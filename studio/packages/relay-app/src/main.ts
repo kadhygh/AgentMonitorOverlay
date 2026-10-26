@@ -20,8 +20,9 @@ import { LOADER_HTML, type LoaderState } from "./loader.js";
 
 // AMO 中转's desktop client (plans/relay.md). This shell is fixed; what people see — login, conversations — is content
 // the service hands out (packages/relay-ui), kept in <home>/client and updated without a restart:
-//   start → loader (connect, check the version, download content the first time) → the content's login screen. When the
-//   service has a newer version, the login screen offers it; updating downloads it, switches, and reloads the window.
+//   start → loader (connect, check the version, download content — the first time, or a newer version) → the content's
+//   login screen. A version published while it runs is applied by the content when nothing would be lost (it asks the
+//   shell to download it, switch, and reload the window). The loader tries an unreachable service again every few seconds.
 // The shell also keeps saved accounts (passwords encrypted by the OS), writes the identity this machine's MCP uses,
 // runs that MCP with its own exe as Node (no Node install needed), and sits in the tray with notifications.
 // Env: AMO_RELAY_HOME (default %APPDATA%\AMO Relay — a second one runs a second client), AMO_RELAY_TEST=1 (window
@@ -138,7 +139,8 @@ function showWindow(): void {
 // ---- the loader
 
 let loaderReady: (() => void) | null = null;
-let loaderAnswer: ((a: { kind: "server"; value: string } | { kind: "retry" } | { kind: "change" }) => void) | null = null;
+type LoaderAnswer = { kind: "server"; value: string } | { kind: "retry" } | { kind: "change" };
+let loaderAnswer: ((a: LoaderAnswer) => void) | null = null;
 
 function loaderState(s: LoaderState): void {
   win?.webContents.send("relay:loader-state", s);
@@ -150,7 +152,10 @@ async function openLoader(): Promise<void> {
   await ready;
 }
 
-const wait = () => new Promise<Parameters<NonNullable<typeof loaderAnswer>>[0]>((resolve) => (loaderAnswer = resolve));
+const wait = () => new Promise<LoaderAnswer>((resolve) => (loaderAnswer = resolve));
+const RETRY_MS = 5000;
+/** An answer, or a retry by itself after `ms`. */
+const waitOrRetry = (ms: number) => Promise.race([wait(), new Promise<LoaderAnswer>((resolve) => setTimeout(() => resolve({ kind: "retry" }), ms))]);
 
 async function health(address: string): Promise<Health> {
   const res = await fetch(`${address}/api/health`, { signal: AbortSignal.timeout(6000) });
@@ -204,14 +209,26 @@ async function boot(askAddress = false): Promise<void> {
       return loadContent(local, null);
     }
     if (!manifest) {
-      loaderState({ step: "error", text: `${address}\n${problem}`, server: address, download: null });
-      const a = await wait();
+      loaderState({ step: "error", text: `${address}\n${problem}\n每 ${RETRY_MS / 1000} 秒自动重试一次。`, server: address, download: null });
+      const a = await waitOrRetry(RETRY_MS);
       if (a.kind === "change") address = null;
       askError = null;
       continue;
     }
     server = address;
     saveServer(address);
+    if (local && local.version !== manifest.version && manifest.minShell <= SHELL_VERSION) {
+      // A newer version: installed now, before anyone is using it.
+      try {
+        const installed = await store.install(address, manifest, (done, total) =>
+          loaderState({ step: "progress", text: `正在更新客户端到 ${manifest!.version}…`, progress: total ? done / total : 0, server: address }),
+        );
+        return loadContent(installed, manifest);
+      } catch {
+        // Start with the current one; the login screen offers the update again.
+        return loadContent(local, manifest);
+      }
+    }
     if (!local) {
       if (manifest.minShell > SHELL_VERSION) {
         loaderState({ step: "error", text: "服务器上的客户端需要更新的桌面程序，请重新下载。", server: address, download: address });
@@ -314,6 +331,7 @@ function wire(): void {
     unread = count;
     tray?.setToolTip(unread ? `AMO 中转 · ${unread} 条未读` : "AMO 中转");
   });
+  ipcMain.handle("relay:in-use", () => !!win && win.isVisible() && !win.isMinimized() && win.isFocused());
   ipcMain.handle("relay:check-update", async () => {
     if (!server) return null;
     try {

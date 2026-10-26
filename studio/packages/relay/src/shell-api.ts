@@ -54,6 +54,8 @@ export interface RelayShell {
   /** Downloads the latest content, switches to it and reloads the window (no restart). */
   applyUpdate(): Promise<void>;
   onUpdateProgress(listener: (p: { done: number; total: number }) => void): void;
+  /** The window is on screen and focused: someone is using it (an update waits). Optional: added after shell 1 shipped. */
+  inUse?(): Promise<boolean>;
   /** Back to the loader, to enter another service address. */
   changeServer(): void;
   openExternal(url: string): void;

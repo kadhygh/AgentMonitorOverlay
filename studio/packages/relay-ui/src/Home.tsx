@@ -1,26 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyText, shell } from "./env.js";
 import { UpdateBanner } from "./Login.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
-import { RelayClientError, usagePrompt, type McpHookup, type ShellInfo, type ThreadView as Thread } from "./shared.js";
+import { RelayClientError, usagePrompt, type McpHookup, type ThreadView as Thread } from "./shared.js";
+import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdates } from "./update.js";
 import { Avatar, RequestStatus, preview, timeText } from "./bits.js";
 import { ThreadView } from "./ThreadView.js";
 
 // After login: the conversations on the left (requests waiting for me first, then the ones I sent, answered ones,
 // direct chats, and the people), the open one on the right. The tools for AIs are in the header: 复制用法 (a prompt for
-// any agent) and 接入 AI (the MCP hookup for this machine).
+// any agent) and 接入 AI (the MCP hookup for this machine). Next to the name: whether the service is connected; while it
+// is not, a bar over the conversation says so and when it tries again. A newer client the service publishes is applied
+// once the window is not in use and nothing is typed; the open conversation comes back after the reload.
 
 const errorText = (err: unknown) => (err instanceof RelayClientError || err instanceof Error ? err.message : String(err));
-const UPDATE_CHECK_MS = 10 * 60_000;
+const CONNECTION_TEXT = { online: "在线", connecting: "连接中", offline: "离线" } as const;
 
-export function Home({ session, onLogout }: { session: Session; onLogout: () => void }) {
-  const { threads, members, connection } = useSession(session);
+export function Home({ session, onLogout, resumeOpen = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null }) {
+  const { threads, members, connection, client } = useSession(session);
   const me = session.me.name;
   useMinuteTick();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(resumeOpen);
   const [dialog, setDialog] = useState<"request" | "ai" | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
-  const [info, setInfo] = useState<ShellInfo | null>(null);
+  const openRef = useRef(openId);
+  openRef.current = openId;
+  const updates = useUpdates(
+    client,
+    async () => !pageHasDraft() && (await pageIsIdle()),
+    () => saveResume({ openId: openRef.current }),
+  );
 
   const toast = useCallback((text: string) => {
     setToastText(text);
@@ -57,18 +66,6 @@ export function Home({ session, onLogout }: { session: Session; onLogout: () => 
   );
   useEffect(() => shell?.onOpenThread((id) => setOpenId(id)), []);
 
-  // A newer client while running: offered at the top of the list.
-  useEffect(() => {
-    if (!shell) return;
-    const check = () =>
-      void shell!.checkUpdate().then(async (update) => {
-        if (update) setInfo({ ...(await shell!.info()), update });
-      });
-    check();
-    const t = setInterval(check, UPDATE_CHECK_MS);
-    return () => clearInterval(t);
-  }, []);
-
   const chatWith = async (name: string) => {
     const existing = groups.direct.find((t) => t.members.includes(name));
     if (existing) return setOpenId(existing.id);
@@ -98,14 +95,17 @@ export function Home({ session, onLogout }: { session: Session; onLogout: () => 
             <b>{me}</b>
             <span className="muted tiny">{session.me.role || session.me.service}</span>
           </div>
-          <span className={`conn ${connection}`} title={connection === "online" ? "已连接" : connection === "offline" ? "连接断开，正在重连" : "正在连接"} />
+          <span className={`conn-chip ${connection}`} title={`服务器 ${session.me.server}`}>
+            <span className="conn-dot" />
+            {CONNECTION_TEXT[connection]}
+          </span>
           <button type="button" className="link tiny" onClick={onLogout}>
             退出
           </button>
         </div>
-        {info?.update && (
+        {updates.update && (
           <div className="side-update">
-            <UpdateBanner info={info} compact />
+            <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />
           </div>
         )}
         <div className="side-actions">
@@ -125,13 +125,13 @@ export function Home({ session, onLogout }: { session: Session; onLogout: () => 
           <Group title="已回答" threads={groups.done} me={me} openId={openId} onOpen={setOpenId} collapsed />
           <Group title="私聊" threads={groups.direct} me={me} openId={openId} onOpen={setOpenId} />
           <div className="group">
-            <div className="group-title">成员 · {others.filter((m) => m.online).length}/{others.length} 在线</div>
+            <div className="group-title">{connection === "offline" ? `成员 · ${others.length} · 在线状态未知` : `成员 · ${others.filter((m) => m.online).length}/${others.length} 在线`}</div>
             {others.map((m) => (
               <button key={m.name} type="button" className="person" onClick={() => void chatWith(m.name)} title={`和 ${m.name} 私聊`}>
                 <Avatar name={m.name} small />
                 <span className="person-name">{m.name}</span>
                 <span className="muted tiny ellipsis">{m.role}</span>
-                <span className={`dot ${m.online ? "on" : ""}`} />
+                <span className={`dot ${m.online && connection !== "offline" ? "on" : ""}`} />
               </button>
             ))}
             {!others.length && <div className="muted tiny pad">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
@@ -139,6 +139,7 @@ export function Home({ session, onLogout }: { session: Session; onLogout: () => 
         </nav>
       </aside>
       <main className="main">
+        <ConnectionBar session={session} />
         {open ? (
           <ThreadView key={open.id} session={session} thread={open} toast={toast} />
         ) : (
@@ -162,6 +163,25 @@ export function Home({ session, onLogout }: { session: Session; onLogout: () => 
       )}
       {dialog === "ai" && <ConnectAiDialog onClose={() => setDialog(null)} onCopyUsage={() => void copyUsage()} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
+    </div>
+  );
+}
+
+/** Offline: since when, the next try, and a way to try now. Hidden for a brief blip. */
+function ConnectionBar({ session }: { session: Session }) {
+  const { connection, offlineSince, retryAt } = useSession(session);
+  const now = useSecondTick(connection === "offline");
+  if (connection !== "offline" || !offlineSince || now - offlineSince < 1500) return null;
+  return (
+    <div className="conn-bar" role="status">
+      <b>! 和服务器断开了</b>
+      <span>
+        已 {spanText(now - offlineSince)} · {retryAt && retryAt > now ? `${spanText(retryAt - now)}后重连` : "正在重连…"}
+      </span>
+      <button type="button" className="link" onClick={() => session.reconnectNow()}>
+        立即重连
+      </button>
+      <span className="muted tiny grow">这段时间发不出消息；连上后会补上别人发来的。服务所在的电脑关机、睡眠或断网时会这样。</span>
     </div>
   );
 }

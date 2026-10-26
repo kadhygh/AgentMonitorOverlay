@@ -23,9 +23,9 @@ afterEach(async () => {
   store = null;
 });
 
-async function service(publicDir?: string) {
+async function service(publicDir?: string, timing: { clientWatchMs?: number; tickMs?: number } = {}) {
   store = new RelayStore(":memory:");
-  server = await startRelayServer({ store, passphrase: "芝麻开门", publicDir, host: "127.0.0.1", port: 0, name: "测试组" });
+  server = await startRelayServer({ store, passphrase: "芝麻开门", publicDir, host: "127.0.0.1", port: 0, name: "测试组", ...timing });
   const anon = new RelayClient(server.url);
   const a = await anon.register("策划小王", "pw-wang", { role: "策划", passphrase: "芝麻开门" });
   const b = await anon.register("程序老李", "pw-li", { role: "程序 · 战斗", passphrase: "芝麻开门" });
@@ -92,11 +92,26 @@ describe("relay service", () => {
     expect((await get("/client/nope.js")).status).toBe(404);
   });
 
+  it("pushes a newly published client build and ticks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-public-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    mkdirSync(join(dir, "client"));
+    const publish = (version: string) => writeFileSync(join(dir, "client", "manifest.json"), JSON.stringify({ version, builtAt: 1, minShell: 1, files: [] }));
+    publish("1");
+    const { url, plannerSettings } = await service(dir, { clientWatchMs: 20, tickMs: 60 });
+    const { next } = await events(url, plannerSettings.key);
+    const seen: RelayEvent[] = [await next()];
+    publish("2");
+    while (!seen.some((e) => e.type === "client") || !seen.some((e) => e.type === "tick")) seen.push(await next());
+    expect(seen[0]).toEqual({ type: "hello", me: "策划小王", client: "1" });
+    expect(seen).toContainEqual({ type: "client", version: "2" });
+  });
+
   it("carries a request and its reply, pushes it, and wakes a wait", async () => {
     const { url, planner, coder } = await service();
     const coderKey = coder.key!;
     const feed = await events(url, coderKey);
-    expect(await feed.next()).toEqual({ type: "hello", me: "程序老李" });
+    expect(await feed.next()).toEqual({ type: "hello", me: "程序老李", client: null });
     expect((await feed.next()).type).toBe("members");
 
     const { thread } = await planner.ask({ to: "程序老李", title: "冷却按等级变", body: "见表", questions: [{ text: "能做吗", options: ["能", "不能"] }] });

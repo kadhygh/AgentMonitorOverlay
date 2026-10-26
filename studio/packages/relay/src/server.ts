@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
-import { RELAY_APP, RELAY_VERSION, type Health, type Member, type Message, type RelayEvent, type Thread } from "./protocol.js";
+import { RELAY_APP, RELAY_VERSION, TICK_MS, type Health, type Member, type Message, type RelayEvent, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 
 // The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
@@ -22,6 +22,9 @@ export interface RelayServerOptions {
   name?: string;
   host?: string;
   port?: number;
+  /** How often to look for a newer client build (default 5 s) and to send a tick (default TICK_MS). Tests shorten them. */
+  clientWatchMs?: number;
+  tickMs?: number;
 }
 
 export interface RelayServer {
@@ -103,6 +106,16 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const pushMembers = () => {
     if (!closing) pushAll({ type: "members", members: members() });
   };
+
+  // A newer client build (npm run relay:release writes client/ while the service runs): pushed to everyone.
+  let clientVersion = files.manifest()?.version ?? null;
+  const watchClient = setInterval(() => {
+    const now = files.manifest()?.version ?? null;
+    if (now === clientVersion) return;
+    clientVersion = now;
+    pushAll({ type: "client", version: now });
+  }, opts.clientWatchMs ?? 5000);
+  const tick = setInterval(() => pushAll({ type: "tick" }), opts.tickMs ?? TICK_MS);
 
   /** A new message: to the thread's members, and to the waits it answers (not the author's own). */
   const announce = (thread: Thread, message: Message) => {
@@ -269,7 +282,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       const wasOnline = set.size > 0;
       set.add(ws);
       sockets.set(name, set);
-      ws.send(JSON.stringify({ type: "hello", me: name } satisfies RelayEvent));
+      ws.send(JSON.stringify({ type: "hello", me: name, client: clientVersion } satisfies RelayEvent));
       if (!wasOnline) pushMembers();
       ws.on("close", () => {
         set.delete(ws);
@@ -293,6 +306,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     port,
     close: async () => {
       closing = true;
+      clearInterval(watchClient);
+      clearInterval(tick);
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();
       wss.close();

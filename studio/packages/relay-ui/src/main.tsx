@@ -4,18 +4,30 @@ import { shell } from "./env.js";
 import { Home } from "./Home.js";
 import { Login } from "./Login.js";
 import { Session, type Identity } from "./session.js";
+import { takeResume } from "./update.js";
 import "./styles.css";
 
-// The AMO 中转 client's content: the login screen, then the conversations. In a browser a reload keeps the login for
-// the tab (sessionStorage); the desktop client asks at each start (its saved password fills the form), which is also
-// where it offers an update.
+// The AMO 中转 client's content: the login screen, then the conversations. The login is kept for the window
+// (sessionStorage), so a reload — an update applying itself — comes back signed in, with the same conversation open
+// (update.ts). The desktop client still asks at each start (its saved password fills the form).
+
+const SESSION = "amo-relay.session";
+const resume = takeResume();
 
 function restored(): Identity | null {
-  if (shell) return null;
   try {
-    return JSON.parse(sessionStorage.getItem("amo-relay.session") ?? "null") as Identity | null;
+    return JSON.parse(sessionStorage.getItem(SESSION) ?? "null") as Identity | null;
   } catch {
     return null;
+  }
+}
+
+function remember(me: Identity | null): void {
+  try {
+    if (me) sessionStorage.setItem(SESSION, JSON.stringify(me));
+    else sessionStorage.removeItem(SESSION);
+  } catch {
+    // no session storage: a reload asks again
   }
 }
 
@@ -33,11 +45,7 @@ function App() {
       setFailed(err instanceof Error ? err.message : String(err));
       session.stop();
       setSession(null);
-      try {
-        sessionStorage.removeItem("amo-relay.session");
-      } catch {
-        // nothing kept
-      }
+      remember(null);
     });
     return () => session.stop();
   }, [session]);
@@ -46,11 +54,7 @@ function App() {
     if (!session) return;
     await session.client.logout().catch(() => undefined);
     await shell?.signedIn(null);
-    try {
-      sessionStorage.removeItem("amo-relay.session");
-    } catch {
-      // nothing kept
-    }
+    remember(null);
     setSession(null);
   };
 
@@ -58,10 +62,10 @@ function App() {
     return (
       <>
         {failed && <div className="toast">{failed}</div>}
-        <Login onSignedIn={(me) => (setFailed(null), setSession(new Session(me)))} />
+        <Login onSignedIn={(me) => (setFailed(null), remember(me), setSession(new Session(me)))} />
       </>
     );
-  return <Home session={session} onLogout={() => void logout()} />;
+  return <Home session={session} onLogout={() => void logout()} resumeOpen={resume?.openId ?? null} />;
 }
 
 createRoot(document.getElementById("root")!).render(

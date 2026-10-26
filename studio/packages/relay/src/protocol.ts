@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.1.0";
+export const RELAY_VERSION = "0.2.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
@@ -101,11 +101,18 @@ export interface NewMessage {
 }
 
 /** Pushed over /ws to the members it concerns. */
+/** The service's /ws tick: a client that hears nothing for a while knows it is gone. */
+export const TICK_MS = 20_000;
+
 export type RelayEvent =
-  | { type: "hello"; me: string }
+  | { type: "hello"; me: string; client: string | null }
   | { type: "message"; thread: Thread; message: Message }
   | { type: "members"; members: Member[] }
-  | { type: "read"; threadId: string; readSeq: number };
+  | { type: "read"; threadId: string; readSeq: number }
+  /** A new client build was published: clients update themselves. */
+  | { type: "client"; version: string | null }
+  /** Every TICK_MS, so a client notices a service that went away without closing (a sleeping machine, the network). */
+  | { type: "tick" };
 
 export interface Health {
   app: typeof RELAY_APP;

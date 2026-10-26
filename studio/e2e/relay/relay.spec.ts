@@ -9,8 +9,9 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 
 // AMO 中转's desktop client (plans/relay.md) against a real service in this process: first start (loader → content
 // download → login), register two people, a request sent by an AI through the command line the client installs,
-// answered one by one in the other client, and a hot update offered on the login screen and applied without a
-// restart. Needs `npm run relay:release` first (release/relay/client).
+// answered one by one in the other client, a direct chat, updates (installed by the loader at start; applied by itself
+// while signed in, when the window is not in use), and the service going away and coming back (the bar, the login
+// screen's status). Needs `npm run relay:release` first (release/relay/client).
 
 // Async: the service runs in this process, so a blocking exec would stall it.
 const exec = async (file: string, args: string[]) => (await promisify(execFile)(file, args, { encoding: "utf8" })).stdout;
@@ -33,7 +34,7 @@ test.beforeAll(async () => {
   publicDir = join(root, "public");
   cpSync(built, join(publicDir, "client"), { recursive: true });
   store = new relay.RelayStore(join(root, "server", "relay.db"));
-  server = await relay.startRelayServer({ store, publicDir, host: "127.0.0.1", port: 0, name: "测试组" });
+  server = await startServer(0);
   mkdirSync(shots, { recursive: true });
 });
 
@@ -43,6 +44,8 @@ test.afterAll(async () => {
   store?.close();
   if (root) rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 });
+
+const startServer = (port: number) => relay.startRelayServer({ store, publicDir, host: "127.0.0.1", port, name: "测试组", clientWatchMs: 300 });
 
 async function launch(who: string): Promise<{ app: ElectronApplication; page: Page; home: string }> {
   const home = join(root, who);
@@ -72,7 +75,7 @@ async function register(page: Page, name: string, role: string): Promise<void> {
   await expect(page.getByRole("button", { name: "复制用法" })).toBeVisible();
 }
 
-test("register, an AI's request answered in the other client, hot update on the login screen", async () => {
+test("register, an AI's request answered in the other client, updates, the service away and back", async () => {
   const a = await launch("planner");
   await register(a.page, "策划小王", "策划");
   const b = await launch("coder");
@@ -116,19 +119,49 @@ test("register, an AI's request answered in the other client, hot update on the 
   await expect(a.page.locator(".msg")).toContainText("下午三点对一下数值？");
   await shot(a.app, "05-direct-chat");
 
-  // A newer client on the service: the planner restarts, the login screen offers it; updating reloads in place.
+  // A newer client on the service: the planner restarts and the loader installs it before the login screen.
   const manifestFile = join(publicDir, "client", "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestFile, "utf8")) as { version: string };
+  const publish = (version: string) => writeFileSync(manifestFile, JSON.stringify({ ...manifest, version }));
   const next = `${manifest.version}-next`;
-  writeFileSync(manifestFile, JSON.stringify({ ...manifest, version: next }));
+  publish(next);
   await a.app.close();
   const again = await launch("planner");
-  await expect(again.page.locator(".notice.update")).toContainText(next, { timeout: 30_000 });
-  await expect(again.page.getByLabel("密码", { exact: true })).toHaveValue("pw-1234");
-  await shot(again.app, "04-login-update");
-  await again.page.getByRole("button", { name: "立即更新" }).click();
   await expect(again.page.locator(".login-foot")).toContainText(next, { timeout: 30_000 });
   await expect(again.page.locator(".notice.update")).toHaveCount(0);
+  await expect(again.page.locator(".server-line")).toContainText("服务器在线");
+  await expect(again.page.getByLabel("密码", { exact: true })).toHaveValue("pw-1234");
   await again.page.getByRole("button", { name: "登录" }).click();
-  await expect(again.page.locator(".item", { hasText: "技能冷却按等级递减" })).toBeVisible();
+  await again.page.locator(".item", { hasText: "技能冷却按等级递减" }).click();
+  await expect(again.page.locator(".conn-chip")).toHaveText("在线");
+
+  // Published while signed in, the window closed to the tray (not in use): it updates by itself and comes back signed
+  // in, the same conversation open.
+  const third = `${manifest.version}-third`;
+  publish(third);
+  await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
+  await expect.poll(() => again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion), { timeout: 30_000 }).toBe(third);
+  await expect(again.page.locator(".item.on")).toContainText("技能冷却按等级递减", { timeout: 15_000 });
+  await expect(again.page.locator(".msg.kind-reply")).toContainText("两天");
+  await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
+
+  // The service goes away: the bar over the conversation, members' state unknown; the other one logs out and its
+  // login screen says the service is offline. It comes back: both see it without doing anything.
+  const port = server.port;
+  await server.close();
+  await expect(again.page.locator(".conn-bar")).toContainText("和服务器断开了", { timeout: 15_000 });
+  await expect(again.page.locator(".conn-chip")).toHaveText("离线");
+  await expect(again.page.locator(".lists")).toContainText("在线状态未知");
+  await shot(again.app, "06-offline-bar");
+  await b.page.getByRole("button", { name: "退出" }).click();
+  await expect(b.page.locator(".server-down")).toContainText("服务器离线", { timeout: 15_000 });
+  await expect(b.page.getByRole("button", { name: /服务器离线/ })).toBeDisabled();
+  await shot(b.app, "07-login-offline");
+  server = await startServer(port);
+  await again.page.getByRole("button", { name: "立即重连" }).click();
+  await expect(again.page.locator(".conn-bar")).toHaveCount(0, { timeout: 15_000 });
+  await expect(again.page.locator(".conn-chip")).toHaveText("在线");
+  await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
+  await b.page.getByRole("button", { name: "登录" }).click();
+  await expect(b.page.getByRole("button", { name: "复制用法" })).toBeVisible();
 });

@@ -1,8 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { RelayClient, type Member, type Message, type RelayEvent, type ThreadView } from "./shared.js";
+import { RelayClient, TICK_MS, type Member, type Message, type RelayEvent, type ThreadView } from "./shared.js";
 
 // One login: the client with its key, the thread list and the people, kept current by /ws (reconnecting, and
-// reloading what it missed). Views subscribe; a thread view also hears each new message.
+// reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
+// TICK_MS; nothing heard for longer than DEAD_MS counts as gone (a machine asleep, the network down) even when the socket
+// never closed. `client` is the newest client build the service hands out (it pushes new ones).
 
 export interface Identity {
   server: string;
@@ -14,19 +16,28 @@ export interface Identity {
 
 export type Connection = "connecting" | "online" | "offline";
 
+const DEAD_MS = TICK_MS * 2 + 5000;
+
 interface State {
   threads: ThreadView[];
   members: Member[];
   connection: Connection;
+  /** When it went offline; null while connected. */
+  offlineSince: number | null;
+  /** The next reconnect, while offline. */
+  retryAt: number | null;
+  client: string | null;
 }
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], connection: "connecting" };
+  private state: State = { threads: [], members: [], connection: "connecting", offlineSince: null, retryAt: null, client: null };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
   private ws: WebSocket | null = null;
   private retry = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private deadTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   /** The thread on screen: its messages count as read while the window has focus. */
   openThread: string | null = null;
@@ -62,7 +73,28 @@ export class Session {
 
   stop(): void {
     this.closed = true;
+    this.clearTimers();
     this.ws?.close();
+  }
+
+  /** Offline: try now instead of waiting for the next attempt. */
+  reconnectNow(): void {
+    if (this.closed || this.state.connection === "online") return;
+    this.clearTimers();
+    this.ws?.close();
+    this.connect();
+  }
+
+  private clearTimers(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.deadTimer) clearTimeout(this.deadTimer);
+    this.retryTimer = this.deadTimer = null;
+  }
+
+  /** Heard from the service: it is alive for another DEAD_MS. */
+  private alive(ws: WebSocket): void {
+    if (this.deadTimer) clearTimeout(this.deadTimer);
+    this.deadTimer = setTimeout(() => ws.close(), DEAD_MS);
   }
 
   async reload(): Promise<void> {
@@ -78,20 +110,27 @@ export class Session {
     ws.onopen = () => {
       const missed = this.retry > 0;
       this.retry = 0;
-      this.set({ connection: "online" });
+      this.alive(ws);
+      this.set({ connection: "online", offlineSince: null, retryAt: null });
       if (missed) void this.reload().catch(() => undefined);
     };
-    ws.onmessage = (e) => this.handle(JSON.parse(String(e.data)) as RelayEvent);
+    ws.onmessage = (e) => {
+      this.alive(ws);
+      this.handle(JSON.parse(String(e.data)) as RelayEvent);
+    };
     ws.onclose = () => {
-      if (this.closed) return;
-      this.set({ connection: "offline" });
+      if (this.closed || this.ws !== ws) return;
+      this.clearTimers();
       this.retry++;
-      setTimeout(() => this.connect(), Math.min(15_000, 1000 * 2 ** Math.min(this.retry, 4)));
+      const delay = Math.min(15_000, 1000 * 2 ** Math.min(this.retry - 1, 4));
+      this.set({ connection: "offline", offlineSince: this.state.offlineSince ?? Date.now(), retryAt: Date.now() + delay });
+      this.retryTimer = setTimeout(() => this.connect(), delay);
     };
   }
 
   private handle(e: RelayEvent): void {
-    if (e.type === "members") this.set({ members: e.members });
+    if (e.type === "hello" || e.type === "client") this.set({ client: e.type === "hello" ? e.client : e.version });
+    else if (e.type === "members") this.set({ members: e.members });
     else if (e.type === "read") {
       this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)) });
     } else if (e.type === "message") {

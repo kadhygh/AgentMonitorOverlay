@@ -1,19 +1,24 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { browserAccounts, browserServer, rememberBrowserAccount, shell } from "./env.js";
 import type { Identity } from "./session.js";
-import { RelayClient, RelayClientError, type Health, type SavedAccount, type ShellInfo } from "./shared.js";
+import { RelayClient, RelayClientError, type SavedAccount, type ShellInfo } from "./shared.js";
+import { spanText, useSecondTick, useServerStatus, useUpdates, type ServerStatus, type Updates } from "./update.js";
 
-// The first screen after the loader: who to log in as (saved accounts, password filled in), or a new account. In the
-// desktop client it is also where an update waits: the loader found a newer client on the service and stopped here, so
-// updating is one click and the window reloads into it — no restart.
+// The first screen after the loader: who to log in as (saved accounts, password filled in), or a new account, and
+// whether the service is there (checked again every few seconds while it is not). A newer client found here is
+// applied at once unless something was typed; the window reloads into it — no restart.
 
 const errorText = (err: unknown) => (err instanceof RelayClientError || err instanceof Error ? err.message : String(err));
 
 export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   const [info, setInfo] = useState<ShellInfo | null>(null);
   const server = info?.server ?? (shell ? "" : browserServer());
-  const [health, setHealth] = useState<Health | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
+  const status = useServerStatus(server);
+  const health = status.health;
+  const offline = !!status.error;
+  // Typed something: an update waits for the button instead of reloading under their hands.
+  const touched = useRef(false);
+  const updates = useUpdates(health?.client ?? null, () => !touched.current);
   const [accounts, setAccounts] = useState<SavedAccount[]>([]);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
@@ -32,10 +37,6 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   useEffect(() => {
     if (!server) return;
     const client = new RelayClient(server);
-    client
-      .health()
-      .then((h) => (setHealth(h), setHealthError(null)))
-      .catch((err) => setHealthError(errorText(err)));
     void (shell ? shell.accounts() : Promise.resolve(browserAccounts())).then((all) => {
       const here = all.filter((a) => a.server === client.server).sort((a, b) => b.lastUsed - a.lastUsed);
       setAccounts(here);
@@ -73,11 +74,6 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
         await shell.signedIn({ server: client.server, name: res.name, key: res.key });
       } else {
         rememberBrowserAccount(client.server, res.name);
-        try {
-          sessionStorage.setItem("amo-relay.session", JSON.stringify(me));
-        } catch {
-          // no session storage: the next reload asks again
-        }
       }
       onSignedIn(me);
     } catch (err) {
@@ -98,18 +94,9 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
           </div>
         </div>
 
-        {info?.update && <UpdateBanner info={info} />}
+        <ServerLine server={server} status={status} />
 
-        {healthError && (
-          <div className="notice error">
-            连不上服务器 {server}：{healthError}
-            {shell && (
-              <button type="button" className="link" onClick={() => shell!.changeServer()}>
-                换一个地址
-              </button>
-            )}
-          </div>
-        )}
+        {updates.update && <UpdateBanner updates={updates} server={server} auto={touched.current ? null : "马上自动更新"} />}
 
         {mode === "login" && accounts.length > 0 && (
           <div className="saved">
@@ -130,7 +117,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
           </div>
         )}
 
-        <form onSubmit={(e) => void submit(e)} className="form">
+        <form onSubmit={(e) => void submit(e)} onInput={() => (touched.current = true)} className="form">
           <label>
             名字
             <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="username" placeholder="团队里大家认得的名字" autoFocus required maxLength={32} />
@@ -164,14 +151,14 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
             </label>
           )}
           {error && <div className="notice error">{error}</div>}
-          <button className="primary" disabled={busy || !server || !!healthError}>
-            {busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}
+          <button className="primary" disabled={busy || !server || offline || !health}>
+            {busy ? "请稍候…" : offline ? "服务器离线，连上后再登录" : mode === "login" ? "登录" : "注册并登录"}
           </button>
         </form>
 
         <div className="login-foot">
           {mode === "login" ? (
-            <button type="button" className="link" onClick={() => (setMode("register"), setError(null), setPassword(""))}>
+            <button type="button" className="link" onClick={() => ((touched.current = true), setMode("register"), setError(null), setPassword(""))}>
               没有账号？注册一个
             </button>
           ) : (
@@ -198,36 +185,61 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   );
 }
 
-/** A newer client on the service: update here (download, switch, reload) or keep going with this one. */
-export function UpdateBanner({ info, compact = false }: { info: ShellInfo; compact?: boolean }) {
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const update = info.update!;
+/** Whether the service is there: online with its name, or unreachable with the next try and a way to try now. */
+function ServerLine({ server, status }: { server: string; status: ServerStatus }) {
+  const now = useSecondTick(!!status.error);
+  if (!server) return <div className="notice error">没有设置服务器地址。</div>;
+  if (!status.error)
+    return (
+      <div className={`server-line ${status.health ? "online" : "checking"}`}>
+        <span className="conn-dot" />
+        {status.health ? `服务器在线 · ${server}` : `正在连接 ${server}…`}
+      </div>
+    );
+  return (
+    <div className="notice error server-down" role="status">
+      <div>
+        <b>! 服务器离线</b>
+        <span className="tiny">
+          {" "}
+          · {server} · {status.error}
+          {status.offlineSince && now - status.offlineSince > 10_000 ? ` · 已离线 ${spanText(now - status.offlineSince)}` : ""}
+        </span>
+      </div>
+      <div className="tiny">
+        {status.checking ? "正在重试…" : `${spanText((status.nextAt ?? now) - now)}后自动重试`}
+        {" · "}
+        <button type="button" className="link tiny" onClick={status.retry} disabled={status.checking}>
+          立即重试
+        </button>
+        {shell && (
+          <>
+            {" · "}
+            <button type="button" className="link tiny" onClick={() => shell!.changeServer()}>
+              换一个地址
+            </button>
+          </>
+        )}
+      </div>
+      <div className="tiny muted">服务开着的那台电脑关机、睡眠或断网时会这样；它恢复后这里会自动连上。</div>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    shell?.onUpdateProgress(setProgress);
-  }, []);
-
+/** A newer client on the service: it updates by itself when nothing would be lost (`auto` says when); or right now. */
+export function UpdateBanner({ updates, server, auto, compact = false }: { updates: Updates; server: string; auto: string | null; compact?: boolean }) {
+  const { update, progress, error } = updates;
+  if (!update) return null;
   if (update.needShell) {
     return (
       <div className="notice update">
         新版本 {update.latest} 需要重新下载客户端。
-        <button type="button" className="link" onClick={() => shell?.openExternal(info.server)}>
+        <button type="button" className="link" onClick={() => shell?.openExternal(server)}>
           打开下载页
         </button>
       </div>
     );
   }
-  const start = async () => {
-    setError(null);
-    setProgress({ done: 0, total: 1 });
-    try {
-      await shell!.applyUpdate();
-    } catch (err) {
-      setProgress(null);
-      setError(errorText(err));
-    }
-  };
   return (
     <div className={`notice update ${compact ? "compact" : ""}`}>
       {progress ? (
@@ -241,9 +253,10 @@ export function UpdateBanner({ info, compact = false }: { info: ShellInfo; compa
         <>
           <span>
             有新版本 <b>{update.latest}</b>
-            {!compact && <span className="muted">（现在是 {update.current ?? "—"}）</span>}
+            {!compact && update.current && <span className="muted">（现在是 {update.current}）</span>}
+            {auto && !error && <span className="muted tiny"> · {auto}</span>}
           </span>
-          <button type="button" className="primary small" onClick={() => void start()}>
+          <button type="button" className="primary small" onClick={() => void updates.apply()}>
             立即更新
           </button>
         </>

@@ -33,6 +33,7 @@ electron.contextBridge.exposeInMainWorld("relayShell", {
   checkUpdate: () => invoke("check-update"),
   applyUpdate: () => invoke("apply-update"),
   onUpdateProgress: (listener: (p: unknown) => void) => on("update-progress", listener),
+  inUse: () => invoke("in-use"),
   changeServer: () => send("change-server"),
   openExternal: (url: string) => send("open-external", url),
 });
