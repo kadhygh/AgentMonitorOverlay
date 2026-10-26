@@ -1,27 +1,55 @@
-// Renders design/icon/viewfinder.svg into the icons the app ships: the UI's icon.svg, the window icon (PNG) and the
-// exe icon (ICO with PNG images, 16–256 px). Uses the installed Edge through Playwright; run after changing the SVG:
+// Renders the AMO mascot (design/icon/mascot-purple, 2026-10-26: 第一套 · 紫色短发, the 开心 face; it replaced the
+// viewfinder, design/icon/viewfinder.svg) into the icons the app ships: the UI's icon.png, the window icon (PNG) and
+// the exe icon (ICO with PNG images, 16–256 px). Scales in the installed Edge through Playwright, halving step by step
+// so small sizes stay smooth; run after changing the source:
 //   node scripts/make-icons.mjs
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const studio = join(dirname(fileURLToPath(import.meta.url)), "..");
-const svgPath = join(studio, "design", "icon", "viewfinder.svg");
-const svg = readFileSync(svgPath, "utf8");
+const source = join(studio, "design", "icon", "mascot-purple", "02-happy.png");
 const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage();
+await page.setContent("<html><body style='margin:0'></body></html>");
+const dataUrl = `data:image/png;base64,${readFileSync(source).toString("base64")}`;
+
+/** The source at `size` px square, as PNG bytes. */
 async function png(size) {
-  await page.setViewportSize({ width: size, height: size });
-  await page.setContent(`<html><body style="margin:0;background:transparent">${svg.replace(/width="512" height="512"/, `width="${size}" height="${size}"`)}</body></html>`);
-  return page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
+  const b64 = await page.evaluate(
+    async ({ dataUrl, size }) => {
+      const img = new Image();
+      img.src = dataUrl;
+      await img.decode();
+      let canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      while (canvas.width / 2 >= size) {
+        const half = document.createElement("canvas");
+        half.width = half.height = canvas.width / 2;
+        const g = half.getContext("2d");
+        g.imageSmoothingQuality = "high";
+        g.drawImage(canvas, 0, 0, half.width, half.height);
+        canvas = half;
+      }
+      const out = document.createElement("canvas");
+      out.width = out.height = size;
+      const g = out.getContext("2d");
+      g.imageSmoothingQuality = "high";
+      g.drawImage(canvas, 0, 0, size, size);
+      return out.toDataURL("image/png").split(",")[1];
+    },
+    { dataUrl, size },
+  );
+  return Buffer.from(b64, "base64");
 }
 
-const big = await png(512);
-writeFileSync(join(studio, "design", "icon", "viewfinder-512.png"), big);
 writeFileSync(join(studio, "packages", "app", "assets", "icon.png"), await png(256));
+writeFileSync(join(studio, "packages", "ui", "public", "icon.png"), await png(128));
 
 // ICO: a header, one directory entry per image, then the PNG data (Windows Vista and later read PNG entries).
 const images = [];
@@ -46,5 +74,4 @@ const entries = images.map(({ size, data }) => {
   return e;
 });
 writeFileSync(join(studio, "packages", "app", "assets", "icon.ico"), Buffer.concat([header, ...entries, ...images.map((i) => i.data)]));
-copyFileSync(svgPath, join(studio, "packages", "ui", "public", "icon.svg"));
 console.log(`icons written: ${ICO_SIZES.join(", ")} px`);

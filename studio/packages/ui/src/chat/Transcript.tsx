@@ -473,7 +473,7 @@ function RunningStatus({ turn, awaiting, compacting }: { turn: TurnItem | null; 
       <span className="sr-only" role="status" aria-live="polite">
         {awaiting ?? "正在工作"}
       </span>
-      <img className={`run-bot${awaiting ? " waiting" : ""}`} src="./icon.svg" alt="" aria-hidden="true" />
+      <img className={`run-bot${awaiting ? " waiting" : ""}`} src="./icon.png" alt="" aria-hidden="true" />
       <Shimmer active={!awaiting} className="run-text">
         {label}
       </Shimmer>

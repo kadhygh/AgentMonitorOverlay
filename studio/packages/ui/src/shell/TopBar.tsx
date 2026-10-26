@@ -56,7 +56,7 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="brand">
-        <img className="brand-mark" src="./icon.svg" alt="" aria-hidden="true" />
+        <img className="brand-mark" src="./icon.png" alt="" aria-hidden="true" />
         <span className="brand-name">AMO Studio</span>
         {scopeName && (
           <>
