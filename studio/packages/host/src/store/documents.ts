@@ -205,6 +205,15 @@ export abstract class DocumentStore {
     return [...out, ...done].map((r) => JSON.parse(str(r.body)) as CanvasCallout);
   }
 
+  /** Open questions per topic. */
+  waitingQuestions(): Record<Id, number> {
+    const out: Record<Id, number> = {};
+    for (const r of this.db.prepare("SELECT topic_id, body FROM canvas_callouts WHERE state = 'open'").all() as Row[]) {
+      if ((JSON.parse(str(r.body)) as CanvasCallout).kind === "question") out[str(r.topic_id)] = (out[str(r.topic_id)] ?? 0) + 1;
+    }
+    return out;
+  }
+
   putCanvas(doc: CanvasDoc): void {
     this.db
       .prepare("INSERT INTO canvas_docs (id, body, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at")

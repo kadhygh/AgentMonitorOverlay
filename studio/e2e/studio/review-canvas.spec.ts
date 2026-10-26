@@ -47,6 +47,9 @@ test("an agent's review on the canvas: items, a question answered in its window,
   await say(`[[mcp: canvas_callout ${JSON.stringify({ target: "#2", text: "退避上限比原来长，注意测试超时" })}]]`);
   await expect.poll(async () => (await s.api<CanvasCallout[]>("GET", `/api/topics/${topic.id}/callouts`)).length, { timeout: 30_000 }).toBe(2);
 
+  // The left column says the topic has a question waiting.
+  await expect(page.getByTestId("scope-topic-relay 审阅").getByTestId("nav-asking")).toHaveText("? 1");
+
   // The canvas: three item cards in their group, the question highlighted, the toolbar says one is waiting.
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await expect(page.getByTestId("canvas-item")).toHaveCount(3);
@@ -74,6 +77,7 @@ test("an agent's review on the canvas: items, a question answered in its window,
   await expect(page.getByTestId("callout-question")).toHaveCount(0);
   await expect(page.getByTestId("callout-answered")).toBeVisible();
   await expect(page.getByTestId("canvas-asking")).toHaveCount(0);
+  await expect(page.getByTestId("nav-asking")).toHaveCount(0);
   await expect(first).not.toHaveAttribute("data-callout", "question");
   // The answer reached the session that asked.
   await expect

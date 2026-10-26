@@ -27,3 +27,26 @@ export function useCallouts(link: HostLink, topicId: string): readonly CanvasCal
   }, [link, topicId]);
   return list;
 }
+
+/** Questions waiting for the person on each topic's canvas (左栏「? N」), refreshed when a bubble changes. */
+export function useWaitingQuestions(link: HostLink): Readonly<Record<string, number>> {
+  const [counts, setCounts] = useState<Readonly<Record<string, number>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      void call(link, "GET /api/callouts/waiting")
+        .then((c) => !cancelled && setCounts(c))
+        .catch(() => undefined);
+    load();
+    const off = onHostEvent((e) => {
+      if (e.type === "callout.upserted") load();
+    });
+    const offReconnect = onHostReconnect(load);
+    return () => {
+      cancelled = true;
+      off();
+      offReconnect();
+    };
+  }, [link]);
+  return counts;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
+import { useEffect, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { projectWorkspaces, type ProjectGroup, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { togglePin, usePins, type PinKind } from "../lib/pins.js";
@@ -28,6 +28,7 @@ function readNavFolded(): boolean {
   }
 }
 import { showToast } from "../lib/toast.js";
+import { useWaitingQuestions } from "../canvas/useCallouts.js";
 import { pickFolder } from "../lib/profiles.js";
 
 /** A project or topic about to be archived from its right-click menu. */
@@ -123,6 +124,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
 
   // 项目分组 (2026-10-22, design B 树形): kept by the Host with the settings; folding is per machine.
   const groups: readonly ProjectGroup[] = useSettings(link)?.projectGroups ?? [];
+  // 画布审阅: questions waiting on each topic's canvas.
+  const asking = useWaitingQuestions(link);
   const owner = groupOwners(groups);
   const groupFolded = useStoredIds(GROUP_FOLD_KEY);
   const [groupMenu, setGroupMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -145,7 +148,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
       return next;
     });
 
-  const row = (kind: PinKind | null, id: string | null, target: Scope, name: string, count: number, testId: string, title?: string, onMenu?: (e: MouseEvent) => void) => {
+  const row = (kind: PinKind | null, id: string | null, target: Scope, name: string, count: number, testId: string, title?: string, onMenu?: (e: MouseEvent) => void, badge?: ReactNode) => {
     const pinned = !!(kind && id && pins.has(kind, id));
     return (
       <div key={testId} className={pinned ? "nav-item pinned" : "nav-item"} title={title}
@@ -191,6 +194,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
               <path d="M4 1.5 H8 L7.4 5 L9.5 7 H2.5 L4.6 5 Z M6 7 V11" />
             </svg>
           )}
+          {badge}
           <span className="count">{count}</span>
         </button>
         {kind && id && (
@@ -394,10 +398,24 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
         <section key="topic" className="nav-section-box" aria-label="专题" {...sectionDrop("topic")}>
           {head("topic", "专题", liveTopics.length, () => setNewTopic(""), "新专题")}
           {topicRows.map((t) =>
-            row("topic", t.id, { kind: "topic", id: t.id }, t.title, liveTasks.filter((x) => x.topicId === t.id).length, `scope-topic-${t.title}`, undefined, (e) => {
-              e.preventDefault();
-              setTopicMenu({ id: t.id, x: e.clientX, y: e.clientY });
-            }),
+            row(
+              "topic",
+              t.id,
+              { kind: "topic", id: t.id },
+              t.title,
+              liveTasks.filter((x) => x.topicId === t.id).length,
+              `scope-topic-${t.title}`,
+              asking[t.id] ? `画布上 ${asking[t.id]} 个问题待你确认` : undefined,
+              (e) => {
+                e.preventDefault();
+                setTopicMenu({ id: t.id, x: e.clientX, y: e.clientY });
+              },
+              asking[t.id] ? (
+                <span className="nav-asking" data-testid="nav-asking">
+                  ? {asking[t.id]}
+                </span>
+              ) : undefined,
+            ),
           )}
           {folded.topic && topicRows.length < liveTopics.length && (
             <button type="button" className="nav-more" onClick={() => fold("topic")}>

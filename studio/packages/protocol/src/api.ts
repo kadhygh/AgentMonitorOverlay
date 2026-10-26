@@ -531,6 +531,8 @@ export interface HostRoutes {
   "PUT /api/tasks/:id/canvas": { req: { onCanvas: boolean }; res: CanvasDoc };
   /** 画布审阅 (2026-10-27): the bubbles on a topic's canvas — every open or answered one, and the last closed ones. */
   "GET /api/topics/:id/callouts": { req: void; res: import("./entities.js").CanvasCallout[] };
+  /** Questions waiting for the person, per topic (the left column shows 「? N」 on the topic). */
+  "GET /api/callouts/waiting": { req: void; res: Record<Id, number> };
   /** The person answers a question (sent to its session as a message) or writes on a remark. */
   "POST /api/callouts/:id/answer": { req: { text: string }; res: import("./entities.js").CanvasCallout };
   /** Puts a bubble away. */

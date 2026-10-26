@@ -113,7 +113,10 @@ describe("画布审阅", () => {
   it("sends the person's answer to the asking session, keeps it, and the agent closes the bubble", async () => {
     await run("canvas_items_post", { group: "审阅", items: [{ title: "协议改了" }] });
     const q = await run("canvas_callout", { target: "#1", kind: "question", text: "要不要兼容旧客户端？" });
+    await run("canvas_callout", { target: "#1", text: "只是说明，不算在等的问题里" });
+    expect(store.waitingQuestions()).toEqual({ [topic.id]: 1 });
     const answered = await service.canvasReview.answer(String(q.id), { text: "兼容一个版本" });
+    expect(store.waitingQuestions()).toEqual({});
     expect(answered).toMatchObject({ state: "answered", answer: { text: "兼容一个版本" } });
     expect(answered.answer!.sent).not.toBe("none");
     await until(() => userTexts(caller.id).some((t) => t.includes("【画布回答】")));
@@ -125,8 +128,8 @@ describe("画布审阅", () => {
     expect(await run("canvas_callout_close", { calloutId: q.id })).toEqual({ closed: [q.id] });
     expect(service.canvasReview.getCallout(String(q.id)).state).toBe("closed");
     // Closed ones stay listed for the page, but not in canvas_read.
-    expect(service.canvasReview.callouts(topic.id).map((c) => c.state)).toEqual(["closed"]);
-    expect(service.canvases.canvasOutline(topic.id).json.callouts).toEqual([]);
+    expect(service.canvasReview.callouts(topic.id).map((c) => c.state)).toEqual(["open", "closed"]);
+    expect(service.canvases.canvasOutline(topic.id).json.callouts.map((c) => c.kind)).toEqual(["note"]);
     await expect(service.canvasReview.answer(String(q.id), { text: "再说" })).rejects.toThrow(/closed/);
   });
 
