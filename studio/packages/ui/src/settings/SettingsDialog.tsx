@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
 import { ModelsPage } from "./ModelsPage.js";
+import { SubsessionPage } from "./SubsessionPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
@@ -40,6 +41,7 @@ export function useSettings(link: HostLink): StudioSettings | null {
 const PAGES = [
   { id: "ui", label: "界面" },
   { id: "models", label: "模型" },
+  { id: "subsession", label: "子会话" },
   { id: "quota", label: "额度" },
   { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
@@ -229,6 +231,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             )}
 
             {page === "models" && <ModelsPage link={link} settings={settings} />}
+            {page === "subsession" && <SubsessionPage link={link} settings={settings} />}
             {page === "quota" && <QuotaPage link={link} settings={settings} />}
 
             {page === "common" && <DefaultFolderSection />}

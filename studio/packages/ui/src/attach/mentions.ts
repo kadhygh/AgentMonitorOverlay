@@ -33,6 +33,8 @@ export interface SubSessionSpec {
   effort?: string;
   permission?: "read-only" | "write" | "full";
   report: boolean;
+  /** 设置 → 子会话: the person's note on that model as a sub-session. */
+  note?: string;
 }
 
 /** A task, session or sub-session setup picked with @: the text keeps "@name", the message says what it is. */
@@ -108,7 +110,7 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
   const sessions = refs.flatMap(([name, p]) =>
     p.kind === "session" ? [`- @${name}：AMO 会话 ${p.id}${p.taskId ? `，属于任务 ${p.taskId}（可以用 AMO 的 session_tree 查看）` : ""}`] : [],
   );
-  const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(p.spec)}`] : []));
+  const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(p.spec)}${p.spec.note ? `。人对这个模型的说明：${p.spec.note.replace(/\s+/g, " ")}` : ""}`] : []));
   const blocks = [
     tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "",
     sessions.length ? `提到的会话：\n${sessions.join("\n")}` : "",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ModelProfile, Session } from "@amo-studio/protocol";
+import type { ModelProfile, Session, SubsessionNote } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { normalPick, type ModelPick } from "../lib/recents.js";
@@ -19,11 +19,13 @@ const LEVELS: Array<{ id: Level | null; label: string; hint: string }> = [
   { id: "full", label: "完全放开", hint: "不用沙箱、不用审批，适合连续跑很多命令" },
 ];
 
-/** The last setup, offered again next time (this window only). */
+/**
+ * The last model, permission and report, offered again next time (this window only). Not the effort (2026-10-26): it
+ * starts from the model's default in 设置 → 模型 each time, as everywhere else.
+ */
 const KEY = "amo.subsessionSetup";
 interface Remembered {
   pick: ModelPick;
-  effort?: string;
   permission?: Level;
   report: boolean;
 }
@@ -47,10 +49,13 @@ export function SubSessionDialog({
   link,
   profiles,
   session,
+  notes = [],
   onDone,
 }: {
   link: HostLink;
   profiles: readonly ModelProfile[];
+  /** 设置 → 子会话: the person's notes on models as sub-sessions; the chosen model's goes with the setup. */
+  notes?: readonly SubsessionNote[];
   /** The session the composer writes to: its model is the first choice. */
   session: Session;
   /** The setup, or null when cancelled. */
@@ -59,7 +64,7 @@ export function SubSessionDialog({
   const last = readRemembered();
   const lastOk = !!last && profiles.some((p) => p.id === last.pick.profileId && !p.hidden);
   const [pick, setPick] = useState<ModelPick>(() => (lastOk ? last!.pick : normalPick({ profileId: session.profileId, model: session.options.model ?? null })));
-  const [effort, setEffort] = useState<string | undefined>(lastOk ? last!.effort : undefined);
+  const [effort, setEffort] = useState<string | undefined>(undefined);
   const [permission, setPermission] = useState<Level | undefined>(lastOk ? last!.permission : undefined);
   const [report, setReport] = useState(lastOk ? last!.report : true);
   const [drawer, setDrawer] = useState(false);
@@ -71,6 +76,8 @@ export function SubSessionDialog({
   // An effort the newly picked model does not take is dropped (its default applies).
   const chosenEffort = effort && model?.efforts.includes(effort) ? effort : undefined;
   const profile = profiles.find((p) => p.id === pick.profileId);
+  const picked = normalPick(pick);
+  const note = notes.find((n) => n.profileId === picked.profileId && (n.model ?? null) === picked.model)?.note;
   const spec: SubSessionSpec | null = profile
     ? {
         model: pick.model ? `${profile.label}/${pick.model}` : profile.label,
@@ -78,12 +85,13 @@ export function SubSessionDialog({
         ...(chosenEffort ? { effort: chosenEffort } : {}),
         ...(permission ? { permission } : {}),
         report,
+        ...(note ? { note } : {}),
       }
     : null;
 
   const done = () => {
     if (!spec) return;
-    remember({ pick, ...(chosenEffort ? { effort: chosenEffort } : {}), ...(permission ? { permission } : {}), report });
+    remember({ pick, ...(permission ? { permission } : {}), report });
     onDone(spec);
   };
 
@@ -137,6 +145,11 @@ export function SubSessionDialog({
             <span className="settings-hint">子会话每一轮做完，它的回复会作为消息回来（被停下、出错也会说）</span>
           </span>
         </label>
+        {note && (
+          <span className="settings-hint" data-testid="subsession-note">
+            你在 设置 → 子会话 写的说明会一起带上：{note}
+          </span>
+        )}
         {spec && (
           <span className="subsession-preview" data-testid="subsession-preview">
             {subSessionArgs(spec)}

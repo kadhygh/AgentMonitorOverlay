@@ -250,6 +250,16 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   const { page } = studio;
   const dir = studio.workspace("alpha");
   const { session } = await openTask(studio, dir);
+  // 设置 → 子会话 (2026-10-26): a note on the model, written on its page, goes with the setup.
+  await page.getByRole("button", { name: "设置" }).click();
+  const settingsDialog = page.getByRole("dialog", { name: "设置" });
+  await settingsDialog.getByRole("tab", { name: "子会话" }).click();
+  await settingsDialog.getByTestId("subsession-add").click();
+  await settingsDialog.getByTestId("subsession-note-text").fill("适合照计划改代码");
+  await settingsDialog.getByTestId("subsession-note-text").blur();
+  await expect.poll(async () => (await studio!.api<{ subsessionNotes: Array<{ note: string }> }>("GET", "/api/settings")).subsessionNotes.map((n) => n.note)).toEqual(["适合照计划改代码"]);
+  await screenshot(studio.app, "stage-18", "S18-subsession-settings", page);
+  await settingsDialog.getByRole("button", { name: "关闭设置" }).click();
   const suggest = page.getByTestId("suggest");
   await composer(page).pressSequentially("接下来开子会话就用 @");
   await expect(suggest.getByRole("option").last()).toContainText("找文件…");
@@ -260,6 +270,7 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   await dialog.getByRole("button", { name: "完全放开" }).click();
   await dialog.getByTestId("subsession-report").uncheck();
   await expect(dialog.getByTestId("subsession-preview")).toContainText('permission: "full"，report: false');
+  await expect(dialog.getByTestId("subsession-note")).toContainText("适合照计划改代码");
   await screenshot(studio.app, "stage-18", "S18-subsession-dialog", page);
   await dialog.getByTestId("subsession-ok").click();
   await expect(dialog).toHaveCount(0);
@@ -270,5 +281,5 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
     .poll(async () => (await studio!.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)?.text ?? "", { timeout: 15_000 })
     .toContain("子会话的开法（要开时用 AMO 的 session_start");
   const sent = (await studio.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!.text!;
-  expect(sent).toMatch(/- @子会话1：session_start 带 model: ".+"（.+），permission: "full"，report: false/);
+  expect(sent).toMatch(/- @子会话1：session_start 带 model: ".+"（.+），permission: "full"，report: false。人对这个模型的说明：适合照计划改代码/);
 });

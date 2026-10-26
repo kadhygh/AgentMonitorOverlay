@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, OPTIONAL_FEATURES, type ProjectGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY, SUBSESSION_NOTES_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -27,7 +27,35 @@ export class ConfigFeature extends Feature {
       quotaDisplay: this.quotaDisplay(),
       quickModels: this.quickModels(),
       projectGroups: this.projectGroups(),
+      subsessionNotes: this.subsessionNotes(),
     };
+  }
+
+  /** 设置 → 子会话: the notes on models as sub-sessions, for accounts that still exist (the role card reads them). */
+  subsessionNotes(): SubsessionNote[] {
+    try {
+      const v = JSON.parse(this.store.getKv(SUBSESSION_NOTES_KEY)?.value ?? "[]") as unknown;
+      return Array.isArray(v) ? (v as SubsessionNote[]).filter((n) => this.profiles.some((p) => p.id === n.profileId)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A new list of 子会话 notes: known accounts, one note per model, empty notes left out. */
+  private checkSubsessionNotes(list: unknown): SubsessionNote[] {
+    if (!Array.isArray(list) || list.length > MAX_SUBSESSION_NOTES) throw new HostError("bad_request", `subsessionNotes must be a list of at most ${MAX_SUBSESSION_NOTES}`);
+    const out: SubsessionNote[] = [];
+    for (const n of list as unknown[]) {
+      const o = n && typeof n === "object" ? (n as Record<string, unknown>) : {};
+      const profileId = typeof o.profileId === "string" ? o.profileId : "";
+      if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("bad_request", `unknown profile ${profileId}`);
+      const model = o.model === null || o.model === undefined || o.model === "" ? null : typeof o.model === "string" && o.model.length <= 100 ? o.model : undefined;
+      if (model === undefined) throw new HostError("bad_request", "subsessionNotes entries are { profileId, model: string | null, note }");
+      const note = typeof o.note === "string" ? o.note.trim() : "";
+      if (note.length > SUBSESSION_NOTE_MAX) throw new HostError("bad_request", `a note is limited to ${SUBSESSION_NOTE_MAX} characters`);
+      if (note && !out.some((x) => x.profileId === profileId && x.model === model)) out.push({ profileId, model, note });
+    }
+    return out;
   }
 
   /** 项目分组, as saved (the UI leaves out projects that are gone or archived). */
@@ -111,7 +139,8 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+    if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.quickModels !== undefined) {
       const list = input.quickModels;

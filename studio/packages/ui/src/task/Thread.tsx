@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
-import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, Task } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
@@ -54,6 +54,8 @@ interface ThreadProps {
   profile?: ModelProfile;
   /** Every model profile: 开子会话… in the @ list picks one. */
   profiles?: readonly ModelProfile[];
+  /** 设置 → 子会话: the person's notes on models as sub-sessions. */
+  subsessionNotes?: readonly SubsessionNote[];
   /** Tasks the composer can @ (the message then says which AMO tasks they are). */
   tasks?: readonly Task[];
   /** Sessions the composer can @ (those of the same project or topic are offered). */
@@ -90,7 +92,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, profiles = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -692,6 +694,7 @@ export function Thread({ link, presets, session, profile, profiles = [], tasks =
           link={link}
           profiles={profiles}
           session={session}
+          notes={subsessionNotes}
           onDone={(spec) => {
             const caret = mentions.finishSubsession(spec);
             requestAnimationFrame(() => {

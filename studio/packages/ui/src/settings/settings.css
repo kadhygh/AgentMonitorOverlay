@@ -172,6 +172,10 @@
 
 /* 设置 → 模型 → 快速选择 */
 .quick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* 设置 → 子会话 */
+.subsession-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.subsession-note { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.subsession-note:last-child { border-bottom: 0; }
 .quick-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: grab; }
 .quick-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .quick-row[data-dragging] { opacity: 0.45; }

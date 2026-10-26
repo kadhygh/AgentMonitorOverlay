@@ -105,6 +105,17 @@ function cardOf(service: HostService, f: RoleFacts): string {
     const open = f.sessionId ? service.store.listTaskPlans().filter((p) => p.fromSessionId === f.sessionId && p.state === "open").length : 0;
     if (open) lines.push(`- 你有 ${open} 个拆任务提案在等人确认`);
   }
+  // 设置 → 子会话 (2026-10-26): what the person wrote about models as sub-sessions, where this session may start some
+  // (session_start) or split work into tasks (task_plan_propose).
+  const notes = f.session.kind === "sub" ? [] : service.config.subsessionNotes();
+  if (notes.length) {
+    lines.push("- 人写的模型用法（开子会话 session_start、拆任务 task_plan_propose 时参考；model 照括号里的写）：");
+    for (const n of notes) {
+      const p = service.profiles.find((x) => x.id === n.profileId)!;
+      const ref = n.model ? `${p.label}/${n.model}` : p.label;
+      lines.push(`  - ${ref}（model: "${ref}"）：${oneLine(n.note, 1000)}`);
+    }
+  }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;
   if (marks) lines.push(`- 这个项目有 ${marks} 个书签里的文件（人标出的重要文件，list_file_marks 读）`);
   lines.push("", "完整用法：amo_guide。身份随看板变化，需要时再调 amo_whoami。");

@@ -14,6 +14,8 @@ export const DISABLED_FEATURES_KEY = "settings:disabled-features";
 export const QUOTA_DISPLAY_KEY = "settings:quota-display";
 /** 设置 → 模型 → 快速选择: the model tiles, in order. */
 export const QUICK_MODELS_KEY = "settings:quick-models";
+/** 设置 → 子会话: the person's notes on models as sub-sessions (2026-10-26). */
+export const SUBSESSION_NOTES_KEY = "settings:subsession-notes";
 /** 项目分组: the left column's project groups. */
 export const PROJECT_GROUPS_KEY = "settings:project-groups";
 export const MAX_PRESETS = 30;

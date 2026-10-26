@@ -1,12 +1,12 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Answer, Message, MessageKind, NewMessage, NewRequest, Question, Thread, ThreadKind, ThreadView, Verdict, Via } from "./protocol.js";
 
-// The relay's records (node:sqlite, one file): members with their key's hash, threads (a direct chat per pair of
-// people, one per request), the messages in one global order, and how far each member has read each thread. Only the
-// service opens it. Who is online is the service's business, not stored.
+// The relay's records (node:sqlite, one file): members (name + password), the keys a login hands out (one per device,
+// only their hash kept), threads (a direct chat per pair of people, one per request), the messages in one global order,
+// and how far each member has read each thread. Only the service opens it. Who is online is the service's, not stored.
 
 export class RelayError extends Error {
   constructor(
@@ -17,12 +17,30 @@ export class RelayError extends Error {
   }
 }
 
-const LIMITS = { name: 32, role: 60, title: 200, body: 200_000, questions: 30, question: 2_000, options: 12, option: 200, answer: 20_000 };
+const LIMITS = { password: 128, name: 32, role: 60, title: 200, body: 200_000, questions: 30, question: 2_000, options: 12, option: 200, answer: 20_000 };
 const VERDICTS = new Set<Verdict>(["agree", "change", "question"]);
 
 type Row = Record<string, unknown>;
 
 const hashKey = (key: string) => createHash("sha256").update(key).digest("hex");
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  return `scrypt:${salt.toString("hex")}:${scryptSync(password, salt, 32).toString("hex")}`;
+}
+
+function passwordMatches(password: string, stored: string): boolean {
+  const [kind, salt, hash] = stored.split(":");
+  if (kind !== "scrypt" || !salt || !hash) return false;
+  const want = Buffer.from(hash, "hex");
+  return timingSafeEqual(scryptSync(password, Buffer.from(salt, "hex"), want.length), want);
+}
+
+function checkPassword(value: unknown): string {
+  if (typeof value !== "string" || value.length < 4) throw new RelayError("bad_request", "密码至少 4 位");
+  if (value.length > LIMITS.password) throw new RelayError("bad_request", "密码太长");
+  return value;
+}
 const newId = (prefix: string) => `${prefix}_${randomBytes(8).toString("hex")}`;
 const directKey = (a: string, b: string) => [a, b].sort().join("\n");
 
@@ -107,7 +125,10 @@ export class RelayStore {
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS members (
-        name TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT '', key_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL
+        name TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT '', password TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS keys (
+        key_hash TEXT PRIMARY KEY, name TEXT NOT NULL REFERENCES members(name), created_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS threads (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL,
@@ -146,18 +167,44 @@ export class RelayStore {
 
   // ---- members
 
-  /** A new member; the key is returned once and only its hash is kept. */
-  join(nameValue: unknown, roleValue?: unknown): { name: string; role: string; key: string } {
+  /** A new member, logged in: the key is returned once and only its hash is kept. */
+  register(nameValue: unknown, passwordValue: unknown, roleValue?: unknown): { name: string; role: string; key: string } {
     const name = checkName(nameValue);
+    const password = checkPassword(passwordValue);
     const role = text(roleValue, "角色", LIMITS.role, false);
     if (this.db.prepare("SELECT 1 FROM members WHERE name = ?").get(name)) throw new RelayError("conflict", `名字「${name}」已经有人用了`);
+    this.db.prepare("INSERT INTO members (name, role, password, created_at) VALUES (?, ?, ?, ?)").run(name, role, hashPassword(password), this.now());
+    return { name, role, key: this.newKey(name) };
+  }
+
+  /** A new key for this device when the password matches. */
+  login(nameValue: unknown, passwordValue: unknown): { name: string; role: string; key: string } {
+    const name = typeof nameValue === "string" ? nameValue.trim() : "";
+    const row = this.db.prepare("SELECT role, password FROM members WHERE name = ?").get(name) as Row | undefined;
+    if (!row || typeof passwordValue !== "string" || !passwordMatches(passwordValue, String(row.password))) throw new RelayError("unauthorized", "名字或密码不对");
+    return { name, role: String(row.role), key: this.newKey(name) };
+  }
+
+  logout(key: string): void {
+    this.db.prepare("DELETE FROM keys WHERE key_hash = ?").run(hashKey(key));
+  }
+
+  /** Sets a password (the service machine's `amo-relay passwd`); the member's keys stop working. */
+  setPassword(nameValue: unknown, passwordValue: unknown): void {
+    const name = checkName(nameValue);
+    this.requireMember(name);
+    this.db.prepare("UPDATE members SET password = ? WHERE name = ?").run(hashPassword(checkPassword(passwordValue)), name);
+    this.db.prepare("DELETE FROM keys WHERE name = ?").run(name);
+  }
+
+  private newKey(name: string): string {
     const key = randomBytes(24).toString("base64url");
-    this.db.prepare("INSERT INTO members (name, role, key_hash, created_at) VALUES (?, ?, ?, ?)").run(name, role, hashKey(key), this.now());
-    return { name, role, key };
+    this.db.prepare("INSERT INTO keys (key_hash, name, created_at) VALUES (?, ?, ?)").run(hashKey(key), name, this.now());
+    return key;
   }
 
   memberByKey(key: string): string | null {
-    const row = this.db.prepare("SELECT name FROM members WHERE key_hash = ?").get(hashKey(key)) as Row | undefined;
+    const row = this.db.prepare("SELECT name FROM keys WHERE key_hash = ?").get(hashKey(key)) as Row | undefined;
     return row ? String(row.name) : null;
   }
 

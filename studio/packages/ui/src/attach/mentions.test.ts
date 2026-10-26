@@ -108,14 +108,14 @@ describe("开子会话… (2026-10-26)", () => {
   it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
     const picked = new Map([
       ["子会话1", { kind: "subsession" as const, spec: { model: "Claude/claude-sonnet", modelName: "Sonnet", effort: "high", permission: "write" as const, report: true } }],
-      ["子会话2", { kind: "subsession" as const, spec: { model: "DeepSeek", modelName: "DeepSeek", report: false } }],
+      ["子会话2", { kind: "subsession" as const, spec: { model: "DeepSeek", modelName: "DeepSeek", report: false, note: "便宜，\n照计划做" } }],
     ]);
     const out = withMentionRefs("接下来开子会话就用 @子会话1", picked);
     expect(out).toContain("子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent");
     expect(out).toContain('- @子会话1：session_start 带 model: "Claude/claude-sonnet"（Sonnet），effort: "high"，permission: "write"，report: true');
     // Only the ones still in the text.
     expect(out).not.toContain("@子会话2：");
-    expect(withMentionRefs("@子会话2 去查", picked)).toContain('- @子会话2：session_start 带 model: "DeepSeek"（DeepSeek），report: false');
+    expect(withMentionRefs("@子会话2 去查", picked)).toContain('- @子会话2：session_start 带 model: "DeepSeek"（DeepSeek），report: false。人对这个模型的说明：便宜， 照计划做');
   });
 
   it("numbers them by what is free", () => {
