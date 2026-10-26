@@ -19,6 +19,7 @@ import { withFileRefs } from "../attach/refs.js";
 import { MentionBackdrop, MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { SubSessionDialog } from "../attach/SubSessionDialog.js";
+import { QuickCommitDialog } from "../attach/QuickCommitDialog.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { DecisionPrompt, SessionDecisions } from "../collab/DecisionPanel.js";
@@ -375,18 +376,22 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     }
   }
 
-  // Ctrl+P anywhere on the session's page opens the file selector (not while another dialog holds the keys).
+  // Ctrl+P anywhere on the session's page opens the file selector, Ctrl+Shift+P 快速提交 (10-26) — not while another
+  // dialog holds the keys.
+  const askCommit = mentions.askCommit;
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "p") return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "p") return;
       if (document.querySelector('[role="dialog"]')) return;
       e.preventDefault();
-      setFinding({ query: "" });
+      if (!e.shiftKey) return setFinding({ query: "" });
+      const el = document.querySelector<HTMLTextAreaElement>(".chat-input textarea");
+      askCommit(el && document.activeElement === el ? el.selectionStart : (el?.value.length ?? 0));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly]);
+  }, [readOnly, askCommit]);
 
   // Files dragged in from Explorer (or anywhere) over the conversation or the composer.
   const dropTarget = readOnly
@@ -686,6 +691,18 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+          }}
+        />
+      )}
+      {mentions.askingCommit && (
+        <QuickCommitDialog
+          onDone={(push) => {
+            const caret = mentions.finishCommit(push);
+            requestAnimationFrame(() => {
+              const el = document.querySelector<HTMLTextAreaElement>(".chat-input textarea");
+              el?.focus();
+              if (el && caret !== null) el.setSelectionRange(caret, caret);
+            });
           }}
         />
       )}

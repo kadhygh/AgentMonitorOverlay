@@ -2,7 +2,7 @@ import { lineSuffix, type FileMark, type ProjectFile, type Session, type Task } 
 import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
-// changed files and the file selector — and last「AMO 扩展功能」(10-26): sub-session setups and 提交并拉取. Pure logic;
+// changed files and the file selector — and last「AMO 扩展功能」(10-26): sub-session setups and 快速提交. Pure logic;
 // the hook and the list live beside it.
 
 export type MentionKind = "task" | "session" | "mark" | "file" | "find" | "subsession" | "commit";
@@ -37,26 +37,32 @@ export interface SubSessionSpec {
   note?: string;
 }
 
-/** A task, session, sub-session setup or 提交并拉取 picked with @: the text keeps "@name", the message says what it is. */
-export type MentionPick = { kind: "task"; id: string } | { kind: "session"; id: string; taskId: string | null } | { kind: "subsession"; spec: SubSessionSpec } | { kind: "commit" };
+/** A task, session, sub-session setup or 快速提交 picked with @: the text keeps "@name", the message says what it is. */
+export type MentionPick = { kind: "task"; id: string } | { kind: "session"; id: string; taskId: string | null } | { kind: "subsession"; spec: SubSessionSpec } | { kind: "commit"; push: boolean };
 
-/** 「@提交并拉取」(10-26): the name in the text. */
-export const COMMIT_PULL = "提交并拉取";
+/** 快速提交 (10-26): the name in the text, saying whether it pushes too. */
+export function quickCommitName(push: boolean): string {
+  return push ? "快速提交并推送" : "快速提交";
+}
 
 /**
- * What 「@提交并拉取」 asks of the model: commit the local changes (split by what they are about), pull the upstream
- * with a merge, and ask the person where it is unclear and about every conflict.
+ * What 「@快速提交」 asks of the model: commit the local changes (split by what they are about), pull the upstream
+ * with a merge, push too when chosen, and ask the person where it is unclear and about every conflict.
  */
-export const COMMIT_PULL_BRIEF = [
-  `「@${COMMIT_PULL}」是人要你现在做的事：把本地改动提交，再拉取上游并合并。`,
-  "1. 先看清本地改动（git status、git diff，没跟踪的文件也算），按开发内容分组：不相关的内容分成多条 commit，每条只放属于它的改动（一个文件里混了几件事时按块暂存）。提交信息照这个仓库以往的写法。",
-  "2. 拿不准的先问人，不要猜：某个改动该不该提交（临时文件、调试代码、像密钥的东西）、该归哪一条、为什么这么改看不出来。",
-  "3. 提交完拉取当前分支的上游：git pull --no-rebase（用合并，不要变基）。没有上游、或者不确定该从哪里拉时问人。",
-  "4. 合并有冲突时不要自己挑：列出每个冲突文件、两边各改了什么、你建议怎么解决，问人；照人的回答解决，确认没有冲突标记、能编译的先编译一下，再完成合并提交。",
-  "5. 不要 push；不要用会丢改动的命令（reset --hard、checkout -- 、clean -f、stash drop、push --force 之类）。",
-  "6. 做完告诉人：提交了哪几条（短哈希和标题）、拉下来了哪些提交、冲突怎么解决的。",
-  "问人时用你的提问工具（有的话），没有就停下来在回复里问，等人回答再继续。",
-].join("\n");
+export function quickCommitBrief(push: boolean): string {
+  return [
+    `「@${quickCommitName(push)}」是人要你现在做的事：把本地改动提交，再拉取上游并合并${push ? "，最后推送" : ""}。`,
+    "1. 先看清本地改动（git status、git diff，没跟踪的文件也算），按开发内容分组：不相关的内容分成多条 commit，每条只放属于它的改动（一个文件里混了几件事时按块暂存）。提交信息照这个仓库以往的写法。",
+    "2. 拿不准的先问人，不要猜：某个改动该不该提交（临时文件、调试代码、像密钥的东西）、该归哪一条、为什么这么改看不出来。",
+    "3. 提交完拉取当前分支的上游：git pull --no-rebase（用合并，不要变基）。没有上游、或者不确定该从哪里拉时问人。",
+    "4. 合并有冲突时不要自己挑：列出每个冲突文件、两边各改了什么、你建议怎么解决，问人；照人的回答解决，确认没有冲突标记、能编译的先编译一下，再完成合并提交。",
+    push
+      ? "5. 合并好以后 git push 到上游。被拒绝（上游又有新提交）时再拉取合并一次再推；不要 --force。不要用会丢改动的命令（reset --hard、checkout -- 、clean -f、stash drop 之类）。"
+      : "5. 不要 push；不要用会丢改动的命令（reset --hard、checkout -- 、clean -f、stash drop、push --force 之类）。",
+    `6. 做完告诉人：提交了哪几条（短哈希和标题）、拉下来了哪些提交、冲突怎么解决的${push ? "、推送到了哪里" : ""}。`,
+    "问人时用你的提问工具（有的话），没有就停下来在回复里问，等人回答再继续。",
+  ].join("\n");
+}
 
 const PER_GROUP = 5;
 const contains = (name: string, q: string) => name.toLowerCase().includes(q);
@@ -81,7 +87,7 @@ export function mentionGroups(input: {
   marks?: readonly FileMark[];
   /** 开子会话… is offered (the session may start sessions: a main or forked session of a task). */
   subsession?: boolean;
-  /** 提交并拉取 is offered (a live session in a project). */
+  /** 快速提交… is offered (a live session). */
   commit?: boolean;
 }): MentionGroup[] {
   const q = input.query.toLowerCase();
@@ -112,7 +118,7 @@ export function mentionGroups(input: {
   ];
   const ext: MentionOption[] = [
     ...(input.subsession ? [{ kind: "subsession" as const, id: "subsession", name: "开子会话…", hint: "选模型和强度，告诉它怎么开" }] : []),
-    ...(input.commit ? [{ kind: "commit" as const, id: "commit", name: COMMIT_PULL, hint: "分条提交再拉取合并，有疑问和冲突会问你" }] : []),
+    ...(input.commit ? [{ kind: "commit" as const, id: "commit", name: "快速提交…", hint: "分条提交、拉取合并，可选推送　Ctrl+Shift+P" }] : []),
   ].filter((o) => !q || contains(o.name, q));
   return [
     ...groups.filter((g) => g.options.length),
@@ -123,7 +129,9 @@ export function mentionGroups(input: {
 
 /** The message as sent: the text, then which AMO tasks and sessions its @ names are (only those still in the text). */
 export function withMentionRefs(message: string, picked: ReadonlyMap<string, MentionPick>): string {
-  const refs = [...picked.entries()].filter(([name]) => message.includes(`@${name}`));
+  // Named in full: 「@快速提交并推送」 does not also name 「快速提交」.
+  const named = new Set(mentionSpans(message, [...picked.keys()]).flatMap((part) => (part.mention ? [part.text.slice(1)] : [])));
+  const refs = [...picked.entries()].filter(([name]) => named.has(name));
   const tasks = refs.flatMap(([name, p]) => (p.kind === "task" ? [`- @${name}：AMO 任务 ${p.id}（可以用 AMO 的 task_get 查看）`] : []));
   const sessions = refs.flatMap(([name, p]) =>
     p.kind === "session" ? [`- @${name}：AMO 会话 ${p.id}${p.taskId ? `，属于任务 ${p.taskId}（可以用 AMO 的 session_tree 查看）` : ""}`] : [],
@@ -133,7 +141,7 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
     tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "",
     sessions.length ? `提到的会话：\n${sessions.join("\n")}` : "",
     subs.length ? `子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent；第一句话写够让它能独立开工）：\n${subs.join("\n")}` : "",
-    refs.some(([, p]) => p.kind === "commit") ? COMMIT_PULL_BRIEF : "",
+    ...refs.flatMap(([, p]) => (p.kind === "commit" ? [quickCommitBrief(p.push)] : [])),
   ].filter(Boolean);
   return blocks.length ? `${message}\n\n${blocks.join("\n\n")}` : message;
 }

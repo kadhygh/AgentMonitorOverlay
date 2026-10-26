@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileMark, Session, Task } from "@amo-studio/protocol";
-import { COMMIT_PULL_BRIEF, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, withMentionRefs } from "./mentions.js";
+import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
 const session = (id: string, title: string, extra: Partial<Session> = {}) =>
@@ -107,7 +107,7 @@ describe("开子会话… (2026-10-26)", () => {
     expect(mentionGroups({ ...input, commit: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["commit"]);
     expect(mentionGroups(input).map((g) => g.kind)).toEqual(["find"]);
     // Typing narrows them too.
-    expect(mentionGroups({ ...input, query: "提交", subsession: true, commit: true }).at(-1)!.options.map((o) => o.name)).toEqual(["提交并拉取"]);
+    expect(mentionGroups({ ...input, query: "提交", subsession: true, commit: true }).at(-1)!.options.map((o) => o.name)).toEqual(["快速提交…"]);
   });
 
   it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
@@ -123,13 +123,21 @@ describe("开子会话… (2026-10-26)", () => {
     expect(withMentionRefs("@子会话2 去查", picked)).toContain('- @子会话2：session_start 带 model: "DeepSeek"（DeepSeek），report: false。人对这个模型的说明：便宜， 照计划做');
   });
 
-  it("「@提交并拉取」 tells the model to commit split by content, pull with a merge, and ask about the unclear and conflicts (10-26)", () => {
-    const picked = new Map([["提交并拉取", { kind: "commit" as const }]]);
-    const out = withMentionRefs("改完了 @提交并拉取", picked);
-    expect(out).toBe(`改完了 @提交并拉取\n\n${COMMIT_PULL_BRIEF}`);
-    expect(COMMIT_PULL_BRIEF).toContain("分成多条 commit");
-    expect(COMMIT_PULL_BRIEF).toContain("git pull --no-rebase");
-    expect(COMMIT_PULL_BRIEF).toContain("冲突时不要自己挑");
+  it("「@快速提交」 tells the model to commit split by content, pull with a merge, push only when chosen, and ask about the unclear and conflicts (10-26)", () => {
+    const picked = new Map([
+      ["快速提交", { kind: "commit" as const, push: false }],
+      ["快速提交并推送", { kind: "commit" as const, push: true }],
+    ]);
+    expect(withMentionRefs("改完了 @快速提交", picked)).toBe(`改完了 @快速提交\n\n${quickCommitBrief(false)}`);
+    expect(withMentionRefs("改完了 @快速提交并推送", picked)).toBe(`改完了 @快速提交并推送\n\n${quickCommitBrief(true)}`);
+    for (const push of [false, true]) {
+      expect(quickCommitBrief(push)).toContain("分成多条 commit");
+      expect(quickCommitBrief(push)).toContain("git pull --no-rebase");
+      expect(quickCommitBrief(push)).toContain("冲突时不要自己挑");
+    }
+    expect(quickCommitBrief(false)).toContain("不要 push");
+    expect(quickCommitBrief(true)).toContain("git push 到上游");
+    expect(quickCommitBrief(true)).toContain("不要 --force");
     expect(withMentionRefs("算了", picked)).toBe("算了");
   });
 

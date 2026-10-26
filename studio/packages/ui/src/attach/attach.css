@@ -123,6 +123,12 @@ button.file-chip:hover { border-color: var(--border-strong); }
 
 /* 开子会话… (2026-10-26) */
 .subsession-modal { width: 600px; gap: 12px; }
+.quickcommit-modal { width: 480px; gap: 12px; }
+.quickcommit-choices { display: flex; flex-direction: column; gap: 6px; }
+.quickcommit-choice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m); cursor: pointer; }
+.quickcommit-choice:has(input:checked) { border-color: var(--primary); background: var(--tint); }
+.quickcommit-choice input { margin-top: 3px; }
+.quickcommit-keys { margin-right: auto; }
 .subsession-field { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .subsession-field > .settings-label { flex: none; width: 64px; padding-top: 5px; }
 .subsession-field > .model-row, .subsession-field > .model-drawer { flex: 1; min-width: 0; }

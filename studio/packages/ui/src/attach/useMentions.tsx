@@ -5,15 +5,15 @@ import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { usePins } from "../lib/pins.js";
 import { useFileMarks } from "../marks/useFileMarks.js";
 import type { FileRefItem } from "./refs.js";
-import { mentionGroups, mentionSpans, nextSubSessionName, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
+import { mentionGroups, mentionSpans, nextSubSessionName, quickCommitName, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
  * is typed, the project's files that match), the project's marked files (S12-D), and "找文件…" for the selector. A task
  * or session keeps "@名字" in the text and the message says which one it is; a file becomes a reference chip, a marked
  * one carrying its range and note. Under「AMO 扩展功能」: 开子会话… (2026-10-26) asks for a model and effort and puts
- *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 提交并拉取 puts
- *「@提交并拉取」there, the message then saying how to commit, pull and merge.
+ *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 快速提交… (also
+ * Ctrl+Shift+P) asks whether to push too and puts「@快速提交」there, the message then saying how to commit, pull, merge.
  */
 export function useComposerMentions(input: {
   link: HostLink;
@@ -47,6 +47,8 @@ export function useComposerMentions(input: {
   const { marks } = useFileMarks(link, workspaceId, wantMarks);
   // 开子会话…: where in the text its「@子会话N」goes once the dialog is confirmed.
   const [subAt, setSubAt] = useState<number | null>(null);
+  // 快速提交…: likewise for its「@快速提交」.
+  const [commitAt, setCommitAt] = useState<number | null>(null);
   const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
   const commit = !!current && !current.archivedAt;
 
@@ -80,10 +82,11 @@ export function useComposerMentions(input: {
   const choose = (option: MentionOption) => {
     if (!active) return;
     setHighlight(0);
-    if (option.kind === "file" || option.kind === "find" || option.kind === "mark" || option.kind === "subsession") {
+    if (option.kind === "file" || option.kind === "find" || option.kind === "mark" || option.kind === "subsession" || option.kind === "commit") {
       setText(withoutMention(text, active));
       setCaret(null);
       if (option.kind === "subsession") setSubAt(active.start);
+      else if (option.kind === "commit") setCommitAt(active.start);
       else if (option.kind === "find") input.onFind(active.query);
       else if (option.kind === "mark") {
         const m = marks?.find((x) => x.id === option.id);
@@ -96,13 +99,35 @@ export function useComposerMentions(input: {
     setText(text.slice(0, active.start) + inserted + text.slice(active.end));
     setCaret(active.start + inserted.length);
     const session = option.kind === "session" ? sessions.find((s) => s.id === option.id) : undefined;
-    const pick: MentionPick =
-      option.kind === "task" ? { kind: "task", id: option.id } : option.kind === "commit" ? { kind: "commit" } : { kind: "session", id: option.id, taskId: session?.taskId ?? null };
+    const pick: MentionPick = option.kind === "task" ? { kind: "task", id: option.id } : { kind: "session", id: option.id, taskId: session?.taskId ?? null };
     setPicked((cur) => new Map(cur).set(option.name, pick));
+  };
+
+  /** `name` put in the text at `at` (a space before it where needed); the caret after it. */
+  const insertPick = (at: number, name: string, pick: MentionPick): number => {
+    const before = text.slice(0, at);
+    const inserted = `${before && !/\s$/.test(before) ? " " : ""}@${name} `;
+    setText(before + inserted + text.slice(at));
+    setPicked((cur) => new Map(cur).set(name, pick));
+    return at + inserted.length;
   };
 
   return {
     open: flat.length > 0,
+    /** 快速提交 is offered here (for Ctrl+Shift+P too). */
+    canCommit: commit,
+    /** 快速提交…'s dialog is up. */
+    askingCommit: commitAt !== null,
+    /** Ctrl+Shift+P: 快速提交's dialog, its「@快速提交」 to go at `at`. */
+    askCommit(at: number) {
+      if (commit) setCommitAt(at);
+    },
+    /** The dialog's answer (push too, or null when cancelled): the caret after the inserted name. */
+    finishCommit(push: boolean | null): number | null {
+      const at = Math.min(commitAt ?? text.length, text.length);
+      setCommitAt(null);
+      return push === null ? null : insertPick(at, quickCommitName(push), { kind: "commit", push });
+    },
     /** 开子会话…'s dialog is up. */
     askingSubsession: subAt !== null,
     /** The dialog's answer: 「@子会话N」 where @ was typed; the caret after it (null when cancelled). */
@@ -110,12 +135,7 @@ export function useComposerMentions(input: {
       const at = Math.min(subAt ?? text.length, text.length);
       setSubAt(null);
       if (!spec) return null;
-      const name = nextSubSessionName(text, picked.keys());
-      const before = text.slice(0, at);
-      const inserted = `${before && !/\s$/.test(before) ? " " : ""}@${name} `;
-      setText(before + inserted + text.slice(at));
-      setPicked((cur) => new Map(cur).set(name, { kind: "subsession", spec }));
-      return at + inserted.length;
+      return insertPick(at, nextSubSessionName(text, picked.keys()), { kind: "subsession", spec });
     },
     groups,
     /** The picked tasks' and sessions' names still in the text (coloured in the composer). */
