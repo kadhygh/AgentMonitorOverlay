@@ -46,11 +46,25 @@ $lockHash = [System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::R
 $stamp = Join-Path $PSScriptRoot "node_modules\.amo-lock.sha256"
 $installed = if (Test-Path -LiteralPath $stamp) { (Get-Content -LiteralPath $stamp -Raw).Trim() } else { "" }
 if ($Install -or $installed -ne $lockHash) {
-  Note "Installing dependencies (npm ci, Node $nodeVersion)..."
-  npm ci
+  # npm ci removes node_modules first: with Studio or the notes window running from it, a file in use stops it halfway
+  # and leaves Studio unable to start (2026-10-26, twice). Installed already, npm install brings it up to date in place.
+  $fresh = $Install -or -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "node_modules\electron"))
+  if ($fresh) {
+    Note "Installing dependencies (npm ci, Node $nodeVersion)..."
+    npm ci
+  } else {
+    Note "Updating dependencies (npm install, Node $nodeVersion)..."
+    npm install --no-audit --no-fund
+  }
   if ($LASTEXITCODE -ne 0) {
-    Fail ("npm ci failed. If the Electron download timed out, use a mirror and retry (in cmd):`n" +
+    Fail ("Installing the dependencies failed. Close AMO Studio and its notes window, then retry. If the Electron download timed out, use a mirror (in cmd):`n" +
       "    set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`n    start-studio.cmd -Install")
+  }
+  # Electron's own program is downloaded by its install script; an interrupted install can leave it out.
+  if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "node_modules\electron\dist\electron.exe"))) {
+    Note "Downloading Electron..."
+    node (Join-Path $PSScriptRoot "node_modules\electron\install.js")
+    if ($LASTEXITCODE -ne 0) { Fail "Downloading Electron failed; see above." }
   }
   Set-Content -LiteralPath $stamp -Value $lockHash -Encoding ascii
 }
