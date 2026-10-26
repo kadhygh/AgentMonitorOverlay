@@ -173,9 +173,14 @@
 /* 设置 → 模型 → 快速选择 */
 .quick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 /* 设置 → 子会话 */
-.subsession-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.subsession-note { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-.subsession-note:last-child { border-bottom: 0; }
+.subsession-channels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.subsession-channel { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.subsession-channel:last-child { border-bottom: 0; }
+.subsession-channel-name { font-size: var(--fs-sm); }
+.subsession-chips { flex-wrap: wrap; gap: 6px; }
+.subsession-chips .chip[aria-pressed="false"] { color: var(--text-faint); }
+.subsession-note { display: flex; flex-direction: column; gap: 4px; padding-left: 26px; }
+.subsession-note .settings-row { justify-content: space-between; }
 .quick-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: grab; }
 .quick-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .quick-row[data-dragging] { opacity: 0.45; }

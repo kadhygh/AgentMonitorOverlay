@@ -192,7 +192,9 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await expect(suggest).toContainText("最近改动的文件");
   await expect(suggest.getByRole("option", { name: /README\.md/ })).toBeVisible();
   await expect(suggest.getByRole("option", { name: /new_feature\.ts/ })).toBeVisible();
-  await expect(suggest.getByRole("option").last()).toContainText("找文件…");
+  // 找文件… ends the files; 「AMO 扩展功能」 come last (10-26).
+  await expect(suggest.locator('[data-kind="find"] + .suggest-h')).toHaveText("AMO 扩展功能");
+  await expect(suggest.getByRole("option").last()).toContainText("提交并拉取");
   await screenshot(studio.app, "stage-11", "S11-B-05-at-menu", page);
 
   // A session keeps its name in the text; the message will say which session it is.
@@ -254,15 +256,21 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   await page.getByRole("button", { name: "设置" }).click();
   const settingsDialog = page.getByRole("dialog", { name: "设置" });
   await settingsDialog.getByRole("tab", { name: "子会话" }).click();
-  await settingsDialog.getByTestId("subsession-add").click();
+  // Each channel lists its models as chips (10-26, no dropdowns): 「整个渠道」 of the session's channel.
+  const channel = settingsDialog.locator(`[data-testid="subsession-channel"][data-profile="${session.profileId}"]`);
+  await channel.getByTestId("subsession-chip").first().click();
+  await expect(channel.getByTestId("subsession-note-text")).toBeFocused();
   await settingsDialog.getByTestId("subsession-note-text").fill("适合照计划改代码");
   await settingsDialog.getByTestId("subsession-note-text").blur();
   await expect.poll(async () => (await studio!.api<{ subsessionNotes: Array<{ note: string }> }>("GET", "/api/settings")).subsessionNotes.map((n) => n.note)).toEqual(["适合照计划改代码"]);
+  await expect(channel.getByTestId("subsession-chip").first()).toHaveAttribute("aria-pressed", "true");
   await screenshot(studio.app, "stage-18", "S18-subsession-settings", page);
   await settingsDialog.getByRole("button", { name: "关闭设置" }).click();
   const suggest = page.getByTestId("suggest");
   await composer(page).pressSequentially("接下来开子会话就用 @");
-  await expect(suggest.getByRole("option").last()).toContainText("找文件…");
+  // Under「AMO 扩展功能」(10-26), after 找文件….
+  await expect(suggest.getByText("AMO 扩展功能")).toBeVisible();
+  await expect(suggest.getByRole("option").last()).toContainText("提交并拉取");
   await suggest.getByRole("option", { name: /开子会话…/ }).click();
   const dialog = page.getByTestId("subsession-dialog");
   await expect(dialog).toBeVisible();

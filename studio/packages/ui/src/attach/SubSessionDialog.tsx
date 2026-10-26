@@ -77,7 +77,9 @@ export function SubSessionDialog({
   const chosenEffort = effort && model?.efforts.includes(effort) ? effort : undefined;
   const profile = profiles.find((p) => p.id === pick.profileId);
   const picked = normalPick(pick);
-  const note = notes.find((n) => n.profileId === picked.profileId && (n.model ?? null) === picked.model)?.note;
+  // The model's own note, else the channel's (「整个渠道」).
+  const own = notes.find((n) => n.profileId === picked.profileId && (n.model ?? null) === picked.model);
+  const note = (own ?? notes.find((n) => n.profileId === picked.profileId && n.model === null))?.note;
   const spec: SubSessionSpec | null = profile
     ? {
         model: pick.model ? `${profile.label}/${pick.model}` : profile.label,

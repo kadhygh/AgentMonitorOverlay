@@ -234,7 +234,8 @@ export const MAX_QUICK_MODELS = 6;
 
 /**
  * 设置 → 子会话 (2026-10-26): the person's note on a model as a sub-session — what it suits, how to brief it — for the
- * main model: in the role card (amo_whoami) and with 「@子会话N」. `model` null: the account's default model.
+ * main model: in the role card (amo_whoami) and with 「@子会话N」. `model` null: the whole account (10-26: all its
+ * models, a model's own note going before it).
  */
 export interface SubsessionNote {
   profileId: Id;

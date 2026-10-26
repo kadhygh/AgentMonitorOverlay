@@ -11,8 +11,9 @@ import { mentionGroups, mentionSpans, nextSubSessionName, withMentionRefs, type 
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
  * is typed, the project's files that match), the project's marked files (S12-D), and "找文件…" for the selector. A task
  * or session keeps "@名字" in the text and the message says which one it is; a file becomes a reference chip, a marked
- * one carrying its range and note. 开子会话… (2026-10-26) asks for a model and effort and puts「@子会话N」in the text; the
- * message then says how to start sub-sessions with AMO's session_start.
+ * one carrying its range and note. Under「AMO 扩展功能」: 开子会话… (2026-10-26) asks for a model and effort and puts
+ *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 提交并拉取 puts
+ *「@提交并拉取」there, the message then saying how to commit, pull and merge.
  */
 export function useComposerMentions(input: {
   link: HostLink;
@@ -47,6 +48,7 @@ export function useComposerMentions(input: {
   // 开子会话…: where in the text its「@子会话N」goes once the dialog is confirmed.
   const [subAt, setSubAt] = useState<number | null>(null);
   const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
+  const commit = !!current && !current.archivedAt;
 
   // Files come from the Host: the recent ones for a bare "@", matches once something is typed (debounced).
   useEffect(() => {
@@ -70,8 +72,8 @@ export function useComposerMentions(input: {
   const groups = useMemo<MentionGroup[]>(() => {
     if (query === null) return [];
     const pinnedTask = (t: Task) => (!!t.topicId && pins.has("topic", t.topicId)) || pins.has("project", t.workspaceId);
-    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [], marks: marks ?? [], subsession });
-  }, [query, tasks, pins, sessions, current, files, marks, subsession]);
+    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [], marks: marks ?? [], subsession, commit });
+  }, [query, tasks, pins, sessions, current, files, marks, subsession, commit]);
   const flat = groups.flatMap((g) => g.options);
   const hl = Math.min(highlight, Math.max(flat.length - 1, 0));
 
@@ -94,7 +96,8 @@ export function useComposerMentions(input: {
     setText(text.slice(0, active.start) + inserted + text.slice(active.end));
     setCaret(active.start + inserted.length);
     const session = option.kind === "session" ? sessions.find((s) => s.id === option.id) : undefined;
-    const pick: MentionPick = option.kind === "task" ? { kind: "task", id: option.id } : { kind: "session", id: option.id, taskId: session?.taskId ?? null };
+    const pick: MentionPick =
+      option.kind === "task" ? { kind: "task", id: option.id } : option.kind === "commit" ? { kind: "commit" } : { kind: "session", id: option.id, taskId: session?.taskId ?? null };
     setPicked((cur) => new Map(cur).set(option.name, pick));
   };
 

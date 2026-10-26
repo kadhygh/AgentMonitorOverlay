@@ -112,8 +112,8 @@ function cardOf(service: HostService, f: RoleFacts): string {
     lines.push("- 人写的模型用法（开子会话 session_start、拆任务 task_plan_propose 时参考；model 照括号里的写）：");
     for (const n of notes) {
       const p = service.profiles.find((x) => x.id === n.profileId)!;
-      const ref = n.model ? `${p.label}/${n.model}` : p.label;
-      lines.push(`  - ${ref}（model: "${ref}"）：${oneLine(n.note, 1000)}`);
+      if (n.model) lines.push(`  - ${p.label}/${n.model}（model: "${p.label}/${n.model}"）：${oneLine(n.note, 1000)}`);
+      else lines.push(`  - ${p.label} 的所有型号（model: "${p.label}" 是它的默认型号，"${p.label}/型号" 指定型号；某个型号另有说明时以那条为准）：${oneLine(n.note, 1000)}`);
     }
   }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;

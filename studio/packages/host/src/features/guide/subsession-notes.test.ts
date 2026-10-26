@@ -64,7 +64,7 @@ describe("设置 → 子会话", () => {
     const card = roleCard(service, main.id);
     expect(card).toContain("人写的模型用法");
     expect(card).toContain('- Plain/fake-slow（model: "Plain/fake-slow"）：慢但便宜， 照计划改代码');
-    expect(card).toContain('- DS（model: "DS"）：快');
+    expect(card).toContain('- DS 的所有型号（model: "DS" 是它的默认型号，"DS/型号" 指定型号；某个型号另有说明时以那条为准）：快');
     const sub = store.createSession({ taskId: main.taskId, topicId: null, parentId: main.id, kind: "sub", runtime: "codex", profileId: "p-ds", workspaceId: main.workspaceId, title: "", status: "idle", writer: "workbench", runtimeRef: "thr-2" });
     expect(roleCard(service, sub.id)).not.toContain("人写的模型用法");
   });
