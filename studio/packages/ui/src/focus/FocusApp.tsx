@@ -120,9 +120,10 @@ export function FocusApp() {
   const subs = live ? subsByParent(live.sessions) : new Map<string, Session[]>();
   const waiting = live ? needsMe(live) : [];
   const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s)) : [];
-  // A finished session opened here stays (seen) until it is closed or another one opens.
-  const held = live && open ? live.sessions.find((s) => s.id === open && !s.archivedAt && FINISHED.has(s.status) && !waiting.includes(s) && !finished.includes(s)) : undefined;
-  const list = [...waiting, ...finished, ...(held ? [held] : [])];
+  // Seen means reviewed (我知道了, 在工作台打开, or looked at in the workbench) and it leaves at once, open or not
+  // (2026-10-26: an entry kept while open looked unreviewed for half an hour after 在工作台打开, then vanished when its
+  // title folded it). Opening it here no longer counts as seeing it.
+  const list = [...waiting, ...finished];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
   const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id)]);
   const keysId = keys.join("|");
@@ -333,7 +334,7 @@ export function FocusApp() {
           </button>
         </div>
         <FocusQuota link={link} settings={settings} profiles={state.profiles} />
-        {!compact && (needs > 0 || held || working.length > 0 || pinned.length > 0) && (
+        {!compact && (needs > 0 || working.length > 0 || pinned.length > 0) && (
           <div className="focus-list" onClickCapture={acknowledge}>
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
                 grow, which moved the buttons between press and release and lost the click (2026-10-20). */}
@@ -501,4 +502,3 @@ export function FocusApp() {
   );
 }
 
-const FINISHED: ReadonlySet<string> = new Set(["idle", "completed", "error"]);
