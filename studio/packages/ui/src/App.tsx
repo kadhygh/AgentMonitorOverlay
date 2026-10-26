@@ -138,13 +138,25 @@ export function App() {
     [],
   );
 
+  // Where the window was when Focus asked it to go somewhere (2026-10-26: 「在工作台打开」 that seemed to do nothing).
+  const viewNow = useRef(view);
+  viewNow.current = view;
   useEffect(
     () =>
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
-      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) =>
-        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" }),
-      ),
+      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) => {
+        const was = viewNow.current;
+        const modal = document.querySelector<HTMLElement>("[aria-modal='true'], .modal-backdrop");
+        window.amo?.trace?.({
+          where: "#main navigate",
+          to: { taskId, sessionId: sessionId ?? null },
+          from: was.kind === "task" ? { task: was.taskId, session: was.sessionId ?? null } : was.kind,
+          modal: modal ? (modal.getAttribute("aria-label") ?? modal.querySelector("[aria-label]")?.getAttribute("aria-label") ?? modal.className) : null,
+          visible: document.visibilityState,
+        });
+        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" });
+      }),
     [],
   );
 
