@@ -5,15 +5,16 @@ import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { usePins } from "../lib/pins.js";
 import { useFileMarks } from "../marks/useFileMarks.js";
 import type { FileRefItem } from "./refs.js";
-import { mentionGroups, mentionSpans, nextSubSessionName, quickCommitName, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
+import { mentionGroups, mentionSpans, nextSubSessionName, QUICK_COMMIT, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
  * is typed, the project's files that match), the project's marked files (S12-D), and "找文件…" for the selector. A task
  * or session keeps "@名字" in the text and the message says which one it is; a file becomes a reference chip, a marked
  * one carrying its range and note. Under「AMO 扩展功能」: 开子会话… (2026-10-26) asks for a model and effort and puts
- *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 快速提交… (also
- * Ctrl+Shift+P) asks whether to push too and puts「@快速提交」there, the message then saying how to commit, pull, merge.
+ *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 快速提交 (also
+ * Ctrl+Shift+P) confirms whether to push too and puts「@快速提交」there, the message then saying how to commit, pull,
+ * merge (and push).
  */
 export function useComposerMentions(input: {
   link: HostLink;
@@ -47,7 +48,7 @@ export function useComposerMentions(input: {
   const { marks } = useFileMarks(link, workspaceId, wantMarks);
   // 开子会话…: where in the text its「@子会话N」goes once the dialog is confirmed.
   const [subAt, setSubAt] = useState<number | null>(null);
-  // 快速提交…: likewise for its「@快速提交」.
+  // 快速提交: likewise for its「@快速提交」.
   const [commitAt, setCommitAt] = useState<number | null>(null);
   const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
   const commit = !!current && !current.archivedAt;
@@ -116,7 +117,7 @@ export function useComposerMentions(input: {
     open: flat.length > 0,
     /** 快速提交 is offered here (for Ctrl+Shift+P too). */
     canCommit: commit,
-    /** 快速提交…'s dialog is up. */
+    /** 快速提交's dialog is up. */
     askingCommit: commitAt !== null,
     /** Ctrl+Shift+P: 快速提交's dialog, its「@快速提交」 to go at `at`. */
     askCommit(at: number) {
@@ -126,7 +127,7 @@ export function useComposerMentions(input: {
     finishCommit(push: boolean | null): number | null {
       const at = Math.min(commitAt ?? text.length, text.length);
       setCommitAt(null);
-      return push === null ? null : insertPick(at, quickCommitName(push), { kind: "commit", push });
+      return push === null ? null : insertPick(at, QUICK_COMMIT, { kind: "commit", push });
     },
     /** 开子会话…'s dialog is up. */
     askingSubsession: subAt !== null,

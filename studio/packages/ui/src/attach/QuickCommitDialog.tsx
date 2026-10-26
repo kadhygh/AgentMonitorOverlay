@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { quickCommitName } from "./mentions.js";
+import { QUICK_COMMIT } from "./mentions.js";
 
-// 快速提交… (2026-10-26): from the composer's @ list or Ctrl+Shift+P, what the model is to do with the local changes —
-// commit them split by content and pull with a merge, and with the second choice push after. It starts on the first
-// each time. Confirmed, the composer gets「@快速提交」(or「@快速提交并推送」) and the message says what it means.
+// 快速提交 (2026-10-26): from the composer's @ list or Ctrl+Shift+P, the person confirms what the model is to do with
+// the local changes — commit them split by content and pull with a merge, and with the second choice push after. It
+// starts on the first each time. Confirmed, the composer gets「@快速提交」 and the message says what it means.
 
 const CHOICES: Array<{ push: boolean; label: string; hint: string }> = [
   { push: false, label: "提交 + 拉取合并", hint: "按改动内容自动拆成几条 commit，再 pull 合并上游；不推送" },
@@ -34,7 +34,7 @@ export function QuickCommitDialog({ onDone }: { onDone(push: boolean | null): vo
         <span className="modal-title" id="quickcommit-title">
           快速提交
         </span>
-        <span className="settings-hint">在输入框里放一个「@{quickCommitName(push)}」，发出去时告诉模型怎么做。拿不准的改动和合并冲突，它会先问你。</span>
+        <span className="settings-hint">确认后在输入框里放一个「@{QUICK_COMMIT}」，发出去时按这里选的告诉模型怎么做。拿不准的改动和合并冲突，它会先问你。</span>
         <div className="quickcommit-choices" role="radiogroup" aria-label="做到哪一步">
           {CHOICES.map((c, i) => (
             <label key={c.label} className="quickcommit-choice" data-testid="quickcommit-choice">

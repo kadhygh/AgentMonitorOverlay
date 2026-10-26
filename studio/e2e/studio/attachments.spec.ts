@@ -194,7 +194,7 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await expect(suggest.getByRole("option", { name: /new_feature\.ts/ })).toBeVisible();
   // 找文件… ends the files; 「AMO 扩展功能」 come last (10-26).
   await expect(suggest.locator('[data-kind="find"] + .suggest-h')).toHaveText("AMO 扩展功能");
-  await expect(suggest.getByRole("option").last()).toContainText("快速提交…");
+  await expect(suggest.getByRole("option").last()).toContainText("快速提交");
   await screenshot(studio.app, "stage-11", "S11-B-05-at-menu", page);
 
   // A session keeps its name in the text; the message will say which session it is.
@@ -270,7 +270,7 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   await composer(page).pressSequentially("接下来开子会话就用 @");
   // Under「AMO 扩展功能」(10-26), after 找文件….
   await expect(suggest.getByText("AMO 扩展功能")).toBeVisible();
-  await expect(suggest.getByRole("option").last()).toContainText("快速提交…");
+  await expect(suggest.getByRole("option").last()).toContainText("快速提交");
   await suggest.getByRole("option", { name: /开子会话…/ }).click();
   const dialog = page.getByTestId("subsession-dialog");
   await expect(dialog).toBeVisible();
@@ -299,7 +299,7 @@ test("快速提交 (10-26): from @ or Ctrl+Shift+P, a choice of pushing too; the
   const suggest = page.getByTestId("suggest");
   const dialog = page.getByTestId("quickcommit-dialog");
   await composer(page).pressSequentially("改完了 @");
-  await suggest.getByRole("option", { name: /快速提交…/ }).click();
+  await suggest.getByRole("option", { name: /快速提交/ }).click();
   await expect(dialog).toBeVisible();
   // The first choice (no push) is the default; Esc puts nothing in.
   await expect(dialog.getByRole("radio").first()).toBeChecked();
@@ -314,12 +314,12 @@ test("快速提交 (10-26): from @ or Ctrl+Shift+P, a choice of pushing too; the
   await screenshot(studio.app, "stage-18", "S18-quick-commit", page);
   await page.keyboard.press("Enter");
   await expect(dialog).toHaveCount(0);
-  await expect(composer(page)).toHaveValue("改完了 @快速提交并推送 ");
-  await expect(page.getByTestId("mention-backdrop").locator(".mention-token")).toHaveText("@快速提交并推送");
+  await expect(composer(page)).toHaveValue("改完了 @快速提交 ");
+  await expect(page.getByTestId("mention-backdrop").locator(".mention-token")).toHaveText("@快速提交");
   await composer(page).press("Enter");
   await expect
     .poll(async () => (await studio!.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)?.text ?? "", { timeout: 15_000 })
-    .toContain("「@快速提交并推送」是人要你现在做的事");
+    .toContain("「@快速提交」是人要你现在做的事");
   const sent = (await studio.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!.text!;
   expect(sent).toContain("git push 到上游");
 });

@@ -107,7 +107,7 @@ describe("开子会话… (2026-10-26)", () => {
     expect(mentionGroups({ ...input, commit: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["commit"]);
     expect(mentionGroups(input).map((g) => g.kind)).toEqual(["find"]);
     // Typing narrows them too.
-    expect(mentionGroups({ ...input, query: "提交", subsession: true, commit: true }).at(-1)!.options.map((o) => o.name)).toEqual(["快速提交…"]);
+    expect(mentionGroups({ ...input, query: "提交", subsession: true, commit: true }).at(-1)!.options.map((o) => o.name)).toEqual(["快速提交"]);
   });
 
   it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
@@ -124,18 +124,17 @@ describe("开子会话… (2026-10-26)", () => {
   });
 
   it("「@快速提交」 tells the model to commit split by content, pull with a merge, push only when chosen, and ask about the unclear and conflicts (10-26)", () => {
-    const picked = new Map([
-      ["快速提交", { kind: "commit" as const, push: false }],
-      ["快速提交并推送", { kind: "commit" as const, push: true }],
-    ]);
-    expect(withMentionRefs("改完了 @快速提交", picked)).toBe(`改完了 @快速提交\n\n${quickCommitBrief(false)}`);
-    expect(withMentionRefs("改完了 @快速提交并推送", picked)).toBe(`改完了 @快速提交并推送\n\n${quickCommitBrief(true)}`);
+    expect(withMentionRefs("改完了 @快速提交", new Map([["快速提交", { kind: "commit" as const, push: false }]]))).toBe(`改完了 @快速提交\n\n${quickCommitBrief(false)}`);
+    const picked = new Map([["快速提交", { kind: "commit" as const, push: true }]]);
+    expect(withMentionRefs("改完了 @快速提交", picked)).toBe(`改完了 @快速提交\n\n${quickCommitBrief(true)}`);
     for (const push of [false, true]) {
       expect(quickCommitBrief(push)).toContain("分成多条 commit");
       expect(quickCommitBrief(push)).toContain("git pull --no-rebase");
       expect(quickCommitBrief(push)).toContain("冲突时不要自己挑");
     }
     expect(quickCommitBrief(false)).toContain("不要 push");
+    // A name that only starts with a picked one is not it.
+    expect(withMentionRefs("@快速提交吧", new Map([["快速提交吧", { kind: "task" as const, id: "t1" }], ["快速提交", { kind: "commit" as const, push: false }]]))).not.toContain("是人要你现在做的事");
     expect(quickCommitBrief(true)).toContain("git push 到上游");
     expect(quickCommitBrief(true)).toContain("不要 --force");
     expect(withMentionRefs("算了", picked)).toBe("算了");
