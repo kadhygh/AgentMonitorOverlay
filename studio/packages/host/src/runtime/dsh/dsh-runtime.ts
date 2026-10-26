@@ -200,7 +200,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
-    if (images.length) throw Object.assign(new Error("DSH 会话暂时不能发图片（DSH 的 ACP 不收图片）"), { code: "bad_request" });
+    if (images.length) throw Object.assign(new Error("DSH 会话还不能发图片（AMO 还没接上 DSH 的图片输入）"), { code: "bad_request" });
     if (!session.title) this.updateSession(sessionId, { title: text.slice(0, 60) });
     const live = await this.ensureLive(session);
     if (live.inflight) {

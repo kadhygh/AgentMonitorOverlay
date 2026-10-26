@@ -2,9 +2,10 @@ import { lineSuffix, type FileMark, type ProjectFile, type Session, type Task } 
 import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
-// changed files — and a last entry that opens the file selector. Pure logic; the hook and the list live beside it.
+// changed files — and last entries that set up sub-sessions and open the file selector. Pure logic; the hook and the
+// list live beside it.
 
-export type MentionKind = "task" | "session" | "mark" | "file" | "find";
+export type MentionKind = "task" | "session" | "mark" | "file" | "find" | "subsession";
 
 export interface MentionOption {
   kind: MentionKind;
@@ -20,8 +21,22 @@ export interface MentionGroup {
   options: MentionOption[];
 }
 
-/** A task or session picked with @: the text keeps "@name", the message says which one it is. */
-export type MentionPick = { kind: "task"; id: string } | { kind: "session"; id: string; taskId: string | null };
+/**
+ * 开子会话 (2026-10-26): how the model is to start sub-sessions when it does — AMO's session_start with these. The
+ * person usually says when ("接下来你开子会话就用 @子会话1").
+ */
+export interface SubSessionSpec {
+  /** session_start's model: a profile's name, or "<profile>/<model>" for one of its models. */
+  model: string;
+  /** How the person knows it ("Opus"). */
+  modelName: string;
+  effort?: string;
+  permission?: "read-only" | "write" | "full";
+  report: boolean;
+}
+
+/** A task, session or sub-session setup picked with @: the text keeps "@name", the message says what it is. */
+export type MentionPick = { kind: "task"; id: string } | { kind: "session"; id: string; taskId: string | null } | { kind: "subsession"; spec: SubSessionSpec };
 
 const PER_GROUP = 5;
 const contains = (name: string, q: string) => name.toLowerCase().includes(q);
@@ -44,6 +59,8 @@ export function mentionGroups(input: {
   files: readonly ProjectFile[];
   /** The project's file marks (S12-D), matched against their path and note. */
   marks?: readonly FileMark[];
+  /** 开子会话… is offered (the session may start sessions: a main or forked session of a task). */
+  subsession?: boolean;
 }): MentionGroup[] {
   const q = input.query.toLowerCase();
   const pinned = input.pinnedTask ?? (() => false);
@@ -73,7 +90,14 @@ export function mentionGroups(input: {
   ];
   return [
     ...groups.filter((g) => g.options.length),
-    { kind: "find", heading: "", options: [{ kind: "find", id: "find", name: "找文件…", hint: "Ctrl+P" }] },
+    {
+      kind: "find",
+      heading: "",
+      options: [
+        ...(input.subsession ? [{ kind: "subsession" as const, id: "subsession", name: "开子会话…", hint: "选模型和强度，告诉它怎么开" }] : []),
+        { kind: "find", id: "find", name: "找文件…", hint: "Ctrl+P" },
+      ],
+    },
   ];
 }
 
@@ -84,7 +108,12 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
   const sessions = refs.flatMap(([name, p]) =>
     p.kind === "session" ? [`- @${name}：AMO 会话 ${p.id}${p.taskId ? `，属于任务 ${p.taskId}（可以用 AMO 的 session_tree 查看）` : ""}`] : [],
   );
-  const blocks = [tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "", sessions.length ? `提到的会话：\n${sessions.join("\n")}` : ""].filter(Boolean);
+  const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(p.spec)}`] : []));
+  const blocks = [
+    tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "",
+    sessions.length ? `提到的会话：\n${sessions.join("\n")}` : "",
+    subs.length ? `子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent；第一句话写够让它能独立开工）：\n${subs.join("\n")}` : "",
+  ].filter(Boolean);
   return blocks.length ? `${message}\n\n${blocks.join("\n\n")}` : message;
 }
 
@@ -109,4 +138,19 @@ export function mentionSpans(text: string, names: readonly string[]): Array<{ te
   }
   if (plain) out.push({ text: plain, mention: false });
   return out;
+}
+
+/** A sub-session setup as session_start's arguments, for the model to copy. */
+export function subSessionArgs(spec: SubSessionSpec): string {
+  const args = [`model: "${spec.model}"（${spec.modelName}）`, spec.effort ? `effort: "${spec.effort}"` : "", spec.permission ? `permission: "${spec.permission}"` : "", `report: ${spec.report}`];
+  return `session_start 带 ${args.filter(Boolean).join("，")}`;
+}
+
+/** The next free 「子会话N」 name: not in the text and not picked already. */
+export function nextSubSessionName(text: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  for (let n = 1; ; n++) {
+    const name = `子会话${n}`;
+    if (!used.has(name) && !text.includes(`@${name}`)) return name;
+  }
 }

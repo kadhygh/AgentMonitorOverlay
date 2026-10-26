@@ -5,13 +5,14 @@ import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { usePins } from "../lib/pins.js";
 import { useFileMarks } from "../marks/useFileMarks.js";
 import type { FileRefItem } from "./refs.js";
-import { mentionGroups, mentionSpans, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick } from "./mentions.js";
+import { mentionGroups, mentionSpans, nextSubSessionName, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
  * is typed, the project's files that match), the project's marked files (S12-D), and "找文件…" for the selector. A task
  * or session keeps "@名字" in the text and the message says which one it is; a file becomes a reference chip, a marked
- * one carrying its range and note.
+ * one carrying its range and note. 开子会话… (2026-10-26) asks for a model and effort and puts「@子会话N」in the text; the
+ * message then says how to start sub-sessions with AMO's session_start.
  */
 export function useComposerMentions(input: {
   link: HostLink;
@@ -43,6 +44,9 @@ export function useComposerMentions(input: {
     if (query !== null) setWantMarks(true);
   }, [query]);
   const { marks } = useFileMarks(link, workspaceId, wantMarks);
+  // 开子会话…: where in the text its「@子会话N」goes once the dialog is confirmed.
+  const [subAt, setSubAt] = useState<number | null>(null);
+  const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
 
   // Files come from the Host: the recent ones for a bare "@", matches once something is typed (debounced).
   useEffect(() => {
@@ -66,18 +70,19 @@ export function useComposerMentions(input: {
   const groups = useMemo<MentionGroup[]>(() => {
     if (query === null) return [];
     const pinnedTask = (t: Task) => (!!t.topicId && pins.has("topic", t.topicId)) || pins.has("project", t.workspaceId);
-    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [], marks: marks ?? [] });
-  }, [query, tasks, pins, sessions, current, files, marks]);
+    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [], marks: marks ?? [], subsession });
+  }, [query, tasks, pins, sessions, current, files, marks, subsession]);
   const flat = groups.flatMap((g) => g.options);
   const hl = Math.min(highlight, Math.max(flat.length - 1, 0));
 
   const choose = (option: MentionOption) => {
     if (!active) return;
     setHighlight(0);
-    if (option.kind === "file" || option.kind === "find" || option.kind === "mark") {
+    if (option.kind === "file" || option.kind === "find" || option.kind === "mark" || option.kind === "subsession") {
       setText(withoutMention(text, active));
       setCaret(null);
-      if (option.kind === "find") input.onFind(active.query);
+      if (option.kind === "subsession") setSubAt(active.start);
+      else if (option.kind === "find") input.onFind(active.query);
       else if (option.kind === "mark") {
         const m = marks?.find((x) => x.id === option.id);
         if (m && input.onMark) input.onMark({ path: m.path, startLine: m.startLine, endLine: m.endLine, note: m.note });
@@ -95,6 +100,20 @@ export function useComposerMentions(input: {
 
   return {
     open: flat.length > 0,
+    /** 开子会话…'s dialog is up. */
+    askingSubsession: subAt !== null,
+    /** The dialog's answer: 「@子会话N」 where @ was typed; the caret after it (null when cancelled). */
+    finishSubsession(spec: SubSessionSpec | null): number | null {
+      const at = Math.min(subAt ?? text.length, text.length);
+      setSubAt(null);
+      if (!spec) return null;
+      const name = nextSubSessionName(text, picked.keys());
+      const before = text.slice(0, at);
+      const inserted = `${before && !/\s$/.test(before) ? " " : ""}@${name} `;
+      setText(before + inserted + text.slice(at));
+      setPicked((cur) => new Map(cur).set(name, { kind: "subsession", spec }));
+      return at + inserted.length;
+    },
     groups,
     /** The picked tasks' and sessions' names still in the text (coloured in the composer). */
     names: [...picked.keys()].filter((name) => text.includes(`@${name}`)),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileMark, Session, Task } from "@amo-studio/protocol";
-import { mentionGroups, mentionSpans, nearbySessions, withMentionRefs } from "./mentions.js";
+import { mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
 const session = (id: string, title: string, extra: Partial<Session> = {}) =>
@@ -95,5 +95,31 @@ describe("mentionSpans", () => {
       { text: " 再问 @别人", mention: false },
     ]);
     expect(mentionSpans("没有提及", [])).toEqual([{ text: "没有提及", mention: false }]);
+  });
+});
+
+describe("开子会话… (2026-10-26)", () => {
+  const input = { query: "", tasks: [], sessions: [], current: null, files: [] };
+  it("is offered before 找文件… only when the session may start sessions", () => {
+    expect(mentionGroups({ ...input, subsession: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["subsession", "find"]);
+    expect(mentionGroups(input).at(-1)!.options.map((o) => o.kind)).toEqual(["find"]);
+  });
+
+  it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
+    const picked = new Map([
+      ["子会话1", { kind: "subsession" as const, spec: { model: "Claude/claude-sonnet", modelName: "Sonnet", effort: "high", permission: "write" as const, report: true } }],
+      ["子会话2", { kind: "subsession" as const, spec: { model: "DeepSeek", modelName: "DeepSeek", report: false } }],
+    ]);
+    const out = withMentionRefs("接下来开子会话就用 @子会话1", picked);
+    expect(out).toContain("子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent");
+    expect(out).toContain('- @子会话1：session_start 带 model: "Claude/claude-sonnet"（Sonnet），effort: "high"，permission: "write"，report: true');
+    // Only the ones still in the text.
+    expect(out).not.toContain("@子会话2：");
+    expect(withMentionRefs("@子会话2 去查", picked)).toContain('- @子会话2：session_start 带 model: "DeepSeek"（DeepSeek），report: false');
+  });
+
+  it("numbers them by what is free", () => {
+    expect(nextSubSessionName("", [])).toBe("子会话1");
+    expect(nextSubSessionName("用 @子会话1 和 @子会话3", ["子会话2"])).toBe("子会话4");
   });
 });

@@ -5,6 +5,7 @@ import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../guide/role.js";
+import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
@@ -258,7 +259,7 @@ export class SessionsFeature extends Feature {
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -266,14 +267,19 @@ export class SessionsFeature extends Feature {
     if (task.archivedAt) throw new HostError("read_only", "这个任务已归档，不能再开会话");
     const text = boundedText(input.text, "text", 20_000);
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
-    const profileId = typeof input.model === "string" && input.model.trim() ? this.f.profileByRef(input.model.trim()).id : from.profileId;
+    const picked = typeof input.model === "string" && input.model.trim() ? await this.peerModel(input.model.trim()) : { profileId: from.profileId };
+    const profileId = picked.profileId;
     const report = input.report === true;
     const workspace = input.workspace === undefined || input.workspace === null || input.workspace === "" ? this.requireLiveWorkspace(task.workspaceId) : this.workspaceByRef(input.workspace);
-    let options: { permission: string } | undefined;
+    let options: SessionOptions | undefined = picked.model ? { model: picked.model } : undefined;
     if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
       const level = PERMISSION_LEVELS.find((l) => l === input.permission);
       if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
-      options = { permission: PERMISSIONS[this.f.requireProfile(profileId).runtime][level] };
+      options = { ...options, permission: PERMISSIONS[this.f.requireProfile(profileId).runtime][level] };
+    }
+    if (input.effort !== undefined && input.effort !== null && input.effort !== "") {
+      if (typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
+      options = { ...options, effort: await this.peerEffort(profileId, picked.model, input.effort.trim()) };
     }
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [
@@ -294,6 +300,44 @@ export class SessionsFeature extends Feature {
     // A quick turn may have ended before the session was marked.
     if (report) this.checkReport(this.requireSession(named.id));
     return named;
+  }
+
+  /**
+   * session_start's effort (2026-10-26, an agent could not set it): checked against the model the new session will run
+   * (the person's default in 设置 → 模型, else the CLI's), as its CLI names them; unchecked when the list cannot be had.
+   */
+  private async peerEffort(profileId: Id, chosen: string | undefined, want: string): Promise<string> {
+    const choices = await this.f.config.choices(profileId).catch(() => null);
+    if (!choices?.models.length) return want;
+    const model = chosen ?? fillDefaults({}, choices, readModelPrefs(this.store)[profileId]).model;
+    const runs = choices.models.find((m) => m.id === model) ?? choices.models.find((m) => m.isDefault) ?? choices.models[0]!;
+    const name = `${this.f.requireProfile(profileId).label}（${runs.label}）`;
+    if (!runs.efforts.length) throw new HostError("bad_request", `${name} 没有思考强度可选，去掉 effort 再开`);
+    const hit = runs.efforts.find((e) => e.toLowerCase() === want.toLowerCase());
+    if (!hit) throw new HostError("bad_request", `${name} 的 effort 只能是：${runs.efforts.join(", ")}`);
+    return hit;
+  }
+
+  /**
+   * session_start's model (2026-10-26: 「@ 开子会话」 picks a model of an account, not only the account): a model
+   * profile as amo_whoami names it; or "<profile>/<model>", one of that profile's models by id or name; or a model's id
+   * or name in any profile's list (the first profile that has it).
+   */
+  private async peerModel(ref: string): Promise<{ profileId: Id; model?: string }> {
+    try {
+      return { profileId: this.f.profileByRef(ref).id };
+    } catch (err) {
+      const slash = ref.indexOf("/");
+      const named = slash > 0 ? this.f.profiles.find((p) => !p.hidden && [p.id, p.label].some((x) => x.toLowerCase() === ref.slice(0, slash).trim().toLowerCase())) : undefined;
+      const want = (named ? ref.slice(slash + 1) : ref).trim().toLowerCase();
+      for (const p of named ? [named] : this.f.profiles.filter((x) => !x.hidden)) {
+        const choices = await this.f.config.choices(p.id).catch(() => null);
+        const m = choices?.models.find((x) => x.id.toLowerCase() === want || x.label.toLowerCase() === want);
+        if (m) return m.isDefault ? { profileId: p.id } : { profileId: p.id, model: m.id };
+      }
+      if (named) throw new HostError("bad_request", `${named.label} 没有型号 ${ref.slice(slash + 1).trim()}`);
+      throw err;
+    }
   }
 
   /** A live project (or the common space) by id, name or folder path, as project_context lists them. */

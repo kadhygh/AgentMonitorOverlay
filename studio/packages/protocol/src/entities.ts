@@ -23,7 +23,7 @@ export interface Workspace {
   description?: string;
 }
 
-/** Board columns. Moved by the person only; agents never move cards. */
+/** Board columns. Moved by the person; Studio itself moves 进行中 ⇄ 待审阅 as sessions stop and start (TasksFeature.watchColumns); agents never move cards. */
 export const TASK_COLUMNS = ["todo", "doing", "review", "done"] as const;
 export type TaskColumn = (typeof TASK_COLUMNS)[number];
 

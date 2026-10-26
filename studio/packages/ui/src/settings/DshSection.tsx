@@ -65,7 +65,7 @@ export function DshSection({ link }: { link: HostLink }) {
   return (
     <div className="dsh-section" data-testid="dsh-section">
       <span className="settings-hint">
-        用 DeepSeek Harness 自己的框架跑 DeepSeek（上下文管理、工具都是 DSH 原生的）。填你本机的 DSH 源码克隆；Key 用上面的 DeepSeek 凭据。DSH 会话不能分支、不能在终端打开、不能发图片，运行中发的消息等这一轮结束再发。
+        用 DeepSeek Harness 自己的框架跑 DeepSeek（上下文管理、工具都是 DSH 原生的）。填你本机的 DSH 源码克隆；Key 用上面的 DeepSeek 凭据。运行中发的消息会排队，这一轮做完自动接着发（和 DSH 默认的「排队」一样）；还不能发图片、不能分支、不能在终端打开。
       </span>
       <div className="settings-row">
         <input

@@ -18,6 +18,7 @@ import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
 import { MentionBackdrop, MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
+import { SubSessionDialog } from "../attach/SubSessionDialog.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { DecisionPrompt, SessionDecisions } from "../collab/DecisionPanel.js";
@@ -51,6 +52,8 @@ interface ThreadProps {
   session: Session | null;
   /** The session's model profile (its account mark and models). */
   profile?: ModelProfile;
+  /** Every model profile: 开子会话… in the @ list picks one. */
+  profiles?: readonly ModelProfile[];
   /** Tasks the composer can @ (the message then says which AMO tasks they are). */
   tasks?: readonly Task[];
   /** Sessions the composer can @ (those of the same project or topic are offered). */
@@ -87,7 +90,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, profiles = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -681,6 +684,21 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+          }}
+        />
+      )}
+      {mentions.askingSubsession && session && (
+        <SubSessionDialog
+          link={link}
+          profiles={profiles}
+          session={session}
+          onDone={(spec) => {
+            const caret = mentions.finishSubsession(spec);
+            requestAnimationFrame(() => {
+              const el = document.querySelector<HTMLTextAreaElement>(".chat-input textarea");
+              el?.focus();
+              if (el && caret !== null) el.setSelectionRange(caret, caret);
+            });
           }}
         />
       )}

@@ -15,6 +15,7 @@ import { Store } from "../../store/store.js";
 const PROFILES: ModelProfile[] = [
   { id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" },
   { id: "p-gpt", label: "GPT", runtime: "codex", provider: "amo-gpt", model: "gpt-model" },
+  { id: "p-plain", label: "Plain", runtime: "codex", provider: "amo-plain", model: null },
 ];
 
 let root: string;
@@ -63,6 +64,17 @@ describe("session_start (开会话)", () => {
     expect((await service.sessions.startPeer(caller.id, { text: "跑一串命令", permission: "full" })).options.permission).toBe("full-auto");
     expect((await service.sessions.startPeer(caller.id, { text: "只读看看", permission: "read-only" })).options.permission).toBe("read-only");
     expect(s.options.permission).not.toBe("full-auto");
+    // effort (10-26): one the model the session runs takes, as its CLI names it; any other is refused with the list.
+    expect((await service.sessions.startPeer(caller.id, { text: "想深一点", model: "Plain", effort: "HIGH" })).options.effort).toBe("high");
+    await expect(service.sessions.startPeer(caller.id, { text: "x", model: "Plain", effort: "max" })).rejects.toThrow(/effort 只能是：low, high/);
+    // A model its CLI does not know the efforts of (a third-party one): none to pick, as in the workbench.
+    await expect(service.sessions.startPeer(caller.id, { text: "x", effort: "high" })).rejects.toThrow(/没有思考强度可选/);
+    // A particular model of an account (「@ 开子会话」, 10-26): "<account>/<model>" by id or name; efforts are that model's.
+    const slow = await service.sessions.startPeer(caller.id, { text: "慢慢来", model: "Plain/Fake Slow" });
+    expect(slow).toMatchObject({ profileId: "p-plain", options: { model: "fake-slow" } });
+    await expect(service.sessions.startPeer(caller.id, { text: "x", model: "plain/fake-slow", effort: "high" })).rejects.toThrow(/没有思考强度可选/);
+    await expect(service.sessions.startPeer(caller.id, { text: "x", model: "Plain/gpt-9" })).rejects.toThrow(/Plain 没有型号 gpt-9/);
+    await expect(service.sessions.startPeer(caller.id, { text: "x", model: "nobody" })).rejects.toThrow(/model nobody not found/);
     await expect(service.sessions.startPeer(caller.id, { text: "x", permission: "root" })).rejects.toThrow(/permission must be/);
     // Archiving the caller leaves the sessions it started alone.
     await service.sessions.archive(caller.id);

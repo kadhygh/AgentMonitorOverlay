@@ -590,6 +590,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               presets={settings?.presets ?? []}
               session={session}
               {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
+              profiles={profiles}
               tasks={tasks}
               sessions={sessions}
               items={items}

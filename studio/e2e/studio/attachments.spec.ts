@@ -244,3 +244,31 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await expect(bubble.getByTestId("msg-file").first()).toContainText("README.md");
   await expect(bubble.getByTestId("msg-file").last()).toContainText("importer.py");
 });
+
+test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the text, and the message tells how to start it (2026-10-26)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const dir = studio.workspace("alpha");
+  const { session } = await openTask(studio, dir);
+  const suggest = page.getByTestId("suggest");
+  await composer(page).pressSequentially("接下来开子会话就用 @");
+  await expect(suggest.getByRole("option").last()).toContainText("找文件…");
+  await suggest.getByRole("option", { name: /开子会话…/ }).click();
+  const dialog = page.getByTestId("subsession-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(composer(page)).toHaveValue("接下来开子会话就用 ");
+  await dialog.getByRole("button", { name: "完全放开" }).click();
+  await dialog.getByTestId("subsession-report").uncheck();
+  await expect(dialog.getByTestId("subsession-preview")).toContainText('permission: "full"，report: false');
+  await screenshot(studio.app, "stage-18", "S18-subsession-dialog", page);
+  await dialog.getByTestId("subsession-ok").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(composer(page)).toHaveValue("接下来开子会话就用 @子会话1 ");
+  await expect(page.getByTestId("mention-backdrop").locator(".mention-token")).toHaveText("@子会话1");
+  await composer(page).press("Enter");
+  await expect
+    .poll(async () => (await studio!.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)?.text ?? "", { timeout: 15_000 })
+    .toContain("子会话的开法（要开时用 AMO 的 session_start");
+  const sent = (await studio.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!.text!;
+  expect(sent).toMatch(/- @子会话1：session_start 带 model: ".+"（.+），permission: "full"，report: false/);
+});

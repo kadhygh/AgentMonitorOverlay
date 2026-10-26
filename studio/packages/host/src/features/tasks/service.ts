@@ -4,12 +4,66 @@ import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace, ChecklistItem, TaskTemplateChoice } from "@amo-studio/protocol";
 import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
-import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME } from "../../core/shared.js";
+import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 
 /** Tasks: creating, renaming, moving, archiving, their sessions; bringing older data into structure v2. */
 export class TasksFeature extends Feature {
+  /** How long a task's sessions must all have stood still before it moves to 待审阅 (a turn often follows another at once). */
+  reviewSettleMs = 4000;
+  private readonly movingBefore = new Map<Id, boolean>();
+  private readonly settling = new Map<Id, NodeJS.Timeout>();
+
+  /**
+   * 进行中 ⇄ 待审阅 by the sessions (2026-10-26, the person asked for it; Studio moves the card, never an agent): when a
+   * session of a 进行中 task stops moving and none of the task's sessions moves any more, the task goes to 待审阅; when a
+   * session of a 待审阅 task starts moving again (the person talks to it), the task goes back to 进行中. Only a session
+   * starting or stopping counts, so a card the person moved stays where it is until then; 待办 and 完成 are never
+   * touched, nor the scheduler's task.
+   */
+  watchColumns(): void {
+    for (const s of this.store.listSessions()) this.movingBefore.set(s.id, sessionMoving(s));
+    this.f.on("event", (e) => {
+      if (e.type !== "session.upserted") return;
+      const s = e.session;
+      const moving = sessionMoving(s);
+      const before = this.movingBefore.get(s.id) ?? false;
+      this.movingBefore.set(s.id, moving);
+      if (moving === before || !s.taskId) return;
+      if (moving) this.sessionStarted(s.taskId);
+      else this.sessionStopped(s.taskId);
+    });
+  }
+
+  private sessionStarted(taskId: Id): void {
+    clearTimeout(this.settling.get(taskId));
+    this.settling.delete(taskId);
+    if (this.followsSessions(taskId, "review")) this.updateTask(taskId, { column: "doing" });
+  }
+
+  private sessionStopped(taskId: Id): void {
+    clearTimeout(this.settling.get(taskId));
+    const timer = setTimeout(() => {
+      this.settling.delete(taskId);
+      try {
+        if (!this.followsSessions(taskId, "doing")) return;
+        if (this.store.listSessions({ taskId }).some(sessionMoving)) return;
+        this.updateTask(taskId, { column: "review" });
+      } catch {
+        // The Host is closing (its database already is).
+      }
+    }, this.reviewSettleMs);
+    timer.unref?.();
+    this.settling.set(taskId, timer);
+  }
+
+  /** Whether the task is live, in `column`, and not the scheduler's own task (which always stays 进行中). */
+  private followsSessions(taskId: Id, column: TaskColumn): boolean {
+    const task = this.store.getTask(taskId);
+    return !!task && !task.archivedAt && task.column === column && this.store.getKv(SCHEDULER_TASK_KEY)?.value !== taskId;
+  }
+
   /**
    * Brings data from before structure v2 into shape, once per start (cheap when there is nothing to do): makes sure
    * the common space exists, gives tasks of the old cross-workspace area a workspace (and a topic when their sessions
@@ -195,7 +249,7 @@ export class TasksFeature extends Feature {
   private firstImages(input: NewSessionInput): Id[] {
     if (input.attachments === undefined) return [];
     const ids = this.f.sessions.images(input.attachments).map((a) => a.id);
-    if (ids.length && this.requireProfile(input.profileId).runtime === "dsh") throw new HostError("bad_request", "DSH 会话暂时不能发图片（DSH 的 ACP 不收图片）");
+    if (ids.length && this.requireProfile(input.profileId).runtime === "dsh") throw new HostError("bad_request", "DSH 会话还不能发图片（AMO 还没接上 DSH 的图片输入）");
     return ids;
   }
 
@@ -232,4 +286,14 @@ export class TasksFeature extends Feature {
     else if (owner.topicId) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(owner.topicId, {}) });
     return session;
   }
+}
+
+/**
+ * Whether a session is still at it, for 进行中 ⇄ 待审阅: running, waiting for the person in the middle of a turn
+ * (approval, a question), about to go on by itself (its /loop, a usage limit that resets), or in a terminal.
+ */
+export function sessionMoving(s: Session): boolean {
+  if (s.archivedAt) return false;
+  if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") return true;
+  return !!s.wake?.loop || !!s.wake?.limit || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
 }
