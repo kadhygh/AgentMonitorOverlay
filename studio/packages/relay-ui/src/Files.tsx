@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { anchorOf, findAnchor, flatten, HIGHLIGHT_CSS, paint } from "./anchors.js";
 import { timeText } from "./bits.js";
-import { Dialog } from "./Dialog.js";
+import { Dialog, Pick } from "./Dialog.js";
 import { copyText } from "./env.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
@@ -325,19 +325,18 @@ export function FileViewer({ session, fileId, onClose, toast }: { session: Sessi
   return (
     <Dialog
       className="viewer"
+      bare
       onClose={onClose}
       title={
         <span className="viewer-title">
           {file?.name ?? "文件"}
           {versions.length > 1 ? (
-            <select value={shownId} onChange={(e) => (setShownId(e.target.value), setHot(null), setDraft(null))} aria-label="版本">
-              {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  v{v.version}
-                  {v.id === versions[0]!.id ? "（最新）" : ""} · {v.by}
-                </option>
-              ))}
-            </select>
+            <Pick
+              label="版本"
+              value={shownId}
+              onChange={(id) => (setShownId(id), setHot(null), setDraft(null))}
+              options={[...versions].reverse().map((v) => ({ value: v.id, label: `v${v.version}`, title: `${v.by} · ${timeText(v.at)}${v.id === versions[0]!.id ? " · 最新" : ""}` }))}
+            />
           ) : (
             file && <span className="chip">v{file.version}</span>
           )}

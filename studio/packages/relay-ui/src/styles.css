@@ -83,7 +83,7 @@ code { font-family: var(--font-code); font-size: 0.9em; background: var(--code-b
 .form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-cap); color: var(--text-dim); }
 .form label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: var(--fs-sm); }
-.form button.primary { height: var(--ctl-l); margin-top: 4px; }
+.login-card .form button.primary { height: var(--ctl-l); margin-top: 4px; }
 .server-line { display: flex; align-items: center; gap: 7px; font-size: var(--fs-cap); color: var(--text-faint); margin: 0 0 10px; }
 .notice.server-down { flex-direction: column; align-items: flex-start; gap: 2px; }
 .login-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); gap: 8px; flex-wrap: wrap; }
@@ -346,3 +346,52 @@ button.box-row:hover:not(:disabled) { border-color: var(--border-strong); backgr
 .viewer-foot { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-header); }
 .link-btn { color: var(--primary); font-size: var(--fs-sm); }
 .selbtn { position: fixed; z-index: 80; }
+
+/* ---- dialogs and fields, second take (2026-10-27): lighter lines, one height for controls and buttons, choices as
+   buttons (.pick) instead of drop-downs, dialogs in three bands. Later rules here win over the ones above. */
+button { border-color: var(--border); }
+button:hover:not(:disabled) { border-color: var(--text-faint); background: var(--panel-raised); }
+button.primary:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
+input, textarea, select { min-height: 34px; border-color: var(--border); border-radius: var(--r-l); padding: 6px 10px; font-size: var(--fs-body); }
+input:hover, textarea:hover { border-color: var(--text-faint); }
+input:focus, textarea:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+textarea { padding: 8px 10px; }
+.overlay { background: rgba(10, 12, 14, 0.42); padding-top: 60px; }
+.dialog { padding: 0; gap: 0; width: 560px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+.dialog.wide { width: 700px; }
+.dialog-head { padding: 16px 20px 12px 22px; align-items: flex-start; gap: 12px; margin: 0; border-bottom: 1px solid var(--divider); }
+.dialog-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dialog-titles b, .dialog-head b { font-family: var(--font-display); font-size: 18px; font-weight: 700; flex: none; }
+.dialog-sub { font-size: var(--fs-cap); color: var(--text-faint); }
+.dialog-body { padding: 16px 22px 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; min-height: 0; }
+.dialog-foot { margin: 0; padding: 12px 22px; border-top: 1px solid var(--divider); background: var(--bg-header); display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.dialog-foot button { height: 32px; min-width: 76px; }
+.foot-note { margin-right: auto; font-size: var(--fs-cap); color: var(--text-faint); min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-label { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.field-hint { font-weight: 400; font-size: var(--fs-cap); color: var(--text-faint); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.fields { display: flex; flex-direction: column; gap: 14px; }
+.row-end { display: flex; justify-content: flex-end; gap: 8px; }
+.row-end button { height: 32px; min-width: 76px; }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick button { height: 32px; padding: 0 12px; border-radius: var(--r-l); color: var(--text-dim); display: inline-flex; align-items: center; gap: 7px; }
+.pick button:hover:not(:disabled) { color: var(--text); }
+.pick button.on, .pick button.on:hover { border-color: var(--primary); background: var(--tint); color: var(--text); font-weight: 600; box-shadow: inset 0 0 0 1px var(--primary); }
+.dot.st-待处理 { background: var(--attention); }
+.dot.st-开发中 { background: var(--primary); }
+.dot.st-已完成 { background: var(--running); }
+.dot.st-已搁置 { background: var(--muted-dot); }
+.check-row { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-sm); color: var(--text-dim); cursor: pointer; min-width: 0; }
+.check-row input { margin-top: 3px; }
+.att-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.att.on, .att.on:hover:not(:disabled) { border-color: var(--primary); background: var(--tint); }
+.att-pick > button.small { height: 34px; }
+.add-q { align-self: flex-start; }
+.q-row input { min-height: 32px; }
+.lead-p { margin: 0; }
+.kw-group { margin: 4px 0 -8px; }
+.hookup pre { max-height: 140px; overflow: auto; }
+.viewer-title .pick button { height: 26px; padding: 0 9px; font-size: var(--fs-cap); font-family: var(--font-ui); }
+.dialog.viewer .dialog-head { align-items: center; padding: 10px 16px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }

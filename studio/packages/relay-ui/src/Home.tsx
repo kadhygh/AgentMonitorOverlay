@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, preview, sessionStatus, timeText, waitedText } from "./bits.js";
 import { ChatView } from "./ChatView.js";
 import { PickFiles } from "./Files.js";
-import { Dialog, Menu } from "./Dialog.js";
+import { Check, Dialog, Field, Menu, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
 import { UpdateBanner } from "./Login.js";
 import { errorText } from "./Messages.js";
@@ -538,84 +538,79 @@ function NewSessionDialog(props: { session: Session; people: string[]; tasks: Ta
     }
   };
 
+  const toggle = (id: string, on: boolean) => setAttach((a) => (on ? [...a, id] : a.filter((x) => x !== id)));
   return (
-    <Dialog title="新会话" onClose={props.onClose} wide>
-      <div className="form">
-        <label>
-          发给
-          <select value={to} onChange={(e) => setTo(e.target.value)}>
-            {props.people.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          所属任务
-          <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
-            <option value="">不挂任务（单独的会话）</option>
-            {props.tasks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          标题
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="一句话说清要对方处理什么" autoFocus />
-        </label>
-        <label>
-          正文 <span className="muted tiny">（Markdown；对方看不到你本机的文件，关键内容贴进来）</span>
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={7} />
-        </label>
-        <div className="qs">
-          <div className="dim tiny">要对方逐条回答的问题</div>
-          {questions.map((q, i) => (
-            <div key={i} className="q-row">
-              <span className="rq-n">{i + 1}</span>
-              <input value={q.text} onChange={(e) => setQuestions((list) => list.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="问题" />
-              <input className="opts" value={q.options} onChange={(e) => setQuestions((list) => list.map((x, j) => (j === i ? { ...x, options: e.target.value } : x)))} placeholder="选项，用逗号隔开（可不填）" />
-              <button type="button" className="x" onClick={() => setQuestions((list) => (list.length > 1 ? list.filter((_, j) => j !== i) : [{ text: "", options: "" }]))}>
-                ×
-              </button>
-            </div>
-          ))}
-          <button type="button" className="link" style={{ alignSelf: "flex-start" }} onClick={() => setQuestions((list) => [...list, { text: "", options: "" }])}>
-            ＋ 再加一个问题
-          </button>
-        </div>
-        <div className="qs">
-          <div className="dim tiny">附件</div>
-          {taskFiles.map((f) => (
-            <label key={f.id} className="check">
-              <input type="checkbox" checked={attach.includes(f.id)} onChange={(e) => setAttach((a) => (e.target.checked ? [...a, f.id] : a.filter((x) => x !== f.id)))} />
-              {f.name} v{f.version}（任务里的）
-            </label>
-          ))}
-          {local.map((f, i) => (
-            <label key={`${f.name}-${i}`} className="check">
-              <input type="checkbox" checked onChange={() => setLocal((l) => l.filter((_, j) => j !== i))} />
-              {f.name}（本机，发出时上传）
-            </label>
-          ))}
-          <div>
-            <PickFiles small label="从本机选文件" onFiles={(fl) => setLocal((l) => [...l, ...fl])} />
-          </div>
-        </div>
-        <label className="check">
-          <input type="checkbox" checked={needsReply} onChange={(e) => setNeedsReply(e.target.checked)} />
-          需要对方回复（对方不能直接标记完成，由你来标记）
-        </label>
-        {error && <div className="notice error">{error}</div>}
-        <div className="dialog-foot">
+    <Dialog
+      title="新会话"
+      onClose={props.onClose}
+      wide
+      foot={
+        <>
+          <Check checked={needsReply} onChange={setNeedsReply}>
+            需要对方回复（对方不能直接标记完成）
+          </Check>
+          <span className="grow" />
           <button type="button" onClick={props.onClose}>
             取消
           </button>
           <button type="button" className="primary" disabled={busy || !to || !title.trim() || !body.trim()} onClick={() => void send()}>
             发出
           </button>
+        </>
+      }
+    >
+      <Field label="发给">
+        {props.people.length ? <PersonPick people={props.people} value={to} onChange={setTo} label="发给" /> : <div className="muted tiny">还没有其他人</div>}
+      </Field>
+      <Field label="所属任务" hint="挂在任务下，回复会记进任务的决策">
+        <Pick
+          label="所属任务"
+          value={taskId}
+          onChange={setTaskId}
+          options={[{ value: "", label: "不挂任务" }, ...props.tasks.map((t) => ({ value: t.id, label: t.title }))]}
+        />
+      </Field>
+      <Field label="标题">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="一句话说清要对方处理什么" autoFocus />
+      </Field>
+      <Field label="正文" hint="Markdown；对方看不到你本机的文件，关键内容贴进来或作为附件">
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
+      </Field>
+      <Field label="要对方逐条回答的问题" hint="可不填；选项用逗号隔开">
+        <div className="qs">
+          {questions.map((q, i) => (
+            <div key={i} className="q-row">
+              <span className="rq-n">{i + 1}</span>
+              <input value={q.text} onChange={(e) => setQuestions((list) => list.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="问题" />
+              <input className="opts" value={q.options} onChange={(e) => setQuestions((list) => list.map((x, j) => (j === i ? { ...x, options: e.target.value } : x)))} placeholder="选项，用逗号隔开（可不填）" />
+              <button type="button" className="x" title="去掉这个问题" onClick={() => setQuestions((list) => (list.length > 1 ? list.filter((_, j) => j !== i) : [{ text: "", options: "" }]))}>
+                ×
+              </button>
+            </div>
+          ))}
+          <button type="button" className="link add-q" onClick={() => setQuestions((list) => [...list, { text: "", options: "" }])}>
+            ＋ 再加一个问题
+          </button>
         </div>
-      </div>
+      </Field>
+      <Field label="附件">
+        <div className="att-pick">
+          {taskFiles.map((f) => (
+            <button key={f.id} type="button" className={`att ${attach.includes(f.id) ? "on" : ""}`} aria-pressed={attach.includes(f.id)} onClick={() => toggle(f.id, !attach.includes(f.id))} title="任务里的文件，点一下带上或不带">
+              <span className="file-ico">{f.name.split(".").pop()?.slice(0, 4)}</span>
+              {f.name} v{f.version}
+            </button>
+          ))}
+          {local.map((f, i) => (
+            <button key={`${f.name}-${i}`} type="button" className="att on" title="本机文件，发出时上传；点一下去掉" onClick={() => setLocal((l) => l.filter((_, j) => j !== i))}>
+              <span className="file-ico">{f.name.split(".").pop()?.slice(0, 4)}</span>
+              {f.name} <span className="muted">· 本机</span>
+            </button>
+          ))}
+          <PickFiles small label="＋ 从本机选" onFiles={(fl) => setLocal((l) => [...l, ...fl])} />
+        </div>
+      </Field>
+      {error && <div className="notice error">{error}</div>}
     </Dialog>
   );
 }
@@ -625,17 +620,17 @@ const quote = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : 
 function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void; onCopyUsage: () => void; toast: (t: string) => void }) {
   const [hookup, setHookup] = useState<McpHookup | null>(null);
   useEffect(() => void shell?.mcp().then(setHookup), []);
+  const copyButton = (
+    <button type="button" onClick={onCopyUsage}>
+      复制用法
+    </button>
+  );
 
   if (!shell) {
     return (
-      <Dialog title="接入 AI" onClose={onClose}>
-        <p>浏览器里没法让本机的 AI 直接接入。要用 MCP，请下载桌面客户端（服务器首页有下载）。</p>
+      <Dialog title="接入 AI" onClose={onClose} foot={copyButton}>
+        <p className="lead-p">浏览器里没法让本机的 AI 直接接入。要用 MCP，请下载桌面客户端（服务器首页有下载）。</p>
         <p className="dim small">现在也可以点「复制用法」把说明贴给 agent，再把它写好的内容手动用「＋ 新会话」发出去。</p>
-        <div className="dialog-foot">
-          <button type="button" onClick={onCopyUsage}>
-            复制用法
-          </button>
-        </div>
       </Dialog>
     );
   }
@@ -667,24 +662,26 @@ function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void;
     </div>
   );
   return (
-    <Dialog title="接入 AI（MCP）" onClose={onClose} wide>
-      <p className="dim small" style={{ margin: 0 }}>
-        接好后，本机的 AI 用你现在登录的身份收发会话：能看到团队成员、给人发会话、取回复并接着处理。换账号登录后，它跟着换。MCP 由这个客户端自带的运行时启动，本机不用装 Node。
-      </p>
+    <Dialog
+      title="接入 AI（MCP）"
+      sub="接好后，本机的 AI 用你现在登录的身份收发会话；MCP 由这个客户端自带的运行时启动，本机不用装 Node"
+      onClose={onClose}
+      wide
+      foot={
+        <>
+          <span className="foot-note">
+            不支持 MCP 的 agent：复制用法，里面带着命令行 <code>{hookup.cli}</code>
+          </span>
+          {copyButton}
+          <button type="button" className="primary" onClick={onClose}>
+            好
+          </button>
+        </>
+      }
+    >
       {block("Claude Code", claude, "在终端里运行一次")}
       {block("Codex", toml, "加到 ~/.codex/config.toml")}
       {block("其他客户端", json, "支持 mcpServers JSON 的都可以")}
-      <p className="dim small" style={{ margin: 0 }}>
-        不支持 MCP 的 agent：点「复制用法」，说明里带着命令行用法（<code>{hookup.cli}</code>）。
-      </p>
-      <div className="dialog-foot">
-        <button type="button" onClick={onCopyUsage}>
-          复制用法
-        </button>
-        <button type="button" className="primary" onClick={onClose}>
-          好
-        </button>
-      </div>
     </Dialog>
   );
 }

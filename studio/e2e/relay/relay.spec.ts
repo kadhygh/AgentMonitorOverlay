@@ -135,6 +135,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   // to them, finishes and archives it. Settings are the team's: the coder's 流程速查 shows the planner's change.
   await a.page.locator(".view-tab", { hasText: "任务" }).click();
   await a.page.getByRole("button", { name: "＋ 新任务" }).click();
+  await shot(a.app, "18-new-task-dialog");
   await a.page.getByPlaceholder("比如：加特林").fill("加特林");
   await a.page.locator(".dialog textarea").fill("按住连射，射速逐步升高，会过热。");
   await a.page.getByRole("button", { name: "新建", exact: true }).click();
@@ -143,8 +144,9 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.locator(".pane input[type=file]").setInputFiles({ name: "designdoc.md", mimeType: "text/markdown", buffer: Buffer.from("# 加特林\n\n基础射速每秒 12 发，按住 2 秒后升到 20 发。\n\n连续射击 6 秒进入过热。") });
   await expect(a.page.locator(".file-row")).toContainText("designdoc.md");
   await a.page.locator(".session-list").getByTitle("在这个任务下新建会话").click();
-  await expect(a.page.locator(".dialog label.check", { hasText: "designdoc.md v1（任务里的）" }).locator("input")).toBeChecked();
-  await expect(a.page.locator(".dialog select").nth(1)).toHaveValue(/^k_/);
+  await expect(a.page.locator(".att-pick .att.on")).toContainText("designdoc.md v1");
+  await shot(a.app, "17-new-session-dialog");
+  await expect(a.page.locator('.dialog [aria-label="所属任务"] [aria-checked="true"]')).toHaveText("加特林");
   await a.page.getByPlaceholder("一句话说清要对方处理什么").fill("射速和过热怎么做");
   await a.page.locator(".dialog textarea").fill("设计见任务说明。");
   await a.page.getByPlaceholder("问题").fill("推进方式");
@@ -195,7 +197,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".reply-form")).toContainText("附上我的批注（1）");
   await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
   await b.page.getByRole("button", { name: "接手任务…" }).click();
-  await b.page.getByPlaceholder("写清楚为什么、接下来谁做什么").fill("涉及武器底层，我来改接口");
+  await b.page.getByPlaceholder("比如：涉及武器底层，我来改接口").fill("涉及武器底层，我来改接口");
   await shot(b.app, "12-takeover");
   await b.page.getByRole("button", { name: "接手", exact: true }).click();
   await expect(b.page.locator(".msg.kind-reply").last()).toContainText("我接手了这个任务（开发中）：涉及武器底层");
@@ -221,9 +223,9 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".view-tab", { hasText: "任务" }).click();
   await b.page.locator(".card", { hasText: "加特林" }).click();
   await b.page.getByRole("button", { name: "流转…" }).click();
-  await b.page.locator(".dialog select").first().selectOption("策划小王");
-  await b.page.locator(".dialog select").nth(1).selectOption("待处理");
-  await b.page.getByPlaceholder("写清楚为什么、接下来谁做什么").fill("接口改好了，请验收");
+  await b.page.locator('.dialog [aria-label="交给"]').getByRole("radio", { name: /策划小王/ }).click();
+  await b.page.locator('.dialog [aria-label="状态"]').getByRole("radio", { name: "待处理" }).click();
+  await b.page.getByPlaceholder("比如：涉及武器底层，我来改接口").fill("接口改好了，请验收");
   await b.page.getByRole("button", { name: "流转", exact: true }).click();
   await a.page.locator(".view-tab", { hasText: "待处理" }).click();
   await expect(a.page.locator(".scope-nav .srow", { hasText: "任务交给你：加特林" })).toContainText("接口改好了，请验收");
@@ -240,7 +242,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await shot(a.app, "14-board");
   await a.page.locator(".card", { hasText: "加特林" }).click();
   await a.page.getByRole("button", { name: "编辑" }).click();
-  await a.page.locator(".editor select").selectOption("已完成");
+  await a.page.locator('.editor [aria-label="状态"]').getByRole("radio", { name: "已完成" }).click();
   await a.page.getByRole("button", { name: "保存" }).click();
   await a.page.locator(".head-actions").getByRole("button", { name: "归档" }).click();
   await a.page.getByRole("button", { name: "任务", exact: true }).first().click();

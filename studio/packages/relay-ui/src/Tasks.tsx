@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Avatar, timeText, waitedText } from "./bits.js";
-import { Dialog } from "./Dialog.js";
+import { Check, Dialog, Field, PersonPick, StatusPick } from "./Dialog.js";
 import { DropZone, FileRow, FileViewer, PickFiles, useUpload } from "./Files.js";
 import { copyText, shell } from "./env.js";
 import { Markdown } from "./Markdown.js";
@@ -344,24 +344,17 @@ function TaskEditor({ session, task, onDone, toast }: { session: Session; task: 
     }
   };
   return (
-    <div className="form editor">
-      <label>
-        标题
+    <div className="fields editor">
+      <Field label="标题">
         <input value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label>
-        说明（Markdown）
+      </Field>
+      <Field label="说明" hint="Markdown">
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={10} />
-      </label>
-      <label>
-        状态 <span className="muted tiny">（换人用「流转…」）</span>
-        <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-          {TASK_STATUSES.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-      </label>
-      <div className="dialog-foot">
+      </Field>
+      <Field label="状态" hint="换人用「流转…」">
+        <StatusPick value={status} onChange={setStatus} />
+      </Field>
+      <div className="row-end">
         <button type="button" onClick={onDone}>
           取消
         </button>
@@ -399,52 +392,38 @@ export function TransferDialog({ session, task, thread, onClose, toast }: { sess
     }
   };
   return (
-    <Dialog title={thread ? "接手任务" : "流转任务"} onClose={onClose}>
-      <p className="dim small" style={{ margin: 0 }}>
-        「{task.title}」现在在 {task.holder} 手里，{task.status}。会写进任务记录，新的持有人会在待处理里收到。
-      </p>
-      <div className="form" style={{ marginTop: 0 }}>
-        <div className="fgrid">
-          <label>
-            交给
-            <select value={to} onChange={(e) => setTo(e.target.value)}>
-              {members.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name}
-                  {m.name === me ? "（我）" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            新状态
-            <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              {TASK_STATUSES.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label>
-          原因
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="写清楚为什么、接下来谁做什么" autoFocus />
-        </label>
-        {thread && r && (
-          <label className="check">
-            <input type="checkbox" checked={withSession} onChange={(e) => setWithSession(e.target.checked)} />
-            {r.to === me && r.needsReply ? `同时回复会话「${thread.title}」，告诉 ${asker} 我已接手（会话回到发起方，由对方标记完成）` : `同时结束会话「${thread.title}」`}
-          </label>
-        )}
-        {error && <div className="notice error">{error}</div>}
-        <div className="dialog-foot">
+    <Dialog
+      title={thread ? "接手任务" : "流转任务"}
+      sub={`「${task.title}」现在在 ${task.holder} 手里 · ${task.status}`}
+      onClose={onClose}
+      wide
+      foot={
+        <>
+          <span className="foot-note">会写进任务记录，新的持有人会在待处理里收到</span>
           <button type="button" onClick={onClose}>
             取消
           </button>
           <button type="button" className="primary" disabled={busy} onClick={() => void go()}>
             {thread ? "接手" : "流转"}
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <Field label="交给">
+        <PersonPick people={members.map((m) => m.name)} value={to} onChange={setTo} me={me} label="交给" />
+      </Field>
+      <Field label="新状态">
+        <StatusPick value={status} onChange={setStatus} />
+      </Field>
+      <Field label="原因" hint="写清楚为什么、接下来谁做什么">
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="比如：涉及武器底层，我来改接口" autoFocus />
+      </Field>
+      {thread && r && (
+        <Check checked={withSession} onChange={setWithSession}>
+          {r.to === me && r.needsReply ? `同时回复会话「${thread.title}」，告诉 ${asker} 我已接手（会话回到发起方，由对方标记完成）` : `同时结束会话「${thread.title}」`}
+        </Check>
+      )}
+      {error && <div className="notice error">{error}</div>}
     </Dialog>
   );
 }
@@ -471,48 +450,35 @@ export function NewTaskDialog({ session, onClose, onMade }: { session: Session; 
     }
   };
   return (
-    <Dialog title="新建团队任务" onClose={onClose} wide>
-      <div className="form" style={{ marginTop: 0 }}>
-        <label>
-          标题
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="比如：加特林" autoFocus />
-        </label>
-        <label>
-          说明 <span className="muted tiny">（Markdown：要做什么、目标、范围；以后可以改）</span>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={6} />
-        </label>
-        <div className="fgrid">
-          <label>
-            持有人
-            <select value={holder} onChange={(e) => setHolder(e.target.value)}>
-              {members.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name}
-                  {m.name === me ? "（我）" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            状态
-            <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              {TASK_STATUSES.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="muted tiny">建好后可以传文件进来，再点「复制任务提示词」贴给 AI 初审。</div>
-        {error && <div className="notice error">{error}</div>}
-        <div className="dialog-foot">
+    <Dialog
+      title="新建团队任务"
+      onClose={onClose}
+      wide
+      foot={
+        <>
+          <span className="foot-note">建好后可以传文件进来，再「复制任务提示词」贴给 AI 初审</span>
           <button type="button" onClick={onClose}>
             取消
           </button>
           <button type="button" className="primary" disabled={busy || !title.trim()} onClick={() => void make()}>
             新建
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <Field label="标题">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="比如：加特林" autoFocus />
+      </Field>
+      <Field label="说明" hint="Markdown：要做什么、目标、范围；以后可以改">
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={6} />
+      </Field>
+      <Field label="持有人">
+        <PersonPick people={members.map((m) => m.name)} value={holder} onChange={setHolder} me={me} label="持有人" />
+      </Field>
+      <Field label="状态">
+        <StatusPick value={status} onChange={setStatus} />
+      </Field>
+      {error && <div className="notice error">{error}</div>}
     </Dialog>
   );
 }
@@ -537,10 +503,17 @@ export function FlowDialog({ settings, onClose, toast }: { settings: TeamSetting
     </div>
   );
   return (
-    <Dialog title="流程速查" onClose={onClose} wide>
-      <p className="dim small" style={{ margin: 0 }}>
-        推进时随手复制，贴给 AI 或写进回复。内容在「设置」里改，全队共用。
-      </p>
+    <Dialog
+      title="流程速查"
+      sub="推进时随手复制，贴给 AI 或写进回复；内容在「设置」里改，全队共用"
+      onClose={onClose}
+      wide
+      foot={
+        <button type="button" className="primary" onClick={onClose}>
+          好
+        </button>
+      }
+    >
       <div className="kw-group">推进方式和常用说法</div>
       {settings.keywords.map((k) => kw(k, k))}
       {!settings.keywords.length && <div className="muted tiny">还没有，在设置里加。</div>}
@@ -548,11 +521,6 @@ export function FlowDialog({ settings, onClose, toast }: { settings: TeamSetting
       {COMMANDS.map(([l, t]) => kw(l, t))}
       <div className="kw-group">团队流程</div>
       {kw("整段团队流程", settings.flow)}
-      <div className="dialog-foot">
-        <button type="button" className="primary" onClick={onClose}>
-          好
-        </button>
-      </div>
     </Dialog>
   );
 }
@@ -587,39 +555,37 @@ export function SettingsDialog({ session, onClose, toast }: { session: Session; 
     }
   };
   return (
-    <Dialog title="设置" onClose={onClose} wide>
-      <p className="dim small" style={{ margin: 0 }}>
-        团队共用，任何人都能改。
-      </p>
-      <div className="form" style={{ marginTop: 0 }}>
-        <label>
-          团队流程 <span className="muted tiny">（放进 MCP 说明、复制用法、复制任务提示词）</span>
-          <textarea value={flow} onChange={(e) => setFlow(e.target.value)} rows={8} />
-        </label>
-        <label>
-          流程速查里的推进方式和常用说法 <span className="muted tiny">（一行一条）</span>
-          <textarea value={keywords} onChange={(e) => setKeywords(e.target.value)} rows={4} />
-        </label>
-        <div className="fgrid">
-          <label>
-            回复到了，AI 多少分钟没取回就高亮
-            <input type="number" min={1} max={1440} value={late} onChange={(e) => setLate(e.target.value)} />
-          </label>
-          <label>
-            AI 取回后多少分钟没动作算卡住
-            <input type="number" min={1} max={1440} value={stuck} onChange={(e) => setStuck(e.target.value)} />
-          </label>
-        </div>
-        {error && <div className="notice error">{error}</div>}
-        <div className="dialog-foot">
+    <Dialog
+      title="设置"
+      sub="团队共用，任何人都能改"
+      onClose={onClose}
+      wide
+      foot={
+        <>
           <button type="button" onClick={onClose}>
             取消
           </button>
           <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
             保存
           </button>
-        </div>
+        </>
+      }
+    >
+      <Field label="团队流程" hint="放进 MCP 说明、复制用法、复制任务提示词">
+        <textarea value={flow} onChange={(e) => setFlow(e.target.value)} rows={8} />
+      </Field>
+      <Field label="流程速查的说法" hint="一行一条，比如推进方式">
+        <textarea value={keywords} onChange={(e) => setKeywords(e.target.value)} rows={4} />
+      </Field>
+      <div className="field-row">
+        <Field label="AI 还没取回" hint="多少分钟后高亮" wide={false}>
+          <input type="number" min={1} max={1440} value={late} onChange={(e) => setLate(e.target.value)} />
+        </Field>
+        <Field label="AI 可能卡住" hint="取回后多少分钟没动作" wide={false}>
+          <input type="number" min={1} max={1440} value={stuck} onChange={(e) => setStuck(e.target.value)} />
+        </Field>
       </div>
+      {error && <div className="notice error">{error}</div>}
     </Dialog>
   );
 }
