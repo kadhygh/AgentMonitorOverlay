@@ -347,6 +347,8 @@ export interface GitExcludeState {
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
+  /** Whether the Host answers (the shell's keepalive); nothing else is read. */
+  "GET /api/health": { req: void; res: { ok: true; pid: number } };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   /** 编辑项目: its name in Studio (the folder keeps its own) and its note; an empty note clears it. */

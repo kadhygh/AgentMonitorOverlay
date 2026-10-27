@@ -30,12 +30,26 @@ function readJson<T>(file: string): T | null {
   }
 }
 
-async function ping(url: string, token: string): Promise<boolean> {
+/**
+ * Whether the Host answers. 2026-10-27: /api/health (was /api/state, the whole state) with a longer wait: a Host busy
+ * for a moment (just started, resuming sessions) was taken for a dead one.
+ */
+async function ping(url: string, token: string, timeoutMs = 1500): Promise<boolean> {
   try {
-    const res = await fetch(`${url}/api/state`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`${url}/api/health`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs) });
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Whether a process still runs (a busy Host is not a dead one). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 
@@ -92,17 +106,32 @@ export interface KeepAliveOptions {
   onRestarted(conn: HostConnection): void;
   log(line: string): void;
   intervalMs?: number;
+  /** Missed answers in a row before the Host counts as gone (default 3). */
+  misses?: number;
+  /** How long one answer may take (default 5 s). */
+  answerMs?: number;
+  /** Tests: whether the Host's process still runs (default: by its pid in host.json). */
+  isAlive?(): boolean;
   /** Restarts allowed within `windowMs`; past that the shell stops trying (something keeps killing it). */
   maxRestarts?: number;
   windowMs?: number;
 }
 
 /**
- * Keeps the Host running: when it stops answering twice in a row (it crashed or was killed), starts it again on the
- * same port. Codex app-servers outlive the Host and are adopted again, so their sessions keep going. Returns stop().
+ * Keeps the Host running: when it stops answering several times in a row and its process is gone (it crashed or was
+ * killed), starts it again on the same port. Codex app-servers outlive the Host and are adopted again, so their
+ * sessions keep going. A Host whose process still runs is only busy: it is logged, never replaced (2026-10-27: a busy
+ * one was restarted 30 s after a start, cutting the sessions it was resuming). Returns stop().
  */
 export function keepHostAlive(options: KeepAliveOptions): () => void {
   const every = options.intervalMs ?? 3000;
+  const needed = options.misses ?? 3;
+  const answerMs = options.answerMs ?? 5000;
+  const isAlive = options.isAlive ?? (() => {
+    const pid = current(options.link.dataDir)?.pid;
+    return typeof pid === "number" && alive(pid);
+  });
+  let busySince: number | null = null;
   const max = options.maxRestarts ?? 5;
   const windowMs = options.windowMs ?? 10 * 60_000;
   const restarts: number[] = [];
@@ -114,11 +143,20 @@ export function keepHostAlive(options: KeepAliveOptions): () => void {
     busy = true;
     try {
       const conn = options.current();
-      if (await ping(conn.url, conn.token)) {
+      if (await ping(conn.url, conn.token, answerMs)) {
+        if (busySince !== null) options.log(`Host answers again after ${Math.round((Date.now() - busySince) / 1000)} s`);
+        busySince = null;
         misses = 0;
         return;
       }
-      if (++misses < 2 || stopped) return;
+      if (++misses < needed || stopped) return;
+      if (isAlive()) {
+        if (busySince === null) {
+          busySince = Date.now();
+          options.log(`Host has not answered ${misses} times in a row but its process runs: busy, left alone`);
+        }
+        return;
+      }
       const now = Date.now();
       while (restarts.length && now - restarts[0]! > windowMs) restarts.shift();
       if (restarts.length >= max) {
@@ -127,10 +165,12 @@ export function keepHostAlive(options: KeepAliveOptions): () => void {
         return;
       }
       restarts.push(now);
-      options.log("Host is not answering; starting it again");
+      options.log(`Host is not answering and its process is gone; starting it again`);
       const port = Number(new URL(conn.url).port);
       const next = await connectHost({ ...options.link, ...(port ? { port } : {}) });
       misses = 0;
+      busySince = null;
+      options.log("Host started again");
       if (!stopped) options.onRestarted(next);
     } catch (err) {
       options.log(`restarting the Host failed: ${String(err)}`);

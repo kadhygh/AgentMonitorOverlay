@@ -370,7 +370,11 @@ if (!app.requestSingleInstanceLock()) {
           host = conn;
           for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("amo:host-restarted");
         },
-        log: (line) => console.error(`[${new Date().toISOString()}] ${line}`),
+        // Also into logs/resize-trace.log (2026-10-27): the shell runs detached, so its console went nowhere.
+        log: (line) => {
+          console.error(`[${new Date().toISOString()}] ${line}`);
+          trace?.note("host", line);
+        },
         ...(process.env.AMO_STUDIO_KEEPALIVE_MS ? { intervalMs: Number(process.env.AMO_STUDIO_KEEPALIVE_MS) } : {}),
       });
       mainWindow = createMainWindow(host);

@@ -59,6 +59,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
 
   const routes: Route[] = [
     route("GET", "/api/state", () => service.snapshot()),
+    // The shell's keepalive asks this (2026-10-27): it answers at once, without building the whole state.
+    route("GET", "/api/health", () => ({ ok: true, pid: process.pid })),
     ...FEATURES.flatMap((f) => f.routes(service)),
   ];
 

@@ -22,7 +22,26 @@ if (!commandLine.replaceAll("\\", "/").includes("packages/host/dist/bin.js")) {
   rmSync(join(dataDir, "host.lock"), { force: true });
   process.exit(0);
 }
-execFileSync("taskkill", ["/pid", String(info.pid), "/T", "/F"], { stdio: "ignore" });
+// 2026-10-27: taskkill fails when one process of the tree cannot be ended; that is reported, and the files are
+// cleared only once the Host itself is gone (a Host left running keeps its data dir).
+let failed = "";
+try {
+  execFileSync("taskkill", ["/pid", String(info.pid), "/T", "/F"], { stdio: "pipe", encoding: "utf8" });
+} catch (err) {
+  failed = String(err.stderr || err.message || err).trim();
+}
+const running = (() => {
+  try {
+    process.kill(Number(info.pid), 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+})();
+if (running) {
+  console.error(`Could not stop the Host (pid ${info.pid}): ${failed || "it is still running"}`);
+  process.exit(1);
+}
 rmSync(infoFile, { force: true });
 rmSync(join(dataDir, "host.lock"), { force: true });
-console.log(`Stopped AMO Studio Host (pid ${info.pid}) and its app-servers.`);
+console.log(`Stopped AMO Studio Host (pid ${info.pid}) and its app-servers.${failed ? ` (Some of its processes could not be ended: ${failed.split("\n")[0]})` : ""}`);
