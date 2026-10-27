@@ -213,7 +213,16 @@ function TurnView({
         </RowBoundary>
       ))}
       {finished && seg.answer && !seg.answer.streaming && (
-        <TurnFooter answer={seg.answer} usage={seg.turn?.usage} speed={outputSpeed(seg.turn ?? undefined)} endedAt={seg.turn?.endedAt} model={model} always={latest} />
+        <TurnFooter
+          answer={seg.answer}
+          usage={seg.turn?.usage}
+          speed={outputSpeed(seg.turn ?? undefined)}
+          approx={seg.turn?.decode?.basis === "request"}
+          subs={subagentsUsage(segmentMembers(seg))}
+          endedAt={seg.turn?.endedAt}
+          model={model}
+          always={latest}
+        />
       )}
     </section>
   );
@@ -348,7 +357,20 @@ const clock = (iso: string) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-function TurnFooter({ answer, usage, speed, endedAt, model, always }: { answer: AgentItem; usage?: TurnUsage; speed: number | null; endedAt?: string; model: string; always: boolean }) {
+/** What the turn's Claude subagents spent (each one's row carries its total), null when it started none that counted. */
+export function subagentsUsage(items: readonly SessionItem[]): SubsUsage | null {
+  const rows = items.flatMap((i) => (i.type === "subagent" && i.usage ? [i.usage] : []));
+  if (!rows.length) return null;
+  return rows.reduce((t, u) => ({ count: t.count + 1, input: t.input + u.input, cachedInput: t.cachedInput + u.cachedInput, output: t.output + u.output }), { count: 0, input: 0, cachedInput: 0, output: 0 });
+}
+
+type SubsUsage = { count: number; input: number; cachedInput: number; output: number };
+
+/** The speed's explanation: generation only, or (a Claude subagent's, 2026-10-27) from each request on. */
+const SPEED_TITLE = "输出 token ÷ 生成用时：每次模型调用从第一个输出 token 到结束（不含等首个 token、命令、工具和等你确认的时间，和 DSH 一样）";
+const APPROX_SPEED_TITLE = "子 agent 的速度是估算：输出 token ÷ 每次调用从发出请求到写完的时间（含等第一个 token 的时间，Studio 拿不到子 agent 的逐字输出），所以比主会话的生成速度偏低，不能直接比";
+
+function TurnFooter({ answer, usage, speed, approx, subs, endedAt, model, always }: { answer: AgentItem; usage?: TurnUsage; speed: number | null; approx: boolean; subs: SubsUsage | null; endedAt?: string; model: string; always: boolean }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -367,10 +389,16 @@ function TurnFooter({ answer, usage, speed, endedAt, model, always }: { answer: 
         {copied ? <IconCheck /> : <IconCopy />}
       </button>
       <span className="turn-foot-time">{clock(endedAt ?? answer.createdAt)}</span>
-      {usage && <UsageButton usage={usage} speed={speed} model={model} />}
+      {usage && <UsageButton usage={usage} speed={speed} approx={approx} subs={subs} model={model} />}
       {speed !== null && (
-        <span className="turn-foot-speed" title="输出 token ÷ 生成用时：每次模型调用从第一个输出 token 到结束（不含等首个 token、命令、工具和等你确认的时间，和 DSH 一样）" data-testid="turn-speed">
+        <span className="turn-foot-speed" title={approx ? APPROX_SPEED_TITLE : SPEED_TITLE} data-testid="turn-speed">
+          {approx ? "约 " : ""}
           {speed} tok/s
+        </span>
+      )}
+      {subs && (
+        <span className="turn-foot-speed" title={`这一轮的 ${subs.count} 个子 agent 另外用了 ${formatTokens(subs.input + subs.output)}（输入 ${n(subs.input)}、输出 ${n(subs.output)}），不在左边的「用量」里`} data-testid="turn-subs-usage">
+          子 agent +{formatTokens(subs.input + subs.output)}
         </span>
       )}
     </div>
@@ -379,7 +407,7 @@ function TurnFooter({ answer, usage, speed, endedAt, model, always }: { answer: 
 
 const n = (v: number) => v.toLocaleString("en-US");
 
-function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number | null; model: string }) {
+function UsageButton({ usage, speed, approx = false, subs = null, model }: { usage: TurnUsage; speed: number | null; approx?: boolean; subs?: SubsUsage | null; model: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -423,7 +451,17 @@ function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number 
             {speed !== null && (
               <>
                 <dt>输出速度</dt>
-                <dd>{speed} tok/s</dd>
+                <dd title={approx ? APPROX_SPEED_TITLE : SPEED_TITLE}>{approx ? `约 ${speed} tok/s（含等待，估算）` : `${speed} tok/s`}</dd>
+              </>
+            )}
+            {subs && (
+              <>
+                <dt>子 agent（{subs.count} 个）</dt>
+                <dd data-testid="usage-subs">
+                  输入 {n(subs.input)} · 输出 {n(subs.output)} tok
+                </dd>
+                <dt>连同子 agent</dt>
+                <dd>{formatTokens(usage.input + usage.output + subs.input + subs.output)}</dd>
               </>
             )}
             {usage.context !== undefined && (

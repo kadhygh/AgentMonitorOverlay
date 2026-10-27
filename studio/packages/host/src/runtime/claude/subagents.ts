@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Id, TurnUsage } from "@amo-studio/protocol";
+import type { Id, Session, TurnUsage } from "@amo-studio/protocol";
 import type { ClaudeCore } from "./core.js";
 import type { Live } from "./live.js";
 import type { ClaudeTurns } from "./turns.js";
 import { agentToolUseId } from "./wake.js";
+import { subagentLogFile, subagentStatsOf } from "./subagent-log.js";
 
 type CallUsage = { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };
 
@@ -54,7 +55,9 @@ export class ClaudeSubagents {
     if (m.type === "assistant") {
       this.count(child, live, m.message as { id?: string; usage?: CallUsage });
       for (const block of m.message.content) {
-        if (block.type === "text" && block.text) this.core.appendItem(child, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
+        // Its thinking and text too since 2026-10-27 (forwardSubagentText): before, only its tool calls came.
+        if (block.type === "thinking" && block.thinking) this.core.appendItem(child, { type: "reasoning", text: block.thinking, streaming: false }, { method: "assistant" });
+        else if (block.type === "text" && block.text) this.core.appendItem(child, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
         else if (block.type === "tool_use") this.turns.addToolCard(child, live, block.id, block.name, block.input as Record<string, unknown>);
       }
     } else if (m.type === "user" && Array.isArray(m.message.content)) {
@@ -105,10 +108,37 @@ export class ClaudeSubagents {
   end(live: Live, child: Id, status: "completed" | "error" | "idle"): void {
     this.core.setStatus(child, status);
     const run = live.subUsage.get(child);
-    if (!run) return;
-    live.subUsage.delete(child);
-    const state = status === "error" ? "failed" : status === "idle" ? "interrupted" : "completed";
-    this.core.updateItem(run.itemId, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state, endedAt: this.core.now().toISOString() } : it));
+    if (run) {
+      live.subUsage.delete(child);
+      const state = status === "error" ? "failed" : status === "idle" ? "interrupted" : "completed";
+      this.core.updateItem(run.itemId, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state, endedAt: this.core.now().toISOString() } : it));
+    }
+    // Its real output and a speed from its transcript; again shortly, in case its last lines were still being written.
+    const session = this.core.store.getSession(child);
+    if (!session) return;
+    this.fillFromLog(session);
+    setTimeout(() => this.fillFromLog(session), 2000).unref?.();
+  }
+
+  /**
+   * A finished subagent's tokens and speed from the transcript Claude Code keeps for it (subagent-log.ts), into its
+   * usage turn and the parent's row for it. False when there is no transcript to read. No model is called.
+   */
+  fillFromLog(child: Session): boolean {
+    const parent = child.parentId ? this.core.store.getSession(child.parentId) : undefined;
+    const toolUseId = child.runtimeRef?.split("/agent/")[1];
+    if (!parent?.runtimeRef || !toolUseId) return false;
+    const file = subagentLogFile(this.core.homeOf(parent.id).dir, parent.runtimeRef, toolUseId);
+    const stats = file ? subagentStatsOf(file) : null;
+    if (!stats) return false;
+    const usage = (u: TurnUsage | undefined): TurnUsage => ({ ...u, input: stats.input, cachedInput: stats.cachedInput, output: stats.output, reasoning: 0, context: u?.context ?? 0 });
+    // Its usage turn came with its first counted call (none: only the parent's row; one made now would land after its
+    // reply and split its conversation).
+    const turn = this.core.store.findItems(child.id, "turn", {}, { newest: true, limit: 1 })[0];
+    if (turn) this.core.updateItem(turn.id, (it) => (it.type === "turn" ? { ...it, usage: usage(it.usage), ...(stats.decode ? { decode: stats.decode } : {}) } : it));
+    const row = this.core.store.findItems(parent.id, "subagent", { childSessionId: child.id }, { limit: 1 })[0];
+    if (row) this.core.updateItem(row.id, (it) => (it.type === "subagent" ? { ...it, usage: usage(it.usage) } : it));
+    return true;
   }
 
   /** The child session an earlier process of this session made for this Agent call; registered with this process. */

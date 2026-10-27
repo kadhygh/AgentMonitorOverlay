@@ -257,7 +257,8 @@ describe("ClaudeRuntime", () => {
     expect(items(s.id).some((i) => i.type === "tool")).toBe(false); // no tool card for the Agent call itself
     const child = store.getSession(line!.childSessionId)!;
     expect(child).toMatchObject({ kind: "sub", parentId: s.id, runtime: "claude", title: "helper", status: "completed" });
-    expect(items(child.id).map((i) => i.type)).toEqual(["user", "agent"]);
+    // Its usage turn (its calls now come whole, forwardSubagentText, 2026-10-27), then its reply.
+    expect(items(child.id).map((i) => i.type)).toEqual(["user", "turn", "agent"]);
     expect(agentTexts(child.id)).toEqual(["MOCK-SUB: helper"]);
     await expect(runtime.sendMessage(child.id, "hi")).rejects.toThrow(/子 agent/);
   }, 120_000);
@@ -273,10 +274,11 @@ describe("ClaudeRuntime", () => {
     expect(existsSync(join(wsDir, "sub-made-dir"))).toBe(true);
     const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
     expect(items(child).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir sub-made-dir", status: "completed" });
-    // Its model call's input (the mock reports 10) is counted in the child and on the parent's row (2026-10-17); its
-    // output only as far as the CLI tells a subagent's messages (the count at the call's start).
-    expect(items(child).find((i) => i.type === "turn")).toMatchObject({ state: "completed", usage: { input: 10 } });
-    expect(items(s.id).find((i) => i.type === "subagent")).toMatchObject({ usage: { input: 10 } });
+    // Its two model calls (the mock reports 10 input each), counted from its transcript once it ends (2026-10-27), in
+    // the child with a speed measured from each request, and on the parent's row.
+    await until(() => (items(child).find((i) => i.type === "turn") as { decode?: unknown } | undefined)?.decode !== undefined, "subagent stats");
+    expect(items(child).find((i) => i.type === "turn")).toMatchObject({ state: "completed", usage: { input: 20 }, decode: { basis: "request" } });
+    expect(items(s.id).find((i) => i.type === "subagent")).toMatchObject({ usage: { input: 20 } });
   }, 120_000);
 
   it("keeps a background subagent running until its notification arrives", async () => {

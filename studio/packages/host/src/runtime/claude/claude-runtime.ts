@@ -236,6 +236,26 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** The Claude subscription's quota (see ClaudeUsageTracker); none for other profiles. */
+  /**
+   * Finished subagents whose usage turn has no speed (before 2026-10-27 none had, and their output was counted far too
+   * low): their tokens and speed from Claude Code's transcripts, one session at a time, `gapMs` apart. No model is called.
+   */
+  async backfillSubagentStats(gapMs = 100): Promise<number> {
+    let filled = 0;
+    for (const s of this.store.listSessions()) {
+      if (s.runtime !== "claude" || s.kind !== "sub" || s.status === "running") continue;
+      const turn = this.store.findItems(s.id, "turn", {}, { newest: true, limit: 1 })[0];
+      if (turn?.type !== "turn" || turn.decode) continue;
+      await new Promise((r) => setTimeout(r, gapMs));
+      try {
+        if (this.subagents.fillFromLog(s)) filled++;
+      } catch (err) {
+        this.emit("log", `claude subagent stats backfill failed for ${s.id}: ${String(err)}`);
+      }
+    }
+    return filled;
+  }
+
   async usage(profileId: Id, refresh = false): Promise<AccountUsage | null> {
     const profile = this.profile(profileId);
     if (!this.isSubscription(profile)) return null;
@@ -499,6 +519,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         ...(session.options.model ? { model: session.options.model } : {}),
         ...(session.options.effort ? { effort: session.options.effort as never } : {}),
         includePartialMessages: true,
+        // A subagent's thinking and text as well as its tool calls (2026-10-27): its child session reads as a
+        // conversation, and its output counts come closer to the real ones.
+        forwardSubagentText: true,
         promptSuggestions: readChatSettings(this.store).promptSuggestions,
         canUseTool: (toolName, toolInput, ctx) => this.asks.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,

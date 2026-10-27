@@ -291,7 +291,11 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       void finalDsh
         .backfillStats()
         .then((n) => n && console.log(`DSH: filled in the tokens and speed of ${n} turns from DSH's logs`))
-        .catch((err: unknown) => console.log(`DSH stats backfill failed: ${String(err)}`));
+        .catch((err: unknown) => console.log(`DSH stats backfill failed: ${String(err)}`))
+        // Claude subagents' tokens and speed from Claude Code's transcripts (2026-10-27), after DSH's.
+        .then(() => (stopped ? 0 : finalClaude.backfillSubagentStats()))
+        .then((n) => n && console.log(`Claude: filled in the tokens and speed of ${n} subagents from Claude Code's transcripts`))
+        .catch((err: unknown) => console.log(`Claude subagent stats backfill failed: ${String(err)}`));
     }, 20_000).unref();
     return {
       info,

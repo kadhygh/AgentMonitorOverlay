@@ -257,6 +257,12 @@ export interface TurnUsage {
 export interface TurnDecode {
   ms: number;
   tokens: number;
+  /**
+   * How `ms` was measured. Absent: from each call's first output token to its end (generation only). "request"
+   * (2026-10-27, Claude subagents, whose stream Studio does not get): from the call's request to its last block, so it
+   * includes the wait for the first token and reads lower.
+   */
+  basis?: "request";
 }
 
 export interface ToolFields {
