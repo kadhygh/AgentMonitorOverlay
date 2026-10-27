@@ -144,6 +144,28 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
   return blocks.length ? `${message}\n\n${blocks.join("\n\n")}` : message;
 }
 
+/** Where withMentionRefs' blocks start, each after a blank line. */
+const REF_HEADS = ["提到的任务：\n", "提到的会话：\n", "子会话的开法（", `「@${QUICK_COMMIT}」是人要你现在做的事`];
+
+/**
+ * A sent message read back (2026-10-28): the person's text, the @ names it picked (each with what the message said of
+ * it), and 快速提交 (whether it pushes) — so the conversation colours them as the composer did, the blocks behind a tag.
+ */
+export function splitMentionRefs(message: string): { text: string; names: Map<string, string>; commit: { push: boolean } | null; blocks: string } {
+  const at = Math.min(...REF_HEADS.map((h) => message.indexOf(`\n\n${h}`)).filter((i) => i >= 0));
+  if (!Number.isFinite(at)) return { text: message, names: new Map(), commit: null, blocks: "" };
+  const blocks = message.slice(at + 2);
+  const names = new Map<string, string>();
+  for (const line of blocks.split("\n")) {
+    const m = /^- @(.+?)：(.*)$/.exec(line);
+    if (m) names.set(m[1]!, m[2]!);
+  }
+  const brief = blocks.indexOf(REF_HEADS[3]!);
+  const commit = brief >= 0 ? { push: blocks.slice(brief).split("\n")[0]!.includes("最后推送") } : null;
+  if (commit) names.set(QUICK_COMMIT, commit.push ? "提交、拉取合并，再推送" : "提交、拉取合并，这次不推送");
+  return { text: message.slice(0, at), names, commit, blocks };
+}
+
 /**
  * The text cut where it names a picked task or session ("@名字"), so the composer can colour those parts (10-22).
  * Longer names win where one name starts another's.

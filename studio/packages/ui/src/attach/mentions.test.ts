@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileMark, Session, Task } from "@amo-studio/protocol";
-import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, withMentionRefs } from "./mentions.js";
+import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, splitMentionRefs, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
 const session = (id: string, title: string, extra: Partial<Session> = {}) =>
@@ -143,5 +143,17 @@ describe("开子会话… (2026-10-26)", () => {
   it("numbers them by what is free", () => {
     expect(nextSubSessionName("", [])).toBe("子会话1");
     expect(nextSubSessionName("用 @子会话1 和 @子会话3", ["子会话2"])).toBe("子会话4");
+  });
+
+  it("reads a sent message back: the person's text, its @ names with what was said of them, and 快速提交 (2026-10-28)", () => {
+    const sent = withMentionRefs("改完 @掉落表 了，@快速提交", new Map([["掉落表", { kind: "task" as const, id: "t1" }], ["快速提交", { kind: "commit" as const, push: true }]]));
+    const back = splitMentionRefs(sent);
+    expect(back.text).toBe("改完 @掉落表 了，@快速提交");
+    expect(back.commit).toEqual({ push: true });
+    expect([...back.names.keys()]).toEqual(["掉落表", "快速提交"]);
+    expect(back.names.get("掉落表")).toContain("AMO 任务 t1");
+    expect(splitMentionRefs(withMentionRefs("@快速提交", new Map([["快速提交", { kind: "commit" as const, push: false }]]))).commit).toEqual({ push: false });
+    // A message without them is left as it is.
+    expect(splitMentionRefs("提到的任务：随便写写")).toEqual({ text: "提到的任务：随便写写", names: new Map(), commit: null, blocks: "" });
   });
 });

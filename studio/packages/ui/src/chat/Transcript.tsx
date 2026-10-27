@@ -9,6 +9,7 @@ import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, s
 import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
+import { mentionSpans, splitMentionRefs } from "../attach/mentions.js";
 import { TurnChanges } from "../files/ChangedFiles.js";
 import { QuestionRecord } from "./questions/QuestionRecord.js";
 import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
@@ -290,7 +291,9 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
 function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) {
   const { text: sent, update } = splitRoleUpdate(item.text);
   const { text: own, refs: annotations } = splitAnnotationRefs(sent);
-  const { text, refs } = splitFileRefItems(own);
+  const { text: withRefs, refs } = splitFileRefItems(own);
+  // Its @ names (快速提交 among them) coloured as in the composer; what the message told the model of them on hover.
+  const { text, names, commit, blocks } = splitMentionRefs(withRefs);
   return (
     <div className="msg-user-row">
       <div className="msg-user" data-testid="msg-user">
@@ -304,8 +307,27 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
             ))}
           </span>
         )}
-        {text && <span className="msg-text">{text}</span>}
+        {text && (
+          <span className="msg-text">
+            {names.size
+              ? mentionSpans(text, [...names.keys()]).map((part, i) =>
+                  part.mention ? (
+                    <span key={i} className="mention-token" title={names.get(part.text.slice(1))} data-testid="msg-mention">
+                      {part.text}
+                    </span>
+                  ) : (
+                    part.text
+                  ),
+                )
+              : text}
+          </span>
+        )}
         <MessageFiles files={refs} />
+        {blocks && (
+          <span className={commit ? "msg-role-update quick-commit" : "msg-role-update"} title={blocks} data-testid="msg-mention-brief">
+            {commit ? `快速提交 · ${commit.push ? "提交、合并并推送" : "提交、合并，不推送"}` : "AMO：已附上提到的任务、会话说明"}
+          </span>
+        )}
         {update && (
           <span className="msg-role-update" title={update} data-testid="msg-role-update">
             AMO 更新：已告诉它任务的变化

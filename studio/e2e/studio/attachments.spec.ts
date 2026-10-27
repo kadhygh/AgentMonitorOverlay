@@ -322,4 +322,11 @@ test("快速提交 (10-26): from @ or Ctrl+Shift+P, a choice of pushing too; the
     .toContain("「@快速提交」是人要你现在做的事");
   const sent = (await studio.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!.text!;
   expect(sent).toContain("git push 到上游");
+  // In the conversation (2026-10-28): 「@快速提交」 coloured as in the composer, the instructions behind a tag.
+  const bubble = page.getByTestId("msg-user").last();
+  await expect(bubble.getByTestId("msg-mention")).toHaveText("@快速提交");
+  await expect(bubble.locator(".msg-text")).toHaveText("改完了 @快速提交");
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveText("快速提交 · 提交、合并并推送");
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveAttribute("title", /是人要你现在做的事/);
+  await screenshot(studio.app, "stage-18", "S18-quick-commit-sent", page);
 });
