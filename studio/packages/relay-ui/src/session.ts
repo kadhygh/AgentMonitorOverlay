@@ -131,6 +131,8 @@ export class Session {
   private handle(e: RelayEvent): void {
     if (e.type === "hello" || e.type === "client") this.set({ client: e.type === "hello" ? e.client : e.version });
     else if (e.type === "members") this.set({ members: e.members });
+    else if (e.type === "thread") this.adopt({ ...e.thread, unread: 0, readSeq: 0, last: null, archived: false });
+    else if (e.type === "archived") this.patchThread(e.threadId, { archived: e.archived });
     else if (e.type === "read") {
       this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)) });
     } else if (e.type === "message") {
@@ -141,6 +143,7 @@ export class Session {
         last: e.message,
         readSeq: mine ? e.message.seq : (old?.readSeq ?? 0),
         unread: mine ? 0 : (old?.unread ?? 0) + 1,
+        archived: false,
       };
       this.set({ threads: [view, ...this.state.threads.filter((t) => t.id !== e.thread.id)] });
       for (const l of this.messageListeners) l(e.message);
@@ -155,7 +158,23 @@ export class Session {
     void this.client.read(threadId).catch(() => undefined);
   }
 
-  /** A thread the list does not have yet (a new direct chat): put it in. */
+  private patchThread(id: string, patch: Partial<ThreadView>): void {
+    this.set({ threads: this.state.threads.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
+  }
+
+  /** Archive (or bring back) in my list: here at once, then the service; put back if it refuses. */
+  async archive(id: string, archived: boolean): Promise<void> {
+    const before = this.state.threads.find((t) => t.id === id)?.archived ?? false;
+    this.patchThread(id, { archived });
+    try {
+      await this.client.archive(id, archived);
+    } catch (err) {
+      this.patchThread(id, { archived: before });
+      throw err;
+    }
+  }
+
+  /** A thread the list does not have yet (a new direct chat or topic): put it in. */
   adopt(view: ThreadView): void {
     if (this.state.threads.some((t) => t.id === view.id)) return;
     this.set({ threads: [view, ...this.state.threads] });

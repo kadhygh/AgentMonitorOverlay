@@ -15,7 +15,8 @@ export interface Member {
   lastSeen: number;
 }
 
-export type ThreadKind = "direct" | "request";
+/** direct: the one plain chat per pair, always there; topic: more chats between the same two, each about one thing. */
+export type ThreadKind = "direct" | "topic" | "request";
 export type Verdict = "agree" | "change" | "question";
 export const VERDICT_LABEL: Record<Verdict, string> = { agree: "同意", change: "需要改", question: "有疑问" };
 
@@ -67,7 +68,7 @@ export interface RequestState {
 export interface Thread {
   id: string;
   kind: ThreadKind;
-  /** A request's title; empty for a direct chat (the other person's name is the title there). */
+  /** A request's or topic's title; empty for the direct chat (the other person's name is the title there). */
   title: string;
   members: string[];
   createdBy: string;
@@ -82,6 +83,8 @@ export interface ThreadView extends Thread {
   unread: number;
   readSeq: number;
   last: Message | null;
+  /** Put away by this member (their list only); a new message brings it back. */
+  archived: boolean;
 }
 
 export interface NewRequest {
@@ -109,6 +112,10 @@ export type RelayEvent =
   | { type: "message"; thread: Thread; message: Message }
   | { type: "members"; members: Member[] }
   | { type: "read"; threadId: string; readSeq: number }
+  /** A new thread with no message yet (a topic): to its members. */
+  | { type: "thread"; thread: Thread }
+  /** This member archived or brought back a thread (their other devices follow). */
+  | { type: "archived"; threadId: string; archived: boolean }
   /** A new client build was published: clients update themselves. */
   | { type: "client"; version: string | null }
   /** Every TICK_MS, so a client notices a service that went away without closing (a sleeping machine, the network). */

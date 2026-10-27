@@ -187,6 +187,12 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       const body = await readJson(req);
       return send(res, 200, { thread: store.direct(me, body.with) });
     }
+    if (method === "POST" && path === "/api/threads/topic") {
+      const body = await readJson(req);
+      const thread = store.createTopic(me, body.with, body.title);
+      push(thread.members, { type: "thread", thread });
+      return send(res, 200, { thread });
+    }
     if (method === "POST" && path === "/api/requests") {
       const body = await readJson(req);
       const out = store.createRequest(me, body as never);
@@ -223,10 +229,16 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return;
     }
 
-    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read)?$/.exec(path);
+    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive)?$/.exec(path);
     if (m) {
       const id = decodeURIComponent(m[1]!);
       if (method === "GET" && !m[2]) return send(res, 200, { thread: store.thread(id, me) });
+      if (method === "POST" && m[2] === "/archive") {
+        const archived = (await readJson(req)).archived !== false;
+        store.setArchived(id, me, archived);
+        push([me], { type: "archived", threadId: id, archived });
+        return send(res, 200, { archived });
+      }
       if (method === "GET" && m[2] === "/messages") {
         const after = Number(url.searchParams.get("after") ?? 0) || 0;
         const limit = Number(url.searchParams.get("limit") ?? 200) || 200;

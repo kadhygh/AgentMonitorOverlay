@@ -82,6 +82,8 @@ export function threadAsText(thread: Thread, messages: Message[], requestMessage
   const r = thread.request;
   const head = r
     ? `## 请求：${thread.title}\n${r.from} → ${r.to} · ${r.status === "answered" ? `已回复${r.verdict ? `（${VERDICT_LABEL[r.verdict]}）` : ""}` : "等回复"} · threadId ${thread.id}`
-    : `## 对话：${thread.members.join("、")}\nthreadId ${thread.id}`;
+    : thread.kind === "topic"
+      ? `## 话题：${thread.title}\n${thread.members.join("、")} · threadId ${thread.id}`
+      : `## 对话：${thread.members.join("、")}\nthreadId ${thread.id}`;
   return [head, ...messages.map((m) => messageAsText(m, questions))].join("\n\n");
 }

@@ -71,6 +71,16 @@ export class RelayClient {
   async direct(other: string): Promise<Thread> {
     return (await this.call<{ thread: Thread }>("POST", "/api/threads/direct", { with: other })).thread;
   }
+
+  /** Another chat with `other`, about one thing. */
+  async topic(other: string, title: string): Promise<Thread> {
+    return (await this.call<{ thread: Thread }>("POST", "/api/threads/topic", { with: other, title })).thread;
+  }
+
+  /** Archives a thread in my list (or brings it back with false). */
+  async archive(threadId: string, archived = true): Promise<void> {
+    await this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/archive`, { archived });
+  }
   ask(req: NewRequest): Promise<{ thread: Thread; message: Message }> {
     return this.call("POST", "/api/requests", req);
   }

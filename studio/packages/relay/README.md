@@ -111,13 +111,15 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 | `GET/PATCH /api/me` | 我是谁，改「负责什么」 |
 | `GET /api/members` | 所有人，带是否在线 |
 | `GET /api/threads` | 我参与的对话，带未读数和最后一条消息 |
-| `POST /api/threads/direct` `{with}` | 打开和某人的私聊，没有就新建 |
+| `POST /api/threads/direct` `{with}` | 打开和某人的普通聊天，没有就新建 |
+| `POST /api/threads/topic` `{with, title}` | 和某人新开一个话题 |
+| `POST /api/threads/:id/archive` `{archived}` | 在我自己的列表里归档或放回；普通聊天不能归档，有新消息会自动放回 |
 | `POST /api/requests` `{to, title, body, questions, via}` | 发请求，单独开一个对话 |
 | `GET /api/threads/:id/messages?after=` | 读消息 |
 | `POST /api/threads/:id/messages` `{kind: text\|reply, body, answers, verdict}` | 发消息或回复 |
 | `POST /api/threads/:id/read` `{seq}` | 标记已读 |
 | `GET /api/wait?thread=&after=&timeout=` | 等对方的新消息，最多 10 分钟 |
-| `WS /ws?key=` | 推送 `message` / `members` / `read` |
+| `WS /ws?key=` | 推送 `hello` / `message` / `thread` / `archived` / `members` / `read` / `client` / `tick` |
 
 ## 测试
 

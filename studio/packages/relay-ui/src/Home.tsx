@@ -8,7 +8,8 @@ import { Avatar, RequestStatus, preview, timeText } from "./bits.js";
 import { ThreadView } from "./ThreadView.js";
 
 // After login: the conversations on the left (requests waiting for me first, then the ones I sent, answered ones,
-// direct chats, and the people), the open one on the right. The tools for AIs are in the header: 复制用法 (a prompt for
+// chats — the plain one with each person and the topics next to it — what I archived, folded, and the people), the
+// open one on the right. Archiving is mine only; a new message brings the thread back. The tools for AIs are in the header: 复制用法 (a prompt for
 // any agent) and 接入 AI (the MCP hookup for this machine). Next to the name: whether the service is connected; while it
 // is not, a bar over the conversation says so and when it tries again. A newer client the service publishes is applied
 // once the window is not in use and nothing is typed; the open conversation comes back after the reload.
@@ -37,13 +38,18 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
   }, []);
 
   const groups = useMemo(() => {
-    const todo = threads.filter((t) => t.request?.to === me && t.request.status === "open");
-    const sent = threads.filter((t) => t.request?.from === me);
-    const done = threads.filter((t) => t.request?.to === me && t.request.status === "answered");
-    const direct = threads.filter((t) => t.kind === "direct");
-    return { todo, sent, done, direct };
+    const live = threads.filter((t) => !t.archived);
+    const todo = live.filter((t) => t.request?.to === me && t.request.status === "open");
+    const sent = live.filter((t) => t.request?.from === me);
+    const done = live.filter((t) => t.request?.to === me && t.request.status === "answered");
+    const chats = live.filter((t) => t.kind !== "request");
+    const archived = threads.filter((t) => t.archived);
+    return { todo, sent, done, chats, archived };
   }, [threads, me]);
   const open = threads.find((t) => t.id === openId) ?? null;
+  // The chats with the open chat's person: its tabs.
+  const peer = open && open.kind !== "request" ? (open.members.find((n) => n !== me) ?? me) : null;
+  const peers = peer ? threads.filter((t) => t.kind !== "request" && t.members.includes(peer) && (!t.archived || t.id === open!.id)) : [];
   const unread = threads.reduce((n, t) => n + t.unread, 0);
 
   // Open the first thing waiting for me.
@@ -59,7 +65,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       session.onMessage((m) => {
         if (m.author === me || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
-        const title = m.kind === "request" ? `${m.author} 发来请求` : m.kind === "reply" ? `${m.author} 回复了` : m.author;
+        const title = m.kind === "request" ? `${m.author} 发来请求` : m.kind === "reply" ? `${m.author} 回复了` : t?.kind === "topic" ? `${m.author} · ${t.title}` : m.author;
         shell?.notify({ title, body: m.kind === "request" ? (t?.title ?? preview(m)) : preview(m).slice(0, 120), threadId: m.threadId });
       }),
     [session, me],
@@ -67,12 +73,28 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
   useEffect(() => shell?.onOpenThread((id) => setOpenId(id)), []);
 
   const chatWith = async (name: string) => {
-    const existing = groups.direct.find((t) => t.members.includes(name));
+    const existing = threads.find((t) => t.kind === "direct" && t.members.includes(name));
     if (existing) return setOpenId(existing.id);
     try {
       const t = await session.client.direct(name);
-      session.adopt({ ...t, unread: 0, readSeq: 0, last: null });
+      session.adopt({ ...t, unread: 0, readSeq: 0, last: null, archived: false });
       setOpenId(t.id);
+    } catch (err) {
+      toast(errorText(err));
+    }
+  };
+
+  /** Throws for the caller's form to show. */
+  const newTopic = async (other: string, title: string) => {
+    const t = await session.client.topic(other, title);
+    session.adopt({ ...t, unread: 0, readSeq: 0, last: null, archived: false });
+    setOpenId(t.id);
+  };
+
+  const archive = async (t: Thread, archived: boolean) => {
+    try {
+      await session.archive(t.id, archived);
+      toast(archived ? "已归档，在左边「已归档」里能找到" : "已放回列表");
     } catch (err) {
       toast(errorText(err));
     }
@@ -120,10 +142,11 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
           </button>
         </div>
         <nav className="lists">
-          <Group title="待我回答" threads={groups.todo} me={me} openId={openId} onOpen={setOpenId} highlight />
-          <Group title="我发出的" threads={groups.sent} me={me} openId={openId} onOpen={setOpenId} />
-          <Group title="已回答" threads={groups.done} me={me} openId={openId} onOpen={setOpenId} collapsed />
-          <Group title="私聊" threads={groups.direct} me={me} openId={openId} onOpen={setOpenId} />
+          <Group title="待我回答" threads={groups.todo} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} highlight />
+          <Group title="我发出的" threads={groups.sent} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} />
+          <Group title="已回答" threads={groups.done} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} collapsed />
+          <Group title="对话" threads={groups.chats} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} />
+          <Group title="已归档" threads={groups.archived} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} collapsed />
           <div className="group">
             <div className="group-title">{connection === "offline" ? `成员 · ${others.length} · 在线状态未知` : `成员 · ${others.filter((m) => m.online).length}/${others.length} 在线`}</div>
             {others.map((m) => (
@@ -141,7 +164,17 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       <main className="main">
         <ConnectionBar session={session} />
         {open ? (
-          <ThreadView key={open.id} session={session} thread={open} toast={toast} />
+          <ThreadView
+            key={open.id}
+            session={session}
+            thread={open}
+            peers={peers}
+            toast={toast}
+            onOpen={setOpenId}
+            onChatWith={(name) => void chatWith(name)}
+            onNewTopic={newTopic}
+            onArchive={(t, archived) => void archive(t, archived)}
+          />
         ) : (
           <div className="empty">
             <h2>还没有对话</h2>
@@ -186,7 +219,16 @@ function ConnectionBar({ session }: { session: Session }) {
   );
 }
 
-function Group(props: { title: string; threads: Thread[]; me: string; openId: string | null; onOpen: (id: string) => void; highlight?: boolean; collapsed?: boolean }) {
+function Group(props: {
+  title: string;
+  threads: Thread[];
+  me: string;
+  openId: string | null;
+  onOpen: (id: string) => void;
+  onArchive: (t: Thread, archived: boolean) => void;
+  highlight?: boolean;
+  collapsed?: boolean;
+}) {
   const [folded, setFolded] = useState(!!props.collapsed);
   if (!props.threads.length) return null;
   const unread = props.threads.reduce((n, t) => n + t.unread, 0);
@@ -200,22 +242,30 @@ function Group(props: { title: string; threads: Thread[]; me: string; openId: st
         props.threads.map((t) => {
           const other = t.members.find((n) => n !== props.me) ?? props.me;
           return (
-            <button key={t.id} type="button" className={`item ${t.id === props.openId ? "on" : ""} ${t.unread ? "unread" : ""}`} onClick={() => props.onOpen(t.id)}>
-              <div className="item-top">
-                <span className="item-title ellipsis">{t.kind === "direct" ? other : t.title}</span>
-                <span className="muted tiny">{timeText(t.updatedAt)}</span>
-              </div>
-              <div className="item-bottom">
-                {t.request && (
-                  <>
-                    <RequestStatus thread={t} me={props.me} />
-                    <span className="muted tiny">{t.request.from === props.me ? `→ ${t.request.to}` : `${t.request.from} →`}</span>
-                  </>
-                )}
-                <span className="muted tiny ellipsis grow">{preview(t.last)}</span>
-                {t.unread > 0 && <span className="badge">{t.unread}</span>}
-              </div>
-            </button>
+            <div key={t.id} className="item-wrap">
+              <button type="button" className={`item ${t.id === props.openId ? "on" : ""} ${t.unread ? "unread" : ""}`} onClick={() => props.onOpen(t.id)}>
+                <div className="item-top">
+                  <span className="item-title ellipsis">{t.kind === "direct" ? other : t.title}</span>
+                  <span className="muted tiny">{timeText(t.updatedAt)}</span>
+                </div>
+                <div className="item-bottom">
+                  {t.request && (
+                    <>
+                      <RequestStatus thread={t} me={props.me} />
+                      <span className="muted tiny">{t.request.from === props.me ? `→ ${t.request.to}` : `${t.request.from} →`}</span>
+                    </>
+                  )}
+                  {t.kind === "topic" && <span className="chip">话题 · {other}</span>}
+                  <span className="muted tiny ellipsis grow">{preview(t.last)}</span>
+                  {t.unread > 0 && <span className="badge">{t.unread}</span>}
+                </div>
+              </button>
+              {t.kind !== "direct" && (
+                <button type="button" className="item-archive" title={t.archived ? "放回列表" : "归档：从列表收起，只影响你自己；有新消息会回来"} onClick={() => props.onArchive(t, !t.archived)}>
+                  {t.archived ? "放回" : "归档"}
+                </button>
+              )}
+            </div>
           );
         })}
     </div>

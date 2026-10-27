@@ -5,12 +5,24 @@ import type { Session } from "./session.js";
 import { RelayClientError, VERDICT_LABEL, threadAsText, type Answer, type Message, type Question, type ThreadView as Thread, type Verdict } from "./shared.js";
 import { RequestStatus, Avatar, timeText } from "./bits.js";
 
-// One conversation: a direct chat, or a request with its replies. The person asked answers the questions one by one
-// (an option and/or their own words), adds a note and a verdict; anyone in it can write a plain message.
+// One conversation: a chat with someone — the plain one or a topic, as tabs over it, a new topic from there — or a
+// request with its replies. The person asked answers the questions one by one (an option and/or their own words), adds
+// a note and a verdict; anyone in it can write a plain message. My messages sit on the right, like any chat app.
 
 const errorText = (err: unknown) => (err instanceof RelayClientError || err instanceof Error ? err.message : String(err));
 
-export function ThreadView({ session, thread, toast }: { session: Session; thread: Thread; toast: (text: string) => void }) {
+export function ThreadView(props: {
+  session: Session;
+  thread: Thread;
+  /** The chats with the same person (the plain one and topics), for the tabs; empty for a request. */
+  peers: Thread[];
+  toast: (text: string) => void;
+  onOpen: (threadId: string) => void;
+  onChatWith: (name: string) => void;
+  onNewTopic: (other: string, title: string) => Promise<void>;
+  onArchive: (thread: Thread, archived: boolean) => void;
+}) {
+  const { session, thread, toast } = props;
   const me = session.me.name;
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,39 +77,47 @@ export function ThreadView({ session, thread, toast }: { session: Session; threa
   const copyAll = async () => {
     if (!messages) return;
     await copyText(threadAsText(thread, messages));
-    toast(request ? "已复制，可以直接贴给 AI" : "已复制对话");
+    toast(request ? "已复制，可以直接贴给 AI" : "已复制这个对话，可以贴给 AI");
   };
+  const archiveButton = thread.kind !== "direct" && (
+    <button type="button" onClick={() => props.onArchive(thread, !thread.archived)} title={thread.archived ? "放回左边的列表" : "从左边的列表收起到「已归档」，只影响你自己；有新消息会回来"}>
+      {thread.archived ? "放回列表" : "归档"}
+    </button>
+  );
 
   return (
     <section className="thread">
-      <header className="thread-head">
+      <header className={`thread-head ${request ? "" : "with-tabs"}`}>
         <div className="thread-title">
           {request ? (
             <>
               <h2>{thread.title}</h2>
               <div className="muted small">
                 {request.from} → {request.to} · <RequestStatus thread={thread} me={me} />
+                {thread.archived && <span className="tag"> 已归档</span>}
               </div>
             </>
           ) : (
             <>
               <h2>{other}</h2>
-              <div className="muted small">{online ? <span className="online-dot">在线</span> : "不在线"} · 私聊</div>
+              <div className="muted small">{online ? <span className="online-dot">在线</span> : "不在线"}</div>
             </>
           )}
         </div>
         <div className="thread-actions">
-          <button type="button" onClick={() => void copyAll()} title="复制整个对话（含逐条回答），贴给 AI">
+          {archiveButton}
+          <button type="button" onClick={() => void copyAll()} title={request ? "复制整个对话（含逐条回答），贴给 AI" : "复制这个对话（只有当前这个话题），贴给 AI"}>
             {request ? "复制给 AI" : "复制对话"}
           </button>
         </div>
       </header>
+      {!request && <TopicTabs thread={thread} peers={props.peers} other={other} onOpen={props.onOpen} onChatWith={props.onChatWith} onNewTopic={props.onNewTopic} />}
 
       <div className="messages" ref={scroller}>
         {error && <div className="notice error">{error}</div>}
         {!messages && !error && <div className="muted center">加载中…</div>}
-        {messages?.length === 0 && <div className="muted center">还没有消息，说点什么吧。</div>}
-        {messages?.map((m) => <MessageItem key={m.seq} m={m} me={me} questions={questions} />)}
+        {messages?.length === 0 && <div className="muted center">{thread.kind === "topic" ? `新话题「${thread.title}」，说点什么吧。` : "还没有消息，说点什么吧。"}</div>}
+        {messages?.map((m, i) => <MessageItem key={m.seq} m={m} prev={messages[i - 1]} me={me} questions={questions} />)}
       </div>
 
       {showForm && requestMessage && (
@@ -117,18 +137,100 @@ export function ThreadView({ session, thread, toast }: { session: Session; threa
           </button>
         </div>
       )}
-      <Composer session={session} threadId={thread.id} placeholder={request ? (canReply ? "追问或补充…（也可以用上面的表单逐条回答）" : "追问或补充…") : `发给 ${other}…`} />
+      <Composer session={session} threadId={thread.id} placeholder={request ? (canReply ? "追问或补充…（也可以用上面的表单逐条回答）" : "追问或补充…") : thread.kind === "topic" ? `发给 ${other}，话题「${thread.title}」…` : `发给 ${other}…`} />
     </section>
   );
 }
 
-function MessageItem({ m, me, questions }: { m: Message; me: string; questions: Question[] }) {
-  const byId = new Map(questions.map((q) => [q.id, q]));
+/** The plain chat first, then the topics in the order they were opened; ＋ 新话题 at the end. */
+function TopicTabs(props: { thread: Thread; peers: Thread[]; other: string; onOpen: (id: string) => void; onChatWith: (name: string) => void; onNewTopic: (other: string, title: string) => Promise<void> }) {
+  const direct = props.peers.find((t) => t.kind === "direct");
+  const topics = props.peers.filter((t) => t.kind === "topic").sort((a, b) => a.createdAt - b.createdAt);
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bar = useRef<HTMLDivElement>(null);
+
+  // A block, not an arrow's value: scrollIntoView returns a promise in newer Chromium, which React would take for cleanup.
+  useEffect(() => {
+    void bar.current?.querySelector(".tab.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [props.thread.id]);
+
+  const start = async () => {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onNewTopic(props.other, title.trim());
+      setAdding(false);
+      setTitle("");
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const badge = (t: Thread | undefined) => (t && t.unread > 0 && t.id !== props.thread.id ? <span className="badge">{t.unread}</span> : null);
+
   return (
-    <article className={`msg ${m.author === me ? "mine" : ""} kind-${m.kind}`}>
+    <div className="tabs" ref={bar} role="tablist">
+      <button type="button" role="tab" className={`tab ${props.thread.kind === "direct" ? "on" : ""}`} aria-selected={props.thread.kind === "direct"} onClick={() => (direct ? props.onOpen(direct.id) : props.onChatWith(props.other))} title="和对方的普通聊天，一直都在">
+        普通聊天
+        {badge(direct)}
+      </button>
+      {topics.map((t) => (
+        <button key={t.id} type="button" role="tab" className={`tab ${t.id === props.thread.id ? "on" : ""}`} aria-selected={t.id === props.thread.id} onClick={() => props.onOpen(t.id)} title={t.title}>
+          <span className="tab-title">{t.title}</span>
+          {t.archived && <span className="tag">已归档</span>}
+          {badge(t)}
+        </button>
+      ))}
+      {adding ? (
+        <form
+          className="tab-new"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void start();
+          }}
+        >
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && (setAdding(false), setTitle(""), setError(null))}
+            placeholder="话题，比如：技能表结构"
+            maxLength={200}
+            autoFocus
+          />
+          <button type="submit" className="primary small" disabled={busy || !title.trim()}>
+            开始
+          </button>
+          <button type="button" className="small" onClick={() => (setAdding(false), setTitle(""), setError(null))}>
+            取消
+          </button>
+          {error && <span className="error tiny">{error}</span>}
+        </form>
+      ) : (
+        <button type="button" className="tab add" onClick={() => setAdding(true)} title={`和 ${props.other} 开一个新话题：每个话题单独记录，可以单独复制给 AI、单独归档`}>
+          ＋ 新话题
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A plain message right after one by the same person, within a few minutes: no header again. */
+const CONTINUES_MS = 5 * 60_000;
+
+function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | undefined; me: string; questions: Question[] }) {
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  const mine = m.author === me;
+  const continues = !!prev && prev.author === m.author && m.kind === "text" && prev.kind === "text" && m.via.kind === prev.via.kind && m.createdAt - prev.createdAt < CONTINUES_MS;
+  return (
+    <article className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""}`}>
       <div className="msg-head">
-        <Avatar name={m.author} />
-        <b>{m.author}</b>
+        {!mine && <Avatar name={m.author} />}
+        {!mine && <b>{m.author}</b>}
         {m.via.kind === "ai" && <span className="tag ai">AI 代发{m.via.client ? ` · ${m.via.client}` : ""}</span>}
         {m.kind === "request" && <span className="tag">请求</span>}
         {m.kind === "reply" && <span className="tag reply">回复</span>}

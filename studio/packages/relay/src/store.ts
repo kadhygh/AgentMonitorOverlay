@@ -5,8 +5,9 @@ import { DatabaseSync } from "node:sqlite";
 import type { Answer, Message, MessageKind, NewMessage, NewRequest, Question, Thread, ThreadKind, ThreadView, Verdict, Via } from "./protocol.js";
 
 // The relay's records (node:sqlite, one file): members (name + password), the keys a login hands out (one per device,
-// only their hash kept), threads (a direct chat per pair of people, one per request), the messages in one global order,
-// and how far each member has read each thread. Only the service opens it. Who is online is the service's, not stored.
+// only their hash kept), threads (the direct chat per pair of people, topics between the same two, one per request), the
+// messages in one global order, and per member how far they have read each thread and whether they archived it. Only
+// the service opens it. Who is online is the service's, not stored.
 
 export class RelayError extends Error {
   constructor(
@@ -147,6 +148,9 @@ export class RelayStore {
       );
       CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread_id, seq);
     `);
+    // Added after the first deployment (2026-10-27).
+    const columns = (this.db.prepare("PRAGMA table_info(thread_members)").all() as Row[]).map((r) => String(r.name));
+    if (!columns.includes("archived")) this.db.exec("ALTER TABLE thread_members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
   }
 
   close(): void {
@@ -277,17 +281,39 @@ export class RelayStore {
     });
   }
 
+  /** Another chat between the same two, about one thing. */
+  createTopic(me: string, otherValue: unknown, titleValue: unknown): Thread {
+    const other = checkName(otherValue);
+    if (other === me) throw new RelayError("bad_request", "不能和自己聊天");
+    this.requireMember(other);
+    const title = text(titleValue, "话题", LIMITS.title);
+    return this.tx(() => {
+      const id = newId("t");
+      const at = this.now();
+      this.db.prepare("INSERT INTO threads (id, kind, title, created_by, created_at, updated_at) VALUES (?, 'topic', ?, ?, ?, ?)").run(id, title, me, at, at);
+      for (const n of [me, other]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
+      return this.toThread(this.threadRow(id));
+    });
+  }
+
+  /** Archives a thread in `name`'s list, or brings it back. The direct chat stays. */
+  setArchived(threadId: string, name: string, archived: boolean): void {
+    const thread = this.thread(threadId, name);
+    if (thread.kind === "direct" && archived) throw new RelayError("bad_request", "普通聊天不能归档");
+    this.db.prepare("UPDATE thread_members SET archived = ? WHERE thread_id = ? AND name = ?").run(archived ? 1 : 0, threadId, name);
+  }
+
   /** The threads `name` is in, latest first. */
   threadsFor(name: string): ThreadView[] {
     const rows = this.db
-      .prepare("SELECT t.*, tm.read_seq AS read_seq FROM threads t JOIN thread_members tm ON tm.thread_id = t.id WHERE tm.name = ? ORDER BY t.updated_at DESC, t.last_seq DESC")
+      .prepare("SELECT t.*, tm.read_seq AS read_seq, tm.archived AS archived FROM threads t JOIN thread_members tm ON tm.thread_id = t.id WHERE tm.name = ? ORDER BY t.updated_at DESC, t.last_seq DESC")
       .all(name) as Row[];
     return rows.map((row) => {
       const thread = this.toThread(row);
       const readSeq = Number(row.read_seq);
       const unread = Number((this.db.prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id = ? AND seq > ? AND author <> ?").get(thread.id, readSeq, name) as Row).n);
       const lastRow = this.db.prepare("SELECT * FROM messages WHERE thread_id = ? ORDER BY seq DESC LIMIT 1").get(thread.id) as Row | undefined;
-      return { ...thread, readSeq, unread, last: lastRow ? this.toMessage(lastRow) : null };
+      return { ...thread, readSeq, unread, last: lastRow ? this.toMessage(lastRow) : null, archived: Number(row.archived) === 1 };
     });
   }
 
@@ -319,8 +345,9 @@ export class RelayStore {
       .run(id, threadId, author, JSON.stringify(via), kind, body, extra ? JSON.stringify(extra) : null, at);
     const seq = Number(res.lastInsertRowid);
     this.db.prepare("UPDATE threads SET last_seq = ?, updated_at = ? WHERE id = ?").run(seq, at, threadId);
-    // The author has read what they wrote.
+    // The author has read what they wrote; a new message brings an archived thread back for everyone.
     this.db.prepare("UPDATE thread_members SET read_seq = ? WHERE thread_id = ? AND name = ?").run(seq, threadId, author);
+    this.db.prepare("UPDATE thread_members SET archived = 0 WHERE thread_id = ?").run(threadId);
     return this.toMessage(this.db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
   }
 

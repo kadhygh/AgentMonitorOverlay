@@ -9,7 +9,7 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 
 // AMO 中转's desktop client (plans/relay.md) against a real service in this process: first start (loader → content
 // download → login), register two people, a request sent by an AI through the command line the client installs,
-// answered one by one in the other client, a direct chat, updates (installed by the loader at start; applied by itself
+// answered one by one in the other client, a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
 // while signed in, when the window is not in use), and the service going away and coming back (the bar, the login
 // screen's status). Needs `npm run relay:release` first (release/relay/client).
 
@@ -17,7 +17,8 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 const exec = async (file: string, args: string[]) => (await promisify(execFile)(file, args, { encoding: "utf8" })).stdout;
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const electronPath = createRequire(import.meta.url)("electron") as string;
-const built = join(studio, "release", "relay", "client");
+// AMO_RELAY_E2E_RELEASE: test a build made with --out elsewhere before publishing it to the running service.
+const built = join(process.env.AMO_RELAY_E2E_RELEASE ?? join(studio, "release", "relay"), "client");
 const shots = join(studio, "screenshots", "relay");
 
 const relay = await import(pathToFileURL(join(studio, "packages", "relay", "dist", "index.js")).href) as typeof import("../../packages/relay/src/index.js");
@@ -27,6 +28,8 @@ let publicDir: string;
 let store: InstanceType<typeof relay.RelayStore>;
 let server: Awaited<ReturnType<typeof relay.startRelayServer>>;
 const apps: ElectronApplication[] = [];
+/** Uncaught errors in the clients' pages: a crash unmounts the whole client, so the test ends with none. */
+const pageErrors: string[] = [];
 
 test.beforeAll(async () => {
   test.skip(!existsSync(join(built, "manifest.json")), "run npm run relay:release first");
@@ -56,6 +59,7 @@ async function launch(who: string): Promise<{ app: ElectronApplication; page: Pa
   });
   apps.push(app);
   const page = await app.firstWindow();
+  page.on("pageerror", (e) => pageErrors.push(`${who}: ${e.stack ?? e.message}`));
   return { app, page, home };
 }
 
@@ -115,9 +119,36 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".person", { hasText: "策划小王" }).click();
   await b.page.getByPlaceholder("发给 策划小王…").fill("下午三点对一下数值？");
   await b.page.keyboard.press("Control+Enter");
-  await a.page.locator(".group", { hasText: "私聊" }).locator(".item", { hasText: "程序老李" }).click();
-  await expect(a.page.locator(".msg")).toContainText("下午三点对一下数值？");
+  await a.page.locator(".group").filter({ has: a.page.locator(".group-title", { hasText: "对话 ·" }) }).locator(".item", { hasText: "程序老李" }).click();
+  await expect(a.page.locator(".msg.theirs")).toContainText("下午三点对一下数值？");
   await shot(a.app, "05-direct-chat");
+
+  // Topics next to the plain chat: each its own conversation; mine on the right, theirs on the left.
+  await a.page.getByRole("button", { name: "＋ 新话题" }).click();
+  await a.page.getByPlaceholder("话题，比如：技能表结构").fill("数值平衡");
+  await a.page.getByRole("button", { name: "开始" }).click();
+  await expect(a.page.locator(".tab.on")).toHaveText("数值平衡");
+  await a.page.getByPlaceholder("发给 程序老李，话题「数值平衡」…").fill("这个单独聊：暴击率上限定多少？");
+  await a.page.keyboard.press("Control+Enter");
+  await expect(a.page.locator(".msg.mine")).toContainText("暴击率上限");
+  await b.page.locator(".item", { hasText: "数值平衡" }).click();
+  await expect(b.page.locator(".msg.theirs")).toContainText("暴击率上限");
+  await expect(b.page.locator(".tab", { hasText: "普通聊天" })).toBeVisible();
+  await b.page.getByPlaceholder(/话题「数值平衡」/).fill("先定 **60%**，超了收益太高");
+  await b.page.keyboard.press("Control+Enter");
+  await expect(a.page.locator(".msg.theirs")).toContainText("超了收益太高");
+  const sides = await a.page.locator(".msg .msg-body").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().right)));
+  expect(sides[0]).toBeGreaterThan(sides[1]! + 50);
+  await shot(a.app, "08-topic");
+
+  // Archived on the planner's side only; the coder's next message brings it back.
+  await a.page.locator(".thread-actions").getByRole("button", { name: "归档" }).click();
+  await expect(a.page.locator(".group-title", { hasText: "已归档 · 1" })).toBeVisible();
+  await expect(b.page.locator(".group-title", { hasText: "已归档" })).toHaveCount(0);
+  await shot(a.app, "09-archived");
+  await b.page.getByPlaceholder(/话题「数值平衡」/).fill("暴击伤害另说");
+  await b.page.keyboard.press("Control+Enter");
+  await expect(a.page.locator(".group-title", { hasText: "已归档" })).toHaveCount(0);
 
   // A newer client on the service: the planner restarts and the loader installs it before the login screen.
   const manifestFile = join(publicDir, "client", "manifest.json");
@@ -164,4 +195,5 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
   await b.page.getByRole("button", { name: "登录" }).click();
   await expect(b.page.getByRole("button", { name: "复制用法" })).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });

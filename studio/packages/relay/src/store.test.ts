@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayError, RelayStore } from "./store.js";
 
@@ -49,6 +52,42 @@ describe("RelayStore", () => {
     expect(store.threadsFor("策划小王")[0]?.unread).toBe(0);
     store.markRead(t1.id, "程序老李");
     expect(store.threadsFor("程序老李")[0]?.unread).toBe(0);
+  });
+
+  it("opens topics next to the direct chat; archiving is per person and a new message brings it back", () => {
+    team();
+    const direct = store.direct("策划小王", "程序老李");
+    const topic = store.createTopic("策划小王", "程序老李", "技能表结构");
+    expect(topic).toMatchObject({ kind: "topic", title: "技能表结构", members: ["策划小王", "程序老李"] });
+    expect(store.createTopic("程序老李", "策划小王", "技能表结构").id).not.toBe(topic.id);
+    expect(() => store.createTopic("策划小王", "程序老李", " ")).toThrow(/话题 不能为空/);
+    expect(() => store.setArchived(direct.id, "策划小王", true)).toThrow(/普通聊天不能归档/);
+
+    store.setArchived(topic.id, "策划小王", true);
+    const archived = (who: string) => store.threadsFor(who).find((t) => t.id === topic.id)?.archived;
+    expect(archived("策划小王")).toBe(true);
+    expect(archived("程序老李")).toBe(false);
+    store.addMessage(topic.id, "程序老李", { body: "表结构我改好了" });
+    expect(archived("策划小王")).toBe(false);
+    store.setArchived(topic.id, "策划小王", true);
+    store.setArchived(topic.id, "策划小王", false);
+    expect(archived("策划小王")).toBe(false);
+  });
+
+  it("adds the archived column to a database from before it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-store-"));
+    const file = join(dir, "relay.db");
+    store = new RelayStore(file);
+    store.register("策划小王", "pw-wang");
+    store.register("程序老李", "pw-li");
+    const t = store.direct("策划小王", "程序老李");
+    store.db.exec("ALTER TABLE thread_members DROP COLUMN archived");
+    store.close();
+    store = new RelayStore(file);
+    expect(store.threadsFor("策划小王").find((x) => x.id === t.id)?.archived).toBe(false);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+    store = new RelayStore(":memory:");
   });
 
   it("opens a request thread and takes a reply only from the person asked", () => {
