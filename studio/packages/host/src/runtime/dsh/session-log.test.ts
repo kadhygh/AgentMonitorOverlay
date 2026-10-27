@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "@amo-studio/testkit";
-import { dshTurnStats, turnStats } from "./session-log.js";
+import { dshTurnStats, turnStats, zstdFrames } from "./session-log.js";
 
 // A DSH session's speed and tokens from its own log (2026-10-22), measured as DSH's session-stats does.
 
@@ -62,5 +62,19 @@ describe("DSH turn stats", () => {
     // Cut short while being written: nothing this time.
     writeFileSync(join(dir, "session.v4.jsonl.zstd"), zstdCompressSync(Buffer.from(log)).subarray(0, 20));
     expect(dshTurnStats(root, "acp-1")).toBeNull();
+  });
+
+  it("reads a log written one zstd frame per line, every frame, leaving out a last one cut short (2026-10-27)", () => {
+    // As DSH writes it: each append its own frame. Electron's zstdDecompressSync stopped after the first one.
+    const lines = log.split("\n").slice(0, -1).map((l) => `${l}\n`);
+    const frames = lines.map((l) => zstdCompressSync(Buffer.from(l)));
+    const whole = Buffer.concat(frames);
+    expect(zstdFrames(whole)).toBe(lines.join(""));
+    expect(zstdFrames(Buffer.concat([whole, frames[0]!.subarray(0, 7)]))).toBe(lines.join(""));
+    root = mkdtempSync(join(tmpdir(), "amo-studio-test-dshlog-"));
+    const dir = join(root, "sessions", "--E-TOOLS-AMO--", "acp-1");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "session.v4.jsonl.zstd"), whole);
+    expect(dshTurnStats(root, "acp-1")?.decode).toEqual({ ms: 1500, tokens: 300 });
   });
 });

@@ -52,12 +52,42 @@ export function dshTurnStats(home: string, sessionId: string): DshTurnStats | nu
   let text: string;
   try {
     const raw = readFileSync(file);
-    text = (file.endsWith(".zstd") ? zstdDecompressSync(raw) : raw).toString("utf8");
+    text = file.endsWith(".zstd") ? zstdFrames(raw) : raw.toString("utf8");
   } catch {
     // Being written (a frame cut short), or gone: try again later.
     return null;
   }
   return turnStats(text);
+}
+
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
+
+/**
+ * A log DSH appends to, one zstd frame per write, decompressed frame by frame. 2026-10-27: Electron's
+ * zstdDecompressSync stops after the first frame (system Node reads them all), so the Host saw one line of every log
+ * and no DSH turn ever got its tokens or speed. A frame is cut at the next magic number (tried further when that one
+ * lies inside compressed data); a last frame still being written is left out.
+ */
+export function zstdFrames(raw: Buffer): string {
+  const out: Buffer[] = [];
+  let start = 0;
+  while (start < raw.length) {
+    let end = raw.indexOf(ZSTD_MAGIC, start + 4);
+    for (;;) {
+      try {
+        out.push(zstdDecompressSync(raw.subarray(start, end < 0 ? raw.length : end)));
+        break;
+      } catch (err) {
+        if (end < 0) {
+          if (out.length) return Buffer.concat(out).toString("utf8");
+          throw err;
+        }
+        end = raw.indexOf(ZSTD_MAGIC, end + 4);
+      }
+    }
+    start = end < 0 ? raw.length : end;
+  }
+  return Buffer.concat(out).toString("utf8");
 }
 
 /** The stats of the last turn in a log's text (exported for tests). */
