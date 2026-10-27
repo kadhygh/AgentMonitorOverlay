@@ -63,10 +63,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     setToastText(text);
     setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
   }, []);
-  // An update that applied itself (the window was not in use) says so once.
-  useEffect(() => {
-    if (updatedTo) toast(`已自动更新到新版本 ${updatedTo}`);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // An update that applied itself (the window was not in use, so a toast then goes unseen): a strip at the bottom left
+  // until it is clicked away.
+  const [updatedNote, setUpdatedNote] = useState(updatedTo);
 
   const groups = useMemo(() => {
     const sessions = threads.filter((t) => t.kind === "request");
@@ -375,6 +374,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             updates={updates}
             shellUpdate={shellUpdate}
             flowNew={flowIsNew(flowDoc, me, session.me.server)}
+            updatedTo={updatedNote}
+            onUpdatedSeen={() => setUpdatedNote(null)}
             onQueue={() => goQueue("mine")}
             onWaiting={() => goQueue("waiting")}
             onShellUpdate={() => setDialog({ kind: "oldShell" })}

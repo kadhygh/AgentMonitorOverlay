@@ -41,7 +41,7 @@ export interface FootActions {
   onSettings: () => void;
 }
 
-export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean } & FootActions) {
+export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean; updatedTo: string | null; onUpdatedSeen: () => void } & FootActions) {
   const { session, mine, handed, waiting, updates, shellUpdate } = props;
   const { connection, offlineSince, retryAt, settings } = useSession(session);
   const now = useSecondTick(connection === "offline");
@@ -63,6 +63,7 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
     else if (updates.progress) strips.push(<Strip key="u" tone="info" mark="↑" title={`正在更新到 ${u.latest}…`} sub={`${Math.round((updates.progress.done / Math.max(updates.progress.total, 1)) * 100)}%`} />);
     else strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={updates.error ? `更新失败：${updates.error}` : `${u.latest} · 不用时自动更新`} action="立即更新" onClick={() => void updates.apply()} />);
   }
+  else if (props.updatedTo) strips.push(<Strip key="u" tone="info" mark="✓" title="已自动更新到新版本" sub={`${props.updatedTo} · 你没在用时装好的`} action="知道了" onClick={props.onUpdatedSeen} />);
   if (shellUpdate)
     strips.push(
       <Strip key="s" tone="info" mark="↑" title="桌面程序可更新" sub={shellUpdate.kind === "auto" ? `新版 ${shellUpdate.target?.build ?? ""}，点一下更新并重启` : "换新的桌面程序才有新标题栏等功能"} action="更新" onClick={props.onShellUpdate} />,
@@ -102,8 +103,8 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
         </button>
         <button type="button" className="gear" aria-label="设置" title="设置：字体大小、主题、团队流程、接入 AI" onClick={props.onSettings}>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
             <circle cx="12" cy="12" r="3" />
-            <path d="M12 2.5 V5 M12 19 V21.5 M2.5 12 H5 M19 12 H21.5 M5.3 5.3 L7.1 7.1 M16.9 16.9 L18.7 18.7 M5.3 18.7 L7.1 16.9 M16.9 7.1 L18.7 5.3" />
           </svg>
         </button>
       </div>

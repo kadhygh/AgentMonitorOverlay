@@ -390,6 +390,11 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect.poll(() => again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion).catch(() => "reloading"), { timeout: 30_000 }).toBe(third);
   await expect(again.page.locator(".scope-nav .srow[aria-current=true]")).toContainText("数值平衡", { timeout: 15_000 });
   await expect(again.page.locator(".head-title")).toHaveText("数值平衡");
+  // Nobody watched it happen: the bottom left says so until clicked away.
+  const updatedStrip = again.page.locator(".strip", { hasText: "已自动更新到新版本" });
+  await expect(updatedStrip).toContainText(third);
+  await updatedStrip.click();
+  await expect(updatedStrip).toHaveCount(0);
   await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
 
   // The service goes away: the bar over the conversation, members' state unknown; the other one logs out and its

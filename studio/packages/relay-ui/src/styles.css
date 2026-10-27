@@ -517,7 +517,7 @@ img.brand-mark { border: none; border-radius: 0; object-fit: contain; }
 .me-row .me-name { max-width: 100%; font-weight: 600; }
 .gear { width: 38px; height: 38px; flex: none; padding: 0; border: none; background: transparent; display: grid; place-items: center; color: var(--text-dim); }
 .gear:hover:not(:disabled) { border: none; background: var(--chip); color: var(--text); }
-.gear svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.gear svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .dialog.settings-dialog { width: min(840px, calc(100vw - 32px)); height: min(660px, calc(100vh - 90px)); max-height: none; }
 .settings-body { flex: 1; display: flex; min-height: 0; }
