@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Avatar, preview, timeText, useDisplayName, Who } from "./bits.js";
+import { Avatar, avatarColor, preview, timeText, useDisplayName, Who } from "./bits.js";
 import { Dialog, Field } from "./Dialog.js";
 import { copyText } from "./env.js";
 import { MessageList, errorText, useMessages } from "./Messages.js";
@@ -456,7 +456,8 @@ function RenameDialog({ session, thread, onClose, toast }: { session: Session; t
 /** 编辑资料: nickname, picture (cut to a small square here), what I do. */
 export function ProfileDialog({ session, onClose, toast }: { session: Session; onClose: () => void; toast: (t: string) => void }) {
   const { members } = useSession(session);
-  const me = members.find((m) => m.name === session.me.name);
+  const name = session.me.name;
+  const me = members.find((m) => m.name === name);
   const [nick, setNick] = useState(me?.nick ?? "");
   const [role, setRole] = useState(me?.role ?? session.me.role);
   const [avatar, setAvatar] = useState<string | null>(me?.avatar ?? null);
@@ -474,19 +475,20 @@ export function ProfileDialog({ session, onClose, toast }: { session: Session; o
     try {
       await session.client.setProfile({ nick: nick.trim(), avatar, role: role.trim() });
       onClose();
-      toast("资料已更新");
+      toast("资料已更新，团队里的人都会看到");
     } catch (err) {
       toast(errorText(err));
       setBusy(false);
     }
   };
+  const shown = nick.trim();
   return (
     <Dialog
       title="编辑资料"
-      sub={`账号名 ${session.me.name} 不能改；昵称会显示在前面，账号名浅色跟在后面`}
       onClose={onClose}
       foot={
         <>
+          <span className="foot-note">保存后团队里的人都会看到</span>
           <button type="button" onClick={onClose}>
             取消
           </button>
@@ -496,27 +498,47 @@ export function ProfileDialog({ session, onClose, toast }: { session: Session; o
         </>
       }
     >
-      <div className="profile-face">
-        {avatar ? <img className="avatar big" src={avatar} alt="" /> : <span className="avatar big placeholder">{(nick || session.me.name).slice(0, 1)}</span>}
-        <div className="row-end" style={{ justifyContent: "flex-start" }}>
-          <button type="button" onClick={() => input.current?.click()}>
-            换头像
+      <div className="profile">
+        <div className="profile-face">
+          <button type="button" className="face-pick" onClick={() => input.current?.click()} title="换一张图片（会裁成正方形）">
+            {avatar ? (
+              <img className="avatar big" src={avatar} alt="" />
+            ) : (
+              <span className="avatar big" style={{ background: avatarColor(name) }}>
+                {(shown || name).slice(0, 1)}
+              </span>
+            )}
+            <span className="face-hint">更换</span>
           </button>
-          {avatar && (
-            <button type="button" onClick={() => setAvatar(null)}>
-              用文字头像
+          <div className="face-acts">
+            <button type="button" className="link tiny" onClick={() => input.current?.click()}>
+              上传图片
             </button>
-          )}
+            {avatar && (
+              <button type="button" className="link tiny" onClick={() => setAvatar(null)}>
+                用文字头像
+              </button>
+            )}
+          </div>
           <input ref={input} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && void pickImage(e.target.files[0])} />
         </div>
+        <div className="profile-fields">
+          <div className="profile-preview">
+            <span className="muted tiny">别人看到的是</span>
+            <b>
+              {shown || name}
+              {shown && <span className="aka">({name})</span>}
+            </b>
+          </div>
+          <Field label="昵称" hint="不填就显示账号名">
+            <input value={nick} onChange={(e) => setNick(e.target.value)} maxLength={32} placeholder={name} autoFocus />
+          </Field>
+          <Field label="负责什么" hint="AI 会看这个决定问谁">
+            <input value={role} onChange={(e) => setRole(e.target.value)} maxLength={60} placeholder="比如：程序 · 战斗" />
+          </Field>
+          <div className="muted tiny">账号名「{name}」用来登录，不能改。</div>
+        </div>
       </div>
-      <Field label="昵称" hint="不填就显示账号名">
-        <input value={nick} onChange={(e) => setNick(e.target.value)} maxLength={32} placeholder={session.me.name} />
-      </Field>
-      <Field label="负责什么" hint="AI 会看这个来决定问谁">
-        <input value={role} onChange={(e) => setRole(e.target.value)} maxLength={60} placeholder="比如：程序 · 战斗" />
-      </Field>
-      <p className="dim small lead-p">保存后，团队里所有人都会看到新的昵称和头像。</p>
     </Dialog>
   );
 }

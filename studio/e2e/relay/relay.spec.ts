@@ -345,6 +345,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   // 编辑资料: a nickname shows first, the account name faintly after it.
   await a.page.locator(".me-chip").click();
   await a.page.locator(".dialog").getByPlaceholder("策划小王", { exact: true }).fill("小王");
+  await shot(a.app, "20-profile");
   await a.page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(a.page.locator(".me-chip .me-name")).toHaveText("小王(策划小王)");
   await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".aka")).toHaveText("(策划小王)");

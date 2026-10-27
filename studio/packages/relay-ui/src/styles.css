@@ -419,7 +419,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 img.avatar { object-fit: cover; background: var(--chip); }
 .avatar.big { width: 72px; height: 72px; font-size: 30px; }
 .avatar.placeholder { background: var(--muted-dot); }
-.profile-face { display: flex; align-items: center; gap: 18px; }
 .person-node { display: flex; flex-direction: column; }
 .person-head-row .fold { width: 10px; font-size: 10px; color: var(--text-faint); flex: none; }
 .person-kids { margin-left: 14px; padding-left: 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
@@ -447,3 +446,16 @@ img.avatar { object-fit: cover; background: var(--chip); }
 .me-chip { height: 40px; }
 @media (max-width: 1280px) { .brand-sep { display: none; } }
 @media (max-width: 1000px) { .brand-name { display: none; } }
+
+/* 编辑资料: the picture on the left (click it to change), the fields on the right with a preview of the name */
+.profile { display: grid; grid-template-columns: 120px 1fr; gap: 22px; align-items: start; }
+.profile-face { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 4px; }
+.face-pick { position: relative; width: 96px; height: 96px; padding: 0; border: none; border-radius: 50%; background: none; overflow: hidden; }
+.face-pick:hover:not(:disabled) { background: none; border: none; }
+.face-pick .avatar.big { width: 96px; height: 96px; font-size: 40px; }
+.face-hint { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: var(--fs-cap); opacity: 0; transition: opacity 0.15s; }
+.face-pick:hover .face-hint, .face-pick:focus-visible .face-hint { opacity: 1; }
+.face-acts { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.profile-fields { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.profile-preview { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--r-l); background: var(--panel-raised); border: 1px solid var(--border); }
+.profile-preview b { font-family: var(--font-display); font-size: var(--fs-title); }

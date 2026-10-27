@@ -7,15 +7,20 @@ const HUES = [18, 42, 160, 200, 230, 280, 330, 100];
 export const PeopleContext = createContext<ReadonlyMap<string, Member>>(new Map());
 export const usePeople = () => useContext(PeopleContext);
 
+/** The colour of someone's initial: picked from the account name, so it stays when the nickname changes. */
+export function avatarColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.codePointAt(0)!) >>> 0;
+  return `hsl(${HUES[h % HUES.length]} 32% 42%)`;
+}
+
 /** Their picture, or their initial on a colour picked from the name, so people are told apart at a glance. */
 export function Avatar({ name, small = false, big = false }: { name: string; small?: boolean; big?: boolean }) {
   const m = usePeople().get(name);
   const cls = `avatar ${small ? "small" : ""} ${big ? "big" : ""}`;
   if (m?.avatar) return <img className={cls} src={m.avatar} alt="" />;
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.codePointAt(0)!) >>> 0;
   return (
-    <span className={cls} style={{ background: `hsl(${HUES[h % HUES.length]} 32% 42%)` }}>
+    <span className={cls} style={{ background: avatarColor(name) }}>
       {(m?.nick || name).slice(0, 1)}
     </span>
   );
