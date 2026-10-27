@@ -170,10 +170,14 @@ export function App() {
 
   // A place come back to that is gone (a deleted task, an archived topic or project): the board, everything in scope.
   const ready = host.kind === "ready" ? host.state : null;
-  // 「AMO 娘」 (2026-10-26): while she is the 桌宠, the top-left icon and the window's are hers (focus/mascot.ts).
+  // 「AMO 娘」 (2026-10-26): while she is the 桌宠, the top-left icon and the window's are hers (focus/mascot.ts). The
+  // window's is her portrait and does not follow her face (2026-10-27): each change of a window's icon held the main
+  // process up for a few hundred ms on this machine (Windows answering WM_SETICON), every window with it, as the work
+  // moved on; the top-left one (in the page) still does.
   const seen = useSessionSeen();
   const mascot = useMascotIcon(ready?.sessions ?? null, seen);
-  useEffect(() => window.amo?.setAppIcon?.(mascot?.file ?? null), [mascot?.file]);
+  const mascotOn = mascot !== null;
+  useEffect(() => window.amo?.setAppIcon?.(mascotOn ? "icon" : null), [mascotOn]);
   useEffect(() => {
     if (!ready) return;
     if (view.kind === "task" && !ready.tasks.some((t) => t.id === view.taskId)) setShownView({ kind: "board" });

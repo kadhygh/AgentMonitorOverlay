@@ -357,7 +357,7 @@ test("Focus 桌宠: the robot by default; 「看书的 Claude 娘」 picked in �
   await angry.click();
 });
 
-test("Focus 桌宠 「AMO 娘」: her faces on Focus, and the top-left and window icons are hers and follow the work; another pet puts them back (2026-10-26)", async () => {
+test("Focus 桌宠 「AMO 娘」: her faces on Focus and the top-left icon, which follow the work; the window's icon is her portrait and stays; another pet puts them back (2026-10-26)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const appIcon = () => app.evaluate(() => (globalThis as { __amoAppIcon?: string }).__amoAppIcon ?? "");
@@ -381,14 +381,15 @@ test("Focus 桌宠 「AMO 娘」: her faces on Focus, and the top-left and windo
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "表情", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo mascot]]" } });
   await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./mascot/01-idle.png", { timeout: 30_000 });
-  await expect.poll(appIcon).toMatch(/mascot[\\/]01-idle\.png$/);
+  // The window's icon does not follow her face (2026-10-27: each change held the main process up).
+  expect(await appIcon()).toMatch(/mascot[\\/]icon\.png$/);
   await expect(focus.getByTestId("focus-bot").getByTestId("mascot-art")).toHaveAttribute("src", "./mascot/01-idle.png");
   await screenshot(app, "stage-18", "S18-pet-mascot-focus", focus, "focus");
 
   // Approved, it finishes: only finished work to look at — 开心.
   await focus.getByTestId("focus-entry").getByRole("button", { name: "批准", exact: true }).click();
   await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./mascot/02-happy.png", { timeout: 30_000 });
-  await expect.poll(appIcon).toMatch(/mascot[\\/]02-happy\.png$/);
+  expect(await appIcon()).toMatch(/mascot[\\/]icon\.png$/);
 
   // Another pet: the icons are the app's again.
   await page.getByRole("button", { name: "设置" }).click();
