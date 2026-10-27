@@ -89,7 +89,15 @@ export function claudeEnv(
     ...(provider.baseUrl ? { ANTHROPIC_BASE_URL: provider.baseUrl } : {}),
     ...(key ? (provider.auth === "oauth" ? { CLAUDE_CODE_OAUTH_TOKEN: key } : { [provider.keyEnv ?? "ANTHROPIC_AUTH_TOKEN"]: key }) : {}),
     ...(!local || home.explicit ? { CLAUDE_CONFIG_DIR: home.dir } : {}),
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    // Not CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC (2026-10-27, the person's call: as their own CLI, which sets none of
+    // these). It also stops the CLI fetching its feature flags (docs: env-vars, data-usage; DISABLE_TELEMETRY does the
+    // same), and auto mode then falls back to built-in defaults (tengu_auto_mode_config → gitStatusType: true): a
+    // `git status --porcelain --untracked-files=normal` with fsmonitor off before each command it judges. In
+    // project_mining that was 3-4 cores for ~1 s, about three times a minute; the desktop and Studio's main process
+    // stalled with it. With the flags fetched, as for the person's CLI, it did not happen. (CLAUDE_CODE_AUTO_MODE_GIT_STATUS
+    // and its siblings look like switches but are read from an empty schema in 2.1.304: they do nothing.)
+    // Studio runs the SDK's own CLI, so no updates.
+    DISABLE_AUTOUPDATER: "1",
     // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the
     // transcript (verified in the S4-09 review).
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
@@ -98,11 +106,5 @@ export function claudeEnv(
     // 70% of every core, mostly kernel time, every few seconds: the whole desktop lagged, Studio's windows, the mouse
     // and the IME with it (2026-10-21). Studio does not show that diff.
     CLAUDE_CODE_BASH_EDIT_DIFF: "0",
-    // 2026-10-27, the same lag back: auto mode now reads the repo's state for its checks — `git status --porcelain
-    // --untracked-files=normal` with fsmonitor off, around each command it judges — when Anthropic's server turns
-    // that on (it came and went, which is why a restart seemed to help for a while). In project_mining each one ran
-    // at 3-4 cores for about 1 s; Studio's main process stalled 0.7-3 s with it. Off here, whatever the server says.
-    CLAUDE_CODE_AUTO_MODE_GIT_STATUS: "0",
-    CLAUDE_CODE_AUTO_MODE_GIT_STATUS_UPLOADS: "0",
   };
 }

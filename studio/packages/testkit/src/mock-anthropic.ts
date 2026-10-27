@@ -12,6 +12,14 @@ export const MOCK_SUGGESTION = "再跑一遍测试";
 /** Model name to use against the mock (any name is accepted when ANTHROPIC_BASE_URL points here). */
 export const MOCK_CLAUDE_MODEL = "mock-claude";
 
+/**
+ * A Claude provider (Studio's ClaudeProviderDef) for the mock. Studio's own sessions fetch the CLI's feature flags like
+ * the person's CLI (2026-10-27); tests must stay off the network, so the mock's provider turns that traffic off.
+ */
+export function mockClaudeProvider(baseUrl: string, more: { auth?: "oauth" } = {}) {
+  return { baseUrl, ...more, env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" } };
+}
+
 /** Environment that routes a Claude Code process to a running mock. */
 export function mockClaudeEnv(baseUrl: string): Record<string, string> {
   return {

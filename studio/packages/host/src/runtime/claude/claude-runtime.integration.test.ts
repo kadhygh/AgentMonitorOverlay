@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile, SessionItem, Task, Workspace } from "@amo-studio/protocol";
-import { MOCK_CLAUDE_MODEL, TINY_PNG_BASE64, removeTempDir, startMockAnthropic, type ClaudeMockServer } from "@amo-studio/testkit";
+import { MOCK_CLAUDE_MODEL, TINY_PNG_BASE64, removeTempDir, startMockAnthropic, type ClaudeMockServer, mockClaudeProvider } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
 import { StaticCredentialReader } from "../credentials.js";
 import { ClaudeRuntime } from "./claude-runtime.js";
@@ -27,7 +27,7 @@ function startRuntime(): ClaudeRuntime {
   return new ClaudeRuntime({
     store,
     profiles: PROFILES,
-    providers: { mock: { baseUrl: mock.baseUrl } },
+    providers: { mock: mockClaudeProvider(mock.baseUrl) },
     credentials: new StaticCredentialReader({ mock: "mock-key" }),
     claudeHome,
   });
@@ -212,7 +212,7 @@ describe("ClaudeRuntime", () => {
     const local = new ClaudeRuntime({
       store,
       profiles: [...PROFILES, sub],
-      providers: { mock: { baseUrl: mock.baseUrl }, "mock-oauth": { baseUrl: mock.baseUrl, auth: "oauth" } },
+      providers: { mock: mockClaudeProvider(mock.baseUrl), "mock-oauth": mockClaudeProvider(mock.baseUrl, { auth: "oauth" }) },
       credentials: new StaticCredentialReader({ mock: "mock-key" }), // no subscription token saved
       claudeHome,
       localClaudeHome: mine,

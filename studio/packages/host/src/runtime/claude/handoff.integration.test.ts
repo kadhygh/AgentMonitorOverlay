@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile, SessionItem, Task, Workspace } from "@amo-studio/protocol";
-import { MOCK_CLAUDE_MODEL, removeTempDir, startMockAnthropic, type ClaudeMockServer } from "@amo-studio/testkit";
+import { MOCK_CLAUDE_MODEL, removeTempDir, startMockAnthropic, type ClaudeMockServer, mockClaudeProvider } from "@amo-studio/testkit";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { RecordingTerminalLauncher } from "../../terminal/launcher.js";
@@ -58,7 +58,7 @@ beforeAll(async () => {
   claude = new ClaudeRuntime({
     store,
     profiles: PROFILES,
-    providers: { mock: { baseUrl: mock.baseUrl } },
+    providers: { mock: mockClaudeProvider(mock.baseUrl) },
     credentials: new StaticCredentialReader({ mock: "mock-key" }),
     claudeHome: join(root, "claude-home"),
     baseEnv: { ...process.env, ANTHROPIC_API_KEY: "must-not-leak" },

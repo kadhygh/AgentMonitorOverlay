@@ -19,6 +19,8 @@ const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
 // Asking Claude Code for its models against the mock API only times out, so the mock profiles list their own.
 const MOCK_CLAUDE_MODELS = ["mock-claude", "mock-claude-b"].map((id) => ({ id, label: id, efforts: ["low", "medium", "high", "xhigh", "max"], ...(id === "mock-claude" ? { isDefault: true } : {}) }));
 
+const OFFLINE = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" };
+
 function testModelOptions(): Partial<StartHostOptions> {
   const url = process.env.AMO_STUDIO_TEST_PROVIDER_URL;
   if (!url) return {};
@@ -39,7 +41,15 @@ function testModelOptions(): Partial<StartHostOptions> {
       ...(dshAgent ? [{ id: "dsh-mock", label: "Mock DSH", runtime: "dsh" as const, provider: "deepseek-official", model: null, credentialId: "mock" }] : []),
     ],
     ...(dshAgent && node ? { dshAgent: { command: node, args: [dshAgent] } } : {}),
-    ...(claudeUrl ? { claudeProviders: { mock: { baseUrl: claudeUrl, models: MOCK_CLAUDE_MODELS }, "mock-oauth": { baseUrl: claudeUrl, auth: "oauth" as const, models: MOCK_CLAUDE_MODELS } } } : {}),
+    // Off the network (2026-10-27): Studio's real sessions fetch the CLI's feature flags; tests must not.
+    ...(claudeUrl
+      ? {
+          claudeProviders: {
+            mock: { baseUrl: claudeUrl, models: MOCK_CLAUDE_MODELS, env: OFFLINE },
+            "mock-oauth": { baseUrl: claudeUrl, auth: "oauth" as const, models: MOCK_CLAUDE_MODELS, env: OFFLINE },
+          },
+        }
+      : {}),
     providers: {
       "amo-mock": {
         name: "Mock",
