@@ -1,4 +1,4 @@
-import type { Health, Member, Message, NewMessage, NewRequest, Thread, ThreadView } from "./protocol.js";
+import type { Health, Member, Message, NewMessage, NewRequest, SessionAction, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
 // pages in a browser use the same one.
@@ -87,16 +87,22 @@ export class RelayClient {
   send(threadId: string, msg: NewMessage): Promise<{ thread: Thread; message: Message }> {
     return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/messages`, msg);
   }
-  messages(threadId: string, after = 0): Promise<{ thread: Thread; messages: Message[] }> {
-    return this.call("GET", `/api/threads/${encodeURIComponent(threadId)}/messages?after=${after}`);
+  /** `ai`: the asking side's AI reads it — a session that came back counts as fetched (「AI 已取回」). */
+  messages(threadId: string, after = 0, opts: { ai?: boolean } = {}): Promise<{ thread: Thread; messages: Message[] }> {
+    return this.call("GET", `/api/threads/${encodeURIComponent(threadId)}/messages?after=${after}${opts.ai ? "&via=ai" : ""}`);
+  }
+  /** 标记完成, 重新打开, 我来处理, 交还给 AI, or (an AI) handing it to its person. */
+  session(threadId: string, action: SessionAction, opts: { note?: string; via?: Via } = {}): Promise<{ thread: Thread; message: Message }> {
+    return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/session`, { action, ...opts });
   }
   read(threadId: string, seq?: number): Promise<{ readSeq: number }> {
     return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/read`, seq === undefined ? {} : { seq });
   }
   /** Messages from others after `after` (in one thread, or any of mine); waits up to `timeoutMs` for the first. */
-  async wait(opts: { threadId?: string; after?: number; timeoutMs?: number; signal?: AbortSignal }): Promise<Message[]> {
+  async wait(opts: { threadId?: string; after?: number; timeoutMs?: number; signal?: AbortSignal; ai?: boolean }): Promise<Message[]> {
     const q = new URLSearchParams({ after: String(opts.after ?? 0), timeout: String(opts.timeoutMs ?? 60_000) });
     if (opts.threadId) q.set("thread", opts.threadId);
+    if (opts.ai) q.set("via", "ai");
     return (await this.call<{ messages: Message[] }>("GET", `/api/wait?${q}`, undefined, opts.signal)).messages;
   }
 }

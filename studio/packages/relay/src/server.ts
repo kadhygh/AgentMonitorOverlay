@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
-import { RELAY_APP, RELAY_VERSION, TICK_MS, type Health, type Member, type Message, type RelayEvent, type Thread } from "./protocol.js";
+import { RELAY_APP, RELAY_VERSION, TICK_MS, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 
 // The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
@@ -128,6 +128,13 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     }
   };
 
+  /** The asking side's AI fetched a session that came back: tell its members (no message is written). */
+  const pickedBy = (threadId: string, name: string) => {
+    if (!store.markPicked(threadId, name)) return;
+    const thread = store.thread(threadId, name);
+    push(thread.members, { type: "updated", thread });
+  };
+
   const auth = (req: IncomingMessage, url: URL): string => {
     const key = keyOf(req, url);
     const name = key ? store.memberByKey(key) : null;
@@ -201,13 +208,19 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     }
     if (method === "GET" && path === "/api/wait") {
       const threadId = url.searchParams.get("thread") || null;
+      // An AI waiting on the asking side: what it gets counts as fetched (「AI 已取回」).
+      const ai = url.searchParams.get("via") === "ai";
+      const picked = (messages: Message[]) => {
+        if (ai) for (const id of new Set(messages.map((m) => m.threadId))) pickedBy(id, me);
+        return messages;
+      };
       const after = Number(url.searchParams.get("after") ?? 0) || 0;
       const timeout = Math.max(0, Math.min(Number(url.searchParams.get("timeout") ?? 60_000) || 0, MAX_WAIT));
       // What already came while the caller was away answers at once.
       const pending = threadId
         ? store.messages(threadId, me, after).filter((m) => m.author !== me)
         : store.threadsFor(me).flatMap((t) => (t.lastSeq > after ? store.messages(t.id, me, after).filter((m) => m.author !== me) : []));
-      if (pending.length || timeout === 0) return send(res, 200, { messages: pending.sort((a, b) => a.seq - b.seq) });
+      if (pending.length || timeout === 0) return send(res, 200, { messages: picked(pending.sort((a, b) => a.seq - b.seq)) });
       await new Promise<void>((resolve) => {
         const w: Waiter = {
           name: me,
@@ -216,7 +229,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
           done: (messages) => {
             clearTimeout(timer);
             waiters.delete(w);
-            if (!res.writableEnded) send(res, 200, { messages });
+            if (!res.writableEnded) send(res, 200, { messages: picked(messages) });
             resolve();
           },
         };
@@ -229,7 +242,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return;
     }
 
-    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive)?$/.exec(path);
+    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive|\/session)?$/.exec(path);
     if (m) {
       const id = decodeURIComponent(m[1]!);
       if (method === "GET" && !m[2]) return send(res, 200, { thread: store.thread(id, me) });
@@ -239,7 +252,14 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         push([me], { type: "archived", threadId: id, archived });
         return send(res, 200, { archived });
       }
+      if (method === "POST" && m[2] === "/session") {
+        const body = await readJson(req);
+        const out = store.sessionAction(id, me, body.action as SessionAction, { via: body.via as never, note: body.note });
+        announce(out.thread, out.message);
+        return send(res, 200, out);
+      }
       if (method === "GET" && m[2] === "/messages") {
+        if (url.searchParams.get("via") === "ai") pickedBy(id, me);
         const after = Number(url.searchParams.get("after") ?? 0) || 0;
         const limit = Number(url.searchParams.get("limit") ?? 200) || 200;
         return send(res, 200, { thread: store.thread(id, me), messages: store.messages(id, me, after, limit) });

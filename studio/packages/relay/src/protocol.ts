@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.2.0";
+export const RELAY_VERSION = "0.3.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
@@ -37,7 +37,8 @@ export interface Answer {
 /** Who wrote a message: the person, or an AI on their behalf (the client is the MCP client's name, e.g. claude-code). */
 export type Via = { kind: "person" } | { kind: "ai"; client?: string };
 
-export type MessageKind = "text" | "request" | "reply";
+/** event: a session's state changed (标记完成, 接手, …), written by whoever did it; its body says what happened. */
+export type MessageKind = "text" | "request" | "reply" | "event";
 
 export interface Message {
   id: string;
@@ -55,14 +56,32 @@ export interface Message {
   createdAt: number;
 }
 
+/** A session (stage 2a, plans/relay-tasks.md): open = with the person asked, returned = back with the one who asked. */
+export type SessionState = "open" | "returned" | "done";
+
+/** What the people in a session can do to it besides writing. */
+export type SessionAction = "done" | "reopen" | "handle" | "toAi" | "handoff";
+
+/** A request thread is a session: someone (or their AI) asks a person to handle one thing. */
 export interface RequestState {
   from: string;
   to: string;
-  /** open until the person replies; a later reply updates the verdict. */
+  /** answered once the person replied; a later reply updates the verdict. */
   status: "open" | "answered";
   verdict: Verdict | null;
   /** The request message's seq. */
   requestSeq: number;
+  state: SessionState;
+  /** Who acts next; null when done. */
+  waitingOn: string | null;
+  /** Who handles the asking side: the AI that sent it, or the person (after 我来处理, or when they sent it). */
+  handler: "ai" | "person";
+  /** The person asked must reply: they cannot mark it done (all sessions from an AI). */
+  needsReply: boolean;
+  /** When it last came back to the asking side. */
+  returnedAt: number | null;
+  /** When the asking side's AI fetched it after that; null while it has not. */
+  pickedAt: number | null;
 }
 
 export interface Thread {
@@ -91,12 +110,17 @@ export interface NewRequest {
   to: string;
   title: string;
   body: string;
+  /** Default true; always true from an AI. */
+  needsReply?: boolean;
   questions?: Array<{ id?: string; text: string; options?: string[] }>;
   via?: Via;
 }
 
 export interface NewMessage {
   kind?: "text" | "reply";
+  /** In a session, hand it to the other side with this message: the asker asks again (继续追问), the person asked
+   * returns it without a form reply. A reply always hands it back. */
+  pass?: boolean;
   body?: string;
   answers?: Answer[];
   verdict?: Verdict;
@@ -114,6 +138,8 @@ export type RelayEvent =
   | { type: "read"; threadId: string; readSeq: number }
   /** A new thread with no message yet (a topic): to its members. */
   | { type: "thread"; thread: Thread }
+  /** A thread changed without a message (a session fetched by an AI): to its members. */
+  | { type: "updated"; thread: Thread }
   /** This member archived or brought back a thread (their other devices follow). */
   | { type: "archived"; threadId: string; archived: boolean }
   /** A new client build was published: clients update themselves. */

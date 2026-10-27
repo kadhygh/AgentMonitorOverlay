@@ -122,6 +122,70 @@ describe("RelayStore", () => {
     expect(store.messages(thread.id, "策划小王").map((m) => m.kind)).toEqual(["request", "reply", "reply"]);
   });
 
+  it("hands a session back and forth; only the asker closes one that needs a reply; the AI keeps out once its person took over", () => {
+    team();
+    const ai = { kind: "ai", client: "claude-code" } as const;
+    const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "见附件", questions: [{ text: "推进方式", options: ["主干", "分支"] }], via: ai });
+    expect(thread.request).toMatchObject({ state: "open", waitingOn: "程序老李", handler: "ai", needsReply: true, returnedAt: null, pickedAt: null });
+    // A person's own session may let the other close it.
+    const loose = store.createRequest("策划小王", { to: "程序老李", title: "顺便", body: "看一眼", needsReply: false }).thread;
+    expect(loose.request).toMatchObject({ handler: "person", needsReply: false });
+    expect(store.sessionAction(loose.id, "程序老李", "done").thread.request).toMatchObject({ state: "done", waitingOn: null });
+
+    expect(() => store.sessionAction(thread.id, "程序老李", "done")).toThrow(/只有发起方能标记完成/);
+    expect(() => store.addMessage(thread.id, "策划小王", { body: "再问", pass: true })).toThrow(/在 程序老李 手里/);
+    const back = store.addMessage(thread.id, "程序老李", { kind: "reply", answers: [{ questionId: "q1", choice: "分支" }], verdict: "agree" });
+    expect(back.thread.request).toMatchObject({ state: "returned", waitingOn: "策划小王", status: "answered" });
+    expect(back.thread.request?.returnedAt).toBeTypeOf("number");
+
+    // The asker's AI fetches it: once.
+    expect(store.markPicked(thread.id, "程序老李")).toBe(false);
+    expect(store.markPicked(thread.id, "策划小王")).toBe(true);
+    expect(store.markPicked(thread.id, "策划小王")).toBe(false);
+    // 继续追问 hands it to the person asked again.
+    const asked = store.addMessage(thread.id, "策划小王", { body: "分支名用什么", pass: true, via: ai });
+    expect(asked.thread.request).toMatchObject({ state: "open", waitingOn: "程序老李" });
+    // The person asked can also return it with a plain message.
+    const plain = store.addMessage(thread.id, "程序老李", { body: "feature/gatling", pass: true });
+    expect(plain.thread.request).toMatchObject({ state: "returned", waitingOn: "策划小王", pickedAt: null });
+
+    // 我来处理: the person takes it from the AI; the AI is then refused, until 交还给 AI.
+    expect(() => store.sessionAction(thread.id, "策划小王", "handle", { via: ai })).toThrow(/本人/);
+    const taken = store.sessionAction(thread.id, "策划小王", "handle");
+    expect(taken.thread.request?.handler).toBe("person");
+    expect(taken.message).toMatchObject({ kind: "event", author: "策划小王", body: "从 AI 手里接手了这个会话" });
+    expect(() => store.addMessage(thread.id, "策划小王", { body: "x", pass: true, via: ai })).toThrow(/本人接手/);
+    expect(() => store.sessionAction(thread.id, "策划小王", "done", { via: ai })).toThrow(/本人接手/);
+    store.sessionAction(thread.id, "策划小王", "toAi");
+    // The AI hands it to its person with a note; then it closes it… after the person gives it back.
+    expect(store.sessionAction(thread.id, "策划小王", "handoff", { via: ai, note: "要你定分支策略" }).message.body).toBe("AI 把会话交给本人处理：要你定分支策略");
+    const done = store.sessionAction(thread.id, "策划小王", "done");
+    expect(done.thread.request).toMatchObject({ state: "done", waitingOn: null });
+    expect(() => store.sessionAction(thread.id, "策划小王", "done")).toThrow(/已经完成/);
+    expect(store.sessionAction(thread.id, "程序老李", "reopen").thread.request).toMatchObject({ state: "open", waitingOn: "程序老李" });
+  });
+
+  it("turns the requests of a database from before sessions into sessions", () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-store-"));
+    const file = join(dir, "relay.db");
+    store = new RelayStore(file);
+    store.register("策划小王", "pw-wang");
+    store.register("程序老李", "pw-li");
+    const open = store.createRequest("策划小王", { to: "程序老李", title: "还没回", body: "b", via: { kind: "ai" } }).thread;
+    const answered = store.createRequest("策划小王", { to: "程序老李", title: "回了", body: "b" }).thread;
+    store.addMessage(answered.id, "程序老李", { kind: "reply", verdict: "agree" });
+    for (const c of ["s_state", "s_waiting", "s_handler", "s_needs", "s_returned", "s_picked"]) store.db.exec(`ALTER TABLE threads DROP COLUMN ${c}`);
+    store.close();
+    store = new RelayStore(file);
+    const byId = new Map(store.threadsFor("策划小王").map((t) => [t.id, t.request]));
+    expect(byId.get(open.id)).toMatchObject({ state: "open", waitingOn: "程序老李", handler: "ai", needsReply: true });
+    expect(byId.get(answered.id)).toMatchObject({ state: "returned", waitingOn: "策划小王", handler: "person", needsReply: true });
+    expect(byId.get(answered.id)?.returnedAt).toBeTypeOf("number");
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+    store = new RelayStore(":memory:");
+  });
+
   it("keeps people out of threads they are not in", () => {
     team();
     store.register("美术小张", "pw-zhang");

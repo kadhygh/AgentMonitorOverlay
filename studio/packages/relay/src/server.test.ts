@@ -164,13 +164,26 @@ describe("relay service", () => {
     const [view] = await coder.threads();
     expect(view?.last).toMatchObject({ via: { kind: "ai", client: "claude-code" } });
 
-    const waiting = client.callTool({ name: "relay_wait", arguments: { threadId, minutes: 0.2 } });
+    // The person asked cannot close it; they reply, and the AI waiting gets it — that counts as fetched.
+    await expect(coder.session(threadId!, "done")).rejects.toThrow(/只有发起方能标记完成/);
+    const waiting = client.callTool({ name: "relay_session_wait", arguments: { threadId, minutes: 0.2 } });
     await coder.send(threadId!, { kind: "reply", answers: [{ questionId: "q1", text: "改成 cdByLevel" }], verdict: "change" });
     const waited = text(await waiting);
     expect(waited).toContain("**字段名可以吗** → 改成 cdByLevel");
     expect(waited).toContain("结论：**需要改**");
+    const [seen] = await coder.threads();
+    expect(seen?.request).toMatchObject({ state: "returned", waitingOn: "策划小王", handler: "ai" });
+    expect(seen?.request?.pickedAt).toBeTypeOf("number");
 
-    expect(text(await client.callTool({ name: "relay_replies", arguments: {} }))).toContain("已回复（需要改）");
+    expect(text(await client.callTool({ name: "relay_queue", arguments: {} }))).toContain("返回给我、等你接着处理");
+    expect(text(await client.callTool({ name: "relay_replies", arguments: {} }))).toContain("已返回给 策划小王（需要改），由 AI 接着处理");
+    expect(text(await client.callTool({ name: "relay_session_reply", arguments: { threadId, body: "那就用 cdByLevel？", then: "ask" } }))).toContain("回到 程序老李 手里");
+    await coder.send(threadId!, { kind: "text", body: "可以", pass: true });
+    expect(text(await client.callTool({ name: "relay_session_reply", arguments: { threadId, body: "好，按这个做", then: "done" } }))).toBe("已标记完成。");
+    const got = text(await client.callTool({ name: "relay_session_get", arguments: { threadId } }));
+    expect(got).toContain("· 已完成 ·");
+    expect(got).toContain("的 AI（claude-code） 标记完成");
+    expect(text(await client.callTool({ name: "relay_queue", arguments: {} }))).toBe("没有待处理的会话。");
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
   });

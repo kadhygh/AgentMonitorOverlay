@@ -2,7 +2,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Answer, Message, MessageKind, NewMessage, NewRequest, Question, Thread, ThreadKind, ThreadView, Verdict, Via } from "./protocol.js";
+import type { Answer, Message, MessageKind, NewMessage, NewRequest, Question, SessionAction, SessionState, Thread, ThreadKind, ThreadView, Verdict, Via } from "./protocol.js";
 
 // The relay's records (node:sqlite, one file): members (name + password), the keys a login hands out (one per device,
 // only their hash kept), threads (the direct chat per pair of people, topics between the same two, one per request), the
@@ -151,6 +151,31 @@ export class RelayStore {
     // Added after the first deployment (2026-10-27).
     const columns = (this.db.prepare("PRAGMA table_info(thread_members)").all() as Row[]).map((r) => String(r.name));
     if (!columns.includes("archived")) this.db.exec("ALTER TABLE thread_members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+    this.migrateSessions();
+  }
+
+  /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
+  private migrateSessions(): void {
+    const columns = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
+    if (columns.includes("s_state")) return;
+    this.db.exec(`
+      ALTER TABLE threads ADD COLUMN s_state TEXT;
+      ALTER TABLE threads ADD COLUMN s_waiting TEXT;
+      ALTER TABLE threads ADD COLUMN s_handler TEXT;
+      ALTER TABLE threads ADD COLUMN s_needs INTEGER;
+      ALTER TABLE threads ADD COLUMN s_returned INTEGER;
+      ALTER TABLE threads ADD COLUMN s_picked INTEGER;
+    `);
+    // Answered ones go back to whoever asked, to look at and mark done; who sent the request decides the handler.
+    this.db.exec(`
+      UPDATE threads SET
+        s_state = CASE WHEN req_status = 'answered' THEN 'returned' ELSE 'open' END,
+        s_waiting = CASE WHEN req_status = 'answered' THEN req_from ELSE req_to END,
+        s_returned = CASE WHEN req_status = 'answered' THEN updated_at ELSE NULL END,
+        s_needs = 1,
+        s_handler = CASE WHEN (SELECT json_extract(m.via, '$.kind') FROM messages m WHERE m.seq = threads.req_seq) = 'ai' THEN 'ai' ELSE 'person' END
+      WHERE kind = 'request';
+    `);
   }
 
   close(): void {
@@ -252,6 +277,12 @@ export class RelayStore {
         status: row.req_status === "answered" ? "answered" : "open",
         verdict: row.req_verdict ? (String(row.req_verdict) as Verdict) : null,
         requestSeq: Number(row.req_seq),
+        state: (row.s_state as SessionState | null) ?? "open",
+        waitingOn: row.s_waiting == null ? null : String(row.s_waiting),
+        handler: row.s_handler === "ai" ? "ai" : "person",
+        needsReply: Number(row.s_needs ?? 1) === 1,
+        returnedAt: row.s_returned == null ? null : Number(row.s_returned),
+        pickedAt: row.s_picked == null ? null : Number(row.s_picked),
       };
     }
     return thread;
@@ -360,12 +391,15 @@ export class RelayStore {
     const body = text(req.body, "正文", LIMITS.body);
     const questions = checkQuestions(req.questions);
     const via = checkVia(req.via);
+    const needs = via.kind === "ai" || req.needsReply !== false;
     return this.tx(() => {
       const id = newId("t");
       const at = this.now();
       this.db
-        .prepare("INSERT INTO threads (id, kind, title, created_by, created_at, updated_at, req_from, req_to, req_status) VALUES (?, 'request', ?, ?, ?, ?, ?, ?, 'open')")
-        .run(id, title, from, at, at, from, to);
+        .prepare(
+          "INSERT INTO threads (id, kind, title, created_by, created_at, updated_at, req_from, req_to, req_status, s_state, s_waiting, s_handler, s_needs) VALUES (?, 'request', ?, ?, ?, ?, ?, ?, 'open', 'open', ?, ?, ?)",
+        )
+        .run(id, title, from, at, at, from, to, to, via.kind === "ai" ? "ai" : "person", needs ? 1 : 0);
       for (const n of [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
       const message = this.insertMessage(id, from, via, "request", body, questions.length ? { questions } : null);
       this.db.prepare("UPDATE threads SET req_seq = ? WHERE id = ?").run(message.seq, id);
@@ -380,8 +414,15 @@ export class RelayStore {
     const via = checkVia(msg?.via);
     if (kind === "text") {
       const body = text(msg.body, "内容", LIMITS.body);
+      const pass = !!msg.pass && !!thread.request;
+      if (pass) this.checkPass(thread, author, via);
       return this.tx(() => {
         const message = this.insertMessage(threadId, author, via, "text", body, null);
+        if (pass) {
+          const r = thread.request!;
+          if (author === r.from) this.setSession(threadId, { s_state: "open", s_waiting: r.to });
+          else this.setSession(threadId, { s_state: "returned", s_waiting: r.from, s_returned: this.now(), s_picked: null });
+        }
         return { thread: this.toThread(this.threadRow(threadId)), message };
       });
     }
@@ -402,8 +443,83 @@ export class RelayStore {
       if (verdict) extra.verdict = verdict;
       const message = this.insertMessage(threadId, author, via, "reply", body, Object.keys(extra).length ? extra : null);
       this.db.prepare("UPDATE threads SET req_status = 'answered', req_verdict = COALESCE(?, req_verdict) WHERE id = ?").run(verdict ?? null, threadId);
+      // A reply hands the session back to whoever asked.
+      this.setSession(threadId, { s_state: "returned", s_waiting: req.from, s_returned: this.now(), s_picked: null });
       return { thread: this.toThread(this.threadRow(threadId)), message };
     });
+  }
+
+  private setSession(threadId: string, cols: Record<string, string | number | null>): void {
+    const keys = Object.keys(cols);
+    this.db.prepare(`UPDATE threads SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => cols[k]!), threadId);
+  }
+
+  /** Handing a session over is for whoever it waits on; an AI keeps out once its person took it over. */
+  private checkPass(thread: Thread, author: string, via: Via): void {
+    const r = thread.request!;
+    if (r.state === "done") throw new RelayError("conflict", "这个会话已经完成了；要继续就先重新打开");
+    if (r.waitingOn !== author) throw new RelayError("conflict", `这个会话现在在 ${r.waitingOn} 手里，等对方处理完再说`);
+    if (via.kind === "ai" && author === r.from && r.handler === "person") throw new RelayError("conflict", `这个会话已由 ${r.from} 本人接手处理，AI 不要再操作；需要的话请他点「交还给 AI」`);
+  }
+
+  /**
+   * 标记完成 / 重新打开 / 我来处理 (the asker takes it from their AI) / 交还给 AI / handoff (the AI gives it to its
+   * person). Each writes an event message saying what happened.
+   */
+  sessionAction(threadId: string, actor: string, action: SessionAction, opts: { via?: Via; note?: unknown } = {}): { thread: Thread; message: Message } {
+    const thread = this.thread(threadId, actor);
+    const r = thread.request;
+    if (!r) throw new RelayError("bad_request", "只有会话有这些操作");
+    const via = checkVia(opts.via);
+    const note = text(opts.note, "说明", LIMITS.body, false);
+    const asker = actor === r.from;
+    const aiOfAsker = asker && via.kind === "ai";
+    if (aiOfAsker && r.handler === "person" && action !== "handoff") throw new RelayError("conflict", `这个会话已由 ${r.from} 本人接手处理，AI 不要再操作`);
+    let cols: Record<string, string | number | null>;
+    let what: string;
+    switch (action) {
+      case "done":
+        if (!asker && r.needsReply) throw new RelayError("forbidden", "这个会话需要你回复，只有发起方能标记完成");
+        if (r.state === "done") throw new RelayError("conflict", "已经完成了");
+        cols = { s_state: "done", s_waiting: null };
+        what = "标记完成";
+        break;
+      case "reopen":
+        if (r.state !== "done") throw new RelayError("conflict", "会话还没完成");
+        cols = { s_state: "open", s_waiting: r.to };
+        what = "重新打开";
+        break;
+      case "handle":
+        if (!asker || via.kind === "ai") throw new RelayError("forbidden", "只有发起人本人能从 AI 手里接手");
+        cols = { s_handler: "person" };
+        what = "从 AI 手里接手了这个会话";
+        break;
+      case "toAi":
+        if (!asker || via.kind === "ai") throw new RelayError("forbidden", "只有发起人本人能交还给 AI");
+        cols = { s_handler: "ai", s_picked: null };
+        what = "把会话交还给 AI";
+        break;
+      case "handoff":
+        if (!aiOfAsker) throw new RelayError("forbidden", "只有发起人的 AI 能把会话交给本人");
+        cols = { s_handler: "person" };
+        what = "AI 把会话交给本人处理";
+        break;
+      default:
+        throw new RelayError("bad_request", `不认识的操作：${String(action)}`);
+    }
+    return this.tx(() => {
+      this.setSession(threadId, cols);
+      const message = this.insertMessage(threadId, actor, via, "event", note ? `${what}：${note}` : what, null);
+      return { thread: this.toThread(this.threadRow(threadId)), message };
+    });
+  }
+
+  /** The asking side's AI read a session that came back: it has it now (shown as 「AI 已取回」). True when that is new. */
+  markPicked(threadId: string, name: string): boolean {
+    const r = this.thread(threadId, name).request;
+    if (!r || r.from !== name || r.state !== "returned" || r.handler !== "ai" || r.pickedAt !== null) return false;
+    this.setSession(threadId, { s_picked: this.now() });
+    return true;
   }
 
   /** Messages of a thread after a seq, oldest first. */

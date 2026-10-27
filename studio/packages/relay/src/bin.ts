@@ -8,7 +8,7 @@ import { createRelayMcp } from "./mcp.js";
 import { RELAY_DEFAULT_PORT, type NewRequest } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
-import { threadAsText, usagePrompt } from "./usage.js";
+import { sessionStateText, threadAsText, usagePrompt } from "./usage.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name 策划组] [--passphrase <邀请口令>]
@@ -16,7 +16,8 @@ import { threadAsText, usagePrompt } from "./usage.js";
 //   passwd --data <dir> <名字> <新密码>        on the service machine, while it is stopped or running
 //   register --server <host:port> --name <名字> --password <密码> [--role …] [--passphrase …] | login --server … --name … --password …
 //   whoami | people | prompt | mcp
-//   ask --json <file|->   replies [threadId] [--after n]   wait <threadId> [--minutes n]   send <threadId> --body <text>
+//   ask --json <file|->   replies [threadId] [--after n]   wait <threadId> [--minutes n]
+//   send <threadId> --body <text> [--then ask|done]   queue   handoff <threadId> --note <text>
 
 const USAGE = `amo-relay <command>
   serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name <服务名>] [--passphrase <邀请口令>]
@@ -27,7 +28,9 @@ const USAGE = `amo-relay <command>
   ask      --json <文件|->
   replies  [threadId] [--after n]
   wait     <threadId> [--minutes n]
-  send     <threadId> --body <文字>`;
+  send     <threadId> --body <文字> [--then ask|done]   （ask：继续追问，会话回到对方手里；done：收尾并标记完成）
+  queue                                            （待我这边处理的会话）
+  handoff  <threadId> --note <文字>                 （交给本人处理）`;
 
 function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<string, string> } {
   const [cmd = "", ...rest] = argv;
@@ -42,6 +45,9 @@ function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<stri
   }
   return { cmd, pos, flags };
 }
+
+/** What the command line writes counts as the person's AI: it is what agents without MCP use. */
+const CLI_VIA = { kind: "ai", client: "amo-relay cli" } as const;
 
 const cliCommand = () => `node "${fileURLToPath(import.meta.url)}"`;
 
@@ -124,20 +130,20 @@ async function main(): Promise<void> {
       if (!flags.json) throw new Error("用法：amo-relay ask --json <文件|->");
       const { client } = joined();
       const req = (await readJsonArg(flags.json)) as NewRequest;
-      const res = await client.ask({ ...req, via: { kind: "ai", client: "amo-relay cli" } });
+      const res = await client.ask({ ...req, via: CLI_VIA });
       out(`已发给 ${res.thread.request?.to}。threadId: ${res.thread.id}`);
       return;
     }
     case "replies": {
       const { client, me } = joined();
       if (pos[0]) {
-        const { thread, messages } = await client.messages(pos[0], Number(flags.after ?? 0));
+        const { thread, messages } = await client.messages(pos[0], Number(flags.after ?? 0), { ai: true });
         out(threadAsText(thread, messages));
         return;
       }
       for (const t of await client.threads()) {
-        if (t.request?.from !== me) continue;
-        out(`${t.title} → ${t.request.to} · ${t.request.status === "answered" ? "已回复" : "等回复"} · ${t.id}`);
+        if (!t.request || (t.request.from !== me && t.request.to !== me)) continue;
+        out(`${t.title} · ${t.request.from} → ${t.request.to} · ${sessionStateText(t.request)} · ${t.id}`);
       }
       return;
     }
@@ -147,7 +153,7 @@ async function main(): Promise<void> {
       const { messages: all } = await client.messages(pos[0]);
       const after = all.reduce((n, m) => (m.author === me ? Math.max(n, m.seq) : n), 0);
       const minutes = Math.max(0.1, Math.min(Number(flags.minutes ?? 5), 10));
-      const got = await client.wait({ threadId: pos[0], after, timeoutMs: minutes * 60_000 });
+      const got = await client.wait({ threadId: pos[0], after, timeoutMs: minutes * 60_000, ai: true });
       if (!got.length) {
         out(`等了 ${minutes} 分钟还没有新回复。`);
         return;
@@ -157,10 +163,35 @@ async function main(): Promise<void> {
       return;
     }
     case "send": {
-      if (!pos[0] || !flags.body) throw new Error("用法：amo-relay send <threadId> --body <文字>");
+      const then = flags.then ?? "note";
+      if (!pos[0] || (!flags.body && then !== "done") || !["ask", "done", "note"].includes(then)) throw new Error("用法：amo-relay send <threadId> --body <文字> [--then ask|done]");
       const { client } = joined();
-      const res = await client.send(pos[0], { kind: "text", body: flags.body, via: { kind: "ai", client: "amo-relay cli" } });
-      out(`已发出（#${res.message.seq}）。`);
+      if (flags.body) {
+        const res = await client.send(pos[0], { kind: "text", body: flags.body, pass: then === "ask", via: CLI_VIA });
+        out(then === "ask" ? `已追问（#${res.message.seq}），会话回到对方手里。` : `已发出（#${res.message.seq}）。`);
+      }
+      if (then === "done") {
+        await client.session(pos[0], "done", { via: CLI_VIA });
+        out("已标记完成。");
+      }
+      return;
+    }
+    case "queue": {
+      const { client, me } = joined();
+      const live = (await client.threads()).filter((t) => t.request && t.request.state !== "done" && t.request.waitingOn === me);
+      if (!live.length) out("没有待处理的会话。");
+      for (const t of live) {
+        const r = t.request!;
+        const what = r.from === me ? (r.handler === "ai" ? "返回给我，等 AI 接着处理" : "已由本人接手，不要动") : "发给我，等我本人回复";
+        out(`${t.title} · ${r.from} → ${r.to} · ${what} · ${t.id}`);
+      }
+      return;
+    }
+    case "handoff": {
+      if (!pos[0] || !flags.note) throw new Error("用法：amo-relay handoff <threadId> --note <文字>");
+      const { client } = joined();
+      await client.session(pos[0], "handoff", { note: flags.note, via: CLI_VIA });
+      out("已交给本人。");
       return;
     }
     default:

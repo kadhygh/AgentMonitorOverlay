@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, type RelaySettings } from "./client.js";
-import { VERDICT_LABEL, type Message, type Thread } from "./protocol.js";
-import { threadAsText, usagePrompt } from "./usage.js";
+import { RELAY_VERSION, type Message, type Thread } from "./protocol.js";
+import { sessionStateText, threadAsText, usagePrompt } from "./usage.js";
 
 // The relay as MCP tools (stdio, `amo-relay mcp`), for any AI client. It speaks as the person whose settings are on
 // this machine, read again on every call, so joining after the client started works. Its instructions are the same
@@ -41,7 +41,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       // The service may be down when the client starts; the tools say so when called.
     }
   }
-  const server = new McpServer({ name: RELAY_MCP_NAME, version: "0.1.0" }, { instructions });
+  const server = new McpServer({ name: RELAY_MCP_NAME, version: RELAY_VERSION }, { instructions });
   const via = () => {
     const client = server.server.getClientVersion()?.name;
     return client ? { kind: "ai" as const, client } : { kind: "ai" as const };
@@ -69,90 +69,139 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     }),
   );
 
+  // Sessions (stage 2a). The first names of stage 1 stay as aliases, so agents that learnt them keep working.
+  const openSchema = {
+    to: z.string().describe("对方的名字（relay_people 里的）"),
+    title: z.string().describe("一句话说清要对方处理什么"),
+    body: z.string().describe("Markdown 正文：背景、方案、要确认的点，附上关键片段"),
+    questions: z
+      .array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() }))
+      .optional()
+      .describe("要对方逐条回答的问题；一个问题只问一件事"),
+  };
+  const openSession = async (args: { to: string; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
+    tool(async (client) => {
+      const out = await client.ask({ ...args, via: via() });
+      return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_session_get 取回复，或 relay_session_wait 等一会儿。`;
+    })();
+  const openDesc =
+    "给团队里的某个人发一个会话，要他处理一件事（确认方案、回答问题）。发出就返回 threadId，不会等回复；对方必须回复，结束由你这边标记。对方看不到你本机的文件和对话，正文里要写清背景并贴出关键内容。问题要逐条列出，可以带选项。";
+  for (const [name, title] of [
+    ["relay_session_open", "发会话"],
+    ["relay_ask", "发会话（旧名，同 relay_session_open）"],
+  ] as const)
+    server.registerTool(name, { title, description: openDesc, inputSchema: openSchema, annotations: annotations(false) }, openSession);
+
+  const getSchema = { threadId: z.string().optional(), after: z.number().int().optional().describe("只看这个序号（#n）之后的消息") };
+  const getSession = async (args: { threadId?: string; after?: number }) =>
+    tool(async (client, me) => {
+      if (args.threadId) {
+        const { thread, messages } = await client.messages(args.threadId, args.after ?? 0, { ai: true });
+        const request = args.after ? await requestOf(client, thread) : undefined;
+        return messages.length ? threadAsText(thread, messages, request) : `${threadAsText(thread, [])}\n\n（#${args.after ?? 0} 之后没有新消息）`;
+      }
+      const mine = (await client.threads()).filter((t) => t.request && (t.request.from === me || t.request.to === me)).slice(0, 30);
+      if (!mine.length) return "还没有会话。";
+      return mine.map((t) => `- ${t.title} · ${t.request!.from} → ${t.request!.to} · ${sessionStateText(t.request!)} · threadId ${t.id} · 最新 #${t.lastSeq}`).join("\n");
+    })();
+  const getDesc = "带 threadId：这个会话（或对话）里的消息，含逐条回答、结论和状态变化；可用 after 只看某个序号之后的。不带：列出我的会话和状态。";
+  for (const [name, title] of [
+    ["relay_session_get", "取会话"],
+    ["relay_replies", "取会话（旧名，同 relay_session_get）"],
+  ] as const)
+    server.registerTool(name, { title, description: getDesc, inputSchema: getSchema, annotations: annotations(true) }, getSession);
+
+  const waitSchema = { threadId: z.string(), minutes: z.number().optional(), after: z.number().int().optional() };
+  const waitSession = async (args: { threadId: string; minutes?: number; after?: number }, extra: { signal: AbortSignal }) =>
+    tool(async (client, me) => {
+      const { thread, messages: all } = await client.messages(args.threadId);
+      const after = args.after ?? lastBy(all, me);
+      const minutes = Math.max(0.1, Math.min(args.minutes ?? 5, 10));
+      const got = await client.wait({ threadId: args.threadId, after, timeoutMs: minutes * 60_000, signal: extra.signal, ai: true });
+      if (!got.length) return `等了 ${minutes} 分钟还没有新回复。可以先做别的，之后用 relay_session_get 看（threadId ${thread.id}）。`;
+      const { thread: now } = await client.messages(args.threadId, after);
+      return threadAsText(now, got, all.find((m) => m.kind === "request"));
+    })();
+  const waitDesc = "等这个会话里对方的新消息（通常是对方处理完返回），最多等 minutes 分钟（默认 5，最多 10）。默认从我最后一条消息之后算，已经到了的会马上返回。只在确实没别的可做时用。";
+  for (const [name, title] of [
+    ["relay_session_wait", "等回复"],
+    ["relay_wait", "等回复（旧名，同 relay_session_wait）"],
+  ] as const)
+    server.registerTool(name, { title, description: waitDesc, inputSchema: waitSchema, annotations: annotations(true) }, waitSession);
+
+  const reply = async (args: { threadId: string; body?: string; then?: "ask" | "done" | "note" }) =>
+    tool(async (client) => {
+      const then = args.then ?? "note";
+      const body = args.body?.trim();
+      if (then === "ask") {
+        if (!body) throw new RelayClientError(400, "bad_request", "继续追问要写内容（body）");
+        const out = await client.send(args.threadId, { kind: "text", body, pass: true, via: via() });
+        return `已追问（#${out.message.seq}），会话回到 ${out.thread.request?.to ?? "对方"} 手里。`;
+      }
+      if (then === "note" && !body) throw new RelayClientError(400, "bad_request", "补充要写内容（body）");
+      if (body) await client.send(args.threadId, { kind: "text", body, via: via() });
+      if (then === "done") {
+        await client.session(args.threadId, "done", { via: via() });
+        return "已标记完成。";
+      }
+      return "已发出。";
+    })();
   server.registerTool(
-    "relay_ask",
+    "relay_session_reply",
     {
-      title: "发请求给某人",
-      description:
-        "给团队里的某个人发一条要他确认的请求，发出就返回 threadId，不会等回复。对方看不到你本机的文件和对话，正文里要写清背景并贴出关键内容。问题要逐条列出，可以带选项。",
-      inputSchema: {
-        to: z.string().describe("对方的名字（relay_people 里的）"),
-        title: z.string().describe("一句话说清要确认什么"),
-        body: z.string().describe("Markdown 正文：背景、方案、要确认的点，附上关键片段"),
-        questions: z
-          .array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() }))
-          .optional()
-          .describe("要对方逐条回答的问题；一个问题只问一件事"),
-      },
+      title: "处理返回的会话",
+      description: '在会话里写一条：then="ask" 继续追问，会话回到对方手里；then="done" 问清楚了，标记完成（body 可写一句收尾）；then="note"（默认）只是补充，不换人。',
+      inputSchema: { threadId: z.string(), body: z.string().optional().describe("Markdown"), then: z.enum(["ask", "done", "note"]).optional() },
       annotations: annotations(false),
     },
-    async (args: { to: string; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
-      tool(async (client) => {
-        const out = await client.ask({ ...args, via: via() });
-        return `已发给 ${out.thread.request?.to}。threadId: ${out.thread.id}\n之后用 relay_replies 取回复，或 relay_wait 等一会儿。`;
-      })(),
+    reply,
   );
-
-  server.registerTool(
-    "relay_replies",
-    {
-      title: "看回复",
-      description: "带 threadId：这个请求（或对话）里的消息，含逐条回答和结论；可用 after 只看某个序号之后的。不带：列出我发出的请求和它们的状态。",
-      inputSchema: { threadId: z.string().optional(), after: z.number().int().optional().describe("只看这个序号（#n）之后的消息") },
-      annotations: annotations(true),
-    },
-    async (args: { threadId?: string; after?: number }) =>
-      tool(async (client, me) => {
-        if (args.threadId) {
-          const { thread, messages } = await client.messages(args.threadId, args.after ?? 0);
-          const request = args.after ? await requestOf(client, thread) : undefined;
-          return messages.length ? threadAsText(thread, messages, request) : `${threadAsText(thread, [])}\n\n（#${args.after ?? 0} 之后没有新消息）`;
-        }
-        const mine = (await client.threads()).filter((t) => t.request?.from === me).slice(0, 20);
-        if (!mine.length) return "还没有发出过请求。";
-        return mine
-          .map((t) => {
-            const r = t.request!;
-            const state = r.status === "answered" ? `已回复${r.verdict ? `（${VERDICT_LABEL[r.verdict]}）` : ""}` : "等回复";
-            return `- ${t.title} → ${r.to} · ${state} · threadId ${t.id} · 最新 #${t.lastSeq}`;
-          })
-          .join("\n");
-      })(),
-  );
-
-  server.registerTool(
-    "relay_wait",
-    {
-      title: "等回复",
-      description: "等这个请求里对方的新消息，最多等 minutes 分钟（默认 5，最多 10）。默认从我最后一条消息之后算，已经到了的会马上返回。只在确实没别的可做时用。",
-      inputSchema: { threadId: z.string(), minutes: z.number().optional(), after: z.number().int().optional() },
-      annotations: annotations(true),
-    },
-    async (args: { threadId: string; minutes?: number; after?: number }, extra: { signal: AbortSignal }) =>
-      tool(async (client, me) => {
-        const { thread, messages: all } = await client.messages(args.threadId);
-        const after = args.after ?? lastBy(all, me);
-        const minutes = Math.max(0.1, Math.min(args.minutes ?? 5, 10));
-        const got = await client.wait({ threadId: args.threadId, after, timeoutMs: minutes * 60_000, signal: extra.signal });
-        if (!got.length) return `等了 ${minutes} 分钟还没有新回复。可以先做别的，之后用 relay_replies 看（threadId ${thread.id}）。`;
-        const { thread: now } = await client.messages(args.threadId, after);
-        return threadAsText(now, got, all.find((m) => m.kind === "request"));
-      })(),
-  );
-
   server.registerTool(
     "relay_send",
     {
-      title: "追问或补充",
-      description: "在一个请求（或对话）里再发一条消息：追问、补充信息、告诉对方你按回复做了什么。",
+      title: "补充（旧名，同 relay_session_reply 的 note）",
+      description: "在会话（或对话）里补充一条消息，不换人。要继续追问或结束，用 relay_session_reply。",
       inputSchema: { threadId: z.string(), body: z.string().describe("Markdown") },
       annotations: annotations(false),
     },
-    async (args: { threadId: string; body: string }) =>
+    async (args: { threadId: string; body: string }) => reply({ ...args, then: "note" }),
+  );
+
+  server.registerTool(
+    "relay_session_handoff",
+    {
+      title: "交给本人",
+      description: "拿不准、需要本人决定时，把这个会话交给本人处理（他的待处理里会高亮），附一句原因。之后不要再动这个会话。",
+      inputSchema: { threadId: z.string(), note: z.string().describe("为什么交给本人、需要他决定什么") },
+      annotations: annotations(false),
+    },
+    async (args: { threadId: string; note: string }) =>
       tool(async (client) => {
-        const out = await client.send(args.threadId, { kind: "text", body: args.body, via: via() });
-        return `已发出（#${out.message.seq}）。`;
+        await client.session(args.threadId, "handoff", { note: args.note, via: via() });
+        return "已交给本人。";
       })(),
+  );
+
+  server.registerTool(
+    "relay_queue",
+    {
+      title: "待处理",
+      description: "待我这边处理的会话：返回给我、等你接着处理的，以及别人发给我、要我本人回复的。新对话开始时先看一眼。",
+      inputSchema: {},
+      annotations: annotations(true),
+    },
+    tool(async (client, me) => {
+      const live = (await client.threads()).filter((t) => t.request && t.request.state !== "done" && t.request.waitingOn === me);
+      const line = (t: Thread) => `- ${t.title} · ${t.request!.from} → ${t.request!.to} · threadId ${t.id}`;
+      const forAi = live.filter((t) => t.request!.from === me && t.request!.handler === "ai");
+      const taken = live.filter((t) => t.request!.from === me && t.request!.handler === "person");
+      const asked = live.filter((t) => t.request!.to === me);
+      const parts: string[] = [];
+      if (forAi.length) parts.push(`返回给我、等你接着处理（用 relay_session_get 取）：\n${forAi.map(line).join("\n")}`);
+      if (taken.length) parts.push(`已由本人接手（不要动）：\n${taken.map(line).join("\n")}`);
+      if (asked.length) parts.push(`别人发给我、等我本人回复（除非我让你帮忙，否则不用管）：\n${asked.map(line).join("\n")}`);
+      return parts.join("\n\n") || "没有待处理的会话。";
+    }),
   );
 
   return server;
