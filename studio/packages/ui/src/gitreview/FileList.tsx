@@ -3,6 +3,7 @@ import type { GitChangedFile } from "@amo-studio/protocol";
 import { FileTypeIcon } from "../files/FileTypeIcon.js";
 import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, treeRows, type ListLayout } from "./filetree.js";
 import { LazyChunks } from "./LazyChunks.js";
+import { isWebPage } from "../lib/openin.js";
 import { listOrder, STATUS_GLYPH, STATUS_NAME } from "./logic.js";
 
 // The review window's file list: a flat list of full paths (default, after Fork) or a folder tree (S12-A), each file
@@ -191,8 +192,11 @@ export interface FileMenuAt {
   y: number;
 }
 
-/** Right-click menu of a file row: VS Code (when the machine has it) and Explorer; a deleted file has neither. */
-export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vscode: boolean; onOpen(app: "vscode" | "explorer"): void; onClose(): void }) {
+/**
+ * Right-click menu of a file row: a web page in the browser (2026-10-27), VS Code (when the machine has it) and
+ * Explorer; a deleted file has none.
+ */
+export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vscode: boolean; onOpen(app: "vscode" | "explorer" | "browser"): void; onClose(): void }) {
   // Closes on Escape and on any click outside it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -205,7 +209,7 @@ export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vsco
     };
   }, [onClose]);
   const gone = at.file.status === "deleted";
-  const item = (app: "vscode" | "explorer", label: string) => (
+  const item = (app: "vscode" | "explorer" | "browser", label: string) => (
     <button
       type="button"
       role="menuitem"
@@ -220,7 +224,8 @@ export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vsco
     </button>
   );
   return (
-    <div className="ctx-menu" role="menu" aria-label="文件" style={{ left: Math.min(at.x, window.innerWidth - 200), top: Math.min(at.y, window.innerHeight - 90) }}>
+    <div className="ctx-menu" role="menu" aria-label="文件" style={{ left: Math.min(at.x, window.innerWidth - 200), top: Math.min(at.y, window.innerHeight - 120) }}>
+      {isWebPage(at.file.path) && item("browser", "浏览器打开")}
       {vscode && item("vscode", "VS Code 打开")}
       {item("explorer", "在资源管理器中显示")}
     </div>

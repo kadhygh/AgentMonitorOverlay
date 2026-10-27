@@ -166,3 +166,31 @@ test("amo-review says when AMO Studio is not running", async () => {
   expect(r).toMatchObject({ code: 2 });
   expect((r as { stderr: string }).stderr).toContain("没有在运行");
 });
+
+test("Review's file menu opens a web page in the browser (2026-10-27)", async () => {
+  studio = await launchStudio();
+  const { app, dataDir } = studio;
+  const dir = studio.workspace("pages");
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "core.autocrlf", "false");
+  writeFileSync(join(dir, "notes.md"), "# 记录\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  writeFileSync(join(dir, "report.html"), "<!doctype html><title>报告</title><p>进度</p>\n");
+  writeFileSync(join(dir, "notes.md"), "# 记录\n\n第二行\n");
+  const review = await nextWindow(app, () => amoReview(dataDir, dir));
+  const files = review.getByTestId("review-file");
+  await expect(files).toHaveCount(2);
+  const menu = review.getByRole("menu", { name: "文件" });
+  await files.filter({ hasText: "notes.md" }).click({ button: "right" });
+  await expect(menu.getByRole("menuitem", { name: "浏览器打开" })).toHaveCount(0);
+  await review.keyboard.press("Escape");
+  await files.filter({ hasText: "report.html" }).click({ button: "right" });
+  await expect(menu.getByRole("menuitem").first()).toHaveText("浏览器打开");
+  const posted = review.waitForResponse((r) => r.url().endsWith("/api/open-in") && r.request().method() === "POST");
+  await menu.getByRole("menuitem", { name: "浏览器打开" }).click();
+  const res = await posted;
+  expect(res.request().postDataJSON()).toMatchObject({ path: "report.html", app: "default" });
+  expect(await res.json()).toMatchObject({ app: "default", dryRun: true });
+  await expect(menu).toHaveCount(0);
+});
