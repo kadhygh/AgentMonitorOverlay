@@ -46,15 +46,18 @@ export function statModels(stats: TokenStats): StatModel[] {
   const total = new Map<string, number>();
   for (const d of stats.days) total.set(d.profileId, (total.get(d.profileId) ?? 0) + d.input + d.cached + d.output);
   const sorted = [...stats.models].sort((a, b) => (total.get(b.profileId) ?? 0) - (total.get(a.profileId) ?? 0));
+  // Two channels may share a name (DeepSeek on Codex and on DSH): the runtime tells them apart.
+  const same = (label: string) => stats.models.filter((m) => m.label === label).length > 1;
+  const name = (m: TokenStats["models"][number]) => (same(m.label) && m.runtime ? `${m.label}（${RUNTIME_LABELS[m.runtime]}）` : m.label);
   const out: StatModel[] = sorted.slice(0, SLOTS).map((m, i) => ({
     id: m.profileId,
-    label: m.label,
+    label: name(m),
     sub: m.removed ? "已删除的渠道" : `${m.runtime ? RUNTIME_LABELS[m.runtime] : ""}${m.model ? ` · ${m.model}` : ""}`,
     color: `var(--stat-s${i + 1})`,
     profileIds: [m.profileId],
   }));
   const rest = sorted.slice(SLOTS);
-  if (rest.length) out.push({ id: "other", label: "其他", sub: rest.map((m) => m.label).join("、"), color: "var(--stat-other)", profileIds: rest.map((m) => m.profileId) });
+  if (rest.length) out.push({ id: "other", label: "其他", sub: rest.map(name).join("、"), color: "var(--stat-other)", profileIds: rest.map((m) => m.profileId) });
   return out;
 }
 

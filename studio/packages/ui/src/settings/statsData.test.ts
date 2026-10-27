@@ -22,6 +22,13 @@ describe("token stats in 设置", () => {
     const data = byDate(s, models);
     expect(value(data.get("2026-10-01")!.get("other"), "all")).toBe(10);
     expect(statModels(stats([day("2026-10-01", "a", 1)]))[0]!.sub).toBe("Codex · m-a");
+    // Same name on two runtimes: the runtime is added.
+    const twins = stats([day("2026-10-01", "x", 2), day("2026-10-01", "y", 1)]);
+    twins.models = [
+      { profileId: "x", label: "DeepSeek", runtime: "codex", model: "deepseek-flash", removed: false },
+      { profileId: "y", label: "DeepSeek", runtime: "dsh", model: null, removed: false },
+    ];
+    expect(statModels(twins).map((m) => m.label)).toEqual(["DeepSeek（Codex）", "DeepSeek（DSH）"]);
   });
 
   it("cuts days, weeks from Monday and months up to today, the current one marked as under way", () => {
