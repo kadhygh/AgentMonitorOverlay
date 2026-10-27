@@ -142,8 +142,8 @@ interface ImageBlock {
   data: string;
 }
 
-/** How often a running turn's speed is read again from DSH's log (on a model call's usage report). */
-const MEASURE_EVERY_MS = 30_000;
+/** How often a running turn's speed is read again from DSH's log (on whatever update DSH sends next). */
+const MEASURE_EVERY_MS = 15_000;
 
 const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
 
@@ -463,8 +463,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
         const failed = grantFailurePath(`${toolOutput(p.update.content)}\n${typeof p.update.rawOutput === "string" ? p.update.rawOutput : JSON.stringify(p.update.rawOutput ?? "")}`);
         if (failed) this.offerFolderFix(session.id, failed);
       }
-      // A model call ended: now and then, the running turn's speed so far.
-      if (p.update.sessionUpdate === "usage_update" && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
+      // Now and then while a turn runs, its speed so far. 2026-10-27: on any update, not only usage_update — DSH sends
+      // that about once a turn, at its start (the log still empty), so a long turn showed no speed until it ended.
+      if (live.inflight && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
     });
     conn.on("exit", (code) => {
       if (this.live.get(session.id) === live) this.live.delete(session.id);
