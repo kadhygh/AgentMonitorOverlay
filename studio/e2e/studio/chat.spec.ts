@@ -77,6 +77,17 @@ test("steers a running reply and interrupts another", async () => {
   await page.getByRole("button", { name: "打断" }).click();
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "打断" })).toHaveCount(0);
+  // A reply had come back: the message stays sent.
+  await expect(composer(page)).toHaveValue("");
+
+  // 停止 before anything came back (2026-10-28): the message goes back into the composer to be reworded.
+  await composer(page).fill("改一下掉落表 [[wait]]");
+  await composer(page).press("Enter");
+  await expect(composer(page)).toHaveValue("");
+  await expect(page.getByRole("button", { name: "打断" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "打断" }).click();
+  await expect(composer(page)).toHaveValue("改一下掉落表 [[wait]]");
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
 });
 
 test("shows a subagent under its parent and jumps to it", async () => {

@@ -31,6 +31,7 @@ import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type Co
 import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
 import { READ_HERE_EVENT } from "../lib/scrollPin.js";
 import { readPlaceOf, restoreReadPlace, type ReadPlace } from "./readPlace.js";
+import { unansweredPrompt } from "./takeBack.js";
 import type { AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
@@ -376,6 +377,15 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     }
   }
 
+  /** 停止 before anything came back for the message (2026-10-28): it goes back into the composer, ahead of what is there. */
+  function stop() {
+    const back = unansweredPrompt(items);
+    onInterrupt();
+    if (back) setDraft((d) => (d.trim() ? `${back}
+
+${d}` : back));
+  }
+
   // Ctrl+P anywhere on the session's page opens the file selector, Ctrl+Shift+P 快速提交 (10-26) — not while another
   // dialog holds the keys.
   const askCommit = mentions.askCommit;
@@ -661,7 +671,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
               <span className="composer-hint">{attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && (
-                <button type="button" className="round-btn stop" onClick={onInterrupt} aria-label="打断" title="停止生成">
+                <button type="button" className="round-btn stop" onClick={stop} aria-label="打断" title={unansweredPrompt(items) ? "停止生成：还没有回复，刚发的消息放回输入框" : "停止生成"}>
                   <IconStop />
                 </button>
               )}

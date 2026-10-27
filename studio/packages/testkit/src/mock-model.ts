@@ -156,7 +156,7 @@ export const MOCK_PLAN = [
  */
 export type MockReply =
   | ((
-      | { kind: "text"; text: string; chunks?: number; delayMs?: number }
+      | { kind: "text"; text: string; chunks?: number; delayMs?: number; waitMs?: number }
       | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string }
       | { kind: "custom_tool_call"; name: string; input: string }
     ) & { reasoning?: string })
@@ -190,6 +190,7 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[spawn: task_name: message]]` → call Codex's collaboration.spawn_agent once, then reply `MOCK-DONE`;
  *   the subagent itself replies `MOCK-SUB: /root/<task_name>`
  * - `[[slow]]` → stream the reply in many small chunks with a delay (for steer/interrupt tests)
+ * - `[[wait]]` → nothing for 8 s, then `MOCK: <user text>` (stopping before anything came back)
  * - `[[markdown]]` → a reply with a table, a nested list, a code block and a link (rendering tests)
  * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies
  *   `MOCK-MCP: <start of its output>`
@@ -253,6 +254,7 @@ export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[files]]")) return { kind: "text", text: MOCK_FILES_REPLY };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
+  if (req.lastUserText.includes("[[wait]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, waitMs: 8000 };
   if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, reasoning: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   return { kind: "text", text: `MOCK: ${req.lastUserText}${req.images ? ` [images: ${req.images}]` : ""}` };
 };
@@ -344,6 +346,10 @@ async function streamReply(res: ServerResponse, reply: MockReply, seq: number): 
   }
   const usage = { input_tokens: 1200 + seq * 300, input_tokens_details: { cached_tokens: 800 + seq * 250 }, output_tokens: 160, output_tokens_details: { reasoning_tokens: reply.reasoning ? 60 : 0 }, total_tokens: 1360 + seq * 300 };
   send({ type: "response.created", response: { id: responseId, object: "response", status: "in_progress", output: [] } });
+  if (reply.kind === "text" && reply.waitMs) {
+    await sleep(reply.waitMs);
+    if (res.destroyed) return;
+  }
 
   const output: Array<Record<string, unknown>> = [];
   if (reply.reasoning) {
