@@ -59,10 +59,17 @@ export function markSeen(ids: readonly string[], at = new Date().toISOString(), 
  * When the last one ends counts as the session changing, so the person hears of it once, at the end.
  */
 export function unseenSessions(sessions: readonly Session[], data: SeenData): Session[] {
-  const subs = subsByParent(sessions);
+  // 2026-10-27: only what reports back folds into its starter. A 委派 session that does not report (its result stays in
+  // it, often one the person was meant to work in) is listed itself when it ends, so 完成待审核 opens it, not its starter.
   const under = hangsUnderOf(sessions);
+  const folded = (s: Session) => !!under(s) && (s.kind === "sub" || s.reportTo === s.startedBy);
+  const subs = new Map<string, Session[]>();
+  for (const [up, list] of subsByParent(sessions)) {
+    const kept = list.filter(folded);
+    if (kept.length) subs.set(up, kept);
+  }
   return sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "idle" || s.status === "completed" || s.status === "error"))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && !folded(s) && (s.status === "idle" || s.status === "completed" || s.status === "error"))
     .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
     .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
