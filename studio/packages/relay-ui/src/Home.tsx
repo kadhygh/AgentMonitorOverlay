@@ -25,13 +25,14 @@ type View = "queue" | "tasks" | "chat" | "people";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
   | { kind: "profile" }
+  | { kind: "oldShell" }
   | { kind: "ai" }
   | { kind: "task" }
   | { kind: "transfer"; task: TaskView; thread?: Thread }
   | { kind: "flow" }
   | { kind: "settings" };
 
-export function Home({ session, onLogout, resumeOpen = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null }) {
+export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings } = useSession(session);
   const me = session.me.name;
   useMinuteTick();
@@ -51,13 +52,17 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
   const updates = useUpdates(
     client,
     async () => !pageHasDraft() && (await pageIsIdle()),
-    () => saveResume({ openId: openRef.current }),
+    (version) => saveResume({ openId: openRef.current, updatedTo: version }),
   );
 
   const toast = useCallback((text: string) => {
     setToastText(text);
     setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
   }, []);
+  // An update that applied itself (the window was not in use) says so once.
+  useEffect(() => {
+    if (updatedTo) toast(`已自动更新到新版本 ${updatedTo}`);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups = useMemo(() => {
     const sessions = threads.filter((t) => t.kind === "request");
@@ -338,6 +343,11 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
         </nav>
         <span className="grow" />
         {updates.update && <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />}
+        {shell && !ownTitleBar && (
+          <button type="button" className="tb-btn old-shell" onClick={() => setDialog({ kind: "oldShell" })} title="你在用的桌面程序是旧版，界面会自动更新，但新标题栏、写用法文档这些要换新的桌面程序">
+            桌面程序可更新
+          </button>
+        )}
         <button type="button" className="tb-btn" onClick={() => setDialog({ kind: "flow" })} title="推进方式、常用指令、团队流程，点开可以复制">
           流程速查
         </button>
@@ -399,6 +409,29 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
             toast("会话已发出，会出现在对方的待处理里");
           }}
         />
+      )}
+      {dialog?.kind === "oldShell" && (
+        <Dialog
+          title="换新的桌面程序"
+          onClose={() => setDialog(null)}
+          foot={
+            <>
+              <button type="button" onClick={() => setDialog(null)}>
+                以后再说
+              </button>
+              <button type="button" className="primary" onClick={() => (shell?.openExternal(session.me.server), setDialog(null))}>
+                打开下载页
+              </button>
+            </>
+          }
+        >
+          <p className="lead-p">界面一直在自动更新，但有几样要换新的桌面程序才有：自绘标题栏、把用法写成本机文档给 AI 读、以后双击新版会自动接替旧版。</p>
+          <ol className="steps">
+            <li>在下载页下载新的客户端，解压到任意文件夹。</li>
+            <li>在右下角托盘图标上右键 →「退出」，把现在这个关掉（点窗口的 × 只是收进托盘）。</li>
+            <li>打开新解压的 AMO Relay.exe。账号、密码和记录都在原来的地方，不用重新登录。</li>
+          </ol>
+        </Dialog>
       )}
       {dialog?.kind === "profile" && <ProfileDialog session={session} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "task" && <NewTaskDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showTask(id))} />}

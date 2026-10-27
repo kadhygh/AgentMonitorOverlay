@@ -14,6 +14,8 @@ const AUTO_CHECK_MS = 5000;
 
 export interface Resume {
   openId: string | null;
+  /** The version the update went to, to say so after the reload. */
+  updatedTo?: string;
 }
 
 /** Saved just before an update reloads the page, read once after it. */
@@ -69,7 +71,7 @@ export interface Updates {
  * `latest`: the client version the service hands out, as last heard. `canApply` says whether applying now would lose
  * nothing; `beforeApply` keeps what should come back after the reload.
  */
-export function useUpdates(latest: string | null, canApply: () => boolean | Promise<boolean>, beforeApply: () => void = () => undefined): Updates {
+export function useUpdates(latest: string | null, canApply: () => boolean | Promise<boolean>, beforeApply: (version: string) => void = () => undefined): Updates {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function useUpdates(latest: string | null, canApply: () => boolean | Prom
     if (!update) return;
     setError(null);
     setProgress({ done: 0, total: 1 });
-    live.current.beforeApply();
+    live.current.beforeApply(update.latest);
     if (!shell) return location.reload();
     try {
       // Resolves only if the reload did not happen; normally this page is gone by then.

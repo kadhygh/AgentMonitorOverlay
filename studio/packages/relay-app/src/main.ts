@@ -392,9 +392,20 @@ function createTray(): void {
 
 // ---- start
 
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on("second-instance", showWindow);
+// One client per data folder. Starting another copy of the client (a newly unpacked one, say) takes over: the running
+// one is asked to make way and quits, and this one starts once the lock is free. Starting the same copy again just
+// shows its window. (A running client from before this rule only shows its window; quit it from the tray once.)
+const me = { exe: process.execPath };
+
+function start(): void {
+  app.on("second-instance", (_e, _argv, _cwd, data) => {
+    const other = (data as { exe?: string } | undefined)?.exe;
+    if (other && other.toLowerCase() !== process.execPath.toLowerCase()) {
+      quitting = true;
+      tray?.destroy();
+      app.quit();
+    } else showWindow();
+  });
   app.on("before-quit", () => (quitting = true));
   app.on("window-all-closed", () => undefined);
   void app.whenReady().then(async () => {
@@ -404,4 +415,19 @@ else {
     win = createWindow();
     await boot();
   });
+}
+
+if (app.requestSingleInstanceLock(me)) start();
+else {
+  // Another copy runs; it quits if it is a different one. Wait for the lock a few seconds, else leave it to it.
+  let tries = 0;
+  const retry = setInterval(() => {
+    if (app.requestSingleInstanceLock(me)) {
+      clearInterval(retry);
+      start();
+    } else if (++tries > 16) {
+      clearInterval(retry);
+      app.quit();
+    }
+  }, 500);
 }

@@ -20,7 +20,9 @@ applyTheme(readTheme());
 
 const SESSION = "amo-relay.session";
 /** What was open before an update reloaded the page: for the first conversations screen only, not after a re-login. */
-let resumeOpen = takeResume()?.openId ?? null;
+const resumed = takeResume();
+let resumeOpen = resumed?.openId ?? null;
+let updatedTo = resumed?.updatedTo ?? null;
 
 function restored(): Identity | null {
   try {
@@ -64,6 +66,7 @@ function App() {
     await shell?.signedIn(null);
     remember(null);
     resumeOpen = null;
+    updatedTo = null;
     setSession(null);
   };
 
@@ -74,7 +77,7 @@ function App() {
         <Login onSignedIn={(me) => (setFailed(null), remember(me), setSession(new Session(me)))} />
       </>
     );
-  return <Home session={session} onLogout={() => void logout()} resumeOpen={resumeOpen} />;
+  return <Home session={session} onLogout={() => void logout()} resumeOpen={resumeOpen} updatedTo={updatedTo} />;
 }
 
 createRoot(document.getElementById("root")!).render(
