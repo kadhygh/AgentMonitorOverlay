@@ -9,6 +9,8 @@ import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
+import { StatsPage } from "./StatsPage.js";
+import { useDialogSize } from "./dialogSize.js";
 import { MaintenancePage } from "./MaintenancePage.js";
 import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
@@ -43,6 +45,7 @@ const PAGES = [
   { id: "models", label: "模型" },
   { id: "subsession", label: "子会话" },
   { id: "quota", label: "额度" },
+  { id: "stats", label: "统计" },
   { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
@@ -68,6 +71,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
   const [dir, setDir] = useState(settings?.commonWorkspace?.path ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const size = useDialogSize();
 
   useEffect(() => setDir(settings?.commonWorkspace?.path ?? ""), [settings?.commonWorkspace?.path]);
   useEffect(() => {
@@ -102,7 +106,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置">
+      <div className="modal settings-modal" role="dialog" aria-modal="true" aria-label="设置" style={size.style}>
         <div className="modal-head">
           <span className="modal-title">设置</span>
           <span className="spacer" />
@@ -233,6 +237,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             {page === "models" && <ModelsPage link={link} settings={settings} />}
             {page === "subsession" && <SubsessionPage link={link} settings={settings} />}
             {page === "quota" && <QuotaPage link={link} settings={settings} />}
+            {page === "stats" && <StatsPage link={link} />}
 
             {page === "common" && <DefaultFolderSection />}
             {page === "common" && (
@@ -266,6 +271,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>
+        <span className="settings-grip" role="separator" aria-label="拖动改变设置窗口大小，双击恢复默认" title="拖动改变大小，双击恢复默认" data-testid="settings-grip" {...size.grip} />
       </div>
     </div>
   );

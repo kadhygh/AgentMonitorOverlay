@@ -468,6 +468,18 @@ export class Store extends DocumentStore {
   }
 
   /** Items still under way: a pending approval or question, a reply streaming, a tool, command, turn or compaction running. */
+  /** Every turn that recorded usage, with only what 设置 → 统计 needs (SQLite reads the JSON; nothing else is parsed). */
+  listTurnUsage(): Array<{ sessionId: Id; startedAt: string; input: number; cached: number; output: number }> {
+    return this.db
+      .prepare(
+        `SELECT session_id AS sessionId, COALESCE(json_extract(body, '$.startedAt'), created_at) AS startedAt,
+                COALESCE(json_extract(body, '$.usage.input'), 0) AS input, COALESCE(json_extract(body, '$.usage.cachedInput'), 0) AS cached,
+                COALESCE(json_extract(body, '$.usage.output'), 0) AS output
+           FROM items WHERE type = 'turn' AND json_extract(body, '$.usage') IS NOT NULL`,
+      )
+      .all() as Array<{ sessionId: Id; startedAt: string; input: number; cached: number; output: number }>;
+  }
+
   listUnfinishedItems(sessionId: Id): SessionItem[] {
     return (
       this.db

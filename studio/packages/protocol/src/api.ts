@@ -324,6 +324,40 @@ export interface DshCheck {
   kind?: "desktop" | "clone";
 }
 
+/**
+ * 设置 → 统计 (2026-10-27): tokens per local day and model, counted again from every turn's usage each time it is asked
+ * for. A model is a profile (a channel: Claude, GPT, GLM, a third-party one); subagents and delegated sessions count
+ * under the model they ran on. `input` here is what was not read from the cache (the runtimes' input minus cachedInput).
+ */
+export interface TokenStatsDay {
+  /** YYYY-MM-DD in the Host's time zone, from the turn's start. */
+  date: string;
+  profileId: string;
+  input: number;
+  cached: number;
+  output: number;
+  turns: number;
+}
+
+export interface TokenStatsModel {
+  profileId: string;
+  label: string;
+  runtime: import("./entities.js").SessionRuntime | null;
+  model: string | null;
+  /** No longer among the profiles (a channel that was deleted): still counted, under its old id. */
+  removed: boolean;
+}
+
+export interface TokenStats {
+  generatedAt: Timestamp;
+  /** How long counting took. */
+  ms: number;
+  /** Turns with usage that were counted. */
+  turns: number;
+  days: TokenStatsDay[];
+  models: TokenStatsModel[];
+}
+
 export interface CredentialStatus {
   id: string;
   /** The profiles that use it, e.g. "Claude 订阅". */
@@ -408,6 +442,7 @@ export interface HostRoutes {
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
+  "GET /api/stats/tokens": { req: void; res: TokenStats };
   /** Saves a writable credential (the Claude subscription token) in the Windows Credential Manager. */
   "PUT /api/credentials/:id": { req: { secret: string }; res: CredentialStatus[] };
   "DELETE /api/credentials/:id": { req: void; res: CredentialStatus[] };

@@ -5,7 +5,7 @@ import type { Session, Task, Workspace, Topic, StateSnapshot, StudioSettings } f
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // 设置: the theme (dark, light, or following the system; remembered, shared with Focus), the common space, and how the
-// Claude subscription signs in (a token, or the person's own Claude Code login after a warning).
+// Claude subscription signs in (the person's own Claude Code login; the token mode is gone since 2026-10-27).
 
 let studio: Studio | undefined;
 
