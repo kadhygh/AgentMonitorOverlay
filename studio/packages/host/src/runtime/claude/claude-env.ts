@@ -8,12 +8,12 @@ import { localClaudeSignedIn } from "./claude-login.js";
 
 /**
  * An Anthropic-compatible endpoint plus the model mapping the CLI should use with it, or (`auth: "oauth"`) the person's
- * own Claude subscription through a long-lived token from `claude setup-token`.
+ * own Claude subscription: their Claude Code login (tests: a test token, as CLAUDE_CODE_OAUTH_TOKEN).
  */
 export interface ClaudeProviderDef {
   /** Absent for the subscription: the CLI talks to Anthropic itself. */
   baseUrl?: string;
-  /** "oauth": the profile's credential is a subscription token (CLAUDE_CODE_OAUTH_TOKEN), not an API key. */
+  /** "oauth": the subscription; signed in by the person's Claude Code (tests: a token in CLAUDE_CODE_OAUTH_TOKEN), not an API key. */
   auth?: "oauth";
   /** Models of a non-Anthropic endpoint (Claude Code's own list only knows Claude models). */
   models?: ModelOption[];
@@ -71,7 +71,7 @@ export function claudeEnv(
   if (!provider) throw new ClaudeProfileError(`unknown Claude provider ${profile.provider}`);
   const local = home.login === "local" && provider.auth === "oauth";
   if (local && localClaudeSignedIn(home.dir) === false) {
-    throw new ClaudeProfileError(`没找到本机 Claude Code 的登录（${home.dir}）：在终端运行 claude 登录一次，或到 设置 → 模型 改用令牌`);
+    throw new ClaudeProfileError(`没找到本机 Claude Code 的登录（${home.dir}）：在终端运行 claude 登录一次`);
   }
   const key = profile.credentialId && !local ? credentials.read(profile.credentialId) : null;
   // The subscription outside the local login: a session started on the token mode, gone since 2026-10-27.

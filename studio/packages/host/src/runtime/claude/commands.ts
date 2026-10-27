@@ -17,8 +17,8 @@ export const BLOCKED_COMMANDS: Record<string, string> = {
   resume: "Studio 里不能切换到别的 Claude 会话。",
   exit: "Studio 里不需要 /exit。",
   quit: "Studio 里不需要 /quit。",
-  login: "Studio 里不能用 /login：本机登录请在终端运行 claude 登录；用令牌请到 设置 → 模型 保存。",
-  logout: "Studio 里不能用 /logout：本机登录请在终端里退出；用令牌请到 设置 → 模型 删除。",
+  login: "Studio 里不能用 /login：在终端运行 claude 登录，Studio 用的就是那份登录。",
+  logout: "Studio 里不能用 /logout：请在终端的 claude 里退出。",
 };
 
 /**

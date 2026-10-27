@@ -29,7 +29,7 @@ export class ClaudeUsageTracker {
     const windows = [...(this.windows.get(profile.id)?.values() ?? [])];
     const note = windows.some((w) => w.usedPercent !== null)
       ? null
-      : "用令牌登录时查不到用量百分比（setup-token 令牌没有这个权限），只显示 Claude 告诉的重置时间。在 设置 → 模型 改用本机 Claude Code 的登录后可以看到。";
+      : "用令牌登录时查不到用量百分比（令牌没有这个权限），只显示 Claude 告诉的重置时间。";
     return { profileId: profile.id, label: profile.label, windows, note, updatedAt: this.updatedAt.get(profile.id) ?? null };
   }
 

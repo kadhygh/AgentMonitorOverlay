@@ -5,7 +5,8 @@ import type { UsageWindow } from "@amo-studio/protocol";
 // The Claude subscription's quota, read the way Claude Code's /usage (and CC Switch) read it: GET /api/oauth/usage with
 // the account's OAuth access token. It needs the `user:profile` scope, which the person's Claude Code login has and a
 // `claude setup-token` token does not (Anthropic answers 403 oauth_scope_insufficient, checked 2026-10-14). So only the
-// local login can show the percentages; with the token Studio knows what the sessions' rate_limit_event messages say.
+// local login can show the percentages; with a token (only tests since 2026-10-27) Studio knows what the sessions'
+// rate_limit_event messages say.
 
 export const CLAUDE_USAGE_LABELS: Record<string, string> = {
   five_hour: "5 小时",
