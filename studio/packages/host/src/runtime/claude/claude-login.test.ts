@@ -20,12 +20,16 @@ afterEach(() => {
 });
 
 describe("how the Claude subscription signs in", () => {
-  it("is the local Claude Code login until the person picks otherwise; test runs default to the token", () => {
+  it("is always the local Claude Code login; test runs use a test token unless they point CLAUDE_CONFIG_DIR at a stand-in (2026-10-27)", () => {
+    expect(readClaudeLogin(store, {})).toBe("local");
+    // A token chosen before the mode was removed counts for nothing.
+    writeClaudeLogin(store, "token");
     expect(readClaudeLogin(store, {})).toBe("local");
     expect(readClaudeLogin(store, { AMO_STUDIO_TEST: "1" })).toBe("token");
-    writeClaudeLogin(store, "token");
-    expect(readClaudeLogin(store, {})).toBe("token");
     writeClaudeLogin(store, "local");
     expect(readClaudeLogin(store, { AMO_STUDIO_TEST: "1" })).toBe("local");
+    store.setKv("settings:claude-login", "");
+    expect(readClaudeLogin(store, { AMO_STUDIO_TEST: "1" })).toBe("token");
+    expect(readClaudeLogin(store, { AMO_STUDIO_TEST: "1", CLAUDE_CONFIG_DIR: "D:/stand-in" })).toBe("local");
   });
 });

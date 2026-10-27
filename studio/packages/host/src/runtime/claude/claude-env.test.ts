@@ -63,14 +63,16 @@ describe("claudeEnv", () => {
     expect(() => claudeEnv(glm, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({}), studio("home"), base)).toThrow(/not stored/);
   });
 
-  it("uses the subscription token for the Claude subscription, with no endpoint override", () => {
+  // Test runs still sign the subscription in on a token (Studio's own dir, never the real ~/.claude); the person can no
+  // longer save one (2026-10-27), so a session started on the token mode says to start a new one.
+  it("uses a test token for the Claude subscription, with no endpoint override", () => {
     const sub: ModelProfile = { id: "claude-subscription", label: "Claude 订阅", runtime: "claude", provider: "anthropic", model: null, credentialId: "claude-subscription" };
     const env = claudeEnv(sub, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({ "claude-subscription": "sk-ant-oat-x" }), studio("home"), base);
     expect(env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-x", CLAUDE_CONFIG_DIR: "home", CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1" });
     expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(env.ANTHROPIC_MODEL).toBeUndefined();
-    expect(() => claudeEnv(sub, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({}), studio("home"), base)).toThrow(/claude setup-token/);
+    expect(() => claudeEnv(sub, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({}), studio("home"), base)).toThrow(/令牌登录已经去掉/);
   });
 
   it("signs the subscription in from the person's own Claude Code with the local login: no token, their config dir", () => {

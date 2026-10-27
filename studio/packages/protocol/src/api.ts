@@ -171,7 +171,6 @@ export interface StudioSettings {
    */
   scratchpadSafeNewlines: boolean;
   /** How the Claude subscription signs in (设置 → 模型); sessions keep the way they were started. */
-  claudeLogin: ClaudeLogin;
   /** The person's own Claude Code config dir and whether it holds a login (null: cannot tell on this system). */
   claudeLocal: { dir: string; signedIn: boolean | null };
   /** Per profile id: model order and defaults (设置 → 模型). */
@@ -264,7 +263,11 @@ export interface QuotaDisplay {
 
 export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false };
 
-/** "token": the token from `claude setup-token`, Studio's own config dir. "local": the person's Claude Code login and ~/.claude. */
+/**
+ * Where a Claude session runs. "local": the person's Claude Code login and ~/.claude (the Claude subscription, always,
+ * since 2026-10-27). "token": Studio's own config dir — API-key channels, and in tests the subscription on a test token;
+ * the person can no longer save a `claude setup-token` token (the person's call: Studio keeps no Claude.ai credential).
+ */
 export type ClaudeLogin = "token" | "local";
 
 /**
@@ -401,7 +404,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

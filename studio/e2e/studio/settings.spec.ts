@@ -116,45 +116,27 @@ test("the common folder: where work without a project runs, moved in settings", 
   expect(state.tasks.find((t) => t.title === "随手记一件事")?.workspaceId).toBe(commonWorkspace.id);
 });
 
-test("the Claude subscription token is saved in settings, then Claude sessions run on it", async () => {
+test("设置 → 模型: the Claude subscription signs in through Claude Code itself, with nothing to paste; API keys show on their channel's page (2026-10-27)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
-  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
-  const start = () =>
-    studio!.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
-      title: "订阅",
-      workspaceId: ws.id, topicId: topic.id,
-      firstSession: { profileId: "claude-subscription", text: "hello" },
-    });
-  // Without a token the session cannot start, and says how to get one.
-  await expect(start()).rejects.toThrow(/claude setup-token/);
-
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
   await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
-  await expect(dialog.getByRole("radio", { name: /令牌/ })).toHaveAttribute("aria-checked", "true");
-  const row = dialog.locator('[data-testid="credential"][data-id="claude-subscription"]');
-  await expect(row).toContainText("未设置");
-  await row.getByLabel("Claude 令牌").fill("sk-ant-oat01-e2e");
-  await row.getByRole("button", { name: "保存" }).click();
-  await expect(row).toContainText("已保存");
-  await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 令牌");
+  await expect(dialog.getByTestId("claude-local-state")).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /令牌/ })).toHaveCount(0);
+  await expect(dialog.locator('[data-testid="credential"][data-id="claude-subscription"]')).toHaveCount(0);
+  await expect(dialog.getByTestId("claude-login-notes")).toContainText("claude --resume");
+  // Studio stores no Claude.ai token any more: the Host refuses one.
+  await expect(studio.api("PUT", "/api/credentials/claude-subscription", { secret: "sk-ant-oat01-e2e" })).rejects.toThrow(/cannot be changed from Studio/);
   // API keys stored elsewhere are shown on their channel's page, never editable here.
   await dialog.locator('[data-testid="channel-nav"][data-id="codex-mock"]').click();
   await expect(dialog.locator('[data-testid="channel-page"][data-id="codex-mock"]')).toContainText("Key 已保存（旧 AMO 设置里的）");
   await expect(dialog.locator('[data-testid="credential"][data-id="mock"]')).toHaveCount(0);
   await screenshot(app, "settings", "settings-credentials", page);
-  await page.keyboard.press("Escape");
-
-  await start();
-  await page.getByTestId("task-card").first().click();
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
-  await expect(page.getByTestId("thread-head")).toContainText("Claude");
 });
 
-test("the Claude subscription on the local Claude Code login: a warning first, then sessions run without a token", async ({}, info) => {
+test("the Claude subscription on the local Claude Code login: found in 设置, then sessions run without a token", async ({}, info) => {
   // A stand-in for the person's ~/.claude (their CLAUDE_CONFIG_DIR), signed in: the real one is never touched.
   const mine = join(info.outputDir, "my-claude");
   mkdirSync(mine, { recursive: true });
@@ -168,33 +150,10 @@ test("the Claude subscription on the local Claude Code login: a warning first, t
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
   await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
-  const local = dialog.getByRole("radio", { name: /本机 Claude Code 的登录/ });
-  const confirm = page.getByTestId("claude-local-confirm");
-
-  // The second dialog lists the risks; cancelling (or Escape, which leaves 设置 open) changes nothing.
-  await local.click();
-  await expect(confirm).toBeVisible();
-  await expect(confirm).toContainText("共用同一个账号和用量额度");
-  await expect(confirm).toContainText(mine);
-  await expect(confirm.getByRole("button", { name: "取消" })).toBeFocused();
-  await screenshot(app, "stage-12", "S12-I-local-login-confirm", page);
-  await page.keyboard.press("Escape");
-  await expect(confirm).toHaveCount(0);
-  await expect(dialog).toBeVisible();
-  await expect(local).toHaveAttribute("aria-checked", "false");
-  await local.click();
-  await confirm.getByRole("button", { name: "取消" }).click();
-  await expect(local).toHaveAttribute("aria-checked", "false");
-  expect((await studio.api<StudioSettings>("GET", "/api/settings")).claudeLogin).toBe("token");
-
-  // Confirmed: the local login is found, no token row any more.
-  await local.click();
-  await confirm.getByRole("button", { name: "我了解风险，改用本机登录" }).click();
-  await expect(local).toHaveAttribute("aria-checked", "true");
+  // The local login is found (the stand-in here); there is nothing to choose and no token row.
   await expect(dialog.getByTestId("claude-local-state")).toContainText("已找到");
+  await expect(dialog.getByTestId("claude-local-state")).toContainText(mine);
   await expect(dialog.locator('[data-testid="credential"][data-id="claude-subscription"]')).toHaveCount(0);
-  await expect(dialog.getByTestId("credential-message")).toContainText("已改用本机 Claude Code 的登录");
-  expect((await studio.api<StudioSettings>("GET", "/api/settings")).claudeLogin).toBe("local");
   await screenshot(app, "stage-12", "S12-I-models-page", page);
   await page.keyboard.press("Escape");
 
@@ -216,11 +175,4 @@ test("the Claude subscription on the local Claude Code login: a warning first, t
   await expect(windows.nth(1).getByTestId("usage-reset")).toHaveText(/^3d 2h [56]m$/);
   await screenshot(app, "stage-12", "S12-J-claude-usage", page);
   await page.getByTestId("host-status").click();
-
-  // Back to the token: no second dialog.
-  await page.getByRole("button", { name: "设置" }).click();
-  await dialog.getByRole("radio", { name: /令牌/ }).click();
-  await expect(confirm).toHaveCount(0);
-  await expect(dialog.getByRole("radio", { name: /令牌/ })).toHaveAttribute("aria-checked", "true");
-  expect((await studio.api<StudioSettings>("GET", "/api/settings")).claudeLogin).toBe("token");
 });

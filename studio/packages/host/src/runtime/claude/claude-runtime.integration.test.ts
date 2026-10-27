@@ -202,7 +202,7 @@ describe("ClaudeRuntime", () => {
     await expect(runtime.fork(fresh.id)).rejects.toThrow(/还没有对话内容/);
   }, 120_000);
 
-  it("runs the subscription on the person's own Claude Code login when they chose it; sessions keep the way they started", async () => {
+  it("runs the subscription on the person's own Claude Code login, whatever was chosen before (2026-10-27: no token mode); sessions keep the way they started", async () => {
     // A stand-in for ~/.claude with a login in it (the CLI sends its access token to the mock as it would to Anthropic).
     const mine = join(root, "my-claude");
     mkdirSync(mine, { recursive: true });
@@ -218,21 +218,16 @@ describe("ClaudeRuntime", () => {
       localClaudeHome: mine,
     });
     try {
-      // With the token way and no token, the subscription cannot start.
+      // A token way chosen before it was removed counts for nothing outside tests: the local login is used.
       writeClaudeLogin(store, "token");
-      await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "x" })).rejects.toThrow(/claude setup-token/);
-      // The token cannot read the account's quota; Studio says so instead of showing numbers it does not have.
-      expect((await local.usage("claude-sub", true))?.note).toMatch(/查不到用量百分比/);
-      writeClaudeLogin(store, "local");
-      // The local login can: 5 小时 and 每周 with their resets, as Claude Code's /usage reads them.
+      // The local login reads the quota: 5 小时 and 每周 with their resets, as Claude Code's /usage reads them.
       const usage = await local.usage("claude-sub", true);
       expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
       expect(Date.parse(usage!.windows[0]!.resetsAt!) - Date.now()).toBeGreaterThan(90 * 60_000);
       const s = await local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "from my login" });
       await until(() => agentTexts(s.id).includes("MOCK: from my login") && status(s.id) === "idle", "local reply");
       expect(existsSync(join(mine, "projects"))).toBe(true);
-      // Back to the token way: the session started with the local login goes on with it (its transcript is there).
-      writeClaudeLogin(store, "token");
+      // The session goes on with it (its transcript is there).
       await local.sendMessage(s.id, "still mine");
       await until(() => agentTexts(s.id).includes("MOCK: still mine") && status(s.id) === "idle", "second local reply");
       expect(JSON.stringify(mock.requests.at(-1)!.body.messages)).toContain("MOCK: from my login");
@@ -241,8 +236,6 @@ describe("ClaudeRuntime", () => {
       await local.sendMessage(branch.id, "in my branch");
       await until(() => agentTexts(branch.id).includes("MOCK: in my branch"), "local branch reply");
       await expect(local.fork(s.id, "claude-mock")).rejects.toThrow(/只能继续用 Claude 订阅/);
-      // New subscription sessions follow the setting again.
-      await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "y" })).rejects.toThrow(/claude setup-token/);
     } finally {
       writeClaudeLogin(store, "token");
       await local.closeAll();

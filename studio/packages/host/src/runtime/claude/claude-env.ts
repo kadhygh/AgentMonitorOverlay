@@ -74,13 +74,11 @@ export function claudeEnv(
     throw new ClaudeProfileError(`没找到本机 Claude Code 的登录（${home.dir}）：在终端运行 claude 登录一次，或到 设置 → 模型 改用令牌`);
   }
   const key = profile.credentialId && !local ? credentials.read(profile.credentialId) : null;
-  if (profile.credentialId && !local && !key) {
-    throw new ClaudeProfileError(
-      provider.auth === "oauth"
-        ? "还没有保存 Claude 订阅令牌：在终端运行 claude setup-token，再到 设置 → 模型 里保存（或在那里改用本机 Claude Code 的登录）"
-        : `profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`,
-    );
+  // The subscription outside the local login: a session started on the token mode, gone since 2026-10-27.
+  if (provider.auth === "oauth" && !local && !key) {
+    throw new ClaudeProfileError("这个 Claude 会话是用令牌登录开始的，令牌登录已经去掉：新开一个会话（用本机 Claude Code 的登录）");
   }
+  if (profile.credentialId && !local && !key) throw new ClaudeProfileError(`profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`);
   const inherited = Object.fromEntries(Object.entries(base).filter(([k, v]) => v !== undefined && !/^(ANTHROPIC_|CLAUDE)/i.test(k))) as Record<string, string>;
   return {
     ...inherited,

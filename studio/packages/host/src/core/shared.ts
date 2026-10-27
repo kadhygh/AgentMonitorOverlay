@@ -1,5 +1,4 @@
 import type { SessionOptions, HostErrorCode, HostEvent, Session } from "@amo-studio/protocol";
-import { CLAUDE_SUBSCRIPTION_CREDENTIAL } from "../runtime/profiles.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -71,5 +70,5 @@ export function boundedText(value: unknown, field: string, max: number): string 
   return text;
 }
 
-/** The only entry Studio writes: the Claude subscription token the person pastes in 设置 → 模型凭据. */
-export const WRITABLE_CREDENTIALS = new Set([CLAUDE_SUBSCRIPTION_CREDENTIAL]);
+/** Credentials Studio may write: none since 2026-10-27 (the Claude subscription token mode is gone). */
+export const WRITABLE_CREDENTIALS = new Set<string>();

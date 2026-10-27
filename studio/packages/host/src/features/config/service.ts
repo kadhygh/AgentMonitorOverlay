@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
-import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
+import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
@@ -19,7 +19,6 @@ export class ConfigFeature extends Feature {
       disabledFeatures: this.disabledFeatures(),
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
-      claudeLogin: readClaudeLogin(this.store),
       autoCompactTokens: readAutoCompact(this.store),
       autoCompactProfiles: readAutoCompactProfiles(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
@@ -171,7 +170,7 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
     if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.topicGroups !== undefined) this.store.setKv(TOPIC_GROUPS_KEY, JSON.stringify(this.checkTopicGroups(input.topicGroups)));
@@ -205,10 +204,6 @@ export class ConfigFeature extends Feature {
       this.store.setKv(QUOTA_DISPLAY_KEY, JSON.stringify(next));
     }
     if (input.modelPrefs !== undefined) writeModelPrefs(this.store, this.profiles.map((p) => p.id), input.modelPrefs);
-    if (input.claudeLogin !== undefined) {
-      if (input.claudeLogin !== "token" && input.claudeLogin !== "local") throw new HostError("bad_request", "claudeLogin must be token or local");
-      writeClaudeLogin(this.store, input.claudeLogin);
-    }
     if (input.scratchpadShortcut !== undefined) this.f.scratchpad.setShortcut(input.scratchpadShortcut);
     if (input.scratchpadSafeNewlines !== undefined) this.f.scratchpad.setSafeNewlines(input.scratchpadSafeNewlines);
     if (input.autoCompactTokens !== undefined) {
