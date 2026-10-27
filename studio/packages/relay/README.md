@@ -34,7 +34,7 @@ npm run relay:release -- --shell   # 再加上桌面客户端的 zip（外壳有
 powershell -File scripts/relay-service.ps1 start|stop|restart|status [-Passphrase <邀请口令>] [-Name <服务名>]
 ```
 
-数据在 `%APPDATA%\AMO Relay\server\relay.db`，日志在同一个目录。默认监听 `0.0.0.0:47120`，不设邀请口令，同一网络里谁都能注册。
+数据在 `%APPDATA%\AMO Relay\server\relay.db`，上传的文件在同一目录的 `files` 下，日志也在这个目录。默认监听 `0.0.0.0:47120`，不设邀请口令，同一网络里谁都能注册。
 
 ## 在 Mac 上跑服务
 
@@ -89,6 +89,8 @@ MCP 提供这几个工具：
 - `relay_session_reply`：继续追问（`then: "ask"`）、标记完成（`then: "done"`）或补充
 - `relay_session_handoff`：交给本人
 - `relay_queue`：待我这边处理的会话
+- `relay_task_list` / `relay_task_get` / `relay_task_create` / `relay_task_update` / `relay_task_transfer`：团队任务
+- `relay_file_put` / `relay_file_get`：传文件到任务或会话、读文件和它的批注
 
 阶段 1 的旧名（`relay_ask`、`relay_replies`、`relay_wait`、`relay_send`）还能用。
 
@@ -119,6 +121,13 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 | `POST /api/logout` | 当前 key 失效 |
 | `GET/PATCH /api/me` | 我是谁，改「负责什么」 |
 | `GET /api/members` | 所有人，带是否在线 |
+| `GET/POST /api/tasks`，`GET/PATCH /api/tasks/:id` | 团队任务（列表带 `unseen`），新建、看（带记录）、改标题/说明/状态 |
+| `POST /api/tasks/:id/transfer` `{to, status, reason, threadId?, closeSession?}` | 流转；带 `threadId` 时同时回复或结束那个会话 |
+| `POST /api/tasks/:id/archive` `{archived}`、`/seen` | 归档（只限已完成、已搁置）、看过交给我的任务 |
+| `GET/PUT /api/settings` | 团队设置：流程、流程速查的说法、AI 提醒时间 |
+| `POST /api/files?task=…` 或 `?thread=…&name=…` | 上传（请求体就是文件内容，最多 20 MB），同名是新版本 |
+| `GET /api/files?task=…`、`/api/files/:id`、`/versions`、`/notes` | 文件列表、内容（`?download=1` 下载）、版本、批注 |
+| `POST /api/files/:id/notes` `{quote, prefix, suffix, body}`、`DELETE /api/notes/:id` | 写批注、删自己的批注 |
 | `GET /api/threads` | 我参与的对话，带未读数和最后一条消息 |
 | `POST /api/threads/direct` `{with}` | 打开和某人的普通聊天，没有就新建 |
 | `POST /api/threads/topic` `{with, title}` | 和某人新开一个话题 |
