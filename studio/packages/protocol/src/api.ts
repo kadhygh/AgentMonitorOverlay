@@ -192,6 +192,8 @@ export interface StudioSettings {
   autoCompactProfiles: Record<string, AutoCompactChoice>;
   /** 项目分组 (2026-10-22): the left column's project groups, in order. */
   projectGroups: ProjectGroup[];
+  /** 专题分组 (2026-10-27): the left column's topic groups, in order, like the project groups. */
+  topicGroups: TopicGroup[];
   /** 设置 → 子会话 (2026-10-26): notes on models as sub-sessions, for the main model. */
   subsessionNotes: SubsessionNote[];
 }
@@ -209,6 +211,15 @@ export interface ProjectGroup {
 }
 
 export const MAX_PROJECT_GROUPS = 50;
+
+/** 专题分组 (2026-10-27): topics gathered under a name in the left column, for the person only; a topic is in at most one. */
+export interface TopicGroup {
+  id: Id;
+  name: string;
+  /** The person's own note; "" for none. */
+  description: string;
+  topicIds: Id[];
+}
 
 /** A channel's own 自动压缩点: tokens, or "cli" to leave it to the CLI. */
 export type AutoCompactChoice = number | "cli";
@@ -388,7 +399,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

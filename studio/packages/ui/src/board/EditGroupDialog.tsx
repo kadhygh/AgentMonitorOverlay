@@ -6,8 +6,10 @@ import { HostApiError } from "../host/client.js";
  * 新建分组 / 编辑分组 (项目分组, 2026-10-22): the group's name and the person's own note on it. `onSave` stores it; the
  * dialog stays open with the Host's message when that fails.
  */
-export function EditGroupDialog({ creating, name: initialName = "", description: initialDescription = "", onSave, onClose }: {
+export function EditGroupDialog({ creating, name: initialName = "", description: initialDescription = "", placeholder = "例如：Unity 客户端和它的资源仓库；发版前一起看改动。", onSave, onClose }: {
   creating: boolean;
+  /** An example note, for the kind of group (项目分组 or 专题分组). */
+  placeholder?: string;
   name?: string;
   description?: string;
   onSave(name: string, description: string): Promise<void>;
@@ -70,7 +72,7 @@ export function EditGroupDialog({ creating, name: initialName = "", description:
             rows={3}
             value={description}
             maxLength={2000}
-            placeholder="例如：Unity 客户端和它的资源仓库；发版前一起看改动。"
+            placeholder={placeholder}
             onChange={(e) => setDescription(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {

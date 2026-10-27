@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY, SUBSESSION_NOTES_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY, TOPIC_GROUPS_KEY, SUBSESSION_NOTES_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -27,6 +27,7 @@ export class ConfigFeature extends Feature {
       quotaDisplay: this.quotaDisplay(),
       quickModels: this.quickModels(),
       projectGroups: this.projectGroups(),
+      topicGroups: this.topicGroups(),
       subsessionNotes: this.subsessionNotes(),
     };
   }
@@ -89,6 +90,37 @@ export class ConfigFeature extends Feature {
     });
   }
 
+  /** 专题分组 (2026-10-27), as saved (the UI leaves out topics that are gone or archived). */
+  private topicGroups(): TopicGroup[] {
+    try {
+      const v = JSON.parse(this.store.getKv(TOPIC_GROUPS_KEY)?.value ?? "[]") as unknown;
+      return Array.isArray(v) ? (v as TopicGroup[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Checks a new list of 专题分组: known topics only, each in one group (the first that names it). */
+  private checkTopicGroups(list: unknown): TopicGroup[] {
+    if (!Array.isArray(list) || list.length > MAX_PROJECT_GROUPS) throw new HostError("bad_request", `topicGroups must be a list of at most ${MAX_PROJECT_GROUPS}`);
+    const taken = new Set<Id>();
+    const ids = new Set<Id>();
+    return list.map((g: unknown) => {
+      const o = g && typeof g === "object" ? (g as Record<string, unknown>) : {};
+      let id = typeof o.id === "string" && o.id ? o.id.slice(0, 64) : newId("tg");
+      if (ids.has(id)) id = newId("tg");
+      ids.add(id);
+      const description = o.description === undefined || o.description === null || o.description === "" ? "" : boundedText(o.description, "description", 2000);
+      if (o.topicIds !== undefined && !Array.isArray(o.topicIds)) throw new HostError("bad_request", "topicIds must be a list of topic ids");
+      const topicIds = ((o.topicIds as unknown[] | undefined) ?? []).filter((t): t is Id => {
+        if (typeof t !== "string" || taken.has(t) || !this.store.getTopic(t)) return false;
+        taken.add(t);
+        return true;
+      });
+      return { id, name: boundedText(o.name, "name", 40), description, topicIds };
+    });
+  }
+
   /** 设置 → 模型 → 快速选择, without profiles that are gone. */
   private quickModels(): QuickModel[] {
     try {
@@ -139,9 +171,10 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
     if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
+    if (input.topicGroups !== undefined) this.store.setKv(TOPIC_GROUPS_KEY, JSON.stringify(this.checkTopicGroups(input.topicGroups)));
     if (input.quickModels !== undefined) {
       const list = input.quickModels;
       if (!Array.isArray(list) || list.length > MAX_QUICK_MODELS) throw new HostError("bad_request", `quickModels must be a list of at most ${MAX_QUICK_MODELS}`);

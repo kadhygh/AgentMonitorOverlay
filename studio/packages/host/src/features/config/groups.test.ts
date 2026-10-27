@@ -72,3 +72,25 @@ describe("项目分组", () => {
     expect(() => service.config.updateSettings({ projectGroups: "x" })).toThrow(/projectGroups/);
   });
 });
+
+describe("专题分组 (2026-10-27)", () => {
+  it("keeps topic groups like project groups: in order, a topic in one group, unknown ones dropped", () => {
+    expect(service.config.settings().topicGroups).toEqual([]);
+    const relay = store.createTopic({ title: "中转" });
+    const canvas = store.createTopic({ title: "画布" });
+    const saved = service.config.updateSettings({
+      topicGroups: [
+        { name: "Studio", description: "工具本身", topicIds: [canvas.id, "tp-gone", canvas.id] },
+        { name: "团队", description: "", topicIds: [canvas.id, relay.id] },
+      ],
+    }).topicGroups;
+    expect(saved.map((g) => [g.name, g.topicIds])).toEqual([
+      ["Studio", [canvas.id]],
+      ["团队", [relay.id]],
+    ]);
+    expect(saved[0]!.id).toMatch(/^tg/);
+    // Project groups are left as they were.
+    expect(service.config.settings().projectGroups).toEqual([]);
+    expect(() => service.config.updateSettings({ topicGroups: "x" })).toThrow(/topicGroups/);
+  });
+});

@@ -18,6 +18,7 @@ export const QUICK_MODELS_KEY = "settings:quick-models";
 export const SUBSESSION_NOTES_KEY = "settings:subsession-notes";
 /** 项目分组: the left column's project groups. */
 export const PROJECT_GROUPS_KEY = "settings:project-groups";
+export const TOPIC_GROUPS_KEY = "settings:topic-groups";
 export const MAX_PRESETS = 30;
 
 /** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */
