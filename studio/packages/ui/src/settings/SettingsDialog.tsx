@@ -376,7 +376,7 @@ function PetSkinRow() {
       <span className="settings-hint">有事时在 Focus 上冒出来提醒你；放着 5 分钟不管会生气、满屏乱飞。只影响这台电脑。</span>
       {skin === "mascot" && (
         <span className="settings-hint" data-testid="pet-skin-mascot-hint">
-          选了 AMO 娘，窗口（标题栏、任务栏）的图标换成她的头像；左上角的图标是她，并跟着换表情：出错或等你审批是「待命」，没额度是「睿智」，有会话在跑是「认真」，只剩等你审核是「开心」，什么都没有是她的头像。窗口图标不跟着变，因为每换一次 Windows 都会让 Studio 顿一下。
+          选了 AMO 娘，左上角和窗口（标题栏、任务栏）的图标也换成她，并跟着换表情：出错或等你审批是「待命」，没额度是「睿智」，有会话在跑是「认真」，只剩等你审核是「开心」，什么都没有是她的头像。
         </span>
       )}
     </>
