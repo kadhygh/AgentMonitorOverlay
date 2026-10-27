@@ -61,8 +61,11 @@ export interface SessionStatus {
   warn: boolean;
 }
 
-export function sessionStatus(t: ThreadView, me: string, now = Date.now()): SessionStatus {
+/** `limits`: the team's settings in minutes; Studio-wide defaults otherwise. */
+export function sessionStatus(t: ThreadView, me: string, now = Date.now(), limits?: { aiLateMinutes: number; aiStuckMinutes: number }): SessionStatus {
   const r = t.request!;
+  const lateMs = limits ? limits.aiLateMinutes * 60_000 : AI_LATE_MS;
+  const stuckMs = limits ? limits.aiStuckMinutes * 60_000 : AI_STUCK_MS;
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
   if (r.state === "done") return { text: "已完成", dot: "done", needsMe: false, warn: false };
   if (r.waitingOn !== me) {
@@ -72,10 +75,10 @@ export function sessionStatus(t: ThreadView, me: string, now = Date.now()): Sess
   if (r.state === "open") return { text: `${asker} 发来 · 等你处理`, dot: "attn", needsMe: true, warn: true };
   if (r.handler === "person") return { text: "回复已到 · 等你处理", dot: "attn", needsMe: true, warn: true };
   if (r.pickedAt) {
-    if (now - r.pickedAt > AI_STUCK_MS) return { text: `! AI 取回后 ${waitedText(now - r.pickedAt)}没有动作，可能卡住了`, dot: "attn", needsMe: true, warn: true };
+    if (now - r.pickedAt > stuckMs) return { text: `! AI 取回后 ${waitedText(now - r.pickedAt)}没有动作，可能卡住了`, dot: "attn", needsMe: true, warn: true };
     return { text: "AI 已取回，正在处理", dot: "run", needsMe: false, warn: false };
   }
-  const late = now - (r.returnedAt ?? now) > AI_LATE_MS;
+  const late = now - (r.returnedAt ?? now) > lateMs;
   return { text: `回复已到 · AI 还没取回（${waitedText(now - (r.returnedAt ?? now))}）`, dot: late ? "attn" : "run", needsMe: true, warn: late };
 }
 

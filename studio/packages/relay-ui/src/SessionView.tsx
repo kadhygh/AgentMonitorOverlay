@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { sessionStatus, waitedText, AI_STUCK_MS, AI_LATE_MS } from "./bits.js";
+import { sessionStatus, waitedText } from "./bits.js";
 import { copyText } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
-import type { Session } from "./session.js";
+import { useSession, type Session } from "./session.js";
 import { threadAsText, VERDICT_LABEL, type Answer, type Question, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
@@ -10,12 +10,25 @@ import { threadAsText, VERDICT_LABEL, type Answer, type Question, type SessionAc
 // up by itself, or the asker does (我来处理), and asks again (继续追问) or closes it (标记完成). A session that needs a
 // reply — every one from an AI — cannot be closed by the person asked.
 
-export function SessionView({ session, thread, toast }: { session: Session; thread: ThreadView; toast: (text: string) => void }) {
+export function SessionView(props: {
+  session: Session;
+  thread: ThreadView;
+  toast: (text: string) => void;
+  /** Shown inside its task's page: no crumb. */
+  embedded?: boolean;
+  /** 接手任务… for a session under a task. */
+  onTakeover?: (thread: ThreadView) => void;
+  onOpenTask?: (taskId: string) => void;
+}) {
+  const { session, thread, toast } = props;
+  const { settings, tasks } = useSession(session);
   const me = session.me.name;
   const r = thread.request!;
   const { messages, error } = useMessages(session, thread.id);
   const [againOpen, setAgainOpen] = useState(false);
-  const status = sessionStatus(thread, me);
+  const status = sessionStatus(thread, me, Date.now(), settings);
+  const task = r.taskId ? tasks.find((t) => t.id === r.taskId) : undefined;
+  const takeover = r.taskId && props.onTakeover && r.to === me && r.state !== "done" ? () => props.onTakeover!(thread) : undefined;
   const questions = messages?.find((m) => m.kind === "request")?.questions ?? [];
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
   const myTurn = r.waitingOn === me && r.state !== "done";
@@ -40,7 +53,7 @@ export function SessionView({ session, thread, toast }: { session: Session; thre
 
   let dock;
   if (myTurn && r.to === me && r.state === "open") {
-    dock = <ReplyForm session={session} thread={thread} questions={questions} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} />;
+    dock = <ReplyForm session={session} thread={thread} questions={questions} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
   } else if (r.to === me && againOpen) {
     dock = <ReplyForm session={session} thread={thread} questions={questions} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
   } else if (myTurn && r.state === "returned" && r.handler === "person") {
@@ -108,7 +121,18 @@ export function SessionView({ session, thread, toast }: { session: Session; thre
     <section className="view" aria-label={thread.title}>
       <header className="page-head">
         <div className="head-main">
-          <div className="page-crumb">待处理 / 会话</div>
+          {!props.embedded && (
+            <div className="page-crumb">
+              待处理 /{" "}
+              {task ? (
+                <button type="button" className="link" onClick={() => props.onOpenTask?.(task.id)}>
+                  任务 · {task.title}
+                </button>
+              ) : (
+                "单独会话"
+              )}
+            </div>
+          )}
           <h1 className="head-title">{thread.title}</h1>
           <div className="head-meta">
             <span>
@@ -125,7 +149,7 @@ export function SessionView({ session, thread, toast }: { session: Session; thre
           </button>
         </div>
       </header>
-      <AiBand thread={thread} me={me} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onAct={(a, t) => void act(a, t)} />
+      <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onAct={(a, t) => void act(a, t)} />
       <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
       {dock}
     </section>
@@ -133,7 +157,7 @@ export function SessionView({ session, thread, toast }: { session: Session; thre
 }
 
 /** Back with me and handled by my AI: has it taken it, is it stuck — and ways to take it myself. */
-function AiBand({ thread, me, onPickup, onCopy, onAct }: { thread: ThreadView; me: string; onPickup: () => void; onCopy: () => void; onAct: (a: SessionAction, toast: string) => void }) {
+function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: ThreadView; me: string; limits: { aiLateMinutes: number; aiStuckMinutes: number }; onPickup: () => void; onCopy: () => void; onAct: (a: SessionAction, toast: string) => void }) {
   const r = thread.request!;
   if (r.from !== me || r.state !== "returned" || r.waitingOn !== me) return null;
   if (r.handler === "person") {
@@ -162,7 +186,7 @@ function AiBand({ thread, me, onPickup, onCopy, onAct }: { thread: ThreadView; m
       </button>
     </>
   );
-  if (r.pickedAt && now - r.pickedAt <= AI_STUCK_MS) {
+  if (r.pickedAt && now - r.pickedAt <= limits.aiStuckMinutes * 60_000) {
     return (
       <div className="aiband">
         ✓ 你的 AI 已取回回复（{waitedText(now - r.pickedAt)}前），正在处理，之后会继续追问或标记完成。
@@ -182,7 +206,7 @@ function AiBand({ thread, me, onPickup, onCopy, onAct }: { thread: ThreadView; m
       </div>
     );
   }
-  const late = now - (r.returnedAt ?? now) > AI_LATE_MS;
+  const late = now - (r.returnedAt ?? now) > limits.aiLateMinutes * 60_000;
   return (
     <div className={`aiband ${late ? "warn" : ""}`}>
       ○ 回复已到，你的 AI 还没取回（{waitedText(now - (r.returnedAt ?? now))}）。它在等就会自动拿到；没在等的话，新对话开始时会先查待处理。
@@ -192,7 +216,7 @@ function AiBand({ thread, me, onPickup, onCopy, onAct }: { thread: ThreadView; m
   );
 }
 
-function ReplyForm(props: { session: Session; thread: ThreadView; questions: Question[]; again?: boolean; onDone: () => void; onMarkDone?: () => void; onCancel?: () => void }) {
+function ReplyForm(props: { session: Session; thread: ThreadView; questions: Question[]; again?: boolean; onDone: () => void; onMarkDone?: () => void; onCancel?: () => void; onTakeover?: () => void }) {
   const { session, thread, questions } = props;
   const r = thread.request!;
   const [choice, setChoice] = useState<Record<string, string>>({});
@@ -266,6 +290,11 @@ function ReplyForm(props: { session: Session; thread: ThreadView; questions: Que
         {props.onCancel && (
           <button type="button" onClick={props.onCancel}>
             取消
+          </button>
+        )}
+        {props.onTakeover && (
+          <button type="button" onClick={props.onTakeover} title="把任务流转到你手里，弹窗里写状态和原因">
+            接手任务…
           </button>
         )}
         {!r.needsReply && props.onMarkDone && (

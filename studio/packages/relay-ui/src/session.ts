@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { RelayClient, TICK_MS, type Member, type Message, type RelayEvent, type ThreadView } from "./shared.js";
+import { DEFAULT_SETTINGS, RelayClient, TICK_MS, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
 
-// One login: the client with its key, the thread list and the people, kept current by /ws (reconnecting, and
+// One login: the client with its key, the thread list, the people, the team's tasks and settings, kept current by /ws (reconnecting, and
 // reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
 // TICK_MS; nothing heard for longer than DEAD_MS counts as gone (a machine asleep, the network down) even when the socket
 // never closed. `client` is the newest client build the service hands out (it pushes new ones).
@@ -21,6 +21,8 @@ const DEAD_MS = TICK_MS * 2 + 5000;
 interface State {
   threads: ThreadView[];
   members: Member[];
+  tasks: TaskView[];
+  settings: TeamSettings;
   connection: Connection;
   /** When it went offline; null while connected. */
   offlineSince: number | null;
@@ -31,7 +33,7 @@ interface State {
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], connection: "connecting", offlineSince: null, retryAt: null, client: null };
+  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
   private ws: WebSocket | null = null;
@@ -98,8 +100,8 @@ export class Session {
   }
 
   async reload(): Promise<void> {
-    const [threads, members] = await Promise.all([this.client.threads(), this.client.members()]);
-    this.set({ threads, members });
+    const [threads, members, tasks, settings] = await Promise.all([this.client.threads(), this.client.members(), this.client.tasks(), this.client.settings()]);
+    this.set({ threads, members, tasks, settings });
   }
 
   private connect(): void {
@@ -134,6 +136,14 @@ export class Session {
     else if (e.type === "thread") this.adopt({ ...e.thread, unread: 0, readSeq: 0, last: null, archived: false });
     else if (e.type === "archived") this.patchThread(e.threadId, { archived: e.archived });
     else if (e.type === "updated") this.patchThread(e.thread.id, e.thread);
+    else if (e.type === "settings") this.set({ settings: e.settings });
+    else if (e.type === "task") {
+      // Handed to me just now: new to me until I open it.
+      const old = this.state.tasks.find((t) => t.id === e.task.id);
+      const h = e.task.handoff;
+      const unseen = h && h.eventId !== old?.handoff?.eventId ? h.to === this.me.name && h.by !== this.me.name : (old?.unseen ?? false);
+      this.set({ tasks: [{ ...e.task, unseen }, ...this.state.tasks.filter((t) => t.id !== e.task.id)] });
+    }
     else if (e.type === "read") {
       this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)) });
     } else if (e.type === "message") {
@@ -176,6 +186,14 @@ export class Session {
   }
 
   /** A thread the list does not have yet (a new direct chat or topic): put it in. */
+  /** Opened a task: a hand-over to me is seen (here at once, then the service). */
+  seeTask(id: string): void {
+    const t = this.state.tasks.find((x) => x.id === id);
+    if (!t?.unseen) return;
+    this.set({ tasks: this.state.tasks.map((x) => (x.id === id ? { ...x, unseen: false } : x)) });
+    void this.client.seenTask(id).catch(() => undefined);
+  }
+
   adopt(view: ThreadView): void {
     if (this.state.threads.some((t) => t.id === view.id)) return;
     this.set({ threads: [view, ...this.state.threads] });

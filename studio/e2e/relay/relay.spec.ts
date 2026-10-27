@@ -10,7 +10,7 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 // AMO 中转's desktop client (plans/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
 // content download → login), register two people, a session sent by an AI through the command line the client
 // installs, answered one by one in the other client and handed back (the AI fetches it, the person takes it over and
-// closes it), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
+// closes it), team tasks (a session under one, 接手任务 from it, 流转 back, seen, archived, shared settings), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
 // while signed in, when the window is not in use), and the service going away and coming back (the bar, the login
 // screen's status). Needs `npm run relay:release` first (release/relay/client).
 
@@ -77,7 +77,7 @@ async function register(page: Page, name: string, role: string): Promise<void> {
   await page.getByLabel("再输一次密码").fill("pw-1234");
   await page.getByLabel(/负责什么/).fill(role);
   await page.getByRole("button", { name: "注册并登录" }).click();
-  await expect(page.getByRole("button", { name: "复制用法" })).toBeVisible();
+  await expect(page.locator(".view-tabs")).toBeVisible();
 }
 
 test("register, an AI's request answered in the other client, updates, the service away and back", async () => {
@@ -129,6 +129,76 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.locator(".dock").getByRole("button", { name: "标记完成" }).click();
   await expect(a.page.locator(".event").last()).toContainText("标记完成");
   await expect(a.page.getByRole("button", { name: "重新打开" })).toBeVisible();
+
+  // Team tasks (2b): the planner makes one and opens a session under it; the coder takes the task over from the
+  // session (it needs a reply, so the session goes back answered); hands it back for 验收; the planner sees it handed
+  // to them, finishes and archives it. Settings are the team's: the coder's 流程速查 shows the planner's change.
+  await a.page.locator(".view-tab", { hasText: "任务" }).click();
+  await a.page.getByRole("button", { name: "＋ 新任务" }).click();
+  await a.page.getByPlaceholder("比如：加特林").fill("加特林");
+  await a.page.locator(".dialog textarea").fill("按住连射，射速逐步升高，会过热。");
+  await a.page.getByRole("button", { name: "新建", exact: true }).click();
+  await expect(a.page.locator(".head-title")).toHaveText("加特林");
+  await a.page.locator(".session-list").getByTitle("在这个任务下新建会话").click();
+  await expect(a.page.locator(".dialog select").nth(1)).toHaveValue(/^k_/);
+  await a.page.getByPlaceholder("一句话说清要对方处理什么").fill("射速和过热怎么做");
+  await a.page.locator(".dialog textarea").fill("设计见任务说明。");
+  await a.page.getByPlaceholder("问题").fill("推进方式");
+  await a.page.getByPlaceholder("选项，用逗号隔开（可不填）").fill("策划在主分支直接推进, 程序接手开发");
+  await a.page.getByRole("button", { name: "发出" }).click();
+  await expect(a.page.locator(".session-list .srow", { hasText: "射速和过热怎么做" })).toContainText("在 程序老李 手里");
+  await shot(a.app, "11-task-page");
+
+  await b.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await row(b.page, "射速和过热怎么做").click();
+  await expect(b.page.locator(".page-crumb")).toContainText("任务 · 加特林");
+  await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
+  await b.page.getByRole("button", { name: "接手任务…" }).click();
+  await b.page.getByPlaceholder("写清楚为什么、接下来谁做什么").fill("涉及武器底层，我来改接口");
+  await shot(b.app, "12-takeover");
+  await b.page.getByRole("button", { name: "接手", exact: true }).click();
+  await expect(b.page.locator(".msg.kind-reply").last()).toContainText("我接手了这个任务（开发中）：涉及武器底层");
+  await expect(a.page.locator(".head-meta").first()).toContainText("在 程序老李 手里");
+  await a.page.locator(".session-list .nav-row", { hasText: "记录" }).click();
+  await expect(a.page.locator(".log")).toContainText("接手任务 · 开发中 · 原因：涉及武器底层，我来改接口");
+
+  // The coder hands it back: 待处理 for the planner, gone once opened.
+  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await b.page.locator(".view-tab", { hasText: "任务" }).click();
+  await b.page.locator(".card", { hasText: "加特林" }).click();
+  await b.page.getByRole("button", { name: "流转…" }).click();
+  await b.page.locator(".dialog select").first().selectOption("策划小王");
+  await b.page.locator(".dialog select").nth(1).selectOption("待处理");
+  await b.page.getByPlaceholder("写清楚为什么、接下来谁做什么").fill("接口改好了，请验收");
+  await b.page.getByRole("button", { name: "流转", exact: true }).click();
+  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await expect(a.page.locator(".scope-nav .srow", { hasText: "任务交给你：加特林" })).toContainText("接口改好了，请验收");
+  await shot(a.app, "13-handed");
+  await a.page.locator(".scope-nav .srow", { hasText: "任务交给你：加特林" }).click();
+  await expect(a.page.locator(".head-meta").first()).toContainText("在 策划小王 手里");
+  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await expect(a.page.locator(".scope-nav .srow", { hasText: "任务交给你" })).toHaveCount(0);
+
+  // Finished and archived; the board says so.
+  await a.page.locator(".view-tab", { hasText: "任务" }).click();
+  await a.page.locator(".nav-row", { hasText: "全部任务" }).click();
+  await expect(a.page.locator(".column", { hasText: "待处理" }).locator(".card")).toContainText("加特林");
+  await shot(a.app, "14-board");
+  await a.page.locator(".card", { hasText: "加特林" }).click();
+  await a.page.getByRole("button", { name: "编辑" }).click();
+  await a.page.locator(".editor select").selectOption("已完成");
+  await a.page.getByRole("button", { name: "保存" }).click();
+  await a.page.locator(".head-actions").getByRole("button", { name: "归档" }).click();
+  await a.page.getByRole("button", { name: "任务", exact: true }).first().click();
+  await expect(a.page.getByRole("button", { name: "已归档 1" })).toBeVisible();
+
+  await a.page.getByRole("button", { name: "更多 ▾" }).click();
+  await a.page.getByRole("menuitem", { name: "设置" }).click();
+  await a.page.locator(".dialog textarea").nth(1).fill("策划在主分支直接推进\n先做一个可玩的原型");
+  await a.page.getByRole("button", { name: "保存" }).click();
+  await b.page.getByRole("button", { name: "流程速查" }).click();
+  await expect(b.page.locator(".dialog")).toContainText("先做一个可玩的原型");
+  await b.page.locator(".dialog").getByRole("button", { name: "好" }).click();
 
   // Direct chat both ways, from 成员.
   await b.page.locator(".view-tab", { hasText: "成员" }).click();
@@ -215,11 +285,13 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(myState).toHaveText("在线");
   await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
   await b.page.getByRole("button", { name: "登录" }).click();
-  await expect(b.page.getByRole("button", { name: "复制用法" })).toBeVisible();
+  await expect(b.page.locator(".view-tabs")).toBeVisible();
 
   // Both themes: Studio's dark one too.
-  await b.page.getByRole("button", { name: /跟随系统|浅色|深色/ }).click();
-  await b.page.getByRole("button", { name: /跟随系统|浅色|深色/ }).click();
+  for (let i = 0; i < 2; i++) {
+    await b.page.getByRole("button", { name: "更多 ▾" }).click();
+    await b.page.getByRole("menuitem", { name: /主题/ }).click();
+  }
   await expect(b.page.locator("html")).toHaveAttribute("data-theme", "dark");
   await b.page.locator(".view-tab", { hasText: "待处理" }).click();
   await b.page.locator(".nav-fold", { hasText: "已完成" }).click();
