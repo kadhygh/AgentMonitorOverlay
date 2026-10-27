@@ -185,6 +185,9 @@ export class RelayStore {
     if (!tcols.includes("s_qseq")) this.db.exec("ALTER TABLE threads ADD COLUMN s_qseq INTEGER; UPDATE threads SET s_qseq = req_seq WHERE kind = 'request';");
     this.migrateTasks();
     this.migrateFiles();
+    // 编辑资料 (2026-10-27): nickname and picture.
+    const mcols = (this.db.prepare("PRAGMA table_info(members)").all() as Row[]).map((r) => String(r.name));
+    if (!mcols.includes("nick")) this.db.exec("ALTER TABLE members ADD COLUMN nick TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN avatar TEXT;");
   }
 
   /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
@@ -274,8 +277,28 @@ export class RelayStore {
     this.db.prepare("UPDATE members SET role = ? WHERE name = ?").run(text(roleValue, "角色", LIMITS.role, false), name);
   }
 
-  members(): Array<{ name: string; role: string }> {
-    return (this.db.prepare("SELECT name, role FROM members ORDER BY rowid").all() as Row[]).map((r) => ({ name: String(r.name), role: String(r.role) }));
+  /** 编辑资料: a nickname, a picture (a small data: URL image; null for none), what they do. Only what is given changes. */
+  setProfile(name: string, p: { nick?: unknown; avatar?: unknown; role?: unknown }): void {
+    if (p.role !== undefined) this.setRole(name, p.role);
+    if (p.nick !== undefined) {
+      const nick = text(p.nick, "昵称", LIMITS.name, false);
+      if (/[\u0000-\u001f\u007f]/.test(nick)) throw new RelayError("bad_request", "昵称里不能有控制字符");
+      this.db.prepare("UPDATE members SET nick = ? WHERE name = ?").run(nick, name);
+    }
+    if (p.avatar !== undefined) {
+      const avatar = p.avatar === null || p.avatar === "" ? null : String(p.avatar);
+      if (avatar && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 96 * 1024)) throw new RelayError("bad_request", "头像要是不超过 64 KB 的 PNG、JPEG 或 WebP 图片");
+      this.db.prepare("UPDATE members SET avatar = ? WHERE name = ?").run(avatar, name);
+    }
+  }
+
+  members(): Array<{ name: string; nick: string; avatar: string | null; role: string }> {
+    return (this.db.prepare("SELECT name, nick, avatar, role FROM members ORDER BY rowid").all() as Row[]).map((r) => ({
+      name: String(r.name),
+      nick: String(r.nick ?? ""),
+      avatar: r.avatar == null ? null : String(r.avatar),
+      role: String(r.role),
+    }));
   }
 
   private requireMember(name: string): void {
@@ -352,6 +375,52 @@ export class RelayStore {
     });
   }
 
+  /**
+   * @-ing someone into a chat brings them in: a direct chat or topic becomes a group (they see what came before; the
+   * pair's next direct chat is a new one), a group just grows. Returns the event message saying so.
+   */
+  addMembers(threadId: string, actor: string, namesValue: unknown): { thread: Thread; message: Message; added: string[] } {
+    const thread = this.thread(threadId, actor);
+    if (thread.kind === "request") throw new RelayError("bad_request", "会话是一对一的，不能拉人；要几个人一起讨论，在聊天里 @ 他们");
+    if (!Array.isArray(namesValue) || !namesValue.length) throw new RelayError("bad_request", "要拉谁？");
+    const added = [...new Set(namesValue.map((n) => checkName(n)))].filter((n) => !thread.members.includes(n));
+    for (const n of added) this.requireMember(n);
+    if (!added.length) throw new RelayError("bad_request", "他们已经在这个对话里了");
+    return this.tx(() => {
+      const becomes = thread.kind !== "group";
+      if (becomes) {
+        const title = thread.kind === "topic" ? thread.title : [...thread.members, ...added].join("、");
+        this.db.prepare("UPDATE threads SET kind = 'group', direct_key = NULL, title = ? WHERE id = ?").run(title, threadId);
+      }
+      for (const n of added) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(threadId, n);
+      const message = this.insertMessage(threadId, actor, { kind: "person" }, "event", `把 ${added.join("、")} 拉了进来${becomes ? "，这里变成了群聊（之前的记录他们也能看到）" : ""}`, null);
+      return { thread: this.toThread(this.threadRow(threadId)), message, added };
+    });
+  }
+
+  /** Leaving a group; the last two may stay as a group of two. */
+  leaveGroup(threadId: string, name: string): { thread: Thread; message: Message } {
+    const thread = this.thread(threadId, name);
+    if (thread.kind !== "group") throw new RelayError("bad_request", "只有群聊能退出");
+    return this.tx(() => {
+      const message = this.insertMessage(threadId, name, { kind: "person" }, "event", "退出了群聊", null);
+      this.db.prepare("DELETE FROM thread_members WHERE thread_id = ? AND name = ?").run(threadId, name);
+      return { thread: this.toThread(this.threadRow(threadId)), message };
+    });
+  }
+
+  /** A group's or a topic's name. */
+  renameThread(threadId: string, actor: string, titleValue: unknown): { thread: Thread; message: Message } {
+    const thread = this.thread(threadId, actor);
+    if (thread.kind !== "group" && thread.kind !== "topic") throw new RelayError("bad_request", "只有群聊和话题能改名");
+    const title = text(titleValue, "名字", LIMITS.title);
+    return this.tx(() => {
+      this.db.prepare("UPDATE threads SET title = ? WHERE id = ?").run(title, threadId);
+      const message = this.insertMessage(threadId, actor, { kind: "person" }, "event", `改名为「${title}」`, null);
+      return { thread: this.toThread(this.threadRow(threadId)), message };
+    });
+  }
+
   /** Another chat between the same two, about one thing. */
   createTopic(me: string, otherValue: unknown, titleValue: unknown): Thread {
     const other = checkName(otherValue);
@@ -406,6 +475,7 @@ export class RelayStore {
     if (extra.answers) m.answers = extra.answers;
     if (extra.verdict) m.verdict = extra.verdict;
     if (extra.notes) m.notes = extra.notes;
+    if (extra.mentions) m.mentions = extra.mentions;
     return m;
   }
 
@@ -461,13 +531,19 @@ export class RelayStore {
     const via = checkVia(msg?.via);
     if (kind === "text") {
       const body = text(msg.body, "内容", LIMITS.body);
+      const mentions = Array.isArray(msg.mentions) ? [...new Set(msg.mentions.map(String))].filter((n) => n !== author) : [];
+      const outside = mentions.filter((n) => !thread.members.includes(n));
+      if (outside.length) throw new RelayError("bad_request", `${outside.join("、")} 不在这个对话里，先把他们拉进来`);
       const pass = !!msg.pass && !!thread.request;
       if (pass) this.checkPass(thread, author, via);
       // A follow-up may bring a new round of questions; only the asker asks them, and only when handing it over.
       const questions = msg.questions ? checkQuestions(msg.questions) : [];
       if (questions.length && (!pass || author !== thread.request?.from)) throw new RelayError("bad_request", "只有发起人追问时能带新问题");
       return this.tx(() => {
-        const message = this.insertMessage(threadId, author, via, "text", body, questions.length ? { questions } : null);
+        const extra: Partial<Message> = {};
+        if (questions.length) extra.questions = questions;
+        if (mentions.length) extra.mentions = mentions;
+        const message = this.insertMessage(threadId, author, via, "text", body, Object.keys(extra).length ? extra : null);
         if (pass) {
           const r = thread.request!;
           if (author === r.from) this.setSession(threadId, { s_state: "open", s_waiting: r.to, s_qseq: questions.length ? message.seq : null });

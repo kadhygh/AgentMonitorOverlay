@@ -3,11 +3,16 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.5.0";
+export const RELAY_VERSION = "0.6.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
+  /** The account name: unique, what everything refers to. */
   name: string;
+  /** What they like to be called, shown first (the name after it, faintly); empty when unset. */
+  nick: string;
+  /** A small picture (data: URL); null = the initial on a colour. */
+  avatar: string | null;
   /** What they do, shown to people and to AIs choosing whom to ask, e.g. 「程序 · 战斗」. */
   role: string;
   online: boolean;
@@ -15,8 +20,9 @@ export interface Member {
   lastSeen: number;
 }
 
-/** direct: the one plain chat per pair, always there; topic: more chats between the same two, each about one thing. */
-export type ThreadKind = "direct" | "topic" | "request";
+/** direct: the one plain chat per pair; topic: more chats between the same two, each about one thing; group: three or
+ * more (a direct chat or topic becomes one when someone is @-ed into it, its history with it). */
+export type ThreadKind = "direct" | "topic" | "group" | "request";
 export type Verdict = "agree" | "change" | "question";
 export const VERDICT_LABEL: Record<Verdict, string> = { agree: "同意", change: "需要改", question: "有疑问" };
 
@@ -53,6 +59,8 @@ export interface Message {
   questions?: Question[];
   answers?: Answer[];
   verdict?: Verdict;
+  /** The people @-ed in a chat message. */
+  mentions?: string[];
   /** Notes on files that came with a reply (copied in when it was sent). */
   notes?: ReplyNote[];
   createdAt: number;
@@ -141,6 +149,8 @@ export interface NewMessage {
   verdict?: Verdict;
   /** With a reply: ids of the replier's notes to send along. */
   notes?: string[];
+  /** In a chat: who is @-ed (they must be in it; bring others in first with addMembers). */
+  mentions?: string[];
   via?: Via;
 }
 
@@ -293,6 +303,8 @@ export type RelayEvent =
   | { type: "settings"; settings: TeamSettings }
   /** Notes on a file changed: to whoever can see the file. */
   | { type: "notes"; fileId: string }
+  /** I am no longer in this thread (left a group): to my devices. */
+  | { type: "left"; threadId: string }
   /** A thread changed without a message (a session fetched by an AI): to its members. */
   | { type: "updated"; thread: Thread }
   /** This member archived or brought back a thread (their other devices follow). */

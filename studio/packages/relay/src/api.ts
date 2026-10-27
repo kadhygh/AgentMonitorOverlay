@@ -62,6 +62,20 @@ export class RelayClient {
   setRole(role: string): Promise<{ ok: true }> {
     return this.call("PATCH", "/api/me", { role });
   }
+  /** 编辑资料: nickname, picture (data: URL, null to remove), what I do. */
+  setProfile(p: { nick?: string; avatar?: string | null; role?: string }): Promise<{ ok: true }> {
+    return this.call("PATCH", "/api/me", p);
+  }
+  /** @-ing people into a chat: a direct chat or topic becomes a group. */
+  async addMembers(threadId: string, names: string[]): Promise<Thread> {
+    return (await this.call<{ thread: Thread }>("POST", `/api/threads/${encodeURIComponent(threadId)}/members`, { add: names })).thread;
+  }
+  async leave(threadId: string): Promise<void> {
+    await this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/leave`, {});
+  }
+  async rename(threadId: string, title: string): Promise<Thread> {
+    return (await this.call<{ thread: Thread }>("PATCH", `/api/threads/${encodeURIComponent(threadId)}`, { title })).thread;
+  }
   async members(): Promise<Member[]> {
     return (await this.call<{ members: Member[] }>("GET", "/api/members")).members;
   }

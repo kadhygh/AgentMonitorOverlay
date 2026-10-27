@@ -292,6 +292,35 @@ describe("RelayStore", () => {
     expect(store.messages(thread.id, "策划小王").at(-1)?.notes).toHaveLength(2);
   });
 
+  it("turns a chat into a group when someone is @-ed in, keeps its history; groups grow, are renamed, are left", () => {
+    team();
+    store.register("美术小周", "pw-zhou");
+    const d = store.direct("策划小王", "程序老李");
+    store.addMessage(d.id, "策划小王", { body: "射速定了吗" });
+    expect(() => store.addMessage(d.id, "策划小王", { body: "@美术小周 来看下", mentions: ["美术小周"] })).toThrow(/不在这个对话里/);
+    const out = store.addMembers(d.id, "策划小王", ["美术小周"]);
+    expect(out.thread).toMatchObject({ kind: "group", title: "策划小王、程序老李、美术小周", members: ["策划小王", "程序老李", "美术小周"] });
+    expect(out.message.body).toContain("变成了群聊");
+    // The newcomer sees what came before; the pair's next direct chat is a new one.
+    expect(store.messages(d.id, "美术小周").map((m) => m.body)).toContain("射速定了吗");
+    expect(store.direct("策划小王", "程序老李").id).not.toBe(d.id);
+    const msg = store.addMessage(d.id, "策划小王", { body: "@美术小周 来看下", mentions: ["美术小周", "策划小王"] });
+    expect(msg.message.mentions).toEqual(["美术小周"]);
+    expect(store.renameThread(d.id, "美术小周", "加特林三方").thread.title).toBe("加特林三方");
+    store.leaveGroup(d.id, "美术小周");
+    expect(store.threadsFor("美术小周").some((t) => t.id === d.id)).toBe(false);
+    expect(() => store.addMembers(store.createRequest("策划小王", { to: "程序老李", title: "t", body: "b" }).thread.id, "策划小王", ["美术小周"])).toThrow(/一对一/);
+  });
+
+  it("keeps a nickname and a picture", () => {
+    team();
+    store.setProfile("策划小王", { nick: "小王", avatar: "data:image/png;base64,iVBORw0KGgo=" });
+    expect(store.members()[0]).toMatchObject({ name: "策划小王", nick: "小王", avatar: "data:image/png;base64,iVBORw0KGgo=", role: "策划" });
+    expect(() => store.setProfile("策划小王", { avatar: "javascript:alert(1)" })).toThrow(/头像/);
+    store.setProfile("策划小王", { avatar: null, nick: "" });
+    expect(store.members()[0]).toMatchObject({ nick: "", avatar: null });
+  });
+
   it("keeps the team's settings, defaults first", () => {
     team();
     expect(store.settings().keywords).toContain("程序接手开发");

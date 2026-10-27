@@ -226,10 +226,13 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       store.logout(keyOf(req, url)!);
       return send(res, 200, { ok: true });
     }
-    if (method === "GET" && path === "/api/me") return send(res, 200, { name: me, service: serviceName, role: store.members().find((m) => m.name === me)?.role ?? "" });
+    if (method === "GET" && path === "/api/me") {
+      const m = store.members().find((x) => x.name === me);
+      return send(res, 200, { name: me, service: serviceName, role: m?.role ?? "", nick: m?.nick ?? "", avatar: m?.avatar ?? null });
+    }
     if (method === "PATCH" && path === "/api/me") {
       const body = await readJson(req);
-      store.setRole(me, body.role);
+      store.setProfile(me, body);
       pushMembers();
       return send(res, 200, { ok: true });
     }
@@ -392,9 +395,27 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       }
     }
 
-    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive|\/session)?$/.exec(path);
+    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive|\/session|\/members|\/leave)?$/.exec(path);
     if (m) {
       const id = decodeURIComponent(m[1]!);
+      if (method === "POST" && m[2] === "/members") {
+        const out = store.addMembers(id, me, (await readJson(req)).add);
+        // The new people get the thread (with its history) first, then everyone the event.
+        for (const n of out.added) push([n], { type: "thread", thread: out.thread });
+        announce(out.thread, out.message);
+        return send(res, 200, { thread: out.thread });
+      }
+      if (method === "POST" && m[2] === "/leave") {
+        const out = store.leaveGroup(id, me);
+        push([me], { type: "left", threadId: id });
+        announce(out.thread, out.message);
+        return send(res, 200, { ok: true });
+      }
+      if (method === "PATCH" && !m[2]) {
+        const out = store.renameThread(id, me, (await readJson(req)).title);
+        announce(out.thread, out.message);
+        return send(res, 200, { thread: out.thread });
+      }
       if (method === "GET" && !m[2]) return send(res, 200, { thread: store.thread(id, me) });
       if (method === "POST" && m[2] === "/archive") {
         const archived = (await readJson(req)).archived !== false;
