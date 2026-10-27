@@ -98,5 +98,11 @@ export function claudeEnv(
     // 70% of every core, mostly kernel time, every few seconds: the whole desktop lagged, Studio's windows, the mouse
     // and the IME with it (2026-10-21). Studio does not show that diff.
     CLAUDE_CODE_BASH_EDIT_DIFF: "0",
+    // 2026-10-27, the same lag back: auto mode now reads the repo's state for its checks — `git status --porcelain
+    // --untracked-files=normal` with fsmonitor off, around each command it judges — when Anthropic's server turns
+    // that on (it came and went, which is why a restart seemed to help for a while). In project_mining each one ran
+    // at 3-4 cores for about 1 s; Studio's main process stalled 0.7-3 s with it. Off here, whatever the server says.
+    CLAUDE_CODE_AUTO_MODE_GIT_STATUS: "0",
+    CLAUDE_CODE_AUTO_MODE_GIT_STATUS_UPLOADS: "0",
   };
 }

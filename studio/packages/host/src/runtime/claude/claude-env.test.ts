@@ -25,6 +25,8 @@ describe("claudeEnv", () => {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
       CLAUDE_CODE_BASH_EDIT_DIFF: "0",
+      CLAUDE_CODE_AUTO_MODE_GIT_STATUS: "0",
+      CLAUDE_CODE_AUTO_MODE_GIT_STATUS_UPLOADS: "0",
     });
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CLAUDECODE).toBeUndefined();
@@ -34,19 +36,20 @@ describe("claudeEnv", () => {
 
   // 2026-10-21: the switch that stops auto mode's whole-checkout git snapshots lives in the CLI. A new SDK that drops or
   // renames it would bring the desktop-wide lag back without a word, so the bundled CLI must still know the name.
-  it("the bundled CLI still knows CLAUDE_CODE_BASH_EDIT_DIFF", async () => {
-    const want = Buffer.from("CLAUDE_CODE_BASH_EDIT_DIFF");
-    let found = false;
+  // 2026-10-27: and the ones that stop auto mode's own git status scans.
+  it("the bundled CLI still knows CLAUDE_CODE_BASH_EDIT_DIFF and the auto mode git status switches", async () => {
+    const names = ["CLAUDE_CODE_BASH_EDIT_DIFF", "CLAUDE_CODE_AUTO_MODE_GIT_STATUS", "CLAUDE_CODE_AUTO_MODE_GIT_STATUS_UPLOADS"];
+    const wants = names.map((n) => Buffer.from(n));
+    const longest = Math.max(...wants.map((w) => w.length));
+    const found = new Set<string>();
     let tail = Buffer.alloc(0);
     for await (const chunk of createReadStream(bundledClaudeExe()) as AsyncIterable<Buffer>) {
       const both = Buffer.concat([tail, chunk]);
-      if (both.includes(want)) {
-        found = true;
-        break;
-      }
-      tail = both.subarray(both.length - want.length);
+      wants.forEach((w, i) => both.includes(w) && found.add(names[i]!));
+      if (found.size === names.length) break;
+      tail = both.subarray(both.length - longest);
     }
-    expect(found).toBe(true);
+    expect([...found].sort()).toEqual([...names].sort());
   });
 
   it("lets the profile pick the model", () => {
