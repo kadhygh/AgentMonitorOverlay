@@ -2,7 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, type RelaySettings } from "./client.js";
 import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
-import { sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
+import { typeOf } from "./types.js";
 
 // The relay as MCP tools (stdio, `amo-relay mcp`), for any AI client. It speaks as the person whose settings are on
 // this machine, read again on every call, so joining after the client started works. Its instructions are the same
@@ -73,6 +76,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   const openSchema = {
     to: z.string().describe("对方的名字（relay_people 里的）"),
     taskId: z.string().optional().describe("为某个团队任务发的，填它的 taskId"),
+    files: z.array(z.string()).optional().describe("一起带上的文件（fileId，先用 relay_file_put 传）"),
     title: z.string().describe("一句话说清要对方处理什么"),
     body: z.string().describe("Markdown 正文：背景、方案、要确认的点，附上关键片段"),
     questions: z
@@ -80,7 +84,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       .optional()
       .describe("要对方逐条回答的问题；一个问题只问一件事"),
   };
-  const openSession = async (args: { to: string; taskId?: string; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
+  const openSession = async (args: { to: string; taskId?: string; files?: string[]; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
       const out = await client.ask({ ...args, via: via() });
       return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_session_get 取回复，或 relay_session_wait 等一会儿。`;
@@ -205,6 +209,39 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     }),
   );
 
+
+
+  // Files and notes (stages 2c, 2d).
+  server.registerTool(
+    "relay_file_put",
+    {
+      title: "传文件",
+      description: "把本机的一个文件传到任务（taskId）或会话（threadId）里，返回 fileId；同名再传就是新版本。最大 20 MB。",
+      inputSchema: { path: z.string().describe("本机文件的路径"), taskId: z.string().optional(), threadId: z.string().optional(), name: z.string().optional().describe("在中转上显示的名字，默认是文件名") },
+      annotations: annotations(false),
+    },
+    async (args: { path: string; taskId?: string; threadId?: string; name?: string }) =>
+      tool(async (client) => {
+        if (!args.taskId === !args.threadId) throw new RelayClientError(400, "bad_request", "taskId 和 threadId 要给一个");
+        const data = await readFile(args.path);
+        const name = args.name ?? basename(args.path);
+        const f = await client.upload({ taskId: args.taskId, threadId: args.threadId }, name, data, typeOf(name), { ai: true });
+        return `已上传 ${f.name} v${f.version}。fileId: ${f.id}`;
+      })(),
+  );
+  server.registerTool(
+    "relay_file_get",
+    { title: "读文件", description: "读一个文件：文字类（md、html、txt、json…）返回内容（最多约 200 KB），再附上它的批注。", inputSchema: { fileId: z.string() }, annotations: annotations(true) },
+    async (args: { fileId: string }) =>
+      tool(async (client) => {
+        const [versions, notes] = await Promise.all([client.versions(args.fileId), client.notes(args.fileId)]);
+        const f = versions.find((v) => v.id === args.fileId)!;
+        const head = `## ${f.name} v${f.version}（共 ${f.versions} 个版本）· ${f.type} · ${f.size} 字节 · ${f.by} 上传`;
+        const textual = /^text\/|json|xml|javascript|markdown|yaml|csv/.test(f.type) || /\.(md|markdown|txt|html?|json|csv|ya?ml|xml|js|ts|lua|ini|toml)$/i.test(f.name);
+        const body = textual ? (await (await client.fileData(f.id)).text()).slice(0, 200_000) : "（不是文字文件，没法在这里显示内容）";
+        return `${head}\n\n${body}\n\n${notesAsText(f, notes)}`;
+      })(),
+  );
 
   // Team tasks (stage 2b).
   const statusEnum = z.enum(TASK_STATUSES);

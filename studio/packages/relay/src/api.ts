@@ -1,4 +1,4 @@
-import type { Health, Member, Message, NewMessage, NewRequest, NewTask, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
+import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
 // pages in a browser use the same one.
@@ -98,6 +98,60 @@ export class RelayClient {
   read(threadId: string, seq?: number): Promise<{ readSeq: number }> {
     return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/read`, seq === undefined ? {} : { seq });
   }
+  // ---- files and notes (stages 2c, 2d)
+  /** Uploads into a task or a session; the same name there makes a new version. */
+  async upload(where: { taskId?: string; threadId?: string }, name: string, data: Blob | ArrayBuffer | Uint8Array, type = "", opts: { ai?: boolean } = {}): Promise<RelayFile> {
+    const q = new URLSearchParams({ name });
+    if (where.taskId) q.set("task", where.taskId);
+    if (where.threadId) q.set("thread", where.threadId);
+    if (type) q.set("type", type);
+    if (opts.ai) q.set("via", "ai");
+    const headers: Record<string, string> = { "content-type": type || "application/octet-stream" };
+    if (this.key) headers.authorization = `Bearer ${this.key}`;
+    let res: Response;
+    try {
+      res = await fetch(`${this.server}/api/files?${q}`, { method: "POST", headers, body: data as unknown as RequestInit["body"] });
+    } catch (err) {
+      throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
+    }
+    const out = (await res.json().catch(() => ({}))) as { file?: RelayFile; error?: string; message?: string };
+    if (!res.ok || !out.file) throw new RelayClientError(res.status, out.error ?? "error", out.message ?? `HTTP ${res.status}`);
+    return out.file;
+  }
+  async files(where: { taskId?: string; threadId?: string }): Promise<RelayFile[]> {
+    const q = where.taskId ? `task=${encodeURIComponent(where.taskId)}` : `thread=${encodeURIComponent(where.threadId ?? "")}`;
+    return (await this.call<{ files: RelayFile[] }>("GET", `/api/files?${q}`)).files;
+  }
+  async versions(fileId: string): Promise<RelayFile[]> {
+    return (await this.call<{ files: RelayFile[] }>("GET", `/api/files/${encodeURIComponent(fileId)}/versions`)).files;
+  }
+  /** A file's bytes. */
+  async fileData(fileId: string): Promise<Blob> {
+    const res = await fetch(this.fileUrl(fileId), { headers: this.key ? { authorization: `Bearer ${this.key}` } : {} });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
+    }
+    return res.blob();
+  }
+  /** Where a file can be fetched or downloaded (the key rides along for a link). */
+  fileUrl(fileId: string, opts: { download?: boolean; withKey?: boolean } = {}): string {
+    const q = new URLSearchParams();
+    if (opts.download) q.set("download", "1");
+    if (opts.withKey && this.key) q.set("key", this.key);
+    const qs = q.toString();
+    return `${this.server}/api/files/${encodeURIComponent(fileId)}${qs ? `?${qs}` : ""}`;
+  }
+  async notes(fileId: string): Promise<FileNote[]> {
+    return (await this.call<{ notes: FileNote[] }>("GET", `/api/files/${encodeURIComponent(fileId)}/notes`)).notes;
+  }
+  async addNote(fileId: string, n: { quote: string; prefix?: string; suffix?: string; body: string }): Promise<FileNote> {
+    return (await this.call<{ note: FileNote }>("POST", `/api/files/${encodeURIComponent(fileId)}/notes`, n)).note;
+  }
+  async deleteNote(noteId: string): Promise<void> {
+    await this.call("DELETE", `/api/notes/${encodeURIComponent(noteId)}`);
+  }
+
   // ---- team tasks (stage 2b)
   async tasks(): Promise<TaskView[]> {
     return (await this.call<{ tasks: TaskView[] }>("GET", "/api/tasks")).tasks;

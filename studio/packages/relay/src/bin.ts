@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, writeSettings } from "./client.js";
@@ -8,7 +8,8 @@ import { createRelayMcp } from "./mcp.js";
 import { RELAY_DEFAULT_PORT, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
-import { sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { typeOf } from "./types.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name 策划组] [--passphrase <邀请口令>]
@@ -34,7 +35,9 @@ const USAGE = `amo-relay <command>
   handoff  <threadId> --note <文字>                 （交给本人处理）
   tasks    [--mine]                                （团队任务）
   task     <taskId>                                （一个任务的说明、决策、会话）
-  transfer <taskId> --to <名字> [--status 待处理|开发中|已完成|已搁置] --reason <文字>`;
+  transfer <taskId> --to <名字> [--status 待处理|开发中|已完成|已搁置] --reason <文字>
+  put      <本机文件> --task <taskId> | --thread <threadId> [--name <显示名>]   （传文件，同名就是新版本）
+  file     <fileId>                                （读文件和它的批注）`;
 
 function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<string, string> } {
   const [cmd = "", ...rest] = argv;
@@ -83,7 +86,7 @@ async function main(): Promise<void> {
       const data = resolve(flags.data ?? join(relayHome(), "server"));
       const publicDir = resolve(flags.public ?? dirname(fileURLToPath(import.meta.url)));
       const store = new RelayStore(join(data, "relay.db"));
-      const server = await startRelayServer({ store, passphrase, publicDir, name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
+      const server = await startRelayServer({ store, passphrase, publicDir, filesDir: join(data, "files"), name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
       out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
       const stop = () => void server.close().then(() => (store.close(), process.exit(0)));
       process.on("SIGINT", stop);
@@ -210,6 +213,24 @@ async function main(): Promise<void> {
       const { client } = joined();
       const t = await client.transferTask(pos[0], { to: flags.to, status: flags.status as TaskStatus | undefined, reason: flags.reason, via: CLI_VIA });
       out(`「${t.title}」已交给 ${t.holder}，${t.status}。`);
+      return;
+    }
+    case "put": {
+      if (!pos[0] || (!flags.task === !flags.thread)) throw new Error("用法：amo-relay put <本机文件> --task <taskId> | --thread <threadId> [--name <显示名>]");
+      const { client } = joined();
+      const name = flags.name ?? basename(pos[0]);
+      const f = await client.upload({ taskId: flags.task, threadId: flags.thread }, name, readFileSync(pos[0]), typeOf(name), { ai: true });
+      out(`已上传 ${f.name} v${f.version}。fileId: ${f.id}`);
+      return;
+    }
+    case "file": {
+      if (!pos[0]) throw new Error("用法：amo-relay file <fileId>");
+      const { client } = joined();
+      const [versions, notes] = await Promise.all([client.versions(pos[0]), client.notes(pos[0])]);
+      const f = versions.find((v) => v.id === pos[0])!;
+      out(`## ${f.name} v${f.version} · ${f.type} · ${f.size} 字节\n`);
+      if (/^text\/|json|xml|markdown/.test(f.type)) out(await (await client.fileData(f.id)).text());
+      out(`\n${notesAsText(f, notes)}`);
       return;
     }
     case "handoff": {

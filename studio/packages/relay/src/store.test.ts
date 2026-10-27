@@ -239,6 +239,39 @@ describe("RelayStore", () => {
     expect(store.task(t.id).sessions[0]?.state).toBe("done");
   });
 
+  it("keeps files by version, a session's for its two people only, and notes across versions", () => {
+    team();
+    store.register("美术小张", "pw-zhang");
+    const t = store.createTask("策划小王", { title: "加特林" });
+    const meta = (id: string, extra: Partial<{ taskId: string; threadId: string }>) => ({ id, name: "designdoc.md", size: 10, type: "text/markdown", sha256: "x", ...extra });
+    const v1 = store.addFile("策划小王", meta("f_1", { taskId: t.id }));
+    const v2 = store.addFile("程序老李", meta("f_2", { taskId: t.id }));
+    expect([v1.version, v2.version, v2.versions]).toEqual([1, 2, 2]);
+    expect(store.task(t.id).files.map((f) => f.id)).toEqual(["f_2"]);
+    expect(store.taskEvents(t.id).filter((e) => e.kind === "file").map((e) => e.text)).toEqual(["上传 designdoc.md v1", "上传 designdoc.md v2"]);
+    expect(() => store.addFile("策划小王", { id: "f_x", name: "a", size: 1, sha256: "x" })).toThrow(/一个任务或一个会话/);
+
+    // A session takes the task's file along and gets one of its own; outsiders see neither of the session's.
+    const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "见附件", taskId: t.id, files: ["f_2"] });
+    store.addFile("程序老李", { id: "f_3", threadId: thread.id, name: "proto.html", size: 5, type: "text/html", sha256: "y" });
+    expect(store.filesOf({ threadId: thread.id }, "策划小王").map((f) => f.id)).toEqual(["f_2", "f_3"]);
+    expect(() => store.file("f_3", "美术小张")).toThrow(/不在这个对话/);
+    expect(store.file("f_2", "美术小张").name).toBe("designdoc.md");
+
+    // Notes on v1 and v2 all come back for either version; only the author removes one.
+    const n1 = store.addNote("程序老李", "f_1", { quote: "每秒 12 发", prefix: "基础射速 ", suffix: "，按住", body: "配表？" });
+    const n2 = store.addNote("程序老李", "f_2", { quote: "6 秒进入过热", body: "复用能量条" });
+    expect(store.notesOf("f_2", "策划小王").map((n) => [n.id, n.version])).toEqual([[n1.id, 1], [n2.id, 2]]);
+    expect(store.file("f_2", "策划小王").notes).toBe(1);
+    expect(() => store.deleteNote("策划小王", n2.id)).toThrow(/自己的批注/);
+
+    // A reply can be just notes; they are copied in.
+    const reply = store.addMessage(thread.id, "程序老李", { kind: "reply", notes: [n1.id, n2.id] });
+    expect(reply.message.notes).toMatchObject([{ file: "designdoc.md", version: 1, quote: "每秒 12 发", body: "配表？" }, { version: 2, body: "复用能量条" }]);
+    store.deleteNote("程序老李", n1.id);
+    expect(store.messages(thread.id, "策划小王").at(-1)?.notes).toHaveLength(2);
+  });
+
   it("keeps the team's settings, defaults first", () => {
     team();
     expect(store.settings().keywords).toContain("程序接手开发");

@@ -1,9 +1,11 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createReadStream, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
-import { RELAY_APP, RELAY_VERSION, TICK_MS, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
+import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 
 // The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
@@ -22,6 +24,8 @@ export interface RelayServerOptions {
   name?: string;
   host?: string;
   port?: number;
+  /** Where uploaded files are kept (one file per upload, named by its id); none = no files. */
+  filesDir?: string;
   /** How often to look for a newer client build (default 5 s) and to send a tick (default TICK_MS). Tests shorten them. */
   clientWatchMs?: number;
   tickMs?: number;
@@ -43,6 +47,25 @@ const samePassphrase = (a: string, b: string) => timingSafeEqual(digest(a), dige
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
+}
+
+/** A request's bytes, at most `max`. */
+function readRaw(req: IncomingMessage, max: number): Promise<Buffer> {
+  return new Promise((ok, fail) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        fail(new RelayError("bad_request", `文件太大（最多 ${Math.round(max / 1024 / 1024)} MB）`));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => ok(Buffer.concat(chunks)));
+    req.on("error", fail);
+  });
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -120,6 +143,21 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   /** A team task changed: everyone sees tasks. */
   const taskChanged = (taskId: string | null | undefined) => {
     if (taskId && !closing) pushAll({ type: "task", task: store.task(taskId) });
+  };
+
+  /** A file came: its task or its session moved. */
+  const fileChanged = (file: RelayFile, me: string) => {
+    if (file.taskId) taskChanged(file.taskId);
+    if (file.threadId) {
+      const thread = store.thread(file.threadId, me);
+      push(thread.members, { type: "updated", thread });
+    }
+  };
+  /** Notes on a file changed: to whoever can see it (everyone for a task's file, the two people for a session's). */
+  const notesChanged = (file: RelayFile) => {
+    const names = file.threadId ? store.threadMembers(file.threadId) : [...sockets.keys()];
+    push(names, { type: "notes", fileId: file.id });
+    if (file.taskId) taskChanged(file.taskId);
   };
 
   /** A new message: to the thread's members, and to the waits it answers (not the author's own). */
@@ -261,6 +299,61 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       taskChanged(task.id);
       return send(res, 200, { task: store.taskView(task.id, me) });
     }
+    // Files (2c) and their notes (2d). A task's are everyone's; a session's, its two people's.
+    if (path === "/api/files" && (method === "POST" || method === "GET")) {
+      const taskId = url.searchParams.get("task") || null;
+      const threadId = url.searchParams.get("thread") || null;
+      if (method === "GET") return send(res, 200, { files: store.filesOf({ taskId: taskId ?? undefined, threadId: threadId ?? undefined }, me) });
+      if (!opts.filesDir) throw new RelayError("bad_request", "这个服务没有开文件存储");
+      const data = await readRaw(req, MAX_FILE_BYTES);
+      if (!data.length) throw new RelayError("bad_request", "文件是空的");
+      const id = `f_${randomBytes(8).toString("hex")}`;
+      mkdirSync(opts.filesDir, { recursive: true });
+      writeFileSync(join(opts.filesDir, id), data);
+      let file;
+      try {
+        const type = url.searchParams.get("type") || String(req.headers["content-type"] ?? "") || "application/octet-stream";
+        file = store.addFile(me, { id, taskId, threadId, name: url.searchParams.get("name"), size: data.length, type, sha256: createHash("sha256").update(data).digest("hex"), via: url.searchParams.get("via") === "ai" ? { kind: "ai" } : undefined });
+      } catch (err) {
+        rmSync(join(opts.filesDir, id), { force: true });
+        throw err;
+      }
+      fileChanged(file, me);
+      return send(res, 200, { file });
+    }
+    const fm = /^\/api\/files\/([^/]+)(\/versions|\/notes)?$/.exec(path);
+    if (fm) {
+      const file = store.file(decodeURIComponent(fm[1]!), me);
+      if (method === "GET" && !fm[2]) {
+        const where = opts.filesDir ? join(opts.filesDir, file.id) : null;
+        if (!where || !existsSync(where)) throw new RelayError("not_found", "文件的内容不在了");
+        res.writeHead(200, {
+          "content-type": file.type,
+          "content-length": String(file.size),
+          "cache-control": "private, max-age=31536000, immutable",
+          // Opened straight from the service, an HTML file runs in a sandbox of its own, never on the service's origin.
+          "content-security-policy": "sandbox",
+          "x-content-type-options": "nosniff",
+          "content-disposition": `${url.searchParams.get("download") ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        });
+        createReadStream(where).pipe(res);
+        return;
+      }
+      if (method === "GET" && fm[2] === "/versions") return send(res, 200, { files: store.versionsOf(file.id, me) });
+      if (method === "GET" && fm[2] === "/notes") return send(res, 200, { notes: store.notesOf(file.id, me) });
+      if (method === "POST" && fm[2] === "/notes") {
+        const note = store.addNote(me, file.id, await readJson(req));
+        notesChanged(file);
+        return send(res, 200, { note });
+      }
+    }
+    const nm = /^\/api\/notes\/([^/]+)$/.exec(path);
+    if (nm && method === "DELETE") {
+      const note = store.deleteNote(me, decodeURIComponent(nm[1]!));
+      notesChanged(store.file(note.fileId, me));
+      return send(res, 200, { ok: true });
+    }
+
     const tk = /^\/api\/tasks\/([^/]+)(\/transfer|\/archive|\/seen)?$/.exec(path);
     if (tk) {
       const id = decodeURIComponent(tk[1]!);

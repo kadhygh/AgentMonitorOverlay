@@ -25,7 +25,9 @@ afterEach(async () => {
 
 async function service(publicDir?: string, timing: { clientWatchMs?: number; tickMs?: number } = {}) {
   store = new RelayStore(":memory:");
-  server = await startRelayServer({ store, passphrase: "芝麻开门", publicDir, host: "127.0.0.1", port: 0, name: "测试组", ...timing });
+  const filesDir = mkdtempSync(join(tmpdir(), "relay-files-"));
+  closers.push(() => rmSync(filesDir, { recursive: true, force: true }));
+  server = await startRelayServer({ store, passphrase: "芝麻开门", publicDir, filesDir, host: "127.0.0.1", port: 0, name: "测试组", ...timing });
   const anon = new RelayClient(server.url);
   const a = await anon.register("策划小王", "pw-wang", { role: "策划", passphrase: "芝麻开门" });
   const b = await anon.register("程序老李", "pw-li", { role: "程序 · 战斗", passphrase: "芝麻开门" });
@@ -199,6 +201,27 @@ describe("relay service", () => {
     const [forCoder] = await coder.tasks();
     expect(forCoder).toMatchObject({ title: "加特林", holder: "程序老李", unseen: true });
     expect(text(await client.callTool({ name: "relay_task_list", arguments: { mine: true } }))).toBe("没有符合的任务。");
+
+    // Files: the AI puts a local file into the task, the coder notes on it over HTTP, the AI reads both back.
+    const dir = mkdtempSync(join(tmpdir(), "relay-put-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(join(dir, "designdoc.md"), "# 加特林\n\n基础射速每秒 12 发。");
+    const put = text(await client.callTool({ name: "relay_file_put", arguments: { path: join(dir, "designdoc.md"), taskId } }));
+    const fileId = /fileId: (\S+)/.exec(put)![1]!;
+    expect(put).toContain("已上传 designdoc.md v1");
+    const blob = await coder.fileData(fileId);
+    expect(await blob.text()).toBe("# 加特林\n\n基础射速每秒 12 发。");
+    const raw = await fetch(coder.fileUrl(fileId, { withKey: true }));
+    expect(raw.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(raw.headers.get("content-security-policy")).toBe("sandbox");
+    expect((await fetch(coder.fileUrl(fileId))).status).toBe(401);
+    await coder.addNote(fileId, { quote: "每秒 12 发", body: "建议配表" });
+    const read = text(await client.callTool({ name: "relay_file_get", arguments: { fileId } }));
+    expect(read).toContain("基础射速每秒 12 发。");
+    expect(read).toContain("> 每秒 12 发\n\n建议配表（程序老李）");
+    const again2 = await coder.upload({ taskId }, "designdoc.md", new TextEncoder().encode("# v2"), "text/markdown");
+    expect(again2).toMatchObject({ version: 2, versions: 2 });
+    expect(text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }))).toContain(`- designdoc.md v2 · fileId ${again2.id}`);
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
   });

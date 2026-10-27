@@ -8,12 +8,15 @@ import {
   TASK_STATUSES,
   VERDICT_LABEL,
   type Answer,
+  type FileNote,
   type Message,
   type MessageKind,
   type NewMessage,
   type NewRequest,
   type NewTask,
   type Question,
+  type RelayFile,
+  type ReplyNote,
   type SessionAction,
   type SessionState,
   type Task,
@@ -178,6 +181,7 @@ export class RelayStore {
     if (!columns.includes("archived")) this.db.exec("ALTER TABLE thread_members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
     this.migrateSessions();
     this.migrateTasks();
+    this.migrateFiles();
   }
 
   /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
@@ -323,6 +327,10 @@ export class RelayStore {
     return thread;
   }
 
+  threadMembers(threadId: string): string[] {
+    return (this.db.prepare("SELECT name FROM thread_members WHERE thread_id = ? ORDER BY rowid").all(threadId) as Row[]).map((r) => String(r.name));
+  }
+
   /** The direct chat between two people, made on first use. */
   direct(me: string, otherValue: unknown): Thread {
     const other = checkName(otherValue);
@@ -393,6 +401,7 @@ export class RelayStore {
     if (extra.questions) m.questions = extra.questions;
     if (extra.answers) m.answers = extra.answers;
     if (extra.verdict) m.verdict = extra.verdict;
+    if (extra.notes) m.notes = extra.notes;
     return m;
   }
 
@@ -422,6 +431,7 @@ export class RelayStore {
     const needs = via.kind === "ai" || req.needsReply !== false;
     const taskId = req.taskId ? String(req.taskId) : null;
     if (taskId) this.taskRow(taskId);
+    const attach = this.checkAttach(from, req.files);
     return this.tx(() => {
       const id = newId("t");
       const at = this.now();
@@ -432,7 +442,7 @@ export class RelayStore {
         .run(id, title, from, at, at, from, to, to, via.kind === "ai" ? "ai" : "person", needs ? 1 : 0);
       for (const n of [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
       const message = this.insertMessage(id, from, via, "request", body, questions.length ? { questions } : null);
-      this.db.prepare("UPDATE threads SET req_seq = ?, task_id = ? WHERE id = ?").run(message.seq, taskId, id);
+      this.db.prepare("UPDATE threads SET req_seq = ?, task_id = ?, s_files = ? WHERE id = ?").run(message.seq, taskId, attach.length ? JSON.stringify(attach) : null, id);
       if (taskId) this.addTaskEvent(taskId, from, via, "session", `${via.kind === "ai" ? "的 AI " : ""}发起会话「${title}」→ ${to}`, { threadId: id, to });
       return { thread: this.toThread(this.threadRow(id)), message };
     });
@@ -467,11 +477,13 @@ export class RelayStore {
     const body = text(msg.body, "补充说明", LIMITS.body, false);
     const verdict = msg.verdict ?? undefined;
     if (verdict !== undefined && !VERDICTS.has(verdict)) throw new RelayError("bad_request", `不认识的结论：${String(verdict)}`);
-    if (!answers.length && !body && !verdict) throw new RelayError("bad_request", "回复是空的");
+    const notes = this.notesForReply(author, msg.notes);
+    if (!answers.length && !body && !verdict && !notes.length) throw new RelayError("bad_request", "回复是空的");
     return this.tx(() => {
       const extra: Partial<Message> = {};
       if (answers.length) extra.answers = answers;
       if (verdict) extra.verdict = verdict;
+      if (notes.length) extra.notes = notes;
       const message = this.insertMessage(threadId, author, via, "reply", body, Object.keys(extra).length ? extra : null);
       this.db.prepare("UPDATE threads SET req_status = 'answered', req_verdict = COALESCE(?, req_verdict) WHERE id = ?").run(verdict ?? null, threadId);
       this.recordDecision(thread, author, answers, verdict, questions);
@@ -618,6 +630,7 @@ export class RelayStore {
       updatedAt: Number(row.updated_at),
       archived: Number(row.archived) === 1,
       sessions,
+      files: this.filesOf({ taskId: id }, ""),
       handoff: ev ? { eventId: ev.id, from: ev.data?.from ?? ev.actor, to: ev.data?.to ?? "", by: ev.actor, at: ev.at, status: ev.data?.status ?? (String(row.status) as TaskStatus), reason: ev.data?.reason ?? "" } : null,
     };
   }
@@ -768,5 +781,153 @@ export class RelayStore {
     }
     for (const [k, v] of Object.entries(out)) this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(k, JSON.stringify(v));
     return this.settings();
+  }
+
+  // ---- files (stage 2c): a task's or a session's attachments, kept by version; the bytes are the service's (files/)
+
+  private migrateFiles(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS files (
+        id TEXT PRIMARY KEY, task_id TEXT, thread_id TEXT, name TEXT NOT NULL, version INTEGER NOT NULL,
+        size INTEGER NOT NULL, type TEXT NOT NULL, sha256 TEXT NOT NULL, by_name TEXT NOT NULL, at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS files_task ON files(task_id, name, version);
+      CREATE INDEX IF NOT EXISTS files_thread ON files(thread_id, name, version);
+      CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY, file_id TEXT NOT NULL REFERENCES files(id), author TEXT NOT NULL, quote TEXT NOT NULL,
+        prefix TEXT NOT NULL DEFAULT '', suffix TEXT NOT NULL DEFAULT '', body TEXT NOT NULL, at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS notes_file ON notes(file_id);
+    `);
+    const columns = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
+    if (!columns.includes("s_files")) this.db.exec("ALTER TABLE threads ADD COLUMN s_files TEXT");
+  }
+
+  private toFile(row: Row): RelayFile {
+    const scope = row.task_id != null ? "task_id = ?" : "thread_id = ?";
+    const versions = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM files WHERE ${scope} AND name = ?`).get(String(row.task_id ?? row.thread_id), String(row.name)) as Row).n);
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      version: Number(row.version),
+      versions,
+      size: Number(row.size),
+      type: String(row.type),
+      sha256: String(row.sha256),
+      by: String(row.by_name),
+      at: Number(row.at),
+      taskId: row.task_id == null ? null : String(row.task_id),
+      threadId: row.thread_id == null ? null : String(row.thread_id),
+      notes: this.noteCount(String(row.id)),
+    };
+  }
+
+  /** A task's files are the team's; a session's, its two people's. */
+  file(id: string, name: string): RelayFile {
+    const row = this.db.prepare("SELECT * FROM files WHERE id = ?").get(id) as Row | undefined;
+    if (!row) throw new RelayError("not_found", `没有这个文件：${id}`);
+    if (row.thread_id != null) this.thread(String(row.thread_id), name);
+    return this.toFile(row);
+  }
+
+  /** A new file, or a new version of the one with the same name in the same place. */
+  addFile(actor: string, f: { taskId?: string | null; threadId?: string | null; name: unknown; size: number; type?: string; sha256: string; id: string; via?: Via }): RelayFile {
+    const name = text(f.name, "文件名", 200).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_");
+    if (!f.taskId === !f.threadId) throw new RelayError("bad_request", "文件要放在一个任务或一个会话里");
+    if (f.taskId) this.taskRow(f.taskId);
+    if (f.threadId) this.thread(f.threadId, actor);
+    const scope = f.taskId ? "task_id = ?" : "thread_id = ?";
+    const key = (f.taskId ?? f.threadId)!;
+    return this.tx(() => {
+      const version = Number((this.db.prepare(`SELECT COALESCE(MAX(version), 0) AS v FROM files WHERE ${scope} AND name = ?`).get(key, name) as Row).v) + 1;
+      const at = this.now();
+      this.db
+        .prepare("INSERT INTO files (id, task_id, thread_id, name, version, size, type, sha256, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(f.id, f.taskId ?? null, f.threadId ?? null, name, version, f.size, f.type || "application/octet-stream", f.sha256, actor, at);
+      if (f.taskId) this.addTaskEvent(f.taskId, actor, checkVia(f.via), "file", `上传 ${name} v${version}`, { fileId: f.id });
+      if (f.threadId) this.db.prepare("UPDATE threads SET updated_at = ? WHERE id = ?").run(at, f.threadId);
+      return this.file(f.id, actor);
+    });
+  }
+
+  /** The latest version of each file in a task or a session (with what the session was given from its task). */
+  filesOf(where: { taskId?: string; threadId?: string }, name: string): RelayFile[] {
+    const latest = (scope: string, key: string) =>
+      (this.db.prepare(`SELECT f.* FROM files f WHERE f.${scope} = ? AND f.version = (SELECT MAX(version) FROM files g WHERE g.${scope} = f.${scope} AND g.name = f.name) ORDER BY f.at`).all(key) as Row[]).map((r) => this.toFile(r));
+    if (where.taskId) {
+      this.taskRow(where.taskId);
+      return latest("task_id", where.taskId);
+    }
+    const thread = this.thread(where.threadId!, name);
+    const attached = this.attachedTo(thread.id).map((id) => this.file(id, name));
+    return [...attached, ...latest("thread_id", thread.id)];
+  }
+
+  /** Every version of a file, newest first. */
+  versionsOf(id: string, name: string): RelayFile[] {
+    const f = this.file(id, name);
+    const scope = f.taskId ? "task_id = ?" : "thread_id = ?";
+    return (this.db.prepare(`SELECT * FROM files WHERE ${scope} AND name = ? ORDER BY version DESC`).all(f.taskId ?? f.threadId, f.name) as Row[]).map((r) => this.toFile(r));
+  }
+
+  private attachedTo(threadId: string): string[] {
+    const raw = (this.db.prepare("SELECT s_files FROM threads WHERE id = ?").get(threadId) as Row | undefined)?.s_files;
+    return raw ? (JSON.parse(String(raw)) as string[]) : [];
+  }
+
+  /** Files a new session takes along (its task's, or the asker's other sessions'). */
+  private checkAttach(from: string, ids: unknown): string[] {
+    if (ids === undefined || ids === null) return [];
+    if (!Array.isArray(ids)) throw new RelayError("bad_request", "files 必须是文件 id 的列表");
+    return [...new Set(ids.map((id) => this.file(String(id), from).id))].slice(0, 30);
+  }
+
+  private noteCount(fileId: string): number {
+    return Number((this.db.prepare("SELECT COUNT(*) AS n FROM notes WHERE file_id = ?").get(fileId) as Row).n);
+  }
+
+  // ---- notes (stage 2d): a passage of a file and what someone thinks of it, anchored by its words and their context
+
+  private toNote(row: Row): FileNote {
+    return { id: String(row.id), fileId: String(row.file_id), version: Number(row.version), author: String(row.author), quote: String(row.quote), prefix: String(row.prefix), suffix: String(row.suffix), body: String(row.body), at: Number(row.at) };
+  }
+
+  /** The notes on every version of a file (oldest first; a client carries them to the version it shows). */
+  notesOf(fileId: string, name: string): FileNote[] {
+    const ids = this.versionsOf(fileId, name).map((f) => f.id);
+    return (this.db.prepare(`SELECT n.*, f.version AS version FROM notes n JOIN files f ON f.id = n.file_id WHERE n.file_id IN (${ids.map(() => "?").join(",")}) ORDER BY n.at`).all(...ids) as Row[]).map((r) => this.toNote(r));
+  }
+
+  addNote(actor: string, fileId: string, n: { quote?: unknown; prefix?: unknown; suffix?: unknown; body?: unknown }): FileNote {
+    this.file(fileId, actor);
+    const quote = text(n.quote, "引文", LIMITS.answer);
+    const body = text(n.body, "批注", LIMITS.answer);
+    const prefix = text(n.prefix, "前文", 200, false);
+    const suffix = text(n.suffix, "后文", 200, false);
+    const id = newId("n");
+    this.db.prepare("INSERT INTO notes (id, file_id, author, quote, prefix, suffix, body, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, fileId, actor, quote, prefix, suffix, body, this.now());
+    return this.toNote(this.db.prepare("SELECT n.*, f.version AS version FROM notes n JOIN files f ON f.id = n.file_id WHERE n.id = ?").get(id) as Row);
+  }
+
+  /** Only its author removes a note. */
+  deleteNote(actor: string, id: string): FileNote {
+    const row = this.db.prepare("SELECT n.*, f.version AS version FROM notes n JOIN files f ON f.id = n.file_id WHERE n.id = ?").get(id) as Row | undefined;
+    if (!row) throw new RelayError("not_found", "没有这条批注");
+    this.file(String(row.file_id), actor);
+    if (String(row.author) !== actor) throw new RelayError("forbidden", "只能删自己的批注");
+    this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+    return this.toNote(row);
+  }
+
+  /** Notes put into a reply: copied in, so the reply keeps them even if they are deleted later. */
+  private notesForReply(actor: string, ids: unknown): ReplyNote[] {
+    if (ids === undefined || ids === null) return [];
+    if (!Array.isArray(ids)) throw new RelayError("bad_request", "notes 必须是批注 id 的列表");
+    return ids.slice(0, 100).map((id) => {
+      const row = this.db.prepare("SELECT n.*, f.version AS version, f.name AS fname FROM notes n JOIN files f ON f.id = n.file_id WHERE n.id = ?").get(String(id)) as Row | undefined;
+      if (!row) throw new RelayError("not_found", `没有这条批注：${String(id)}`);
+      this.file(String(row.file_id), actor);
+      return { noteId: String(row.id), fileId: String(row.file_id), file: String(row.fname), version: Number(row.version), author: String(row.author), quote: String(row.quote), body: String(row.body) };
+    });
   }
 }

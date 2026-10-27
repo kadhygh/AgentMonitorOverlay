@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.4.0";
+export const RELAY_VERSION = "0.5.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
@@ -53,6 +53,8 @@ export interface Message {
   questions?: Question[];
   answers?: Answer[];
   verdict?: Verdict;
+  /** Notes on files that came with a reply (copied in when it was sent). */
+  notes?: ReplyNote[];
   createdAt: number;
 }
 
@@ -118,6 +120,8 @@ export interface NewRequest {
   needsReply?: boolean;
   /** Under this team task. */
   taskId?: string;
+  /** Files it takes along (ids of the task's or the asker's files). */
+  files?: string[];
   questions?: Array<{ id?: string; text: string; options?: string[] }>;
   via?: Via;
 }
@@ -130,6 +134,8 @@ export interface NewMessage {
   body?: string;
   answers?: Answer[];
   verdict?: Verdict;
+  /** With a reply: ids of the replier's notes to send along. */
+  notes?: string[];
   via?: Via;
 }
 
@@ -180,6 +186,8 @@ export interface Task {
   updatedAt: number;
   archived: boolean;
   sessions: TaskSession[];
+  /** The latest version of each file. */
+  files: RelayFile[];
   /** The last time it was handed to someone (流转, or made for someone else). */
   handoff: { eventId: number; from: string; to: string; by: string; at: number; status: TaskStatus; reason: string } | null;
 }
@@ -217,6 +225,53 @@ export const DEFAULT_SETTINGS: TeamSettings = {
   aiStuckMinutes: 30,
 };
 
+// ---- files and notes (stages 2c, 2d)
+
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/** A file in a task (the team sees it) or in a session (its two people do); a new upload of the same name in the same
+ * place is its next version. */
+export interface RelayFile {
+  id: string;
+  name: string;
+  version: number;
+  /** How many versions there are of this name in this place. */
+  versions: number;
+  size: number;
+  type: string;
+  sha256: string;
+  by: string;
+  at: number;
+  taskId: string | null;
+  threadId: string | null;
+  /** Notes on this version. */
+  notes: number;
+}
+
+/** A passage of a file (its words, and some of the text before and after to find it again) and what someone thinks. */
+export interface FileNote {
+  id: string;
+  fileId: string;
+  /** The version it was written on. */
+  version: number;
+  author: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  body: string;
+  at: number;
+}
+
+export interface ReplyNote {
+  noteId: string;
+  fileId: string;
+  file: string;
+  version: number;
+  author: string;
+  quote: string;
+  body: string;
+}
+
 /** The service's /ws tick: a client that hears nothing for a while knows it is gone. */
 export const TICK_MS = 20_000;
 
@@ -231,6 +286,8 @@ export type RelayEvent =
   | { type: "task"; task: Task }
   /** The team's settings changed: to everyone. */
   | { type: "settings"; settings: TeamSettings }
+  /** Notes on a file changed: to whoever can see the file. */
+  | { type: "notes"; fileId: string }
   /** A thread changed without a message (a session fetched by an AI): to its members. */
   | { type: "updated"; thread: Thread }
   /** This member archived or brought back a thread (their other devices follow). */

@@ -1,4 +1,4 @@
-import { VERDICT_LABEL, type Member, type Message, type Task, type TaskEvent, type Thread } from "./protocol.js";
+import { VERDICT_LABEL, type FileNote, type Member, type Message, type RelayFile, type Task, type TaskEvent, type Thread } from "./protocol.js";
 
 // Text for AIs: the usage prompt the person copies into any agent (「复制用法」, `amo-relay prompt`) and that the MCP
 // gives as its instructions, and a thread as readable Markdown (the MCP's replies, the command line, 「复制回复」).
@@ -30,7 +30,8 @@ export function usagePrompt(ctx: UsageContext): string {
 - \`${ctx.cli} send <threadId> --body "…" [--then ask|done]\`：补充；\`--then ask\` 继续追问（会话回到对方手里），\`--then done\` 收尾并标记完成
 - \`${ctx.cli} handoff <threadId> --note "…"\`：交给我本人处理
 - \`${ctx.cli} tasks [--mine]\` / \`${ctx.cli} task <taskId>\`：团队任务；发会话的 JSON 里加 "taskId" 就挂在任务下
-- \`${ctx.cli} transfer <taskId> --to <名字> --status <状态> --reason "…"\`：流转任务`
+- \`${ctx.cli} transfer <taskId> --to <名字> --status <状态> --reason "…"\`：流转任务
+- \`${ctx.cli} put <本机文件> --task <taskId>\`（或 \`--thread <threadId>\`）：传文件；\`${ctx.cli} file <fileId>\`：读文件和批注；发会话的 JSON 里加 "files": [fileId] 就带上`
     : "";
   return `# AMO 中转：推进中需要别人确认时
 
@@ -60,7 +61,11 @@ ${people}
 - 一件要做的事（比如一把新武器）是一个团队任务，始终在某个人手里（持有人），状态是 待处理 / 开发中 / 已完成 / 已搁置。
 - \`relay_task_list\`：列出任务（mine: true 只看我手里的）；\`relay_task_get\`：一个任务的说明、持有人、状态、记录里的决策和它下面的会话。
 - \`relay_task_create\` 新建任务；\`relay_task_update\` 改标题、说明或状态；\`relay_task_transfer\` 流转给某人（写清状态和原因）。
-- 为某个任务发的会话，\`relay_session_open\` 时带上 taskId；会话里的逐条回答和结论会自动记进任务的决策。${ctx.flow?.trim() ? `
+- 为某个任务发的会话，\`relay_session_open\` 时带上 taskId；会话里的逐条回答和结论会自动记进任务的决策。
+
+## 文件和批注
+- 对方看不到我本机的文件：要给人看的文档（比如 designdoc.md、HTML 原型），用 \`relay_file_put\` 传到任务（taskId）或会话（threadId）里；同名再传就是新版本。发会话时用 files 带上这些文件的 fileId。
+- \`relay_file_get\`：读一个文件（文字类会返回内容）和它上面的批注（引文 + 意见）。别人在回复里附上的批注，\`relay_session_get\` 里也能看到。${ctx.flow?.trim() ? `
 
 ## 团队流程
 ${ctx.flow.trim()}` : ""}${cli}
@@ -107,6 +112,7 @@ export function messageAsText(m: Message, questions: Message["questions"] = []):
       );
     }
     if (m.verdict) parts.push(`结论：**${VERDICT_LABEL[m.verdict]}**`);
+    if (m.notes?.length) parts.push(`附上的批注：\n${m.notes.map((n) => `- ${n.file} v${n.version}：「${n.quote}」 → ${n.body}`).join("\n")}`);
   }
   return parts.join("\n\n");
 }
@@ -129,6 +135,7 @@ export function taskAsText(task: Task, events: TaskEvent[] = []): string {
   parts.push(`### 说明\n${task.description.trim() || "（没写）"}`);
   const decisions = events.filter((e) => e.kind === "decision");
   if (decisions.length) parts.push(`### 决策\n${decisions.map((e) => `- ${e.text}`).join("\n")}`);
+  if (task.files.length) parts.push(`### 文件\n${task.files.map((f) => `- ${f.name} v${f.version}${f.notes ? ` · ${f.notes} 条批注` : ""} · fileId ${f.id}`).join("\n")}`);
   if (task.sessions.length) {
     const state = (s: Task["sessions"][number]) => (s.state === "done" ? "已完成" : s.state === "open" ? `在 ${s.to} 手里` : `已返回给 ${s.from}`);
     parts.push(`### 会话\n${task.sessions.map((s) => `- ${s.title} · ${s.from} → ${s.to} · ${state(s)} · threadId ${s.id}`).join("\n")}`);
@@ -149,4 +156,10 @@ ${taskAsText(task, events)}
 ---
 
 ${usagePrompt(ctx)}`;
+}
+
+/** A file's notes as Markdown: what was quoted, what was said; for 复制批注 and for an AI. */
+export function notesAsText(file: Pick<RelayFile, "name" | "version">, notes: FileNote[]): string {
+  if (!notes.length) return `${file.name} v${file.version}：还没有批注。`;
+  return [`### ${file.name} v${file.version} 的批注`, ...notes.map((n) => `> ${n.quote.replace(/\n/g, "\n> ")}\n\n${n.body}（${n.author}${n.version !== file.version ? `，写在 v${n.version} 上` : ""}）`)].join("\n\n");
 }
