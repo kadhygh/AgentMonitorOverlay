@@ -124,7 +124,7 @@ test("archived tasks leave the board; the 完成 column lists them, they open re
   await expect(page.getByTestId("archived-open")).toHaveCount(0);
 });
 
-test("the 完成 column's right-click menu archives one topic group or every finished task (2026-10-22)", async () => {
+test("归档 on the 完成 column's head archives every finished task, the one on a topic group's head that group (2026-10-28)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -142,24 +142,28 @@ test("the 完成 column's right-click menu archives one topic group or every fin
   const done = page.getByTestId("column-done");
   await expect(done.getByTestId("task-card")).toHaveCount(3);
 
-  // On a topic group (its head or its cards): that group alone, or the whole column.
-  await done.locator('[data-testid="topic-group"][data-topic="掉落表重构"]').locator(".topic-group-head").click({ button: "right" });
-  await expect(page.getByTestId("archive-done-group")).toHaveText("归档「掉落表重构」这一组（2）");
-  await expect(page.getByTestId("archive-done-all")).toHaveText("归档全部已完成（3）");
-  await screenshot(app, "stage-18", "S18-board-archive-done", page);
-  await page.getByTestId("archive-done-group").click();
+  // No right-click menu any more; 全部归档 sits at the right of the head, on the red-tinted face.
+  await done.locator(".column-head").click({ button: "right" });
   await expect(page.getByTestId("done-menu")).toHaveCount(0);
+  const all = done.getByTestId("archive-done-all");
+  await expect(all).toHaveText("全部归档");
+  await expect(all).toHaveClass(/soft-danger/);
+  await expect(page.getByTestId("column-doing").getByTestId("archive-done-all")).toHaveCount(0);
+  // A topic group's own 归档 shows with the pointer on the group.
+  const group = done.locator('[data-testid="topic-group"][data-topic="掉落表重构"]');
+  await expect(group.getByTestId("archive-done-group")).toBeHidden();
+  await group.hover();
+  await expect(group.getByTestId("archive-done-group")).toBeVisible();
+  await screenshot(app, "stage-18", "S18-board-archive-done", page);
+  await group.getByTestId("archive-done-group").click();
   await expect(done.getByTestId("task-card")).toHaveCount(1);
   await expect(done.getByTestId("task-card")).toContainText("改日志格式");
   await expect(page.getByTestId("column-doing").getByTestId("task-card")).toContainText("还在做的");
 
-  // On the column itself (no group there): only the whole column. Other columns have no such menu.
-  await page.getByTestId("column-doing").click({ button: "right" });
-  await expect(page.getByTestId("done-menu")).toHaveCount(0);
-  await done.locator(".column-head").click({ button: "right" });
-  await expect(page.getByTestId("archive-done-group")).toHaveCount(0);
-  await page.getByTestId("archive-done-all").click();
+  await all.click();
   await expect(done.getByTestId("task-card")).toHaveCount(0);
+  // An empty 完成 has nothing to archive.
+  await expect(all).toHaveCount(0);
   await expect(page.getByTestId("archived-open")).toHaveText("已归档 3");
   const state = await studio.api<{ tasks: Task[] }>("GET", "/api/state");
   expect(state.tasks.filter((t) => t.archivedAt).map((t) => t.title).sort()).toEqual(["拆掉旧的掉落表", "改日志格式", "补掉落表测试"].sort());

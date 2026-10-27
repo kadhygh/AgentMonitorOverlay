@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
-import { PopMenu, type Anchor } from "../task/TaskHead.js";
+import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
 import { KindIcon } from "./KindIcon.js";
 import { setGroupByTopic, useGroupByTopic } from "./prefs.js";
@@ -47,21 +47,16 @@ interface BoardProps {
   decisions?: ReadonlyMap<string, number>;
   /** Checklist progress per task id (tasks made from a pack template). */
   checklist?: ReadonlyMap<string, { done: number; total: number }>;
-  /** 归档已完成 (2026-10-22): the 完成 column's right-click menu archives its cards, or one topic group's. */
+  /** 归档已完成: 归档 at the right of the 完成 column's head archives its cards, the one on a topic group's head that group's (2026-10-28; a right-click menu before). */
   onArchive?(tasks: readonly Task[]): void;
 }
-
-/** The 完成 column's right-click menu: the whole column, and the topic group it was opened on. */
-type DoneMenu = { at: Anchor; all: Task[]; group?: { name: string; tasks: Task[] } };
 
 /** Four columns; the person moves cards (drag a card onto another column), agents never do. Cards carry no buttons. */
 export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist, onArchive }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskColumn | null>(null);
-  const [menu, setMenu] = useState<DoneMenu | null>(null);
   const archive = (list: readonly Task[]) => {
-    setMenu(null);
     if (list.length) onArchive?.(list);
   };
   // 按专题分组: wherever the board holds more than one topic's tasks (not in a topic's own board).
@@ -124,22 +119,16 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
               setDragging(null);
               setOver(null);
             }}
-            onContextMenu={
-              archivable
-                ? (e) => {
-                    if ((e.target as Element).closest(".archived-tasks")) return;
-                    e.preventDefault();
-                    // Inside a topic group (its head or its cards) the menu also offers that group alone.
-                    const el = (e.target as Element).closest<HTMLElement>("[data-group-index]");
-                    const g = el ? topicGroups(cards, topics)[Number(el.dataset.groupIndex)] : undefined;
-                    setMenu({ at: { x: e.clientX, y: e.clientY }, all: cards, ...(g ? { group: { name: g.topic?.title ?? "未归专题", tasks: g.tasks } } : {}) });
-                  }
-                : undefined
-            }
           >
             <div className="column-head">
               <span className="column-name">{COLUMN_NAMES[col]}</span>
               <span className="column-count">{cards.length}</span>
+              {archivable && cards.length > 0 && (
+                <button type="button" className="btn-ghost small with-icon soft-danger column-archive" title={`归档全部已完成（${cards.length}）：任务和它们的会话一起归档；在「已归档」里能打开、恢复`} onClick={() => archive(cards)} data-testid="archive-done-all">
+                  <ArchiveIcon size={14} />
+                  全部归档
+                </button>
+              )}
             </div>
             {grouped
               ? topicGroups(cards, topics).map((g, i) => (
@@ -149,6 +138,11 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
                       <span className="topic-group-name">{g.topic?.title ?? "未归专题"}</span>
                       <span className="topic-group-count">{g.tasks.length}</span>
                       <span className="topic-group-rule" />
+                      {archivable && (
+                        <button type="button" className="bar-btn soft-danger group-archive" aria-label={`归档「${g.topic?.title ?? "未归专题"}」这一组`} title={`归档「${g.topic?.title ?? "未归专题"}」这一组（${g.tasks.length}）：任务和它们的会话一起归档`} onClick={() => archive(g.tasks)} data-testid="archive-done-group">
+                          <ArchiveIcon size={13} />
+                        </button>
+                      )}
                     </div>
                     {g.tasks.map(card)}
                   </div>
@@ -160,18 +154,6 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
           </div>
         );
       })}
-      {menu && (
-        <PopMenu at={menu.at} label="归档已完成" onClose={() => setMenu(null)} testId="done-menu">
-          {menu.group && (
-            <button type="button" role="menuitem" title="这一组的任务和它们的会话一起归档；在「已归档」里能打开、恢复" onClick={() => archive(menu.group!.tasks)} data-testid="archive-done-group">
-              归档「{menu.group.name}」这一组（{menu.group.tasks.length}）
-            </button>
-          )}
-          <button type="button" role="menuitem" disabled={!menu.all.length} title="「完成」里的任务和它们的会话一起归档；在「已归档」里能打开、恢复" onClick={() => archive(menu.all)} data-testid="archive-done-all">
-            归档全部已完成（{menu.all.length}）
-          </button>
-        </PopMenu>
-      )}
     </section>
   );
 }
