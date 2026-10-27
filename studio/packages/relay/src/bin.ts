@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, writeSettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
-import { RELAY_DEFAULT_PORT, type NewRequest } from "./protocol.js";
+import { RELAY_DEFAULT_PORT, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
-import { sessionStateText, threadAsText, usagePrompt } from "./usage.js";
+import { sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name 策划组] [--passphrase <邀请口令>]
@@ -18,6 +18,7 @@ import { sessionStateText, threadAsText, usagePrompt } from "./usage.js";
 //   whoami | people | prompt | mcp
 //   ask --json <file|->   replies [threadId] [--after n]   wait <threadId> [--minutes n]
 //   send <threadId> --body <text> [--then ask|done]   queue   handoff <threadId> --note <text>
+//   tasks [--mine]   task <taskId>   transfer <taskId> --to <名字> [--status …] --reason <text>
 
 const USAGE = `amo-relay <command>
   serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name <服务名>] [--passphrase <邀请口令>]
@@ -30,7 +31,10 @@ const USAGE = `amo-relay <command>
   wait     <threadId> [--minutes n]
   send     <threadId> --body <文字> [--then ask|done]   （ask：继续追问，会话回到对方手里；done：收尾并标记完成）
   queue                                            （待我这边处理的会话）
-  handoff  <threadId> --note <文字>                 （交给本人处理）`;
+  handoff  <threadId> --note <文字>                 （交给本人处理）
+  tasks    [--mine]                                （团队任务）
+  task     <taskId>                                （一个任务的说明、决策、会话）
+  transfer <taskId> --to <名字> [--status 待处理|开发中|已完成|已搁置] --reason <文字>`;
 
 function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<string, string> } {
   const [cmd = "", ...rest] = argv;
@@ -117,8 +121,8 @@ async function main(): Promise<void> {
     }
     case "prompt": {
       const { client } = joined();
-      const [me, members] = await Promise.all([client.me(), client.members()]);
-      out(usagePrompt({ me: me.name, role: me.role, members, cli: cliCommand() }));
+      const [me, members, settings] = await Promise.all([client.me(), client.members(), client.settings().catch(() => null)]);
+      out(usagePrompt({ me: me.name, role: me.role, members, cli: cliCommand(), flow: settings?.flow }));
       return;
     }
     case "mcp": {
@@ -185,6 +189,27 @@ async function main(): Promise<void> {
         const what = r.from === me ? (r.handler === "ai" ? "返回给我，等 AI 接着处理" : "已由本人接手，不要动") : "发给我，等我本人回复";
         out(`${t.title} · ${r.from} → ${r.to} · ${what} · ${t.id}`);
       }
+      return;
+    }
+    case "tasks": {
+      const { client, me } = joined();
+      const list = (await client.tasks()).filter((t) => !t.archived && (!flags.mine || t.holder === me));
+      if (!list.length) out("没有任务。");
+      for (const t of list) out(`${t.title} · ${t.status} · 在 ${t.holder} 手里 · ${t.id}`);
+      return;
+    }
+    case "task": {
+      if (!pos[0]) throw new Error("用法：amo-relay task <taskId>");
+      const { client } = joined();
+      const { task, events } = await client.task(pos[0]);
+      out(taskAsText(task, events));
+      return;
+    }
+    case "transfer": {
+      if (!pos[0] || !flags.to || !flags.reason) throw new Error("用法：amo-relay transfer <taskId> --to <名字> [--status …] --reason <文字>");
+      const { client } = joined();
+      const t = await client.transferTask(pos[0], { to: flags.to, status: flags.status as TaskStatus | undefined, reason: flags.reason, via: CLI_VIA });
+      out(`「${t.title}」已交给 ${t.holder}，${t.status}。`);
       return;
     }
     case "handoff": {

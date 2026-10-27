@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.3.0";
+export const RELAY_VERSION = "0.4.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
@@ -76,6 +76,8 @@ export interface RequestState {
   waitingOn: string | null;
   /** The request was sent by the asker's AI (MCP or command line). */
   byAi: boolean;
+  /** The team task it belongs to (stage 2b); null for a session of its own. */
+  taskId: string | null;
   /** Who handles the asking side: the AI that sent it, or the person (after 我来处理, or when they sent it). */
   handler: "ai" | "person";
   /** The person asked must reply: they cannot mark it done (all sessions from an AI). */
@@ -114,6 +116,8 @@ export interface NewRequest {
   body: string;
   /** Default true; always true from an AI. */
   needsReply?: boolean;
+  /** Under this team task. */
+  taskId?: string;
   questions?: Array<{ id?: string; text: string; options?: string[] }>;
   via?: Via;
 }
@@ -130,6 +134,89 @@ export interface NewMessage {
 }
 
 /** Pushed over /ws to the members it concerns. */
+// ---- team tasks (stage 2b, plans/relay-tasks.md): a task is always in someone's hands and moves on by 流转.
+
+export const TASK_STATUSES = ["待处理", "开发中", "已完成", "已搁置"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+/** Only these may be archived (归档 is one click on their cards). */
+export const ARCHIVABLE: readonly TaskStatus[] = ["已完成", "已搁置"];
+
+export type TaskEventKind = "created" | "edited" | "status" | "transfer" | "archived" | "unarchived" | "session" | "decision" | "file";
+
+/** One line of a task's 记录. A decision is what a session's reply settled (answers and verdict). */
+export interface TaskEvent {
+  id: number;
+  taskId: string;
+  at: number;
+  actor: string;
+  via: Via;
+  kind: TaskEventKind;
+  text: string;
+  data?: { to?: string; from?: string; status?: TaskStatus; reason?: string; threadId?: string; fileId?: string };
+}
+
+/** A session under a task as everyone on the team sees it; its messages are for its two people. */
+export interface TaskSession {
+  id: string;
+  title: string;
+  from: string;
+  to: string;
+  byAi: boolean;
+  state: SessionState;
+  waitingOn: string | null;
+  updatedAt: number;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  /** Markdown. */
+  description: string;
+  status: TaskStatus;
+  /** Who has it now. */
+  holder: string;
+  creator: string;
+  createdAt: number;
+  updatedAt: number;
+  archived: boolean;
+  sessions: TaskSession[];
+  /** The last time it was handed to someone (流转, or made for someone else). */
+  handoff: { eventId: number; from: string; to: string; by: string; at: number; status: TaskStatus; reason: string } | null;
+}
+
+/** A task as one member sees it: `unseen` = handed to me and I have not opened it since. */
+export interface TaskView extends Task {
+  unseen: boolean;
+}
+
+export interface NewTask {
+  title: string;
+  description?: string;
+  holder?: string;
+  status?: TaskStatus;
+  via?: Via;
+}
+
+/** Shared by the team, edited by anyone: the flow AIs are told, 流程速查's keywords, when an AI counts as slow. */
+export interface TeamSettings {
+  flow: string;
+  /** 推进方式 and other phrases to copy. */
+  keywords: string[];
+  aiLateMinutes: number;
+  aiStuckMinutes: number;
+}
+
+export const DEFAULT_SETTINGS: TeamSettings = {
+  flow: `1. 策划新建团队任务，写 designdoc 并上传到任务。
+2. 把「复制任务提示词」贴给 AI 初审；需要程序确认的，AI 用 relay_session_open 在任务下发会话给程序，问题里带上「推进方式」三选一。
+3. 程序在待处理里回复并返回，或者接手任务。
+4. 策划的 AI 用 relay_session_get 取回复，按选定的推进方式继续；完成后用 relay_task_transfer 流转给程序终审（状态：待处理）。
+5. 程序终审通过后把任务标为已完成，并归档。`,
+  keywords: ["策划在主分支直接推进", "策划拉独立分支，完成后程序合并", "程序接手开发"],
+  aiLateMinutes: 10,
+  aiStuckMinutes: 30,
+};
+
 /** The service's /ws tick: a client that hears nothing for a while knows it is gone. */
 export const TICK_MS = 20_000;
 
@@ -140,6 +227,10 @@ export type RelayEvent =
   | { type: "read"; threadId: string; readSeq: number }
   /** A new thread with no message yet (a topic): to its members. */
   | { type: "thread"; thread: Thread }
+  /** A team task changed (made, edited, handed over, a session under it moved): to everyone. */
+  | { type: "task"; task: Task }
+  /** The team's settings changed: to everyone. */
+  | { type: "settings"; settings: TeamSettings }
   /** A thread changed without a message (a session fetched by an AI): to its members. */
   | { type: "updated"; thread: Thread }
   /** This member archived or brought back a thread (their other devices follow). */

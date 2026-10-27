@@ -1,4 +1,4 @@
-import { VERDICT_LABEL, type Member, type Message, type Thread } from "./protocol.js";
+import { VERDICT_LABEL, type Member, type Message, type Task, type TaskEvent, type Thread } from "./protocol.js";
 
 // Text for AIs: the usage prompt the person copies into any agent (「复制用法」, `amo-relay prompt`) and that the MCP
 // gives as its instructions, and a thread as readable Markdown (the MCP's replies, the command line, 「复制回复」).
@@ -11,6 +11,8 @@ export interface UsageContext {
   members?: Array<Pick<Member, "name" | "role">>;
   /** How to run the command line on this machine, e.g. `node G:\…\bin.js`; leave out when there is none. */
   cli?: string;
+  /** The team's flow (TeamSettings.flow): how work moves here. */
+  flow?: string;
 }
 
 export function usagePrompt(ctx: UsageContext): string {
@@ -26,7 +28,9 @@ export function usagePrompt(ctx: UsageContext): string {
 - \`${ctx.cli} replies [threadId]\`：取会话内容（不带 id 时列出我的会话）
 - \`${ctx.cli} wait <threadId> [--minutes N]\`：等对方返回，最多 10 分钟
 - \`${ctx.cli} send <threadId> --body "…" [--then ask|done]\`：补充；\`--then ask\` 继续追问（会话回到对方手里），\`--then done\` 收尾并标记完成
-- \`${ctx.cli} handoff <threadId> --note "…"\`：交给我本人处理`
+- \`${ctx.cli} handoff <threadId> --note "…"\`：交给我本人处理
+- \`${ctx.cli} tasks [--mine]\` / \`${ctx.cli} task <taskId>\`：团队任务；发会话的 JSON 里加 "taskId" 就挂在任务下
+- \`${ctx.cli} transfer <taskId> --to <名字> --status <状态> --reason "…"\`：流转任务`
     : "";
   return `# AMO 中转：推进中需要别人确认时
 
@@ -50,7 +54,16 @@ ${people}
   - 还有要问的：\`relay_session_reply\`，then 填 "ask"，会话回到对方手里；
   - 已经问清楚：\`relay_session_reply\`，then 填 "done"，可以写一句收尾。然后按回复调整方案，再告诉我对方是怎么答的。
 - 拿不准、需要我来决定时：\`relay_session_handoff\`，把会话交给我本人，附一句原因。
-- \`relay_queue\`：待我这边处理的会话，包括返回给我的和别人发给我的。${cli}
+- \`relay_queue\`：待我这边处理的会话，包括返回给我的和别人发给我的。
+
+## 团队任务
+- 一件要做的事（比如一把新武器）是一个团队任务，始终在某个人手里（持有人），状态是 待处理 / 开发中 / 已完成 / 已搁置。
+- \`relay_task_list\`：列出任务（mine: true 只看我手里的）；\`relay_task_get\`：一个任务的说明、持有人、状态、记录里的决策和它下面的会话。
+- \`relay_task_create\` 新建任务；\`relay_task_update\` 改标题、说明或状态；\`relay_task_transfer\` 流转给某人（写清状态和原因）。
+- 为某个任务发的会话，\`relay_session_open\` 时带上 taskId；会话里的逐条回答和结论会自动记进任务的决策。${ctx.flow?.trim() ? `
+
+## 团队流程
+${ctx.flow.trim()}` : ""}${cli}
 `;
 }
 
@@ -108,4 +121,32 @@ export function threadAsText(thread: Thread, messages: Message[], requestMessage
       ? `## 话题：${thread.title}\n${thread.members.join("、")} · threadId ${thread.id}`
       : `## 对话：${thread.members.join("、")}\nthreadId ${thread.id}`;
   return [head, ...messages.map((m) => messageAsText(m, questions))].join("\n\n");
+}
+
+/** A team task for an AI: what it is, where it stands, what was decided, its sessions. */
+export function taskAsText(task: Task, events: TaskEvent[] = []): string {
+  const parts = [`## 团队任务：${task.title}\n状态 ${task.status} · 在 ${task.holder} 手里 · ${task.creator} 创建${task.archived ? " · 已归档" : ""} · taskId ${task.id}`];
+  parts.push(`### 说明\n${task.description.trim() || "（没写）"}`);
+  const decisions = events.filter((e) => e.kind === "decision");
+  if (decisions.length) parts.push(`### 决策\n${decisions.map((e) => `- ${e.text}`).join("\n")}`);
+  if (task.sessions.length) {
+    const state = (s: Task["sessions"][number]) => (s.state === "done" ? "已完成" : s.state === "open" ? `在 ${s.to} 手里` : `已返回给 ${s.from}`);
+    parts.push(`### 会话\n${task.sessions.map((s) => `- ${s.title} · ${s.from} → ${s.to} · ${state(s)} · threadId ${s.id}`).join("\n")}`);
+  }
+  const log = events.filter((e) => e.kind !== "decision").slice(-12);
+  if (log.length) parts.push(`### 最近的记录\n${log.map((e) => `- ${time(e.at)} ${e.actor} ${e.text}`).join("\n")}`);
+  return parts.join("\n\n");
+}
+
+/** 复制任务提示词: the task, then how to work with the relay (the usage prompt, the team flow in it). */
+export function taskPrompt(task: Task, events: TaskEvent[], ctx: UsageContext): string {
+  return `# 接手推进团队任务「${task.title}」
+
+先读下面的任务内容；需要更全的（附件、会话原文），用 relay_task_get（taskId ${task.id}）和 relay_session_get 取。按团队流程推进，需要别人确认的就在这个任务下发会话。
+
+${taskAsText(task, events)}
+
+---
+
+${usagePrompt(ctx)}`;
 }

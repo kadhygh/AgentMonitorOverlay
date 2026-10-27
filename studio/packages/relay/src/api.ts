@@ -1,4 +1,4 @@
-import type { Health, Member, Message, NewMessage, NewRequest, SessionAction, Thread, ThreadView, Via } from "./protocol.js";
+import type { Health, Member, Message, NewMessage, NewRequest, NewTask, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
 // pages in a browser use the same one.
@@ -98,6 +98,36 @@ export class RelayClient {
   read(threadId: string, seq?: number): Promise<{ readSeq: number }> {
     return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/read`, seq === undefined ? {} : { seq });
   }
+  // ---- team tasks (stage 2b)
+  async tasks(): Promise<TaskView[]> {
+    return (await this.call<{ tasks: TaskView[] }>("GET", "/api/tasks")).tasks;
+  }
+  task(id: string): Promise<{ task: TaskView; events: TaskEvent[] }> {
+    return this.call("GET", `/api/tasks/${encodeURIComponent(id)}`);
+  }
+  async createTask(t: NewTask): Promise<TaskView> {
+    return (await this.call<{ task: TaskView }>("POST", "/api/tasks", t)).task;
+  }
+  async updateTask(id: string, patch: { title?: string; description?: string; status?: TaskStatus; via?: Via }): Promise<TaskView> {
+    return (await this.call<{ task: TaskView }>("PATCH", `/api/tasks/${encodeURIComponent(id)}`, patch)).task;
+  }
+  /** 流转; from a session (threadId), that session is answered or closed too unless closeSession is false. */
+  async transferTask(id: string, t: { to: string; status?: TaskStatus; reason?: string; threadId?: string; closeSession?: boolean; via?: Via }): Promise<TaskView> {
+    return (await this.call<{ task: TaskView }>("POST", `/api/tasks/${encodeURIComponent(id)}/transfer`, t)).task;
+  }
+  async archiveTask(id: string, archived = true): Promise<Task> {
+    return (await this.call<{ task: TaskView }>("POST", `/api/tasks/${encodeURIComponent(id)}/archive`, { archived })).task;
+  }
+  async seenTask(id: string): Promise<void> {
+    await this.call("POST", `/api/tasks/${encodeURIComponent(id)}/seen`, {});
+  }
+  async settings(): Promise<TeamSettings> {
+    return (await this.call<{ settings: TeamSettings }>("GET", "/api/settings")).settings;
+  }
+  async saveSettings(patch: Partial<TeamSettings>): Promise<TeamSettings> {
+    return (await this.call<{ settings: TeamSettings }>("PUT", "/api/settings", patch)).settings;
+  }
+
   /** Messages from others after `after` (in one thread, or any of mine); waits up to `timeoutMs` for the first. */
   async wait(opts: { threadId?: string; after?: number; timeoutMs?: number; signal?: AbortSignal; ai?: boolean }): Promise<Message[]> {
     const q = new URLSearchParams({ after: String(opts.after ?? 0), timeout: String(opts.timeoutMs ?? 60_000) });

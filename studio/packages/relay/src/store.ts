@@ -2,7 +2,32 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Answer, Message, MessageKind, NewMessage, NewRequest, Question, SessionAction, SessionState, Thread, ThreadKind, ThreadView, Verdict, Via } from "./protocol.js";
+import {
+  ARCHIVABLE,
+  DEFAULT_SETTINGS,
+  TASK_STATUSES,
+  VERDICT_LABEL,
+  type Answer,
+  type Message,
+  type MessageKind,
+  type NewMessage,
+  type NewRequest,
+  type NewTask,
+  type Question,
+  type SessionAction,
+  type SessionState,
+  type Task,
+  type TaskEvent,
+  type TaskEventKind,
+  type TaskStatus,
+  type TaskView,
+  type TeamSettings,
+  type Thread,
+  type ThreadKind,
+  type ThreadView,
+  type Verdict,
+  type Via,
+} from "./protocol.js";
 
 // The relay's records (node:sqlite, one file): members (name + password), the keys a login hands out (one per device,
 // only their hash kept), threads (the direct chat per pair of people, topics between the same two, one per request), the
@@ -152,6 +177,7 @@ export class RelayStore {
     const columns = (this.db.prepare("PRAGMA table_info(thread_members)").all() as Row[]).map((r) => String(r.name));
     if (!columns.includes("archived")) this.db.exec("ALTER TABLE thread_members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
     this.migrateSessions();
+    this.migrateTasks();
   }
 
   /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
@@ -277,6 +303,7 @@ export class RelayStore {
         status: row.req_status === "answered" ? "answered" : "open",
         verdict: row.req_verdict ? (String(row.req_verdict) as Verdict) : null,
         requestSeq: Number(row.req_seq),
+        taskId: row.task_id == null ? null : String(row.task_id),
         byAi: (this.db.prepare("SELECT json_extract(via, '$.kind') AS k FROM messages WHERE seq = ?").get(Number(row.req_seq)) as Row | undefined)?.k === "ai",
         state: (row.s_state as SessionState | null) ?? "open",
         waitingOn: row.s_waiting == null ? null : String(row.s_waiting),
@@ -393,6 +420,8 @@ export class RelayStore {
     const questions = checkQuestions(req.questions);
     const via = checkVia(req.via);
     const needs = via.kind === "ai" || req.needsReply !== false;
+    const taskId = req.taskId ? String(req.taskId) : null;
+    if (taskId) this.taskRow(taskId);
     return this.tx(() => {
       const id = newId("t");
       const at = this.now();
@@ -403,7 +432,8 @@ export class RelayStore {
         .run(id, title, from, at, at, from, to, to, via.kind === "ai" ? "ai" : "person", needs ? 1 : 0);
       for (const n of [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
       const message = this.insertMessage(id, from, via, "request", body, questions.length ? { questions } : null);
-      this.db.prepare("UPDATE threads SET req_seq = ? WHERE id = ?").run(message.seq, id);
+      this.db.prepare("UPDATE threads SET req_seq = ?, task_id = ? WHERE id = ?").run(message.seq, taskId, id);
+      if (taskId) this.addTaskEvent(taskId, from, via, "session", `${via.kind === "ai" ? "的 AI " : ""}发起会话「${title}」→ ${to}`, { threadId: id, to });
       return { thread: this.toThread(this.threadRow(id)), message };
     });
   }
@@ -444,6 +474,7 @@ export class RelayStore {
       if (verdict) extra.verdict = verdict;
       const message = this.insertMessage(threadId, author, via, "reply", body, Object.keys(extra).length ? extra : null);
       this.db.prepare("UPDATE threads SET req_status = 'answered', req_verdict = COALESCE(?, req_verdict) WHERE id = ?").run(verdict ?? null, threadId);
+      this.recordDecision(thread, author, answers, verdict, questions);
       // A reply hands the session back to whoever asked.
       this.setSession(threadId, { s_state: "returned", s_waiting: req.from, s_returned: this.now(), s_picked: null });
       return { thread: this.toThread(this.threadRow(threadId)), message };
@@ -511,6 +542,7 @@ export class RelayStore {
     return this.tx(() => {
       this.setSession(threadId, cols);
       const message = this.insertMessage(threadId, actor, via, "event", note ? `${what}：${note}` : what, null);
+      if (r.taskId && (action === "done" || action === "reopen")) this.addTaskEvent(r.taskId, actor, via, "session", `会话「${thread.title}」${what}`, { threadId });
       return { thread: this.toThread(this.threadRow(threadId)), message };
     });
   }
@@ -536,5 +568,205 @@ export class RelayStore {
     const to = Math.min(seq ?? thread.lastSeq, thread.lastSeq);
     this.db.prepare("UPDATE thread_members SET read_seq = MAX(read_seq, ?) WHERE thread_id = ? AND name = ?").run(to, threadId, name);
     return Number((this.db.prepare("SELECT read_seq FROM thread_members WHERE thread_id = ? AND name = ?").get(threadId, name) as Row).read_seq);
+  }
+
+  // ---- team tasks (stage 2b, plans/relay-tasks.md)
+
+  /** Stage 2b (2026-10-27): tasks, their 记录, who has looked at a hand-over, the team's settings; sessions under a task. */
+  private migrateTasks(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+        holder TEXT NOT NULL, creator TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS task_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id), at INTEGER NOT NULL,
+        actor TEXT NOT NULL, via TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, data TEXT
+      );
+      CREATE INDEX IF NOT EXISTS task_events_task ON task_events(task_id, id);
+      CREATE TABLE IF NOT EXISTS task_seen (task_id TEXT NOT NULL, name TEXT NOT NULL, event_id INTEGER NOT NULL, PRIMARY KEY (task_id, name));
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
+    const columns = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
+    if (!columns.includes("task_id")) this.db.exec("ALTER TABLE threads ADD COLUMN task_id TEXT; CREATE INDEX IF NOT EXISTS threads_task ON threads(task_id);");
+  }
+
+  private taskRow(id: string): Row {
+    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as Row | undefined;
+    if (!row) throw new RelayError("not_found", `没有这个任务：${id}`);
+    return row;
+  }
+
+  private toTask(row: Row): Task {
+    const id = String(row.id);
+    const sessions = (this.db.prepare("SELECT * FROM threads WHERE task_id = ? ORDER BY created_at").all(id) as Row[]).map((r) => {
+      const t = this.toThread(r);
+      const q = t.request!;
+      return { id: t.id, title: t.title, from: q.from, to: q.to, byAi: q.byAi, state: q.state, waitingOn: q.waitingOn, updatedAt: t.updatedAt };
+    });
+    const last = this.db.prepare("SELECT * FROM task_events WHERE task_id = ? AND kind = 'transfer' ORDER BY id DESC LIMIT 1").get(id) as Row | undefined;
+    const ev = last ? this.toTaskEvent(last) : null;
+    return {
+      id,
+      title: String(row.title),
+      description: String(row.description),
+      status: String(row.status) as TaskStatus,
+      holder: String(row.holder),
+      creator: String(row.creator),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+      archived: Number(row.archived) === 1,
+      sessions,
+      handoff: ev ? { eventId: ev.id, from: ev.data?.from ?? ev.actor, to: ev.data?.to ?? "", by: ev.actor, at: ev.at, status: ev.data?.status ?? (String(row.status) as TaskStatus), reason: ev.data?.reason ?? "" } : null,
+    };
+  }
+
+  private toTaskEvent(row: Row): TaskEvent {
+    const e: TaskEvent = { id: Number(row.id), taskId: String(row.task_id), at: Number(row.at), actor: String(row.actor), via: JSON.parse(String(row.via)) as Via, kind: String(row.kind) as TaskEventKind, text: String(row.text) };
+    if (row.data) e.data = JSON.parse(String(row.data)) as TaskEvent["data"];
+    return e;
+  }
+
+  private addTaskEvent(taskId: string, actor: string, via: Via, kind: TaskEventKind, text: string, data?: TaskEvent["data"]): TaskEvent {
+    const at = this.now();
+    const res = this.db.prepare("INSERT INTO task_events (task_id, at, actor, via, kind, text, data) VALUES (?, ?, ?, ?, ?, ?, ?)").run(taskId, at, actor, JSON.stringify(via), kind, text, data ? JSON.stringify(data) : null);
+    this.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(at, taskId);
+    return this.toTaskEvent(this.db.prepare("SELECT * FROM task_events WHERE id = ?").get(Number(res.lastInsertRowid)) as Row);
+  }
+
+  task(id: string): Task {
+    return this.toTask(this.taskRow(id));
+  }
+
+  /** As `name` sees it: whether the last hand-over was to them and they have not opened it since. */
+  taskView(id: string, name: string): TaskView {
+    const task = this.task(id);
+    const seen = (this.db.prepare("SELECT event_id FROM task_seen WHERE task_id = ? AND name = ?").get(id, name) as Row | undefined)?.event_id;
+    const h = task.handoff;
+    return { ...task, unseen: !!h && h.to === name && h.by !== name && h.eventId > Number(seen ?? 0) };
+  }
+
+  /** Every task (the team sees them all), latest first. */
+  tasksFor(name: string): TaskView[] {
+    return (this.db.prepare("SELECT id FROM tasks ORDER BY updated_at DESC, rowid DESC").all() as Row[]).map((r) => this.taskView(String(r.id), name));
+  }
+
+  taskEvents(id: string): TaskEvent[] {
+    this.taskRow(id);
+    return (this.db.prepare("SELECT * FROM task_events WHERE task_id = ? ORDER BY id").all(id) as Row[]).map((r) => this.toTaskEvent(r));
+  }
+
+  markTaskSeen(id: string, name: string): void {
+    const h = this.task(id).handoff;
+    if (!h) return;
+    this.db.prepare("INSERT INTO task_seen (task_id, name, event_id) VALUES (?, ?, ?) ON CONFLICT(task_id, name) DO UPDATE SET event_id = MAX(event_id, excluded.event_id)").run(id, name, h.eventId);
+  }
+
+  private checkStatus(value: unknown, fallback?: TaskStatus): TaskStatus {
+    if (value === undefined || value === null || value === "") {
+      if (fallback) return fallback;
+      throw new RelayError("bad_request", "要选一个状态");
+    }
+    if (!(TASK_STATUSES as readonly string[]).includes(String(value))) throw new RelayError("bad_request", `状态只能是 ${TASK_STATUSES.join(" / ")}`);
+    return value as TaskStatus;
+  }
+
+  createTask(actor: string, t: NewTask): Task {
+    const title = text(t?.title, "标题", LIMITS.title);
+    const description = text(t.description, "说明", LIMITS.body, false);
+    const holder = t.holder ? checkName(t.holder) : actor;
+    this.requireMember(holder);
+    const status = this.checkStatus(t.status, "开发中");
+    const via = checkVia(t.via);
+    return this.tx(() => {
+      const id = newId("k");
+      const at = this.now();
+      this.db.prepare("INSERT INTO tasks (id, title, description, status, holder, creator, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, title, description, status, holder, actor, at, at);
+      this.addTaskEvent(id, actor, via, "created", `新建任务 · ${status}`);
+      if (holder !== actor) this.addTaskEvent(id, actor, via, "transfer", `交给 ${holder} · ${status}`, { from: actor, to: holder, status, reason: "" });
+      return this.task(id);
+    });
+  }
+
+  updateTask(actor: string, id: string, patch: { title?: unknown; description?: unknown; status?: unknown; via?: Via }): Task {
+    const row = this.taskRow(id);
+    const via = checkVia(patch.via);
+    return this.tx(() => {
+      if (patch.title !== undefined || patch.description !== undefined) {
+        const title = patch.title === undefined ? String(row.title) : text(patch.title, "标题", LIMITS.title);
+        const description = patch.description === undefined ? String(row.description) : text(patch.description, "说明", LIMITS.body, false);
+        this.db.prepare("UPDATE tasks SET title = ?, description = ? WHERE id = ?").run(title, description, id);
+        this.addTaskEvent(id, actor, via, "edited", patch.title !== undefined && title !== String(row.title) ? `改了标题：${title}` : "改了说明");
+      }
+      if (patch.status !== undefined) {
+        const status = this.checkStatus(patch.status);
+        if (status !== String(row.status)) {
+          this.db.prepare("UPDATE tasks SET status = ? WHERE id = ?").run(status, id);
+          this.addTaskEvent(id, actor, via, "status", `状态改为 ${status}`, { status });
+        }
+      }
+      return this.task(id);
+    });
+  }
+
+  /** 流转: someone else (or me) has it now, in this state, for this reason. Anyone may; it is all in 记录. */
+  transferTask(actor: string, id: string, t: { to?: unknown; status?: unknown; reason?: unknown; via?: Via }): Task {
+    const row = this.taskRow(id);
+    const to = checkName(t.to);
+    this.requireMember(to);
+    const status = this.checkStatus(t.status, String(row.status) as TaskStatus);
+    const reason = text(t.reason, "原因", LIMITS.answer, false);
+    const via = checkVia(t.via);
+    return this.tx(() => {
+      this.db.prepare("UPDATE tasks SET holder = ?, status = ? WHERE id = ?").run(to, status, id);
+      const from = String(row.holder);
+      const what = to === actor && from !== actor ? `接手任务 · ${status}` : `流转给 ${to} · ${status}`;
+      this.addTaskEvent(id, actor, via, "transfer", reason ? `${what} · 原因：${reason}` : what, { from, to, status, reason });
+      return this.task(id);
+    });
+  }
+
+  archiveTask(actor: string, id: string, archived: boolean): Task {
+    const row = this.taskRow(id);
+    if (archived && !ARCHIVABLE.includes(String(row.status) as TaskStatus)) throw new RelayError("bad_request", `只有${ARCHIVABLE.join("或")}的任务能归档`);
+    return this.tx(() => {
+      this.db.prepare("UPDATE tasks SET archived = ? WHERE id = ?").run(archived ? 1 : 0, id);
+      this.addTaskEvent(id, actor, { kind: "person" }, archived ? "archived" : "unarchived", archived ? "归档" : "放回列表");
+      return this.task(id);
+    });
+  }
+
+  /** What a session's reply settled, as a line in its task's 记录. */
+  private recordDecision(thread: Thread, author: string, answers: Answer[], verdict: Verdict | undefined, questions: Question[]): void {
+    const taskId = thread.request?.taskId;
+    if (!taskId || (!answers.length && !verdict)) return;
+    const byId = new Map(questions.map((q) => [q.id, q.text]));
+    const parts = answers.map((a) => `${byId.get(a.questionId) ?? a.questionId}：${[a.choice, a.text].filter(Boolean).join("，")}`);
+    if (verdict) parts.push(`结论：${VERDICT_LABEL[verdict]}`);
+    this.addTaskEvent(taskId, author, { kind: "person" }, "decision", `${parts.join("；")}（来自会话「${thread.title}」）`, { threadId: thread.id });
+  }
+
+  settings(): TeamSettings {
+    const rows = this.db.prepare("SELECT key, value FROM settings").all() as Row[];
+    const got = Object.fromEntries(rows.map((r) => [String(r.key), JSON.parse(String(r.value)) as unknown]));
+    return { ...DEFAULT_SETTINGS, ...got } as TeamSettings;
+  }
+
+  saveSettings(patch: Partial<Record<keyof TeamSettings, unknown>>): TeamSettings {
+    const out: Partial<TeamSettings> = {};
+    if (patch.flow !== undefined) out.flow = text(patch.flow, "团队流程", LIMITS.body, false);
+    if (patch.keywords !== undefined) {
+      if (!Array.isArray(patch.keywords)) throw new RelayError("bad_request", "关键词必须是列表");
+      out.keywords = patch.keywords.map((k) => text(k, "关键词", LIMITS.answer)).slice(0, 50);
+    }
+    for (const k of ["aiLateMinutes", "aiStuckMinutes"] as const) {
+      if (patch[k] === undefined) continue;
+      const n = Number(patch[k]);
+      if (!Number.isFinite(n) || n < 1 || n > 24 * 60) throw new RelayError("bad_request", "提醒时间要在 1 到 1440 分钟之间");
+      out[k] = Math.round(n);
+    }
+    for (const [k, v] of Object.entries(out)) this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(k, JSON.stringify(v));
+    return this.settings();
   }
 }

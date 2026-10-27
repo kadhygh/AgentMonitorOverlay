@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, type RelaySettings } from "./client.js";
-import { RELAY_VERSION, type Message, type Thread } from "./protocol.js";
-import { sessionStateText, threadAsText, usagePrompt } from "./usage.js";
+import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
+import { sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
 
 // The relay as MCP tools (stdio, `amo-relay mcp`), for any AI client. It speaks as the person whose settings are on
 // this machine, read again on every call, so joining after the client started works. Its instructions are the same
@@ -35,8 +35,8 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   if (s) {
     try {
       const client = clientFromSettings(s);
-      const [me, members] = await Promise.all([client.me(), client.members()]);
-      instructions = usagePrompt({ me: me.name, role: me.role, members });
+      const [me, members, settings] = await Promise.all([client.me(), client.members(), client.settings().catch(() => null)]);
+      instructions = usagePrompt({ me: me.name, role: me.role, members, flow: settings?.flow });
     } catch {
       // The service may be down when the client starts; the tools say so when called.
     }
@@ -72,6 +72,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   // Sessions (stage 2a). The first names of stage 1 stay as aliases, so agents that learnt them keep working.
   const openSchema = {
     to: z.string().describe("对方的名字（relay_people 里的）"),
+    taskId: z.string().optional().describe("为某个团队任务发的，填它的 taskId"),
     title: z.string().describe("一句话说清要对方处理什么"),
     body: z.string().describe("Markdown 正文：背景、方案、要确认的点，附上关键片段"),
     questions: z
@@ -79,7 +80,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       .optional()
       .describe("要对方逐条回答的问题；一个问题只问一件事"),
   };
-  const openSession = async (args: { to: string; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
+  const openSession = async (args: { to: string; taskId?: string; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
       const out = await client.ask({ ...args, via: via() });
       return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_session_get 取回复，或 relay_session_wait 等一会儿。`;
@@ -202,6 +203,58 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       if (asked.length) parts.push(`别人发给我、等我本人回复（除非我让你帮忙，否则不用管）：\n${asked.map(line).join("\n")}`);
       return parts.join("\n\n") || "没有待处理的会话。";
     }),
+  );
+
+
+  // Team tasks (stage 2b).
+  const statusEnum = z.enum(TASK_STATUSES);
+  server.registerTool(
+    "relay_task_list",
+    { title: "任务列表", description: "列出团队任务：标题、状态、在谁手里、taskId。mine=true 只看我手里的；默认不含已归档的。", inputSchema: { mine: z.boolean().optional(), status: statusEnum.optional(), archived: z.boolean().optional() }, annotations: annotations(true) },
+    async (args: { mine?: boolean; status?: TaskStatus; archived?: boolean }) =>
+      tool(async (client, me) => {
+        const list = (await client.tasks()).filter((t) => (args.archived ? true : !t.archived) && (!args.mine || t.holder === me) && (!args.status || t.status === args.status));
+        if (!list.length) return "没有符合的任务。";
+        return list.map((t) => `- ${t.title} · ${t.status} · 在 ${t.holder} 手里${t.unseen ? " · 刚交给你" : ""} · taskId ${t.id}`).join("\n");
+      })(),
+  );
+  server.registerTool(
+    "relay_task_get",
+    { title: "看任务", description: "一个团队任务的全部：说明、状态、持有人、记录里的决策、它下面的会话（带 threadId）。", inputSchema: { taskId: z.string() }, annotations: annotations(true) },
+    async (args: { taskId: string }) =>
+      tool(async (client) => {
+        const { task, events } = await client.task(args.taskId);
+        return taskAsText(task, events);
+      })(),
+  );
+  server.registerTool(
+    "relay_task_create",
+    { title: "新建任务", description: "新建一个团队任务。holder 默认是我；status 默认 开发中。", inputSchema: { title: z.string(), description: z.string().optional().describe("Markdown"), holder: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
+    async (args: { title: string; description?: string; holder?: string; status?: TaskStatus }) =>
+      tool(async (client) => {
+        const t = await client.createTask({ ...args, via: via() });
+        return `已新建任务「${t.title}」，在 ${t.holder} 手里，${t.status}。taskId: ${t.id}`;
+      })(),
+  );
+  server.registerTool(
+    "relay_task_update",
+    { title: "改任务", description: "改一个任务的标题、说明（Markdown，整段替换）或状态。换人用 relay_task_transfer。", inputSchema: { taskId: z.string(), title: z.string().optional(), description: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
+    async (args: { taskId: string; title?: string; description?: string; status?: TaskStatus }) =>
+      tool(async (client) => {
+        const { taskId, ...patch } = args;
+        const t = await client.updateTask(taskId, { ...patch, via: via() });
+        return `已更新「${t.title}」：${t.status}，在 ${t.holder} 手里。`;
+      })(),
+  );
+  server.registerTool(
+    "relay_task_transfer",
+    { title: "流转任务", description: "把任务交给某人（也可以是自己），写清新状态和原因；会记进任务记录，对方的待处理里会出现。", inputSchema: { taskId: z.string(), to: z.string(), status: statusEnum.optional(), reason: z.string() }, annotations: annotations(false) },
+    async (args: { taskId: string; to: string; status?: TaskStatus; reason: string }) =>
+      tool(async (client) => {
+        const { taskId, ...t } = args;
+        const task = await client.transferTask(taskId, { ...t, via: via() });
+        return `「${task.title}」已交给 ${task.holder}，${task.status}。`;
+      })(),
   );
 
   return server;

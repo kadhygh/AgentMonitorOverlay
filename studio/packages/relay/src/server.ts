@@ -117,9 +117,15 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   }, opts.clientWatchMs ?? 5000);
   const tick = setInterval(() => pushAll({ type: "tick" }), opts.tickMs ?? TICK_MS);
 
+  /** A team task changed: everyone sees tasks. */
+  const taskChanged = (taskId: string | null | undefined) => {
+    if (taskId && !closing) pushAll({ type: "task", task: store.task(taskId) });
+  };
+
   /** A new message: to the thread's members, and to the waits it answers (not the author's own). */
   const announce = (thread: Thread, message: Message) => {
     push(thread.members, { type: "message", thread, message });
+    taskChanged(thread.request?.taskId);
     for (const w of [...waiters]) {
       if (w.name === message.author || !thread.members.includes(w.name)) continue;
       if (w.threadId && w.threadId !== thread.id) continue;
@@ -133,6 +139,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (!store.markPicked(threadId, name)) return;
     const thread = store.thread(threadId, name);
     push(thread.members, { type: "updated", thread });
+    taskChanged(thread.request?.taskId);
   };
 
   const auth = (req: IncomingMessage, url: URL): string => {
@@ -242,6 +249,56 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return;
     }
 
+    if (method === "GET" && path === "/api/settings") return send(res, 200, { settings: store.settings() });
+    if (method === "PUT" && path === "/api/settings") {
+      const settings = store.saveSettings(await readJson(req));
+      pushAll({ type: "settings", settings });
+      return send(res, 200, { settings });
+    }
+    if (method === "GET" && path === "/api/tasks") return send(res, 200, { tasks: store.tasksFor(me) });
+    if (method === "POST" && path === "/api/tasks") {
+      const task = store.createTask(me, (await readJson(req)) as never);
+      taskChanged(task.id);
+      return send(res, 200, { task: store.taskView(task.id, me) });
+    }
+    const tk = /^\/api\/tasks\/([^/]+)(\/transfer|\/archive|\/seen)?$/.exec(path);
+    if (tk) {
+      const id = decodeURIComponent(tk[1]!);
+      if (method === "GET" && !tk[2]) return send(res, 200, { task: store.taskView(id, me), events: store.taskEvents(id) });
+      if (method === "PATCH" && !tk[2]) {
+        store.updateTask(me, id, (await readJson(req)) as never);
+        taskChanged(id);
+        return send(res, 200, { task: store.taskView(id, me) });
+      }
+      if (method === "POST" && tk[2] === "/archive") {
+        store.archiveTask(me, id, (await readJson(req)).archived !== false);
+        taskChanged(id);
+        return send(res, 200, { task: store.taskView(id, me) });
+      }
+      if (method === "POST" && tk[2] === "/seen") {
+        store.markTaskSeen(id, me);
+        return send(res, 200, { task: store.taskView(id, me) });
+      }
+      if (method === "POST" && tk[2] === "/transfer") {
+        const body = await readJson(req);
+        const via = body.via as never;
+        store.transferTask(me, id, body as never);
+        // 接手任务 from a session: answer it too — handed back when it needs a reply, else closed.
+        const threadId = typeof body.threadId === "string" ? body.threadId : null;
+        if (threadId && body.closeSession !== false) {
+          const r = store.thread(threadId, me).request;
+          const task = store.task(id);
+          const note = `${task.holder === me ? "我接手了这个任务" : `任务交给了 ${task.holder}`}（${task.status}）${body.reason ? `：${String(body.reason)}` : ""}`;
+          if (r && r.state !== "done") {
+            const out = r.to === me && r.needsReply ? store.addMessage(threadId, me, { kind: "reply", body: note, via }) : store.sessionAction(threadId, me, "done", { note, via });
+            announce(out.thread, out.message);
+          }
+        }
+        taskChanged(id);
+        return send(res, 200, { task: store.taskView(id, me) });
+      }
+    }
+
     const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive|\/session)?$/.exec(path);
     if (m) {
       const id = decodeURIComponent(m[1]!);
@@ -283,7 +340,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const server = createServer((req, res) => {
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-allow-headers", "authorization, content-type");
-    res.setHeader("access-control-allow-methods", "GET, POST, PATCH, OPTIONS");
+    res.setHeader("access-control-allow-methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();

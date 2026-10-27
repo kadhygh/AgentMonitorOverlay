@@ -186,6 +186,67 @@ describe("RelayStore", () => {
     store = new RelayStore(":memory:");
   });
 
+  it("keeps team tasks: in someone's hands, handed over with a reason, seen, archived only when finished", () => {
+    team();
+    const t = store.createTask("策划小王", { title: "加特林", description: "按住连射" });
+    expect(t).toMatchObject({ status: "开发中", holder: "策划小王", creator: "策划小王", archived: false, handoff: null, sessions: [] });
+    expect(() => store.createTask("策划小王", { title: "x", status: "进行中" as never })).toThrow(/状态只能是/);
+    expect(store.taskView(t.id, "程序老李").unseen).toBe(false);
+
+    const moved = store.transferTask("策划小王", t.id, { to: "程序老李", status: "待处理", reason: "配置已提交主分支" });
+    expect(moved).toMatchObject({ holder: "程序老李", status: "待处理", handoff: { from: "策划小王", to: "程序老李", reason: "配置已提交主分支" } });
+    expect(store.taskView(t.id, "程序老李").unseen).toBe(true);
+    expect(store.taskView(t.id, "策划小王").unseen).toBe(false);
+    store.markTaskSeen(t.id, "程序老李");
+    expect(store.taskView(t.id, "程序老李").unseen).toBe(false);
+    // Taking it yourself is 接手 and nobody's news.
+    store.transferTask("策划小王", t.id, { to: "策划小王", status: "开发中" });
+    expect(store.taskView(t.id, "策划小王").unseen).toBe(false);
+
+    expect(() => store.archiveTask("策划小王", t.id, true)).toThrow(/已完成或已搁置/);
+    store.updateTask("程序老李", t.id, { status: "已完成", description: "按住连射，6 秒过热" });
+    expect(store.archiveTask("程序老李", t.id, true).archived).toBe(true);
+    expect(store.taskEvents(t.id).map((e) => e.text)).toEqual([
+      "新建任务 · 开发中",
+      "流转给 程序老李 · 待处理 · 原因：配置已提交主分支",
+      "接手任务 · 开发中",
+      "改了说明",
+      "状态改为 已完成",
+      "归档",
+    ]);
+    // Made for someone else: handed to them at once.
+    const forLi = store.createTask("策划小王", { title: "新手引导", holder: "程序老李", status: "待处理" });
+    expect(store.taskView(forLi.id, "程序老李").unseen).toBe(true);
+    expect(store.tasksFor("程序老李").map((x) => x.title)).toEqual(["新手引导", "加特林"]);
+  });
+
+  it("puts sessions under a task: they show on it, their replies become its decisions", () => {
+    team();
+    const t = store.createTask("策划小王", { title: "加特林" });
+    expect(() => store.createRequest("策划小王", { to: "程序老李", title: "x", body: "b", taskId: "k_none" })).toThrow(/没有这个任务/);
+    const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "见附件", taskId: t.id, questions: [{ text: "推进方式", options: ["主干", "分支"] }], via: { kind: "ai" } });
+    expect(thread.request?.taskId).toBe(t.id);
+    expect(store.task(t.id).sessions).toMatchObject([{ id: thread.id, title: "射速", state: "open", waitingOn: "程序老李", byAi: true }]);
+    store.addMessage(thread.id, "程序老李", { kind: "reply", answers: [{ questionId: "q1", choice: "分支" }], verdict: "agree" });
+    store.sessionAction(thread.id, "策划小王", "done");
+    const events = store.taskEvents(t.id);
+    expect(events.map((e) => [e.kind, e.text])).toEqual([
+      ["created", "新建任务 · 开发中"],
+      ["session", "的 AI 发起会话「射速」→ 程序老李"],
+      ["decision", "推进方式：分支；结论：同意（来自会话「射速」）"],
+      ["session", "会话「射速」标记完成"],
+    ]);
+    expect(store.task(t.id).sessions[0]?.state).toBe("done");
+  });
+
+  it("keeps the team's settings, defaults first", () => {
+    team();
+    expect(store.settings().keywords).toContain("程序接手开发");
+    const s = store.saveSettings({ flow: "先对需求再开发", aiLateMinutes: 5 });
+    expect(s).toMatchObject({ flow: "先对需求再开发", aiLateMinutes: 5, aiStuckMinutes: 30 });
+    expect(() => store.saveSettings({ aiStuckMinutes: 0 })).toThrow(/1 到 1440/);
+  });
+
   it("keeps people out of threads they are not in", () => {
     team();
     store.register("美术小张", "pw-zhang");

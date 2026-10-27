@@ -184,6 +184,21 @@ describe("relay service", () => {
     expect(got).toContain("· 已完成 ·");
     expect(got).toContain("的 AI（claude-code） 标记完成");
     expect(text(await client.callTool({ name: "relay_queue", arguments: {} }))).toBe("没有待处理的会话。");
+
+    // Tasks: made, a session under it, handed over; the coder sees it handed to them.
+    const made = text(await client.callTool({ name: "relay_task_create", arguments: { title: "加特林", description: "按住连射" } }));
+    const taskId = /taskId: (\S+)/.exec(made)?.[1];
+    expect(taskId).toBeTruthy();
+    const second = text(await client.callTool({ name: "relay_session_open", arguments: { to: "程序老李", taskId, title: "过热", body: "复用能量条？", questions: [{ text: "能复用吗", options: ["能", "不能"] }] } }));
+    const sid = /threadId: (\S+)/.exec(second)![1]!;
+    await coder.send(sid, { kind: "reply", answers: [{ questionId: "q1", choice: "能" }] });
+    const got2 = text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }));
+    expect(got2).toContain("### 决策\n- 能复用吗：能（来自会话「过热」）");
+    expect(got2).toContain(`- 过热 · 策划小王 → 程序老李 · 已返回给 策划小王 · threadId ${sid}`);
+    expect(text(await client.callTool({ name: "relay_task_transfer", arguments: { taskId, to: "程序老李", status: "待处理", reason: "请终审" } }))).toContain("已交给 程序老李");
+    const [forCoder] = await coder.tasks();
+    expect(forCoder).toMatchObject({ title: "加特林", holder: "程序老李", unseen: true });
+    expect(text(await client.callTool({ name: "relay_task_list", arguments: { mine: true } }))).toBe("没有符合的任务。");
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
   });
