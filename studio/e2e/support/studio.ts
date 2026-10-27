@@ -144,7 +144,7 @@ export async function launchFirstRun(portableDir: string): Promise<{ app: Electr
 }
 
 /** Which window: the workbench, the Focus window (#focus), the scratchpad window (#scratchpad), a Git Review window (#review?…), the file marks window (#marks…) or a viewer window (#viewer?…). */
-export type WindowKind = "main" | "focus" | "scratchpad" | "review" | "marks" | "viewer";
+export type WindowKind = "main" | "focus" | "scratchpad" | "review" | "marks" | "viewer" | "canvas-mini";
 
 /** Saves a PNG of the (hidden) main window, or another window, to studio/screenshots/<stage>/<name>.png. */
 export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
@@ -161,7 +161,7 @@ export async function screenshot(app: ElectronApplication, stage: string, name: 
   // Several windows of a kind (viewers): the one showing `page`.
   const exact = page && which !== "main" ? page.url() : null;
   const base64 = await app.evaluate(async ({ BrowserWindow }, [kind, url]) => {
-    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : url.includes("#marks") ? "marks" : url.includes("#viewer") ? "viewer" : "main");
+    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : url.includes("#marks") ? "marks" : url.includes("#viewer") ? "viewer" : url.includes("#canvas-mini") ? "canvas-mini" : "main");
     const all = BrowserWindow.getAllWindows();
     const win = (url && all.find((w) => w.webContents.getURL() === url)) || all.find((w) => kindOf(w.webContents.getURL()) === kind)!;
     return (await win.webContents.capturePage()).toPNG().toString("base64");
@@ -175,7 +175,7 @@ export async function screenshot(app: ElectronApplication, stage: string, name: 
 /** Window state used to assert the red line: test windows never take focus and stay off every display. */
 export function windowState(app: ElectronApplication, which: WindowKind = "main") {
   return app.evaluate(({ BrowserWindow, screen }, kind) => {
-    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : url.includes("#marks") ? "marks" : url.includes("#viewer") ? "viewer" : "main");
+    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : url.includes("#marks") ? "marks" : url.includes("#viewer") ? "viewer" : url.includes("#canvas-mini") ? "canvas-mini" : "main");
     const win = BrowserWindow.getAllWindows().find((w) => kindOf(w.webContents.getURL()) === kind)!;
     const b = win.getBounds();
     const onScreen = screen.getAllDisplays().some((d) => {

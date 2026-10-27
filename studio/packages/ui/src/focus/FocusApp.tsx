@@ -8,6 +8,7 @@ import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayCard, useRelays } from "../relays/Relays.js";
+import { useWaitingQuestionList } from "../canvas/useCallouts.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
@@ -65,6 +66,12 @@ export function FocusApp() {
   const plans = useTaskPlans(host.kind === "ready" ? host.link : NO_LINK).filter((p) => p.state === "open");
   // 传话 (stage 16): answered here in place, like an approval.
   const relays = useRelays(host.kind === "ready" ? host.link : NO_LINK).filter((r) => r.state === "pending");
+  // 画布审阅 (2026-10-27): topics whose canvas has questions waiting for the person, oldest question first.
+  const questionsByTopic = useWaitingQuestionList(host.kind === "ready" ? host.link : null);
+  const canvasAsks = Object.entries(questionsByTopic)
+    .filter(([topicId]) => host.kind !== "ready" || host.state.topics.some((t) => t.id === topicId && !t.archivedAt))
+    .map(([topicId, w]) => ({ topicId, ...w }))
+    .sort((a, b) => a.first.createdAt.localeCompare(b.first.createdAt));
 
   useWindowShape();
   const skin = usePetSkin();
@@ -125,7 +132,7 @@ export function FocusApp() {
   // title folded it). Opening it here no longer counts as seeing it.
   const list = [...waiting, ...finished];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id)]);
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...canvasAsks.map((q) => q.first.id)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -156,7 +163,7 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
-  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length - toReview.length;
+  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length - toReview.length;
 
   // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
   const firstSeen = useRef<Map<string, number>>(new Map());
@@ -219,7 +226,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
   // show under 进行中 either (10-22).
@@ -398,6 +405,21 @@ export function FocusApp() {
                 </button>
               </div>
             )}
+            {canvasAsks.map((q) => (
+              // A question an agent pinned on a canvas card: the workbench opens that canvas with the oldest one open.
+              <div key={q.topicId} className="focus-entry" data-testid="focus-canvas-ask">
+                <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ topicId: q.topicId, calloutId: q.first.id })} title="在工作台打开这个专题的画布，并打开最早的那个问题">
+                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <span className="focus-row-text">
+                    <span className="focus-title">
+                      画布问题 · {state.topics.find((t) => t.id === q.topicId)?.title ?? "专题"}
+                      {q.count > 1 ? ` · ${q.count} 个` : ""}
+                    </span>
+                    <span className="focus-sub">{q.first.text}</span>
+                  </span>
+                </button>
+              </div>
+            ))}
             {relays.map((r) => (
               <div key={r.id} className="focus-entry open" data-testid="focus-relay">
                 <RelayCard link={link} relay={r} tasks={state.tasks} className="focus-detail focus-relay" />

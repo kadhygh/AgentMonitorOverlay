@@ -147,7 +147,7 @@ export function App() {
     () =>
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
-      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) => {
+      window.amo?.onNavigate?.(({ taskId, sessionId, passage, topicId, calloutId }) => {
         const was = viewNow.current;
         const modal = document.querySelector<HTMLElement>("[aria-modal='true'], .modal-backdrop");
         window.amo?.trace?.({
@@ -157,6 +157,12 @@ export function App() {
           modal: modal ? (modal.getAttribute("aria-label") ?? modal.querySelector("[aria-label]")?.getAttribute("aria-label") ?? modal.className) : null,
           visible: document.visibilityState,
         });
+        // 画布审阅 (2026-10-27): a topic's canvas, a question on it opened.
+        if (!taskId && topicId) {
+          setScope({ kind: "topic", id: topicId });
+          setView({ kind: "canvas", ...(calloutId ? { callout: calloutId } : {}), nav: Date.now() });
+          return;
+        }
         setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" });
       }),
     [],

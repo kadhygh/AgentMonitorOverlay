@@ -11,7 +11,8 @@ import type { ReadPlace } from "../task/readPlace.js";
 // `back`: the page the new-task or task page was opened from, where its "←" returns (the board when absent).
 export type View =
   | { kind: "board" }
-  | { kind: "canvas" }
+  /** `callout`: a question on the canvas to open (from Focus, 画布审阅 2026-10-27); `nav` changes with each ask. */
+  | { kind: "canvas"; callout?: string; nav?: number }
   | { kind: "new"; topicId?: string; back?: View }
   | { kind: "packs"; workspaceId: string }
   /**

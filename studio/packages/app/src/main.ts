@@ -12,6 +12,7 @@ import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
 import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { installMarksWindow } from "./marks-window.js";
+import { installCanvasWindow } from "./canvas-window.js";
 import { ResizeTrace } from "./resize-trace.js";
 import { setupBotFlight } from "./bot-window.js";
 import { installFolderIpc } from "./folders.js";
@@ -273,14 +274,16 @@ if (!app.requestSingleInstanceLock()) {
   });
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
-    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown } | null;
+    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown; topicId?: unknown; calloutId?: unknown } | null;
     // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus. `show`: only bring
     // the window forward, where it is (Focus's icon, 2026-10-15).
     if (!mainWindow) return;
     if (t?.show !== true) {
       const taskId = typeof t?.taskId === "string" ? t.taskId : "";
       const passage = taskId && typeof t?.sessionId === "string" ? passageOf(t.passage) : null;
-      mainWindow.webContents.send("amo:navigate", { taskId, ...(taskId && typeof t?.sessionId === "string" ? { sessionId: t.sessionId } : {}), ...(passage ? { passage } : {}) });
+      // 画布审阅 (2026-10-27): a topic's canvas, with a question there to open.
+      const topic = !taskId && typeof t?.topicId === "string" && t.topicId ? { topicId: t.topicId, ...(typeof t.calloutId === "string" && t.calloutId ? { calloutId: t.calloutId } : {}) } : {};
+      mainWindow.webContents.send("amo:navigate", { taskId, ...(taskId && typeof t?.sessionId === "string" ? { sessionId: t.sessionId } : {}), ...(passage ? { passage } : {}), ...topic });
     }
     if (testMode) {
       const g = globalThis as { __amoMainShown?: number };
@@ -384,6 +387,7 @@ if (!app.requestSingleInstanceLock()) {
       installNotesLink({ studioRoot, dataDir, host, testMode, log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
       // The file marks window (文件标记).
       installMarksWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
+      installCanvasWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       if (!testMode) {
         // Displays unplugged, rearranged or rescaled: keep both windows reachable.
         const refit = () => {

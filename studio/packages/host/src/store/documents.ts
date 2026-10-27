@@ -205,11 +205,16 @@ export abstract class DocumentStore {
     return [...out, ...done].map((r) => JSON.parse(str(r.body)) as CanvasCallout);
   }
 
-  /** Open questions per topic. */
-  waitingQuestions(): Record<Id, number> {
-    const out: Record<Id, number> = {};
-    for (const r of this.db.prepare("SELECT topic_id, body FROM canvas_callouts WHERE state = 'open'").all() as Row[]) {
-      if ((JSON.parse(str(r.body)) as CanvasCallout).kind === "question") out[str(r.topic_id)] = (out[str(r.topic_id)] ?? 0) + 1;
+  /** Open questions per topic: how many, and the oldest. */
+  waitingQuestions(): Record<Id, { count: number; first: { id: Id; text: string; createdAt: string } }> {
+    const out: Record<Id, { count: number; first: { id: Id; text: string; createdAt: string } }> = {};
+    for (const r of this.db.prepare("SELECT topic_id, body FROM canvas_callouts WHERE state = 'open' ORDER BY created_at, id").all() as Row[]) {
+      const c = JSON.parse(str(r.body)) as CanvasCallout;
+      if (c.kind !== "question") continue;
+      const topic = str(r.topic_id);
+      const seen = out[topic];
+      if (seen) seen.count++;
+      else out[topic] = { count: 1, first: { id: c.id, text: c.text, createdAt: c.createdAt } };
     }
     return out;
   }

@@ -6,6 +6,7 @@ import { BotApp } from "./focus/BotApp.js";
 import { ReviewApp } from "./gitreview/ReviewApp.js";
 import { MarksApp } from "./marks/MarksApp.js";
 import { ViewerApp } from "./viewer/ViewerApp.js";
+import { CanvasMiniApp } from "./canvas/CanvasMiniApp.js";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
@@ -59,6 +60,8 @@ if (focus) document.documentElement.classList.add("focus-mode");
 const marks = location.hash.startsWith("#marks");
 // The viewer window (查看器, stage 13), loaded with #viewer?path=….
 const viewer = location.hash.startsWith("#viewer");
+// 画布小窗 (2026-10-27), loaded with #canvas-mini?topic=….
+const canvasMini = location.hash.startsWith("#canvas-mini");
 // The angry robot flying about the screen (2026-10-15 evening), loaded with #bot.
 const bot = location.hash === "#bot";
 if (bot) document.documentElement.classList.add("bot-mode");
@@ -72,7 +75,7 @@ if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <WindowBoundary>
-      {focus ? <FocusApp /> : bot ? <BotApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
+      {focus ? <FocusApp /> : bot ? <BotApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : canvasMini ? <CanvasMiniApp /> : <App />}
       <Toaster />
       <BookmarkNotePrompt />
     </WindowBoundary>

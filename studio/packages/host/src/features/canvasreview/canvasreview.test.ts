@@ -114,7 +114,7 @@ describe("画布审阅", () => {
     await run("canvas_items_post", { group: "审阅", items: [{ title: "协议改了" }] });
     const q = await run("canvas_callout", { target: "#1", kind: "question", text: "要不要兼容旧客户端？" });
     await run("canvas_callout", { target: "#1", text: "只是说明，不算在等的问题里" });
-    expect(store.waitingQuestions()).toEqual({ [topic.id]: 1 });
+    expect(store.waitingQuestions()).toEqual({ [topic.id]: { count: 1, first: { id: q.id, text: "要不要兼容旧客户端？", createdAt: expect.any(String) } } });
     const answered = await service.canvasReview.answer(String(q.id), { text: "兼容一个版本" });
     expect(store.waitingQuestions()).toEqual({});
     expect(answered).toMatchObject({ state: "answered", answer: { text: "兼容一个版本" } });

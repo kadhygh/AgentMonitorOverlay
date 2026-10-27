@@ -216,3 +216,11 @@
 .item-detail .btn-ghost, .item-detail .btn-primary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Focusing a card near the edge must not scroll the viewport (it pans by transform only). */
 .canvas-viewport { overflow: clip; }
+
+/* 画布小窗 (2026-10-27) */
+.canvas-mini { height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+.canvas-mini-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.canvas-mini-bar select { min-width: 0; max-width: 60%; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; }
+.canvas-mini-bar .is-on { border-color: var(--primary); color: var(--text); }
+.canvas-mini .canvas-page { flex: 1; min-height: 0; }
+.canvas-mini .canvas-row .canvas-viewport { margin: 6px; }

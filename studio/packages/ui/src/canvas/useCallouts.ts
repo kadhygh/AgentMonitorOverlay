@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CanvasCallout } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
@@ -28,10 +28,19 @@ export function useCallouts(link: HostLink, topicId: string): readonly CanvasCal
   return list;
 }
 
-/** Questions waiting for the person on each topic's canvas (左栏「? N」), refreshed when a bubble changes. */
+export type WaitingQuestions = Readonly<Record<string, { count: number; first: { id: string; text: string; createdAt: string } }>>;
+
+/** Questions waiting for the person on each topic's canvas (左栏「? N」), as counts. */
 export function useWaitingQuestions(link: HostLink): Readonly<Record<string, number>> {
-  const [counts, setCounts] = useState<Readonly<Record<string, number>>>({});
+  const waiting = useWaitingQuestionList(link);
+  return useMemo(() => Object.fromEntries(Object.entries(waiting).map(([topic, w]) => [topic, w.count])), [waiting]);
+}
+
+/** Questions waiting on each topic's canvas, with the oldest (Focus), refreshed when a bubble changes. */
+export function useWaitingQuestionList(link: HostLink | null): WaitingQuestions {
+  const [counts, setCounts] = useState<WaitingQuestions>({});
   useEffect(() => {
+    if (!link) return;
     let cancelled = false;
     const load = () =>
       void call(link, "GET /api/callouts/waiting")

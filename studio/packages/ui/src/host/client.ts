@@ -72,8 +72,13 @@ declare global {
         onChange(cb: (on: boolean) => void): () => void;
       };
       /** From Focus: show a task (and session) in the workbench. */
-      /** A task (and session); without a task (a topic session) the workbench shows the board. */
-      openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage }): Promise<void>;
+      /** A task (and session); without a task (a topic session) the workbench shows the board; `topicId`: that topic's
+       * canvas (画布审阅, 2026-10-27), opening the question `calloutId`. */
+      openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string }): Promise<void>;
+      /** 画布小窗 (2026-10-27): a topic's canvas in the small window on top. */
+      openCanvasMini?(target: { topicId?: string }): Promise<void>;
+      /** In the 画布小窗: keep it on top of other windows (or not); without a value, whether it is. */
+      canvasMiniTop?(on?: boolean): Promise<boolean>;
       /** One window drag's summary, for logs/resize-trace.log (Electron). */
       trace?(summary: unknown): void;
       windowControls?: {
@@ -84,7 +89,7 @@ declare global {
         onMaximized(cb: (maximized: boolean) => void): () => void;
       };
       /** Workbench: Focus asked to show a task. */
-      onNavigate?(cb: (target: { taskId: string; sessionId?: string; passage?: Passage }) => void): () => void;
+      onNavigate?(cb: (target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string }) => void): () => void;
       onHostRestarted?(cb: () => void): () => void;
       /** The 便签 program's windows (packages/notes, 2026-10-23); absent inside Studio. */
       notes?: {

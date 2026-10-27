@@ -23,6 +23,8 @@ export { CARD_H, CARD_W, NOTE_H, NOTE_W } from "./cards.js";
 const MIN_K = 0.3;
 const MAX_K = 2.5;
 const VIEW_KEY = "amo.canvasView";
+/** The 画布小窗 keeps its own zoom and place. */
+const MINI_VIEW_KEY = "amo.canvasMiniView";
 
 interface View {
   x: number;
@@ -40,9 +42,9 @@ type Drag =
 
 type Menu = { x: number; y: number; label: string; entries: MenuEntry[] };
 
-function loadView(): View {
+function loadView(key: string): View {
   try {
-    const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "") as View;
+    const v = JSON.parse(localStorage.getItem(key) ?? "") as View;
     if ([v.x, v.y, v.k].every(Number.isFinite)) return v;
   } catch {
     // per-viewer convenience only
@@ -50,9 +52,9 @@ function loadView(): View {
   return { x: 0, y: 0, k: 1 };
 }
 
-function saveView(v: View) {
+function saveView(key: string, v: View) {
   try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+    localStorage.setItem(key, JSON.stringify(v));
   } catch {
     // ignore
   }
@@ -76,11 +78,19 @@ interface CanvasPageProps {
   onOpenTask(taskId: Id, sessionId?: Id): void;
   /** "在专题里新建任务": the draft task page with this topic picked. */
   onNewTask?(): void;
+  /** A question to open once the canvas has it (from Focus); `nav` changes with each ask. */
+  openCallout?: { id: Id; nav: number };
+  /**
+   * 画布小窗 (2026-10-27): the canvas alone, no sidebar or editing tools — the cards, their bubbles and the question
+   * window — fitted into view when it opens.
+   */
+  compact?: boolean;
 }
 
-export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [topic], sessions, workspaces, profiles = [], onOpenTask, onNewTask }: CanvasPageProps) {
+export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [topic], sessions, workspaces, profiles = [], onOpenTask, onNewTask, openCallout, compact = false }: CanvasPageProps) {
   const { doc, save, conflict, dismissConflict, error, dismissError } = useCanvas(link, topic.id);
-  const [view, setView] = useState<View>(loadView);
+  const viewKey = compact ? MINI_VIEW_KEY : VIEW_KEY;
+  const [view, setView] = useState<View>(() => loadView(viewKey));
   const [drag, setDrag] = useState<Drag | null>(null);
   const [preview, setPreviewState] = useState<CanvasDoc | null>(null);
   const previewRef = useRef<CanvasDoc | null>(null);
@@ -105,7 +115,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   const plans = useTaskPlans(link).filter((p) => p.topicId === topic.id);
   // 画布审阅 (2026-10-27): the bubbles on the cards, the one open in its window, and a short notice (opening a session…).
   const callouts = useCallouts(link, topic.id);
-  const [openCallout, setOpenCallout] = useState<Id | null>(null);
+  const [openedCallout, setOpenCallout] = useState<Id | null>(null);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
@@ -128,7 +138,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     if (next) setSizes(next);
   });
 
-  useEffect(() => saveView(view), [view]);
+  useEffect(() => saveView(viewKey, view), [view, viewKey]);
 
   const persist = useCallback((next: CanvasDoc) => void save(next).catch(() => undefined), [save]);
   const latestDoc = useRef(doc);
@@ -202,12 +212,29 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
 
   /** 全部显示: everything on the canvas in view (at most 100%). */
   const fitAll = () => {
-    const b = doc && contentBounds(doc, nodeSize);
+    const cards = doc && contentBounds(doc, nodeSize);
     const box = viewport.current?.getBoundingClientRect();
-    if (!b || !box) return setView({ x: 0, y: 0, k: 1 });
+    if (!cards || !box) return setView({ x: 0, y: 0, k: 1 });
+    // Bubbles stand above their cards' top-right corners: room for them too (画布审阅).
+    const out = callouts.some((c) => c.state !== "closed");
+    const b = out ? { x: cards.x, y: cards.y - 70, w: cards.w + 240, h: cards.h + 70 } : cards;
     const k = Math.min(1, MAX_K, Math.max(MIN_K, Math.min((box.width - 80) / b.w, (box.height - 80) / b.h)));
     setView({ k, x: (box.width - b.w * k) / 2 - b.x * k, y: (box.height - b.h * k) / 2 - b.y * k });
   };
+
+  // The small window shows the whole canvas when it opens (and when it switches topic: the page is made anew).
+  // Again once when its bubbles first arrive (they load after the document), to make room for them.
+  const fitted = useRef({ doc: false, bubbles: false });
+  const anyOut = callouts.some((c) => c.state !== "closed");
+  useEffect(() => {
+    if (!compact || !doc) return;
+    const f = fitted.current;
+    if (f.doc && (f.bubbles || !anyOut)) return;
+    f.doc = true;
+    if (anyOut) f.bubbles = true;
+    requestAnimationFrame(fitAll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- when the document, then its bubbles, first arrive
+  }, [compact, doc !== null, anyOut]);
 
   /** A rect in the middle of the view, at the current zoom. */
   const centreOf = (r: { x: number; y: number; w: number; h: number }) => {
@@ -438,7 +465,18 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
       })
       .catch(failed("没能开会话"));
   };
-  const shownCallout = openCallout ? callouts.find((c) => c.id === openCallout && c.state !== "closed") : undefined;
+  const shownCallout = openedCallout ? callouts.find((c) => c.id === openedCallout && c.state !== "closed") : undefined;
+  // Asked from outside (Focus): once the canvas and its bubbles are here, centre that question and open it.
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openCallout || !doc) return;
+    const key = `${openCallout.id}:${openCallout.nav}`;
+    const c = callouts.find((x) => x.id === openCallout.id);
+    if (asked.current === key || !c) return;
+    asked.current = key;
+    focusCallout(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per ask, when its bubble is known
+  }, [openCallout?.id, openCallout?.nav, doc !== null, callouts]);
 
   // ---- the menus --------------------------------------------------------------------------------------------------
 
@@ -720,7 +758,13 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                   flag={flags.get(node.id)}
                   selected={selected}
                   handles={handlesOf(node.id)}
-                  onOpen={() => setSelection({ kind: "node", id: node.id })}
+                  onOpen={() => {
+                    if (!compact) return setSelection({ kind: "node", id: node.id });
+                    // No sidebar here: its bubble, else the session that laid it out.
+                    const c = callouts.find((x) => x.target === node.id && x.state !== "closed");
+                    if (c) focusCallout(c);
+                    else if (node.sessionId) openSession(node.sessionId);
+                  }}
                   onMouseDown={(e) => startDrag(e, "node", node.id)}
                   onContextMenu={(e) => itemMenu(e, node)}
                 />
@@ -821,6 +865,8 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         </div>
 
         <div className="canvas-tools" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+          {!compact && (
+          <>
           {onNewTask && (
             <button type="button" className="btn-primary small" onClick={onNewTask}>
               + 在专题里新建任务
@@ -835,6 +881,13 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           <button type="button" className="btn-ghost small" onClick={() => newNote()} disabled={!doc}>
             + 便签
           </button>
+          {window.amo?.openCanvasMini && (
+            <button type="button" className="btn-ghost small" onClick={() => void window.amo?.openCanvasMini?.({ topicId: topic.id })} title="在一个置顶的小窗里看这张画布，做别的事时也能看到问题和进度" data-testid="canvas-open-mini">
+              小窗
+            </button>
+          )}
+          </>
+          )}
           {openQuestions.length > 0 && (
             <button type="button" className="btn-ghost small canvas-asking" onClick={() => focusCallout(openQuestions[0]!)} title="跳到最早的一个问题并打开它" data-testid="canvas-asking">
               ? {openQuestions.length} 个问题待你确认
@@ -881,9 +934,9 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
             复位
           </button>
         </div>
-        <div className="canvas-hint">拖空白处移动视角 · 滚轮缩放 · 从卡片边上的圆点拖出连线 · 右键看更多操作 · 双击打开任务</div>
+        {!compact && <div className="canvas-hint">拖空白处移动视角 · 滚轮缩放 · 从卡片边上的圆点拖出连线 · 右键看更多操作 · 双击打开任务</div>}
       </div>
-      {shown && (
+      {shown && !compact && (
         <CanvasSidebar
           doc={shown}
           selection={selection}
