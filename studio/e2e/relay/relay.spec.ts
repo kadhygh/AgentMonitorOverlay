@@ -10,7 +10,7 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 // AMO 中转's desktop client (plans/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
 // content download → login), register two people, a session sent by an AI through the command line the client
 // installs, answered one by one in the other client and handed back (the AI fetches it, the person takes it over and
-// closes it), team tasks (a session under one, 接手任务 from it, 流转 back, seen, archived, shared settings), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
+// closes it), team tasks (files on it, a note in the viewer sent with a reply, an HTML file without its scripts; a session under one, 接手任务 from it, 流转 back, seen, archived, shared settings), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
 // while signed in, when the window is not in use), and the service going away and coming back (the bar, the login
 // screen's status). Needs `npm run relay:release` first (release/relay/client).
 
@@ -49,7 +49,7 @@ test.afterAll(async () => {
   if (root) rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 });
 
-const startServer = (port: number) => relay.startRelayServer({ store, publicDir, host: "127.0.0.1", port, name: "测试组", clientWatchMs: 300 });
+const startServer = (port: number) => relay.startRelayServer({ store, publicDir, filesDir: join(root, "files"), host: "127.0.0.1", port, name: "测试组", clientWatchMs: 300 });
 
 async function launch(who: string): Promise<{ app: ElectronApplication; page: Page; home: string }> {
   const home = join(root, who);
@@ -139,7 +139,11 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.locator(".dialog textarea").fill("按住连射，射速逐步升高，会过热。");
   await a.page.getByRole("button", { name: "新建", exact: true }).click();
   await expect(a.page.locator(".head-title")).toHaveText("加特林");
+  // Files (2c): the designdoc goes into the task, and along with the session.
+  await a.page.locator(".pane input[type=file]").setInputFiles({ name: "designdoc.md", mimeType: "text/markdown", buffer: Buffer.from("# 加特林\n\n基础射速每秒 12 发，按住 2 秒后升到 20 发。\n\n连续射击 6 秒进入过热。") });
+  await expect(a.page.locator(".file-row")).toContainText("designdoc.md");
   await a.page.locator(".session-list").getByTitle("在这个任务下新建会话").click();
+  await expect(a.page.locator(".dialog label.check", { hasText: "designdoc.md v1（任务里的）" }).locator("input")).toBeChecked();
   await expect(a.page.locator(".dialog select").nth(1)).toHaveValue(/^k_/);
   await a.page.getByPlaceholder("一句话说清要对方处理什么").fill("射速和过热怎么做");
   await a.page.locator(".dialog textarea").fill("设计见任务说明。");
@@ -152,6 +156,43 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".view-tab", { hasText: "待处理" }).click();
   await row(b.page, "射速和过热怎么做").click();
   await expect(b.page.locator(".page-crumb")).toContainText("任务 · 加特林");
+
+  // Notes (2d): the coder opens the attachment, selects a passage and notes it.
+  await b.page.locator(".atts .att", { hasText: "designdoc.md" }).click();
+  await expect(b.page.locator(".md-doc")).toContainText("基础射速每秒 12 发");
+  await b.page.evaluate((quote) => {
+    const root = document.querySelector(".md-doc")!;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf(quote);
+      if (i < 0) continue;
+      const range = document.createRange();
+      range.setStart(n, i);
+      range.setEnd(n, i + quote.length);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(range);
+      root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      return;
+    }
+  }, "每秒 12 发");
+  await b.page.getByRole("button", { name: "写批注" }).click();
+  await b.page.getByPlaceholder("写意见，比如：这里配成表更好调").fill("升速曲线建议配表");
+  await b.page.locator(".note.new").getByRole("button", { name: "保存" }).click();
+  await expect(b.page.locator(".notes-pane .note").first()).toContainText("每秒 12 发");
+  await expect(b.page.locator(".notes-pane .note").first()).toContainText("升速曲线建议配表");
+  await shot(b.app, "15-viewer");
+  await b.page.locator(".viewer-foot").getByRole("button", { name: "完成", exact: true }).click();
+
+  // An HTML file in the session: its script does not run unless asked to.
+  await b.page.locator(".atts input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
+  await b.page.locator(".atts .att", { hasText: "原型.html" }).click();
+  const proto = b.page.frameLocator(".doc-frame").locator("body");
+  await expect(proto).toContainText("原型说明：枪管发红");
+  await expect(proto).not.toContainText("脚本运行了");
+  await b.page.getByRole("button", { name: "不运行脚本 · 可批注" }).click();
+  await expect(proto).toContainText("脚本运行了");
+  await b.page.locator(".dialog.viewer .x").click();
+  await expect(b.page.locator(".reply-form")).toContainText("附上我的批注（1）");
   await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
   await b.page.getByRole("button", { name: "接手任务…" }).click();
   await b.page.getByPlaceholder("写清楚为什么、接下来谁做什么").fill("涉及武器底层，我来改接口");
@@ -161,6 +202,19 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".head-meta").first()).toContainText("在 程序老李 手里");
   await a.page.locator(".session-list .nav-row", { hasText: "记录" }).click();
   await expect(a.page.locator(".log")).toContainText("接手任务 · 开发中 · 原因：涉及武器底层，我来改接口");
+  await expect(a.page.locator(".log")).toContainText("上传 designdoc.md v1");
+
+  // The planner asks again in that session; the coder answers with the form and sends the note along.
+  await a.page.locator(".session-list .srow", { hasText: "射速和过热怎么做" }).click();
+  await a.page.getByPlaceholder("继续追问 程序老李…（发出后会话回到对方手里）").fill("那推进方式就定程序接手？");
+  await a.page.getByRole("button", { name: "继续追问" }).click();
+  await row(b.page, "射速和过热怎么做").click();
+  await b.page.locator(".reply-form .opt", { hasText: "程序接手开发" }).click();
+  await expect(b.page.locator(".reply-form")).toContainText("附上我的批注（1）");
+  await b.page.getByRole("button", { name: "回复并返回给 策划小王" }).click();
+  await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("升速曲线建议配表");
+  await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("designdoc.md v1：每秒 12 发");
+  await shot(a.app, "16-reply-notes");
 
   // The coder hands it back: 待处理 for the planner, gone once opened.
   await a.page.locator(".view-tab", { hasText: "待处理" }).click();

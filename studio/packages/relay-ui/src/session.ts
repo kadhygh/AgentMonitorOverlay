@@ -36,6 +36,7 @@ export class Session {
   private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
+  private noteListeners = new Set<(fileId: string) => void>();
   private ws: WebSocket | null = null;
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,6 +57,12 @@ export class Session {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+
+  /** Notes on a file changed (someone wrote or removed one). */
+  onNotes(listener: (fileId: string) => void): () => void {
+    this.noteListeners.add(listener);
+    return () => this.noteListeners.delete(listener);
+  }
 
   onMessage(listener: (m: Message) => void): () => void {
     this.messageListeners.add(listener);
@@ -137,6 +144,7 @@ export class Session {
     else if (e.type === "archived") this.patchThread(e.threadId, { archived: e.archived });
     else if (e.type === "updated") this.patchThread(e.thread.id, e.thread);
     else if (e.type === "settings") this.set({ settings: e.settings });
+    else if (e.type === "notes") for (const l of this.noteListeners) l(e.fileId);
     else if (e.type === "task") {
       // Handed to me just now: new to me until I open it.
       const old = this.state.tasks.find((t) => t.id === e.task.id);

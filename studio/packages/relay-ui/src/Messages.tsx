@@ -123,6 +123,19 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
           </ul>
         )}
         {m.kind === "reply" && m.verdict && <div className={`verdict v-${m.verdict}`}>结论：{VERDICT_LABEL[m.verdict]}</div>}
+        {m.notes && m.notes.length > 0 && (
+          <div className="notes-in">
+            <div className="tag">附上的批注 · {m.notes.length}</div>
+            {m.notes.map((n) => (
+              <div key={n.noteId} className="nq">
+                <span className="quote">
+                  {n.file} v{n.version}：{n.quote}
+                </span>
+                {n.body}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   );

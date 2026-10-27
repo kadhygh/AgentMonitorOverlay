@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Avatar, timeText, waitedText } from "./bits.js";
 import { Dialog } from "./Dialog.js";
+import { DropZone, FileRow, FileViewer, PickFiles, useUpload } from "./Files.js";
 import { copyText, shell } from "./env.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
@@ -121,6 +122,8 @@ export function TaskPage(props: {
   const me = session.me.name;
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [editing, setEditing] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const { upload, busy: uploading } = useUpload(session, { taskId: task.id }, toast);
 
   // 记录: loaded with the page and again whenever the task moves.
   useEffect(() => {
@@ -178,6 +181,14 @@ export function TaskPage(props: {
           </div>
         ))}
         {!decisions.length && <div className="hint">还没有。会话里的回复（逐条回答和结论）会自动记到这里。</div>}
+        <h3>
+          文件
+          <PickFiles small label={uploading ? "上传中…" : "上传文件"} disabled={uploading} onFiles={(fl) => void upload(fl)} />
+        </h3>
+        {task.files.map((f) => (
+          <FileRow key={f.id} file={f} onOpen={setViewing} />
+        ))}
+        <div className="hint">把文件拖到这页上传（最多 20 MB）；AI 用 relay_file_put 传本机文件。同名再传就是新版本，打开文件可以批注。</div>
         <h3>进行中的会话</h3>
         {open.map((s) => (
           <button key={s.id} type="button" className="box-row" onClick={() => props.onPane(s.id)}>
@@ -301,8 +312,11 @@ export function TaskPage(props: {
           ))}
           {!task.sessions.length && <div className="nav-empty">还没有会话。</div>}
         </aside>
-        <div className="content">{content}</div>
+        <DropZone className="content" onFiles={(fl) => void upload(fl)}>
+          {content}
+        </DropZone>
       </div>
+      {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
     </section>
   );
 }

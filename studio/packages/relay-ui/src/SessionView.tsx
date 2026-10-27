@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { FileChip, FileViewer, PickFiles, useThreadFiles, useUpload } from "./Files.js";
 import { sessionStatus, waitedText } from "./bits.js";
 import { copyText } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
-import { threadAsText, VERDICT_LABEL, type Answer, type Question, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+import { threadAsText, VERDICT_LABEL, type Answer, type FileNote, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
 // the person asked answers it one question at a time and returns it (回复并返回); back with the asker, their AI takes it
@@ -32,6 +33,9 @@ export function SessionView(props: {
   const questions = messages?.find((m) => m.kind === "request")?.questions ?? [];
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
   const myTurn = r.waitingOn === me && r.state !== "done";
+  const files = useThreadFiles(session, thread.id, thread.updatedAt);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const { upload, busy: uploading } = useUpload(session, { threadId: thread.id }, toast);
 
   const act = async (action: SessionAction, done: string) => {
     try {
@@ -53,9 +57,9 @@ export function SessionView(props: {
 
   let dock;
   if (myTurn && r.to === me && r.state === "open") {
-    dock = <ReplyForm session={session} thread={thread} questions={questions} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
+    dock = <ReplyForm session={session} thread={thread} questions={questions} files={files} onOpenFile={setViewing} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
   } else if (r.to === me && againOpen) {
-    dock = <ReplyForm session={session} thread={thread} questions={questions} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
+    dock = <ReplyForm session={session} thread={thread} questions={questions} files={files} onOpenFile={setViewing} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
   } else if (myTurn && r.state === "returned" && r.handler === "person") {
     dock = (
       <Composer
@@ -150,6 +154,17 @@ export function SessionView(props: {
         </div>
       </header>
       <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onAct={(a, t) => void act(a, t)} />
+      {(files.length > 0 || r.state !== "done") && (
+        <div className="atts">
+          <span className="muted tiny">附件</span>
+          {files.map((f) => (
+            <FileChip key={f.id} file={f} onOpen={setViewing} />
+          ))}
+          {!files.length && <span className="muted tiny">没有</span>}
+          {r.state !== "done" && <PickFiles small label={uploading ? "上传中…" : "＋ 附加文件"} disabled={uploading} onFiles={(fl) => void upload(fl)} />}
+        </div>
+      )}
+      {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
       <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
       {dock}
     </section>
@@ -216,8 +231,35 @@ function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: Threa
   );
 }
 
-function ReplyForm(props: { session: Session; thread: ThreadView; questions: Question[]; again?: boolean; onDone: () => void; onMarkDone?: () => void; onCancel?: () => void; onTakeover?: () => void }) {
+function ReplyForm(props: {
+  session: Session;
+  thread: ThreadView;
+  questions: Question[];
+  files: RelayFile[];
+  onOpenFile: (id: string) => void;
+  again?: boolean;
+  onDone: () => void;
+  onMarkDone?: () => void;
+  onCancel?: () => void;
+  onTakeover?: () => void;
+}) {
   const { session, thread, questions } = props;
+  const me = session.me.name;
+  // My notes on this session's files: sent along with the reply unless unticked.
+  const [myNotes, setMyNotes] = useState<FileNote[]>([]);
+  const [attach, setAttach] = useState(true);
+  const notesKey = props.files.map((f) => `${f.id}:${f.notes}`).join(",");
+  useEffect(() => {
+    let alive = true;
+    void Promise.all(props.files.map((f) => session.client.notes(f.id).catch(() => [] as FileNote[]))).then((all) => {
+      if (!alive) return;
+      const seen = new Set<string>();
+      setMyNotes(all.flat().filter((n) => n.author === me && !seen.has(n.id) && seen.add(n.id)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [session, notesKey, me]); // eslint-disable-line react-hooks/exhaustive-deps
   const r = thread.request!;
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [texts, setTexts] = useState<Record<string, string>>({});
@@ -233,13 +275,14 @@ function ReplyForm(props: { session: Session; thread: ThreadView; questions: Que
         .filter((a) => a.choice || a.text),
     [questions, choice, texts],
   );
-  const empty = !answers.length && !note.trim() && !verdict;
+  const sendNotes = attach ? myNotes.map((n) => n.id) : [];
+  const empty = !answers.length && !note.trim() && !verdict && !sendNotes.length;
 
   const send = async () => {
     setBusy(true);
     setError(null);
     try {
-      await session.client.send(thread.id, { kind: "reply", answers, body: note.trim(), verdict: verdict ?? undefined });
+      await session.client.send(thread.id, { kind: "reply", answers, body: note.trim(), verdict: verdict ?? undefined, notes: sendNotes.length ? sendNotes : undefined });
       props.onDone();
     } catch (err) {
       setError(errorText(err));
@@ -283,6 +326,17 @@ function ReplyForm(props: { session: Session; thread: ThreadView; questions: Que
             </button>
           ))}
         </div>
+        {props.files.length > 0 && (
+          <>
+            <label className="check tiny">
+              <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} />
+              附上我的批注（{myNotes.length}）
+            </label>
+            <button type="button" className="link tiny" onClick={() => props.onOpenFile(props.files[0]!.id)}>
+              打开附件批注
+            </button>
+          </>
+        )}
         {error && <span className="error tiny">{error}</span>}
       </div>
       <div className="acts">

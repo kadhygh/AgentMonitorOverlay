@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, preview, sessionStatus, timeText, waitedText } from "./bits.js";
 import { ChatView } from "./ChatView.js";
+import { PickFiles } from "./Files.js";
 import { Dialog, Menu } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
 import { UpdateBanner } from "./Login.js";
@@ -503,6 +504,10 @@ function ConnectionBar({ session }: { session: Session }) {
 function NewSessionDialog(props: { session: Session; people: string[]; tasks: TaskView[]; to?: string; taskId?: string; onClose: () => void; onSent: (threadId: string, taskId: string | null) => void }) {
   const [to, setTo] = useState(props.to ?? props.people[0] ?? "");
   const [taskId, setTaskId] = useState(props.taskId ?? "");
+  const [attach, setAttach] = useState<string[]>([]);
+  const [local, setLocal] = useState<File[]>([]);
+  const taskFiles = props.tasks.find((t) => t.id === taskId)?.files ?? [];
+  useEffect(() => setAttach(taskFiles.map((f) => f.id)), [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [needsReply, setNeedsReply] = useState(true);
@@ -523,7 +528,8 @@ function NewSessionDialog(props: { session: Session; people: string[]; tasks: Ta
             .filter(Boolean);
           return options.length ? { text: q.text.trim(), options } : { text: q.text.trim() };
         });
-      const { thread } = await props.session.client.ask({ to, title: title.trim(), body: body.trim(), questions: qs, needsReply, taskId: taskId || undefined });
+      const { thread } = await props.session.client.ask({ to, title: title.trim(), body: body.trim(), questions: qs, needsReply, taskId: taskId || undefined, files: attach.filter((id) => taskFiles.some((f) => f.id === id)) });
+      for (const f of local) await props.session.client.upload({ threadId: thread.id }, f.name, f, f.type);
       props.onSent(thread.id, taskId || null);
     } catch (err) {
       setError(errorText(err));
@@ -577,6 +583,24 @@ function NewSessionDialog(props: { session: Session; people: string[]; tasks: Ta
           <button type="button" className="link" style={{ alignSelf: "flex-start" }} onClick={() => setQuestions((list) => [...list, { text: "", options: "" }])}>
             ＋ 再加一个问题
           </button>
+        </div>
+        <div className="qs">
+          <div className="dim tiny">附件</div>
+          {taskFiles.map((f) => (
+            <label key={f.id} className="check">
+              <input type="checkbox" checked={attach.includes(f.id)} onChange={(e) => setAttach((a) => (e.target.checked ? [...a, f.id] : a.filter((x) => x !== f.id)))} />
+              {f.name} v{f.version}（任务里的）
+            </label>
+          ))}
+          {local.map((f, i) => (
+            <label key={`${f.name}-${i}`} className="check">
+              <input type="checkbox" checked onChange={() => setLocal((l) => l.filter((_, j) => j !== i))} />
+              {f.name}（本机，发出时上传）
+            </label>
+          ))}
+          <div>
+            <PickFiles small label="从本机选文件" onFiles={(fl) => setLocal((l) => [...l, ...fl])} />
+          </div>
         </div>
         <label className="check">
           <input type="checkbox" checked={needsReply} onChange={(e) => setNeedsReply(e.target.checked)} />
