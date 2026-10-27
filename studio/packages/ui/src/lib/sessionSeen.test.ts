@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleSessions, type Session } from "@amo-studio/protocol";
-import { awaitsPerson, hangsUnderOf, markSeen, readSeen, subsByParent, unseenSessions } from "./sessionSeen.js";
+import { awaitsPerson, hangsUnderOf, interruptedSince, markSeen, readSeen, subsByParent, unseenSessions } from "./sessionSeen.js";
 
 function memory(): Pick<Storage, "getItem" | "setItem"> & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -94,5 +94,14 @@ describe("sessions the person has not looked at", () => {
     const store = memory();
     store.setItem("amo.sessionSeen", "{not json");
     expect(readSeen(store).seen).toEqual({});
+  });
+
+  it("counts the subagents cut off since the person last looked at their parent (2026-10-28)", () => {
+    const parent = at("p", "idle", "2026-10-28T10:05:00.000Z");
+    const old = at("s1", "interrupted", "2026-10-28T09:00:00.000Z", { kind: "sub", parentId: "p" });
+    const fresh = at("s2", "interrupted", "2026-10-28T10:04:00.000Z", { kind: "sub", parentId: "p" });
+    const done = at("s3", "completed", "2026-10-28T10:04:00.000Z", { kind: "sub", parentId: "p" });
+    const data = { since: "2026-10-01T00:00:00.000Z", seen: { p: "2026-10-28T10:00:00.000Z" } };
+    expect(interruptedSince(parent, [parent, old, fresh, done], data).map((s) => s.id)).toEqual(["s2"]);
   });
 });

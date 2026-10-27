@@ -3,7 +3,7 @@ import type { Session, StateSnapshot } from "@amo-studio/protocol";
 import { useHostState } from "../host/useHostState.js";
 import { needsPerson } from "../lib/status.js";
 import { noteFocusJump } from "../lib/focusJump.js";
-import { hangsUnderOf, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
+import { hangsUnderOf, interruptedSince, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
@@ -471,6 +471,7 @@ export function FocusApp() {
                   setOpen(null);
                 }}
                 pin={s.taskId ? <PinButton pinned={false} onToggle={() => pins.toggle(s.taskId!)} /> : undefined}
+                cut={interruptedSince(s, state.sessions, seenData).length}
               />
             ))}
           </div>

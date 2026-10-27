@@ -292,12 +292,14 @@ function TreeLevel({
         const s = node.session;
         const look = SESSION_LOOK[s.status];
         const letters = unread?.get(s.id) ?? 0;
-        const loud = needsPerson(s.status) || s.status === "error";
+        // 被中断 (2026-10-28: a main session cut off from outside, a subagent stopped before it finished) says so in words.
+        const loud = needsPerson(s.status) || s.status === "error" || s.status === "interrupted";
         const terminal = s.writer === "terminal-shared";
         const hidden = below(node);
         const open = !folded.has(s.id);
         // Folded, it still says when something under it needs the person.
         const alert = !open && hidden.some((x) => needsPerson(x.status) || x.status === "error");
+        const cut = !open && !alert && hidden.some((x) => x.status === "interrupted");
         const starter = delegatedBy(s, all);
         const kind = starter ? "委派会话" : KIND[s.kind];
         const project = elsewhere(s);
@@ -357,8 +359,9 @@ function TreeLevel({
                   className="tree-fold"
                   aria-expanded={open}
                   aria-label={open ? `收起下面的 ${hidden.length} 个会话` : `展开下面的 ${hidden.length} 个会话`}
-                  title={open ? "收起下面的子 agent、分支和委派会话" : alert ? "下面有会话等你处理，展开看" : "展开下面的子 agent、分支和委派会话"}
+                  title={open ? "收起下面的子 agent、分支和委派会话" : alert ? "下面有会话等你处理，展开看" : cut ? "下面有会话被中断了，展开看" : "展开下面的子 agent、分支和委派会话"}
                   data-alert={alert || undefined}
+                  data-cut={cut || undefined}
                   onClick={() => folded.toggle(s.id)}
                   data-testid="session-fold"
                 >

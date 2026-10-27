@@ -38,9 +38,9 @@ export function latestSnippet(items: readonly SessionItem[]): { text: string; ap
 /** Finished work to look at: a reply that ended unseen, or a session waiting for review. */
 export const TO_REVIEW: StatusLook = { label: "完成待审核", dot: "var(--running)", text: "var(--running-text)" };
 
-/** 完成待审核 rather than a 事: a reply that ended (not failed) unseen, or a session waiting for review. */
+/** 完成待审核 rather than a 事: a reply that ended (not failed, not cut off) unseen, or a session waiting for review. */
 export function isToReview(s: Session, waiting: readonly Session[]): boolean {
-  return s.status === "awaiting-review" || (!waiting.includes(s) && s.status !== "error");
+  return s.status === "awaiting-review" || (!waiting.includes(s) && s.status !== "error" && s.status !== "interrupted");
 }
 
 /** The robot's words: how many 事 and how many 完成待审核. */
@@ -58,6 +58,7 @@ export function FocusEntry({
   onToggle,
   onDone,
   pin,
+  cut = 0,
 }: {
   link: HostLink;
   session: Session;
@@ -70,10 +71,12 @@ export function FocusEntry({
   onDone(): void;
   /** 置顶 (2026-10-21): the task's pin, shown on hover. */
   pin?: ReactNode;
+  /** Its subagents cut off since the person last looked (2026-10-28): said in red. */
+  cut?: number;
 }) {
   const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
   return (
-    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined}>
+    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined} data-interrupted={session.status === "interrupted" || cut > 0 || undefined}>
       <div className="focus-row-line">
         <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
           <span className="dot" style={{ background: look.dot }} />
@@ -81,6 +84,12 @@ export function FocusEntry({
             <span className="focus-title">{title}</span>
             <span className="focus-sub" style={{ color: look.text }}>
               {look.label}
+              {cut > 0 && (
+                <b className="focus-cut" data-testid="focus-cut">
+                  {" · "}
+                  {cut} 个子会话被中断
+                </b>
+              )}
               {session.title ? ` · ${session.title}` : ""}
             </span>
           </span>

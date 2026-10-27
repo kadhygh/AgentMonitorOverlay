@@ -431,7 +431,8 @@ export class CodexRuntime extends RuntimeBase {
         }
         const current = this.store.getSession(s.id)!.status;
         if (active && current !== "awaiting-approval" && current !== "awaiting-answer") this.setStatus(s.id, "running");
-        if (!active && (current === "running" || current === "awaiting-approval" || current === "awaiting-answer")) this.setStatus(s.id, "idle");
+        // Cut off from outside (the Host or the app-server went down mid-turn): red until a message carries it on.
+        if (!active && (current === "running" || current === "awaiting-approval" || current === "awaiting-answer")) this.setStatus(s.id, "interrupted");
       } catch (err) {
         this.emit("log", `thread/resume failed for ${s.id}: ${String(err)}`);
       }

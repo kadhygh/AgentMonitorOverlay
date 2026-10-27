@@ -75,6 +75,15 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+/**
+ * The subagents (and 委派 sessions) under this one cut off since the person last looked at it (2026-10-28): Focus marks
+ * the entry red for them, the session itself having ended otherwise.
+ */
+export function interruptedSince(session: Session, sessions: readonly Session[], data: SeenData): Session[] {
+  const after = maxIso(data.since, data.seen[session.id]);
+  return (subsByParent(sessions).get(session.id) ?? []).filter((s) => s.status === "interrupted" && s.updatedAt > after);
+}
+
 /** Whether the workbench opening this session is the person coming to deal with it: it waits, or ended unseen. */
 export function awaitsPerson(session: Session, sessions: readonly Session[], data: SeenData): boolean {
   return needsPerson(session.status) || unseenSessions([session, ...sessions.filter((s) => s.parentId === session.id || s.startedBy === session.id)], data).length > 0;

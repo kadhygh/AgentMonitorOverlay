@@ -591,10 +591,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       this.appendItem(sessionId, { type: "error", message: `Claude 会话异常结束：${firstLine(err)}` }, { method: "query/error" });
       this.setStatus(sessionId, "error");
     } else if (live.running || live.interrupted) {
-      if (live.closedByHost && !live.interrupted) {
-        this.appendItem(sessionId, { type: "notice", level: "warning", message: "Host 关闭时这条会话的回复被中断了。发一条消息即可接着对话。" });
-      }
-      this.setStatus(sessionId, "idle");
+      const cut = live.closedByHost && !live.interrupted;
+      if (cut) this.appendItem(sessionId, { type: "notice", level: "warning", message: "Host 关闭时这条会话的回复被中断了。发一条消息即可接着对话。" });
+      // Cut off from outside (2026-10-28): red until a message carries it on; the person's 停止 leaves it idle.
+      this.setStatus(sessionId, cut ? "interrupted" : "idle");
     }
   }
 
@@ -655,7 +655,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
-        this.setStatus(s.id, s.kind === "sub" ? "interrupted" : "idle");
+        this.setStatus(s.id, "interrupted");
       } else if (s.kind === "sub" && s.status === "idle") {
         // Before 2026-10-27 a stopped subagent was left `idle`: nothing else leaves one there (a finished one is completed).
         this.setStatus(s.id, "interrupted");

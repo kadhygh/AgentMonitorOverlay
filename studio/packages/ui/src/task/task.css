@@ -224,6 +224,7 @@
 .tree-fold { flex: none; height: 20px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 11px; cursor: pointer; }
 .tree-fold:hover { background: var(--selected); color: var(--text); }
 .tree-fold[data-alert] { border-color: var(--attention); color: var(--attention); }
+.tree-fold[data-cut] { border-color: var(--error-border); background: var(--error-bg); color: var(--error-text); }
 .srow.tree-row { flex-direction: row; align-items: center; gap: 8px; height: 30px; padding: 0 8px; box-shadow: none; }
 .srow.tree-row.child { height: 28px; }
 .srow.tree-row[aria-current="true"] { background: var(--selected); box-shadow: none; }

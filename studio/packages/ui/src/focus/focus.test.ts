@@ -50,6 +50,8 @@ describe("Focus", () => {
     expect(isToReview(at("i", "idle"), waiting)).toBe(true);
     expect(isToReview(at("c", "completed"), waiting)).toBe(true);
     expect(isToReview(at("e", "error"), waiting)).toBe(false);
+    // Cut off from outside (2026-10-28): a 事 in red, not 完成待审核.
+    expect(isToReview(at("x", "interrupted"), waiting)).toBe(false);
   });
 
   it("the robot says how many of each", () => {

@@ -305,7 +305,8 @@ describe("ClaudeRuntime", () => {
       store.createSession({ taskId: task.id, topicId: null, parentId: s.id, kind: "sub", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title, status: st, writer: "workbench", runtimeRef: null });
     const [running, stopped, done] = [sub("running", "running"), sub("stopped", "idle"), sub("done", "completed")];
     const recovered = startRuntime();
-    expect(status(s.id)).toBe("idle");
+    // Cut off from outside (2026-10-28): red until a message carries it on.
+    expect(status(s.id)).toBe("interrupted");
     // A subagent cannot be carried on with a message: stopped ones show as interrupted (red), not idle.
     expect([status(running.id), status(stopped.id), status(done.id)]).toEqual(["interrupted", "interrupted", "completed"]);
     expect(items(running.id).filter((i) => i.type === "notice")).toHaveLength(0);
@@ -322,7 +323,7 @@ describe("ClaudeRuntime", () => {
     await until(() => status(s.id) === "awaiting-approval", "approval before restart");
     await runtime.closeAll();
     runtime = startRuntime();
-    expect(status(s.id)).toBe("idle");
+    expect(status(s.id)).toBe("interrupted");
     expect(items(s.id).find((i) => i.type === "approval")).toMatchObject({ state: "resolved-elsewhere" });
     expect(items(s.id).filter((i) => i.type === "notice")).toHaveLength(1);
     await runtime.sendMessage(s.id, "still there?");

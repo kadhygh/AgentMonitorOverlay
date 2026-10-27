@@ -169,7 +169,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "dsh" || !BUSY.has(s.status)) continue;
       new DshTranscript(this.makeCore(), s.id).settleAfterRestart();
-      this.setStatus(s.id, "idle");
+      this.setStatus(s.id, "interrupted");
     }
   }
 
