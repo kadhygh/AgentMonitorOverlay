@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,7 +98,8 @@ function createWindow(): BrowserWindow {
     minHeight: 500,
     title: "AMO 中转",
     icon: ICON || undefined,
-    backgroundColor: "#f1eee7",
+    // Studio's ground, light or dark as the system is (the loader follows it too).
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#efede8",
     show: false,
     autoHideMenuBar: true,
     ...(testMode ? { x: -4000, y: 0, skipTaskbar: true } : {}),

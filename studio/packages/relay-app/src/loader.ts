@@ -10,24 +10,24 @@ export type LoaderState =
 export const LOADER_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>AMO 中转</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <style>
-:root{--bg:#f1eee7;--panel:#fbfaf7;--ink:#2b2822;--muted:#847c6f;--line:#ddd6c9;--accent:#3d6b5a;--accent-ink:#fff;--error:#b03a2e}
-@media (prefers-color-scheme:dark){:root{--bg:#1b1a18;--panel:#24231f;--ink:#e8e3d8;--muted:#a0998b;--line:#3a3731;--accent:#7fb39d;--accent-ink:#13221c;--error:#f08a7e}}
+:root{--bg:#efede8;--panel:#fbfaf7;--ink:#22201c;--muted:#8d877c;--line:#d9d3c7;--strong:#2a2723;--accent:#23436f;--accent-ink:#fbfaf7;--error:#a3302b}
+@media (prefers-color-scheme:dark){:root{--bg:#111316;--panel:#181b1f;--ink:#e6e8eb;--muted:#7c8590;--line:#2b3036;--strong:#3a414a;--accent:#7fb2ff;--accent-ink:#0b1626;--error:#ff8a8a}}
 *{box-sizing:border-box}html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.6 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:16px}
-.card{width:400px;max-width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px;box-shadow:0 8px 30px rgb(40 30 10/12%)}
+.card{width:400px;max-width:100%;background:var(--panel);border:1px solid var(--strong);border-radius:8px;padding:28px;box-shadow:0 14px 36px rgb(0 0 0/16%)}
 .brand{display:flex;gap:14px;align-items:center;margin-bottom:22px}
-.mark{width:44px;height:44px;border-radius:12px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700}
-h1{font-size:20px;margin:0}.muted{color:var(--muted)}.small{font-size:12px}
+.mark{width:34px;height:34px;border-radius:3px;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;font-family:"Noto Serif SC","Songti SC",SimSun,serif}
+h1{font-size:19px;margin:0;font-family:"Noto Serif SC","Songti SC",SimSun,serif}.muted{color:var(--muted)}.small{font-size:12px}
 .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:10px 0 6px}
 .bar>div{height:100%;width:30%;background:var(--accent);border-radius:3px;transition:width .2s}
 .bar.busy>div{animation:slide 1.1s ease-in-out infinite}
 @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
 .hide{display:none}
 label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
-input{font:inherit;color:inherit;width:100%;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 10px;outline:none}
+input{font:inherit;color:inherit;width:100%;border:1px solid var(--strong);background:var(--panel);border-radius:3px;padding:6px 10px;outline:none}
 input:focus{border-color:var(--accent)}
 .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
-button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 14px}
+button{font:inherit;cursor:pointer;border:1px solid var(--strong);background:var(--panel);color:var(--ink);border-radius:3px;padding:5px 14px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .err{color:var(--error);font-size:13px;margin-top:8px;white-space:pre-wrap}
 </style></head><body><div class="card">

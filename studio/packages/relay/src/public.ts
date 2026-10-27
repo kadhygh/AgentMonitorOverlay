@@ -87,13 +87,13 @@ export function landingPage(service: string, client: ClientManifest | null, file
   const web = client ? `<a class="btn alt" href="/app/">直接在浏览器里用<small>不用安装</small></a>` : "";
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(service)} · AMO 中转</title>
 <style>
-:root{--bg:#f4f1ea;--panel:#fbfaf7;--ink:#2b2822;--muted:#7a7366;--line:#d9d3c7;--accent:#3d6b5a}
-@media (prefers-color-scheme:dark){:root{--bg:#1d1c1a;--panel:#262522;--ink:#e9e5dc;--muted:#a39d90;--line:#3d3a34;--accent:#7fb39d}}
+:root{--bg:#efede8;--panel:#fbfaf7;--ink:#22201c;--muted:#8d877c;--line:#2a2723;--accent:#23436f;--on:#fbfaf7}
+@media (prefers-color-scheme:dark){:root{--bg:#111316;--panel:#181b1f;--ink:#e6e8eb;--muted:#7c8590;--line:#3a414a;--accent:#7fb2ff;--on:#0b1626}}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
 main{max-width:620px;margin:48px auto;padding:0 16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px 28px}
-h1{font-size:22px;margin:0 0 4px}.muted{color:var(--muted)}
-.btn{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:12px 16px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px 28px}
+h1{font-size:22px;margin:0 0 4px;font-family:"Noto Serif SC","Songti SC",SimSun,serif}.muted{color:var(--muted)}
+.btn{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:12px 16px;border-radius:3px;background:var(--accent);color:var(--on);text-decoration:none;font-weight:600}
 .btn.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 small{font-weight:400;opacity:.85}ol{padding-left:20px}code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}
 </style></head><body><main><div class="card">
