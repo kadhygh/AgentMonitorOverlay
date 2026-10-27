@@ -8,6 +8,7 @@ import { UpdateBanner } from "./Login.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { SessionView } from "./SessionView.js";
+import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { usagePointer, usagePrompt, type McpHookup, type TaskView, type ThreadView as Thread } from "./shared.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, SettingsDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { nextTheme, readTheme, setTheme, THEME_LABEL, type Theme } from "./theme.js";
@@ -55,6 +56,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     (version) => saveResume({ openId: openRef.current, updatedTo: version }),
   );
 
+  const checkHealth = useCallback(() => session.client.health(), [session]);
+  const shellUpdate = useShellUpdate(checkHealth);
   const toast = useCallback((text: string) => {
     setToastText(text);
     setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
@@ -343,8 +346,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         </nav>
         <span className="grow" />
         {updates.update && <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />}
-        {shell && !ownTitleBar && (
-          <button type="button" className="tb-btn old-shell" onClick={() => setDialog({ kind: "oldShell" })} title="你在用的桌面程序是旧版，界面会自动更新，但新标题栏、写用法文档这些要换新的桌面程序">
+        {shellUpdate && (
+          <button type="button" className="tb-btn old-shell" onClick={() => setDialog({ kind: "oldShell" })} title={shellUpdate.kind === "auto" ? `桌面程序有新版 ${shellUpdate.target?.build}，点一下自动更新并重启` : "你在用的桌面程序是旧版，界面会自动更新，但新标题栏、写用法文档这些要换新的桌面程序"}>
             桌面程序可更新
           </button>
         )}
@@ -410,29 +413,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           }}
         />
       )}
-      {dialog?.kind === "oldShell" && (
-        <Dialog
-          title="换新的桌面程序"
-          onClose={() => setDialog(null)}
-          foot={
-            <>
-              <button type="button" onClick={() => setDialog(null)}>
-                以后再说
-              </button>
-              <button type="button" className="primary" onClick={() => (shell?.openExternal(session.me.server), setDialog(null))}>
-                打开下载页
-              </button>
-            </>
-          }
-        >
-          <p className="lead-p">界面一直在自动更新，但有几样要换新的桌面程序才有：自绘标题栏、把用法写成本机文档给 AI 读、以后双击新版会自动接替旧版。</p>
-          <ol className="steps">
-            <li>在下载页下载新的客户端，解压到任意文件夹。</li>
-            <li>在右下角托盘图标上右键 →「退出」，把现在这个关掉（点窗口的 × 只是收进托盘）。</li>
-            <li>打开新解压的 AMO Relay.exe。账号、密码和记录都在原来的地方，不用重新登录。</li>
-          </ol>
-        </Dialog>
-      )}
+      {dialog?.kind === "oldShell" && shellUpdate && <ShellUpdatePage update={shellUpdate} server={session.me.server} onClose={() => setDialog(null)} />}
       {dialog?.kind === "profile" && <ProfileDialog session={session} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "task" && <NewTaskDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showTask(id))} />}
       {dialog?.kind === "transfer" && <TransferDialog session={session} task={tasks.find((t) => t.id === dialog.task.id) ?? dialog.task} thread={dialog.thread} onClose={() => setDialog(null)} toast={toast} />}

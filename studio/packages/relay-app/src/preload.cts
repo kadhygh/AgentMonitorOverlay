@@ -36,6 +36,8 @@ electron.contextBridge.exposeInMainWorld("relayShell", {
   applyUpdate: () => invoke("apply-update"),
   onUpdateProgress: (listener: (p: unknown) => void) => on("update-progress", listener),
   inUse: () => invoke("in-use"),
+  updateShell: () => invoke("update-shell"),
+  onShellProgress: (listener: (p: unknown) => void) => on("shell-progress", listener),
   windowControls: {
     minimize: () => send("window", "minimize"),
     toggleMaximize: () => send("window", "maximize"),

@@ -1,5 +1,10 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { appendFileSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { promises as fsp } from "node:fs";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -54,6 +59,15 @@ let server: string | null = null;
 let content: InstalledContent | null = null;
 let latest: ClientManifest | null = null;
 let unread = 0;
+
+/** This desktop program's build (written by relay-release --shell next to main.js); undefined in a dev build. */
+const BUILD = (() => {
+  try {
+    return (JSON.parse(readFileSync(join(here, "build.json"), "utf8")) as { build?: string }).build;
+  } catch {
+    return undefined;
+  }
+})();
 
 // ---- config (the service address)
 
@@ -313,7 +327,8 @@ function wire(): void {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
   });
 
-  ipcMain.handle("relay:info", (): ShellInfo => ({ shellVersion: SHELL_VERSION, contentVersion: content?.version ?? "", server: server ?? "", update: updateInfo(), platform: process.platform }));
+  ipcMain.handle("relay:update-shell", () => updateShell());
+  ipcMain.handle("relay:info", (): ShellInfo => ({ shellVersion: SHELL_VERSION, shellBuild: BUILD, contentVersion: content?.version ?? "", server: server ?? "", update: updateInfo(), platform: process.platform }));
   ipcMain.handle("relay:accounts", () => accounts.list());
   ipcMain.handle("relay:save-account", (_e, a: { server: string; name: string; password: string | null }) => accounts.save(a));
   ipcMain.handle("relay:forget-account", (_e, s: string, name: string) => accounts.forget(s, name));
@@ -373,6 +388,156 @@ ${String(text)}`);
   });
 }
 
+// ---- 更新桌面程序: this program replaced by the service's newer build, without downloading and unpacking by hand.
+// The zip is fetched and its hash checked, unpacked next to it (tar, in Windows 10 and later), its files put in place
+// of this program's while it runs (replaceProgram), and the program restarted (app.relaunch). No helper process has to
+// outlive it: Windows may end a program's children with it. The data (%APPDATA%\AMO Relay) is untouched.
+
+let shellUpdating = false;
+
+/** What 更新桌面程序 did, kept in the data folder (update.log) to look at when it went wrong. */
+function updateLog(line: string): void {
+  try {
+    appendFileSync(join(home, "update.log"), `${new Date().toISOString()} ${line}
+`);
+  } catch {
+    // no log
+  }
+}
+
+async function updateShell(): Promise<void> {
+  if (process.platform !== "win32") throw new Error("自动更新桌面程序目前只支持 Windows；请从下载页下载新版");
+  if (!server) throw new Error("没有连上服务器");
+  if (shellUpdating) throw new Error("正在更新");
+  shellUpdating = true;
+  const progress = (step: string, done = 0, total = 0) => win?.webContents.send("relay:shell-progress", { step, done, total });
+  try {
+    const h = await health(server);
+    const want = h.shell;
+    if (!want) throw new Error("服务器上没有桌面程序可以更新");
+    const dir = join(tmpdir(), "amo-relay-update", want.build.replace(/[^\w.-]/g, "_"));
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    const zip = join(dir, "AMO-Relay-win.zip");
+    const res = await fetch(`${server}/downloads/AMO-Relay-win.zip`);
+    if (!res.ok || !res.body) throw new Error(`下载失败：HTTP ${res.status}`);
+    const hash = createHash("sha256");
+    const out = createWriteStream(zip);
+    let done = 0;
+    let last = 0;
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      hash.update(chunk);
+      done += chunk.length;
+      if (!out.write(chunk)) await new Promise<void>((r) => out.once("drain", () => r()));
+      if (done - last > 1024 * 1024) (progress("download", done, want.size), (last = done));
+    }
+    await new Promise<void>((ok, fail) => (out.once("error", fail), out.end(ok)));
+    progress("check", want.size, want.size);
+    if (hash.digest("hex") !== want.sha256) throw new Error("下载的文件校验不对，请重试");
+    progress("unpack");
+    // Windows' own tar (bsdtar reads zip); a "tar" earlier on the PATH (Git's) may not.
+    const tar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+    await promisify(execFile)(tar, ["-xf", zip, "-C", dir], { windowsHide: true });
+    const fresh = join(dir, "AMO Relay");
+    if (!existsSync(join(fresh, "AMO Relay.exe"))) throw new Error("下载的文件里没有 AMO Relay.exe");
+    progress("replace", 0, 1);
+    updateLog(`update ${BUILD ?? "?"} -> ${want.build}`);
+    await replaceProgram(fresh, dirname(process.execPath), (done, total) => progress("replace", done, total));
+    progress("restart");
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // Started with arguments (another server, say): started again with them.
+    app.relaunch({ args: process.argv.slice(1).filter((a) => !a.startsWith("--remote-debugging") && !a.startsWith("--inspect")) });
+    quitting = true;
+    tray?.destroy();
+    setTimeout(() => app.quit(), 300);
+  } finally {
+    shellUpdating = false;
+  }
+}
+
+const OLD = /\.amo-old-\d+$/;
+
+/** The new program's files put in place of this one's while it runs: Windows lets a running program's files be renamed,
+ * not overwritten, so each is moved aside (…amo-old-<time>, removed at the next start) and the new one copied in. On
+ * any failure everything is put back as it was. */
+async function replaceProgram(fresh: string, target: string, onFile: (done: number, total: number) => void): Promise<void> {
+  const stamp = `.amo-old-${Date.now()}`;
+  const moved: Array<[string, string]> = [];
+  const added: string[] = [];
+  // Only what changed: between two builds usually the program's own code, while Electron (the exe, its DLLs) stays the
+  // same — and the running exe is best left alone.
+  const files: string[] = [];
+  for (const rel of filesUnder(fresh)) if (!(await sameFile(join(fresh, rel), join(target, rel)))) files.push(rel);
+  updateLog(`replacing ${files.length} changed files in ${target}`);
+  // Electron itself changed (outside resources\): swapping a running exe and its DLLs is not done in place.
+  const core = files.filter((f) => !f.startsWith(`resources${sep}`));
+  if (core.length) {
+    updateLog(`not in place: ${core.slice(0, 5).join(", ")}`);
+    throw new Error("MANUAL:这次新版连 Electron 本体也换了，不能在运行中替换");
+  }
+  try {
+    // Asynchronously, a file at a time: thousands of them blocking the main process for a minute get it ended.
+    for (const rel of files) {
+      const from = join(fresh, rel);
+      const to = join(target, rel);
+      await fsp.mkdir(dirname(to), { recursive: true });
+      if (existsSync(to)) {
+        await fsp.rename(to, to + stamp);
+        moved.push([to, to + stamp]);
+      }
+      await fsp.copyFile(from, to);
+      added.push(to);
+      if (added.length % 20 === 0) onFile(added.length, files.length);
+    }
+    updateLog(`replaced ${added.length} files`);
+  } catch (err) {
+    updateLog(`failed after ${added.length} files: ${err instanceof Error ? err.stack : String(err)}`);
+    for (const f of added) await fsp.rm(f, { force: true });
+    for (const [was, now] of moved.reverse()) {
+      try {
+        await fsp.rename(now, was);
+      } catch {
+        // left as …amo-old: the next start does not remove it while the original is missing
+      }
+    }
+    throw new Error(`MANUAL:换文件时出错（${err instanceof Error ? err.message : String(err)}），程序没有改动`);
+  }
+}
+
+/** Whether two files have the same bytes (sizes first, then their hashes). */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const [sa, sb] = await Promise.all([fsp.stat(a), fsp.stat(b).catch(() => null)]);
+  if (!sb || sa.size !== sb.size) return false;
+  const hash = async (f: string) => createHash("sha256").update(await fsp.readFile(f)).digest("hex");
+  return (await hash(a)) === (await hash(b));
+}
+
+/** Every file under `root`, relative (walked by hand: Electron's fs lists only part of a tree with `recursive`). */
+function filesUnder(root: string, rel = ""): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
+    const path = rel ? join(rel, e.name) : e.name;
+    if (e.isDirectory()) out.push(...filesUnder(root, path));
+    else if (e.isFile()) out.push(path);
+  }
+  return out;
+}
+
+/** What an update moved aside, removed once the program runs again (only those whose replacement is there). */
+async function removeOldFiles(): Promise<void> {
+  if (!BUILD) return;
+  const root = dirname(process.execPath);
+  try {
+    for (const rel of filesUnder(root)) {
+      if (!OLD.test(rel)) continue;
+      const file = join(root, rel);
+      if (existsSync(file.replace(OLD, ""))) await fsp.rm(file, { force: true }).catch(() => undefined);
+    }
+  } catch {
+    // tried again next start
+  }
+}
+
 // ---- tray
 
 function createTray(): void {
@@ -413,6 +578,7 @@ function start(): void {
     wire();
     createTray();
     win = createWindow();
+    setTimeout(() => void removeOldFiles(), 5000);
     await boot();
   });
 }

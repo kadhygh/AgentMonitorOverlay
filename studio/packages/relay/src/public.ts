@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import type { ClientManifest } from "./protocol.js";
+import type { ClientManifest, ShellBuild } from "./protocol.js";
 
 // What the relay service hands out besides its API (publicDir): client/ — the client's content and manifest.json (the
 // desktop client downloads it: hot update; a browser opens it at /app/) — and downloads/, the desktop client's zip.
@@ -49,12 +49,23 @@ export class PublicFiles {
     }
   }
 
+  /** downloads/AMO-Relay-win.json, written with the zip by relay-release --shell. */
+  shell(): ShellBuild | null {
+    if (!this.dir) return null;
+    const file = join(this.dir, "downloads", "AMO-Relay-win.json");
+    try {
+      return existsSync(file) && existsSync(join(this.dir, "downloads", "AMO-Relay-win.zip")) ? (JSON.parse(readFileSync(file, "utf8")) as ShellBuild) : null;
+    } catch {
+      return null;
+    }
+  }
+
   downloads(): Array<{ name: string; size: number }> {
     if (!this.dir) return [];
     const dir = join(this.dir, "downloads");
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
-      .filter((n) => statSync(join(dir, n)).isFile())
+      .filter((n) => statSync(join(dir, n)).isFile() && n.endsWith(".zip"))
       .map((name) => ({ name, size: statSync(join(dir, name)).size }));
   }
 }

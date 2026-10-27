@@ -193,7 +193,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     const method = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
     const path = url.pathname;
     if (method === "GET" && path === "/api/health") {
-      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null };
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null, shell: files.shell() };
       return send(res, 200, health);
     }
     if (method === "POST" && path === "/api/register") {

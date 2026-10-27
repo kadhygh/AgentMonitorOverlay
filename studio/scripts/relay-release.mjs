@@ -68,6 +68,8 @@ console.log(`client ${version}: ${files.length} files, ${(files.reduce((n, f) =>
 
 // 3. The desktop client's zip (the portable layout of scripts/package-portable.mjs).
 if (withShell) {
+  // The shell's build stamp: it tells the service's zip from the one running, for 更新桌面程序.
+  writeFileSync(join(studio, "packages", "relay-app", "dist", "build.json"), JSON.stringify({ build: version }));
   // --pack <dir>: build the client elsewhere, e.g. while the one in release/relay-pack is running (its files are locked).
   const pack = resolve(studio, flag("--pack") ?? join("release", "relay-pack"));
   run(process.execPath, [join(studio, "scripts", "package-portable.mjs"), pack, "--zip", "--only", "relay"]);
@@ -76,6 +78,9 @@ if (withShell) {
   mkdirSync(join(out, "downloads"), { recursive: true });
   for (const n of readdirSync(join(out, "downloads"))) if (n.endsWith(".zip")) rmSync(join(out, "downloads", n));
   renameRetry(join(pack, zip), join(out, "downloads", "AMO-Relay-win.zip"));
+  const zipFile = join(out, "downloads", "AMO-Relay-win.zip");
+  const zipData = readFileSync(zipFile);
+  writeFileSync(join(out, "downloads", "AMO-Relay-win.json"), JSON.stringify({ build: version, size: zipData.length, sha256: createHash("sha256").update(zipData).digest("hex") }, null, 2));
   console.log(`desktop client: ${join(out, "downloads", "AMO-Relay-win.zip")}`);
 }
 console.log(`release folder: ${out}\nrun the service: node "${join(out, "amo-relay.mjs")}" serve`);

@@ -115,7 +115,7 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 | `GET /app/` | 浏览器版客户端 |
 | `GET /client/*` | 客户端界面和 `manifest.json`（桌面客户端热更新用） |
 | `GET /downloads/*` | 桌面客户端 zip |
-| `GET /api/health` | 服务名、版本、注册是否要邀请口令、客户端版本 |
+| `GET /api/health` | 服务名、版本、注册是否要邀请口令、客户端版本、桌面程序构建（`shell`，给「更新桌面程序」用） |
 | `POST /api/register` `{name, password, role, passphrase}` | 注册并登录，返回 `{key}` |
 | `POST /api/login` `{name, password}` | 登录，每台设备拿一个 key |
 | `POST /api/logout` | 当前 key 失效 |

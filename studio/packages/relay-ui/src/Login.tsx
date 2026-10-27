@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { browserAccounts, browserServer, rememberBrowserAccount, shell } from "./env.js";
 import type { Identity } from "./session.js";
-import { RelayClient, RelayClientError, type SavedAccount, type ShellInfo } from "./shared.js";
+import { RelayClient, RelayClientError, type Health, type SavedAccount, type ShellInfo } from "./shared.js";
 import { spanText, useSecondTick, useServerStatus, useUpdates, type ServerStatus, type Updates } from "./update.js";
+import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 
 // The first screen after the loader: who to log in as (saved accounts, password filled in), or a new account, and
@@ -20,6 +21,13 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   // Typed something: an update waits for the button instead of reloading under their hands.
   const touched = useRef(false);
   const updates = useUpdates(health?.client ?? null, () => !touched.current);
+  const checkHealth = useCallback(async (): Promise<Health> => {
+    if (!server) throw new Error("no server");
+    const res = await fetch(`${server}/api/health`);
+    return (await res.json()) as Health;
+  }, [server]);
+  const shellUpdate = useShellUpdate(checkHealth);
+  const [shellOpen, setShellOpen] = useState(false);
   const [accounts, setAccounts] = useState<SavedAccount[]>([]);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
@@ -84,6 +92,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
     }
   };
 
+  if (shellOpen && shellUpdate) return <ShellUpdatePage update={shellUpdate} server={server} onClose={() => setShellOpen(false)} />;
   return (
     <div className="login-page">
       {ownTitleBar && (
@@ -104,6 +113,13 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
         <ServerLine server={server} status={status} />
 
         {updates.update && <UpdateBanner updates={updates} server={server} auto={touched.current ? null : "马上自动更新"} />}
+
+        {shellUpdate && (
+          <button type="button" className="notice shell-notice" onClick={() => setShellOpen(true)}>
+            <b>桌面程序可更新</b>
+            <span className="tiny">{shellUpdate.kind === "auto" ? `新版 ${shellUpdate.target?.build} · 点这里一键更新` : "点这里看怎么换新版"}</span>
+          </button>
+        )}
 
         {mode === "login" && accounts.length > 0 && (
           <div className="saved">

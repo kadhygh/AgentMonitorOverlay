@@ -22,6 +22,8 @@ export interface UpdateInfo {
 
 export interface ShellInfo {
   shellVersion: number;
+  /** This desktop program's build (relay-release --shell); undefined for builds from before it was stamped. */
+  shellBuild?: string;
   contentVersion: string;
   server: string;
   update: UpdateInfo | null;
@@ -61,6 +63,10 @@ export interface RelayShell {
   writeUsage?(text: string): Promise<string>;
   /** The window has no system title bar: the page draws minimise / maximise / close (not on a Mac, which keeps its
    * traffic lights). Optional: added after shell 1 shipped; without it the window has the system's title bar. */
+  /** 更新桌面程序: downloads the service's desktop program, checks it, puts it in place of this one and restarts into
+   * it (Windows). Optional: added after shell 1 shipped. */
+  updateShell?(): Promise<void>;
+  onShellProgress?(listener: (p: { step: "download" | "check" | "unpack" | "replace" | "restart"; done: number; total: number }) => void): void;
   windowControls?: {
     minimize(): void;
     toggleMaximize(): void;

@@ -322,6 +322,15 @@ export interface Health {
   invite: boolean;
   /** The client content's version the service hands out; null = none. */
   client: string | null;
+  /** The desktop program the service hands out (downloads/AMO-Relay-win.zip): a client running another build can
+   * update itself to it (更新桌面程序). Null = none. */
+  shell?: ShellBuild | null;
+}
+
+export interface ShellBuild {
+  build: string;
+  size: number;
+  sha256: string;
 }
 
 /** client/manifest.json: the client content the desktop client downloads and keeps (its hot update). */
