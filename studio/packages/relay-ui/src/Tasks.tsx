@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Avatar, timeText, waitedText } from "./bits.js";
+import { Avatar, timeText, waitedText, Who } from "./bits.js";
 import { Check, Dialog, Field, PersonPick, StatusPick } from "./Dialog.js";
 import { DropZone, FileRow, FileViewer, PickFiles, useUpload } from "./Files.js";
 import { copyText, shell } from "./env.js";
@@ -74,7 +74,7 @@ function TaskCard({ task, me, onOpen, onArchive }: { task: TaskView; me: string;
     <div className={`card ${task.holder === me ? "mine" : ""} ${task.archived ? "archived" : ""}`} role="button" tabIndex={0} onClick={() => onOpen(task.id)} onKeyDown={(e) => e.key === "Enter" && onOpen(task.id)}>
       <div className="card-where">
         <Avatar name={task.holder} small />
-        <span className="card-holder">{task.holder === me ? "在我手里" : `在 ${task.holder} 手里`}</span>
+        <span className="card-holder">{task.holder === me ? "在我手里" : <>在 <Who name={task.holder} /> 手里</>}</span>
         {task.unseen && <span className="chip attn">刚交给你</span>}
       </div>
       <div className="card-title">{task.title}</div>

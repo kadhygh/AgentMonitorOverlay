@@ -144,6 +144,7 @@ export class Session {
     else if (e.type === "archived") this.patchThread(e.threadId, { archived: e.archived });
     else if (e.type === "updated") this.patchThread(e.thread.id, e.thread);
     else if (e.type === "settings") this.set({ settings: e.settings });
+    else if (e.type === "left") this.set({ threads: this.state.threads.filter((t) => t.id !== e.threadId) });
     else if (e.type === "notes") for (const l of this.noteListeners) l(e.fileId);
     else if (e.type === "task") {
       // Handed to me just now: new to me until I open it.

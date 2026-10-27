@@ -288,22 +288,23 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.getByPlaceholder("发给 策划小王…").fill("下午三点对一下数值？");
   await b.page.keyboard.press("Control+Enter");
   await a.page.locator(".view-tab", { hasText: "聊天" }).click();
-  await row(a.page, "程序老李").click();
+  await a.page.locator(".person-node", { hasText: "程序老李" }).locator(".srow", { hasText: "普通聊天" }).click();
   await expect(a.page.locator(".msg.theirs")).toContainText("下午三点对一下数值？");
+  await expect(a.page.locator(".topbar .win-controls")).toBeVisible();
   await shot(a.app, "05-direct-chat");
 
   // Topics next to the plain chat: each its own conversation; mine on the right, theirs on the left.
   await a.page.getByRole("button", { name: "＋ 新话题" }).click();
   await a.page.getByPlaceholder("话题，比如：技能表结构").fill("数值平衡");
   await a.page.getByRole("button", { name: "开始" }).click();
-  await expect(a.page.locator(".tab.on")).toHaveText("数值平衡");
-  await a.page.getByPlaceholder("发给 程序老李，话题「数值平衡」…").fill("这个单独聊：暴击率上限定多少？");
+  await expect(a.page.locator(".head-title")).toHaveText("数值平衡");
+  await a.page.getByPlaceholder("发给 程序老李…").fill("这个单独聊：暴击率上限定多少？");
   await a.page.keyboard.press("Control+Enter");
   await expect(a.page.locator(".msg.mine")).toContainText("暴击率上限");
   await row(b.page, "数值平衡").click();
   await expect(b.page.locator(".msg.theirs")).toContainText("暴击率上限");
-  await expect(b.page.locator(".tab", { hasText: "普通聊天" })).toBeVisible();
-  await b.page.getByPlaceholder(/话题「数值平衡」/).fill("先定 **60%**，超了收益太高");
+  await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".srow", { hasText: "普通聊天" })).toBeVisible();
+  await b.page.getByPlaceholder("发给 策划小王…").fill("先定 **60%**，超了收益太高");
   await b.page.keyboard.press("Control+Enter");
   await expect(a.page.locator(".msg.theirs")).toContainText("超了收益太高");
   const sides = await a.page.locator(".msg .msg-body").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().right)));
@@ -315,9 +316,38 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".nav-fold", { hasText: "已归档 1" })).toBeVisible();
   await expect(b.page.locator(".nav-fold", { hasText: "已归档" })).toHaveCount(0);
   await shot(a.app, "09-archived");
-  await b.page.getByPlaceholder(/话题「数值平衡」/).fill("暴击伤害另说");
+  await b.page.getByPlaceholder("发给 策划小王…").fill("暴击伤害另说");
   await b.page.keyboard.press("Control+Enter");
   await expect(a.page.locator(".nav-fold", { hasText: "已归档" })).toHaveCount(0);
+
+  // A group: @-ing someone into the plain chat brings them in, history and all; it shows under each of its people.
+  const zhou = await new relay.RelayClient(server.url).register("美术小周", "pw-1234", { role: "美术" });
+  await a.page.locator(".person-node", { hasText: "程序老李" }).locator(".srow", { hasText: "普通聊天" }).click();
+  await a.page.getByPlaceholder("发给 程序老李…").fill("@美");
+  await expect(a.page.locator(".mention-pop")).toContainText("美术小周");
+  await a.page.keyboard.press("Enter");
+  await a.page.keyboard.type("来看看枪管过热的特效");
+  await a.page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(a.page.locator(".dialog")).toContainText("这个对话会变成群聊");
+  await a.page.getByRole("button", { name: "拉进来并发送" }).click();
+  await expect(a.page.locator(".page-crumb")).toHaveText("群聊");
+  await expect(a.page.locator(".faces .face")).toHaveCount(3);
+  await expect(a.page.locator(".msg").last()).toContainText("@美术小周");
+  await shot(a.app, "19-group");
+  await expect(b.page.locator(".person-node", { hasText: "策划小王" })).toContainText("群聊 · 1");
+  const zhouClient = new relay.RelayClient(server.url, zhou.key);
+  const [group] = (await zhouClient.threads()).filter((t) => t.kind === "group");
+  expect((await zhouClient.messages(group!.id)).messages.map((m) => m.body)).toContain("下午三点对一下数值？");
+  await b.page.locator(".view-tab", { hasText: "成员" }).click();
+  await expect(b.page.locator(".scope-nav .srow", { hasText: "美术小周" })).toContainText("3 人");
+  await b.page.locator(".view-tab", { hasText: "聊天" }).click();
+
+  // 编辑资料: a nickname shows first, the account name faintly after it.
+  await a.page.locator(".me-chip").click();
+  await a.page.locator(".dialog").getByPlaceholder("策划小王", { exact: true }).fill("小王");
+  await a.page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(a.page.locator(".me-chip .me-name")).toHaveText("小王(策划小王)");
+  await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".aka")).toHaveText("(策划小王)");
 
   // A newer client on the service: the planner restarts and the loader installs it before the login screen.
   const manifestFile = join(publicDir, "client", "manifest.json");
@@ -335,7 +365,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await again.page.locator(".view-tab", { hasText: "聊天" }).click();
   await row(again.page, "数值平衡").click();
   const myState = again.page.locator(".me-chip .conn-chip");
-  await expect(myState).toHaveText("在线");
+  await expect(myState).toHaveText("服务器在线");
 
   // Published while signed in, the window closed to the tray (not in use): it updates by itself and comes back signed
   // in, the same conversation open.
@@ -344,7 +374,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
   await expect.poll(() => again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion), { timeout: 30_000 }).toBe(third);
   await expect(again.page.locator(".scope-nav .srow[aria-current=true]")).toContainText("数值平衡", { timeout: 15_000 });
-  await expect(again.page.locator(".tab.on")).toHaveText("数值平衡");
+  await expect(again.page.locator(".head-title")).toHaveText("数值平衡");
   await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
 
   // The service goes away: the bar over the conversation, members' state unknown; the other one logs out and its
@@ -352,18 +382,19 @@ test("register, an AI's request answered in the other client, updates, the servi
   const port = server.port;
   await server.close();
   await expect(again.page.locator(".conn-bar")).toContainText("和服务器断开了", { timeout: 15_000 });
-  await expect(myState).toHaveText("离线");
+  await expect(myState).toHaveText("服务器离线");
   await again.page.locator(".view-tab", { hasText: "成员" }).click();
   await expect(again.page.locator(".scope-nav")).toContainText("在线状态未知");
   await shot(again.app, "06-offline-bar");
-  await b.page.getByRole("button", { name: "退出" }).click();
+  await b.page.getByRole("button", { name: "更多 ▾" }).click();
+  await b.page.getByRole("menuitem", { name: "退出登录" }).click();
   await expect(b.page.locator(".server-down")).toContainText("服务器离线", { timeout: 15_000 });
   await expect(b.page.getByRole("button", { name: /服务器离线/ })).toBeDisabled();
   await shot(b.app, "07-login-offline");
   server = await startServer(port);
   await again.page.getByRole("button", { name: "立即重连" }).click();
   await expect(again.page.locator(".conn-bar")).toHaveCount(0, { timeout: 15_000 });
-  await expect(myState).toHaveText("在线");
+  await expect(myState).toHaveText("服务器在线");
   await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
   await b.page.getByRole("button", { name: "登录" }).click();
   await expect(b.page.locator(".view-tabs")).toBeVisible();

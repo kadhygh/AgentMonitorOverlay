@@ -59,6 +59,15 @@ export interface RelayShell {
   /** Writes the usage text for agents to a file of this machine and says where (复制用法 then copies just that path).
    * Optional: added after shell 1 shipped; without it the whole text is copied. */
   writeUsage?(text: string): Promise<string>;
+  /** The window has no system title bar: the page draws minimise / maximise / close (not on a Mac, which keeps its
+   * traffic lights). Optional: added after shell 1 shipped; without it the window has the system's title bar. */
+  windowControls?: {
+    minimize(): void;
+    toggleMaximize(): void;
+    close(): void;
+    isMaximized(): Promise<boolean>;
+    onMaximized(listener: (maximized: boolean) => void): void;
+  };
   /** Back to the loader, to enter another service address. */
   changeServer(): void;
   openExternal(url: string): void;

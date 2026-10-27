@@ -102,6 +102,9 @@ function createWindow(): BrowserWindow {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#efede8",
     show: false,
     autoHideMenuBar: true,
+    // No system title bar (as AMO Studio): the page's top bar is the title bar and draws the window buttons; on a Mac
+    // the traffic lights stay, inset into it.
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     ...(testMode ? { x: -4000, y: 0, skipTaskbar: true } : {}),
     webPreferences: { preload: join(here, "preload.cjs"), sandbox: true, contextIsolation: true },
   });
@@ -113,6 +116,8 @@ function createWindow(): BrowserWindow {
     w.hide();
   });
   w.on("focus", () => w.flashFrame(false));
+  w.on("maximize", () => w.webContents.send("relay:maximized", true));
+  w.on("unmaximize", () => w.webContents.send("relay:maximized", false));
   // Links open in the browser, never in this window.
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
@@ -332,6 +337,14 @@ function wire(): void {
     unread = count;
     tray?.setToolTip(unread ? `AMO 中转 · ${unread} 条未读` : "AMO 中转");
   });
+  // The page's window buttons (the window has no system title bar). 关闭 hides it to the tray, as before.
+  ipcMain.on("relay:window", (_e, action: unknown) => {
+    if (!win) return;
+    if (action === "minimize") win.minimize();
+    else if (action === "maximize") (win.isMaximized() ? win.unmaximize() : win.maximize());
+    else if (action === "close") win.close();
+  });
+  ipcMain.handle("relay:window-maximized", () => !!win?.isMaximized());
   ipcMain.handle("relay:in-use", () => !!win && win.isVisible() && !win.isMinimized() && win.isFocused());
   // The usage text as a file next to the command line: agents are pointed at it instead of being pasted the whole text.
   ipcMain.handle("relay:write-usage", (_e, text: string) => {

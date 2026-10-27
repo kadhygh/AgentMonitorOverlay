@@ -1,16 +1,43 @@
-import { VERDICT_LABEL, type Message, type ThreadView } from "./shared.js";
+import { createContext, useContext } from "react";
+import { VERDICT_LABEL, type Member, type Message, type ThreadView } from "./shared.js";
 
 const HUES = [18, 42, 160, 200, 230, 280, 330, 100];
 
-/** A name's initial on a colour picked from the name, so people are told apart at a glance. */
-export function Avatar({ name, small = false }: { name: string; small?: boolean }) {
+/** Who is who (name → member, with nickname and picture), provided by the signed-in screen. */
+export const PeopleContext = createContext<ReadonlyMap<string, Member>>(new Map());
+export const usePeople = () => useContext(PeopleContext);
+
+/** Their picture, or their initial on a colour picked from the name, so people are told apart at a glance. */
+export function Avatar({ name, small = false, big = false }: { name: string; small?: boolean; big?: boolean }) {
+  const m = usePeople().get(name);
+  const cls = `avatar ${small ? "small" : ""} ${big ? "big" : ""}`;
+  if (m?.avatar) return <img className={cls} src={m.avatar} alt="" />;
   let h = 0;
   for (const c of name) h = (h * 31 + c.codePointAt(0)!) >>> 0;
   return (
-    <span className={`avatar ${small ? "small" : ""}`} style={{ background: `hsl(${HUES[h % HUES.length]} 32% 42%)` }}>
-      {name.slice(0, 1)}
+    <span className={cls} style={{ background: `hsl(${HUES[h % HUES.length]} 32% 42%)` }}>
+      {(m?.nick || name).slice(0, 1)}
     </span>
   );
+}
+
+/** A name as shown: the nickname, then the account name faintly; just the name without a nickname. */
+export function Who({ name }: { name: string }) {
+  const m = usePeople().get(name);
+  return m?.nick ? (
+    <>
+      {m.nick}
+      <span className="aka">({name})</span>
+    </>
+  ) : (
+    <>{name}</>
+  );
+}
+
+/** The same as text, for places that take a string. */
+export function useDisplayName(): (name: string) => string {
+  const people = usePeople();
+  return (name) => people.get(name)?.nick || name;
 }
 
 export function timeText(ms: number): string {

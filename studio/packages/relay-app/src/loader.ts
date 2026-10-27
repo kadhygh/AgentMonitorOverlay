@@ -23,6 +23,10 @@ h1{font-size:19px;margin:0;font-family:"Noto Serif SC","Songti SC",SimSun,serif}
 .bar.busy>div{animation:slide 1.1s ease-in-out infinite}
 @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
 .hide{display:none}
+.titlebar{position:fixed;top:0;left:0;right:0;height:40px;display:flex;justify-content:flex-end;-webkit-app-region:drag}
+.titlebar button{-webkit-app-region:no-drag;width:46px;height:40px;border:none;border-radius:0;background:transparent;color:var(--muted);padding:0;display:grid;place-items:center}
+.titlebar button:hover{background:var(--line);color:var(--ink)}.titlebar button.close:hover{background:#c42b1c;color:#fff}
+.titlebar svg{fill:none;stroke:currentColor;stroke-width:1;shape-rendering:crispEdges}
 label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
 input{font:inherit;color:inherit;width:100%;border:1px solid var(--strong);background:var(--panel);border-radius:3px;padding:6px 10px;outline:none}
 input:focus{border-color:var(--accent)}
@@ -30,7 +34,7 @@ input:focus{border-color:var(--accent)}
 button{font:inherit;cursor:pointer;border:1px solid var(--strong);background:var(--panel);color:var(--ink);border-radius:3px;padding:5px 14px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .err{color:var(--error);font-size:13px;margin-top:8px;white-space:pre-wrap}
-</style></head><body><div class="card">
+</style></head><body><div class="titlebar" id="titlebar"><button id="wmin" title="最小化"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0.5 5.5 H9.5"/></svg></button><button id="wclose" class="close" title="关闭"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5"/></svg></button></div><div class="card">
 <div class="brand"><div class="mark">中</div><div><h1>AMO 中转</h1><div class="muted small" id="where"></div></div></div>
 <div id="progress"><div id="text">正在启动…</div><div class="bar busy" id="bar"><div></div></div></div>
 <form id="ask" class="hide"><label>服务器地址<input id="server" placeholder="例如 192.168.1.20:47120" required></label>
@@ -54,5 +58,8 @@ $("ask").addEventListener("submit",(e)=>{e.preventDefault();$("askErr").textCont
 $("retry").onclick=()=>window.relayLoader.retry();
 $("change").onclick=()=>window.relayLoader.changeServer();
 $("download").onclick=()=>download&&window.relayLoader.open(download);
+if(window.relayLoader.platform==="darwin"){$("wmin").remove();$("wclose").remove()}
+$("wmin")&&($("wmin").onclick=()=>window.relayLoader.window("minimize"));
+$("wclose")&&($("wclose").onclick=()=>window.relayLoader.window("close"));
 window.relayLoader.ready();
 </script></body></html>`;

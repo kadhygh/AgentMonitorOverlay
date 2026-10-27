@@ -3,6 +3,7 @@ import { browserAccounts, browserServer, rememberBrowserAccount, shell } from ".
 import type { Identity } from "./session.js";
 import { RelayClient, RelayClientError, type SavedAccount, type ShellInfo } from "./shared.js";
 import { spanText, useSecondTick, useServerStatus, useUpdates, type ServerStatus, type Updates } from "./update.js";
+import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 
 // The first screen after the loader: who to log in as (saved accounts, password filled in), or a new account, and
 // whether the service is there (checked again every few seconds while it is not). A newer client found here is
@@ -85,6 +86,12 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
 
   return (
     <div className="login-page">
+      {ownTitleBar && (
+        <div className={`login-titlebar ${macLights ? "mac" : ""}`}>
+          <span className="grow" />
+          <WindowControls />
+        </div>
+      )}
       <div className="login-card">
         <div className="brand">
           <span className="brand-mark">中</span>

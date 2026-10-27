@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Avatar, timeText } from "./bits.js";
+import { Avatar, timeText, Who } from "./bits.js";
 import { Markdown } from "./Markdown.js";
 import type { Session } from "./session.js";
 import { RelayClientError, VERDICT_LABEL, type Message, type Question } from "./shared.js";
@@ -70,6 +70,9 @@ export function MessageList({ messages, error, me, questions, empty, after }: { 
   );
 }
 
+/** @-ed names stand out (as bold) in the message. */
+const boldMentions = (body: string, names: string[]) => names.reduce((s, n) => s.split(`@${n}`).join(`**@${n}**`), body);
+
 /** A plain message right after one by the same person, within a few minutes: no header again. */
 const CONTINUES_MS = 5 * 60_000;
 
@@ -89,7 +92,11 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
     <article className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""}`}>
       <div className="msg-head">
         {!mine && <Avatar name={m.author} small />}
-        {!mine && <b>{m.author}</b>}
+        {!mine && (
+          <b>
+            <Who name={m.author} />
+          </b>
+        )}
         {m.via.kind === "ai" && <span className="tag ai">AI 代发{m.via.client ? ` · ${m.via.client}` : ""}</span>}
         {m.kind === "request" && <span className="tag">会话</span>}
         {m.kind === "text" && m.questions && m.questions.length > 0 && <span className="tag">追问</span>}
@@ -99,7 +106,7 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
         </span>
       </div>
       <div className="msg-body">
-        {m.body && <Markdown source={m.body} />}
+        {m.body && <Markdown source={m.mentions?.length ? boldMentions(m.body, m.mentions) : m.body} />}
         {m.kind !== "reply" && m.questions && m.questions.length > 0 && (
           <ol className="questions">
             {m.questions.map((q) => (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Avatar } from "./bits.js";
+import { Avatar, Who } from "./bits.js";
 import { TASK_STATUSES, type TaskStatus } from "./shared.js";
 
 // The parts every dialog is made of (2026-10-27, after 「很丑，尽量少用下拉菜单」): a modal in three bands — head, body,
@@ -70,7 +70,7 @@ export function PersonPick({ people, value, onChange, me, label = "人" }: { peo
         label: (
           <>
             <Avatar name={p} small />
-            {p}
+            <Who name={p} />
             {p === me ? <span className="muted">（我）</span> : null}
           </>
         ),

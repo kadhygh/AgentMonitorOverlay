@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Avatar, preview, sessionStatus, timeText, waitedText } from "./bits.js";
-import { ChatView } from "./ChatView.js";
+import { Avatar, PeopleContext, preview, sessionStatus, waitedText, Who } from "./bits.js";
+import { ChatTree, ChatView, GroupRows, ProfileDialog } from "./Chats.js";
 import { PickFiles } from "./Files.js";
 import { Check, Dialog, Field, Menu, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
@@ -12,6 +12,7 @@ import { usagePointer, usagePrompt, type McpHookup, type TaskView, type ThreadVi
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, SettingsDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { nextTheme, readTheme, setTheme, THEME_LABEL, type Theme } from "./theme.js";
 import { writeUsageFile } from "./usageFile.js";
+import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdates } from "./update.js";
 
 // After login, in AMO Studio's layout (stages 2a–2b, plans/relay-tasks.md): the top bar with four views — 待处理 (tasks
@@ -23,6 +24,7 @@ import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdat
 type View = "queue" | "tasks" | "chat" | "people";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
+  | { kind: "profile" }
   | { kind: "ai" }
   | { kind: "task" }
   | { kind: "transfer"; task: TaskView; thread?: Thread }
@@ -93,7 +95,16 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       session.onMessage((m) => {
         if (m.author === me || m.kind === "event" || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
-        const title = m.kind === "request" ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 发来会话` : m.kind === "reply" ? `${m.author} 回复了` : t?.kind === "topic" ? `${m.author} · ${t.title}` : m.author;
+        const title =
+          m.kind === "request"
+            ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 发来会话`
+            : m.kind === "reply"
+              ? `${m.author} 回复了`
+              : m.mentions?.includes(me)
+                ? `${m.author} 在「${t?.title || "聊天"}」里 @ 了你`
+                : t?.kind === "topic" || t?.kind === "group"
+                  ? `${m.author} · ${t.title}`
+                  : m.author;
         shell?.notify({ title, body: m.kind === "request" ? (t?.title ?? preview(m)) : preview(m).slice(0, 120), threadId: m.threadId });
       }),
     [session, me],
@@ -154,6 +165,11 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       return toast("已复制用法文件的位置，贴给 agent，它会自己去读");
     }
     const hookup = shell ? await shell.mcp().catch(() => null) : null;
+    if (hookup?.cli) {
+      // An older desktop client cannot write the file: point the agent at the command that prints the usage.
+      await copyText(`请先运行 "${hookup.cli}" prompt（PowerShell 里写 & "${hookup.cli}" prompt），按它打印的说明用 AMO 中转（团队里互相传话、发会话找人确认、推进团队任务）。`);
+      return toast("已复制一行指令，贴给 agent，它会自己去看用法");
+    }
     await copyText(usagePrompt({ me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow }));
     toast("用法已复制，贴给 agent 就行");
   };
@@ -233,23 +249,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       </>
     );
   } else if (view === "chat") {
-    nav = (
-      <>
-        <NavLabel title="对话" count={groups.chats.length} />
-        {groups.chats.map((t) => (
-          <ChatRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} onArchive={archive} />
-        ))}
-        {!groups.chats.length && <div className="nav-empty">点「成员」里的同事开始聊天。</div>}
-        {groups.archived.length > 0 && (
-          <>
-            <button type="button" className="nav-fold" onClick={() => setArchOpen(!archOpen)}>
-              {archOpen ? "▾" : "▸"} 已归档 {groups.archived.length}
-            </button>
-            {archOpen && groups.archived.map((t) => <ChatRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} onArchive={archive} />)}
-          </>
-        )}
-      </>
-    );
+    nav = <ChatTree session={session} openId={openId} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onNewTopic={newTopic} onArchive={(t, a) => void archive(t, a)} />;
   } else {
     nav = (
       <>
@@ -266,6 +266,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
           </button>
         ))}
         {!others.length && <div className="nav-empty">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
+        <GroupRows session={session} onOpen={(id) => (setView("chat"), setOpenId(id))} />
       </>
     );
   }
@@ -289,7 +290,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
     );
   else if (view === "tasks") main = <Board session={session} filter={taskFilter} onOpen={(id) => showTask(id)} toast={toast} />;
   else if (view === "chat" && open && open.kind !== "request")
-    main = <ChatView key={open.id} session={session} thread={open} peers={peers} toast={toast} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onNewTopic={newTopic} onArchive={(t, a) => void archive(t, a)} />;
+    main = <ChatView key={open.id} session={session} thread={open} toast={toast} onArchive={(t, a) => void archive(t, a)} />;
   else if (view === "people" && person)
     main = <PersonView name={person} session={session} threads={threads} onChat={(n) => void chatWith(n)} onAsk={(n) => setDialog({ kind: "session", to: n })} onOpen={(id) => (setView("queue"), setOpenId(id))} />;
   else
@@ -317,9 +318,11 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
     ["chat", "聊天", chatUnread],
     ["people", "成员", 0],
   ];
+  const people = useMemo(() => new Map(members.map((m) => [m.name, m])), [members]);
   return (
+    <PeopleContext.Provider value={people}>
     <div className="app">
-      <header className="topbar">
+      <header className={`topbar ${ownTitleBar ? "own" : ""} ${macLights ? "mac" : ""}`}>
         <div className="brand">
           <span className="brand-mark">中</span>
           <span className="brand-name">AMO 中转</span>
@@ -348,6 +351,9 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
             null,
             { label: `主题：${THEME_LABEL[theme]}`, onClick: cycleTheme, hint: "跟随系统 / 浅色 / 深色，点一下切换" },
             { label: "设置", onClick: () => setDialog({ kind: "settings" }), hint: "团队流程、流程速查的说法、AI 提醒时间" },
+            { label: "编辑资料", onClick: () => setDialog({ kind: "profile" }), hint: "昵称、头像、负责什么" },
+            null,
+            { label: "退出登录", onClick: onLogout },
           ]}
         />
         {view === "tasks" ? (
@@ -359,17 +365,19 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
             ＋ 新会话
           </button>
         )}
-        <span className="me-chip" title={`${session.me.role || session.me.service} · 服务器 ${session.me.server}`}>
+        <button type="button" className="me-chip" title={`编辑资料：昵称、头像、负责什么 · 服务器 ${session.me.server}`} onClick={() => setDialog({ kind: "profile" })}>
           <Avatar name={me} small />
-          {me}
-          <span className={`conn-chip ${connection}`}>
-            <span className="conn-dot" />
-            {{ online: "在线", connecting: "连接中", offline: "离线" }[connection]}
+          <span className="me-lines">
+            <span className="me-name">
+              <Who name={me} />
+            </span>
+            <span className={`conn-chip ${connection}`}>
+              <span className="conn-dot" />
+              {{ online: "服务器在线", connecting: "正在连接服务器", offline: "服务器离线" }[connection]}
+            </span>
           </span>
-        </span>
-        <button type="button" className="tb-btn small" onClick={onLogout}>
-          退出
         </button>
+        <WindowControls />
       </header>
       <ConnectionBar session={session} />
       <div className="body">
@@ -392,6 +400,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
           }}
         />
       )}
+      {dialog?.kind === "profile" && <ProfileDialog session={session} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "task" && <NewTaskDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showTask(id))} />}
       {dialog?.kind === "transfer" && <TransferDialog session={session} task={tasks.find((t) => t.id === dialog.task.id) ?? dialog.task} thread={dialog.thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "flow" && <FlowDialog settings={settings} onClose={() => setDialog(null)} toast={toast} />}
@@ -399,6 +408,7 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
       {dialog?.kind === "ai" && <ConnectAiDialog onClose={() => setDialog(null)} onCopyUsage={() => void copyUsage()} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>
+    </PeopleContext.Provider>
   );
 }
 
@@ -429,31 +439,6 @@ function SessionRow({ thread, me, current, onOpen, limits }: { thread: Thread; m
         <span className={`t ${s.warn ? "warn" : ""}`}>{r.from === me && r.state === "open" ? `等 ${r.to} 处理` : s.text}</span>
       </div>
     </button>
-  );
-}
-
-function ChatRow({ thread, me, current, onOpen, onArchive }: { thread: Thread; me: string; current: boolean; onOpen: (id: string) => void; onArchive: (t: Thread, archived: boolean) => void }) {
-  const other = thread.members.find((n) => n !== me) ?? me;
-  return (
-    <div className="srow-wrap">
-      <button type="button" className={`srow ${thread.unread ? "unread" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onOpen(thread.id)}>
-        <div className="srow-top">
-          <Avatar name={other} small />
-          <span className="srow-title">{thread.kind === "direct" ? other : thread.title}</span>
-          {thread.unread > 0 && <span className="badge">{thread.unread}</span>}
-          <span className="srow-time">{timeText(thread.updatedAt)}</span>
-        </div>
-        <div className="srow-meta" style={{ paddingLeft: 28 }}>
-          {thread.kind === "topic" && <span className="chip">话题 · {other}</span>}
-          <span className="t">{preview(thread.last)}</span>
-        </div>
-      </button>
-      {thread.kind !== "direct" && (
-        <button type="button" className="small srow-archive" title={thread.archived ? "放回列表" : "归档：从列表收起，只影响你自己；有新消息会回来"} onClick={() => onArchive(thread, !thread.archived)}>
-          {thread.archived ? "放回" : "归档"}
-        </button>
-      )}
-    </div>
   );
 }
 

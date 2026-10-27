@@ -17,6 +17,8 @@ electron.contextBridge.exposeInMainWorld("relayLoader", {
   retry: () => send("loader-retry"),
   changeServer: () => send("change-server"),
   open: (url: string) => send("open-external", url),
+  window: (action: string) => send("window", action),
+  platform: process.platform,
 });
 
 electron.contextBridge.exposeInMainWorld("relayShell", {
@@ -34,6 +36,13 @@ electron.contextBridge.exposeInMainWorld("relayShell", {
   applyUpdate: () => invoke("apply-update"),
   onUpdateProgress: (listener: (p: unknown) => void) => on("update-progress", listener),
   inUse: () => invoke("in-use"),
+  windowControls: {
+    minimize: () => send("window", "minimize"),
+    toggleMaximize: () => send("window", "maximize"),
+    close: () => send("window", "close"),
+    isMaximized: () => invoke("window-maximized"),
+    onMaximized: (listener: (m: boolean) => void) => on("maximized", listener),
+  },
   writeUsage: (text: string) => invoke("write-usage", text),
   changeServer: () => send("change-server"),
   openExternal: (url: string) => send("open-external", url),

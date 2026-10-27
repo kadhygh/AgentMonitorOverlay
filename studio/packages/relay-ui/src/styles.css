@@ -395,3 +395,55 @@ textarea { padding: 8px 10px; }
 .viewer-title .pick button { height: 26px; padding: 0 9px; font-size: var(--fs-cap); font-family: var(--font-ui); }
 .dialog.viewer .dialog-head { align-items: center; padding: 10px 16px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
+
+/* ---- the window's own title bar (2026-10-27, as AMO Studio): the top bar drags the window, ends with its buttons */
+.topbar.own { -webkit-app-region: drag; padding-right: 0; user-select: none; }
+.topbar.own.mac { padding-left: 84px; }
+.topbar.own button, .topbar.own input, .topbar.own a, .topbar.own .menu-box, .topbar.own .view-tabs, .topbar.own .notice { -webkit-app-region: no-drag; }
+.topbar.own > :last-child:not(.win-controls) { margin-right: 16px; }
+.win-controls { align-self: stretch; display: flex; margin-left: 4px; border-left: 1px solid var(--border); -webkit-app-region: no-drag; }
+.win-btn { width: 46px; height: 100%; display: grid; place-items: center; border: none; border-radius: 0; background: transparent; color: var(--text-dim); padding: 0; }
+.win-btn svg { fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
+.win-btn:hover:not(:disabled) { background: var(--chip); color: var(--text); border: none; }
+.win-btn.close:hover:not(:disabled) { background: var(--error); color: #fff; }
+.login-page { position: relative; }
+.login-titlebar { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; -webkit-app-region: drag; }
+.login-titlebar .win-controls { border-left: none; }
+.overlay, .menu, .mention-pop { -webkit-app-region: no-drag; }
+
+/* ---- chats: people with their chats and groups; mentions; profile (2026-10-27) */
+.aka { margin-left: 3px; color: var(--text-faint); font-weight: 400; font-size: 0.9em; }
+.me-chip { height: var(--ctl); border-color: transparent; background: transparent; padding: 0 8px; display: inline-flex; align-items: center; gap: 8px; }
+.me-chip:hover:not(:disabled) { background: var(--chip); border-color: transparent; }
+.me-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+img.avatar { object-fit: cover; background: var(--chip); }
+.avatar.big { width: 72px; height: 72px; font-size: 30px; }
+.avatar.placeholder { background: var(--muted-dot); }
+.profile-face { display: flex; align-items: center; gap: 18px; }
+.person-node { display: flex; flex-direction: column; }
+.person-head-row .fold { width: 10px; font-size: 10px; color: var(--text-faint); flex: none; }
+.person-kids { margin-left: 14px; padding-left: 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.srow.kid { padding: 5px 8px; }
+.srow.kid .srow-title { font-size: var(--fs-sm); }
+.srow.kid .srow-meta { padding-left: 0; }
+.kid-add { height: 26px; border: none; background: none; color: var(--primary); text-align: left; font-size: var(--fs-cap); padding: 0 8px; }
+.kid-add:hover:not(:disabled) { background: var(--chip); }
+.kid-label { padding: 6px 8px 2px; font-size: 11px; color: var(--text-faint); letter-spacing: 0.1em; }
+.kid-new { display: flex; gap: 6px; align-items: center; padding: 3px 4px; }
+.kid-new input { min-height: 28px; padding: 2px 8px; font-size: var(--fs-sm); }
+.group-mark { flex: none; width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; background: var(--tint); color: var(--primary); font-size: 10px; font-weight: 700; }
+.faces { display: inline-flex; align-items: center; gap: 2px; }
+.face { margin-right: -4px; }
+.face .avatar { box-shadow: 0 0 0 2px var(--bg-header); }
+.faces .muted { margin-left: 10px; }
+.mention-box { position: relative; }
+.mention-pop { position: absolute; left: 24px; bottom: calc(100% - 6px); z-index: 30; min-width: 240px; padding: 4px; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--menu-bg); box-shadow: 0 12px 32px var(--shadow); display: flex; flex-direction: column; }
+.mention-pop button { border: none; background: none; justify-content: flex-start; display: flex; align-items: center; gap: 8px; height: 32px; text-align: left; }
+.mention-pop button:first-child { background: var(--menu-hover); }
+.mention-pop button:hover:not(:disabled) { background: var(--menu-hover); }
+
+.me-lines { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; min-width: 0; }
+.me-lines .conn-chip { font-size: 11px; }
+.me-chip { height: 40px; }
+@media (max-width: 1280px) { .brand-sep { display: none; } }
+@media (max-width: 1000px) { .brand-name { display: none; } }
