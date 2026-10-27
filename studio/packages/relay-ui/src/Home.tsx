@@ -1,29 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Avatar, preview, sessionStatus, timeText, waitedText } from "./bits.js";
+import { ChatView } from "./ChatView.js";
 import { copyText, shell } from "./env.js";
 import { UpdateBanner } from "./Login.js";
+import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
-import { RelayClientError, usagePrompt, type McpHookup, type ThreadView as Thread } from "./shared.js";
+import { SessionView } from "./SessionView.js";
+import { usagePrompt, type McpHookup, type ThreadView as Thread } from "./shared.js";
+import { nextTheme, readTheme, setTheme, THEME_LABEL, type Theme } from "./theme.js";
 import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdates } from "./update.js";
-import { Avatar, RequestStatus, preview, timeText } from "./bits.js";
-import { ThreadView } from "./ThreadView.js";
 
-// After login: the conversations on the left (requests waiting for me first, then the ones I sent, answered ones,
-// chats — the plain one with each person and the topics next to it — what I archived, folded, and the people), the
-// open one on the right. Archiving is mine only; a new message brings the thread back. The tools for AIs are in the header: 复制用法 (a prompt for
-// any agent) and 接入 AI (the MCP hookup for this machine). Next to the name: whether the service is connected; while it
-// is not, a bar over the conversation says so and when it tries again. A newer client the service publishes is applied
-// once the window is not in use and nothing is typed; the open conversation comes back after the reload.
+// After login, in AMO Studio's layout (stage 2a, plans/relay-tasks.md): the top bar with three views — 待处理 (the
+// sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones), 聊天 (the plain chat
+// with each person and the topics next to it; archived ones folded) and 成员 — the view's list on the left, the open
+// one on the right. Next to my name: whether the service is connected; while it is not, a bar says so. A newer client
+// the service publishes is applied once the window is not in use and nothing is typed.
 
-const errorText = (err: unknown) => (err instanceof RelayClientError || err instanceof Error ? err.message : String(err));
-const CONNECTION_TEXT = { online: "在线", connecting: "连接中", offline: "离线" } as const;
+type View = "queue" | "chat" | "people";
 
 export function Home({ session, onLogout, resumeOpen = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null }) {
   const { threads, members, connection, client } = useSession(session);
   const me = session.me.name;
   useMinuteTick();
+  const [view, setView] = useState<View>("queue");
   const [openId, setOpenId] = useState<string | null>(resumeOpen);
-  const [dialog, setDialog] = useState<"request" | "ai" | null>(null);
+  const [person, setPerson] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "session"; to?: string } | { kind: "ai" } | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
+  const [theme, setThemeState] = useState<Theme>(readTheme);
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [archOpen, setArchOpen] = useState(false);
   const openRef = useRef(openId);
   openRef.current = openId;
   const updates = useUpdates(
@@ -34,45 +40,58 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
 
   const toast = useCallback((text: string) => {
     setToastText(text);
-    setTimeout(() => setToastText((t) => (t === text ? null : t)), 2200);
+    setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
   }, []);
 
   const groups = useMemo(() => {
-    const live = threads.filter((t) => !t.archived);
-    const todo = live.filter((t) => t.request?.to === me && t.request.status === "open");
-    const sent = live.filter((t) => t.request?.from === me);
-    const done = live.filter((t) => t.request?.to === me && t.request.status === "answered");
-    const chats = live.filter((t) => t.kind !== "request");
-    const archived = threads.filter((t) => t.archived);
-    return { todo, sent, done, chats, archived };
+    const sessions = threads.filter((t) => t.kind === "request");
+    const withStatus = sessions.map((t) => ({ t, s: sessionStatus(t, me) }));
+    const mine = withStatus.filter((x) => x.s.needsMe).map((x) => x.t);
+    const waiting = withStatus.filter((x) => !x.s.needsMe && x.t.request!.state !== "done").map((x) => x.t);
+    const done = withStatus.filter((x) => x.t.request!.state === "done").map((x) => x.t);
+    const chats = threads.filter((t) => t.kind !== "request" && !t.archived);
+    const archived = threads.filter((t) => t.kind !== "request" && t.archived);
+    return { mine, waiting, done, chats, archived };
   }, [threads, me]);
   const open = threads.find((t) => t.id === openId) ?? null;
-  // The chats with the open chat's person: its tabs.
-  const peer = open && open.kind !== "request" ? (open.members.find((n) => n !== me) ?? me) : null;
-  const peers = peer ? threads.filter((t) => t.kind !== "request" && t.members.includes(peer) && (!t.archived || t.id === open!.id)) : [];
-  const unread = threads.reduce((n, t) => n + t.unread, 0);
+  const chatUnread = groups.chats.reduce((n, t) => n + t.unread, 0);
 
-  // Open the first thing waiting for me.
+  // The view follows what is open (a notification, a resumed reload).
   useEffect(() => {
-    if (!openId && threads.length) setOpenId((groups.todo[0] ?? threads[0])!.id);
-  }, [threads.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (open) setView(open.kind === "request" ? "queue" : "chat");
+  }, [open?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Something open in the view when there is something.
+  // Not before the list has loaded: a resumed conversation would be replaced.
+  useEffect(() => {
+    if (!threads.length || (openId && threads.some((t) => t.id === openId))) return;
+    if (view === "queue") setOpenId((groups.mine[0] ?? groups.waiting[0])?.id ?? null);
+    if (view === "chat") setOpenId(groups.chats[0]?.id ?? null);
+  }, [view, threads.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => shell?.setUnread(unread), [unread]);
+  useEffect(() => shell?.setUnread(groups.mine.length + chatUnread), [groups.mine.length, chatUnread]);
 
   // Notifications when the window is not looking at it.
   useEffect(
     () =>
       session.onMessage((m) => {
-        if (m.author === me || (document.hasFocus() && session.openThread === m.threadId)) return;
+        if (m.author === me || m.kind === "event" || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
-        const title = m.kind === "request" ? `${m.author} 发来请求` : m.kind === "reply" ? `${m.author} 回复了` : t?.kind === "topic" ? `${m.author} · ${t.title}` : m.author;
+        const title = m.kind === "request" ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 发来会话` : m.kind === "reply" ? `${m.author} 回复了` : t?.kind === "topic" ? `${m.author} · ${t.title}` : m.author;
         shell?.notify({ title, body: m.kind === "request" ? (t?.title ?? preview(m)) : preview(m).slice(0, 120), threadId: m.threadId });
       }),
     [session, me],
   );
   useEffect(() => shell?.onOpenThread((id) => setOpenId(id)), []);
 
+  const switchView = (v: View) => {
+    setView(v);
+    if (v === "queue") setOpenId((groups.mine[0] ?? groups.waiting[0])?.id ?? null);
+    else if (v === "chat") setOpenId(groups.chats[0]?.id ?? null);
+    else setPerson((p) => p ?? members.find((m) => m.name !== me)?.name ?? null);
+  };
+
   const chatWith = async (name: string) => {
+    setView("chat");
     const existing = threads.find((t) => t.kind === "direct" && t.members.includes(name));
     if (existing) return setOpenId(existing.id);
     try {
@@ -106,97 +125,259 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
     toast("用法已复制，贴给 agent 就行");
   };
 
-  const others = members.filter((m) => m.name !== me);
+  const cycleTheme = () => {
+    const t = nextTheme(theme);
+    setTheme(t);
+    setThemeState(t);
+  };
 
-  return (
-    <div className="home">
-      <aside className="side">
-        <div className="side-head">
-          <Avatar name={me} />
-          <div className="who">
-            <b>{me}</b>
-            <span className="muted tiny">{session.me.role || session.me.service}</span>
-          </div>
-          <span className={`conn-chip ${connection}`} title={`服务器 ${session.me.server}`}>
-            <span className="conn-dot" />
-            {CONNECTION_TEXT[connection]}
-          </span>
-          <button type="button" className="link tiny" onClick={onLogout}>
-            退出
-          </button>
-        </div>
-        {updates.update && (
-          <div className="side-update">
-            <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />
-          </div>
+  const others = members.filter((m) => m.name !== me);
+  const peer = open && open.kind !== "request" ? (open.members.find((n) => n !== me) ?? me) : null;
+  const peers = peer ? threads.filter((t) => t.kind !== "request" && t.members.includes(peer) && (!t.archived || t.id === open!.id)) : [];
+
+  let nav;
+  if (view === "queue") {
+    nav = (
+      <>
+        <NavLabel title="待我处理" count={groups.mine.length} />
+        {groups.mine.map((t) => (
+          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} />
+        ))}
+        {!groups.mine.length && <div className="nav-empty">手上没有要处理的会话。</div>}
+        <NavLabel title="等对方 / AI 处理中" count={groups.waiting.length} />
+        {groups.waiting.map((t) => (
+          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} />
+        ))}
+        {!groups.waiting.length && <div className="nav-empty">没有。</div>}
+        {groups.done.length > 0 && (
+          <>
+            <button type="button" className="nav-fold" onClick={() => setDoneOpen(!doneOpen)}>
+              {doneOpen ? "▾" : "▸"} 已完成 {groups.done.length}
+            </button>
+            {doneOpen && groups.done.map((t) => <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} />)}
+          </>
         )}
-        <div className="side-actions">
-          <button type="button" className="primary" onClick={() => setDialog("request")}>
-            ＋ 新请求
+      </>
+    );
+  } else if (view === "chat") {
+    nav = (
+      <>
+        <NavLabel title="对话" count={groups.chats.length} />
+        {groups.chats.map((t) => (
+          <ChatRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} onArchive={archive} />
+        ))}
+        {!groups.chats.length && <div className="nav-empty">点「成员」里的同事开始聊天。</div>}
+        {groups.archived.length > 0 && (
+          <>
+            <button type="button" className="nav-fold" onClick={() => setArchOpen(!archOpen)}>
+              {archOpen ? "▾" : "▸"} 已归档 {groups.archived.length}
+            </button>
+            {archOpen && groups.archived.map((t) => <ChatRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} onArchive={archive} />)}
+          </>
+        )}
+      </>
+    );
+  } else {
+    nav = (
+      <>
+        <NavLabel title={connection === "offline" ? "成员 · 在线状态未知" : "成员"} count={members.length} />
+        {members.map((m) => (
+          <button key={m.name} type="button" className="nav-row person" aria-current={person === m.name ? "true" : undefined} onClick={() => setPerson(m.name)}>
+            <span className="name">
+              <Avatar name={m.name} small />
+              {m.name}
+              {m.name === me ? "（我）" : ""}
+              <span className="muted tiny ellipsis">{m.role}</span>
+            </span>
+            <span className={`dot ${m.online && connection !== "offline" ? "on" : ""}`} />
           </button>
-          <button type="button" onClick={() => void copyUsage()} title="复制一段说明，贴给任何 agent，它就知道怎么用中转找人确认">
-            复制用法
-          </button>
-          <button type="button" onClick={() => setDialog("ai")} title="让本机的 AI 客户端（Claude Code、Codex…）直接用中转">
-            接入 AI
-          </button>
-        </div>
-        <nav className="lists">
-          <Group title="待我回答" threads={groups.todo} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} highlight />
-          <Group title="我发出的" threads={groups.sent} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} />
-          <Group title="已回答" threads={groups.done} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} collapsed />
-          <Group title="对话" threads={groups.chats} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} />
-          <Group title="已归档" threads={groups.archived} me={me} openId={openId} onOpen={setOpenId} onArchive={archive} collapsed />
-          <div className="group">
-            <div className="group-title">{connection === "offline" ? `成员 · ${others.length} · 在线状态未知` : `成员 · ${others.filter((m) => m.online).length}/${others.length} 在线`}</div>
-            {others.map((m) => (
-              <button key={m.name} type="button" className="person" onClick={() => void chatWith(m.name)} title={`和 ${m.name} 私聊`}>
-                <Avatar name={m.name} small />
-                <span className="person-name">{m.name}</span>
-                <span className="muted tiny ellipsis">{m.role}</span>
-                <span className={`dot ${m.online && connection !== "offline" ? "on" : ""}`} />
-              </button>
-            ))}
-            {!others.length && <div className="muted tiny pad">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
-          </div>
-        </nav>
-      </aside>
-      <main className="main">
-        <ConnectionBar session={session} />
-        {open ? (
-          <ThreadView
-            key={open.id}
-            session={session}
-            thread={open}
-            peers={peers}
-            toast={toast}
-            onOpen={setOpenId}
-            onChatWith={(name) => void chatWith(name)}
-            onNewTopic={newTopic}
-            onArchive={(t, archived) => void archive(t, archived)}
-          />
-        ) : (
-          <div className="empty">
+        ))}
+        {!others.length && <div className="nav-empty">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
+      </>
+    );
+  }
+
+  let main;
+  if (view === "queue" && open?.kind === "request") main = <SessionView key={open.id} session={session} thread={open} toast={toast} />;
+  else if (view === "chat" && open && open.kind !== "request")
+    main = <ChatView key={open.id} session={session} thread={open} peers={peers} toast={toast} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onNewTopic={newTopic} onArchive={(t, a) => void archive(t, a)} />;
+  else if (view === "people" && person)
+    main = <PersonView name={person} session={session} threads={threads} onChat={(n) => void chatWith(n)} onAsk={(n) => setDialog({ kind: "session", to: n })} onOpen={(id) => (setView("queue"), setOpenId(id))} />;
+  else
+    main = (
+      <div className="placeholder">
+        {view === "queue" ? (
+          <>
+            <h2>手上的事都在左边</h2>
+            <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点「复制用法」或「接入 AI」。</p>
+          </>
+        ) : view === "chat" ? (
+          <>
             <h2>还没有对话</h2>
-            <p className="muted">
-              点左边的同事开始私聊，或者「＋ 新请求」发一个要对方确认的问题。
-              <br />
-              想让 AI 自己去问人：点「复制用法」把说明贴给 agent，或者「接入 AI」。
-            </p>
-          </div>
+            <p>在「成员」里点同事开始私聊；和同一个人还可以开多个话题。</p>
+          </>
+        ) : (
+          <h2>选一个成员</h2>
         )}
-      </main>
-      {dialog === "request" && (
-        <NewRequestDialog
+      </div>
+    );
+
+  const tabs: Array<[View, string, number]> = [
+    ["queue", "待处理", groups.mine.length],
+    ["chat", "聊天", chatUnread],
+    ["people", "成员", 0],
+  ];
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">中</span>
+          <span className="brand-name">AMO 中转</span>
+          <span className="brand-sep">{session.me.service}</span>
+        </div>
+        <nav className="view-tabs">
+          {tabs.map(([v, label, n]) => (
+            <button key={v} type="button" className="view-tab" aria-current={view === v ? "page" : undefined} onClick={() => switchView(v)}>
+              {label}
+              {n > 0 && <span className="badge">{n}</span>}
+            </button>
+          ))}
+        </nav>
+        <span className="grow" />
+        {updates.update && <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />}
+        <button type="button" className="tb-btn" onClick={() => void copyUsage()} title="复制一段说明，贴给任何 agent，它就知道怎么用中转找人处理事情">
+          复制用法
+        </button>
+        <button type="button" className="tb-btn" onClick={() => setDialog({ kind: "ai" })} title="让本机的 AI 客户端（Claude Code、Codex…）直接用中转">
+          接入 AI
+        </button>
+        <button type="button" className="tb-btn" onClick={cycleTheme} title="主题：跟随系统 / 浅色 / 深色，点一下切换">
+          {THEME_LABEL[theme]}
+        </button>
+        <button type="button" className="primary" onClick={() => setDialog({ kind: "session" })}>
+          ＋ 新会话
+        </button>
+        <span className="me-chip" title={`${session.me.role || session.me.service} · 服务器 ${session.me.server}`}>
+          <Avatar name={me} small />
+          {me}
+          <span className={`conn-chip ${connection}`}>
+            <span className="conn-dot" />
+            {{ online: "在线", connecting: "连接中", offline: "离线" }[connection]}
+          </span>
+        </span>
+        <button type="button" className="tb-btn small" onClick={onLogout}>
+          退出
+        </button>
+      </header>
+      <ConnectionBar session={session} />
+      <div className="body">
+        <aside className="scope-nav">{nav}</aside>
+        <main className="main-col">{main}</main>
+      </div>
+      {dialog?.kind === "session" && (
+        <NewSessionDialog
           session={session}
           people={others.map((m) => m.name)}
+          to={dialog.to}
           onClose={() => setDialog(null)}
-          onSent={(id) => (setDialog(null), setOpenId(id), toast("请求已发出"))}
+          onSent={(id) => (setDialog(null), setView("queue"), setOpenId(id), toast("会话已发出，会出现在对方的待处理里"))}
         />
       )}
-      {dialog === "ai" && <ConnectAiDialog onClose={() => setDialog(null)} onCopyUsage={() => void copyUsage()} toast={toast} />}
+      {dialog?.kind === "ai" && <ConnectAiDialog onClose={() => setDialog(null)} onCopyUsage={() => void copyUsage()} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>
+  );
+}
+
+function NavLabel({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="nav-label">
+      {title}
+      <span className="count">{count}</span>
+      <span className="rule" />
+    </div>
+  );
+}
+
+function SessionRow({ thread, me, current, onOpen }: { thread: Thread; me: string; current: boolean; onOpen: (id: string) => void }) {
+  const r = thread.request!;
+  const s = sessionStatus(thread, me);
+  const at = r.state === "returned" ? (r.returnedAt ?? thread.updatedAt) : thread.updatedAt;
+  return (
+    <button type="button" className={`srow ${thread.unread ? "unread" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onOpen(thread.id)}>
+      <div className="srow-top">
+        <span className={`dot ${s.dot}`} />
+        <span className="srow-title">{thread.title}</span>
+        {r.byAi && <span className="tag ai">AI</span>}
+        {thread.unread > 0 && <span className="badge">{thread.unread}</span>}
+        <span className="srow-time">{waitedText(Date.now() - at)}</span>
+      </div>
+      <div className="srow-meta">
+        <span className={`t ${s.warn ? "warn" : ""}`}>{r.from === me && r.state === "open" ? `等 ${r.to} 处理` : s.text}</span>
+      </div>
+    </button>
+  );
+}
+
+function ChatRow({ thread, me, current, onOpen, onArchive }: { thread: Thread; me: string; current: boolean; onOpen: (id: string) => void; onArchive: (t: Thread, archived: boolean) => void }) {
+  const other = thread.members.find((n) => n !== me) ?? me;
+  return (
+    <div className="srow-wrap">
+      <button type="button" className={`srow ${thread.unread ? "unread" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onOpen(thread.id)}>
+        <div className="srow-top">
+          <Avatar name={other} small />
+          <span className="srow-title">{thread.kind === "direct" ? other : thread.title}</span>
+          {thread.unread > 0 && <span className="badge">{thread.unread}</span>}
+          <span className="srow-time">{timeText(thread.updatedAt)}</span>
+        </div>
+        <div className="srow-meta" style={{ paddingLeft: 28 }}>
+          {thread.kind === "topic" && <span className="chip">话题 · {other}</span>}
+          <span className="t">{preview(thread.last)}</span>
+        </div>
+      </button>
+      {thread.kind !== "direct" && (
+        <button type="button" className="small srow-archive" title={thread.archived ? "放回列表" : "归档：从列表收起，只影响你自己；有新消息会回来"} onClick={() => onArchive(thread, !thread.archived)}>
+          {thread.archived ? "放回" : "归档"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PersonView(props: { name: string; session: Session; threads: Thread[]; onChat: (name: string) => void; onAsk: (name: string) => void; onOpen: (id: string) => void }) {
+  const me = props.session.me.name;
+  const m = props.session.snapshot.members.find((x) => x.name === props.name);
+  const between = props.threads.filter((t) => t.kind === "request" && t.members.includes(props.name) && t.members.includes(me) && props.name !== me);
+  const live = between.filter((t) => t.request!.state !== "done");
+  return (
+    <section className="view">
+      <div className="person-head">
+        <Avatar name={props.name} />
+        <div className="grow">
+          <h2>{props.name}</h2>
+          <div className="dim small">
+            {m?.role || "（没写负责什么）"} · {m?.online ? "在线" : "不在线"}
+          </div>
+        </div>
+        {props.name !== me && (
+          <>
+            <button type="button" onClick={() => props.onChat(props.name)}>
+              私聊
+            </button>
+            <button type="button" className="primary" onClick={() => props.onAsk(props.name)}>
+              发起会话
+            </button>
+          </>
+        )}
+      </div>
+      <div className="pane">
+        <h3>和你之间进行中的会话 · {live.length}</h3>
+        {live.map((t) => (
+          <SessionRow key={t.id} thread={t} me={me} current={false} onOpen={props.onOpen} />
+        ))}
+        {!live.length && <div className="muted tiny">没有。</div>}
+      </div>
+    </section>
   );
 }
 
@@ -214,60 +395,7 @@ function ConnectionBar({ session }: { session: Session }) {
       <button type="button" className="link" onClick={() => session.reconnectNow()}>
         立即重连
       </button>
-      <span className="muted tiny grow">这段时间发不出消息；连上后会补上别人发来的。服务所在的电脑关机、睡眠或断网时会这样。</span>
-    </div>
-  );
-}
-
-function Group(props: {
-  title: string;
-  threads: Thread[];
-  me: string;
-  openId: string | null;
-  onOpen: (id: string) => void;
-  onArchive: (t: Thread, archived: boolean) => void;
-  highlight?: boolean;
-  collapsed?: boolean;
-}) {
-  const [folded, setFolded] = useState(!!props.collapsed);
-  if (!props.threads.length) return null;
-  const unread = props.threads.reduce((n, t) => n + t.unread, 0);
-  return (
-    <div className={`group ${props.highlight ? "hl" : ""}`}>
-      <button type="button" className="group-title" onClick={() => setFolded(!folded)}>
-        {folded ? "▸" : "▾"} {props.title} · {props.threads.length}
-        {folded && unread > 0 && <span className="badge">{unread}</span>}
-      </button>
-      {!folded &&
-        props.threads.map((t) => {
-          const other = t.members.find((n) => n !== props.me) ?? props.me;
-          return (
-            <div key={t.id} className="item-wrap">
-              <button type="button" className={`item ${t.id === props.openId ? "on" : ""} ${t.unread ? "unread" : ""}`} onClick={() => props.onOpen(t.id)}>
-                <div className="item-top">
-                  <span className="item-title ellipsis">{t.kind === "direct" ? other : t.title}</span>
-                  <span className="muted tiny">{timeText(t.updatedAt)}</span>
-                </div>
-                <div className="item-bottom">
-                  {t.request && (
-                    <>
-                      <RequestStatus thread={t} me={props.me} />
-                      <span className="muted tiny">{t.request.from === props.me ? `→ ${t.request.to}` : `${t.request.from} →`}</span>
-                    </>
-                  )}
-                  {t.kind === "topic" && <span className="chip">话题 · {other}</span>}
-                  <span className="muted tiny ellipsis grow">{preview(t.last)}</span>
-                  {t.unread > 0 && <span className="badge">{t.unread}</span>}
-                </div>
-              </button>
-              {t.kind !== "direct" && (
-                <button type="button" className="item-archive" title={t.archived ? "放回列表" : "归档：从列表收起，只影响你自己；有新消息会回来"} onClick={() => props.onArchive(t, !t.archived)}>
-                  {t.archived ? "放回" : "归档"}
-                </button>
-              )}
-            </div>
-          );
-        })}
+      <span className="muted tiny">这段时间发不出消息；连上后会补上别人发来的。服务所在的电脑关机、睡眠或断网时会这样。</span>
     </div>
   );
 }
@@ -293,10 +421,11 @@ function Dialog({ title, onClose, children, wide = false }: { title: string; onC
   );
 }
 
-function NewRequestDialog(props: { session: Session; people: string[]; onClose: () => void; onSent: (threadId: string) => void }) {
-  const [to, setTo] = useState(props.people[0] ?? "");
+function NewSessionDialog(props: { session: Session; people: string[]; to?: string; onClose: () => void; onSent: (threadId: string) => void }) {
+  const [to, setTo] = useState(props.to ?? props.people[0] ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [needsReply, setNeedsReply] = useState(true);
   const [questions, setQuestions] = useState<Array<{ text: string; options: string }>>([{ text: "", options: "" }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -314,7 +443,7 @@ function NewRequestDialog(props: { session: Session; people: string[]; onClose: 
             .filter(Boolean);
           return options.length ? { text: q.text.trim(), options } : { text: q.text.trim() };
         });
-      const { thread } = await props.session.client.ask({ to, title: title.trim(), body: body.trim(), questions: qs });
+      const { thread } = await props.session.client.ask({ to, title: title.trim(), body: body.trim(), questions: qs, needsReply });
       props.onSent(thread.id);
     } catch (err) {
       setError(errorText(err));
@@ -324,7 +453,7 @@ function NewRequestDialog(props: { session: Session; people: string[]; onClose: 
   };
 
   return (
-    <Dialog title="新请求" onClose={props.onClose} wide>
+    <Dialog title="新会话" onClose={props.onClose} wide>
       <div className="form">
         <label>
           发给
@@ -336,14 +465,14 @@ function NewRequestDialog(props: { session: Session; people: string[]; onClose: 
         </label>
         <label>
           标题
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="一句话说清要确认什么" autoFocus />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="一句话说清要对方处理什么" autoFocus />
         </label>
         <label>
           正文 <span className="muted tiny">（Markdown；对方看不到你本机的文件，关键内容贴进来）</span>
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={7} />
         </label>
         <div className="qs">
-          <div className="muted small">要对方逐条回答的问题</div>
+          <div className="dim tiny">要对方逐条回答的问题</div>
           {questions.map((q, i) => (
             <div key={i} className="q-row">
               <span className="rq-n">{i + 1}</span>
@@ -354,10 +483,14 @@ function NewRequestDialog(props: { session: Session; people: string[]; onClose: 
               </button>
             </div>
           ))}
-          <button type="button" className="link" onClick={() => setQuestions((list) => [...list, { text: "", options: "" }])}>
+          <button type="button" className="link" style={{ alignSelf: "flex-start" }} onClick={() => setQuestions((list) => [...list, { text: "", options: "" }])}>
             ＋ 再加一个问题
           </button>
         </div>
+        <label className="check">
+          <input type="checkbox" checked={needsReply} onChange={(e) => setNeedsReply(e.target.checked)} />
+          需要对方回复（对方不能直接标记完成，由你来标记）
+        </label>
         {error && <div className="notice error">{error}</div>}
         <div className="dialog-foot">
           <button type="button" onClick={props.onClose}>
@@ -382,7 +515,7 @@ function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void;
     return (
       <Dialog title="接入 AI" onClose={onClose}>
         <p>浏览器里没法让本机的 AI 直接接入。要用 MCP，请下载桌面客户端（服务器首页有下载）。</p>
-        <p className="muted">现在也可以点「复制用法」把说明贴给 agent，再把它写好的请求内容手动用「＋ 新请求」发出去。</p>
+        <p className="dim small">现在也可以点「复制用法」把说明贴给 agent，再把它写好的内容手动用「＋ 新会话」发出去。</p>
         <div className="dialog-foot">
           <button type="button" onClick={onCopyUsage}>
             复制用法
@@ -420,13 +553,13 @@ function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void;
   );
   return (
     <Dialog title="接入 AI（MCP）" onClose={onClose} wide>
-      <p className="muted small">
-        接好后，本机的 AI 用你现在登录的身份收发请求：能看到团队成员、给人发请求、取回复。换账号登录后，它跟着换。MCP 由这个客户端自带的运行时启动，本机不用装 Node。
+      <p className="dim small" style={{ margin: 0 }}>
+        接好后，本机的 AI 用你现在登录的身份收发会话：能看到团队成员、给人发会话、取回复并接着处理。换账号登录后，它跟着换。MCP 由这个客户端自带的运行时启动，本机不用装 Node。
       </p>
       {block("Claude Code", claude, "在终端里运行一次")}
       {block("Codex", toml, "加到 ~/.codex/config.toml")}
       {block("其他客户端", json, "支持 mcpServers JSON 的都可以")}
-      <p className="muted small">
+      <p className="dim small" style={{ margin: 0 }}>
         不支持 MCP 的 agent：点「复制用法」，说明里带着命令行用法（<code>{hookup.cli}</code>）。
       </p>
       <div className="dialog-foot">

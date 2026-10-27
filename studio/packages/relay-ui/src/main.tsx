@@ -4,15 +4,23 @@ import { shell } from "./env.js";
 import { Home } from "./Home.js";
 import { Login } from "./Login.js";
 import { Session, type Identity } from "./session.js";
+import { applyTheme, readTheme } from "./theme.js";
 import { takeResume } from "./update.js";
+// AMO Studio's fonts and theme variables, so the client looks like Studio (stage 2a).
+import "@fontsource-variable/noto-serif-sc";
+import "@fontsource-variable/jetbrains-mono";
+import "../../ui/src/styles/base.css";
 import "./styles.css";
+
+applyTheme(readTheme());
 
 // The AMO 中转 client's content: the login screen, then the conversations. The login is kept for the window
 // (sessionStorage), so a reload — an update applying itself — comes back signed in, with the same conversation open
 // (update.ts). The desktop client still asks at each start (its saved password fills the form).
 
 const SESSION = "amo-relay.session";
-const resume = takeResume();
+/** What was open before an update reloaded the page: for the first conversations screen only, not after a re-login. */
+let resumeOpen = takeResume()?.openId ?? null;
 
 function restored(): Identity | null {
   try {
@@ -55,6 +63,7 @@ function App() {
     await session.client.logout().catch(() => undefined);
     await shell?.signedIn(null);
     remember(null);
+    resumeOpen = null;
     setSession(null);
   };
 
@@ -65,7 +74,7 @@ function App() {
         <Login onSignedIn={(me) => (setFailed(null), remember(me), setSession(new Session(me)))} />
       </>
     );
-  return <Home session={session} onLogout={() => void logout()} resumeOpen={resume?.openId ?? null} />;
+  return <Home session={session} onLogout={() => void logout()} resumeOpen={resumeOpen} />;
 }
 
 createRoot(document.getElementById("root")!).render(

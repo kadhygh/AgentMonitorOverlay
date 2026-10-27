@@ -1,6 +1,8 @@
 # AMO 中转（amo-relay）
 
-局域网里的小工具：人和人互相发消息，AI 会话也能发一条「请求」给某个人，对方逐条回答。聊天记录都存在中转服务上。计划见 `plans/relay.md`。
+局域网里的小工具：人和人互相发消息；人或 AI 也能给某个人发一个「会话」，请他处理一件事，对方逐条回答后返回。聊天记录都存在中转服务上。计划见 `plans/relay.md`（阶段 1）和 `plans/relay-tasks.md`（阶段 2：会话、团队任务、文件和批注）。
+
+界面用的是 AMO Studio 的设计：主题变量直接引用 `packages/ui/src/styles/base.css`（支持浅色和深色），顶栏、左栏、会话列表和弹窗的做法也照 Studio 来。
 
 由四个包组成：
 
@@ -80,18 +82,25 @@ node ~/amo-relay/amo-relay.mjs serve --name 策划组 [--passphrase 邀请口令
 
 MCP 提供这几个工具：
 
-- `relay_people`
-- `relay_ask`
-- `relay_replies`
-- `relay_wait`
-- `relay_send`
+- `relay_people`：能找的人
+- `relay_session_open`：发会话
+- `relay_session_wait`：等对方返回
+- `relay_session_get`：取会话（含逐条回答）
+- `relay_session_reply`：继续追问（`then: "ask"`）、标记完成（`then: "done"`）或补充
+- `relay_session_handoff`：交给本人
+- `relay_queue`：待我这边处理的会话
+
+阶段 1 的旧名（`relay_ask`、`relay_replies`、`relay_wait`、`relay_send`）还能用。
+
+**会话的规则**：会话在谁手里就由谁处理。AI 发出的会话一定要回复，收到的人不能直接标记完成，只有发起方（人或者他的 AI）能标记完成。发起人的 AI 取过返回的会话后，界面上会显示「AI 已取回」；回复到了 10 分钟 AI 还没取，或者取回后 30 分钟没有动作，发起人的待处理里会高亮，可以「复制取回指令」或者「我来处理」。本人接手后，AI 再操作这个会话会被拒绝，直到本人点「交还给 AI」。
 
 工具的说明、「复制用法」的内容和 `amo-relay prompt` 打印的内容，都由同一处生成（`src/usage.ts`）。
 
 ## 命令行
 
 ```
-amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | ask --json <file|-> | replies [id] | wait <id> | send <id> --body …
+amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | ask --json <file|-> | replies [id] | wait <id>
+          | send <id> --body … [--then ask|done] | queue | handoff <id> --note …
 ```
 
 ## 接口
@@ -114,9 +123,10 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 | `POST /api/threads/direct` `{with}` | 打开和某人的普通聊天，没有就新建 |
 | `POST /api/threads/topic` `{with, title}` | 和某人新开一个话题 |
 | `POST /api/threads/:id/archive` `{archived}` | 在我自己的列表里归档或放回；普通聊天不能归档，有新消息会自动放回 |
-| `POST /api/requests` `{to, title, body, questions, via}` | 发请求，单独开一个对话 |
-| `GET /api/threads/:id/messages?after=` | 读消息 |
-| `POST /api/threads/:id/messages` `{kind: text\|reply, body, answers, verdict}` | 发消息或回复 |
+| `POST /api/requests` `{to, title, body, questions, needsReply, via}` | 发会话，单独开一个对话 |
+| `POST /api/threads/:id/session` `{action, note, via}` | `done` 标记完成 / `reopen` 重新打开 / `handle` 我来处理 / `toAi` 交还给 AI / `handoff` AI 交给本人 |
+| `GET /api/threads/:id/messages?after=&via=ai` | 读消息；`via=ai` 表示发起方的 AI 在取，返回的会话记为「AI 已取回」 |
+| `POST /api/threads/:id/messages` `{kind: text\|reply, body, answers, verdict, pass}` | 发消息或回复；回复会把会话还给发起方，`pass` 让一条普通消息也换手（继续追问） |
 | `POST /api/threads/:id/read` `{seq}` | 标记已读 |
 | `GET /api/wait?thread=&after=&timeout=` | 等对方的新消息，最多 10 分钟 |
 | `WS /ws?key=` | 推送 `hello` / `message` / `thread` / `archived` / `members` / `read` / `client` / `tick` |
@@ -126,4 +136,4 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 - 单测：`npx vitest run packages/relay packages/relay-app`
 - e2e：`npm run relay:release && npx playwright test -c e2e/playwright.config.ts --project relay`
 
-e2e 会启动两个客户端，依次跑：注册、AI 用命令行发请求、对方逐条回复、私聊、热更新；截图存在 `screenshots/relay/`。
+e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；截图存在 `screenshots/relay/`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。

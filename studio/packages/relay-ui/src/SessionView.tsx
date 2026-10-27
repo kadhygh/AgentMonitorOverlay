@@ -1,0 +1,283 @@
+import { useMemo, useState } from "react";
+import { sessionStatus, waitedText, AI_STUCK_MS, AI_LATE_MS } from "./bits.js";
+import { copyText } from "./env.js";
+import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
+import type { Session } from "./session.js";
+import { threadAsText, VERDICT_LABEL, type Answer, type Question, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+
+// A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
+// the person asked answers it one question at a time and returns it (回复并返回); back with the asker, their AI takes it
+// up by itself, or the asker does (我来处理), and asks again (继续追问) or closes it (标记完成). A session that needs a
+// reply — every one from an AI — cannot be closed by the person asked.
+
+export function SessionView({ session, thread, toast }: { session: Session; thread: ThreadView; toast: (text: string) => void }) {
+  const me = session.me.name;
+  const r = thread.request!;
+  const { messages, error } = useMessages(session, thread.id);
+  const [againOpen, setAgainOpen] = useState(false);
+  const status = sessionStatus(thread, me);
+  const questions = messages?.find((m) => m.kind === "request")?.questions ?? [];
+  const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
+  const myTurn = r.waitingOn === me && r.state !== "done";
+
+  const act = async (action: SessionAction, done: string) => {
+    try {
+      await session.client.session(thread.id, action);
+      toast(done);
+    } catch (err) {
+      toast(errorText(err));
+    }
+  };
+  const copyAll = async () => {
+    if (!messages) return;
+    await copyText(threadAsText(thread, messages));
+    toast("已复制整个会话（含逐条回答），可以贴给 AI");
+  };
+  const copyPickup = async () => {
+    await copyText(`用 amo-relay 的 relay_session_get 取会话 ${thread.id} 的回复，按团队流程继续；处理完用 relay_session_reply 继续追问（then: "ask"）或标记完成（then: "done"）。`);
+    toast("已复制取回指令，贴给任何 agent 都行");
+  };
+
+  let dock;
+  if (myTurn && r.to === me && r.state === "open") {
+    dock = <ReplyForm session={session} thread={thread} questions={questions} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} />;
+  } else if (r.to === me && againOpen) {
+    dock = <ReplyForm session={session} thread={thread} questions={questions} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
+  } else if (myTurn && r.state === "returned" && r.handler === "person") {
+    dock = (
+      <Composer
+        session={session}
+        threadId={thread.id}
+        pass
+        sendLabel="继续追问"
+        placeholder={`继续追问 ${r.to}…（发出后会话回到对方手里）`}
+        hint="你是发起人：问清楚了就标记完成"
+        extra={
+          <button type="button" onClick={() => void act("done", "会话已完成")}>
+            标记完成
+          </button>
+        }
+      />
+    );
+  } else if (myTurn && r.state === "returned") {
+    dock = (
+      <div className="dock">
+        <div className="acts">
+          <span className="why">这个会话由你的 AI 接着处理；要自己处理，点上面的「我来处理」</span>
+        </div>
+      </div>
+    );
+  } else if (r.state !== "done") {
+    dock = (
+      <Composer
+        session={session}
+        threadId={thread.id}
+        placeholder={`补充内容给 ${r.waitingOn === r.to ? r.to : r.from}…（会话仍在对方手里）`}
+        hint={status.text}
+        sendLabel="补充"
+        extra={
+          <>
+            {r.to === me && r.status === "answered" && (
+              <button type="button" onClick={() => setAgainOpen(true)}>
+                再回复一次
+              </button>
+            )}
+            {r.from === me && (
+              <button type="button" onClick={() => void act("done", "会话已撤回并完成")} title="不用对方再处理了">
+                撤回并标记完成
+              </button>
+            )}
+          </>
+        }
+      />
+    );
+  } else {
+    dock = (
+      <div className="dock">
+        <div className="acts">
+          <span className="why">已完成</span>
+          <button type="button" onClick={() => void act("reopen", `已重新打开，会话回到 ${r.to} 手里`)}>
+            重新打开
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="view" aria-label={thread.title}>
+      <header className="page-head">
+        <div className="head-main">
+          <div className="page-crumb">待处理 / 会话</div>
+          <h1 className="head-title">{thread.title}</h1>
+          <div className="head-meta">
+            <span>
+              {asker} → {r.to}
+            </span>
+            <span className={`chip ${status.warn ? "attn" : ""}`}>{status.text}</span>
+            {r.verdict && <span className={`chip v-${r.verdict}`}>{VERDICT_LABEL[r.verdict]}</span>}
+            {r.needsReply && <span className="chip">需要回复</span>}
+          </div>
+        </div>
+        <div className="head-actions">
+          <button type="button" onClick={() => void copyAll()} title="复制整个会话（含逐条回答），贴给 AI">
+            复制给 AI
+          </button>
+        </div>
+      </header>
+      <AiBand thread={thread} me={me} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onAct={(a, t) => void act(a, t)} />
+      <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
+      {dock}
+    </section>
+  );
+}
+
+/** Back with me and handled by my AI: has it taken it, is it stuck — and ways to take it myself. */
+function AiBand({ thread, me, onPickup, onCopy, onAct }: { thread: ThreadView; me: string; onPickup: () => void; onCopy: () => void; onAct: (a: SessionAction, toast: string) => void }) {
+  const r = thread.request!;
+  if (r.from !== me || r.state !== "returned" || r.waitingOn !== me) return null;
+  if (r.handler === "person") {
+    if (!r.byAi) return null;
+    return (
+      <div className="aiband">
+        你已从 AI 手里接手，这个会话之后由你处理；AI 再碰它时会被告知。
+        <span className="grow" />
+        <button type="button" className="small" onClick={() => onAct("toAi", "已交还给 AI")}>
+          交还给 AI
+        </button>
+      </div>
+    );
+  }
+  const now = Date.now();
+  const tools = (
+    <>
+      <button type="button" className="small" onClick={onPickup} title="一行提示词，贴给任何 agent，它就会去取这条回复并继续">
+        复制取回指令
+      </button>
+      <button type="button" className="small" onClick={onCopy}>
+        复制给 AI
+      </button>
+      <button type="button" className="small primary" onClick={() => onAct("handle", "你接手了：可以继续追问或标记完成")}>
+        我来处理
+      </button>
+    </>
+  );
+  if (r.pickedAt && now - r.pickedAt <= AI_STUCK_MS) {
+    return (
+      <div className="aiband">
+        ✓ 你的 AI 已取回回复（{waitedText(now - r.pickedAt)}前），正在处理，之后会继续追问或标记完成。
+        <span className="grow" />
+        <button type="button" className="small" onClick={() => onAct("handle", "你接手了：可以继续追问或标记完成")}>
+          我来处理
+        </button>
+      </div>
+    );
+  }
+  if (r.pickedAt) {
+    return (
+      <div className="aiband warn">
+        ! 你的 AI 取回回复后 {waitedText(now - r.pickedAt)}没有动作，可能卡住了（对话结束了，或者在等你）。
+        <span className="grow" />
+        {tools}
+      </div>
+    );
+  }
+  const late = now - (r.returnedAt ?? now) > AI_LATE_MS;
+  return (
+    <div className={`aiband ${late ? "warn" : ""}`}>
+      ○ 回复已到，你的 AI 还没取回（{waitedText(now - (r.returnedAt ?? now))}）。它在等就会自动拿到；没在等的话，新对话开始时会先查待处理。
+      <span className="grow" />
+      {tools}
+    </div>
+  );
+}
+
+function ReplyForm(props: { session: Session; thread: ThreadView; questions: Question[]; again?: boolean; onDone: () => void; onMarkDone?: () => void; onCancel?: () => void }) {
+  const { session, thread, questions } = props;
+  const r = thread.request!;
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const [note, setNote] = useState("");
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const answers = useMemo<Answer[]>(
+    () =>
+      questions
+        .map((q) => ({ questionId: q.id, choice: choice[q.id] || undefined, text: texts[q.id]?.trim() || undefined }))
+        .filter((a) => a.choice || a.text),
+    [questions, choice, texts],
+  );
+  const empty = !answers.length && !note.trim() && !verdict;
+
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await session.client.send(thread.id, { kind: "reply", answers, body: note.trim(), verdict: verdict ?? undefined });
+      props.onDone();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="dock reply-form">
+      <div className="dock-head">
+        <b>{props.again ? "再回复一次" : "处理这个会话"}</b>
+        <span className="muted tiny">逐条回答（不需要的可以空着）→ 写说明 → 选结论</span>
+      </div>
+      {questions.map((q, i) => (
+        <div key={q.id} className="rq">
+          <div className="rq-text">
+            <span className="rq-n">{i + 1}</span>
+            {q.text}
+          </div>
+          <div>
+            {q.options && (
+              <div className="options">
+                {q.options.map((o) => (
+                  <button key={o} type="button" className={`opt ${choice[q.id] === o ? "on" : ""}`} onClick={() => setChoice((c) => ({ ...c, [q.id]: c[q.id] === o ? "" : o }))}>
+                    {o}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input value={texts[q.id] ?? ""} onChange={(e) => setTexts((t) => ({ ...t, [q.id]: e.target.value }))} placeholder={q.options ? "补充说明，或写自己的答案" : "你的回答"} />
+          </div>
+        </div>
+      ))}
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="补充说明（支持 Markdown）" rows={2} />
+      <div className="dock-foot">
+        <div className="verdicts">
+          {(Object.keys(VERDICT_LABEL) as Verdict[]).map((v) => (
+            <button key={v} type="button" className={`small vbtn v-${v} ${verdict === v ? "on" : ""}`} onClick={() => setVerdict(verdict === v ? null : v)}>
+              {VERDICT_LABEL[v]}
+            </button>
+          ))}
+        </div>
+        {error && <span className="error tiny">{error}</span>}
+      </div>
+      <div className="acts">
+        <span className="why">{r.needsReply ? `${r.byAi ? "AI 发来的会话一定要回复" : "发起人要求回复"}；完成由发起方标记` : "不需要回复的话，也可以直接标记完成"}</span>
+        {props.onCancel && (
+          <button type="button" onClick={props.onCancel}>
+            取消
+          </button>
+        )}
+        {!r.needsReply && props.onMarkDone && (
+          <button type="button" onClick={props.onMarkDone}>
+            标记完成
+          </button>
+        )}
+        <button type="button" className="primary" disabled={busy || empty} onClick={() => void send()}>
+          回复并返回给 {r.from}
+          {r.byAi ? " 的 AI" : ""}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -277,6 +277,7 @@ export class RelayStore {
         status: row.req_status === "answered" ? "answered" : "open",
         verdict: row.req_verdict ? (String(row.req_verdict) as Verdict) : null,
         requestSeq: Number(row.req_seq),
+        byAi: (this.db.prepare("SELECT json_extract(via, '$.kind') AS k FROM messages WHERE seq = ?").get(Number(row.req_seq)) as Row | undefined)?.k === "ai",
         state: (row.s_state as SessionState | null) ?? "open",
         waitingOn: row.s_waiting == null ? null : String(row.s_waiting),
         handler: row.s_handler === "ai" ? "ai" : "person",

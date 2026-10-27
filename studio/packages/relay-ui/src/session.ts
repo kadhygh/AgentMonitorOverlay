@@ -133,6 +133,7 @@ export class Session {
     else if (e.type === "members") this.set({ members: e.members });
     else if (e.type === "thread") this.adopt({ ...e.thread, unread: 0, readSeq: 0, last: null, archived: false });
     else if (e.type === "archived") this.patchThread(e.threadId, { archived: e.archived });
+    else if (e.type === "updated") this.patchThread(e.thread.id, e.thread);
     else if (e.type === "read") {
       this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)) });
     } else if (e.type === "message") {

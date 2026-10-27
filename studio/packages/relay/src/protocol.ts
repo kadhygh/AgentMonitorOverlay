@@ -74,6 +74,8 @@ export interface RequestState {
   state: SessionState;
   /** Who acts next; null when done. */
   waitingOn: string | null;
+  /** The request was sent by the asker's AI (MCP or command line). */
+  byAi: boolean;
   /** Who handles the asking side: the AI that sent it, or the person (after 我来处理, or when they sent it). */
   handler: "ai" | "person";
   /** The person asked must reply: they cannot mark it done (all sessions from an AI). */

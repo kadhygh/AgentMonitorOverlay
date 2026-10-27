@@ -126,7 +126,7 @@ describe("RelayStore", () => {
     team();
     const ai = { kind: "ai", client: "claude-code" } as const;
     const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "见附件", questions: [{ text: "推进方式", options: ["主干", "分支"] }], via: ai });
-    expect(thread.request).toMatchObject({ state: "open", waitingOn: "程序老李", handler: "ai", needsReply: true, returnedAt: null, pickedAt: null });
+    expect(thread.request).toMatchObject({ byAi: true, state: "open", waitingOn: "程序老李", handler: "ai", needsReply: true, returnedAt: null, pickedAt: null });
     // A person's own session may let the other close it.
     const loose = store.createRequest("策划小王", { to: "程序老李", title: "顺便", body: "看一眼", needsReply: false }).thread;
     expect(loose.request).toMatchObject({ handler: "person", needsReply: false });
