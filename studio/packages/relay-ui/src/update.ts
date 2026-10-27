@@ -4,10 +4,11 @@ import { RelayClient, type Health, type UpdateInfo } from "./shared.js";
 
 // Updates and the service's state, for the login screen and the conversations.
 //
-// The client updates itself: the loader installs a newer build at start; while running, the service says when it has a
-// new one (/ws, or the version in /api/health on the login screen), and the update is applied as soon as nothing would
-// be lost — the window is not being used and nothing is typed (canApply). Applying reloads the page in place (the
-// desktop shell downloads the build first; a browser just reloads /app/); what was open comes back (resume).
+// The loader installs a newer build at start, and the login screen applies one by itself until something is typed
+// (canApply). Once signed in it is by hand (2026-10-27, the user's call: an update that applied itself while the window
+// was away went unnoticed): the service says when it has a new one (/ws), the bottom left offers 「立即更新」. Applying
+// reloads the page in place (the desktop shell downloads the build first; a browser just reloads /app/); what was open
+// comes back (resume).
 
 const RESUME = "amo-relay.resume";
 const AUTO_CHECK_MS = 5000;
@@ -69,9 +70,9 @@ export interface Updates {
 
 /**
  * `latest`: the client version the service hands out, as last heard. `canApply` says whether applying now would lose
- * nothing; `beforeApply` keeps what should come back after the reload.
+ * nothing — without it the update waits for `apply`; `beforeApply` keeps what should come back after the reload.
  */
-export function useUpdates(latest: string | null, canApply: () => boolean | Promise<boolean>, beforeApply: (version: string) => void = () => undefined): Updates {
+export function useUpdates(latest: string | null, canApply: (() => boolean | Promise<boolean>) | null, beforeApply: (version: string) => void = () => undefined): Updates {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,10 +118,11 @@ export function useUpdates(latest: string | null, canApply: () => boolean | Prom
   }, [update]);
 
   useEffect(() => {
-    if (!update || update.needShell || progress) return;
+    if (!update || update.needShell || progress || !live.current.canApply) return;
     const t = setInterval(() => {
-      if (failed.current === update.latest) return;
-      void Promise.resolve(live.current.canApply()).then((ok) => {
+      const canApply = live.current.canApply;
+      if (failed.current === update.latest || !canApply) return;
+      void Promise.resolve(canApply()).then((ok) => {
         if (ok) void apply();
       });
     }, AUTO_CHECK_MS);

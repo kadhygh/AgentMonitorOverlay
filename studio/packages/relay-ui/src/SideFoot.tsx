@@ -41,7 +41,7 @@ export interface FootActions {
   onSettings: () => void;
 }
 
-export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean; updatedTo: string | null; onUpdatedSeen: () => void } & FootActions) {
+export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean } & FootActions) {
   const { session, mine, handed, waiting, updates, shellUpdate } = props;
   const { connection, offlineSince, retryAt, settings } = useSession(session);
   const now = useSecondTick(connection === "offline");
@@ -61,9 +61,8 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
   if (u) {
     if (u.needShell) strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={`${u.latest} 要换新的桌面程序`} action="下载" onClick={() => shell?.openExternal(session.me.server)} />);
     else if (updates.progress) strips.push(<Strip key="u" tone="info" mark="↑" title={`正在更新到 ${u.latest}…`} sub={`${Math.round((updates.progress.done / Math.max(updates.progress.total, 1)) * 100)}%`} />);
-    else strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={updates.error ? `更新失败：${updates.error}` : `${u.latest} · 不用时自动更新`} action="立即更新" onClick={() => void updates.apply()} />);
+    else strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={updates.error ? `更新失败：${updates.error}` : `${u.latest} · 点一下更新，正在看的会保留`} action="立即更新" onClick={() => void updates.apply()} />);
   }
-  else if (props.updatedTo) strips.push(<Strip key="u" tone="info" mark="✓" title="已自动更新到新版本" sub={`${props.updatedTo} · 你没在用时装好的`} action="知道了" onClick={props.onUpdatedSeen} />);
   if (shellUpdate)
     strips.push(
       <Strip key="s" tone="info" mark="↑" title="桌面程序可更新" sub={shellUpdate.kind === "auto" ? `新版 ${shellUpdate.target?.build ?? ""}，点一下更新并重启` : "换新的桌面程序才有新标题栏等功能"} action="更新" onClick={props.onShellUpdate} />,

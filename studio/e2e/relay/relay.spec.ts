@@ -382,20 +382,21 @@ test("register, an AI's request answered in the other client, updates, the servi
   const myState = again.page.locator(".me-chip .conn-chip");
   await expect(myState).toHaveText("服务器在线");
 
-  // Published while signed in, the window closed to the tray (not in use): it updates by itself and comes back signed
-  // in, the same conversation open.
+  // Published while signed in: even with the window in the tray (not in use) it waits — the bottom left offers it; a
+  // click updates and comes back signed in, the same conversation open.
   const third = `${manifest.version}-third`;
   publish(third);
   await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
+  const updateStrip = again.page.locator(".strip", { hasText: "有新版本" });
+  await expect(updateStrip).toContainText(third, { timeout: 15_000 });
+  await again.page.waitForTimeout(7000);
+  expect(await again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion)).not.toBe(third);
+  await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
+  await updateStrip.click();
   await expect.poll(() => again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion).catch(() => "reloading"), { timeout: 30_000 }).toBe(third);
   await expect(again.page.locator(".scope-nav .srow[aria-current=true]")).toContainText("数值平衡", { timeout: 15_000 });
   await expect(again.page.locator(".head-title")).toHaveText("数值平衡");
-  // Nobody watched it happen: the bottom left says so until clicked away.
-  const updatedStrip = again.page.locator(".strip", { hasText: "已自动更新到新版本" });
-  await expect(updatedStrip).toContainText(third);
-  await updatedStrip.click();
-  await expect(updatedStrip).toHaveCount(0);
-  await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
+  await expect(updateStrip).toHaveCount(0);
 
   // The service goes away: the bar over the conversation, members' state unknown; the other one logs out and its
   // login screen says the service is offline. It comes back: both see it without doing anything.

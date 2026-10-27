@@ -15,7 +15,7 @@ import { flowIsNew, markFlowSeen, SideFoot } from "./SideFoot.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { writeUsageFile } from "./usageFile.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
-import { pageHasDraft, pageIsIdle, saveResume, useUpdates } from "./update.js";
+import { saveResume, useUpdates } from "./update.js";
 
 // After login, in AMO Studio's layout (stages 2a–2b, plans/relay-tasks.md): the top bar with four views — 待处理 (tasks
 // handed to me and the sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones),
@@ -51,11 +51,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [archOpen, setArchOpen] = useState(false);
   const openRef = useRef(openId);
   openRef.current = openId;
-  const updates = useUpdates(
-    client,
-    async () => !pageHasDraft() && (await pageIsIdle()),
-    (version) => saveResume({ openId: openRef.current, updatedTo: version }),
-  );
+  const updates = useUpdates(client, null, (version) => saveResume({ openId: openRef.current, updatedTo: version }));
 
   const checkHealth = useCallback(() => session.client.health(), [session]);
   const shellUpdate = useShellUpdate(checkHealth);
@@ -63,9 +59,10 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     setToastText(text);
     setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
   }, []);
-  // An update that applied itself (the window was not in use, so a toast then goes unseen): a strip at the bottom left
-  // until it is clicked away.
-  const [updatedNote, setUpdatedNote] = useState(updatedTo);
+  // Back from 「立即更新」: say it took.
+  useEffect(() => {
+    if (updatedTo) toast(`已更新到 ${updatedTo}`);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups = useMemo(() => {
     const sessions = threads.filter((t) => t.kind === "request");
@@ -374,8 +371,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             updates={updates}
             shellUpdate={shellUpdate}
             flowNew={flowIsNew(flowDoc, me, session.me.server)}
-            updatedTo={updatedNote}
-            onUpdatedSeen={() => setUpdatedNote(null)}
             onQueue={() => goQueue("mine")}
             onWaiting={() => goQueue("waiting")}
             onShellUpdate={() => setDialog({ kind: "oldShell" })}
