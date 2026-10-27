@@ -147,6 +147,12 @@ export function sumRange(data: ByDate, ids: readonly string[], from: string, to:
   return { total, per };
 }
 
+/** The models used in [from, to] — the only ones the page shows for that range — and their totals there. */
+export function activeModels(data: ByDate, models: readonly StatModel[], from: string, to: string): { active: StatModel[]; per: Record<string, Usage> } {
+  const { per } = sumRange(data, models.map((m) => m.id), from, to);
+  return { active: models.filter((m) => value(per[m.id], "all") > 0), per };
+}
+
 /** The first day with any use, or null. */
 export const firstDate = (data: ByDate): string | null => [...data.keys()].sort()[0] ?? null;
 

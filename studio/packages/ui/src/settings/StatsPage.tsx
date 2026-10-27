@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import type { TokenStats } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import {
-  addDays, byDate, columns, firstDate, fmtTokens, mondayOf, niceMax, rangeStart, smoothPath, statModels, sumRange, value, ymd,
+  activeModels, addDays, byDate, columns, firstDate, fmtTokens, mondayOf, niceMax, rangeStart, smoothPath, statModels, sumRange, value, ymd,
   type ByDate, type Column, type Grain, type Metric, type StatModel, type Usage,
 } from "./statsData.js";
 
@@ -89,8 +89,12 @@ export function StatsPage({ link }: { link: HostLink }) {
   const today = useMemo(() => (stats ? new Date(stats.generatedAt) : new Date()), [stats]);
   const models = useMemo(() => (stats ? statModels(stats) : []), [stats]);
   const data = useMemo<ByDate>(() => (stats ? byDate(stats, models) : new Map()), [stats, models]);
-  const shown = models.filter((m) => !hidden.has(m.id));
-  const ids = shown.map((m) => m.id);
+  // Only the models with use in the range picked: one unused there leaves the legend, the charts and the tables.
+  const { active, per: inRange } = useMemo(() => activeModels(data, models, rangeStart(grain, today, data), ymd(today)), [data, models, grain, today]);
+  const picked = active.filter((m) => !hidden.has(m.id));
+  // Those hidden in another range may be all there is here: then they show.
+  const shown = picked.length ? picked : active;
+  const ids = models.filter((m) => !hidden.has(m.id)).map((m) => m.id);
   const cols = useMemo(() => (grain === "total" ? [] : columns(data, grain, today)), [data, grain, today]);
 
   const head = (
@@ -128,7 +132,6 @@ export function StatsPage({ link }: { link: HostLink }) {
     else if (shown.length > 1) next.add(id);
     setHidden(next);
   };
-  const legendTotals = sumRange(data, models.map((m) => m.id), rangeStart(grain, today, data), ymd(today)).per;
   const metricLabel = METRICS.find((m) => m.id === metric)!.label;
 
   return (
@@ -158,23 +161,27 @@ export function StatsPage({ link }: { link: HostLink }) {
         <button type="button" className="stats-chip all" onClick={() => setHidden(new Set())}>
           {hidden.size ? "全部显示" : "全部模型"}
         </button>
-        {models.map((m) => (
+        {active.map((m) => (
           <button
             key={m.id}
             type="button"
             className="stats-chip"
-            aria-pressed={!hidden.has(m.id)}
-            title={`${m.sub}：点一下${hidden.has(m.id) ? "显示" : "隐藏"}`}
+            aria-pressed={shown.includes(m)}
+            title={`${m.sub}：点一下${shown.includes(m) ? "隐藏" : "显示"}`}
             data-testid="stats-model"
             onClick={() => toggle(m.id)}
           >
             <span className="stats-sw" style={{ background: m.color }} />
             {m.label}
-            <span className="stats-chip-v">{fmtTokens(value(legendTotals[m.id], metric))}</span>
+            <span className="stats-chip-v">{fmtTokens(value(inRange[m.id], metric))}</span>
           </button>
         ))}
       </div>
 
+      {!active.length ? (
+        <span className="settings-hint" data-testid="stats-none">{RANGE[grain]}没有用量。</span>
+      ) : (
+        <>
       <div className="stats-card">
         <div className="stats-card-head">
           <span className="stats-card-title">{grain === "total" ? "各模型合计" : `每${{ day: "天", week: "周", month: "月" }[grain]}用量`}</span>
@@ -213,6 +220,8 @@ export function StatsPage({ link }: { link: HostLink }) {
         </div>
         <Detail data={data} models={shown} from={rangeStart(grain, today, data)} to={ymd(today)} />
       </div>
+        </>
+      )}
       <span className="settings-hint">
         按每一轮开始的那天算（本机时间）。输入不含缓存命中；子 agent 和委派会话算在它们自己用的模型下。只算 Studio 记下用量的轮次：Studio 开始记之前的、和中途被打断没回报用量的不在里面。
       </span>
@@ -421,6 +430,7 @@ function Tip({ col, models, metric, total, left, top }: { col: Column; models: S
       </div>
       {[...models].reverse().map((m) => {
         const v = value(col.values[m.id], metric);
+        if (!v) return null;
         return (
           <div key={m.id} className="stats-tip-row">
             <span className="stats-sw" style={{ background: m.color }} />

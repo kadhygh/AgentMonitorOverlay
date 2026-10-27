@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TokenStats, TokenStatsDay } from "@amo-studio/protocol";
-import { byDate, columns, fmtTokens, niceMax, rangeStart, statModels, sumRange, value } from "./statsData.js";
+import { activeModels, byDate, columns, fmtTokens, niceMax, rangeStart, statModels, sumRange, value } from "./statsData.js";
 
 // 设置 → 统计 (2026-10-27).
 
@@ -52,6 +52,12 @@ describe("token stats in 设置", () => {
     expect(rangeStart("week", today, data)).toBe("2026-08-10");
     expect(rangeStart("total", today, data)).toBe("2025-11-15");
     expect(sumRange(data, ["a"], "2026-10-26", "2026-10-27").total).toEqual({ input: 15, cached: 3, output: 1, turns: 2 });
+    // A model unused in the range is left out of it.
+    const two = stats([day("2026-10-27", "a", 5), day("2026-08-01", "b", 9)]);
+    const twoModels = statModels(two);
+    const twoData = byDate(two, twoModels);
+    expect(activeModels(twoData, twoModels, rangeStart("day", today, twoData), "2026-10-27").active.map((m) => m.id)).toEqual(["a"]);
+    expect(activeModels(twoData, twoModels, rangeStart("total", today, twoData), "2026-10-27").active.map((m) => m.id)).toEqual(["b", "a"]);
   });
 
   it("writes tokens in 万 and 亿, and picks round axis tops", () => {
