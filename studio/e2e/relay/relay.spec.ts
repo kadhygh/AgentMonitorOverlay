@@ -273,13 +273,27 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.getByRole("button", { name: "任务", exact: true }).first().click();
   await expect(a.page.getByRole("button", { name: "已归档 1" })).toBeVisible();
 
-  await a.page.getByRole("button", { name: "更多 ▾" }).click();
-  await a.page.getByRole("menuitem", { name: "设置" }).click();
-  await a.page.locator(".dialog textarea").nth(1).fill("策划在主分支直接推进\n先做一个可玩的原型");
-  await a.page.getByRole("button", { name: "保存" }).click();
+  // 设置 · 团队流程: the flow document goes up to the service (its copy button works, scripts allowed), a phrase is added.
+  await a.page.getByRole("button", { name: "设置", exact: true }).click();
+  await a.page.locator(".settings-nav").getByRole("button", { name: "团队流程" }).click();
+  const flowHtml = `<!doctype html><html><head><title>流程</title></head><body><h1>团队流程</h1><button id="copy" onclick="navigator.clipboard.writeText('按团队流程推进这个任务')">复制提示词</button></body></html>`;
+  await a.page.locator('.flow-card input[type="file"]').setInputFiles({ name: "团队流程.html", mimeType: "text/html", buffer: Buffer.from(flowHtml) });
+  await expect(a.page.locator(".flow-card")).toContainText("第 1 版");
+  await a.page.locator(".kw-add").fill("先做一个可玩的原型");
+  await a.page.keyboard.press("Enter");
+  await shot(a.app, "21-settings-flow");
+  await a.page.locator(".dialog-foot").getByRole("button", { name: "保存" }).click();
   await b.page.getByRole("button", { name: "流程速查" }).click();
   await expect(b.page.locator(".dialog")).toContainText("先做一个可玩的原型");
   await b.page.locator(".dialog").getByRole("button", { name: "好" }).click();
+  const flowShortcut = b.page.locator(".shortcut", { hasText: "团队流程" });
+  await expect(flowShortcut).toContainText("有更新");
+  await flowShortcut.click();
+  await b.page.frameLocator(".doc-frame").locator("#copy").click();
+  await expect(b.page.locator(".toast")).toHaveText("已复制");
+  expect(await b.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("按团队流程推进这个任务");
+  await b.page.locator(".viewer-foot").getByRole("button", { name: "完成" }).click();
+  await expect(flowShortcut).not.toContainText("有更新");
 
   // Direct chat both ways, from 成员.
   await b.page.locator(".view-tab", { hasText: "成员" }).click();
@@ -382,30 +396,34 @@ test("register, an AI's request answered in the other client, updates, the servi
   // login screen says the service is offline. It comes back: both see it without doing anything.
   const port = server.port;
   await server.close();
-  await expect(again.page.locator(".conn-bar")).toContainText("和服务器断开了", { timeout: 15_000 });
+  await expect(again.page.locator(".strip.error")).toContainText("服务器离线", { timeout: 15_000 });
   await expect(myState).toHaveText("服务器离线");
   await again.page.locator(".view-tab", { hasText: "成员" }).click();
   await expect(again.page.locator(".scope-nav")).toContainText("在线状态未知");
   await shot(again.app, "06-offline-bar");
-  await b.page.getByRole("button", { name: "更多 ▾" }).click();
-  await b.page.getByRole("menuitem", { name: "退出登录" }).click();
+  await b.page.getByRole("button", { name: "设置", exact: true }).click();
+  await b.page.locator(".settings-nav").getByRole("button", { name: "我的资料" }).click();
+  await b.page.getByRole("button", { name: "退出登录" }).click();
   await expect(b.page.locator(".server-down")).toContainText("服务器离线", { timeout: 15_000 });
   await expect(b.page.getByRole("button", { name: /服务器离线/ })).toBeDisabled();
   await shot(b.app, "07-login-offline");
   server = await startServer(port);
-  await again.page.getByRole("button", { name: "立即重连" }).click();
-  await expect(again.page.locator(".conn-bar")).toHaveCount(0, { timeout: 15_000 });
+  await again.page.locator(".strip.error").click();
+  await expect(again.page.locator(".strip.error")).toHaveCount(0, { timeout: 15_000 });
   await expect(myState).toHaveText("服务器在线");
   await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
   await b.page.getByRole("button", { name: "登录" }).click();
   await expect(b.page.locator(".view-tabs")).toBeVisible();
 
   // Both themes: Studio's dark one too.
-  for (let i = 0; i < 2; i++) {
-    await b.page.getByRole("button", { name: "更多 ▾" }).click();
-    await b.page.getByRole("menuitem", { name: /主题/ }).click();
-  }
+  // 设置 · 通用: dark, and a bigger font for the text.
+  await b.page.getByRole("button", { name: "设置", exact: true }).click();
+  await b.page.getByRole("radio", { name: "深色" }).click();
+  await b.page.getByRole("radio", { name: /^大/ }).click();
   await expect(b.page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await b.page.evaluate(() => getComputedStyle(document.body).fontSize)).toBe("15px");
+  await shot(b.app, "22-settings-general");
+  await b.page.keyboard.press("Escape");
   await b.page.locator(".view-tab", { hasText: "待处理" }).click();
   await b.page.locator(".nav-fold", { hasText: "已完成" }).click();
   await row(b.page, "技能冷却按等级递减").click();

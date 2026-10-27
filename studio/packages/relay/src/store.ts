@@ -46,6 +46,8 @@ export class RelayError extends Error {
   }
 }
 
+/** The team's files that are not a task's or a session's. */
+const SLOTS = ["flow"];
 const LIMITS = { password: 128, name: 32, role: 60, title: 200, body: 200_000, questions: 30, question: 2_000, options: 12, option: 200, answer: 20_000 };
 const VERDICTS = new Set<Verdict>(["agree", "change", "question"]);
 
@@ -851,12 +853,13 @@ export class RelayStore {
   settings(): TeamSettings {
     const rows = this.db.prepare("SELECT key, value FROM settings").all() as Row[];
     const got = Object.fromEntries(rows.map((r) => [String(r.key), JSON.parse(String(r.value)) as unknown]));
-    return { ...DEFAULT_SETTINGS, ...got } as TeamSettings;
+    return { ...DEFAULT_SETTINGS, ...got, flowDoc: this.slotFile("flow") } as TeamSettings;
   }
 
   saveSettings(patch: Partial<Record<keyof TeamSettings, unknown>>): TeamSettings {
     const out: Partial<TeamSettings> = {};
     if (patch.flow !== undefined) out.flow = text(patch.flow, "团队流程", LIMITS.body, false);
+    if (patch.flowScripts !== undefined) out.flowScripts = patch.flowScripts === true;
     if (patch.keywords !== undefined) {
       if (!Array.isArray(patch.keywords)) throw new RelayError("bad_request", "关键词必须是列表");
       out.keywords = patch.keywords.map((k) => text(k, "关键词", LIMITS.answer)).slice(0, 50);
@@ -889,11 +892,20 @@ export class RelayStore {
     `);
     const columns = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
     if (!columns.includes("s_files")) this.db.exec("ALTER TABLE threads ADD COLUMN s_files TEXT");
+    const fileColumns = (this.db.prepare("PRAGMA table_info(files)").all() as Row[]).map((r) => String(r.name));
+    if (!fileColumns.includes("slot")) this.db.exec("ALTER TABLE files ADD COLUMN slot TEXT");
+  }
+
+  /** Where a file's versions are counted: by name in a task or a session; a team slot holds one file whatever its name. */
+  private place(f: { slot?: unknown; task_id?: unknown; thread_id?: unknown; name?: unknown }): { where: string; args: string[] } {
+    if (f.slot != null) return { where: "slot = ?", args: [String(f.slot)] };
+    if (f.task_id != null) return { where: "task_id = ? AND name = ?", args: [String(f.task_id), String(f.name)] };
+    return { where: "thread_id = ? AND name = ?", args: [String(f.thread_id), String(f.name)] };
   }
 
   private toFile(row: Row): RelayFile {
-    const scope = row.task_id != null ? "task_id = ?" : "thread_id = ?";
-    const versions = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM files WHERE ${scope} AND name = ?`).get(String(row.task_id ?? row.thread_id), String(row.name)) as Row).n);
+    const at = this.place(row);
+    const versions = Number((this.db.prepare(`SELECT COUNT(*) AS n FROM files WHERE ${at.where}`).get(...at.args) as Row).n);
     return {
       id: String(row.id),
       name: String(row.name),
@@ -906,11 +918,12 @@ export class RelayStore {
       at: Number(row.at),
       taskId: row.task_id == null ? null : String(row.task_id),
       threadId: row.thread_id == null ? null : String(row.thread_id),
+      slot: row.slot == null ? null : String(row.slot),
       notes: this.noteCount(String(row.id)),
     };
   }
 
-  /** A task's files are the team's; a session's, its two people's. */
+  /** A task's files and the team's slots are everyone's; a session's, its people's. */
   file(id: string, name: string): RelayFile {
     const row = this.db.prepare("SELECT * FROM files WHERE id = ?").get(id) as Row | undefined;
     if (!row) throw new RelayError("not_found", `没有这个文件：${id}`);
@@ -919,19 +932,20 @@ export class RelayStore {
   }
 
   /** A new file, or a new version of the one with the same name in the same place. */
-  addFile(actor: string, f: { taskId?: string | null; threadId?: string | null; name: unknown; size: number; type?: string; sha256: string; id: string; via?: Via }): RelayFile {
+  addFile(actor: string, f: { taskId?: string | null; threadId?: string | null; slot?: string | null; name: unknown; size: number; type?: string; sha256: string; id: string; via?: Via }): RelayFile {
     const name = text(f.name, "文件名", 200).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_");
-    if (!f.taskId === !f.threadId) throw new RelayError("bad_request", "文件要放在一个任务或一个会话里");
+    if ([f.taskId, f.threadId, f.slot].filter(Boolean).length !== 1) throw new RelayError("bad_request", "文件要放在一个任务、一个会话或团队流程里");
+    if (f.slot && !SLOTS.includes(f.slot)) throw new RelayError("bad_request", `没有这个位置：${f.slot}`);
+    if (f.slot === "flow" && !/\.(html?|md|markdown)$/i.test(name)) throw new RelayError("bad_request", "团队流程要是 HTML 或 Markdown 文件");
     if (f.taskId) this.taskRow(f.taskId);
     if (f.threadId) this.thread(f.threadId, actor);
-    const scope = f.taskId ? "task_id = ?" : "thread_id = ?";
-    const key = (f.taskId ?? f.threadId)!;
+    const place = this.place({ slot: f.slot, task_id: f.taskId, thread_id: f.threadId, name });
     return this.tx(() => {
-      const version = Number((this.db.prepare(`SELECT COALESCE(MAX(version), 0) AS v FROM files WHERE ${scope} AND name = ?`).get(key, name) as Row).v) + 1;
+      const version = Number((this.db.prepare(`SELECT COALESCE(MAX(version), 0) AS v FROM files WHERE ${place.where}`).get(...place.args) as Row).v) + 1;
       const at = this.now();
       this.db
-        .prepare("INSERT INTO files (id, task_id, thread_id, name, version, size, type, sha256, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(f.id, f.taskId ?? null, f.threadId ?? null, name, version, f.size, f.type || "application/octet-stream", f.sha256, actor, at);
+        .prepare("INSERT INTO files (id, task_id, thread_id, slot, name, version, size, type, sha256, by_name, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(f.id, f.taskId ?? null, f.threadId ?? null, f.slot ?? null, name, version, f.size, f.type || "application/octet-stream", f.sha256, actor, at);
       if (f.taskId) this.addTaskEvent(f.taskId, actor, checkVia(f.via), "file", `上传 ${name} v${version}`, { fileId: f.id });
       if (f.threadId) this.db.prepare("UPDATE threads SET updated_at = ? WHERE id = ?").run(at, f.threadId);
       return this.file(f.id, actor);
@@ -954,8 +968,14 @@ export class RelayStore {
   /** Every version of a file, newest first. */
   versionsOf(id: string, name: string): RelayFile[] {
     const f = this.file(id, name);
-    const scope = f.taskId ? "task_id = ?" : "thread_id = ?";
-    return (this.db.prepare(`SELECT * FROM files WHERE ${scope} AND name = ? ORDER BY version DESC`).all(f.taskId ?? f.threadId, f.name) as Row[]).map((r) => this.toFile(r));
+    const place = this.place({ slot: f.slot, task_id: f.taskId, thread_id: f.threadId, name: f.name });
+    return (this.db.prepare(`SELECT * FROM files WHERE ${place.where} ORDER BY version DESC`).all(...place.args) as Row[]).map((r) => this.toFile(r));
+  }
+
+  /** The newest file in a team slot. */
+  slotFile(slot: string): RelayFile | null {
+    const row = this.db.prepare("SELECT * FROM files WHERE slot = ? ORDER BY version DESC LIMIT 1").get(slot) as Row | undefined;
+    return row ? this.toFile(row) : null;
   }
 
   private attachedTo(threadId: string): string[] {

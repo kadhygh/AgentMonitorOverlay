@@ -269,7 +269,7 @@ describe("RelayStore", () => {
     expect([v1.version, v2.version, v2.versions]).toEqual([1, 2, 2]);
     expect(store.task(t.id).files.map((f) => f.id)).toEqual(["f_2"]);
     expect(store.taskEvents(t.id).filter((e) => e.kind === "file").map((e) => e.text)).toEqual(["上传 designdoc.md v1", "上传 designdoc.md v2"]);
-    expect(() => store.addFile("策划小王", { id: "f_x", name: "a", size: 1, sha256: "x" })).toThrow(/一个任务或一个会话/);
+    expect(() => store.addFile("策划小王", { id: "f_x", name: "a", size: 1, sha256: "x" })).toThrow(/一个任务、一个会话或团队流程/);
 
     // A session takes the task's file along and gets one of its own; outsiders see neither of the session's.
     const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "见附件", taskId: t.id, files: ["f_2"] });
@@ -327,6 +327,19 @@ describe("RelayStore", () => {
     const s = store.saveSettings({ flow: "先对需求再开发", aiLateMinutes: 5 });
     expect(s).toMatchObject({ flow: "先对需求再开发", aiLateMinutes: 5, aiStuckMinutes: 30 });
     expect(() => store.saveSettings({ aiStuckMinutes: 0 })).toThrow(/1 到 1440/);
+  });
+
+  it("keeps the team's flow document as one file with versions, whatever its name", () => {
+    team();
+    expect(store.settings()).toMatchObject({ flowDoc: null, flowScripts: true });
+    store.addFile("策划小王", { id: "f_f1", slot: "flow", name: "团队流程.html", size: 3, type: "text/html", sha256: "a" });
+    const v2 = store.addFile("程序老李", { id: "f_f2", slot: "flow", name: "流程-v2.html", size: 4, type: "text/html", sha256: "b" });
+    expect(v2).toMatchObject({ version: 2, versions: 2, slot: "flow", taskId: null, threadId: null });
+    expect(store.settings().flowDoc).toMatchObject({ id: "f_f2", by: "程序老李" });
+    expect(store.versionsOf("f_f1", "策划小王").map((f) => f.version)).toEqual([2, 1]);
+    expect(() => store.addFile("策划小王", { id: "f_f3", slot: "flow", name: "a.png", size: 1, sha256: "c" })).toThrow(/HTML 或 Markdown/);
+    expect(() => store.addFile("策划小王", { id: "f_f4", slot: "other", name: "a.md", size: 1, sha256: "c" })).toThrow(/没有这个位置/);
+    expect(store.saveSettings({ flowScripts: false }).flowScripts).toBe(false);
   });
 
   it("keeps people out of threads they are not in", () => {

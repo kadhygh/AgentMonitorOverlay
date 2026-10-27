@@ -4,7 +4,7 @@ import { shell } from "./env.js";
 import { Home } from "./Home.js";
 import { Login } from "./Login.js";
 import { Session, type Identity } from "./session.js";
-import { applyTheme, readTheme } from "./theme.js";
+import { applyFontSize, applyTheme, readFontSize, readTheme } from "./theme.js";
 import { takeResume } from "./update.js";
 // AMO Studio's fonts and theme variables, so the client looks like Studio (stage 2a).
 import "@fontsource-variable/noto-serif-sc";
@@ -13,6 +13,7 @@ import "../../ui/src/styles/base.css";
 import "./styles.css";
 
 applyTheme(readTheme());
+applyFontSize(readFontSize());
 
 // The AMO 中转 client's content: the login screen, then the conversations. The login is kept for the window
 // (sessionStorage), so a reload — an update applying itself — comes back signed in, with the same conversation open

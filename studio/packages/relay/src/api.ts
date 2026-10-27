@@ -114,10 +114,11 @@ export class RelayClient {
   }
   // ---- files and notes (stages 2c, 2d)
   /** Uploads into a task or a session; the same name there makes a new version. */
-  async upload(where: { taskId?: string; threadId?: string }, name: string, data: Blob | ArrayBuffer | Uint8Array, type = "", opts: { ai?: boolean } = {}): Promise<RelayFile> {
+  async upload(where: { taskId?: string; threadId?: string; slot?: "flow" }, name: string, data: Blob | ArrayBuffer | Uint8Array, type = "", opts: { ai?: boolean } = {}): Promise<RelayFile> {
     const q = new URLSearchParams({ name });
     if (where.taskId) q.set("task", where.taskId);
     if (where.threadId) q.set("thread", where.threadId);
+    if (where.slot) q.set("slot", where.slot);
     if (type) q.set("type", type);
     if (opts.ai) q.set("via", "ai");
     const headers: Record<string, string> = { "content-type": type || "application/octet-stream" };

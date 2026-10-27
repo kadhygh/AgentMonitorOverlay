@@ -2,37 +2,38 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import iconUrl from "./icon.svg";
 import { Avatar, PeopleContext, preview, sessionStatus, waitedText, Who } from "./bits.js";
 import { ChatTree, ChatView, GroupRows, ProfileDialog } from "./Chats.js";
-import { PickFiles } from "./Files.js";
-import { Check, Dialog, Field, Menu, PersonPick, Pick } from "./Dialog.js";
+import { FileViewer, PickFiles } from "./Files.js";
+import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
-import { UpdateBanner } from "./Login.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
-import { usagePointer, usagePrompt, type McpHookup, type TaskView, type ThreadView as Thread } from "./shared.js";
-import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, SettingsDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
-import { nextTheme, readTheme, setTheme, THEME_LABEL, type Theme } from "./theme.js";
+import { SettingsDialog, type SettingsPart } from "./Settings.js";
+import { usagePointer, usagePrompt, type TaskView, type ThreadView as Thread } from "./shared.js";
+import { flowIsNew, markFlowSeen, SideFoot } from "./SideFoot.js";
+import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { writeUsageFile } from "./usageFile.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
-import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdates } from "./update.js";
+import { pageHasDraft, pageIsIdle, saveResume, useUpdates } from "./update.js";
 
 // After login, in AMO Studio's layout (stages 2a–2b, plans/relay-tasks.md): the top bar with four views — 待处理 (tasks
 // handed to me and the sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones),
 // 任务 (the team's board, a task's page), 聊天 (the plain chat with each person and the topics next to it; archived
-// ones folded) and 成员 — the view's list on the left, the open one on the right. Next to my name: whether the service is connected; while it is not, a bar says so. A newer client
-// the service publishes is applied once the window is not in use and nothing is typed.
+// ones folded) and 成员 — the view's list on the left, the open one on the right. The top bar holds only those and
+// ＋ 新会话; the bottom of the left column (SideFoot) what wants me, the shortcuts, me and 设置. A newer client the
+// service publishes is applied once the window is not in use and nothing is typed.
 
 type View = "queue" | "tasks" | "chat" | "people";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
   | { kind: "profile" }
   | { kind: "oldShell" }
-  | { kind: "ai" }
   | { kind: "task" }
   | { kind: "transfer"; task: TaskView; thread?: Thread }
   | { kind: "flow" }
-  | { kind: "settings" };
+  | { kind: "settings"; part?: SettingsPart }
+  | { kind: "file"; id: string; scripts: boolean };
 
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings } = useSession(session);
@@ -46,7 +47,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskPane, setTaskPane] = useState<TaskPane>("overview");
   const [toastText, setToastText] = useState<string | null>(null);
-  const [theme, setThemeState] = useState<Theme>(readTheme);
   const [doneOpen, setDoneOpen] = useState(false);
   const [archOpen, setArchOpen] = useState(false);
   const openRef = useRef(openId);
@@ -183,10 +183,17 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     toast("用法已复制，贴给 agent 就行");
   };
 
-  const cycleTheme = () => {
-    const t = nextTheme(theme);
-    setTheme(t);
-    setThemeState(t);
+  const flowDoc = settings.flowDoc ?? null;
+  const openFlow = () => {
+    if (!flowDoc) return setDialog({ kind: "settings", part: "flow" });
+    markFlowSeen(flowDoc, session.me.server);
+    setDialog({ kind: "file", id: flowDoc.id, scripts: settings.flowScripts !== false && /\.html?$/i.test(flowDoc.name) });
+  };
+  const goQueue = (which: "mine" | "waiting") => {
+    // Only a task waiting on me: its page; otherwise the first session of the kind.
+    if (which === "mine" && !groups.mine.length && groups.handed[0]) return showTask(groups.handed[0].id);
+    setView("queue");
+    setOpenId((which === "mine" ? groups.mine[0] : groups.waiting[0])?.id ?? null);
   };
 
   const others = members.filter((m) => m.name !== me);
@@ -308,7 +315,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         {view === "queue" ? (
           <>
             <h2>手上的事都在左边</h2>
-            <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点「复制用法」或「接入 AI」。</p>
+            <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点左下的「复制用法」。</p>
           </>
         ) : view === "chat" ? (
           <>
@@ -346,56 +353,38 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           ))}
         </nav>
         <span className="grow" />
-        {updates.update && <UpdateBanner updates={updates} server={session.me.server} auto="不用时自动更新" compact />}
-        {shellUpdate && (
-          <button type="button" className="tb-btn old-shell" onClick={() => setDialog({ kind: "oldShell" })} title={shellUpdate.kind === "auto" ? `桌面程序有新版 ${shellUpdate.target?.build}，点一下自动更新并重启` : "你在用的桌面程序是旧版，界面会自动更新，但新标题栏、写用法文档这些要换新的桌面程序"}>
-            桌面程序可更新
-          </button>
-        )}
-        <button type="button" className="tb-btn" onClick={() => setDialog({ kind: "flow" })} title="推进方式、常用指令、团队流程，点开可以复制">
-          流程速查
-        </button>
-        <button type="button" className="tb-btn" onClick={() => void copyUsage()} title="复制本机用法文档的位置，贴给 agent，它会自己去读，用命令行收发会话；不占它平时的上下文">
-          复制用法
-        </button>
-        <Menu
-          label="更多 ▾"
-          items={[
-            { label: "接入 AI（MCP）", onClick: () => setDialog({ kind: "ai" }), hint: "把中转接成 AI 客户端的工具；会常驻占一些上下文" },
-            null,
-            { label: `主题：${THEME_LABEL[theme]}`, onClick: cycleTheme, hint: "跟随系统 / 浅色 / 深色，点一下切换" },
-            { label: "设置", onClick: () => setDialog({ kind: "settings" }), hint: "团队流程、流程速查的说法、AI 提醒时间" },
-            { label: "编辑资料", onClick: () => setDialog({ kind: "profile" }), hint: "昵称、头像、负责什么" },
-            null,
-            { label: "退出登录", onClick: onLogout },
-          ]}
-        />
         {view === "tasks" ? (
-          <button type="button" className="primary" onClick={() => setDialog({ kind: "task" })}>
+          <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "task" })}>
             ＋ 新任务
           </button>
         ) : (
-          <button type="button" className="primary" onClick={() => setDialog({ kind: "session" })}>
+          <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "session" })}>
             ＋ 新会话
           </button>
         )}
-        <button type="button" className="me-chip" title={`编辑资料：昵称、头像、负责什么 · 服务器 ${session.me.server}`} onClick={() => setDialog({ kind: "profile" })}>
-          <Avatar name={me} small />
-          <span className="me-lines">
-            <span className="me-name">
-              <Who name={me} />
-            </span>
-            <span className={`conn-chip ${connection}`}>
-              <span className="conn-dot" />
-              {{ online: "服务器在线", connecting: "正在连接服务器", offline: "服务器离线" }[connection]}
-            </span>
-          </span>
-        </button>
         <WindowControls />
       </header>
-      <ConnectionBar session={session} />
       <div className="body">
-        <aside className="scope-nav">{nav}</aside>
+        <aside className="side">
+          <div className="scope-nav">{nav}</div>
+          <SideFoot
+            session={session}
+            mine={groups.mine.length}
+            handed={groups.handed.length}
+            waiting={groups.waiting.length}
+            updates={updates}
+            shellUpdate={shellUpdate}
+            flowNew={flowIsNew(flowDoc, me, session.me.server)}
+            onQueue={() => goQueue("mine")}
+            onWaiting={() => goQueue("waiting")}
+            onShellUpdate={() => setDialog({ kind: "oldShell" })}
+            onFlow={openFlow}
+            onQuick={() => setDialog({ kind: "flow" })}
+            onCopyUsage={() => void copyUsage()}
+            onProfile={() => setDialog({ kind: "profile" })}
+            onSettings={() => setDialog({ kind: "settings" })}
+          />
+        </aside>
         <main className="main-col">{main}</main>
       </div>
       {dialog?.kind === "session" && (
@@ -419,8 +408,19 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       {dialog?.kind === "task" && <NewTaskDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showTask(id))} />}
       {dialog?.kind === "transfer" && <TransferDialog session={session} task={tasks.find((t) => t.id === dialog.task.id) ?? dialog.task} thread={dialog.thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "flow" && <FlowDialog settings={settings} onClose={() => setDialog(null)} toast={toast} />}
-      {dialog?.kind === "settings" && <SettingsDialog session={session} onClose={() => setDialog(null)} toast={toast} />}
-      {dialog?.kind === "ai" && <ConnectAiDialog onClose={() => setDialog(null)} onCopyUsage={() => void copyUsage()} toast={toast} />}
+      {dialog?.kind === "settings" && (
+        <SettingsDialog
+          session={session}
+          part={dialog.part}
+          onClose={() => setDialog(null)}
+          toast={toast}
+          onCopyUsage={() => void copyUsage()}
+          onProfile={() => setDialog({ kind: "profile" })}
+          onLogout={onLogout}
+          onOpenFile={(id) => setDialog({ kind: "file", id, scripts: settings.flowScripts !== false && !!flowDoc && /\.html?$/i.test(flowDoc.name) })}
+        />
+      )}
+      {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>
     </PeopleContext.Provider>
@@ -491,25 +491,6 @@ function PersonView(props: { name: string; session: Session; threads: Thread[]; 
         {!live.length && <div className="muted tiny">没有。</div>}
       </div>
     </section>
-  );
-}
-
-/** Offline: since when, the next try, and a way to try now. Hidden for a brief blip. */
-function ConnectionBar({ session }: { session: Session }) {
-  const { connection, offlineSince, retryAt } = useSession(session);
-  const now = useSecondTick(connection === "offline");
-  if (connection !== "offline" || !offlineSince || now - offlineSince < 1500) return null;
-  return (
-    <div className="conn-bar" role="status">
-      <b>! 和服务器断开了</b>
-      <span>
-        已 {spanText(now - offlineSince)} · {retryAt && retryAt > now ? `${spanText(retryAt - now)}后重连` : "正在重连…"}
-      </span>
-      <button type="button" className="link" onClick={() => session.reconnectNow()}>
-        立即重连
-      </button>
-      <span className="muted tiny">这段时间发不出消息；连上后会补上别人发来的。服务所在的电脑关机、睡眠或断网时会这样。</span>
-    </div>
   );
 }
 
@@ -623,77 +604,6 @@ function NewSessionDialog(props: { session: Session; people: string[]; tasks: Ta
         </div>
       </Field>
       {error && <div className="notice error">{error}</div>}
-    </Dialog>
-  );
-}
-
-const quote = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
-
-function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void; onCopyUsage: () => void; toast: (t: string) => void }) {
-  const [hookup, setHookup] = useState<McpHookup | null>(null);
-  useEffect(() => void shell?.mcp().then(setHookup), []);
-  const copyButton = (
-    <button type="button" onClick={onCopyUsage}>
-      复制用法
-    </button>
-  );
-
-  if (!shell) {
-    return (
-      <Dialog title="接入 AI" onClose={onClose} foot={copyButton}>
-        <p className="lead-p">浏览器里没法让本机的 AI 直接接入。要用 MCP，请下载桌面客户端（服务器首页有下载）。</p>
-        <p className="dim small">现在也可以点「复制用法」把说明贴给 agent，再把它写好的内容手动用「＋ 新会话」发出去。</p>
-      </Dialog>
-    );
-  }
-  if (!hookup) return null;
-  const envFlags = Object.entries(hookup.env)
-    .map(([k, v]) => `-e ${k}=${v}`)
-    .join(" ");
-  const claude = `claude mcp add amo-relay --scope user ${envFlags} -- ${[hookup.command, ...hookup.args].map(quote).join(" ")}`;
-  const toml = [
-    "[mcp_servers.amo-relay]",
-    `command = ${JSON.stringify(hookup.command)}`,
-    `args = [${hookup.args.map((a) => JSON.stringify(a)).join(", ")}]`,
-    `env = { ${Object.entries(hookup.env)
-      .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
-      .join(", ")} }`,
-  ].join("\n");
-  const json = JSON.stringify({ mcpServers: { "amo-relay": { command: hookup.command, args: hookup.args, env: hookup.env } } }, null, 2);
-  const block = (label: string, text: string, hint: string) => (
-    <div className="hookup">
-      <div className="hookup-head">
-        <b>{label}</b>
-        <span className="muted tiny">{hint}</span>
-        <div className="grow" />
-        <button type="button" className="small" onClick={() => void copyText(text).then(() => toast(`已复制 ${label} 的配置`))}>
-          复制
-        </button>
-      </div>
-      <pre>{text}</pre>
-    </div>
-  );
-  return (
-    <Dialog
-      title="接入 AI（MCP）"
-      sub="接了以后，这个 AI 客户端的每个对话都会带上中转的工具（约 6 千字符的上下文）。不常用的话，用顶栏的「复制用法」就行：需要时把文档位置贴给 AI，平时不占上下文。每个 AI 客户端配置一次；MCP 用这个客户端自带的运行时启动，本机不用装 Node"
-      onClose={onClose}
-      wide
-      foot={
-        <>
-          <span className="foot-note">
-            不支持 MCP 的 agent：复制用法，里面带着命令行 <code>{hookup.cli}</code>
-          </span>
-          {copyButton}
-          <button type="button" className="primary" onClick={onClose}>
-            好
-          </button>
-        </>
-      }
-    >
-      {block("Claude Code", claude, "在终端里运行一次")}
-      {block("Codex", toml, "加到 ~/.codex/config.toml")}
-      {block("其他客户端", json, "支持 mcpServers JSON 的都可以")}
     </Dialog>
   );
 }

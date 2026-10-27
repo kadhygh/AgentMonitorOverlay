@@ -147,6 +147,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
 
   /** A file came: its task or its session moved. */
   const fileChanged = (file: RelayFile, me: string) => {
+    if (file.slot) pushAll({ type: "settings", settings: store.settings() });
     if (file.taskId) taskChanged(file.taskId);
     if (file.threadId) {
       const thread = store.thread(file.threadId, me);
@@ -306,6 +307,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (path === "/api/files" && (method === "POST" || method === "GET")) {
       const taskId = url.searchParams.get("task") || null;
       const threadId = url.searchParams.get("thread") || null;
+      const slot = url.searchParams.get("slot") || null;
       if (method === "GET") return send(res, 200, { files: store.filesOf({ taskId: taskId ?? undefined, threadId: threadId ?? undefined }, me) });
       if (!opts.filesDir) throw new RelayError("bad_request", "这个服务没有开文件存储");
       const data = await readRaw(req, MAX_FILE_BYTES);
@@ -316,7 +318,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       let file;
       try {
         const type = url.searchParams.get("type") || String(req.headers["content-type"] ?? "") || "application/octet-stream";
-        file = store.addFile(me, { id, taskId, threadId, name: url.searchParams.get("name"), size: data.length, type, sha256: createHash("sha256").update(data).digest("hex"), via: url.searchParams.get("via") === "ai" ? { kind: "ai" } : undefined });
+        file = store.addFile(me, { id, taskId, threadId, slot, name: url.searchParams.get("name"), size: data.length, type, sha256: createHash("sha256").update(data).digest("hex"), via: url.searchParams.get("via") === "ai" ? { kind: "ai" } : undefined });
       } catch (err) {
         rmSync(join(opts.filesDir, id), { force: true });
         throw err;

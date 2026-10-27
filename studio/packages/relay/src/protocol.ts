@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.6.0";
+export const RELAY_VERSION = "0.7.0";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
@@ -223,6 +223,10 @@ export interface NewTask {
 /** Shared by the team, edited by anyone: the flow AIs are told, 流程速查's keywords, when an AI counts as slow. */
 export interface TeamSettings {
   flow: string;
+  /** The team's flow document (an HTML or Markdown file anyone uploads a new version of); the service fills it in. */
+  flowDoc?: RelayFile | null;
+  /** Whether the flow document runs its own scripts when opened (its 复制提示词 buttons need them). */
+  flowScripts: boolean;
   /** 推进方式 and other phrases to copy. */
   keywords: string[];
   aiLateMinutes: number;
@@ -238,6 +242,7 @@ export const DEFAULT_SETTINGS: TeamSettings = {
   keywords: ["策划在主分支直接推进", "策划拉独立分支，完成后程序合并", "程序接手开发"],
   aiLateMinutes: 10,
   aiStuckMinutes: 30,
+  flowScripts: true,
 };
 
 // ---- files and notes (stages 2c, 2d)
@@ -259,6 +264,8 @@ export interface RelayFile {
   at: number;
   taskId: string | null;
   threadId: string | null;
+  /** A file of the team's rather than of a task or a session: "flow" for the flow document. */
+  slot: string | null;
   /** Notes on this version. */
   notes: number;
 }

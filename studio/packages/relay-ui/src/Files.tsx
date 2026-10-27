@@ -150,14 +150,28 @@ interface Placed {
 }
 
 /** The viewer: one file, its versions, its notes. */
-export function FileViewer({ session, fileId, onClose, toast }: { session: Session; fileId: string; onClose: () => void; toast: (t: string) => void }) {
+/**
+ * In an HTML file that runs its scripts (the team's flow document): its copy buttons reach the clipboard through us,
+ * as the sandboxed frame cannot. Put first in <head>, before the page's own scripts.
+ */
+const COPY_BRIDGE = `<script>(()=>{const send=(t)=>parent.postMessage({amoRelayCopy:String(t)},"*");try{Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:(t)=>(send(t),Promise.resolve()),readText:()=>Promise.reject(new Error("clipboard"))}})}catch(e){}const exec=document.execCommand.bind(document);document.execCommand=(c,...a)=>{if(String(c).toLowerCase()!=="copy")return exec(c,...a);const el=document.activeElement;const v=el&&typeof el.value==="string"&&el.selectionStart!=null?el.value.slice(el.selectionStart,el.selectionEnd):"";send(v||String(getSelection()||""));return true}})()</script>`;
+
+function withBridge(html: string): string {
+  const head = /<head[^>]*>/i.exec(html);
+  if (head) return html.slice(0, head.index + head[0].length) + COPY_BRIDGE + html.slice(head.index + head[0].length);
+  const top = /^\s*(<!doctype[^>]*>)?\s*(<html[^>]*>)?/i.exec(html)!;
+  return html.slice(0, top[0].length) + COPY_BRIDGE + html.slice(top[0].length);
+}
+
+/** `scripts`: open an HTML file running its scripts (the flow document, when the team allows it). */
+export function FileViewer({ session, fileId, onClose, toast, scripts = false }: { session: Session; fileId: string; onClose: () => void; toast: (t: string) => void; scripts?: boolean }) {
   const me = session.me.name;
   const [versions, setVersions] = useState<RelayFile[]>([]);
   const [shownId, setShownId] = useState(fileId);
   const [content, setContent] = useState<{ id: string; text?: string; url?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<FileNote[]>([]);
-  const [live, setLive] = useState(false);
+  const [live, setLive] = useState(scripts);
   const [draft, setDraft] = useState<{ quote: string; prefix: string; suffix: string } | null>(null);
   const [draftBody, setDraftBody] = useState("");
   const [hot, setHot] = useState<string | null>(null);
@@ -277,8 +291,18 @@ export function FileViewer({ session, fileId, onClose, toast }: { session: Sessi
   const srcdoc = useMemo(() => {
     if (kind !== "html" || content?.text === undefined) return "";
     // Static: no scripts run (sandbox without allow-scripts); the highlight styles are ours.
-    return live ? content.text : `${content.text}<style>${HIGHLIGHT_CSS}</style>`;
+    return live ? withBridge(content.text) : `${content.text}<style>${HIGHLIGHT_CSS}</style>`;
   }, [kind, content, live]);
+  useEffect(() => {
+    if (!live) return;
+    const got = (e: MessageEvent) => {
+      const text = (e.data as { amoRelayCopy?: unknown } | null)?.amoRelayCopy;
+      if (e.source !== frame.current?.contentWindow || typeof text !== "string") return;
+      void copyText(text).then(() => toast("已复制"));
+    };
+    window.addEventListener("message", got);
+    return () => window.removeEventListener("message", got);
+  }, [live, toast]);
 
   let body: ReactNode;
   if (error) body = <div className="notice error">{error}</div>;
