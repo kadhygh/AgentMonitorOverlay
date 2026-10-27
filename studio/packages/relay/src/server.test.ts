@@ -155,11 +155,16 @@ describe("relay service", () => {
     await Promise.all([mcp.connect(a), client.connect(b)]);
     closers.push(() => client.close());
 
-    expect(client.getInstructions()).toContain("程序老李（程序 · 战斗）");
+    // Short instructions (they sit in every conversation), and no stage-1 aliases.
+    expect(client.getInstructions()).toContain("我是 策划小王（策划）");
+    expect(client.getInstructions()!.length).toBeLessThan(400);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("relay_ask");
+    expect(names).toHaveLength(14);
     const text = (r: unknown) => ((r as { content: Array<{ text: string }> }).content[0]?.text ?? "");
 
     expect(text(await client.callTool({ name: "relay_people", arguments: {} }))).toContain("程序老李");
-    const asked = text(await client.callTool({ name: "relay_ask", arguments: { to: "程序老李", title: "接口确认", body: "要加 cooldownByLevel", questions: [{ text: "字段名可以吗" }] } }));
+    const asked = text(await client.callTool({ name: "relay_session_open", arguments: { to: "程序老李", title: "接口确认", body: "要加 cooldownByLevel", questions: [{ text: "字段名可以吗" }] } }));
     const threadId = /threadId: (\S+)/.exec(asked)?.[1];
     expect(threadId).toBeTruthy();
 
@@ -178,7 +183,7 @@ describe("relay service", () => {
     expect(seen?.request?.pickedAt).toBeTypeOf("number");
 
     expect(text(await client.callTool({ name: "relay_queue", arguments: {} }))).toContain("返回给我、等你接着处理");
-    expect(text(await client.callTool({ name: "relay_replies", arguments: {} }))).toContain("已返回给 策划小王（需要改），由 AI 接着处理");
+    expect(text(await client.callTool({ name: "relay_session_get", arguments: {} }))).toContain("已返回给 策划小王（需要改），由 AI 接着处理");
     expect(text(await client.callTool({ name: "relay_session_reply", arguments: { threadId, body: "那就用 cdByLevel？", then: "ask" } }))).toContain("回到 程序老李 手里");
     await coder.send(threadId!, { kind: "text", body: "可以", pass: true });
     expect(text(await client.callTool({ name: "relay_session_reply", arguments: { threadId, body: "好，按这个做", then: "done" } }))).toBe("已标记完成。");
@@ -232,7 +237,10 @@ describe("usage prompt", () => {
     const p = usagePrompt({ me: "小王", members: [{ name: "小王", role: "" }, { name: "老李", role: "程序" }], cli: "amo-relay" });
     expect(p).toContain("- 老李（程序）");
     expect(p).not.toContain("- 小王");
-    expect(p).toContain("amo-relay ask --json");
+    expect(p).toContain("`relay ask --json <文件>`");
+    expect(p).toContain('PowerShell 写 `& "amo-relay" people`');
+    expect(p).toContain("`relay newtask --title");
     expect(usagePrompt({ me: "小王" })).not.toContain("命令行");
+    expect(usagePrompt({ me: "小王" })).toContain("relay_session_open");
   });
 });

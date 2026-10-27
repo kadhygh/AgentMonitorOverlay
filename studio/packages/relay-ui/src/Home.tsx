@@ -338,11 +338,13 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
         <button type="button" className="tb-btn" onClick={() => setDialog({ kind: "flow" })} title="推进方式、常用指令、团队流程，点开可以复制">
           流程速查
         </button>
+        <button type="button" className="tb-btn" onClick={() => void copyUsage()} title="复制本机用法文档的位置，贴给 agent，它会自己去读，用命令行收发会话；不占它平时的上下文">
+          复制用法
+        </button>
         <Menu
           label="更多 ▾"
           items={[
-            { label: "复制用法", onClick: () => void copyUsage(), hint: "复制一段说明，贴给任何 agent，它就知道怎么用中转找人处理事情" },
-            { label: "接入 AI", onClick: () => setDialog({ kind: "ai" }), hint: "让本机的 AI 客户端（Claude Code、Codex…）直接用中转" },
+            { label: "接入 AI（MCP）", onClick: () => setDialog({ kind: "ai" }), hint: "把中转接成 AI 客户端的工具；会常驻占一些上下文" },
             null,
             { label: `主题：${THEME_LABEL[theme]}`, onClick: cycleTheme, hint: "跟随系统 / 浅色 / 深色，点一下切换" },
             { label: "设置", onClick: () => setDialog({ kind: "settings" }), hint: "团队流程、流程速查的说法、AI 提醒时间" },
@@ -674,7 +676,7 @@ function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void;
   return (
     <Dialog
       title="接入 AI（MCP）"
-      sub="每个 AI 客户端配置一次就行（同一个客户端里换模型、换项目都不用再配）；MCP 用这个客户端自带的运行时启动，本机不用装 Node；AI 用你现在登录的身份收发会话"
+      sub="接了以后，这个 AI 客户端的每个对话都会带上中转的工具（约 6 千字符的上下文）。不常用的话，用顶栏的「复制用法」就行：需要时把文档位置贴给 AI，平时不占上下文。每个 AI 客户端配置一次；MCP 用这个客户端自带的运行时启动，本机不用装 Node"
       onClose={onClose}
       wide
       foot={

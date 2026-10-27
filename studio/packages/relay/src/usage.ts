@@ -17,23 +17,10 @@ export interface UsageContext {
 
 export function usagePrompt(ctx: UsageContext): string {
   const others = (ctx.members ?? []).filter((m) => m.name !== ctx.me);
-  const people = others.length ? others.map((m) => `- ${m.name}${m.role ? `（${m.role}）` : ""}`).join("\n") : "- （还没有其他人加入，用 relay_people 再看）";
-  const cli = ctx.cli
-    ? `
-
-## 没有 MCP 工具时：命令行
-- \`${ctx.cli} people\`：能找的人
-- \`${ctx.cli} queue\`：待我这边处理的会话
-- \`${ctx.cli} ask --json <文件>\`：发会话。文件内容是 JSON：{"to":"名字","title":"…","body":"Markdown 正文","questions":[{"text":"…","options":["…"]}]}；用 \`-\` 代替文件名时从标准输入读
-- \`${ctx.cli} replies [threadId]\`：取会话内容（不带 id 时列出我的会话）
-- \`${ctx.cli} wait <threadId> [--minutes N]\`：等对方返回，最多 10 分钟
-- \`${ctx.cli} send <threadId> --body "…" [--then ask|done]\`：补充；\`--then ask\` 继续追问（会话回到对方手里），\`--then done\` 收尾并标记完成
-- \`${ctx.cli} handoff <threadId> --note "…"\`：交给我本人处理
-- \`${ctx.cli} tasks [--mine]\` / \`${ctx.cli} task <taskId>\`：团队任务；发会话的 JSON 里加 "taskId" 就挂在任务下
-- \`${ctx.cli} transfer <taskId> --to <名字> --status <状态> --reason "…"\`：流转任务
-- \`${ctx.cli} put <本机文件> --task <taskId>\`（或 \`--thread <threadId>\`）：传文件；\`${ctx.cli} file <fileId>\`：读文件和批注；发会话的 JSON 里加 "files": [fileId] 就带上`
-    : "";
-  return `# AMO 中转：推进中需要别人确认时
+  const people = others.length ? others.map((m) => `- ${m.name}${m.role ? `（${m.role}）` : ""}`).join("\n") : "- （还没有其他人加入）";
+  const cliMode = !!ctx.cli;
+  const q = (cmd: string) => (cliMode ? `\`relay ${cmd}\`` : cmd);
+  const head = `# AMO 中转：推进中需要别人确认时
 
 我是 ${ctx.me}${ctx.role ? `（${ctx.role}）` : ""}。团队用「AMO 中转」在局域网里互相传话。推进中遇到需要别人确认的事（比如要程序确认实现方式、接口、工作量），不要停下来等我转述，你直接给对方发一个**会话**。对方在自己的面板上逐条回答，然后把会话返回给我这边，由你接着处理。
 
@@ -43,34 +30,55 @@ ${people}
 ## 规则
 - 你用的就是我（${ctx.me}）的身份：会话只能发给别人，不能发给 ${ctx.me}；要问我本人，直接在当前对话里问。
 - 会话在谁手里就由谁处理。你发出的会话，对方必须回复，不能直接关掉；结束由你这边来标记。
-- 对方看不到我本机的文件和这段对话：背景、方案和关键片段都要写进正文。
-- 每次新对话开始时，先用 \`relay_queue\` 看有没有返回给我、等你接着处理的会话。
-- 工具提示「已由本人接手」时，就不要再动这个会话了。
+- 对方看不到我本机的文件和这段对话：背景、方案和关键片段都要写进正文，文档作为文件传上去。
+- 每次开始时先看一眼待处理（${cliMode ? q("queue") : "`relay_queue`"}），有返回给我的会话就接着处理。
+- 提示「已由本人接手」时，就不要再动那个会话了。`;
+  const flow = ctx.flow?.trim() ? `\n\n## 团队流程\n${ctx.flow.trim()}` : "";
+  if (cliMode) {
+    return `${head}
 
-## 有 MCP 工具（amo-relay）时
-- \`relay_people\`：看能找的人和他们负责什么。
-- \`relay_session_open\`：发会话。to 填对方名字；title 用一句话说清要确认什么；body 是 Markdown 正文，写背景、方案和要确认的点；questions 放要对方逐条回答的问题，可以带选项，一个问题只问一件事。发出后立刻返回 threadId，不会等回复。
-- 先接着做不依赖答复的部分；确实没别的可做时，用 \`relay_session_wait\` 等对方返回（最多 10 分钟）。
-- \`relay_session_get\`：取会话内容，包括逐条回答、补充说明和结论（同意 / 需要改 / 有疑问）；不带 threadId 时列出我的会话和它们的状态。
-- 拿到回复后：
-  - 还有要问的：\`relay_session_reply\`，then 填 "ask"，会话回到对方手里；
-  - 已经问清楚：\`relay_session_reply\`，then 填 "done"，可以写一句收尾。然后按回复调整方案，再告诉我对方是怎么答的。
-- 拿不准、需要我来决定时：\`relay_session_handoff\`，把会话交给我本人，附一句原因。
-- \`relay_queue\`：待我这边处理的会话，包括返回给我的和别人发给我的。
+## 怎么用：命令行
+下面的 \`relay\` 指本机的 \`"${ctx.cli}"\`。路径里有空格，要带引号：PowerShell 写 \`& "${ctx.cli}" people\`，cmd 和 bash 写 \`"${ctx.cli}" people\`。内容长的，用 \`--body-file <文件>\` 代替 \`--body "…"\`。
 
-## 团队任务
-- 一件要做的事（比如一把新武器）是一个团队任务，始终在某个人手里（持有人），状态是 待处理 / 开发中 / 已完成 / 已搁置。
-- \`relay_task_list\`：列出任务（mine: true 只看我手里的）；\`relay_task_get\`：一个任务的说明、持有人、状态、记录里的决策和它下面的会话。
-- \`relay_task_create\` 新建任务；\`relay_task_update\` 改标题、说明或状态；\`relay_task_transfer\` 流转给某人（写清状态和原因）。
-- 为某个任务发的会话，\`relay_session_open\` 时带上 taskId；会话里的逐条回答和结论会自动记进任务的决策。
+**会话**
+- ${q("people")}：能找的人和他们负责什么
+- ${q("queue")}：待我这边处理的会话
+- ${q("ask --json <文件>")}：发会话（\`-\` 表示从标准输入读），发出就返回 threadId，不等回复。JSON：\`{"to":"名字","title":"一句话说清要确认什么","body":"Markdown 正文：背景、方案、要确认的点","questions":[{"text":"一个问题只问一件事","options":["选项1","选项2"]}],"taskId":"可选，挂在任务下","files":["可选，fileId"]}\`
+- ${q("wait <threadId> [--minutes N]")}：等对方返回，最多 10 分钟；先做不依赖答复的部分，确实没别的可做再等
+- ${q("replies [threadId]")}：取会话内容（逐条回答、补充说明、结论、附上的批注）；不带 id 时列出我的会话
+- ${q('send <threadId> --body "…" --then ask')}：用话追问，会话回到对方手里；再加 \`--questions <文件>\`（JSON 数组，格式同上面的 questions）就是新一轮逐条回答的问题
+- ${q('send <threadId> --body "…" --then done')}：问清楚了，写一句收尾并标记完成；然后按回复调整方案，告诉我对方怎么答的
+- ${q('send <threadId> --body "…"')}：只补充，不换人
+- ${q('handoff <threadId> --note "…"')}：拿不准、需要我来决定时，交给我本人
 
-## 文件和批注
-- 对方看不到我本机的文件：要给人看的文档（比如 designdoc.md、HTML 原型），用 \`relay_file_put\` 传到任务（taskId）或会话（threadId）里；同名再传就是新版本。发会话时用 files 带上这些文件的 fileId。
-- \`relay_file_get\`：读一个文件（文字类会返回内容）和它上面的批注（引文 + 意见）。别人在回复里附上的批注，\`relay_session_get\` 里也能看到。${ctx.flow?.trim() ? `
+**团队任务**（状态只有 待处理 / 开发中 / 已完成 / 已搁置）
+- ${q("tasks [--mine]")}、${q("task <taskId>")}：任务列表；一个任务的说明、决策、会话和文件
+- ${q('newtask --title "…" [--desc-file <文件>] [--holder 名字] [--status 开发中]')}：新建任务
+- ${q("settask <taskId> [--title …] [--desc-file <文件>] [--status …]")}：改任务
+- ${q('transfer <taskId> --to 名字 --status 待处理 --reason "…"')}：流转给某人
+- 为任务发的会话，在 JSON 里带上 "taskId"；对方的逐条回答和结论会自动记进任务的决策
 
-## 团队流程
-${ctx.flow.trim()}` : ""}${cli}
+**文件和批注**
+- ${q("put <本机文件> --task <taskId>")}（或 \`--thread <threadId>\`）：传文件，返回 fileId；同名再传就是新版本
+- ${q("file <fileId>")}：读文件内容和上面的批注（引文 + 意见）${flow}
 `;
+  }
+  return `${head}
+
+## 怎么用：MCP 工具（amo-relay）
+- \`relay_people\`、\`relay_queue\`：能找的人；待我这边处理的会话。
+- \`relay_session_open\`：发会话（to、title、body、questions，可带 taskId 和 files）；发出就返回 threadId，不等回复。
+- \`relay_session_wait\`：等对方返回（最多 10 分钟）；\`relay_session_get\`：取会话内容。
+- \`relay_session_reply\`：then="ask" 追问（带 questions 是新一轮问题），then="done" 收尾并标记完成。
+- \`relay_session_handoff\`：交给我本人。
+- 团队任务：\`relay_task_list\` / \`relay_task_get\` / \`relay_task_create\` / \`relay_task_update\` / \`relay_task_transfer\`；为任务发的会话带上 taskId。
+- 文件：\`relay_file_put\` 传本机文件（同名是新版本），\`relay_file_get\` 读文件和批注。${flow}
+`;
+}
+
+/** The MCP's instructions: short, since they sit in every conversation of a client; the rest is in the tools. */
+export function mcpInstructions(ctx: UsageContext & { usageFile?: string }): string {
+  return `我是 ${ctx.me}${ctx.role ? `（${ctx.role}）` : ""}。团队用 AMO 中转互相传话：要别人确认的事，用 relay_session_open 发会话给对方（不能发给我自己；问我本人就直接在对话里问），对方回复后 relay_session_get 取，relay_session_reply 追问（then="ask"）或收尾（then="done"）。开始时先 relay_queue。团队任务用 relay_task_*，文件用 relay_file_*。${ctx.usageFile ? `详细用法和团队流程在 ${ctx.usageFile}。` : ""}`;
 }
 
 /** Where a session stands, in words. */

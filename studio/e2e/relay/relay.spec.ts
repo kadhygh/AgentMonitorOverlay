@@ -91,12 +91,12 @@ test("register, an AI's request answered in the other client, updates, the servi
   const cli = join(a.home, "amo-relay.cmd");
   expect(existsSync(cli)).toBe(true);
   // 复制用法 copies where the usage file is; the file holds the whole text, kept current.
-  await a.page.getByRole("button", { name: "更多 ▾" }).click();
-  await a.page.getByRole("menuitem", { name: "复制用法" }).click();
+  await a.page.getByRole("button", { name: "复制用法" }).click();
   const usageFile = join(a.home, "AMO中转用法.md");
   await expect.poll(() => existsSync(usageFile)).toBe(true);
   expect(readFileSync(usageFile, "utf8")).toContain("我是 策划小王（策划）");
   expect(readFileSync(usageFile, "utf8")).toContain("程序老李（程序 · 战斗）");
+  expect(readFileSync(usageFile, "utf8")).toContain("`relay newtask --title");
   const copied = await a.app.evaluate(({ clipboard }) => clipboard.readText());
   expect(copied).toContain(usageFile);
   expect(copied.length).toBeLessThan(400);

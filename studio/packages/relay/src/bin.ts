@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, writeSettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
-import { RELAY_DEFAULT_PORT, type NewRequest, type TaskStatus } from "./protocol.js";
+import { RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
@@ -30,10 +30,13 @@ const USAGE = `amo-relay <command>
   ask      --json <文件|->
   replies  [threadId] [--after n]
   wait     <threadId> [--minutes n]
-  send     <threadId> --body <文字> [--then ask|done]   （ask：继续追问，会话回到对方手里；done：收尾并标记完成）
+  send     <threadId> --body <文字>|--body-file <文件> [--then ask|done] [--questions <文件|->]
+                                                   （ask：追问，会话回到对方手里，--questions 是新一轮问题的 JSON 数组；done：收尾并标记完成）
   queue                                            （待我这边处理的会话）
   handoff  <threadId> --note <文字>                 （交给本人处理）
   tasks    [--mine]                                （团队任务）
+  newtask  --title <标题> [--desc <文字>|--desc-file <文件>] [--holder <名字>] [--status <状态>]
+  settask  <taskId> [--title <标题>] [--desc <文字>|--desc-file <文件>] [--status <状态>]
   task     <taskId>                                （一个任务的说明、决策、会话）
   transfer <taskId> --to <名字> [--status 待处理|开发中|已完成|已搁置] --reason <文字>
   put      <本机文件> --task <taskId> | --thread <threadId> [--name <显示名>]   （传文件，同名就是新版本）
@@ -51,6 +54,12 @@ function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<stri
     } else pos.push(a);
   }
   return { cmd, pos, flags };
+}
+
+/** A text flag, or the content of a file (long Markdown is easier from a file than through a shell's quoting). */
+function textArg(value: string | undefined, file: string | undefined): string | undefined {
+  if (file) return readFileSync(file, "utf8");
+  return value === "true" ? undefined : value;
 }
 
 /** What the command line writes counts as the person's AI: it is what agents without MCP use. */
@@ -171,10 +180,13 @@ async function main(): Promise<void> {
     }
     case "send": {
       const then = flags.then ?? "note";
-      if (!pos[0] || (!flags.body && then !== "done") || !["ask", "done", "note"].includes(then)) throw new Error("用法：amo-relay send <threadId> --body <文字> [--then ask|done]");
+      const body = textArg(flags.body, flags["body-file"]);
+      if (!pos[0] || (!body && then !== "done") || !["ask", "done", "note"].includes(then)) throw new Error("用法：amo-relay send <threadId> --body <文字>|--body-file <文件> [--then ask|done] [--questions <文件|->]");
+      const questions = flags.questions ? ((await readJsonArg(flags.questions)) as NewMessage["questions"]) : undefined;
+      if (questions && then !== "ask") throw new Error("--questions 只能和 --then ask 一起用");
       const { client } = joined();
-      if (flags.body) {
-        const res = await client.send(pos[0], { kind: "text", body: flags.body, pass: then === "ask", via: CLI_VIA });
+      if (body) {
+        const res = await client.send(pos[0], { kind: "text", body, pass: then === "ask", questions, via: CLI_VIA });
         out(then === "ask" ? `已追问（#${res.message.seq}），会话回到对方手里。` : `已发出（#${res.message.seq}）。`);
       }
       if (then === "done") {
@@ -192,6 +204,20 @@ async function main(): Promise<void> {
         const what = r.from === me ? (r.handler === "ai" ? "返回给我，等 AI 接着处理" : "已由本人接手，不要动") : "发给我，等我本人回复";
         out(`${t.title} · ${r.from} → ${r.to} · ${what} · ${t.id}`);
       }
+      return;
+    }
+    case "newtask": {
+      if (!flags.title) throw new Error("用法：amo-relay newtask --title <标题> [--desc <文字>|--desc-file <文件>] [--holder <名字>] [--status <状态>]");
+      const { client } = joined();
+      const t = await client.createTask({ title: flags.title, description: textArg(flags.desc, flags["desc-file"]) ?? "", holder: flags.holder, status: flags.status as TaskStatus | undefined, via: CLI_VIA });
+      out(`已新建任务「${t.title}」，在 ${t.holder} 手里，${t.status}。taskId: ${t.id}`);
+      return;
+    }
+    case "settask": {
+      if (!pos[0]) throw new Error("用法：amo-relay settask <taskId> [--title <标题>] [--desc <文字>|--desc-file <文件>] [--status <状态>]");
+      const { client } = joined();
+      const t = await client.updateTask(pos[0], { title: flags.title, description: textArg(flags.desc, flags["desc-file"]), status: flags.status as TaskStatus | undefined, via: CLI_VIA });
+      out(`已更新「${t.title}」：${t.status}，在 ${t.holder} 手里。`);
       return;
     }
     case "tasks": {
@@ -234,9 +260,10 @@ async function main(): Promise<void> {
       return;
     }
     case "handoff": {
-      if (!pos[0] || !flags.note) throw new Error("用法：amo-relay handoff <threadId> --note <文字>");
+      const note = textArg(flags.note, flags["note-file"]);
+      if (!pos[0] || !note) throw new Error("用法：amo-relay handoff <threadId> --note <文字>");
       const { client } = joined();
-      await client.session(pos[0], "handoff", { note: flags.note, via: CLI_VIA });
+      await client.session(pos[0], "handoff", { note, via: CLI_VIA });
       out("已交给本人。");
       return;
     }

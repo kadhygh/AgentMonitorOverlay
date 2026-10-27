@@ -1,10 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { RelayClient, RelayClientError, clientFromSettings, readSettings, type RelaySettings } from "./client.js";
+import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, type RelaySettings } from "./client.js";
 import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
-import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { mcpInstructions, notesAsText, sessionStateText, taskAsText, threadAsText } from "./usage.js";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { typeOf } from "./types.js";
 
 // The relay as MCP tools (stdio, `amo-relay mcp`), for any AI client. It speaks as the person whose settings are on
@@ -34,12 +35,14 @@ export interface RelayMcpOptions {
 export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpServer> {
   const settings = opts.settings ?? (() => readSettings());
   const s = settings();
-  let instructions = usagePrompt({ me: s?.name ?? "（未加入）" });
+  const usageFile = join(relayHome(), "AMO中转用法.md");
+  const file = existsSync(usageFile) ? usageFile : undefined;
+  let instructions = mcpInstructions({ me: s?.name ?? "（未加入）", usageFile: file });
   if (s) {
     try {
       const client = clientFromSettings(s);
-      const [me, members, settings] = await Promise.all([client.me(), client.members(), client.settings().catch(() => null)]);
-      instructions = usagePrompt({ me: me.name, role: me.role, members, flow: settings?.flow });
+      const me = await client.me();
+      instructions = mcpInstructions({ me: me.name, role: me.role, usageFile: file });
     } catch {
       // The service may be down when the client starts; the tools say so when called.
     }
@@ -64,7 +67,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
 
   server.registerTool(
     "relay_people",
-    { title: "能找的人", description: "列出中转服务上的人：名字、负责什么、是否在线。", inputSchema: {}, annotations: annotations(true) },
+    { title: "能找的人", description: "团队里的人：名字、负责什么、是否在线。", inputSchema: {}, annotations: annotations(true) },
     tool(async (client, me) => {
       const members = (await client.members()).filter((m) => m.name !== me);
       if (!members.length) return "还没有其他人加入。";
@@ -72,32 +75,27 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     }),
   );
 
-  // Sessions (stage 2a). The first names of stage 1 stay as aliases, so agents that learnt them keep working.
+  // Sessions (stage 2a). Descriptions are kept short: they sit in every conversation of a client that has this MCP.
   const openSchema = {
-    to: z.string().describe("对方的名字（relay_people 里的）"),
-    taskId: z.string().optional().describe("为某个团队任务发的，填它的 taskId"),
-    files: z.array(z.string()).optional().describe("一起带上的文件（fileId，先用 relay_file_put 传）"),
-    title: z.string().describe("一句话说清要对方处理什么"),
-    body: z.string().describe("Markdown 正文：背景、方案、要确认的点，附上关键片段"),
+    to: z.string(),
+    taskId: z.string().optional(),
+    files: z.array(z.string()).optional().describe("fileId"),
+    title: z.string(),
+    body: z.string().describe("Markdown"),
     questions: z
       .array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() }))
       .optional()
-      .describe("要对方逐条回答的问题；一个问题只问一件事"),
+      .describe("逐条回答的问题"),
   };
   const openSession = async (args: { to: string; taskId?: string; files?: string[]; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
       const out = await client.ask({ ...args, via: via() });
       return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_session_get 取回复，或 relay_session_wait 等一会儿。`;
     })();
-  const openDesc =
-    "给团队里的某个人发一个会话，要他处理一件事（确认方案、回答问题）。发出就返回 threadId，不会等回复；对方必须回复，结束由你这边标记。对方看不到你本机的文件和对话，正文里要写清背景并贴出关键内容。问题要逐条列出，可以带选项。";
-  for (const [name, title] of [
-    ["relay_session_open", "发会话"],
-    ["relay_ask", "发会话（旧名，同 relay_session_open）"],
-  ] as const)
-    server.registerTool(name, { title, description: openDesc, inputSchema: openSchema, annotations: annotations(false) }, openSession);
+  const openDesc = "发会话请某人处理一件事，立刻返回 threadId。对方看不到本机文件和对话：正文写清背景，文档用 files 带上。";
+  server.registerTool("relay_session_open", { title: "发会话", description: openDesc, inputSchema: openSchema, annotations: annotations(false) }, openSession);
 
-  const getSchema = { threadId: z.string().optional(), after: z.number().int().optional().describe("只看这个序号（#n）之后的消息") };
+  const getSchema = { threadId: z.string().optional(), after: z.number().int().optional().describe("只看 #n 之后的") };
   const getSession = async (args: { threadId?: string; after?: number }) =>
     tool(async (client, me) => {
       if (args.threadId) {
@@ -109,12 +107,8 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       if (!mine.length) return "还没有会话。";
       return mine.map((t) => `- ${t.title} · ${t.request!.from} → ${t.request!.to} · ${sessionStateText(t.request!)} · threadId ${t.id} · 最新 #${t.lastSeq}`).join("\n");
     })();
-  const getDesc = "带 threadId：这个会话（或对话）里的消息，含逐条回答、结论和状态变化；可用 after 只看某个序号之后的。不带：列出我的会话和状态。";
-  for (const [name, title] of [
-    ["relay_session_get", "取会话"],
-    ["relay_replies", "取会话（旧名，同 relay_session_get）"],
-  ] as const)
-    server.registerTool(name, { title, description: getDesc, inputSchema: getSchema, annotations: annotations(true) }, getSession);
+  const getDesc = "带 threadId：会话内容（逐条回答、结论、批注）；不带：我的会话列表。";
+  server.registerTool("relay_session_get", { title: "取会话", description: getDesc, inputSchema: getSchema, annotations: annotations(true) }, getSession);
 
   const waitSchema = { threadId: z.string(), minutes: z.number().optional(), after: z.number().int().optional() };
   const waitSession = async (args: { threadId: string; minutes?: number; after?: number }, extra: { signal: AbortSignal }) =>
@@ -127,12 +121,8 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       const { thread: now } = await client.messages(args.threadId, after);
       return threadAsText(now, got, all.find((m) => m.kind === "request"));
     })();
-  const waitDesc = "等这个会话里对方的新消息（通常是对方处理完返回），最多等 minutes 分钟（默认 5，最多 10）。默认从我最后一条消息之后算，已经到了的会马上返回。只在确实没别的可做时用。";
-  for (const [name, title] of [
-    ["relay_session_wait", "等回复"],
-    ["relay_wait", "等回复（旧名，同 relay_session_wait）"],
-  ] as const)
-    server.registerTool(name, { title, description: waitDesc, inputSchema: waitSchema, annotations: annotations(true) }, waitSession);
+  const waitDesc = "等对方返回，最多 minutes 分钟（默认 5，最多 10）；没别的可做时再用。";
+  server.registerTool("relay_session_wait", { title: "等回复", description: waitDesc, inputSchema: waitSchema, annotations: annotations(true) }, waitSession);
 
   const reply = async (args: { threadId: string; body?: string; then?: "ask" | "done" | "note"; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
@@ -156,34 +146,23 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     {
       title: "处理返回的会话",
       description:
-        '在会话里写一条：then="ask" 继续追问，会话回到对方手里——只写 body 是用话追问，对方用话回答；再带 questions 就是新一轮逐条回答的问题（之前的问题不用再答）；then="done" 问清楚了，标记完成（body 可写一句收尾）；then="note"（默认）只是补充，不换人。',
+        'then="ask" 追问（带 questions 是新一轮问题），会话回到对方手里；then="done" 收尾并标记完成；默认只补充。',
       inputSchema: {
         threadId: z.string(),
         body: z.string().optional().describe("Markdown"),
         then: z.enum(["ask", "done", "note"]).optional(),
-        questions: z.array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() })).optional().describe("then=ask 时可带：新一轮要对方逐条回答的问题"),
+        questions: z.array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() })).optional(),
       },
       annotations: annotations(false),
     },
     reply,
   );
   server.registerTool(
-    "relay_send",
-    {
-      title: "补充（旧名，同 relay_session_reply 的 note）",
-      description: "在会话（或对话）里补充一条消息，不换人。要继续追问或结束，用 relay_session_reply。",
-      inputSchema: { threadId: z.string(), body: z.string().describe("Markdown") },
-      annotations: annotations(false),
-    },
-    async (args: { threadId: string; body: string }) => reply({ ...args, then: "note" }),
-  );
-
-  server.registerTool(
     "relay_session_handoff",
     {
       title: "交给本人",
-      description: "拿不准、需要本人决定时，把这个会话交给本人处理（他的待处理里会高亮），附一句原因。之后不要再动这个会话。",
-      inputSchema: { threadId: z.string(), note: z.string().describe("为什么交给本人、需要他决定什么") },
+      description: "拿不准时把会话交给本人，附原因；之后别再动它。",
+      inputSchema: { threadId: z.string(), note: z.string() },
       annotations: annotations(false),
     },
     async (args: { threadId: string; note: string }) =>
@@ -197,7 +176,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     "relay_queue",
     {
       title: "待处理",
-      description: "待我这边处理的会话：返回给我、等你接着处理的，以及别人发给我、要我本人回复的。新对话开始时先看一眼。",
+      description: "待我这边处理的会话。开始时先看一眼。",
       inputSchema: {},
       annotations: annotations(true),
     },
@@ -222,8 +201,8 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     "relay_file_put",
     {
       title: "传文件",
-      description: "把本机的一个文件传到任务（taskId）或会话（threadId）里，返回 fileId；同名再传就是新版本。最大 20 MB。",
-      inputSchema: { path: z.string().describe("本机文件的路径"), taskId: z.string().optional(), threadId: z.string().optional(), name: z.string().optional().describe("在中转上显示的名字，默认是文件名") },
+      description: "把本机文件传到任务或会话里，返回 fileId；同名是新版本。",
+      inputSchema: { path: z.string(), taskId: z.string().optional(), threadId: z.string().optional(), name: z.string().optional() },
       annotations: annotations(false),
     },
     async (args: { path: string; taskId?: string; threadId?: string; name?: string }) =>
@@ -237,7 +216,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_file_get",
-    { title: "读文件", description: "读一个文件：文字类（md、html、txt、json…）返回内容（最多约 200 KB），再附上它的批注。", inputSchema: { fileId: z.string() }, annotations: annotations(true) },
+    { title: "读文件", description: "读文件内容（文字类）和它的批注。", inputSchema: { fileId: z.string() }, annotations: annotations(true) },
     async (args: { fileId: string }) =>
       tool(async (client) => {
         const [versions, notes] = await Promise.all([client.versions(args.fileId), client.notes(args.fileId)]);
@@ -253,7 +232,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   const statusEnum = z.enum(TASK_STATUSES);
   server.registerTool(
     "relay_task_list",
-    { title: "任务列表", description: "列出团队任务：标题、状态、在谁手里、taskId。mine=true 只看我手里的；默认不含已归档的。", inputSchema: { mine: z.boolean().optional(), status: statusEnum.optional(), archived: z.boolean().optional() }, annotations: annotations(true) },
+    { title: "任务列表", description: "团队任务列表；mine=true 只看我手里的。", inputSchema: { mine: z.boolean().optional(), status: statusEnum.optional(), archived: z.boolean().optional() }, annotations: annotations(true) },
     async (args: { mine?: boolean; status?: TaskStatus; archived?: boolean }) =>
       tool(async (client, me) => {
         const list = (await client.tasks()).filter((t) => (args.archived ? true : !t.archived) && (!args.mine || t.holder === me) && (!args.status || t.status === args.status));
@@ -263,7 +242,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_task_get",
-    { title: "看任务", description: "一个团队任务的全部：说明、状态、持有人、记录里的决策、它下面的会话（带 threadId）。", inputSchema: { taskId: z.string() }, annotations: annotations(true) },
+    { title: "看任务", description: "任务的说明、状态、持有人、决策、会话和文件。", inputSchema: { taskId: z.string() }, annotations: annotations(true) },
     async (args: { taskId: string }) =>
       tool(async (client) => {
         const { task, events } = await client.task(args.taskId);
@@ -272,7 +251,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_task_create",
-    { title: "新建任务", description: "新建一个团队任务。holder 默认是我；status 默认 开发中。", inputSchema: { title: z.string(), description: z.string().optional().describe("Markdown"), holder: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
+    { title: "新建任务", description: "新建团队任务（holder 默认是我，status 默认 开发中）。", inputSchema: { title: z.string(), description: z.string().optional(), holder: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
     async (args: { title: string; description?: string; holder?: string; status?: TaskStatus }) =>
       tool(async (client) => {
         const t = await client.createTask({ ...args, via: via() });
@@ -281,7 +260,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_task_update",
-    { title: "改任务", description: "改一个任务的标题、说明（Markdown，整段替换）或状态。换人用 relay_task_transfer。", inputSchema: { taskId: z.string(), title: z.string().optional(), description: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
+    { title: "改任务", description: "改标题、说明（整段替换）或状态。", inputSchema: { taskId: z.string(), title: z.string().optional(), description: z.string().optional(), status: statusEnum.optional() }, annotations: annotations(false) },
     async (args: { taskId: string; title?: string; description?: string; status?: TaskStatus }) =>
       tool(async (client) => {
         const { taskId, ...patch } = args;
@@ -291,7 +270,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_task_transfer",
-    { title: "流转任务", description: "把任务交给某人（也可以是自己），写清新状态和原因；会记进任务记录，对方的待处理里会出现。", inputSchema: { taskId: z.string(), to: z.string(), status: statusEnum.optional(), reason: z.string() }, annotations: annotations(false) },
+    { title: "流转任务", description: "把任务交给某人，写清新状态和原因。", inputSchema: { taskId: z.string(), to: z.string(), status: statusEnum.optional(), reason: z.string() }, annotations: annotations(false) },
     async (args: { taskId: string; to: string; status?: TaskStatus; reason: string }) =>
       tool(async (client) => {
         const { taskId, ...t } = args;
