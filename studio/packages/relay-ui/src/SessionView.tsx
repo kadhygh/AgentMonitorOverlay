@@ -31,6 +31,9 @@ export function SessionView(props: {
   const task = r.taskId ? tasks.find((t) => t.id === r.taskId) : undefined;
   const takeover = r.taskId && props.onTakeover && r.to === me && r.state !== "done" ? () => props.onTakeover!(thread) : undefined;
   const questions = messages?.find((m) => m.kind === "request")?.questions ?? [];
+  // The open round (the request's, or a follow-up's); none after a plain follow-up, which is answered in words.
+  const askQuestions = r.askSeq == null ? null : (messages?.find((m) => m.seq === r.askSeq)?.questions ?? []);
+  const lastQuestions = [...(messages ?? [])].reverse().find((m) => m.kind !== "reply" && m.questions?.length)?.questions ?? questions;
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
   const myTurn = r.waitingOn === me && r.state !== "done";
   const files = useThreadFiles(session, thread.id, thread.updatedAt);
@@ -56,26 +59,39 @@ export function SessionView(props: {
   };
 
   let dock;
-  if (myTurn && r.to === me && r.state === "open") {
-    dock = <ReplyForm session={session} thread={thread} questions={questions} files={files} onOpenFile={setViewing} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
-  } else if (r.to === me && againOpen) {
-    dock = <ReplyForm session={session} thread={thread} questions={questions} files={files} onOpenFile={setViewing} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
-  } else if (myTurn && r.state === "returned" && r.handler === "person") {
+  if (myTurn && r.to === me && r.state === "open" && askQuestions === null) {
+    // A follow-up in words: answered in words, like a chat.
     dock = (
       <Composer
         session={session}
         threadId={thread.id}
         pass
-        sendLabel="继续追问"
-        placeholder={`继续追问 ${r.to}…（发出后会话回到对方手里）`}
-        hint="你是发起人：问清楚了就标记完成"
+        sendLabel={`回复并返回给 ${asker}`}
+        placeholder={`回答 ${asker} 的追问…（发出后会话回到对方手里）`}
+        hint={r.needsReply ? "直接用话回答就行" : "直接用话回答；不用回的话也可以标记完成"}
+        onSent={() => toast(`已返回给 ${asker}`)}
         extra={
-          <button type="button" onClick={() => void act("done", "会话已完成")}>
-            标记完成
-          </button>
+          <>
+            {takeover && (
+              <button type="button" onClick={takeover}>
+                接手任务…
+              </button>
+            )}
+            {!r.needsReply && (
+              <button type="button" onClick={() => void act("done", "会话已完成")}>
+                标记完成
+              </button>
+            )}
+          </>
         }
       />
     );
+  } else if (myTurn && r.to === me && r.state === "open") {
+    dock = <ReplyForm session={session} thread={thread} questions={askQuestions ?? []} files={files} onOpenFile={setViewing} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
+  } else if (r.to === me && againOpen) {
+    dock = <ReplyForm session={session} thread={thread} questions={lastQuestions} files={files} onOpenFile={setViewing} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
+  } else if (myTurn && r.state === "returned" && r.handler === "person") {
+    dock = <FollowUp session={session} thread={thread} onDone={() => void act("done", "会话已完成")} toast={toast} />;
   } else if (myTurn && r.state === "returned") {
     dock = (
       <div className="dock">
@@ -359,6 +375,78 @@ function ReplyForm(props: {
         <button type="button" className="primary" disabled={busy || empty} onClick={() => void send()}>
           回复并返回给 {r.from}
           {r.byAi ? " 的 AI" : ""}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The asker's turn: ask again in words (answered in words), or add a new round of questions to answer one by one. */
+function FollowUp({ session, thread, onDone, toast }: { session: Session; thread: ThreadView; onDone: () => void; toast: (t: string) => void }) {
+  const r = thread.request!;
+  const [text, setText] = useState("");
+  const [qs, setQs] = useState<Array<{ text: string; options: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const round = qs
+    .filter((q) => q.text.trim())
+    .map((q) => {
+      const options = q.options
+        .split(/[,，/、]/)
+        .map((o) => o.trim())
+        .filter(Boolean);
+      return options.length ? { text: q.text.trim(), options } : { text: q.text.trim() };
+    });
+  const send = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await session.client.send(thread.id, { kind: "text", body: text.trim(), pass: true, questions: round.length ? round : undefined });
+      setText("");
+      setQs([]);
+      toast(round.length ? `已追问 ${round.length} 个问题，会话回到 ${r.to} 手里` : `已追问，会话回到 ${r.to} 手里`);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="dock followup">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.ctrlKey || e.metaKey) && (e.preventDefault(), void send())}
+        placeholder={`继续追问 ${r.to}…（发出后会话回到对方手里）`}
+        rows={2}
+      />
+      {qs.length > 0 && (
+        <div className="qs">
+          {qs.map((q, i) => (
+            <div key={i} className="q-row">
+              <span className="rq-n">{i + 1}</span>
+              <input value={q.text} onChange={(e) => setQs((l) => l.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="问题" autoFocus={i === qs.length - 1} />
+              <input className="opts" value={q.options} onChange={(e) => setQs((l) => l.map((x, j) => (j === i ? { ...x, options: e.target.value } : x)))} placeholder="选项，用逗号隔开（可不填）" />
+              <button type="button" className="x" title="去掉这个问题" onClick={() => setQs((l) => l.filter((_, j) => j !== i))}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="acts">
+        <span className="why">
+          {error ? <span className="error">{error}</span> : round.length ? `对方会看到这 ${round.length} 个新问题，逐条回答` : "直接用话追问，对方用话回答；也可以加几个逐条回答的问题"}
+        </span>
+        <button type="button" className="link" onClick={() => setQs((l) => [...l, { text: "", options: "" }])}>
+          ＋ 加逐条回答的问题
+        </button>
+        <button type="button" onClick={onDone}>
+          标记完成
+        </button>
+        <button type="button" className="primary" disabled={busy || !text.trim()} onClick={() => void send()}>
+          继续追问
         </button>
       </div>
     </div>

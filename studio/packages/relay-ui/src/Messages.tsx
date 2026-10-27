@@ -56,7 +56,15 @@ export function MessageList({ messages, error, me, questions, empty, after }: { 
       {error && <div className="notice error">{error}</div>}
       {!messages && !error && <div className="muted center">加载中…</div>}
       {messages?.length === 0 && <div className="muted center">{empty}</div>}
-      {messages?.map((m, i) => <MessageItem key={m.seq} m={m} prev={messages[i - 1]} me={me} questions={questions} />)}
+      {/* A reply answers the round of questions before it: the request's, or a follow-up's that asked more. */}
+      {messages?.reduce<{ round: Question[]; out: ReactNode[] }>(
+        (acc, m, i) => {
+          if (m.questions?.length && m.kind !== "reply") acc.round = m.questions;
+          acc.out.push(<MessageItem key={m.seq} m={m} prev={messages[i - 1]} me={me} questions={acc.round} />);
+          return acc;
+        },
+        { round: questions, out: [] },
+      ).out}
       {after}
     </div>
   );
@@ -84,6 +92,7 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
         {!mine && <b>{m.author}</b>}
         {m.via.kind === "ai" && <span className="tag ai">AI 代发{m.via.client ? ` · ${m.via.client}` : ""}</span>}
         {m.kind === "request" && <span className="tag">会话</span>}
+        {m.kind === "text" && m.questions && m.questions.length > 0 && <span className="tag">追问</span>}
         {m.kind === "reply" && <span className="tag">回复</span>}
         <span className="tm" title={new Date(m.createdAt).toLocaleString()}>
           {timeText(m.createdAt)}
@@ -91,7 +100,7 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
       </div>
       <div className="msg-body">
         {m.body && <Markdown source={m.body} />}
-        {m.kind === "request" && m.questions && m.questions.length > 0 && (
+        {m.kind !== "reply" && m.questions && m.questions.length > 0 && (
           <ol className="questions">
             {m.questions.map((q) => (
               <li key={q.id}>

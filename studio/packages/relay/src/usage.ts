@@ -93,10 +93,10 @@ const who = (m: Message) => (m.via.kind === "ai" ? `${m.author} 的 AI${m.via.cl
 /** One message as Markdown; a reply's answers carry their questions, so the reader needs nothing else. */
 export function messageAsText(m: Message, questions: Message["questions"] = []): string {
   if (m.kind === "event") return `> （${who(m)} ${m.body} · ${time(m.createdAt)} · #${m.seq}）`;
-  const head = `### ${who(m)} · ${time(m.createdAt)} · #${m.seq}${m.kind === "request" ? " · 会话" : m.kind === "reply" ? " · 回复" : ""}`;
+  const head = `### ${who(m)} · ${time(m.createdAt)} · #${m.seq}${m.kind === "request" ? " · 会话" : m.kind === "reply" ? " · 回复" : m.questions?.length ? " · 追问" : ""}`;
   const parts = [head];
   if (m.body) parts.push(m.body);
-  if (m.kind === "request" && m.questions?.length) {
+  if ((m.kind === "request" || m.kind === "text") && m.questions?.length) {
     parts.push(m.questions.map((q, i) => `${i + 1}. [${q.id}] ${q.text}${q.options?.length ? `（选项：${q.options.join(" / ")}）` : ""}`).join("\n"));
   }
   if (m.kind === "reply") {
@@ -120,14 +120,21 @@ export function messageAsText(m: Message, questions: Message["questions"] = []):
 
 /** A thread and (some of) its messages as Markdown. */
 export function threadAsText(thread: Thread, messages: Message[], requestMessage?: Message): string {
-  const questions = (requestMessage ?? messages.find((m) => m.kind === "request"))?.questions ?? [];
+  // A reply answers the last round of questions before it (the request, or a follow-up that asked more).
+  let questions = (requestMessage ?? messages.find((m) => m.kind === "request"))?.questions ?? [];
   const r = thread.request;
   const head = r
     ? `## 会话：${thread.title}\n${r.from} → ${r.to} · ${sessionStateText(r)}${r.needsReply ? " · 需要回复" : ""} · threadId ${thread.id}`
     : thread.kind === "topic"
       ? `## 话题：${thread.title}\n${thread.members.join("、")} · threadId ${thread.id}`
       : `## 对话：${thread.members.join("、")}\nthreadId ${thread.id}`;
-  return [head, ...messages.map((m) => messageAsText(m, questions))].join("\n\n");
+  return [
+    head,
+    ...messages.map((m) => {
+      if (m.questions?.length) questions = m.questions;
+      return messageAsText(m, questions);
+    }),
+  ].join("\n\n");
 }
 
 /** A team task for an AI: what it is, where it stands, what was decided, its sessions. */

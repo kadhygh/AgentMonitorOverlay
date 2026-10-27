@@ -180,6 +180,9 @@ export class RelayStore {
     const columns = (this.db.prepare("PRAGMA table_info(thread_members)").all() as Row[]).map((r) => String(r.name));
     if (!columns.includes("archived")) this.db.exec("ALTER TABLE thread_members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
     this.migrateSessions();
+    // Follow-ups with questions (2026-10-27): which message's questions are the open round.
+    const tcols = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
+    if (!tcols.includes("s_qseq")) this.db.exec("ALTER TABLE threads ADD COLUMN s_qseq INTEGER; UPDATE threads SET s_qseq = req_seq WHERE kind = 'request';");
     this.migrateTasks();
     this.migrateFiles();
   }
@@ -315,6 +318,7 @@ export class RelayStore {
         needsReply: Number(row.s_needs ?? 1) === 1,
         returnedAt: row.s_returned == null ? null : Number(row.s_returned),
         pickedAt: row.s_picked == null ? null : Number(row.s_picked),
+        askSeq: row.s_qseq === undefined ? Number(row.req_seq) : row.s_qseq == null ? null : Number(row.s_qseq),
       };
     }
     return thread;
@@ -444,7 +448,7 @@ export class RelayStore {
         .run(id, title, from, at, at, from, to, to, via.kind === "ai" ? "ai" : "person", needs ? 1 : 0);
       for (const n of [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
       const message = this.insertMessage(id, from, via, "request", body, questions.length ? { questions } : null);
-      this.db.prepare("UPDATE threads SET req_seq = ?, task_id = ?, s_files = ? WHERE id = ?").run(message.seq, taskId, attach.length ? JSON.stringify(attach) : null, id);
+      this.db.prepare("UPDATE threads SET req_seq = ?, s_qseq = ?, task_id = ?, s_files = ? WHERE id = ?").run(message.seq, message.seq, taskId, attach.length ? JSON.stringify(attach) : null, id);
       if (taskId) this.addTaskEvent(taskId, from, via, "session", `${via.kind === "ai" ? "的 AI " : ""}发起会话「${title}」→ ${to}`, { threadId: id, to });
       return { thread: this.toThread(this.threadRow(id)), message };
     });
@@ -459,11 +463,14 @@ export class RelayStore {
       const body = text(msg.body, "内容", LIMITS.body);
       const pass = !!msg.pass && !!thread.request;
       if (pass) this.checkPass(thread, author, via);
+      // A follow-up may bring a new round of questions; only the asker asks them, and only when handing it over.
+      const questions = msg.questions ? checkQuestions(msg.questions) : [];
+      if (questions.length && (!pass || author !== thread.request?.from)) throw new RelayError("bad_request", "只有发起人追问时能带新问题");
       return this.tx(() => {
-        const message = this.insertMessage(threadId, author, via, "text", body, null);
+        const message = this.insertMessage(threadId, author, via, "text", body, questions.length ? { questions } : null);
         if (pass) {
           const r = thread.request!;
-          if (author === r.from) this.setSession(threadId, { s_state: "open", s_waiting: r.to });
+          if (author === r.from) this.setSession(threadId, { s_state: "open", s_waiting: r.to, s_qseq: questions.length ? message.seq : null });
           else this.setSession(threadId, { s_state: "returned", s_waiting: r.from, s_returned: this.now(), s_picked: null });
         }
         return { thread: this.toThread(this.threadRow(threadId)), message };
@@ -473,8 +480,11 @@ export class RelayStore {
     const req = thread.request;
     if (!req) throw new RelayError("bad_request", "只有请求可以回复");
     if (author !== req.to) throw new RelayError("forbidden", `这条请求是发给 ${req.to} 的`);
-    const requestRow = this.db.prepare("SELECT * FROM messages WHERE seq = ?").get(req.requestSeq) as Row;
-    const questions = this.toMessage(requestRow).questions ?? [];
+    // Answers are to the open round; after a plain follow-up, to the last questions asked (a reply again).
+    const askRow = (req.askSeq != null
+      ? this.db.prepare("SELECT * FROM messages WHERE seq = ?").get(req.askSeq)
+      : this.db.prepare("SELECT * FROM messages WHERE thread_id = ? AND extra LIKE '%\"questions\"%' ORDER BY seq DESC LIMIT 1").get(threadId)) as Row | undefined;
+    const questions = askRow ? (this.toMessage(askRow).questions ?? []) : [];
     const answers = checkAnswers(msg.answers, questions);
     const body = text(msg.body, "补充说明", LIMITS.body, false);
     const verdict = msg.verdict ?? undefined;

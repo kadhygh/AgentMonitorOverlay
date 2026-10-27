@@ -134,13 +134,13 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   ] as const)
     server.registerTool(name, { title, description: waitDesc, inputSchema: waitSchema, annotations: annotations(true) }, waitSession);
 
-  const reply = async (args: { threadId: string; body?: string; then?: "ask" | "done" | "note" }) =>
+  const reply = async (args: { threadId: string; body?: string; then?: "ask" | "done" | "note"; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
       const then = args.then ?? "note";
       const body = args.body?.trim();
       if (then === "ask") {
         if (!body) throw new RelayClientError(400, "bad_request", "继续追问要写内容（body）");
-        const out = await client.send(args.threadId, { kind: "text", body, pass: true, via: via() });
+        const out = await client.send(args.threadId, { kind: "text", body, pass: true, questions: args.questions?.length ? args.questions : undefined, via: via() });
         return `已追问（#${out.message.seq}），会话回到 ${out.thread.request?.to ?? "对方"} 手里。`;
       }
       if (then === "note" && !body) throw new RelayClientError(400, "bad_request", "补充要写内容（body）");
@@ -155,8 +155,14 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     "relay_session_reply",
     {
       title: "处理返回的会话",
-      description: '在会话里写一条：then="ask" 继续追问，会话回到对方手里；then="done" 问清楚了，标记完成（body 可写一句收尾）；then="note"（默认）只是补充，不换人。',
-      inputSchema: { threadId: z.string(), body: z.string().optional().describe("Markdown"), then: z.enum(["ask", "done", "note"]).optional() },
+      description:
+        '在会话里写一条：then="ask" 继续追问，会话回到对方手里——只写 body 是用话追问，对方用话回答；再带 questions 就是新一轮逐条回答的问题（之前的问题不用再答）；then="done" 问清楚了，标记完成（body 可写一句收尾）；then="note"（默认）只是补充，不换人。',
+      inputSchema: {
+        threadId: z.string(),
+        body: z.string().optional().describe("Markdown"),
+        then: z.enum(["ask", "done", "note"]).optional(),
+        questions: z.array(z.object({ id: z.string().optional(), text: z.string(), options: z.array(z.string()).optional() })).optional().describe("then=ask 时可带：新一轮要对方逐条回答的问题"),
+      },
       annotations: annotations(false),
     },
     reply,

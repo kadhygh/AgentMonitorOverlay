@@ -88,6 +88,9 @@ export interface RequestState {
   returnedAt: number | null;
   /** When the asking side's AI fetched it after that; null while it has not. */
   pickedAt: number | null;
+  /** The message whose questions wait for answers (the request, or a follow-up with questions); null after a plain
+   * follow-up, which is answered in words. */
+  askSeq: number | null;
 }
 
 export interface Thread {
@@ -131,6 +134,8 @@ export interface NewMessage {
   /** In a session, hand it to the other side with this message: the asker asks again (继续追问), the person asked
    * returns it without a form reply. A reply always hands it back. */
   pass?: boolean;
+  /** With the asker's pass: a new round of questions to answer one by one (the earlier ones are done). */
+  questions?: Array<{ id?: string; text: string; options?: string[] }>;
   body?: string;
   answers?: Answer[];
   verdict?: Verdict;

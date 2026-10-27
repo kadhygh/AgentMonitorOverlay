@@ -136,6 +136,14 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.getByRole("button", { name: "我来处理" }).click();
   await expect(a.page.locator(".event").last()).toContainText("从 AI 手里接手了这个会话");
   await expect(exec("cmd.exe", ["/c", cli, "send", threadId, "--body", "再问一句", "--then", "ask"])).rejects.toThrow(/本人接手/);
+  // A follow-up in words is answered in words: no form with the first round again.
+  await a.page.getByPlaceholder("继续追问 程序老李…（发出后会话回到对方手里）").fill("那周三前能加上吗？");
+  await a.page.getByRole("button", { name: "继续追问" }).click();
+  await row(b.page, "技能冷却按等级递减").click();
+  await expect(b.page.locator(".reply-form")).toHaveCount(0);
+  await b.page.getByPlaceholder(/的追问…/).fill("可以，周三前加上");
+  await b.page.getByRole("button", { name: /^回复并返回给/ }).click();
+  await expect(a.page.locator(".msg.theirs").last()).toContainText("周三前加上");
   await a.page.locator(".dock").getByRole("button", { name: "标记完成" }).click();
   await expect(a.page.locator(".event").last()).toContainText("标记完成");
   await expect(a.page.getByRole("button", { name: "重新打开" })).toBeVisible();
@@ -218,12 +226,19 @@ test("register, an AI's request answered in the other client, updates, the servi
 
   // The planner asks again in that session; the coder answers with the form and sends the note along.
   await a.page.locator(".session-list .srow", { hasText: "射速和过热怎么做" }).click();
-  await a.page.getByPlaceholder("继续追问 程序老李…（发出后会话回到对方手里）").fill("那推进方式就定程序接手？");
+  // A follow-up with a new round: only its questions are in the form.
+  await a.page.getByPlaceholder("继续追问 程序老李…（发出后会话回到对方手里）").fill("再定一下推进方式");
+  await a.page.getByRole("button", { name: "＋ 加逐条回答的问题" }).click();
+  await a.page.locator(".followup").getByPlaceholder("问题").fill("推进方式定哪个");
+  await a.page.locator(".followup").getByPlaceholder("选项，用逗号隔开（可不填）").fill("程序接手开发, 策划拉独立分支");
   await a.page.getByRole("button", { name: "继续追问" }).click();
   await row(b.page, "射速和过热怎么做").click();
+  await expect(b.page.locator(".reply-form .rq")).toHaveCount(1);
+  await expect(b.page.locator(".reply-form .rq")).toContainText("推进方式定哪个");
   await b.page.locator(".reply-form .opt", { hasText: "程序接手开发" }).click();
   await expect(b.page.locator(".reply-form")).toContainText("附上我的批注（1）");
   await b.page.getByRole("button", { name: "回复并返回给 策划小王" }).click();
+  await expect(a.page.locator(".msg.kind-reply").last()).toContainText("推进方式定哪个");
   await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("升速曲线建议配表");
   await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("designdoc.md v1：每秒 12 发");
   await shot(a.app, "16-reply-notes");

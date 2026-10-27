@@ -166,6 +166,25 @@ describe("RelayStore", () => {
     expect(store.sessionAction(thread.id, "程序老李", "reopen").thread.request).toMatchObject({ state: "open", waitingOn: "程序老李" });
   });
 
+  it("follows up in words or with a new round of questions; replies answer the open round", () => {
+    team();
+    const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "射速", body: "b", questions: [{ text: "推进方式", options: ["主干", "分支"] }] });
+    expect(thread.request?.askSeq).toBe(thread.request?.requestSeq);
+    store.addMessage(thread.id, "程序老李", { kind: "reply", answers: [{ questionId: "q1", choice: "分支" }] });
+    // In words: no open round; the person answers in words too.
+    const plain = store.addMessage(thread.id, "策划小王", { body: "分支名叫什么？", pass: true });
+    expect(plain.thread.request).toMatchObject({ state: "open", waitingOn: "程序老李", askSeq: null });
+    expect(store.addMessage(thread.id, "程序老李", { body: "feature/gatling", pass: true }).thread.request).toMatchObject({ state: "returned", waitingOn: "策划小王" });
+    // A new round: only its questions count.
+    expect(() => store.addMessage(thread.id, "程序老李", { body: "x", questions: [{ text: "?" }] })).toThrow(/只有发起人追问时/);
+    const round = store.addMessage(thread.id, "策划小王", { body: "再确认两点", pass: true, questions: [{ text: "过热复用能量条吗", options: ["能", "不能"] }, { text: "几天" }] });
+    expect(round.thread.request?.askSeq).toBe(round.message.seq);
+    expect(round.message.questions?.map((q) => q.text)).toEqual(["过热复用能量条吗", "几天"]);
+    expect(() => store.addMessage(thread.id, "程序老李", { kind: "reply", answers: [{ questionId: "q1", choice: "分支" }] })).toThrow(/没有选项「分支」/);
+    const answered = store.addMessage(thread.id, "程序老李", { kind: "reply", answers: [{ questionId: "q1", choice: "能" }, { questionId: "q2", text: "两天" }] });
+    expect(answered.message.answers).toHaveLength(2);
+  });
+
   it("turns the requests of a database from before sessions into sessions", () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-store-"));
     const file = join(dir, "relay.db");

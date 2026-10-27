@@ -674,7 +674,7 @@ function ConnectAiDialog({ onClose, onCopyUsage, toast }: { onClose: () => void;
   return (
     <Dialog
       title="接入 AI（MCP）"
-      sub="接好后，本机的 AI 用你现在登录的身份收发会话；MCP 由这个客户端自带的运行时启动，本机不用装 Node"
+      sub="每个 AI 客户端配置一次就行（同一个客户端里换模型、换项目都不用再配）；MCP 用这个客户端自带的运行时启动，本机不用装 Node；AI 用你现在登录的身份收发会话"
       onClose={onClose}
       wide
       foot={
