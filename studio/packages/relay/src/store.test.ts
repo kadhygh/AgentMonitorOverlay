@@ -44,6 +44,7 @@ describe("RelayStore", () => {
     const t2 = store.direct("程序老李", "策划小王");
     expect(t2.id).toBe(t1.id);
     expect(() => store.direct("策划小王", "策划小王")).toThrow(/自己/);
+    expect(() => store.createRequest("策划小王", { to: "策划小王", title: "t", body: "b" })).toThrow(/用的就是 策划小王 本人的身份/);
     store.addMessage(t1.id, "策划小王", { body: "在吗" });
     store.addMessage(t1.id, "策划小王", { body: "看下这个" });
     const [li] = store.threadsFor("程序老李");

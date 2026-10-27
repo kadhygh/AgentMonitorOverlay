@@ -422,7 +422,9 @@ export class RelayStore {
   /** A request from `from` to a person: its own thread, opened by the request message. */
   createRequest(from: string, req: NewRequest): { thread: Thread; message: Message } {
     const to = checkName(req?.to);
-    if (to === from) throw new RelayError("bad_request", "不能给自己发请求");
+    // An AI speaks as its person, so this is the AI asking its own person: not what sessions are for (it would ask
+    // them in its own chat). Said plainly, so an agent stops looking for a way round it.
+    if (to === from) throw new RelayError("bad_request", `不能给自己发会话：你（AI）用的就是 ${from} 本人的身份。要问 ${from} 本人，直接在当前对话里问；要测试，请让对方用另一个账号（比如在浏览器里另注册一个）当收件人。`);
     this.requireMember(to);
     const title = text(req.title, "标题", LIMITS.title);
     const body = text(req.body, "正文", LIMITS.body);
