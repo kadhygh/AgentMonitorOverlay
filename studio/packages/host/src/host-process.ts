@@ -285,6 +285,14 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const finalManager = manager;
     const finalClaude = claude;
     const finalDsh = dsh;
+    // 2026-10-27: DSH turns that ended without their tokens and speed get them from DSH's logs, once the Host settled.
+    setTimeout(() => {
+      if (stopped) return;
+      void finalDsh
+        .backfillStats()
+        .then((n) => n && console.log(`DSH: filled in the tokens and speed of ${n} turns from DSH's logs`))
+        .catch((err: unknown) => console.log(`DSH stats backfill failed: ${String(err)}`));
+    }, 20_000).unref();
     return {
       info,
       token,

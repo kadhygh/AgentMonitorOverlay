@@ -81,6 +81,23 @@ afterEach(async () => {
 });
 
 describe("DSH runtime", () => {
+  it("fills in the tokens and speed of turns that ended without them, from DSH's log, without touching others (2026-10-27)", async () => {
+    const host = await boot();
+    const s = await start(host, "你好");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "turn" && !!i.decode));
+    // As every DSH turn was before 10-27: ended, no tokens, no speed.
+    const store = host.service.store;
+    const turn = store.findItems(s.id, "turn")[0]!;
+    if (turn.type !== "turn") throw new Error("not a turn");
+    const { decode: _decode, ...bare } = turn;
+    store.replaceItem({ ...bare, usage: { ...turn.usage!, input: 0, cachedInput: 0, output: 0 } });
+    const dsh = host.service.options.dsh!;
+    expect(await dsh.backfillStats(0)).toBe(1);
+    expect(store.findItems(s.id, "turn")[0]).toMatchObject({ decode: { ms: 2000, tokens: 400 }, usage: { input: 1300, cachedInput: 1000, output: 400 } });
+    // Nothing left to fill: the log is not read again.
+    expect(await dsh.backfillStats(0)).toBe(0);
+  });
+
   it("runs a turn: thought, reply, context use; the process gets its own home, the key and the permission mode", async () => {
     const host = await boot();
     const s = await start(host, "你好 [[context: 4321]]");

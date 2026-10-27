@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "@amo-studio/testkit";
-import { dshTurnStats, turnStats, zstdFrames } from "./session-log.js";
+import { allTurnStats, dshTurnStats, turnStats, zstdFrames } from "./session-log.js";
 
 // A DSH session's speed and tokens from its own log (2026-10-22), measured as DSH's session-stats does.
 
@@ -45,6 +45,13 @@ describe("DSH turn stats", () => {
       // Step 0: 11_250 - 10_250; step 1: 12_800 - 12_300.
       decode: { ms: 1000 + 500, tokens: 300 },
     });
+  });
+
+  it("measures every turn of a log, oldest first (filling in turns that ended unmeasured, 2026-10-27)", () => {
+    const all = allTurnStats(log);
+    expect(all.map((t) => t.startedAt)).toEqual([1000, 10_000]);
+    expect(all[0]).toMatchObject({ output: 999, decode: { ms: 900, tokens: 999 } });
+    expect(all[1]).toEqual(turnStats(log));
   });
 
   it("has no speed for a turn whose calls reported no usage, and nothing without a turn", () => {

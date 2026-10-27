@@ -47,17 +47,9 @@ export function dshLogFile(home: string, sessionId: string): string | null {
 
 /** The latest turn of a DSH session (the one running, or the one just ended), from its log; null when unreadable. */
 export function dshTurnStats(home: string, sessionId: string): DshTurnStats | null {
-  const file = dshLogFile(home, sessionId);
-  if (!file) return null;
-  let text: string;
-  try {
-    const raw = readFileSync(file);
-    text = file.endsWith(".zstd") ? zstdFrames(raw) : raw.toString("utf8");
-  } catch {
-    // Being written (a frame cut short), or gone: try again later.
-    return null;
-  }
-  return turnStats(text);
+  // Unreadable (gone, or being written): try again later.
+  const text = dshLogText(home, sessionId);
+  return text === null ? null : turnStats(text);
 }
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
@@ -94,9 +86,40 @@ export function zstdFrames(raw: Buffer): string {
 export function turnStats(text: string): DshTurnStats | null {
   const at = text.lastIndexOf('"type":"turn/start"');
   if (at < 0) return null;
-  const lines = text.slice(text.lastIndexOf("\n", at) + 1).split("\n");
+  const events = parseEvents(text.slice(text.lastIndexOf("\n", at) + 1));
+  const turn = events[0]?.data?.turn;
+  if (typeof turn !== "number") return null;
+  return statsOf(events, turn, events[0]!.time);
+}
+
+/**
+ * Every turn in a log's text, oldest first (2026-10-27): to fill in turns that ended before Studio could read DSH's
+ * logs, matched to Studio's turns by when they started.
+ */
+export function allTurnStats(text: string): DshTurnStats[] {
+  const events = parseEvents(text);
+  const out: DshTurnStats[] = [];
+  events.forEach((e, i) => {
+    if (e.type === "turn/start" && typeof e.data?.turn === "number") out.push(statsOf(events.slice(i), e.data.turn, e.time));
+  });
+  return out;
+}
+
+/** A DSH log's text, read and decompressed; null when there is none or it cannot be read now. */
+export function dshLogText(home: string, sessionId: string): string | null {
+  const file = dshLogFile(home, sessionId);
+  if (!file) return null;
+  try {
+    const raw = readFileSync(file);
+    return file.endsWith(".zstd") ? zstdFrames(raw) : raw.toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function parseEvents(text: string): DshEvent[] {
   const events: DshEvent[] = [];
-  for (const line of lines) {
+  for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       events.push(JSON.parse(line) as DshEvent);
@@ -104,9 +127,12 @@ export function turnStats(text: string): DshTurnStats | null {
       // A line still being written.
     }
   }
-  const turn = events[0]?.data?.turn;
-  if (typeof turn !== "number") return null;
-  const out: DshTurnStats = { startedAt: events[0]!.time, input: 0, cachedInput: 0, output: 0 };
+  return events;
+}
+
+/** One turn's tokens and generation time, from the events from its start on. */
+function statsOf(events: readonly DshEvent[], turn: number, startedAt: number): DshTurnStats {
+  const out: DshTurnStats = { startedAt, input: 0, cachedInput: 0, output: 0 };
   let ms = 0;
   let tokens = 0;
   let decoded = false;

@@ -8,7 +8,7 @@ import { DSH_DEFAULT_PERMISSION, DSH_PERMISSIONS, dshPermissionMode } from "../c
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { AcpConnection, AcpError } from "./acp.js";
-import { dshTurnStats } from "./session-log.js";
+import { allTurnStats, dshLogText, dshTurnStats, type DshTurnStats } from "./session-log.js";
 import {
   ACP_VERSION,
   DSH_ACP_ARGS,
@@ -144,6 +144,8 @@ interface ImageBlock {
 
 /** How often a running turn's speed is read again from DSH's log (on whatever update DSH sends next). */
 const MEASURE_EVERY_MS = 15_000;
+/** How far a turn in DSH's log may start from Studio's turn and still be taken for it (backfillStats). */
+const BACKFILL_SLACK_MS = 5000;
 
 const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
 
@@ -733,6 +735,39 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       live.applied.effort = opts.effort;
       this.remember(r.configOptions, profile);
     }
+  }
+
+  /**
+   * Turns that ended without their tokens and speed (2026-10-27: until then Studio read only the first frame of DSH's
+   * logs, so every DSH turn had none): read once from each session's log, matched to its turns by start time. One
+   * session at a time, `gapMs` apart, so a Host just started is not held up. No model is called.
+   */
+  async backfillStats(gapMs = 200): Promise<number> {
+    const home = join(this.options.dir, "home");
+    let filled = 0;
+    for (const s of this.store.listSessions()) {
+      if (s.runtime !== "dsh" || !s.runtimeRef) continue;
+      const missing = this.store.findItems(s.id, "turn").filter((t) => t.type === "turn" && t.state !== "running" && !t.decode);
+      if (!missing.length) continue;
+      await new Promise((r) => setTimeout(r, gapMs));
+      try {
+        const text = dshLogText(home, s.runtimeRef);
+        if (text === null) continue;
+        const stats = allTurnStats(text);
+        const transcript = new DshTranscript(this.makeCore(), s.id);
+        for (const t of missing) {
+          if (t.type !== "turn") continue;
+          const at = Date.parse(t.startedAt);
+          const best = stats.reduce<DshTurnStats | null>((b, x) => (Math.abs(x.startedAt - at) < Math.abs((b?.startedAt ?? Infinity) - at) ? x : b), null);
+          if (!best || Math.abs(best.startedAt - at) > BACKFILL_SLACK_MS || !best.decode) continue;
+          transcript.applyStats(t.id, best);
+          filled++;
+        }
+      } catch (err) {
+        this.emit("log", `dsh stats backfill failed for ${s.id}: ${String(err)}`);
+      }
+    }
+    return filled;
   }
 
   /** A turn's tokens and speed from DSH's own session log (ACP tells only the context size). */
