@@ -63,7 +63,6 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await screenshot(studio.app, "stage-1", "S1-11a-task-page", page);
 
   // Archive the main session: its fork goes with it; restore brings both back.
-  await page.getByTestId("session-more").click();
   await page.getByTestId("session-archive").click();
   await expect(rows).toHaveCount(1);
   await page.getByRole("button", { name: /已归档 1/ }).click();

@@ -104,7 +104,14 @@ export function SessionHead({
           </button>
         </>
       )}
-      <button type="button" className="bar-btn" aria-label="会话的更多操作" title="更多：文件标记、归档会话" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
+      {/* 归档 out of ⋯, right of 分支 (2026-10-28); an archived session is restored from its banner below. */}
+      {!session.archivedAt && (
+        <button type="button" className="bar-btn labeled soft-danger" aria-label="归档会话" title="归档会话：变成只读，从它开出的分支一起归档；之后可以恢复" disabled={busy} onClick={onArchive} data-testid="session-archive">
+          <ArchiveIcon />
+          <span className="bar-label">归档</span>
+        </button>
+      )}
+      <button type="button" className="bar-btn" aria-label="会话的更多操作" title="更多：书签" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
         <svg viewBox="0 0 16 16" aria-hidden="true" className="filled">
           <circle cx="3.5" cy="8" r="1.3" />
           <circle cx="8" cy="8" r="1.3" />
@@ -125,22 +132,6 @@ export function SessionHead({
           >
             书签
           </button>
-          {/* An archived session is restored from its banner below. */}
-          {!session.archivedAt && (
-            <button
-              type="button"
-              role="menuitem"
-              className="menu-danger"
-              disabled={busy}
-              onClick={() => {
-                setSessionMenu(null);
-                onArchive();
-              }}
-              data-testid="session-archive"
-            >
-              归档会话
-            </button>
-          )}
         </PopMenu>
       )}
     </div>

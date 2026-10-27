@@ -116,7 +116,8 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByTestId("note-count")).toBeVisible();
   await expect(page.getByLabel("输入消息")).toHaveValue("写到一半的话");
 
-  // The session bar: the openers as one group, 分支 with the git-branch glyph, ⋯ (标记, 归档会话 in deep red); no 仅工作台.
+  // The session bar: the openers as one group, 分支 with the git-branch glyph, 归档 right of it on a red-tinted face (2026-10-28),
+  // ⋯ (书签); no 仅工作台.
   await expect(page.getByTestId("writer")).toHaveCount(0);
   const bar = page.getByTestId("thread-head");
   await expect(bar.getByRole("group", { name: "在外部打开" }).getByRole("button", { name: "在终端打开" })).toBeVisible();
@@ -124,10 +125,16 @@ test("status, topic and project from the line under the title; the right column 
   const forkBox = await bar.getByTestId("session-fork").boundingBox();
   expect(forkBox!.height).toBeGreaterThanOrEqual(30);
   await screenshot(app, "stage-14", "S14-I-session-bar", page);
+  const archive = bar.getByTestId("session-archive");
+  expect((await archive.boundingBox())!.x).toBeGreaterThan(forkBox!.x);
+  await expect(archive).toHaveClass(/soft-danger/);
+  expect(await archive.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+  // 归档 of the task wears the same colours.
+  expect(await page.getByTestId("task-archive").evaluate((el) => getComputedStyle(el).color)).toBe(await archive.evaluate((el) => getComputedStyle(el).color));
   await page.getByTestId("session-more").click();
-  await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["书签", "归档会话"]);
-  await expect(page.getByTestId("session-archive")).toHaveClass(/menu-danger/);
-  await page.getByTestId("session-archive").hover();
+  await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["书签"]);
+  await page.keyboard.press("Escape");
+  await archive.hover();
   await screenshot(app, "stage-14", "S14-I-archive-danger", page);
 });
 

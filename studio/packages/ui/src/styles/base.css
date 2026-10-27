@@ -53,6 +53,11 @@
   --danger-hover: #b0292d;
   --on-danger: #fff;
   --danger-text: #ff8f8f;
+  /* 归档 buttons (2026-10-28): a red-tinted face with a deep red that goes with it, not bare red text. */
+  --danger-soft-bg: #3a1c1f;
+  --danger-soft-border: #66303a;
+  --danger-soft-text: #ffb4ad;
+  --danger-soft-hover: #4a2227;
   --tint: #1b2633;
   --tint-strong: #22324a;
   --code-bg: #0c0e10;
@@ -113,6 +118,10 @@
   --danger-hover: #701414;
   --on-danger: #fff;
   --danger-text: #8b1a1a;
+  --danger-soft-bg: #f5e0db;
+  --danger-soft-border: #e2b6ae;
+  --danger-soft-text: #8b211b;
+  --danger-soft-hover: #efd0c9;
   --tint: #efe7d6;
   --tint-strong: #e4d6b8;
   --code-bg: #f1eee7;
@@ -171,6 +180,10 @@
     --danger-hover: #701414;
     --on-danger: #fff;
     --danger-text: #8b1a1a;
+    --danger-soft-bg: #f5e0db;
+    --danger-soft-border: #e2b6ae;
+    --danger-soft-text: #8b211b;
+    --danger-soft-hover: #efd0c9;
     --tint: #efe7d6;
     --tint-strong: #e4d6b8;
     --code-bg: #f1eee7;
