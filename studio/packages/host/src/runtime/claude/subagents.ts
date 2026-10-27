@@ -105,12 +105,12 @@ export class ClaudeSubagents {
   }
 
   /** The agent stopped (finished, failed, stopped, or its process ended): its child session and its usage turn settle. */
-  end(live: Live, child: Id, status: "completed" | "error" | "idle"): void {
+  end(live: Live, child: Id, status: "completed" | "error" | "interrupted"): void {
     this.core.setStatus(child, status);
     const run = live.subUsage.get(child);
     if (run) {
       live.subUsage.delete(child);
-      const state = status === "error" ? "failed" : status === "idle" ? "interrupted" : "completed";
+      const state = status === "error" ? "failed" : status;
       this.core.updateItem(run.itemId, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state, endedAt: this.core.now().toISOString() } : it));
     }
     // Its real output and a speed from its transcript; again shortly, in case its last lines were still being written.
@@ -184,7 +184,7 @@ export class ClaudeSubagents {
   }
 
   /** A background agent's task ended (task_updated): its child session settles, unless already settled. */
-  settled(sessionId: Id, live: Live, agentId: string, status: "completed" | "error" | "idle"): void {
+  settled(sessionId: Id, live: Live, agentId: string, status: "completed" | "error" | "interrupted"): void {
     const child = this.child(live, agentId, sessionId);
     if (child && this.core.store.getSession(child)?.status === "running") this.end(live, child, status);
   }
@@ -204,13 +204,13 @@ export class ClaudeSubagents {
     }
     const fromResult = (r as { task_id?: unknown } | null | undefined)?.task_id;
     const agentId = typeof fromResult === "string" ? fromResult : typeof input.task_id === "string" ? input.task_id : typeof input.shell_id === "string" ? input.shell_id : "";
-    if (agentId) this.settled(sessionId, live, agentId, "idle");
+    if (agentId) this.settled(sessionId, live, agentId, "interrupted");
   }
 
   /** The process ended: its agents stopped with it. */
   endAll(live: Live, failed: boolean): void {
     for (const childId of live.subs.values()) {
-      if (this.core.store.getSession(childId)?.status === "running") this.end(live, childId, failed ? "error" : "idle");
+      if (this.core.store.getSession(childId)?.status === "running") this.end(live, childId, failed ? "error" : "interrupted");
     }
   }
 }

@@ -373,7 +373,7 @@ export class SessionsFeature extends Feature {
   }
 
   private checkReport(s: Session): void {
-    if (!s.reportTo || s.archivedAt || !(s.status === "idle" || s.status === "completed" || s.status === "error")) return;
+    if (!s.reportTo || s.archivedAt || !(s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error")) return;
     const [turn] = this.store.findItems(s.id, "turn", {}, { newest: true, limit: 1 });
     if (!turn || turn.type !== "turn" || turn.state === "running") return;
     const key = `report-turn:${s.id}`;

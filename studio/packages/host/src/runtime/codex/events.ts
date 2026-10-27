@@ -120,7 +120,7 @@ export class CodexEvents {
         } else if (s.kind !== "sub" && this.asks.openAsync(s.id).length) {
           this.core.setStatus(s.id, "awaiting-answer");
         } else {
-          this.core.setStatus(s.id, s.kind === "sub" ? "completed" : "idle");
+          this.core.setStatus(s.id, s.kind !== "sub" ? "idle" : turn.status === "interrupted" ? "interrupted" : "completed");
         }
         return;
       }

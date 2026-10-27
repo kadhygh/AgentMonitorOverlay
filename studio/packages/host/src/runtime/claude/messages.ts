@@ -274,7 +274,7 @@ export class ClaudeMessages {
         const state: BackgroundState | null = patch.status === "completed" ? "completed" : patch.status === "failed" ? "failed" : patch.status === "killed" ? "stopped" : null;
         if (itemId && state) turns.settleBackground(itemId, state, patch.error);
         // A background agent that ended (10-22: one stopped with TaskStop got no task_notification and stayed running).
-        if (state) subagents.settled(sessionId, live, taskId, state === "completed" ? "completed" : state === "failed" ? "error" : "idle");
+        if (state) subagents.settled(sessionId, live, taskId, state === "completed" ? "completed" : state === "failed" ? "error" : "interrupted");
         return;
       }
       case "task_notification": {
@@ -284,7 +284,7 @@ export class ClaudeMessages {
         const toolUseId = str(s.tool_use_id);
         // A resumed agent's notification names the SendMessage call that resumed it.
         const child = (toolUseId ? (live.subs.get(toolUseId) ?? live.resumes.get(toolUseId)) : undefined) ?? subagents.child(live, taskId);
-        if (child) subagents.end(live, child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
+        if (child) subagents.end(live, child, s.status === "completed" ? "completed" : s.status === "stopped" ? "interrupted" : "error");
         const itemId = live.bgItems.get(taskId);
         if (itemId) {
           const state: BackgroundState = s.status === "completed" ? "completed" : s.status === "stopped" ? "stopped" : "failed";

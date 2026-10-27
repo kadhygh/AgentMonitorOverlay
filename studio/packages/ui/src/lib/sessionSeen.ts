@@ -69,7 +69,7 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
     if (kept.length) subs.set(up, kept);
   }
   return sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && !folded(s) && (s.status === "idle" || s.status === "completed" || s.status === "error"))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && !folded(s) && (s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error"))
     .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
     .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

@@ -18,10 +18,12 @@ export const SESSION_LOOK: Record<SessionStatus, StatusLook> = {
   error: { label: "出错", dot: "var(--error)", text: "var(--error-text)" },
   idle: { label: "空闲", dot: "var(--muted-dot)", text: "var(--text-dim)" },
   completed: { label: "已完成", dot: "var(--muted-dot)", text: "var(--text-dim)" },
+  // A subagent stopped before it finished (2026-10-27: it looked like an idle one).
+  interrupted: { label: "被中断", dot: "var(--error)", text: "var(--error-text)" },
 };
 
 /** Most urgent first: a card shows the status that most needs the person. */
-const PRIORITY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
+const PRIORITY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "interrupted", "completed"];
 
 /** A task's status is derived from its live (non-archived) sessions; the column is separate and set by the person. */
 export function taskStatus(sessions: readonly Session[]): SessionStatus | null {

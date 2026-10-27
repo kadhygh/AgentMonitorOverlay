@@ -78,9 +78,11 @@ export type SessionKind = "main" | "fork" | "sub";
 
 /**
  * Updated automatically from runtime events; independent from the task column. `awaiting-answer`: the agent asked the
- * person a question (or for a plan review) and waits (stage 12).
+ * person a question (or for a plan review) and waits (stage 12). `interrupted` (2026-10-27): only for a subagent's
+ * session — it was stopped before it finished (its parent was interrupted or stopped it, or the Host went down); a main
+ * session that is interrupted goes back to `idle`, since a message carries it on.
  */
-export const SESSION_STATUSES = ["running", "awaiting-approval", "awaiting-answer", "awaiting-review", "idle", "completed", "error"] as const;
+export const SESSION_STATUSES = ["running", "awaiting-approval", "awaiting-answer", "awaiting-review", "idle", "completed", "interrupted", "error"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**

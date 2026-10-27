@@ -290,9 +290,9 @@ describe("ClaudeRuntime", () => {
     // TaskStop is deferred: the mock loads it with ToolSearch, then stops the agent by the id its Agent call returned.
     await until(() => items(s.id).some((i) => i.type === "tool" && (i as { name?: string }).name === "TaskStop"), "the parent's TaskStop");
     await until(() => status(child) !== "running", "stopped subagent settled");
-    expect(status(child)).toBe("idle");
+    expect(status(child)).toBe("interrupted");
     await until(() => status(s.id) === "idle", "parent idle");
-    expect(status(child)).toBe("idle");
+    expect(status(child)).toBe("interrupted");
   }, 120_000);
 
   it("after a crash, marks turns that were in flight as over", async () => {
@@ -300,8 +300,15 @@ describe("ClaudeRuntime", () => {
     const s = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title: "crashed", status: "awaiting-approval", writer: "workbench", runtimeRef: "00000000-0000-4000-8000-000000000000" });
     store.appendItem({ id: "i-crash-approval", sessionId: s.id, createdAt: new Date().toISOString(), type: "approval", approvalId: "t1", kind: "command", summary: "mkdir x", state: "pending" });
     store.appendItem({ id: "i-crash-agent", sessionId: s.id, createdAt: new Date().toISOString(), type: "agent", markdown: "half", streaming: true });
+    // Its subagents: one was running, one was stopped before 2026-10-27 (left idle then), one had finished.
+    const sub = (title: string, st: "running" | "idle" | "completed") =>
+      store.createSession({ taskId: task.id, topicId: null, parentId: s.id, kind: "sub", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title, status: st, writer: "workbench", runtimeRef: null });
+    const [running, stopped, done] = [sub("running", "running"), sub("stopped", "idle"), sub("done", "completed")];
     const recovered = startRuntime();
     expect(status(s.id)).toBe("idle");
+    // A subagent cannot be carried on with a message: stopped ones show as interrupted (red), not idle.
+    expect([status(running.id), status(stopped.id), status(done.id)]).toEqual(["interrupted", "interrupted", "completed"]);
+    expect(items(running.id).filter((i) => i.type === "notice")).toHaveLength(0);
     expect(items(s.id).map((i) => [i.type, (i as { state?: string }).state ?? (i as { streaming?: boolean }).streaming ?? null])).toEqual([
       ["approval", "resolved-elsewhere"],
       ["agent", false],

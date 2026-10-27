@@ -655,7 +655,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
-        this.setStatus(s.id, "idle");
+        this.setStatus(s.id, s.kind === "sub" ? "interrupted" : "idle");
+      } else if (s.kind === "sub" && s.status === "idle") {
+        // Before 2026-10-27 a stopped subagent was left `idle`: nothing else leaves one there (a finished one is completed).
+        this.setStatus(s.id, "interrupted");
       }
       // The CLI's own timers went with its process: Studio sends the loop's wakeup (and goes on after a limit) itself.
       if (s.wake && !s.archivedAt) {
