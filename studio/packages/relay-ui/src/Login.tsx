@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import iconUrl from "./icon.svg";
 import { browserAccounts, browserServer, rememberBrowserAccount, shell } from "./env.js";
 import type { Identity } from "./session.js";
 import { RelayClient, RelayClientError, type Health, type SavedAccount, type ShellInfo } from "./shared.js";
@@ -103,7 +104,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
       )}
       <div className="login-card">
         <div className="brand">
-          <span className="brand-mark">中</span>
+          <img className="brand-mark" src={iconUrl} alt="" />
           <div>
             <h1>{health?.name ?? "AMO 中转"}</h1>
             <p className="muted">和团队直接沟通，AI 也能把要确认的事发给对方</p>

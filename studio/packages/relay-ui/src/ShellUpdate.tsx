@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import iconUrl from "./icon.svg";
 import type { Health, ShellBuild } from "./shared.js";
 import { shell } from "./env.js";
 import { errorText } from "./Messages.js";
@@ -96,7 +97,7 @@ export function ShellUpdatePage({ update, server, onClose }: { update: ShellUpda
       )}
       <div className="login-card shell-card">
         <div className="brand">
-          <span className="brand-mark">中</span>
+          <img className="brand-mark" src={iconUrl} alt="" />
           <div>
             <h1>更新桌面程序</h1>
             <p className="muted">界面平时自己更新；窗口、标题栏这些外壳要换新的桌面程序</p>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import iconUrl from "./icon.svg";
 import { Avatar, PeopleContext, preview, sessionStatus, waitedText, Who } from "./bits.js";
 import { ChatTree, ChatView, GroupRows, ProfileDialog } from "./Chats.js";
 import { PickFiles } from "./Files.js";
@@ -332,7 +333,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     <div className="app">
       <header className={`topbar ${ownTitleBar ? "own" : ""} ${macLights ? "mac" : ""}`}>
         <div className="brand">
-          <span className="brand-mark">中</span>
+          <img className="brand-mark" src={iconUrl} alt="" />
           <span className="brand-name">AMO 中转</span>
           <span className="brand-sep">{session.me.service}</span>
         </div>
