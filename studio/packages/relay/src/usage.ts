@@ -146,8 +146,15 @@ export function taskAsText(task: Task, events: TaskEvent[] = []): string {
   return parts.join("\n\n");
 }
 
-/** 复制任务提示词: the task, then how to work with the relay (the usage prompt, the team flow in it). */
-export function taskPrompt(task: Task, events: TaskEvent[], ctx: UsageContext): string {
+/** What 复制用法 copies when the usage text is a file on this machine: just where it is. */
+export function usagePointer(file: string, cli?: string): string {
+  return `请先读这个文件，按里面的说明用 AMO 中转（团队里互相传话、发会话找人确认、推进团队任务）：
+${file}
+（文件由 AMO 中转客户端自动更新${cli ? `；也可以运行 "${cli}" prompt 看最新的用法` : ""}）`;
+}
+
+/** 复制任务提示词: the task, then how to work with the relay (the usage prompt with the team flow, or the file it is in). */
+export function taskPrompt(task: Task, events: TaskEvent[], ctx: UsageContext, usageFile?: string): string {
   return `# 接手推进团队任务「${task.title}」
 
 先读下面的任务内容；需要更全的（附件、会话原文），用 relay_task_get（taskId ${task.id}）和 relay_session_get 取。按团队流程推进，需要别人确认的就在这个任务下发会话。
@@ -156,7 +163,7 @@ ${taskAsText(task, events)}
 
 ---
 
-${usagePrompt(ctx)}`;
+${usageFile ? usagePointer(usageFile, ctx.cli) : usagePrompt(ctx)}`;
 }
 
 /** A file's notes as Markdown: what was quoted, what was said; for 复制批注 and for an AI. */

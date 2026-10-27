@@ -56,6 +56,9 @@ export interface RelayShell {
   onUpdateProgress(listener: (p: { done: number; total: number }) => void): void;
   /** The window is on screen and focused: someone is using it (an update waits). Optional: added after shell 1 shipped. */
   inUse?(): Promise<boolean>;
+  /** Writes the usage text for agents to a file of this machine and says where (复制用法 then copies just that path).
+   * Optional: added after shell 1 shipped; without it the whole text is copied. */
+  writeUsage?(text: string): Promise<string>;
   /** Back to the loader, to enter another service address. */
   changeServer(): void;
   openExternal(url: string): void;

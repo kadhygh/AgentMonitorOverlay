@@ -8,9 +8,10 @@ import { UpdateBanner } from "./Login.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { SessionView } from "./SessionView.js";
-import { usagePrompt, type McpHookup, type TaskView, type ThreadView as Thread } from "./shared.js";
+import { usagePointer, usagePrompt, type McpHookup, type TaskView, type ThreadView as Thread } from "./shared.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, SettingsDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { nextTheme, readTheme, setTheme, THEME_LABEL, type Theme } from "./theme.js";
+import { writeUsageFile } from "./usageFile.js";
 import { pageHasDraft, pageIsIdle, saveResume, spanText, useSecondTick, useUpdates } from "./update.js";
 
 // After login, in AMO Studio's layout (stages 2a–2b, plans/relay-tasks.md): the top bar with four views — 待处理 (tasks
@@ -142,7 +143,16 @@ export function Home({ session, onLogout, resumeOpen = null }: { session: Sessio
     }
   };
 
+  // The usage file stays current with the team and its flow.
+  const memberKey = members.map((m) => `${m.name}:${m.role}`).join(",");
+  useEffect(() => void writeUsageFile(session), [session, memberKey, settings.flow]);
+
   const copyUsage = async () => {
+    const written = await writeUsageFile(session);
+    if (written) {
+      await copyText(usagePointer(written.file, written.cli));
+      return toast("已复制用法文件的位置，贴给 agent，它会自己去读");
+    }
     const hookup = shell ? await shell.mcp().catch(() => null) : null;
     await copyText(usagePrompt({ me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow }));
     toast("用法已复制，贴给 agent 就行");

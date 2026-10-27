@@ -6,6 +6,7 @@ import { copyText, shell } from "./env.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
+import { writeUsageFile } from "./usageFile.js";
 import { SessionView } from "./SessionView.js";
 import { ARCHIVABLE, TASK_STATUSES, taskPrompt, type TaskEvent, type TaskSession, type TaskStatus, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
 
@@ -147,8 +148,9 @@ export function TaskPage(props: {
 
   const copyPrompt = async () => {
     const hookup = shell ? await shell.mcp().catch(() => null) : null;
-    await copyText(taskPrompt(task, events, { me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow }));
-    toast("已复制任务提示词：任务内容 + 团队流程 + 用法，贴给 AI 就能开始");
+    const written = await writeUsageFile(session);
+    await copyText(taskPrompt(task, events, { me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow }, written?.file));
+    toast(written ? "已复制任务提示词：任务内容 + 用法文件的位置，贴给 AI 就能开始" : "已复制任务提示词：任务内容 + 团队流程 + 用法，贴给 AI 就能开始");
   };
 
   const decisions = events.filter((e) => e.kind === "decision");

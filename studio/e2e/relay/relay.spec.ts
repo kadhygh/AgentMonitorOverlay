@@ -90,6 +90,16 @@ test("register, an AI's request answered in the other client, updates, the servi
   // The planner's AI asks through the command line the client installed (its own exe as Node).
   const cli = join(a.home, "amo-relay.cmd");
   expect(existsSync(cli)).toBe(true);
+  // 复制用法 copies where the usage file is; the file holds the whole text, kept current.
+  await a.page.getByRole("button", { name: "更多 ▾" }).click();
+  await a.page.getByRole("menuitem", { name: "复制用法" }).click();
+  const usageFile = join(a.home, "AMO中转用法.md");
+  await expect.poll(() => existsSync(usageFile)).toBe(true);
+  expect(readFileSync(usageFile, "utf8")).toContain("我是 策划小王（策划）");
+  expect(readFileSync(usageFile, "utf8")).toContain("程序老李（程序 · 战斗）");
+  const copied = await a.app.evaluate(({ clipboard }) => clipboard.readText());
+  expect(copied).toContain(usageFile);
+  expect(copied.length).toBeLessThan(400);
   const req = join(root, "req.json");
   writeFileSync(req, JSON.stringify({ to: "程序老李", title: "技能冷却按等级递减", body: "方案：每升 1 级冷却 **-0.5s**，最低 3s。\n\n| 等级 | 冷却 |\n|---|---|\n| 1 | 8s |\n| 10 | 3.5s |", questions: [{ text: "现在的技能表能直接加这一列吗", options: ["能", "要改结构"] }, { text: "大概要几天" }] }));
   const asked = await exec("cmd.exe", ["/c", cli, "ask", "--json", req]);

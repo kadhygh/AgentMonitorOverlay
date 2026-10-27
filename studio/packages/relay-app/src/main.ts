@@ -333,6 +333,15 @@ function wire(): void {
     tray?.setToolTip(unread ? `AMO 中转 · ${unread} 条未读` : "AMO 中转");
   });
   ipcMain.handle("relay:in-use", () => !!win && win.isVisible() && !win.isMinimized() && win.isFocused());
+  // The usage text as a file next to the command line: agents are pointed at it instead of being pasted the whole text.
+  ipcMain.handle("relay:write-usage", (_e, text: string) => {
+    const file = join(home, "AMO中转用法.md");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(file, `<!-- AMO 中转客户端自动生成，登录、成员或团队流程变化时会更新；${new Date().toLocaleString()} -->
+
+${String(text)}`);
+    return file;
+  });
   ipcMain.handle("relay:check-update", async () => {
     if (!server) return null;
     try {

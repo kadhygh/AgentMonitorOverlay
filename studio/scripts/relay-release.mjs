@@ -2,7 +2,7 @@
 //   <out>/amo-relay.mjs          the service, CLI and MCP in one file (plain Node 22.13+, also on a Mac)
 //   <out>/client/                the client's content + manifest.json: the desktop client's hot update, /app/ in a browser
 //   <out>/downloads/AMO-Relay-win.zip   the desktop client (with --shell)
-//   node scripts/relay-release.mjs [--out <dir>] [--shell]    (npm run relay:release [-- --shell])
+//   node scripts/relay-release.mjs [--out <dir>] [--shell [--pack <dir>]]    (npm run relay:release [-- --shell])
 // Publishing a client update = run this again (without --shell); a running service hands it out at once. The shell
 // only needs rebuilding when packages/relay-app or shell-api.ts changes (then bump SHELL_VERSION).
 import { execFileSync } from "node:child_process";
@@ -68,7 +68,8 @@ console.log(`client ${version}: ${files.length} files, ${(files.reduce((n, f) =>
 
 // 3. The desktop client's zip (the portable layout of scripts/package-portable.mjs).
 if (withShell) {
-  const pack = join(studio, "release", "relay-pack");
+  // --pack <dir>: build the client elsewhere, e.g. while the one in release/relay-pack is running (its files are locked).
+  const pack = resolve(studio, flag("--pack") ?? join("release", "relay-pack"));
   run(process.execPath, [join(studio, "scripts", "package-portable.mjs"), pack, "--zip", "--only", "relay"]);
   const zip = readdirSync(pack).find((n) => /^AMO-Relay-.*\.zip$/.test(n));
   if (!zip) throw new Error("the desktop client's zip is missing");
