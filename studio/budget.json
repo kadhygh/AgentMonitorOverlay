@@ -10,11 +10,15 @@
       "used": 28
     },
     "gpt": {
-      "limit": 50,
+      "limit": 300,
       "used": 6
     },
     "claude": {
-      "limit": 50,
+      "limit": 300,
+      "used": 0
+    },
+    "dsh-dxx-ds": {
+      "limit": 1000,
       "used": 0
     }
   },
