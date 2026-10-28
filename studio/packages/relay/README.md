@@ -54,10 +54,52 @@ Mac 上的位置：
 
 - 程序 `~/Services/amo-relay/app`（每次 deploy 整个换掉）
 - 数据 `~/Services/amo-relay/data`（relay.db、上传的文件、`backup-*.db`；deploy 不碰）
+- 平台目录 `~/Services/amo-relay/platform`（AMO 平台的工具，见下一节；deploy 只保证它存在，plist 用 `--platform-dir` 传给服务）
 - 开机自启 `~/Library/LaunchAgents/com.amo.relay.plist`（登录后启动，退出了自动拉起）
 - 日志 `~/Library/Logs/AMO Relay/`
 
 Mac 用的是 Homebrew 的 Node（需要 22.13 或更新），防火墙是关着的，也不会睡眠。重设密码后，这个人之前的登录会全部失效。
+
+## AMO 平台的发布（2026-10-28 起）
+
+中转服务顺带给 AMO 平台（`plans/amo-lan-platform.md`）提供工具的文件。服务只读一个平台目录，内容由本机的发布命令写：
+
+```
+platform/
+  objects/<sha256 前两位>/<sha256>     文件内容，按 sha256 存，同一个文件只存一份
+  tools/<tool>/<version>.json          一个工具一个版本的清单
+  channels.json                        { "stable": { "studio": "0.9.0", … }, "test": { "studio": "0.9.1", … } }
+  downloads/AMO-Platform-win.zip       平台自己的下载（可选）
+```
+
+- 平台目录用 `serve --platform-dir <目录>` 或环境变量 `AMO_RELAY_PLATFORM_DIR` 指定；没指定时下面三个接口返回 404 和一句说明。Mac 上是 `$ROOT/platform`。
+- 清单：`{ tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }`。`path` 用 `/` 分隔、相对程序文件夹；`exe` 是主程序（如 `AMO Studio.exe`）；`notes` 是这次的改动说明（Markdown）；`builtAt` 是打包时间（毫秒）。
+- 工具 id 是小写字母开头的小写字母、数字和 `-`（`studio`、`reviewer`、`notes`、`platform`）；版本号像 `0.9.1` 或 `0.9.1-test.1`。
+
+接口（都要登录，`Authorization: Bearer <key>`；objects 也接受 `?key=`，方便直接下载）：
+
+| | |
+|---|---|
+| `GET /api/platform/channels` | `channels.json` 的内容；还没发布过时是 `{ "stable": {}, "test": {} }` |
+| `GET /api/platform/tools/<tool>/<version>` | 这个版本的清单；没发布过是 404 |
+| `GET /platform/objects/<sha256>` | 文件内容（`application/octet-stream`，可以长期缓存）；sha256 是 64 位小写十六进制 |
+
+工具 id、版本号、sha256 不合格式时返回 400，不会去读磁盘；读到的文件一定在平台目录里面。下载页（`/`）在 `downloads/AMO-Platform-win.zip` 存在时（客户端的 `downloads/` 里，或者平台目录的 `downloads/` 里）显示「下载 AMO 平台」，这个 zip 不用登录就能下载。放在平台目录里更稳：deploy 换客户端 zip 时会整个换掉 `app/downloads`。
+
+发布（在本机，通过 SSH，不开 HTTP 写接口）：
+
+```
+npm run package:portable -- --only notes               # 先打包：release/AMO Notes/
+npm run relay:mac -- publish notes [--channel test|stable] [--notes "…"] [--release <目录>]
+npm run relay:mac -- promote notes 0.9.1               # 把稳定通道指向一个已经发布过的版本
+npm run relay:mac -- platform-status                   # 两个通道各工具的版本、发布过的版本、存了多少文件
+```
+
+- `publish`：版本号取工具自己的 `package.json`（Studio 是 `packages/app`），读 `release/<Name>/`，算每个文件的 sha256，先问服务器缺哪些，只把缺的用 tar 经 SSH 传过去（到了那边按 sha256 校验后再放进 `objects/`），再写清单，最后改通道。不写 `--channel` 时发到测试通道。`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本那一节（`## 0.9.1（2026-10-29）`）。打包的版本和现在的版本号不一样时拒绝（先重新打包）；同一个版本号已经发布过：文件相同就只改通道，文件不同就拒绝（先升版本号）。
+- 稳定通道不会比测试通道旧：发到稳定或 `promote` 时，如果测试通道的版本更旧（或没有），测试通道也指过去。
+- 清单和 `channels.json` 都先写临时文件再改名，平台不会读到写了一半的文件，也不会读到文件还没传完的清单。
+- 三个命令都可以加 `--target-dir <本机目录>`：不走 SSH，直接发布到这个目录。用来测试，也可以在本机起一个带平台目录的服务做联调：`node release/relay/amo-relay.mjs serve --port 47130 --data <临时目录> --platform-dir <同一个目录>`。
+- 核心逻辑在 `scripts/platform-publish.mjs`（测试 `scripts/platform-publish.test.mjs`），工具表在 `scripts/amo-tools.mjs`。
 
 ## 给同事用
 
@@ -134,7 +176,7 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 
 ## 测试
 
-- 单测：`npx vitest run packages/relay packages/relay-app`
+- 单测：`npx vitest run packages/relay packages/relay-app scripts`（`scripts` 是平台的发布）
 - e2e：`npm run relay:release && npx playwright test -c e2e/playwright.config.ts --project relay`
 
 e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；截图存在 `screenshots/relay/`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。

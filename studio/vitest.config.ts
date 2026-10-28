@@ -14,6 +14,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/*/src/**/*.test.ts"],
+    // scripts/: the release scripts' testable parts (platform-publish.mjs).
+    include: ["packages/*/src/**/*.test.ts", "scripts/**/*.test.mjs"],
   },
 });

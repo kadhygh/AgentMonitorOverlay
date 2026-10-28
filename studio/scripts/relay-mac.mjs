@@ -1,12 +1,22 @@
 // AMO 中转's service on the team Mac (2026-10-28), driven from here over SSH (alias `mac` in ~/.ssh/config):
 //   ~/Services/amo-relay/app/    release/relay as built here (service, client content, downloads); replaced on deploy
 //   ~/Services/amo-relay/data/   relay.db and uploaded files; deploy never touches it
+//   ~/Services/amo-relay/platform/   the AMO platform's tools (platform-publish.mjs), given to the service as --platform-dir;
+//                                deploy only makes sure it exists
 //   ~/Library/LaunchAgents/com.amo.relay.plist   started at login, restarted when it stops; logs in ~/Library/Logs/AMO Relay
 //   node scripts/relay-mac.mjs deploy            send release/relay (npm run relay:release first); a changed service restarts
 //                              status | start | stop | restart | logs [lines]
 //                              passwd <名字> [新密码]       reset someone's password (a random one when left out) and print it
 //                              backup                        a copy of the database in data/backup-<time>.db
 //                              migrate --from <data dir> [--force]   one-off: a running service's data copied over
+//   The AMO platform (2026-10-28, plans/amo-lan-platform.md):
+//                              publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>]
+//                                  release/<Name>/ (npm run package:portable -- --only <tool>) as the tool's version
+//                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md
+//                              promote <tool> <version>     the stable channel to a version already published
+//                              platform-status              both channels' versions per tool, and what is stored
+//                              --target-dir <dir>           any of the three on a folder here instead of the Mac (tests,
+//                                                           or a relay service started here with --platform-dir <dir>)
 // SSH_HOST=<alias> to use another machine. Content updates need no restart: the service reads app/client per request.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomInt } from "node:crypto";
@@ -14,6 +24,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOOLS, changelogSection, tool, toolVersion } from "./amo-tools.mjs";
+import { LocalTarget, ShellTarget, mb, promote, publish, status } from "./platform-publish.mjs";
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const release = join(studio, "release", "relay");
@@ -22,10 +34,12 @@ const LABEL = "com.amo.relay";
 const PORT = 47120;
 const [cmd = "status", ...rest] = process.argv.slice(2);
 const flag = (name) => (rest.includes(name) ? rest[rest.indexOf(name) + 1] : undefined);
+/** The arguments that are not flags or their values (every flag of these commands takes a value, except --force). */
+const positional = rest.filter((a, i) => !a.startsWith("--") && !(rest[i - 1]?.startsWith("--") && rest[i - 1] !== "--force"));
 
 /** The shell code every remote script starts with: where things are, and how to reach launchd. */
 const PRELUDE = `set -e
-ROOT="$HOME/Services/amo-relay"; APP="$ROOT/app"; DATA="$ROOT/data"; LOGS="$HOME/Library/Logs/AMO Relay"
+ROOT="$HOME/Services/amo-relay"; APP="$ROOT/app"; DATA="$ROOT/data"; PLATFORM="$ROOT/platform"; LOGS="$HOME/Library/Logs/AMO Relay"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"; DOMAIN="gui/$(id -u)"
 NODE="$(command -v node || ls /opt/homebrew/bin/node /usr/local/bin/node 2>/dev/null | head -1)"
 export PATH="$(dirname "$NODE"):$PATH"
@@ -34,7 +48,7 @@ health() { curl -s -m 3 "http://127.0.0.1:${PORT}/api/health" || echo "(no answe
 
 /** Runs a bash script on the Mac, sent on stdin (no quoting through the remote login shell). */
 function remote(script, { capture = false } = {}) {
-  const res = spawnSync("ssh", ["-o", "BatchMode=yes", host, "/bin/bash", "-s"], { input: PRELUDE + script, stdio: ["pipe", capture ? "pipe" : "inherit", "inherit"], encoding: "utf8" });
+  const res = spawnSync("ssh", ["-o", "BatchMode=yes", host, "/bin/bash", "-s"], { input: PRELUDE + script, stdio: ["pipe", capture ? "pipe" : "inherit", "inherit"], encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   if (res.status !== 0) throw new Error(`ssh ${host}: exit ${res.status}`);
   return res.stdout;
 }
@@ -58,6 +72,7 @@ const plist = () => `cat > "$PLIST" <<EOF
   <key>ProgramArguments</key><array>
     <string>$NODE</string><string>$APP/amo-relay.mjs</string><string>serve</string>
     <string>--data</string><string>$DATA</string><string>--port</string><string>${PORT}</string>
+    <string>--platform-dir</string><string>$PLATFORM</string>
   </array>
   <key>WorkingDirectory</key><string>$APP</string>
   <key>RunAtLoad</key><true/>
@@ -68,7 +83,7 @@ const plist = () => `cat > "$PLIST" <<EOF
 EOF
 `;
 
-const START = `mkdir -p "$DATA" "$LOGS" "$HOME/Library/LaunchAgents"
+const START = `mkdir -p "$DATA" "$PLATFORM" "$LOGS" "$HOME/Library/LaunchAgents"
 ${plist()}
 launchctl bootout "$DOMAIN/${LABEL}" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
@@ -82,6 +97,13 @@ const BACKUP = `if [ -f "$DATA/relay.db" ]; then
   echo "backup: $B"
 fi
 `;
+
+/** Where publish / promote / platform-status work: the Mac's platform dir over SSH, or a folder here (--target-dir). */
+function platformTarget() {
+  const dir = flag("--target-dir");
+  if (dir) return new LocalTarget(resolve(dir));
+  return new ShellTarget({ run: (script, { capture }) => remote(script, { capture }), upload, root: "$HOME/Services/amo-relay/platform", where: `${host}:~/Services/amo-relay/platform` });
+}
 
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
@@ -99,7 +121,7 @@ switch (cmd) {
     console.log(`uploading ${entries.join(", ")} to ${host}…`);
     await upload(release, entries, "$HOME/Services/amo-relay/incoming");
     // Whole folders renamed into place, the client last, so the service never hands out half of one.
-    remote(`IN="$ROOT/incoming"; mkdir -p "$APP"
+    remote(`IN="$ROOT/incoming"; mkdir -p "$APP" "$PLATFORM"
 if [ -d "$IN/downloads" ]; then rm -rf "$APP/downloads.old"; [ -d "$APP/downloads" ] && mv "$APP/downloads" "$APP/downloads.old"; mv "$IN/downloads" "$APP/downloads"; rm -rf "$APP/downloads.old"; fi
 ${serviceChanged ? BACKUP : ""}cp "$IN/amo-relay.mjs" "$APP/amo-relay.mjs.new" && mv "$APP/amo-relay.mjs.new" "$APP/amo-relay.mjs"
 rm -rf "$APP/client.old"; [ -d "$APP/client" ] && mv "$APP/client" "$APP/client.old"; mv "$IN/client" "$APP/client"; rm -rf "$APP/client.old" "$IN"
@@ -158,6 +180,36 @@ echo "data in place"
 ${START}`);
     break;
   }
+  case "publish": {
+    const [id] = positional;
+    if (!id) throw new Error('usage: relay-mac.mjs publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>] [--target-dir <dir>]');
+    const t = tool(id);
+    const version = toolVersion(id);
+    const notes = flag("--notes") ?? changelogSection(id, version);
+    if (!notes) throw new Error(`packages/${t.pkg}/CHANGELOG.md 里没有 ${version} 这一节：写上再发布，或者用 --notes "…"`);
+    const channel = flag("--channel") ?? "test";
+    const target = platformTarget();
+    const dir = join(resolve(studio, flag("--release") ?? "release"), t.name);
+    const r = await publish(target, { id, dir, version, notes, channel, log: (s) => console.log(s) });
+    console.log(`${r.existed ? "这个版本已经发布过，文件相同：只改了通道" : "已发布"}：${id} ${version} → ${channel === "stable" ? "稳定" : "测试"}通道（${target.where}）`);
+    console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}）`);
+    if (channel === "test") console.log(`转成正式版：npm run relay:mac -- promote ${id} ${version}${flag("--target-dir") ? ` --target-dir "${flag("--target-dir")}"` : ""}`);
+    break;
+  }
+  case "promote": {
+    const [id, version] = positional;
+    if (!id || !version) throw new Error("usage: relay-mac.mjs promote <tool> <version> [--target-dir <dir>]");
+    const target = platformTarget();
+    const channels = await promote(target, { id, version });
+    console.log(`稳定通道：${id} ${channels.stable[id]}；测试通道：${id} ${channels.test[id]}（${target.where}）`);
+    break;
+  }
+  case "platform-status": {
+    const target = platformTarget();
+    console.log(`AMO 平台（${target.where}）`);
+    console.log(await status(target, { tools: Object.keys(TOOLS).filter((id) => TOOLS[id].platform) }));
+    break;
+  }
   default:
-    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate`);
+    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status`);
 }
