@@ -124,7 +124,7 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
               <span className="column-name">{COLUMN_NAMES[col]}</span>
               <span className="column-count">{cards.length}</span>
               {archivable && cards.length > 0 && (
-                <button type="button" className="btn-ghost small with-icon soft-danger column-archive" title={`归档全部已完成（${cards.length}）：任务和它们的会话一起归档；在「已归档」里能打开、恢复`} onClick={() => archive(cards)} data-testid="archive-done-all">
+                <button type="button" className="bar-btn labeled soft-danger column-archive" title={`归档全部已完成（${cards.length}）：任务和它们的会话一起归档；在「已归档」里能打开、恢复`} onClick={() => archive(cards)} data-testid="archive-done-all">
                   <ArchiveIcon size={14} />
                   全部归档
                 </button>

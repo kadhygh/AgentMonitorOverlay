@@ -142,7 +142,7 @@ test("归档 on the 完成 column's head archives every finished task, the one o
   const done = page.getByTestId("column-done");
   await expect(done.getByTestId("task-card")).toHaveCount(3);
 
-  // No right-click menu any more; 全部归档 sits at the right of the head, on the red-tinted face.
+  // No right-click menu any more; 全部归档 sits at the right of the head, like 归档 on the session bar (red glyph).
   await done.locator(".column-head").click({ button: "right" });
   await expect(page.getByTestId("done-menu")).toHaveCount(0);
   const all = done.getByTestId("archive-done-all");

@@ -6,7 +6,7 @@
 .column-name { font-weight: 700; }
 .column-count { color: var(--text-faint); font-family: var(--font-code); font-size: var(--fs-cap); }
 /* 全部归档 at the right of 完成 (2026-10-28); a topic group's own 归档 shows when the pointer is on the group. */
-.column-archive { margin-left: auto; align-self: center; font-family: var(--font-ui); }
+.column-archive { margin-left: auto; align-self: center; height: var(--ctl-s); font-family: var(--font-ui); }
 .topic-group-head .group-archive { height: 22px; min-width: 22px; padding: 0 4px; visibility: hidden; }
 .topic-group-head .group-archive svg { width: 13px; height: 13px; }
 .topic-group:hover .group-archive, .group-archive:focus-visible { visibility: visible; }

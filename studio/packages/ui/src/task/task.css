@@ -194,9 +194,11 @@
 .bar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .bar-btn:disabled { opacity: 0.45; cursor: default; }
 .bar-btn.labeled { padding: 0 10px 0 8px; }
-/* 归档 (任务 and 会话, 2026-10-28): a red-tinted face, its text and glyph in the deep red that goes with it. */
-.btn-ghost.soft-danger, .bar-btn.soft-danger { background: var(--danger-soft-bg); border-color: var(--danger-soft-border); color: var(--danger-soft-text); font-weight: 600; }
-.btn-ghost.soft-danger:hover:not(:disabled), .bar-btn.soft-danger:hover:not(:disabled) { background: var(--danger-soft-hover); border-color: var(--danger-soft-text); color: var(--danger-soft-text); }
+/* 归档 (任务, 会话, 完成 column, 2026-10-28, the user's pick 「B」): the face of the buttons beside it, only the glyph in
+   deep red; red-tinted under the pointer. */
+.soft-danger svg { color: var(--danger-text); }
+.btn-ghost.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-text); color: var(--danger-soft-text); }
+.bar-btn.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-border); color: var(--danger-soft-text); }
 .thread-head .head-sep { height: 18px; margin: 0; }
 /* A narrow window keeps the icons and drops the words. */
 @media (max-width: 1000px) {

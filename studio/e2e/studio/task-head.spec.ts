@@ -128,9 +128,11 @@ test("status, topic and project from the line under the title; the right column 
   const archive = bar.getByTestId("session-archive");
   expect((await archive.boundingBox())!.x).toBeGreaterThan(forkBox!.x);
   await expect(archive).toHaveClass(/soft-danger/);
-  expect(await archive.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
-  // 归档 of the task wears the same colours.
-  expect(await page.getByTestId("task-archive").evaluate((el) => getComputedStyle(el).color)).toBe(await archive.evaluate((el) => getComputedStyle(el).color));
+  // 「B」 (2026-10-28): the face of 分支 beside it, only the glyph in deep red — the task's 归档 the same.
+  const glyph = (el: Element) => getComputedStyle(el.querySelector("svg")!).color;
+  expect(await archive.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+  expect(await archive.evaluate(glyph)).not.toBe(await bar.getByTestId("session-fork").evaluate(glyph));
+  expect(await page.getByTestId("task-archive").evaluate(glyph)).toBe(await archive.evaluate(glyph));
   await page.getByTestId("session-more").click();
   await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["书签"]);
   await page.keyboard.press("Escape");
