@@ -183,12 +183,12 @@ test("Review's file menu opens a web page in the browser (2026-10-27)", async ()
   await expect(files).toHaveCount(2);
   const menu = review.getByRole("menu", { name: "文件" });
   await files.filter({ hasText: "notes.md" }).click({ button: "right" });
-  await expect(menu.getByRole("menuitem", { name: "浏览器打开" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "用浏览器打开" })).toHaveCount(0);
   await review.keyboard.press("Escape");
   await files.filter({ hasText: "report.html" }).click({ button: "right" });
-  await expect(menu.getByRole("menuitem").first()).toHaveText("浏览器打开");
+  await expect(menu.getByRole("menuitem").first()).toHaveAccessibleName("在查看器中打开");
   const posted = review.waitForResponse((r) => r.url().endsWith("/api/open-in") && r.request().method() === "POST");
-  await menu.getByRole("menuitem", { name: "浏览器打开" }).click();
+  await menu.getByRole("menuitem", { name: "用浏览器打开" }).click();
   const res = await posted;
   expect(res.request().postDataJSON()).toMatchObject({ path: "report.html", app: "default" });
   expect(await res.json()).toMatchObject({ app: "default", dryRun: true });

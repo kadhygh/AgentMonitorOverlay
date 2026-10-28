@@ -8,7 +8,7 @@ import { launchStudio, screenshot, type Studio, confirmBookmarkNote } from "../s
 
 // S12-C: files in the conversation. Names in a reply, tool rows and file chips become links when the file exists. Stage
 // 13 (S13-A): a click opens the viewer window (查看器: one preview window, reused until 固定), Ctrl+click VS Code, a
-// right click the file menu (查看器打开 / 右栏快速查看 / 用 git diff 看 / … / 标记); a finished turn lists the files it
+// right click the file menu (在查看器中打开 / 在侧栏预览 / 查看未提交的改动 / … / 加书签, in groups, a letter each); a finished turn lists the files it
 // changed and shows each one's diff in the quick look. Test mode records VS Code / Explorer launches (dryRun).
 
 let studio: Studio | undefined;
@@ -40,9 +40,9 @@ async function nextWindow(app: ElectronApplication, act: () => Promise<void>): P
 
 const viewers = (app: ElectronApplication) => app.windows().filter((w) => w.url().includes("#viewer"));
 
-test("a web page named in the conversation opens in the browser on a click; the viewer stays on the menu (2026-10-26)", async () => {
+test("a web page named in the conversation opens in the viewer on a click, rendered; the browser is on the menu (2026-10-28)", async () => {
   studio = await launchStudio();
-  const { page } = studio;
+  const { app, page } = studio;
   const dir = studio.workspace("alpha");
   writeFileSync(join(dir, "report.html"), "<!doctype html><title>报告</title><p>进度</p>\n");
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
@@ -54,13 +54,17 @@ test("a web page named in the conversation opens in the browser on a click; the 
   await page.getByTestId("task-card").first().click();
   const chip = page.getByTestId("msg-user").getByTestId("msg-file");
   await expect(chip).toHaveAttribute("data-file-link", "", { timeout: 30_000 });
-  const open = await nextOpenIn(page, () => chip.click());
-  expect(open.asked).toMatchObject({ path: join(dir, "report.html"), app: "default" });
-  expect(open.result).toMatchObject({ app: "default", dryRun: true });
+  const viewer = await nextWindow(app, () => chip.click());
+  await expect(viewer.getByTestId("viewer-rendered")).toHaveAttribute("data-kind", "html");
   await chip.click({ button: "right" });
   const menu = page.getByTestId("file-menu");
-  await expect(menu.getByRole("menuitem").first()).toHaveText("浏览器打开");
-  await expect(menu.getByRole("menuitem", { name: "查看器打开" })).toBeVisible();
+  await expect(menu.getByRole("menuitem").first()).toHaveAccessibleName("在查看器中打开");
+  await expect(menu.getByRole("menuitem", { name: "用浏览器打开" })).toHaveAttribute("aria-keyshortcuts", "W");
+  // Its letter opens it.
+  const open = await nextOpenIn(page, () => page.keyboard.press("w"));
+  expect(open.asked).toMatchObject({ path: join(dir, "report.html"), app: "default" });
+  expect(open.result).toMatchObject({ app: "default", dryRun: true });
+  await expect(menu).toHaveCount(0);
 });
 
 async function approveUntilAnswered(page: Page, answer: string) {
@@ -156,13 +160,15 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
     expect(open.asked).toMatchObject({ app: "vscode", line: 4 });
   }
 
-  // Right click: the file menu. 右栏快速查看 the README (linked at #L2): source first, marking line 2; then rendered.
+  // Right click: the file menu, in groups, a letter each. 在侧栏预览 (P) the README (linked at #L2): source first, marking
+  // line 2; then rendered.
   await links.last().click({ button: "right" });
   const menu = page.getByTestId("file-menu");
-  const items = ["查看器打开", "右栏快速查看", "用 git diff 看", ...(vscode ? ["VS Code 打开"] : []), "在资源管理器中显示", "复制路径", "加书签"];
-  await expect(menu.getByRole("menuitem")).toHaveText(items);
+  const items: Array<[string, string]> = [["在查看器中打开", "O"], ["在侧栏预览", "P"], ["查看未提交的改动", "D"], ...(vscode ? [["用 VS Code 打开", "V"] as [string, string]] : []), ["在资源管理器中显示", "E"], ["复制路径", "C"], ["加书签", "B"]];
+  await expect(menu.getByRole("menuitem")).toHaveText(items.map(([label, key]) => label + key));
+  await expect(menu.getByRole("group")).toHaveCount(3);
   await screenshot(app, "stage-13", "S13-A-file-menu", page);
-  await menu.getByRole("menuitem", { name: "右栏快速查看" }).click();
+  await page.keyboard.press("p");
   await expect(menu).toHaveCount(0);
   const preview = page.getByTestId("file-preview");
   await expect(preview.getByTestId("file-preview-name")).toHaveText("README.md:2");
@@ -250,13 +256,13 @@ test("a finished turn lists the files it changed; each opens its diff, then the 
   await viewer.getByTestId("viewer-mode-file").click();
   await expect(viewer.getByTestId("viewer-code")).toBeVisible();
 
-  // 用 git diff 看 (right click): the project's Review window, at the file.
+  // 查看未提交的改动 (right click): the project's Review window, at the file.
   await read.getByTestId("file-link").click({ button: "right" });
-  const review = await nextWindow(app, () => page.getByTestId("file-menu").getByRole("menuitem", { name: "用 git diff 看" }).click());
+  const review = await nextWindow(app, () => page.getByTestId("file-menu").getByRole("menuitem", { name: "查看未提交的改动" }).click());
   await expect(review.getByTestId("review-file-head")).toContainText(DEMO_FILE);
   // A file without uncommitted changes (the person's chip, notes.md): the same window says so.
   await page.getByTestId("msg-user").getByTestId("msg-file").click({ button: "right" });
-  await page.getByTestId("file-menu").getByRole("menuitem", { name: "用 git diff 看" }).click();
+  await page.keyboard.press("d");
   await expect(review.getByTestId("toast")).toHaveText(/这个文件没有未提交的改动/);
   await expect(review.getByTestId("review-file-head")).toContainText(DEMO_FILE);
   // Review's 查看文件 opens the viewer at the file.

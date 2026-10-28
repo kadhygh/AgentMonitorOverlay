@@ -10,6 +10,7 @@ import { formatBytes } from "../attach/refs.js";
 import { diffRows, type DiffRow } from "./changes.js";
 import { useVsCode } from "./FileLinks.js";
 import { fileName, folderOf } from "./paths.js";
+import { openViewer } from "../viewer/open.js";
 
 // The quick look (stage 12, S12-C, after DSH's document preview): a file beside the conversation without leaving it.
 // Code with line numbers and colours, scrolled to and marking a line; Markdown rendered or as source; images; a
@@ -216,6 +217,16 @@ export function FilePreview({ link, file, line, endLine, column, diff, onClose, 
         </button>
       </div>
       <div className="fp-actions">
+        {/* The viewer first (2026-10-28): its own window, Markdown and HTML rendered with comments. */}
+        <button
+          type="button"
+          className="btn-ghost small"
+          title="在单独的查看器窗口里打开，可以写批注"
+          onClick={() => openViewer({ path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}), ...(mode === "file" && at.line ? { line: at.line } : {}) })}
+          data-testid="fp-viewer"
+        >
+          在查看器中打开
+        </button>
         {vscode && (
           <button type="button" className="btn-ghost small" data-testid="fp-vscode" onClick={() => openInEditor(link, file, mode === "file" ? at.line : undefined, mode === "file" ? at.column : undefined).catch(fail)}>
             VS Code 打开

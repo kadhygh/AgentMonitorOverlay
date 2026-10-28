@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { FileDiff } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
+import { ActionMenu } from "../lib/ActionMenu.js";
 import { MarkdownFileLinks } from "../lib/markdown.js";
 import { isWebPage, openInApps, openInDefault, openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { openReview } from "../gitreview/open.js";
@@ -11,9 +12,9 @@ import { parseInlinePath, parseLinkTarget } from "./paths.js";
 
 // Files named in the conversation become links (stage 12, S12-C). Stage 13: a click opens the file in the viewer
 // window (查看器; a change of this turn still opens in the quick look beside the conversation), Ctrl+click opens VS
-// Code, and a right click offers 查看器打开 / 右栏快速查看 / 用 git diff 看 / VS Code 打开 / 在资源管理器中显示 /
-// 复制路径 / 标记. A web page (.html, 2026-10-26) opens in the browser on a click instead, the viewer staying on the
-// menu. The page wraps its conversation in <FileLinks>; outside one, everything stays plain text.
+// Code, and a right click offers 在查看器中打开 / 在侧栏预览 / 查看未提交的改动 / 用 VS Code 打开 / 在资源管理器中显示 /
+// 复制路径 / 加书签, each with a letter (2026-10-28). A web page opens in the viewer too (2026-10-28; in the browser
+// from 10-26), 用浏览器打开 on the menu. The page wraps its conversation in <FileLinks>; outside it, plain text.
 
 /** What the quick look shows: a file (at a line or range), or a change to it first (本轮改动). */
 export interface PreviewTarget {
@@ -29,7 +30,7 @@ interface FileLinksValue {
   workspaceId: string | null;
   sessionId: string | null;
   vscode: boolean;
-  /** A click: the viewer window (the browser for a web page), or the quick look for a change of this turn. */
+  /** A click: the viewer window, or the quick look for a change of this turn. */
   open(target: PreviewTarget): void;
   preview(target: PreviewTarget): void;
   editor(target: PreviewTarget): void;
@@ -108,83 +109,53 @@ export function FileLinks({
     },
     [link, workspaceId, fail],
   );
-  const open = useCallback(
-    (t: PreviewTarget) => (t.diff ? onPreview(t) : isWebPage(t.file.path) ? browse(t) : viewFile(t, workspaceId, sessionId)),
-    [onPreview, browse, workspaceId, sessionId],
-  );
+  // A web page too opens in the viewer (2026-10-28): rendered there, its passages take comments; the browser is on the menu.
+  const open = useCallback((t: PreviewTarget) => (t.diff ? onPreview(t) : viewFile(t, workspaceId, sessionId)), [onPreview, workspaceId, sessionId]);
   const value = useMemo<FileLinksValue>(
     () => ({ link, workspaceId, sessionId, vscode, open, preview: onPreview, editor, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) }),
     [link, workspaceId, sessionId, vscode, open, onPreview, editor],
   );
 
-  // The menu closes on Escape, on a click outside it, and when anything scrolls.
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      close();
-    };
-    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".file-menu") && close();
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("scroll", close, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [menu]);
-
-  const act = (fn: (t: PreviewTarget) => void) => () => {
-    if (!menu) return;
-    const t = menu.target;
-    setMenu(null);
-    fn(t);
-  };
-  const reviewIn = menu ? (menu.target.file.workspaceId ?? workspaceId) : null;
+  const t = menu?.target;
+  const reviewIn = t ? (t.file.workspaceId ?? workspaceId) : null;
+  const rendered = t && /\.(md|markdown|html?)$/i.test(t.file.path);
 
   return (
     <Ctx.Provider value={value}>
       <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
-      {menu && (
-        <div className="ctx-menu file-menu" role="menu" aria-label="文件" style={{ left: menu.x, top: menu.y }} data-testid="file-menu">
-          {isWebPage(menu.target.file.path) && (
-            <button type="button" role="menuitem" onClick={act(browse)}>
-              浏览器打开
-            </button>
-          )}
-          <button type="button" role="menuitem" onClick={act((t) => viewFile(t, workspaceId, sessionId))}>
-            查看器打开
-          </button>
-          <button type="button" role="menuitem" onClick={act(onPreview)}>
-            右栏快速查看
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!reviewIn}
-            title={reviewIn ? "在这个项目的 Git Review 里看这个文件未提交的改动" : "这段对话不属于任何项目"}
-            onClick={act((t) => reviewIn && openReview({ workspaceId: reviewIn, ...(sessionId ? { sessionId } : {}), file: t.file.path }))}
-          >
-            用 git diff 看
-          </button>
-          {vscode && (
-            <button type="button" role="menuitem" onClick={act((t) => openInEditor(link, t.file, t.line, t.column).catch(fail))}>
-              VS Code 打开
-            </button>
-          )}
-          <button type="button" role="menuitem" onClick={act((t) => revealInExplorer(link, t.file).catch(fail))}>
-            在资源管理器中显示
-          </button>
-          <button type="button" role="menuitem" onClick={act((t) => void copyText(t.file.path))}>
-            复制路径
-          </button>
-          <button type="button" role="menuitem" onClick={act((t) => void markOrShow(link, t.file, t.line, sessionId ?? undefined).catch(fail))}>
-            加书签
-          </button>
-        </div>
+      {menu && t && (
+        // 2026-10-28: ways to look at it, then Explorer, then the path and 书签; a letter for each.
+        <ActionMenu
+          label="文件"
+          at={menu}
+          testId="file-menu"
+          onClose={() => setMenu(null)}
+          groups={[
+            [
+              {
+                label: "在查看器中打开",
+                key: "O",
+                title: rendered ? "单独的窗口，渲染显示，可以选中文字写批注（单击文件名也是这样打开）" : "单独的窗口，可以按行写批注（单击文件名也是这样打开）",
+                run: () => viewFile(t, workspaceId, sessionId),
+              },
+              { label: "在侧栏预览", key: "P", title: "在对话右边打开，不离开这段对话", run: () => onPreview(t) },
+              {
+                label: "查看未提交的改动",
+                key: "D",
+                disabled: !reviewIn,
+                title: reviewIn ? "在这个项目的 Git Review 里看这个文件还没提交的改动" : "这段对话不属于任何项目",
+                run: () => reviewIn && openReview({ workspaceId: reviewIn, ...(sessionId ? { sessionId } : {}), file: t.file.path }),
+              },
+              vscode && { label: "用 VS Code 打开", key: "V", title: "Ctrl+单击文件名也是这样打开", run: () => void openInEditor(link, t.file, t.line, t.column).catch(fail) },
+              isWebPage(t.file.path) && { label: "用浏览器打开", key: "W", title: "在系统默认浏览器里打开", run: () => browse(t) },
+            ],
+            [{ label: "在资源管理器中显示", key: "E", run: () => void revealInExplorer(link, t.file).catch(fail) }],
+            [
+              { label: "复制路径", key: "C", run: () => void copyText(t.file.path) },
+              { label: "加书签", key: "B", run: () => void markOrShow(link, t.file, t.line, sessionId ?? undefined).catch(fail) },
+            ],
+          ]}
+        />
       )}
     </Ctx.Provider>
   );

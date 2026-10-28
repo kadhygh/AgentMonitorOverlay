@@ -13,6 +13,12 @@
 .ctx-menu .menu-check { display: inline-block; width: 14px; color: var(--primary); }
 .ctx-menu .menu-rule { border: none; border-top: 1px solid var(--divider); margin: 4px 6px; }
 .ctx-menu button.menu-new { color: var(--primary); }
+/* ActionMenu (2026-10-28): groups with a rule between them, each action's key on its right. */
+.action-menu { min-width: 200px; }
+.action-group { display: flex; flex-direction: column; }
+.action-menu button { display: flex; align-items: center; gap: 24px; }
+.action-menu .menu-key { margin-left: auto; min-width: 18px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text-faint); font-family: var(--font-code); font-size: 11px; line-height: 16px; text-align: center; }
+.action-menu button:disabled .menu-key { opacity: 0.5; }
 .anno-panel { flex: 0 0 300px; max-width: 320px; border-left: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: var(--panel-raised); }
 .anno-head { display: flex; align-items: baseline; gap: 8px; }
 .anno-title { font-weight: 600; font-size: var(--fs-sm); }

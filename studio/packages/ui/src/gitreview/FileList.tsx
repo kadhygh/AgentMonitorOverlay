@@ -4,6 +4,7 @@ import { FileTypeIcon } from "../files/FileTypeIcon.js";
 import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, treeRows, type ListLayout } from "./filetree.js";
 import { LazyChunks } from "./LazyChunks.js";
 import { isWebPage } from "../lib/openin.js";
+import { ActionMenu } from "../lib/ActionMenu.js";
 import { listOrder, STATUS_GLYPH, STATUS_NAME } from "./logic.js";
 
 // The review window's file list: a flat list of full paths (default, after Fork) or a folder tree (S12-A), each file
@@ -192,42 +193,31 @@ export interface FileMenuAt {
   y: number;
 }
 
+/** What the menu of a file row does. */
+export type FileMenuAction = "viewer" | "vscode" | "browser" | "explorer" | "copy";
+
 /**
- * Right-click menu of a file row: a web page in the browser (2026-10-27), VS Code (when the machine has it) and
- * Explorer; a deleted file has none.
+ * Right-click menu of a file row (2026-10-28, grouped, a letter each): the viewer first, VS Code (when the machine has
+ * it), a web page in the browser; Explorer; the path. A deleted file only has its path.
  */
-export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vscode: boolean; onOpen(app: "vscode" | "explorer" | "browser"): void; onClose(): void }) {
-  // Closes on Escape and on any click outside it.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown);
-    };
-  }, [onClose]);
+export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vscode: boolean; onOpen(action: FileMenuAction): void; onClose(): void }) {
   const gone = at.file.status === "deleted";
-  const item = (app: "vscode" | "explorer" | "browser", label: string) => (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={gone}
-      title={gone ? "文件已删除" : undefined}
-      onClick={() => {
-        onOpen(app);
-        onClose();
-      }}
-    >
-      {label}
-    </button>
-  );
+  const why = gone ? "文件已删除" : undefined;
+  const act = (action: FileMenuAction, label: string, key: string, title?: string) => ({ label, key, disabled: gone && action !== "copy", title: (action !== "copy" && why) || title, run: () => onOpen(action) });
   return (
-    <div className="ctx-menu" role="menu" aria-label="文件" style={{ left: Math.min(at.x, window.innerWidth - 200), top: Math.min(at.y, window.innerHeight - 120) }}>
-      {isWebPage(at.file.path) && item("browser", "浏览器打开")}
-      {vscode && item("vscode", "VS Code 打开")}
-      {item("explorer", "在资源管理器中显示")}
-    </div>
+    <ActionMenu
+      label="文件"
+      at={at}
+      onClose={onClose}
+      groups={[
+        [
+          act("viewer", "在查看器中打开", "O", "单独的窗口看文件现在的样子；Markdown、HTML 渲染显示，可以批注"),
+          vscode && act("vscode", "用 VS Code 打开", "V"),
+          isWebPage(at.file.path) && act("browser", "用浏览器打开", "W", "在系统默认浏览器里打开"),
+        ],
+        [act("explorer", "在资源管理器中显示", "E")],
+        [act("copy", "复制路径", "C")],
+      ]}
+    />
   );
 }

@@ -342,7 +342,7 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   // The file list's right-click menu does the same; a deleted file has nothing to open.
   await files.filter({ hasText: "table.lua" }).click({ button: "right" });
   const menu = review.getByRole("menu", { name: "文件" });
-  await expect(menu.getByRole("menuitem")).toHaveText(apps.vscode ? ["VS Code 打开", "在资源管理器中显示"] : ["在资源管理器中显示"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["在查看器中打开O", ...(apps.vscode ? ["用 VS Code 打开V"] : []), "在资源管理器中显示E", "复制路径C"]);
   await expect(review.getByTestId("diff-cell-new").first()).toContainText("return");
   await screenshot(app, "stage-12", "S12-A-file-menu", review, "review");
   res = posted();

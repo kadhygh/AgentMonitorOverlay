@@ -11,11 +11,12 @@ import {
   type StateSnapshot,
   type Workspace,
 } from "@amo-studio/protocol";
-import { call, HostApiError, type HostLink } from "../host/client.js";
+import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { openInApps, openInDefault, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView, type ViewMark } from "./DiffView.js";
-import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
+import { FileList, FileMenu, Splitter, type FileMenuAction, type FileMenuAt } from "./FileList.js";
+import { openViewer } from "../viewer/open.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
 import { changeStarts, cycle, diffRows, draftCounts, nextOf, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
 import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
@@ -224,8 +225,13 @@ export function ReviewPage({
       live = false;
     };
   }, [link]);
-  const openFile = (f: GitChangedFile, app: "vscode" | "explorer" | "browser", line?: number) => {
+  const openFile = (f: GitChangedFile, app: FileMenuAction, line?: number) => {
     const ref = { path: f.path, workspaceId: workspace.id };
+    if (app === "viewer") return openViewer({ path: f.path, workspaceId: workspace.id, ...(line ? { line } : {}) });
+    if (app === "copy") {
+      const sep = workspace.path.includes("\\") ? "\\" : "/";
+      return void copyText(`${workspace.path.replace(/[\\/]+$/, "")}${sep}${f.path.replace(/\//g, sep)}`).then(() => setToast({ text: "已复制路径" }));
+    }
     if (app === "browser") return void openInDefault(link, ref).catch((err: unknown) => fail(err, "浏览器打开失败："));
     (app === "vscode" ? openInEditor(link, ref, line) : revealInExplorer(link, ref)).catch((err: unknown) => fail(err, app === "vscode" ? "VS Code 打开失败：" : "在资源管理器中显示失败："));
   };

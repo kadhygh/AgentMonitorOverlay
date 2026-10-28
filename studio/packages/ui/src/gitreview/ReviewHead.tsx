@@ -153,6 +153,18 @@ export function FileHead({
       <span className="gr-dim">{file.untracked ? "未跟踪的新文件" : STATUS_NAME[file.status]}</span>
       <span className="spacer" />
       <span className="gr-dim">{countLabel(file)}</span>
+      {/* The viewer first: the way to look at a file (2026-10-28). */}
+      {file.status !== "deleted" && (
+        <button
+          type="button"
+          className="btn-ghost small"
+          title={`在查看器里看这个文件现在的样子（第 ${openLine} 行）`}
+          onClick={() => openViewer({ path: file.path, workspaceId, line: openLine })}
+          data-testid="review-open-viewer"
+        >
+          查看文件
+        </button>
+      )}
       {vscode && (
         <button
           type="button"
@@ -175,17 +187,6 @@ export function FileHead({
       >
         在资源管理器中显示
       </button>
-      {file.status !== "deleted" && (
-        <button
-          type="button"
-          className="btn-ghost small"
-          title={`在查看器里看这个文件现在的样子（第 ${openLine} 行）`}
-          onClick={() => openViewer({ path: file.path, workspaceId, line: openLine })}
-          data-testid="review-open-viewer"
-        >
-          查看文件
-        </button>
-      )}
       {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId }} line={lineChosen ? openLine : null} />}
     </div>
   );
