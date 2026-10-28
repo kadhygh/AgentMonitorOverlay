@@ -51,7 +51,10 @@ test("tasks and sessions are renamed in place; a task can be @-ed in a conversat
   await expect(composer).toHaveValue("参考 @掉落表概率校验 ");
   await composer.press("Enter");
   const target = state.tasks.find((t: Task) => t.title === "掉落表概率校验")!;
-  await expect(page.getByTestId("msg-user").last()).toContainText(`AMO 任务 ${target.id}`);
+  // Since 2026-10-28 (12bce21) the name is coloured in the bubble and what the model was told of it is behind a tag.
+  const bubble = page.getByTestId("msg-user").last();
+  await expect(bubble.getByTestId("msg-mention")).toHaveText("@掉落表概率校验");
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveAttribute("title", new RegExp(`AMO 任务 ${target.id}`));
 });
 
 test("a canvas group is removed from its title bar or with Delete; its cards stay", async () => {
