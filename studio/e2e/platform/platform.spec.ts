@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,9 +46,10 @@ function cleanEnv(): Record<string, string> {
   return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_FAKE_TOOL_MARK: join(root, "launched") };
 }
 
-async function launch(args: string[] = []): Promise<{ app: ElectronApplication; page: Page }> {
+/** `machine` lays out a pretend machine under the temp root and returns the environment that points at it. */
+async function launch(args: string[] = [], machine?: (root: string) => Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
   root = mkdtempSync(join(tmpdir(), "amo-platform-e2e-"));
-  app = await _electron.launch({ executablePath: electronPath, args: [MAIN, ...args], env: cleanEnv() });
+  app = await _electron.launch({ executablePath: electronPath, args: [MAIN, ...args], env: { ...cleanEnv(), ...machine?.(root) } });
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   return { app, page };
@@ -312,4 +313,63 @@ test("注册 on the login page: the passphrase only when the server wants one, e
     await invited.close();
   }
   expect(existsSync(realHome) ? statSync(realHome).mtimeMs : null).toBe(before);
+});
+
+test("环境: what the tools run on, found where Studio looks; 去下载 opens the official page, 复制 the install command", async () => {
+  // A pretend machine: PATH, %USERPROFILE%, %APPDATA% and %LOCALAPPDATA% in the temp root, so the real Claude Code, Codex
+  // and git here are not what is found. Claude Code: a file named claude.exe that is no program (found, does not answer);
+  // no DSH app, no Codex, no git (Codex turns up later: a .cmd that says its version).
+  const bin = () => join(root, "bin");
+  const { app, page } = await launch([], (r) => {
+    const dirs = { bin: join(r, "bin"), home: join(r, "home"), appdata: join(r, "appdata"), local: join(r, "localappdata") };
+    for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
+    mkdirSync(join(dirs.home, ".local", "bin"), { recursive: true });
+    writeFileSync(join(dirs.home, ".local", "bin", "claude.exe"), "not a program");
+    return { PATH: [dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local };
+  });
+  const form = page.getByRole("form", { name: "登录" });
+  await form.getByLabel("服务器地址").fill(server.url.replace("http://", ""));
+  await form.getByLabel("名字").fill("小王");
+  await form.getByLabel("密码").fill("secret");
+  await form.getByRole("button", { name: "登录" }).click();
+  await expect(page.getByTestId("pf-connection")).toContainText("服务器在线", { timeout: 20_000 });
+  await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
+  await expect(page.getByRole("heading", { name: "环境" })).toBeVisible();
+
+  const item = (id: string) => page.getByTestId(`env-${id}`);
+  const envStatus = (id: string) => page.getByTestId(`env-${id}-status`);
+  await expect(envStatus("claude")).toHaveText("! 需要注意", { timeout: 30_000 });
+  await expect(page.getByTestId("env-claude-note")).toContainText("没有回应 claude --version");
+  await expect(item("claude")).toContainText(join(root, "home", ".local", "bin", "claude.exe"));
+  await expect(item("claude")).toContainText("用在：Studio 里的 Claude 订阅、GLM 等 Claude 渠道");
+  await expect(item("claude").locator("code").last()).toHaveText("irm https://claude.ai/install.ps1 | iex");
+  await expect(envStatus("dsh")).toHaveText("○ 没装 · 推荐装桌面版");
+  await expect(page.getByTestId("env-dsh-note")).toContainText(join(root, "localappdata", "Programs", "DeepSeek Harness"));
+  await expect(envStatus("codex")).toHaveText("○ 没装");
+  await expect(envStatus("git")).toHaveText("○ 没装");
+  await expect(item("git")).toContainText("用在：Review、项目");
+  await screenshot(app, "platform", "P17-environment", page);
+
+  // 去下载: the official pages, recorded instead of opened in tests; 复制: the install command.
+  const external = () => app.evaluate(() => (globalThis as { __platformExternal?: string[] }).__platformExternal ?? []);
+  await item("git").getByRole("button", { name: "去下载" }).click();
+  await expect.poll(external).toEqual(["https://git-scm.com/install/windows"]);
+  await item("dsh").getByRole("button", { name: "去下载" }).click();
+  await item("claude").getByRole("button", { name: "去下载" }).click();
+  await expect.poll(external).toEqual(["https://git-scm.com/install/windows", "https://www.deepseek.com/harness/", "https://code.claude.com/docs/en/setup"]);
+  await item("claude").getByRole("button", { name: "复制" }).click();
+  await expect(item("claude").getByRole("button", { name: "已复制" })).toBeVisible();
+  expect(await app.evaluate(() => (globalThis as { __platformCopied?: string }).__platformCopied)).toBe("irm https://claude.ai/install.ps1 | iex");
+
+  // Codex installed since: 重新检测 finds it (the page keeps the last check until then).
+  writeFileSync(join(bin(), "codex.cmd"), "@echo off\r\necho codex-cli 0.161.0\r\n");
+  await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "工具" }).click();
+  await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
+  await expect(envStatus("codex")).toHaveText("○ 没装");
+  await page.getByRole("button", { name: "重新检测" }).click();
+  await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.161.0", { timeout: 30_000 });
+  await expect(item("codex")).toContainText(join(root, "bin", "codex.cmd"));
+  await expect(item("codex").getByRole("button", { name: "去下载" })).toHaveCount(0);
+  await item("git").scrollIntoViewIfNeeded();
+  await screenshot(app, "platform", "P18-environment-rechecked", page);
 });

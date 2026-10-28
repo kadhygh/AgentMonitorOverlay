@@ -6,6 +6,8 @@ import { channelVersion, compareVersions, PlatformError, type Channels, type Man
 import { planLaunch, startDetached, type LaunchSpec } from "./launch.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
+import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
+import type { EnvironmentView } from "./environment-view.js";
 import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
@@ -25,6 +27,9 @@ export interface PlatformShell {
   pickFolder(title: string, start: string | null): Promise<string | null>;
   openPath(path: string): Promise<void>;
   setOpenAtLogin(on: boolean): void;
+  /** The 环境 page's 去下载 (the system browser) and 复制; absent where nothing should open (unit tests). */
+  openExternal?(url: string): Promise<void>;
+  copyText?(text: string): void;
 }
 
 export interface PlatformOptions {
@@ -432,6 +437,28 @@ export class Platform implements PlatformCalls {
     const v = this.view();
     const path = which === "apps" ? v.dirs.apps : which === "settings" ? v.dirs.settings : v.dirs.studioData;
     if (path) await this.options.shell.openPath(path);
+  }
+
+  // ---- 环境 (environment.ts): only looking, and links to the official pages
+
+  private envChecker: EnvironmentChecker | null = null;
+
+  /** The last check of what the tools run on, or a new one (重新检测: `fresh`). */
+  async environment(fresh = false): Promise<EnvironmentView> {
+    // Studio's own SDK, when it is installed, tells an outdated Claude Code as Studio's 设置 → 模型 does.
+    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir) }));
+    return this.envChecker.check(fresh);
+  }
+
+  /** 去下载: the item's official page (the platform's own list, https only) in the system browser. */
+  async openDownload(id: string): Promise<void> {
+    const url = downloadUrl(id);
+    if (url) await this.options.shell.openExternal?.(url);
+  }
+
+  /** 复制: Claude Code's PowerShell install command. */
+  async copyInstallCommand(): Promise<void> {
+    this.options.shell.copyText?.(CLAUDE_INSTALL_COMMAND);
   }
 
   /** Where platform.json is (for the settings page). */

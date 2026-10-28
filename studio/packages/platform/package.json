@@ -8,7 +8,8 @@
     "start": "electron ."
   },
   "dependencies": {
-    "@amo-studio/account": "0.0.0"
+    "@amo-studio/account": "0.0.0",
+    "@amo-studio/locate": "0.0.0"
   },
   "devDependencies": {
     "electron": "44.7.0"

@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { claudeCodeCandidates, olderVersion, versionIn } from "@amo-studio/locate";
 import type { ClaudeCodeStatus } from "@amo-studio/protocol";
-import { bundledClaudeExe, installedClaudeExe } from "./transcripts.js";
+import { bundledClaudeExe } from "./transcripts.js";
 
 // Which Claude Code the Claude sessions run on (2026-10-24). The portable build leaves Claude Code out (it is
 // Anthropic's, not Studio's to hand out, and it is half the download): there the sessions use the person's own install,
@@ -43,7 +43,7 @@ function versionNow(path: string): string | null {
   if (known && known.mtimeMs === mtimeMs) return known.version;
   let version: string | null = null;
   try {
-    version = /\d+\.\d+\.\d+/.exec(execFileSync(path, ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }))?.[0] ?? null;
+    version = versionIn(execFileSync(path, ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }));
   } catch {
     version = null;
   }
@@ -55,20 +55,11 @@ function versionNow(path: string): string | null {
 const starts = (path: string) => versionNow(path) !== null;
 
 /**
- * The person's install: `claude` on PATH, else where its installers put it (Studio's PATH is the one it started with,
- * so a Claude Code installed since is found there too); the first that starts. npm's `claude.cmd` cannot be started
- * without a shell; the native exe it wraps is used instead.
+ * The person's install: the first of @amo-studio/locate's candidates (`claude` on PATH, else where its installers put
+ * it; AMO 平台's 环境 page tries the same ones) that starts.
  */
 function installed(env: NodeJS.ProcessEnv, works: (path: string) => boolean): string | null {
-  const home = env.USERPROFILE ?? homedir();
-  const npm = env.APPDATA ? join(env.APPDATA, "npm") : null;
-  const candidates = [installedClaudeExe(env), join(home, ".local", "bin", "claude.exe"), npm && join(npm, "claude.cmd")];
-  for (const exe of candidates) {
-    if (!exe || !existsSync(exe)) continue;
-    const native = exe.toLowerCase().endsWith(".cmd") ? join(dirname(exe), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe") : exe;
-    if (existsSync(native) && works(native)) return native;
-  }
-  return null;
+  return claudeCodeCandidates(env).find((exe) => works(exe)) ?? null;
 }
 
 /**
@@ -106,16 +97,7 @@ export async function claudeCodeVersion(path: string): Promise<string | null> {
   return versionNow(path);
 }
 
-/** Whether `a` is an older version than `b` (dotted numbers). */
-export function olderVersion(a: string, b: string): boolean {
-  const x = a.split(".").map(Number);
-  const y = b.split(".").map(Number);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0);
-    if (d) return d < 0;
-  }
-  return false;
-}
+export { olderVersion };
 
 /** 设置 → 模型: the Claude Code sessions run on, its version, and the SDK's. */
 export async function claudeCodeStatus(env: NodeJS.ProcessEnv = process.env): Promise<ClaudeCodeStatus> {

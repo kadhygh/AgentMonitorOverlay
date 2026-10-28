@@ -1,15 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
+import { EnvironmentPage } from "./EnvironmentPage.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
-// page (with 注册 for people without an account) until there is an account, then 工具 / 目录 / 设置. Everything it shows comes from the main process
+// page (with 注册 for people without an account) until there is an account, then 工具 / 环境 / 目录 / 设置. Everything it shows comes from the main process
 // (platform:view) and every button is a call back to it; the page keeps only which page is open.
 // The prototype's 更新 page (per-tool update modes, updates.json) is step 3 and not here yet.
 
-type Page = "tools" | "dirs" | "settings";
+type Page = "tools" | "environment" | "dirs" | "settings";
 
 const PAGES: Array<[Page, string]> = [
   ["tools", "工具"],
+  ["environment", "环境"],
   ["dirs", "目录"],
   ["settings", "设置"],
 ];
@@ -69,6 +71,7 @@ export function PlatformApp() {
           </nav>
           <main className="pf-content">
             {page === "tools" && <ToolsPage view={view} onNeedStudioDir={needStudioDir} />}
+            {page === "environment" && <EnvironmentPage />}
             {page === "dirs" && <DirsPage view={view} notice={dirNotice} onNoticeDone={() => setDirNotice(null)} />}
             {page === "settings" && <SettingsPage view={view} />}
           </main>

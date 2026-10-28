@@ -3,5 +3,5 @@
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test-support.ts"],
-  "references": [{ "path": "../protocol" }]
+  "references": [{ "path": "../protocol" }, { "path": "../locate" }]
 }

@@ -5,7 +5,8 @@ import type { MaintenanceCli, MaintenanceInfo, MaintenanceTerminalResult, Studio
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { git } from "../gitreview/git.js";
-import { firstOnPath, installedClaudeExe } from "../../runtime/claude/transcripts.js";
+import { codexOnPath } from "@amo-studio/locate";
+import { installedClaudeExe } from "../../runtime/claude/transcripts.js";
 import { findClaudeCode } from "../../runtime/claude/executable.js";
 
 // src/ and dist/ sit at the same depth: studio/packages/host/{src,dist}/features/maintenance.
@@ -75,7 +76,7 @@ const NOT_FOUND: Record<MaintenanceCli, string> = {
 
 /** The person's own `codex`, the first on PATH, as their terminal finds it (not the copy the Codex desktop app bundles). */
 function codexExe(): string | null {
-  return firstOnPath(["codex.exe", "codex.cmd"]);
+  return codexOnPath();
 }
 
 /** The person's own `claude` (it updates itself), else the one the sessions run on (the SDK's copy in a checkout). */

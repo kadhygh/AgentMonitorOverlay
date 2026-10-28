@@ -1,0 +1,6 @@
+/* AMO 平台's 环境 page (EnvironmentPage.tsx); the rest of its look is platform.css's tool cards. */
+
+.pf-env-note { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); overflow-wrap: anywhere; }
+.pf-env-note.warn { padding: 6px 10px; border: 1px solid var(--attention-border); border-radius: var(--r-m); background: var(--attention-bg); color: var(--text); }
+.pf-env-command { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pf-env-command .pf-path { user-select: all; }

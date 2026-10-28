@@ -3,6 +3,7 @@ import type { OpenResult, PlatformCalls, PlatformView } from "../../../platform/
 // The AMO 平台 window's way to its main process (packages/platform/src/preload.cts → window.amoPlatform).
 
 export type { OpenResult, PlatformView, ToolView, TaskView, Channel, RegisterResult, ServerCheck } from "../../../platform/src/view.js";
+export type { EnvironmentView, EnvItemView } from "../../../platform/src/environment-view.js";
 
 export interface PlatformNotice {
   tool: string;

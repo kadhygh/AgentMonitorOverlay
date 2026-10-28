@@ -1,5 +1,6 @@
 // What the platform's window shows, as the main process hands it over (platform:view). Types only: the page
 // (packages/ui/src/platform) imports them too, so nothing here may need Node.
+import type { EnvironmentView } from "./environment-view.js";
 
 export type Channel = "stable" | "test";
 
@@ -87,6 +88,10 @@ export interface PlatformCalls {
   pickStudioDataDir(): Promise<void>;
   openPath(which: "apps" | "studioData" | "settings"): Promise<void>;
   dismiss(tool: string): Promise<void>;
+  /** 环境 (environment-view.ts): the last check, or a new one. */
+  environment(fresh?: boolean): Promise<EnvironmentView>;
+  openDownload(id: string): Promise<void>;
+  copyInstallCommand(): Promise<void>;
 }
 
 export interface RegisterForm {

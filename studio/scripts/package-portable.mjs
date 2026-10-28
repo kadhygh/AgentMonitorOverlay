@@ -47,7 +47,7 @@ const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewe
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
   studio: {
-    packages: ["app", "host", "protocol", "ui", "reviewer", "notes"],
+    packages: ["app", "host", "protocol", "locate", "ui", "reviewer", "notes"],
     programs: ["studio", "notes", "reviewer"],
     // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -65,7 +65,7 @@ const BUILDS = {
     ],
   },
   reviewer: {
-    packages: ["reviewer", "host", "protocol", "ui"],
+    packages: ["reviewer", "host", "protocol", "locate", "ui"],
     programs: ["reviewer"],
     // Its Host runs no models; the SDK's JavaScript is still loaded.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -101,7 +101,7 @@ const BUILDS = {
   },
   // AMO 平台 (2026-10-28, plans/amo-lan-platform.md): the tray app that installs and updates the others from the team server.
   platform: {
-    packages: ["platform", "account", "ui"],
+    packages: ["platform", "account", "locate", "ui"],
     programs: ["platform"],
     icon: () => join(studio, "packages", "platform", "assets", "icon.ico"),
     readme: [
@@ -190,7 +190,7 @@ function build(id) {
     // Window, tray and exe icons (each tool's own since 2026-10-28, scripts/make-icons.mjs); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
     // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
-    if (["protocol", "host", "reviewer", "relay", "account"].includes(name)) {
+    if (["protocol", "host", "reviewer", "relay", "account", "locate"].includes(name)) {
       cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
       cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
     }

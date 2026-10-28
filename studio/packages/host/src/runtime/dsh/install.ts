@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { DSH_DESKTOP_ARGS, dshDesktopDir, dshDesktopIn } from "@amo-studio/locate";
 import type { DshCheck, DshStatus } from "@amo-studio/protocol";
 
 // Everything Studio relies on in DeepSeek Harness (stage 17, plans/done/stage-17-dsh.md; spikes s17-00/01): the desktop app
@@ -99,15 +100,10 @@ export function readDshSource(kv: KvStore): DshSource {
 
 // ---- the desktop app --------------------------------------------------------------------------------------------
 
-/** Where the desktop app installs (per user); AMO_STUDIO_DSH_DESKTOP points elsewhere ("" = none). */
-export function desktopDir(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.AMO_STUDIO_DSH_DESKTOP !== undefined) return env.AMO_STUDIO_DSH_DESKTOP || null;
-  return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs", "DeepSeek Harness") : null;
-}
-/** The app's own command line, as its resources/runtime/cli/bin/dsh.cmd runs it: the app's Electron as Node. */
-const DESKTOP_EXE = "DeepSeek Harness.exe";
-const DESKTOP_CLI = ["resources", "app.asar", "dsh", "node_modules", "@deepseek-ai", "dsh-desktop-host", "lib", "cli.js"] as const;
-const DESKTOP_ARGS = ["--expose-internals"] as const;
+// Where the app installs, its exe and its own command line: in @amo-studio/locate since 2026-10-28 (AMO 平台's 环境 page
+// looks for the app the same way).
+export { dshDesktopDir as desktopDir };
+const DESKTOP_ARGS = DSH_DESKTOP_ARGS;
 
 export interface DshDesktop {
   dir: string;
@@ -121,18 +117,17 @@ const desktopVersions = new Map<string, { mtime: number; version: string | null 
 
 /** The installed desktop app, or null. Its version is asked once per installed build (a second or two). */
 export function findDesktopDsh(env: NodeJS.ProcessEnv = process.env): DshDesktop | null {
-  const dir = desktopDir(env);
+  const dir = dshDesktopDir(env);
   if (!dir) return null;
-  const exe = join(dir, DESKTOP_EXE);
+  const app = dshDesktopIn(dir);
+  if (!app) return null;
+  const { exe, cli } = app;
   let mtime: number;
   try {
     mtime = statSync(exe).mtimeMs;
   } catch {
     return null;
   }
-  // The CLI sits inside app.asar, which only Electron can read: the exe and the archive are what can be checked.
-  if (!existsSync(join(dir, "resources", "app.asar"))) return null;
-  const cli = join(dir, ...DESKTOP_CLI);
   const known = desktopVersions.get(exe);
   let version = known?.mtime === mtime ? known.version : null;
   if (known?.mtime !== mtime) {
@@ -243,7 +238,7 @@ export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env): Ds
   return {
     source: readDshSource(kv),
     desktop: desktop ? { path: desktop.dir, version: desktop.version } : null,
-    desktopDir: desktopDir(env),
+    desktopDir: dshDesktopDir(env),
     active: "error" in launch ? null : { kind: launch.kind, version: launch.version },
     unavailable: "error" in launch ? launch.error : null,
     path,

@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import type { Id } from "@amo-studio/protocol";
 import type { RuntimeCore } from "../runtime.js";
@@ -70,22 +70,6 @@ export function bundledClaudeExe(): string {
   return join(dirname(require.resolve("@anthropic-ai/claude-agent-sdk-win32-x64/package.json")), "claude.exe");
 }
 
-/**
- * The person's own Claude Code, the first `claude` on PATH (native install `claude.exe`, or npm's `claude.cmd`), for
- * 设置 → 维护: it updates itself and may be newer than the SDK's. Null when there is none.
- */
-export function installedClaudeExe(env: NodeJS.ProcessEnv = process.env): string | null {
-  return firstOnPath(["claude.exe", "claude.cmd"], env);
-}
-
-/** The first of `names` in PATH order (in each folder in the order given), as a terminal would find the command. */
-export function firstOnPath(names: readonly string[], env: NodeJS.ProcessEnv = process.env): string | null {
-  const path = env.PATH ?? env.Path ?? "";
-  for (const dir of path.split(delimiter).filter(Boolean)) {
-    for (const name of names) {
-      const exe = join(dir, name);
-      if (existsSync(exe)) return exe;
-    }
-  }
-  return null;
-}
+// The person's own `claude` on PATH, and the PATH lookup: in @amo-studio/locate since 2026-10-28 (AMO 平台's 环境 page
+// looks in the same places), under the names the Host has always used.
+export { claudeOnPath as installedClaudeExe, firstOnPath } from "@amo-studio/locate";

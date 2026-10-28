@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +38,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformPicks?: string[]; __platformOpened?: string[]; __platformOpenAtLogin?: boolean; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
+type TestGlobals = { __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -69,6 +69,22 @@ const platformShell: PlatformShell = {
     // Packaged: the exe itself; in development: electron with this package.
     const args = app.isPackaged ? ["--hidden"] : [app.getAppPath(), "--hidden"];
     app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args });
+  },
+  // 环境: the official pages (environment.ts's list) in the system browser, and Claude Code's install command copied.
+  async openExternal(url) {
+    if (!/^https:\/\//.test(url)) return;
+    if (testMode) {
+      g.__platformExternal = [...(g.__platformExternal ?? []), url];
+      return;
+    }
+    await shell.openExternal(url);
+  },
+  copyText(text) {
+    if (testMode) {
+      g.__platformCopied = text;
+      return;
+    }
+    clipboard.writeText(text);
   },
 };
 
@@ -200,7 +216,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());
