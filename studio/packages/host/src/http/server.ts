@@ -65,7 +65,9 @@ const MIME: Record<string, string> = {
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const { service } = options;
 
-  const runningCount = () => service.store.listSessions().filter(sessionMoving).length;
+  // A remote task's copies (runtime "remote") run on the other computer: stopping this Host cuts none of them, so they
+  // do not hold back 完全退出 or the platform's 重启 Studio (2026-10-29).
+  const runningCount = () => service.store.listSessions().filter((s) => s.runtime !== "remote" && sessionMoving(s)).length;
   let shuttingDown = false;
   const routes: Route[] = [
     route("GET", "/api/state", () => service.snapshot()),
