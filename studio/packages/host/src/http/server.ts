@@ -9,6 +9,7 @@ import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
 import { FEATURES } from "../features/index.js";
+import { sessionMoving } from "../features/tasks/service.js";
 import { FileReply, route, str, obj, type Route, type RouteContext } from "./route.js";
 
 export type { RouteContext } from "./route.js";
@@ -59,8 +60,10 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
 
   const routes: Route[] = [
     route("GET", "/api/state", () => service.snapshot()),
-    // The shell's keepalive asks this (2026-10-27): it answers at once, without building the whole state.
-    route("GET", "/api/health", () => ({ ok: true, pid: process.pid })),
+    // The shell's keepalive asks this (2026-10-27): it answers at once, without building the whole state. 2026-10-28: also
+    // without the token, with how many sessions are at work (counted as the board's 进行中, sessionMoving), so the AMO
+    // platform can ask before it updates Studio. A number only: no titles or other content.
+    route("GET", "/api/health", () => ({ ok: true, pid: process.pid, running: service.store.listSessions().filter(sessionMoving).length }), { open: true }),
     ...FEATURES.flatMap((f) => f.routes(service)),
   ];
 
@@ -181,7 +184,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     const matched = isMcp ? undefined : match(req.method ?? "GET", url.pathname);
     // An <img> cannot send a header: routes that allow it take the token from the query (GET only).
     const given = auth?.startsWith("Bearer ") ? auth.slice(7) : matched?.route.queryToken && req.method === "GET" ? url.searchParams.get("token") : null;
-    if (!(isMcp ? mcpTokenOk(given) : tokenOk(given))) return fail(res, 401, "bad_request", "missing or invalid host token");
+    const open = !!matched?.route.open && req.method === "GET";
+    if (!open && !(isMcp ? mcpTokenOk(given) : tokenOk(given))) return fail(res, 401, "bad_request", "missing or invalid host token");
     if (isMcp) {
       // AMO MCP (read-only): the same token as the REST API.
       try {

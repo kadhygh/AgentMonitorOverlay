@@ -16,6 +16,8 @@ export interface RouteOptions {
   rawBody?: number;
   /** Also accept the host token as `?token=` (for <img src>); GET only. */
   queryToken?: boolean;
+  /** Answers without the host token (GET only): for what may ask without it, e.g. the AMO platform. Only counts, no content. */
+  open?: boolean;
 }
 
 export type Route = { method: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown } & RouteOptions;

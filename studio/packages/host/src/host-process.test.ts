@@ -83,6 +83,22 @@ describe("Host process", () => {
     expect(readHostInfo(dataDir)).toBeNull();
   });
 
+  it("answers /api/health without the token, with the number of sessions at work and nothing else (2026-10-28)", async () => {
+    const host = await boot();
+    const health = async () => (await (await fetch(`${host.info.url}/api/health`)).json()) as Record<string, unknown>;
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0 });
+    const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
+    const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { workspaceId: ws.id, firstSession: { profileId: "p-ds" } });
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0 });
+    // Counted as the board's 进行中 counts them (sessionMoving): running, or waiting for the person mid-turn.
+    host.service.store.updateSession(session.id, { status: "running" });
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 1 });
+    host.service.store.updateSession(session.id, { status: "awaiting-approval" });
+    expect((await health()).running).toBe(1);
+    host.service.store.updateSession(session.id, { status: "idle" });
+    expect((await health()).running).toBe(0);
+  });
+
   it("clears a stale lock left by a dead process", async () => {
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(hostPaths(dataDir).lock, "999999");

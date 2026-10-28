@@ -394,8 +394,12 @@ export interface GitExcludeState {
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
-  /** Whether the Host answers (the shell's keepalive); nothing else is read. */
-  "GET /api/health": { req: void; res: { ok: true; pid: number } };
+  /**
+   * Whether the Host answers (the shell's keepalive). No token needed (2026-10-28). `running`: sessions at work, counted
+   * as the board's 进行中 (running, waiting for the person mid-turn, about to go on by itself, or in a terminal), for the
+   * AMO platform to ask before it updates Studio.
+   */
+  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number } };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   /** 编辑项目: its name in Studio (the folder keeps its own) and its note; an empty note clears it. */
