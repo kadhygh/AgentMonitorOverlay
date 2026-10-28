@@ -16,14 +16,21 @@ export interface SavedAccount {
 export interface UpdateInfo {
   current: string | null;
   latest: string;
-  /** The content needs a newer shell: download the client again from the service's page. */
+  /** The content needs a newer shell: download the client again from the service's page (or, with updatedBy, update it
+   * in AMO 平台). */
   needShell: boolean;
+  /** "platform": this desktop program was installed by AMO 平台 and only the platform updates it (2026-10-28). */
+  updatedBy?: "platform";
 }
 
 export interface ShellInfo {
   shellVersion: number;
   /** This desktop program's build (relay-release --shell); undefined for builds from before it was stamped. */
   shellBuild?: string;
+  /** "platform": installed by AMO 平台 (its own version folder, Electron's files shared with the other tools): no
+   * 更新桌面程序 here — updateShell refuses — and a newer desktop program is had from the platform. Absent: the zip
+   * people unpacked themselves, which updates itself as before. Added 2026-10-28. */
+  updatedBy?: "platform";
   contentVersion: string;
   server: string;
   update: UpdateInfo | null;

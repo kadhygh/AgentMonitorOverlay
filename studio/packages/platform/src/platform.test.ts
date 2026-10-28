@@ -131,6 +131,29 @@ describe("Platform", () => {
     expect(platform.view()).toMatchObject({ account: null, loginError: "登录已失效，请重新登录。" });
     server.setChannel("test", "studio", "0.9.0");
   });
+
+  // Last in this group: the published relay stays on the fake server.
+  it("AMO 中转 is a tool like the others (2026-10-28): listed after Studio, installed, opened with the team server's address", async () => {
+    server.publish("relay", "0.9.0", { "AMO Relay.exe": "relay 0.9.0", "resources/app/package.json": "{}" }, { name: "AMO Relay", exe: "AMO Relay.exe", notes: "- 从平台发布" });
+    const { platform, launched } = make();
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    expect(platform.view().tools.map((t) => [t.id, t.name])).toEqual([
+      ["studio", "AMO Studio"],
+      ["relay", "AMO 中转"],
+      ["reviewer", "AMO Reviewer（独立版）"],
+    ]);
+    const relay = () => platform.view().tools.find((t) => t.id === "relay")!;
+    expect(relay()).toMatchObject({ available: "0.9.0", installed: null, notes: "- 从平台发布", hint: null });
+    expect(relay().desc).toContain("桌面程序在这里更新");
+    await platform.install("relay");
+    expect(relay()).toMatchObject({ installed: "0.9.0", result: { tone: "ok", text: "已装好 0.9.0" } });
+    expect(platform.installedTools()).toEqual([{ id: "relay", name: "AMO 中转" }]);
+    expect(await platform.open("relay")).toEqual({ ok: true });
+    expect(launched[0]!.file).toMatch(/\\relay\\0\.9\.0\\AMO Relay\.exe$/);
+    expect(launched[0]!.args).toEqual(["--server", server.url]);
+    expect(launched[0]!.env.AMO_STUDIO_DATA_DIR).toBeUndefined();
+  });
 });
 
 describe("launch and the machine", () => {
@@ -143,7 +166,11 @@ describe("launch and the machine", () => {
     expect(planLaunch("notes", undefined, { studioDataDir: null, env: {}, name: "AMO 便签" })).toMatchObject({ ok: false, message: "AMO 便签 还没装。" });
     expect(planLaunch("notes", { ...entry, exe: "Gone.exe" }, { studioDataDir: null, env: {} })).toMatchObject({ ok: false, reason: "not-installed" });
     const p = planLaunch("notes", entry, { studioDataDir: "D:\\d", env: { PATH: "x", AMO_PLATFORM_TEST: "1", CLAUDECODE: "1" } });
-    expect(p).toMatchObject({ ok: true, spec: { file: join(root, "1.0.0", "Tool.exe"), cwd: join(root, "1.0.0"), env: { PATH: "x" } } });
+    expect(p).toMatchObject({ ok: true, spec: { file: join(root, "1.0.0", "Tool.exe"), cwd: join(root, "1.0.0"), args: [], env: { PATH: "x" } } });
+    // Only AMO 中转 is handed the server (it fills in its address the first time); without a login, nothing.
+    expect(planLaunch("notes", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: [] } });
+    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: ["--server", "http://s:1"] } });
+    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: null })).toMatchObject({ ok: true, spec: { args: [] } });
     expect(channelFromArgs(["--channel=test"])).toBe("test");
     expect(channelFromArgs(["--channel", "beta"])).toBeNull();
   });

@@ -193,7 +193,8 @@ describe("platform publish", () => {
   it("checks what it is given", async () => {
     const target = new LocalTarget(temp("platform"));
     const dir = programFolder(temp("release"), "0.9.0", {});
-    await expect(publish(target, { id: "relay", dir, version: "0.9.0", notes: "x" })).rejects.toThrow(/不通过平台发布/);
+    // AMO 中转 goes through the platform too since 2026-10-28: checked like the others, not refused as a tool.
+    await expect(publish(target, { id: "relay", dir, version: "0.9.0", notes: "x" })).rejects.toThrow(/没有 AMO Relay.exe/);
     await expect(publish(target, { id: "nope", dir, version: "0.9.0", notes: "x" })).rejects.toThrow(/unknown tool/);
     await expect(publish(target, { id: "notes", dir, version: "0.9", notes: "x" })).rejects.toThrow(/版本号不对/);
     await expect(publish(target, { id: "notes", dir, version: "0.9.0", notes: "x", channel: "beta" })).rejects.toThrow(/通道/);

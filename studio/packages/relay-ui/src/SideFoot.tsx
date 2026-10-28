@@ -60,7 +60,9 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
   else strips.push(<Strip key="q" tone="calm" mark="✓" title="没有等你处理的" sub={waiting ? `等别人回复的 ${waiting} 件` : "等别人的也没有"} action={waiting ? "查看" : undefined} onClick={waiting ? props.onWaiting : undefined} />);
   const u = updates.update;
   if (u) {
-    if (u.needShell) strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={`${u.latest} 要换新的桌面程序`} action="下载" onClick={() => shell?.openExternal(session.me.server)} />);
+    // Installed by AMO 平台: the newer desktop program comes from there, not from the download page.
+    if (u.needShell && u.updatedBy === "platform") strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={`${u.latest} 要新的桌面程序，在 AMO 平台的「工具」里更新 AMO 中转`} />);
+    else if (u.needShell) strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={`${u.latest} 要换新的桌面程序`} action="下载" onClick={() => shell?.openExternal(session.me.server)} />);
     else if (updates.progress) strips.push(<Strip key="u" tone="info" mark="↑" title={`正在更新到 ${u.latest}…`} sub={`${Math.round((updates.progress.done / Math.max(updates.progress.total, 1)) * 100)}%`} />);
     else strips.push(<Strip key="u" tone="info" mark="↑" title="有新版本" sub={updates.error ? `更新失败：${updates.error}` : `${u.latest} · 点一下更新，正在看的会保留`} action="立即更新" onClick={() => void updates.apply()} />);
   }

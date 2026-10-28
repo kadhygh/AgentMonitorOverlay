@@ -20,6 +20,7 @@ import {
   type UpdateInfo,
 } from "@amo-studio/relay";
 import { Accounts } from "./accounts.js";
+import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
 
@@ -31,11 +32,15 @@ import { LOADER_HTML, type LoaderState } from "./loader.js";
 // The shell also keeps saved accounts (passwords encrypted by the OS), writes the identity this machine's MCP uses,
 // runs that MCP with its own exe as Node (no Node install needed), and sits in the tray with notifications.
 // Env: AMO_RELAY_HOME (default %APPDATA%\AMO Relay — a second one runs a second client), AMO_RELAY_TEST=1 (window
-// off-screen, never focused). Args: --server <address> fills in the address the first time.
+// off-screen, never focused). Args: --server <address> fills in the address the first time (AMO 平台 passes its own).
+// Installed by AMO 平台 (build-mode.ts, 2026-10-28) it never writes into its program folder and has no 更新桌面程序: the
+// platform updates the shell; the content still comes from the service.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_RELAY_TEST === "1";
 const home = relayHome();
+const buildMode = readBuildMode(here);
+const byPlatform = buildMode === "platform";
 const ICON = [join(here, "..", "assets", "icon.png"), join(here, "..", "..", "app", "assets", "icon.png")].find((p) => existsSync(p)) ?? "";
 const SCHEME = "relay-app";
 const CONTENT_URL = `${SCHEME}://content/index.html`;
@@ -60,8 +65,11 @@ let content: InstalledContent | null = null;
 let latest: ClientManifest | null = null;
 let unread = 0;
 
-/** This desktop program's build (written by relay-release --shell next to main.js); undefined in a dev build. */
+/** This desktop program's build (written by relay-release --shell next to main.js); undefined in a dev build. A platform
+ * install has none: its version is the platform's (resources/app/package.json), and a stamp left in dist by an earlier
+ * relay-release --shell would only be compared with the service's portable zip. */
 const BUILD = (() => {
+  if (byPlatform) return undefined;
   try {
     return (JSON.parse(readFileSync(join(here, "build.json"), "utf8")) as { build?: string }).build;
   } catch {
@@ -259,7 +267,8 @@ async function boot(askAddress = false): Promise<void> {
     }
     if (!local) {
       if (manifest.minShell > SHELL_VERSION) {
-        loaderState({ step: "error", text: "服务器上的客户端需要更新的桌面程序，请重新下载。", server: address, download: address });
+        // From the platform there is nothing to download here: the platform has the newer shell (once it is published).
+        loaderState({ step: "error", text: byPlatform ? `服务器上的客户端${newShellText(buildMode)}` : "服务器上的客户端需要更新的桌面程序，请重新下载。", server: address, download: byPlatform ? null : address });
         const a = await wait();
         if (a.kind === "change") address = null;
         continue;
@@ -290,13 +299,16 @@ async function loadContent(installed: InstalledContent, manifest: ClientManifest
 
 function updateInfo(): UpdateInfo | null {
   if (!latest || !content || latest.version === content.version) return null;
-  return { current: content.version, latest: latest.version, needShell: latest.minShell > SHELL_VERSION };
+  return { current: content.version, latest: latest.version, needShell: latest.minShell > SHELL_VERSION, ...(byPlatform ? { updatedBy: "platform" as const } : {}) };
 }
 
 // ---- the MCP and command line, run by this exe as Node
 
 const cliScript = () => join(home, "amo-relay.mjs");
 const cliCmd = () => join(home, process.platform === "win32" ? "amo-relay.cmd" : "amo-relay.sh");
+
+/** The exe the command line and the MCP run as Node: a platform install's `current`, not its version folder. */
+const nodeExe = () => stableExe(process.execPath, buildMode);
 
 /** The content's amo-relay.mjs to a stable place (MCP configs point there), with a launcher for the command line. */
 function installCli(): void {
@@ -308,17 +320,17 @@ function installCli(): void {
   const extra = process.env.AMO_RELAY_HOME ? { AMO_RELAY_HOME: home } : {};
   if (process.platform === "win32") {
     const sets = Object.entries({ ELECTRON_RUN_AS_NODE: "1", ...extra }).map(([k, v]) => `set "${k}=${v}"`);
-    writeFileSync(cliCmd(), ["@echo off", "setlocal", ...sets, `"${process.execPath}" "%~dp0amo-relay.mjs" %*`, ""].join("\r\n"));
+    writeFileSync(cliCmd(), ["@echo off", "setlocal", ...sets, `"${nodeExe()}" "%~dp0amo-relay.mjs" %*`, ""].join("\r\n"));
   } else {
     const sets = Object.entries({ ELECTRON_RUN_AS_NODE: "1", ...extra }).map(([k, v]) => `${k}='${v}'`);
-    writeFileSync(cliCmd(), `#!/bin/sh\n${sets.join(" ")} exec "${process.execPath}" "$(dirname "$0")/amo-relay.mjs" "$@"\n`, { mode: 0o755 });
+    writeFileSync(cliCmd(), `#!/bin/sh\n${sets.join(" ")} exec "${nodeExe()}" "$(dirname "$0")/amo-relay.mjs" "$@"\n`, { mode: 0o755 });
   }
 }
 
 function hookup(): McpHookup {
   const env: Record<string, string> = { ELECTRON_RUN_AS_NODE: "1" };
   if (process.env.AMO_RELAY_HOME) env.AMO_RELAY_HOME = home;
-  return { command: process.execPath, args: [cliScript(), "mcp"], env, cli: cliCmd() };
+  return { command: nodeExe(), args: [cliScript(), "mcp"], env, cli: cliCmd() };
 }
 
 // ---- IPC
@@ -336,7 +348,7 @@ function wire(): void {
   });
 
   ipcMain.handle("relay:update-shell", () => updateShell());
-  ipcMain.handle("relay:info", (): ShellInfo => ({ shellVersion: SHELL_VERSION, shellBuild: BUILD, contentVersion: content?.version ?? "", server: server ?? "", update: updateInfo(), platform: process.platform }));
+  ipcMain.handle("relay:info", (): ShellInfo => ({ shellVersion: SHELL_VERSION, shellBuild: BUILD, ...(byPlatform ? { updatedBy: "platform" as const } : {}), contentVersion: content?.version ?? "", server: server ?? "", update: updateInfo(), platform: process.platform }));
   ipcMain.handle("relay:accounts", () => accounts.list());
   ipcMain.handle("relay:save-account", (_e, a: { server: string; name: string; password: string | null }) => accounts.save(a));
   ipcMain.handle("relay:forget-account", (_e, s: string, name: string) => accounts.forget(s, name));
@@ -390,7 +402,7 @@ ${String(text)}`);
   ipcMain.handle("relay:apply-update", async () => {
     if (!server) throw new Error("没有连上服务器");
     const manifest = await fetchManifest(server);
-    if (manifest.minShell > SHELL_VERSION) throw new Error("这个版本需要重新下载客户端");
+    if (manifest.minShell > SHELL_VERSION) throw new Error(`这个版本${newShellText(buildMode)}`);
     const installed = await store.install(server, manifest, (done, total) => win?.webContents.send("relay:update-progress", { done, total }));
     await loadContent(installed, manifest);
   });
@@ -414,6 +426,9 @@ function updateLog(line: string): void {
 }
 
 async function updateShell(): Promise<void> {
+  // Installed by the platform: its files are the platform's (Electron's hard-linked with the other tools), never
+  // swapped from here. Content from before 10-28 may still offer the button; it gets this instead.
+  if (byPlatform) throw new Error("这个 AMO 中转是 AMO 平台装的，桌面程序在 AMO 平台的「工具」里更新。");
   if (process.platform !== "win32") throw new Error("自动更新桌面程序目前只支持 Windows；请从下载页下载新版");
   if (!server) throw new Error("没有连上服务器");
   if (shellUpdating) throw new Error("正在更新");
@@ -533,7 +548,7 @@ function filesUnder(root: string, rel = ""): string[] {
 
 /** What an update moved aside, removed once the program runs again (only those whose replacement is there). */
 async function removeOldFiles(): Promise<void> {
-  if (!BUILD) return;
+  if (!BUILD || byPlatform) return;
   const root = dirname(process.execPath);
   try {
     for (const rel of filesUnder(root)) {

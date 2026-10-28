@@ -260,6 +260,7 @@ function ServerLine({ server, status }: { server: string; status: ServerStatus }
 export function UpdateBanner({ updates, server, auto, compact = false }: { updates: Updates; server: string; auto: string | null; compact?: boolean }) {
   const { update, progress, error } = updates;
   if (!update) return null;
+  if (update.needShell && update.updatedBy === "platform") return <div className="notice update">新版本 {update.latest} 要新的桌面程序：在 AMO 平台的「工具」里更新 AMO 中转。</div>;
   if (update.needShell) {
     return (
       <div className="notice update">

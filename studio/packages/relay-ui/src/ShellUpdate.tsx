@@ -30,6 +30,9 @@ export function useShellUpdate(health: () => Promise<Health>): ShellUpdate | nul
       try {
         const [h, info] = await Promise.all([health(), shell!.info()]);
         if (gone) return;
+        // Installed by AMO 平台 (2026-10-28): the platform updates this program; the service's zip is for the unpacked
+        // ones, and swapping files here would change the Electron files the platform shares between its tools.
+        if (info.updatedBy === "platform") return setState(null);
         const target = h.shell ?? null;
         if (!shell!.updateShell) setState({ kind: "manual", current: info.shellBuild, target });
         else setState(target && target.build !== info.shellBuild ? { kind: "auto", current: info.shellBuild, target } : null);

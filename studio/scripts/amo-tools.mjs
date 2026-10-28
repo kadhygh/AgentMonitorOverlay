@@ -1,7 +1,7 @@
 // The AMO tools as the release scripts know them (2026-10-28, plans/amo-lan-platform.md): one row per tool. Each tool
 // has its own version (its package's package.json) and its own CHANGELOG.md beside it, one `## <version>（<date>）`
 // section per release. package-portable.mjs builds a tool's program folder (release/<name>/) from its row plus its build
-// details; platform-publish.mjs publishes that folder to the team server for the platform. A new tool = a row here (and
+// details; platform-publish.mjs publishes that folder (platform: true) to the team server for the platform. A new tool = a row here (and
 // its build details in package-portable.mjs).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -19,8 +19,9 @@ export const TOOLS = {
   notes: { name: "AMO Notes", zip: "AMO-Notes", pkg: "notes", description: "AMO 便签", platform: true },
   // The platform publishes itself the same way (2026-10-28); its first download is the zip on the service's page.
   platform: { name: "AMO Platform", zip: "AMO-Platform", pkg: "platform", description: "AMO 平台", platform: true },
-  // AMO 中转 updates itself (its service hands out the client); the platform only links to it.
-  relay: { name: "AMO Relay", zip: "AMO-Relay", pkg: "relay-app", description: "AMO 中转", platform: false },
+  // AMO 中转's desktop client installs and updates through the platform too (the user, 2026-10-28); its content still
+  // comes from its service (relay-release.mjs). The portable zip (relay-release --shell) is for clients unpacked by hand.
+  relay: { name: "AMO Relay", zip: "AMO-Relay", pkg: "relay-app", description: "AMO 中转", platform: true },
 };
 
 export function tool(id) {

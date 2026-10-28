@@ -10,23 +10,41 @@
 |---|---|
 | `packages/relay` | 服务（HTTP + WebSocket，`node:sqlite`）、命令行、MCP。打包成单文件 `amo-relay.mjs` |
 | `packages/relay-ui` | 客户端界面（React）：登录 / 注册、请求、回复表单、私聊、复制用法、接入 AI。**由服务器下发，热更新** |
-| `packages/relay-app` | 桌面客户端外壳（Electron，固定不变）：读条、检查版本、下载界面、托盘、通知、记住密码、给本机 AI 用的身份 |
+| `packages/relay-app` | 桌面客户端外壳（Electron，固定不变）：读条、检查版本、下载界面、托盘、通知、记住密码、给本机 AI 用的身份。有自己的版本号（`package.json`）和 `CHANGELOG.md`，从 AMO 平台发布 |
 | `scripts/relay-release.mjs` | 生成发布目录 `release/relay/`，服务直接在这个目录里跑 |
 
 ## 发布与更新
 
+中转分两部分发布（2026-10-28 起）：
+
+| 部分 | 怎么发 | 谁来更新 |
+|---|---|---|
+| 服务 + 客户端界面（`relay`、`relay-ui`） | `npm run relay:release`，再 `npm run relay:mac -- deploy` | 服务器下发，在线的客户端几秒内自己更新（下面） |
+| 桌面程序（外壳，`relay-app`） | `npm run package:platform -- --only relay`，再 `npm run relay:mac -- publish relay`（见「AMO 平台的发布」） | AMO 平台：「工具」里的 AMO 中转，和别的工具一样安装、更新、回滚、卸载 |
+
 ```
 npm run relay:release              # 界面 + 服务；界面更新就是重跑这一条，在线的客户端几秒内自己更新
-npm run relay:release -- --shell   # 再加上桌面客户端的 zip（外壳有改动时才需要）
+npm run relay:release -- --shell   # 再加上桌面客户端的 portable zip（只给自己解压用的旧客户端，见下）
 ```
 
 `release/relay/` 里有：
 
 - `amo-relay.mjs`：服务、命令行、MCP 都在这一个文件里，需要 Node 22.13 或更新。
 - `client/`：界面和 `manifest.json`。
-- `downloads/AMO-Relay-win.zip`：桌面客户端。
+- `downloads/AMO-Relay-win.zip`：桌面客户端的 portable zip（带 `--shell` 时才有）。
 
-服务每次请求都现读这些文件，所以更新界面不用重启服务；它每 5 秒检查一次 `manifest.json`，版本变了就推送给所有在线的客户端。客户端在不会丢东西的时候自己更新：窗口在托盘里或没有焦点，也没有正在写的内容。更新就是重新载入窗口，登录状态和打开的对话都保留。正在用的人会在左上角看到「有新版本」，可以点「立即更新」。只有改了服务本身（`packages/relay/src`）才要重启。改了外壳或 `shell-api.ts` 时，先把 `SHELL_VERSION` 加一，再带上 `--shell` 打包。比这个版本旧的外壳会在登录页提示「需要重新下载客户端」。
+服务每次请求都现读这些文件，所以更新界面不用重启服务；它每 5 秒检查一次 `manifest.json`，版本变了就推送给所有在线的客户端。客户端在不会丢东西的时候自己更新：窗口在托盘里或没有焦点，也没有正在写的内容。更新就是重新载入窗口，登录状态和打开的对话都保留。正在用的人会在左上角看到「有新版本」，可以点「立即更新」。只有改了服务本身（`packages/relay/src`）才要重启。
+
+### 改了外壳时
+
+1. 改了 `shell-api.ts`（外壳给界面的接口）时，先把 `SHELL_VERSION` 加一；只改了外壳内部的不用。
+2. `packages/relay-app/package.json` 升版本号，`CHANGELOG.md` 加一节（平台上显示的改动说明）。
+3. `npm run package:platform -- --only relay`，`npm run relay:mac -- publish relay`（默认发到测试通道，试过再 `promote relay <版本>`）。
+4. 要用新接口的界面，等平台上的新外壳发出去以后再 `relay:release` + `deploy`。比 `minShell` 旧的外壳会提示：平台装的写「在 AMO 平台的「工具」里更新 AMO 中转」，自己解压的写「需要重新下载客户端」。
+
+**平台装的中转不自己更新外壳**（`relay-app/src/build-mode.ts`，看 `resources/app/package.json` 的 `amoBuild.mode`）：不检查、不下载、不改写自己程序文件夹里的文件（平台装的工具共用硬链接的 Electron 文件，改一个就改到别的工具），「更新桌面程序」的提示和按钮都不出现；`updateShell` 直接拒绝。接入 AI 的配置和 `amo-relay.cmd` 指向 `apps\relay\current\AMO Relay.exe`，平台清掉旧版本文件夹后照样能用。从平台打开时，平台用 `--server` 传它登录的服务器地址，中转第一次打开就不用再填。
+
+**portable zip 还打不打**：下载页 10-28 起只给平台，新同事都从平台装。`--shell` 只是给已经在用自己解压的客户端的人：它们照旧在「更新桌面程序」里一键换成服务器上的 zip。外壳有改动、而且还有人在用解压版时，`relay:release -- --shell` 再 `deploy` 一次；所有人都换到平台以后就不用再打了（不打时 deploy 照旧传本机 `release/relay/downloads` 里上次那个 zip；删掉它再 deploy，服务的 `/api/health` 里 `shell` 就是空，解压版也不会再提示）。解压版换到平台装的：在平台里装好 AMO 中转、从平台打开，新的会接替正在跑的那个，账号和记录都在 `%APPDATA%\AMO Relay`，不用重新登录。
 
 ## 在这台 Windows 上跑服务
 
@@ -75,7 +93,7 @@ platform/
 
 - 平台目录用 `serve --platform-dir <目录>` 或环境变量 `AMO_RELAY_PLATFORM_DIR` 指定；没指定时下面三个接口返回 404 和一句说明。Mac 上是 `$ROOT/platform`。
 - 清单：`{ tool, name, version, builtAt, exe, runtime, notes, files: [{ path, size, sha256 }] }`。`path` 用 `/` 分隔、相对程序文件夹；`exe` 是主程序（如 `AMO Studio.exe`）；`runtime` 是打包用的 Electron 版本（如 `44.7.0`，10-29 起，之前的清单没有）；`notes` 是这次的改动说明（Markdown）；`builtAt` 是打包时间（毫秒）。
-- 工具 id 是小写字母开头的小写字母、数字和 `-`（`studio`、`reviewer`、`notes`、`platform`）；版本号像 `0.9.1` 或 `0.9.1-test.1`。
+- 工具 id 是小写字母开头的小写字母、数字和 `-`（`studio`、`reviewer`、`notes`、`relay`、`platform`）；版本号像 `0.9.1` 或 `0.9.1-test.1`。`relay` 是中转的桌面程序（10-28 起，版本从 0.9.0 起，取 `packages/relay-app`），它的界面不在这里，照旧是 `client/`。
 
 接口（都要登录，`Authorization: Bearer <key>`；objects 也接受 `?key=`，方便直接下载）：
 
@@ -108,10 +126,11 @@ npm run relay:mac -- platform-compress                 # 把服务器上原样�
 
 ## 给同事用
 
-把 `http://<服务机器的 IP>:47120/` 发给他们。这个页面上有：
+把 `http://<服务机器的 IP>:47120/` 发给他们。这个页面 10-28 起只给 **AMO 平台** 的下载：装好平台、登录后，在「工具」里安装 AMO 中转，从平台打开（服务器地址已经填好），然后在中转里登录或注册。客户端会记住账号和密码（用系统加密保存），关掉窗口后留在托盘里，来新消息会提醒。服务器连不上时，登录页和对话上方会显示离线和下次重试的时间，服务恢复后会自己连上。
 
-- **下载 Windows 客户端**：解压后双击 `AMO Relay.exe`，第一次打开时填服务器地址，然后注册。客户端会记住账号和密码（用系统加密保存），关掉窗口后留在托盘里，来新消息会提醒。服务器连不上时，登录页和对话上方会显示离线和下次重试的时间，服务恢复后会自己连上。
-- **直接在浏览器里用**：不用安装，但没有记住密码、托盘提醒和接入 AI。
+中转现在还有自己的登录页（账号和平台是同一个团队服务器的账号，但要在中转里再登录一次）；以后改成读平台存的 `%APPDATA%\AMO\account.json`（`AGENTS.md` 约束第 7 条），还没做。
+
+浏览器版（`/app/`）和解压版 zip（`/downloads/AMO-Relay-win.zip`）的地址还在，只是页面上不再给链接。
 
 ## 接入 AI（MCP）
 
@@ -184,4 +203,4 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 - 单测：`npx vitest run packages/relay packages/relay-app scripts`（`scripts` 是平台的发布）
 - e2e：`npm run relay:release && npx playwright test -c e2e/playwright.config.ts --project relay`
 
-e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；截图存在 `screenshots/relay/`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。
+e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；最后一个用平台的程序文件夹布局（`amoBuild.mode: "platform"`）启动客户端，确认它不提示、也不执行「更新桌面程序」，界面要新外壳时指向平台，程序文件夹里没多文件。截图存在 `screenshots/relay/`。平台「工具」页里的中转（列出、安装、带 `--server` 打开、更新）在 `npx playwright test -c e2e/playwright.config.ts --project platform`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。

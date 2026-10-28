@@ -5,7 +5,8 @@
 //   AMO Notes     the 便签 on its own
 //   npm run build && node scripts/package-portable.mjs [outDir] [--zip] [--only studio,reviewer,notes]   (npm run package:portable)
 //   npm run package:portable -- --only notes      one tool only
-//   npm run package:platform [-- --only studio]   the platform's folders (below), release/platform/<Name>/
+//   npm run package:platform [-- --only studio]   the platform's folders (below), release/platform/<Name>/ — all the
+//                                                 tools with `platform: true`, AMO 中转's client too (--only relay)
 // Each tool has its own version (2026-10-28): its package's package.json (scripts/amo-tools.mjs says which package), in
 // the zip's name, the exe's version info, resources/app/package.json and 使用说明.txt. Studio's download still carries
 // the 便签 and the Reviewer, at whatever they are in this checkout.
@@ -113,8 +114,9 @@ const BUILDS = {
       "想先用测试版：设置里把更新通道换成「测试」，或者带参数 --channel test 启动。",
     ],
   },
-  // AMO 中转's desktop client (2026-10-26): a fixed shell; its content comes from the service (scripts/relay-release.mjs
-  // builds this into the service's downloads/).
+  // AMO 中转's desktop client (2026-10-26): a fixed shell; its content comes from the service. Platform mode (2026-10-28,
+  // the user: it installs and updates through the platform like the others) is what the platform installs; the portable
+  // zip is scripts/relay-release.mjs --shell's, for clients unpacked by hand (they still update themselves from it).
   relay: {
     packages: ["relay-app", "relay"],
     programs: ["relay"],
@@ -127,6 +129,16 @@ const BUILDS = {
       "客户端界面由服务器下发：有新版本时，登录页会提示「立即更新」，点一下就换好，不用重新下载。",
       "账号和密码（系统加密）、本机 AI 的接入信息都在 %APPDATA%\\AMO Relay。",
     ],
+    platformReadme: [
+      "AMO 中转（桌面客户端，AMO 平台装的）",
+      "",
+      "从 AMO 平台的「工具」里打开。第一次打开时服务器地址已经填好（平台登录的那个），在中转里登录或注册。",
+      "关掉窗口会留在托盘里，新消息会弹提醒；托盘右键可以退出。",
+      "客户端界面由服务器下发，自己更新；桌面程序（这个文件夹）由 AMO 平台更新，不要改这里的文件。",
+      "账号和密码（系统加密）、本机 AI 的接入信息都在 %APPDATA%\\AMO Relay。",
+    ],
+    // relay-release --shell's build stamp: only the portable zip's 更新桌面程序 compares it with the service's zip.
+    platformSkip: /[\\/]relay-app[\\/]dist[\\/]build\.json$/,
   },
 };
 
@@ -185,7 +197,7 @@ function build(id) {
     const dir = `packages/${name}`;
     const from = join(studio, dir);
     if (!existsSync(join(from, "dist"))) throw new Error(`${dir}/dist is missing: run npm run build first`);
-    cpSync(join(from, "dist"), join(app, dir, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
+    cpSync(join(from, "dist"), join(app, dir, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) && !(platformMode && spec.platformSkip?.test(p)) });
     if (name !== "ui") cpSync(join(from, "package.json"), join(app, dir, "package.json"));
     // Window, tray and exe icons (each tool's own since 2026-10-28, scripts/make-icons.mjs); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
@@ -228,7 +240,7 @@ function build(id) {
     ]);
     if (icon.startsWith(target)) rmSync(icon);
   }
-  writeFileSync(join(target, "使用说明.txt"), [...spec.readme, "", `版本 ${version}`, ""].join("\r\n"), "utf8");
+  writeFileSync(join(target, "使用说明.txt"), [...((platformMode && spec.platformReadme) || spec.readme), "", `版本 ${version}`, ""].join("\r\n"), "utf8");
 
   // 5. Production dependencies of the packages, with their dependency closure, copied from the installed tree. A package
   //    is copied whole (including any nested node_modules npm put inside it).
@@ -273,7 +285,8 @@ function build(id) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-// The relay client ships from its service (scripts/relay-release.mjs), not with the other three.
-const ids = only ?? Object.keys(BUILDS).filter((p) => p !== "relay");
+// Platform mode: every tool the platform installs, AMO 中转 included (2026-10-28). Portable: the relay client's zip comes
+// from scripts/relay-release.mjs --shell (it lands in the service's downloads/), not with the others.
+const ids = only ?? Object.keys(BUILDS).filter((p) => (platformMode ? TOOLS[p].platform : p !== "relay"));
 for (const id of ids) if (!TOOLS[id] || !BUILDS[id]) throw new Error(`unknown program ${id}: ${Object.keys(BUILDS).join(", ")}`);
 for (const id of ids) build(id);

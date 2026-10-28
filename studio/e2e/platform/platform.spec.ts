@@ -496,3 +496,45 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   await item("git").scrollIntoViewIfNeeded();
   await screenshot(app, "platform", "P18-environment-rechecked", page);
 });
+
+test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO 中转」, installed, opened with the team server's address, updated", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+  try {
+    // A stand-in relay client: records what it was started with (the server the platform hands it).
+    const relayTool = (version: string) => ({ ...tool("relay", version), "run.cmd": `@echo off\r\necho relay ${version} %*>"%AMO_FAKE_TOOL_MARK%.relay"\r\n` });
+    own.publish("studio", "0.9.0", tool("studio", "0.9.0"), { name: "AMO Studio", exe: "run.cmd", notes: "- 看板、任务、会话" });
+    own.publish("notes", "1.0.0", tool("notes", "1.0.0"), { name: "AMO Notes", exe: "run.cmd" });
+    own.publish("relay", "0.9.0", relayTool("0.9.0"), { name: "AMO Relay", exe: "run.cmd", notes: "- 第一个从 AMO 平台发布的版本" });
+    const { app, page } = await launch();
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await expect(status(page, "relay")).toHaveText("○ 没装 · 服务器上是 0.9.0");
+    await expect(row(page, "relay")).toContainText("AMO 中转");
+    await expect(row(page, "relay")).toContainText("界面由服务器更新，桌面程序在这里更新");
+    // Studio first, then AMO 中转, then the 便签 that Studio already carries.
+    const order = await page.evaluate(() => [...document.querySelectorAll("[data-testid]")].map((e) => e.getAttribute("data-testid")!).filter((id) => /^tool-[a-z]+$/.test(id)));
+    expect(order).toEqual(["tool-studio", "tool-relay", "tool-notes"]);
+
+    await row(page, "relay").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "relay")).toHaveText("✓ 0.9.0 · 已是最新");
+    expect(programs().tools.relay).toEqual({ version: "0.9.0", dir: join(root, "local", "apps", "relay", "current"), exe: "run.cmd" });
+    await screenshot(app, "platform", "P24-relay-installed", page);
+    await row(page, "relay").getByRole("button", { name: "打开" }).click();
+    await expect.poll(() => (existsSync(join(root, "launched.relay")) ? readFileSync(join(root, "launched.relay"), "utf8").trim() : "")).toBe(`relay 0.9.0 --server ${own.url}`);
+
+    // A new shell published: updated here like the others (a relay from the platform never replaces its own files).
+    own.publish("relay", "0.9.1", relayTool("0.9.1"), { name: "AMO Relay", exe: "run.cmd", notes: "- 外壳的一处修正" });
+    await refresh(page);
+    await expect(status(page, "relay")).toHaveText("! 0.9.0 · 有新版 0.9.1");
+    await expect(row(page, "relay").locator(".pf-notes-text")).toContainText("外壳的一处修正");
+    await screenshot(app, "platform", "P25-relay-update", page);
+    await row(page, "relay").getByRole("button", { name: "更新到 0.9.1" }).click();
+    await expect(status(page, "relay")).toHaveText("✓ 0.9.1 · 已是最新", { timeout: 20_000 });
+    expect(programs().tools.relay!.version).toBe("0.9.1");
+  } finally {
+    await own.close();
+  }
+});

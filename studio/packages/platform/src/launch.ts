@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { safeParts } from "./manifest.js";
 
 // Starting a tool the platform installed, the way the tools already support (AGENTS.md, constraint 1): Studio gets
-// AMO_STUDIO_DATA_DIR (its data stays outside the program folder, so an update never touches it); the Reviewer and the
-// 便签 start as they are. Detached: closing the platform leaves them running. Started from the real version folder,
+// AMO_STUDIO_DATA_DIR (its data stays outside the program folder, so an update never touches it); AMO 中转 gets the
+// team server's address (--server, used when it has none saved); the Reviewer and the 便签 start as they are. Detached: closing the platform leaves them running. Started from the real version folder,
 // not through `current`, so switching `current` later never finds a folder in use by them.
 
 export interface LaunchSpec {
@@ -27,7 +27,9 @@ export function startEnv(env: Record<string, string | undefined>): Record<string
   return out;
 }
 
-export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string }): LaunchPlan {
+/** `server`: the team server the platform is logged in to; AMO 中转 is handed it with `--server`, which it only uses the
+ * first time (no address saved yet), so nobody types it twice. Not the login: AMO 中转 still signs in by itself. */
+export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string; server?: string | null }): LaunchPlan {
   const name = options.name ?? tool;
   if (!entry) return { ok: false, reason: "not-installed", message: `${name} 还没装。` };
   if (tool === "studio" && !options.studioDataDir) return { ok: false, reason: "need-studio-dir", message: "先设好 Studio 数据目录，再打开 Studio。" };
@@ -42,7 +44,8 @@ export function planLaunch(tool: string, entry: { dir: string; exe: string } | u
   if (!file || !existsSync(file)) return { ok: false, reason: "not-installed", message: `${name} 的主程序不在了，重新安装一下。` };
   const env = startEnv(options.env);
   if (tool === "studio") env.AMO_STUDIO_DATA_DIR = options.studioDataDir!;
-  return { ok: true, spec: { file, args: [], cwd: dir, env } };
+  const args = tool === "relay" && options.server ? ["--server", options.server] : [];
+  return { ok: true, spec: { file, args, cwd: dir, env } };
 }
 
 /** Starts it on its own; a .cmd/.bat (the tests' stand-in tools) goes through cmd.exe. */

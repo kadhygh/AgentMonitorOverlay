@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -555,4 +555,81 @@ test("a moved service: the last 3 servers offered, the last one picked; accounts
   const saved = JSON.parse(readFileSync(join(root, "mover", "shell.json"), "utf8")) as { server: string; recent: string[] };
   expect(saved).toEqual({ server: moved, recent: [moved, gone, server.url] });
   expect(pageErrors).toEqual([]);
+});
+
+/** Every file under `dir` (relative), node_modules left out. */
+function filesIn(dir: string, rel = ""): string[] {
+  return readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((e) => (e.name === "node_modules" ? [] : e.isDirectory() ? filesIn(dir, join(rel, e.name)) : [join(rel, e.name)]));
+}
+
+// Last: it puts a desktop program zip on the service and, for a while, content that needs a newer shell.
+test("installed by AMO 平台: no 更新桌面程序 (the platform updates the shell), a newer shell is asked for there, nothing written into its folder", async () => {
+  // The program folder as the platform installs it (package-portable.mjs --platform): resources/app/package.json says
+  // amoBuild.mode "platform"; the dependencies come from the checkout (a junction), Electron is the dev one.
+  const program = join(root, "apps", "relay", "0.9.0");
+  const app = join(program, "resources", "app");
+  const pkg = join(studio, "packages", "relay-app");
+  mkdirSync(join(app, "packages", "relay-app"), { recursive: true });
+  cpSync(join(pkg, "dist"), join(app, "packages", "relay-app", "dist"), { recursive: true });
+  cpSync(join(pkg, "assets"), join(app, "packages", "relay-app", "assets"), { recursive: true });
+  cpSync(join(pkg, "package.json"), join(app, "packages", "relay-app", "package.json"));
+  writeFileSync(join(app, "package.json"), JSON.stringify({ name: "amo-relay", version: "0.9.0", type: "module", amoBuild: { mode: "platform", runtime: "44.7.0" } }));
+  symlinkSync(join(studio, "node_modules"), join(app, "node_modules"), "junction");
+  const before = filesIn(program).sort();
+  // The service hands out a desktop program zip (for the unpacked clients): a client from the sources offers it, the
+  // platform's never does.
+  const downloads = join(publicDir, "downloads");
+  mkdirSync(downloads, { recursive: true });
+  writeFileSync(join(downloads, "AMO-Relay-win.zip"), "zip");
+  writeFileSync(join(downloads, "AMO-Relay-win.json"), JSON.stringify({ build: "2026.10.28-120000", size: 3, sha256: "0".repeat(64) }));
+  const manifestFile = join(publicDir, "client", "manifest.json");
+  const manifest = readFileSync(manifestFile, "utf8");
+  try {
+    const launchFrom = async (main: string, who: string) => {
+      const a = await _electron.launch({ executablePath: electronPath, args: [main, "--server", server.url], env: { ...process.env, AMO_RELAY_HOME: join(root, who), AMO_RELAY_TEST: "1" } });
+      apps.push(a);
+      const page = await a.firstWindow();
+      page.on("pageerror", (e) => pageErrors.push(`${who}: ${e.stack ?? e.message}`));
+      return { app: a, page };
+    };
+    const fromPlatform = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-user");
+    await register(fromPlatform.page, "平台小赵", "策划", false);
+    const dev = await launch("dev-user");
+    await register(dev.page, "源码小钱", "程序", false);
+    type Info = { updatedBy?: string; shellBuild?: string };
+    const info = (page: Page) => page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<Info> } }).relayShell.info()) as Info);
+    expect(await info(fromPlatform.page)).toMatchObject({ updatedBy: "platform" });
+    expect((await info(fromPlatform.page)).shellBuild).toBeUndefined();
+    expect((await info(dev.page)).updatedBy).toBeUndefined();
+    // The one from the sources is offered the service's desktop program; the platform's is not, and refuses to swap.
+    await expect(dev.page.getByText("桌面程序可更新").first()).toBeVisible({ timeout: 15_000 });
+    await expect(fromPlatform.page.getByText("桌面程序可更新")).toHaveCount(0);
+    const refused = await fromPlatform.page.evaluate(() => (window as unknown as { relayShell: { updateShell(): Promise<void> } }).relayShell.updateShell().then(() => "updated", (e: Error) => e.message));
+    expect(refused).toContain("这个 AMO 中转是 AMO 平台装的，桌面程序在 AMO 平台的「工具」里更新");
+    await shot(fromPlatform.app, "40-platform-no-shell-update");
+
+    // Content that needs a newer shell: the platform's client is pointed at the platform, not at a download page.
+    const parsed = JSON.parse(manifest) as { version: string; minShell: number };
+    writeFileSync(manifestFile, JSON.stringify({ ...parsed, version: `${parsed.version}-next`, minShell: 99 }));
+    await expect(fromPlatform.page.getByText("要新的桌面程序，在 AMO 平台的「工具」里更新 AMO 中转").first()).toBeVisible({ timeout: 15_000 });
+    await expect(dev.page.getByText("要换新的桌面程序").first()).toBeVisible({ timeout: 15_000 });
+    await shot(fromPlatform.app, "41-platform-new-shell");
+    // A first start then: the loader says the same, with no download page to open.
+    const fresh = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-fresh");
+    await expect(fresh.page.locator("#errText")).toHaveText("服务器上的客户端要新的桌面程序：在 AMO 平台的「工具」里更新 AMO 中转。", { timeout: 30_000 });
+    await expect(fresh.page.locator("#download")).toBeHidden();
+    // capturePage on this third window can fail (UnknownVizError); the page's own screenshot does not.
+    await fresh.page.screenshot({ path: join(shots, "42-platform-loader-new-shell.png") });
+
+    // Its MCP and command line run its exe (a platform install's `current`, unit-tested in build-mode.test.ts), and
+    // nothing was written into its program folder: no build stamp, no …amo-old files, no update.log.
+    expect(readFileSync(join(root, "platform-user", "amo-relay.cmd"), "utf8")).toContain(electronPath);
+    expect(filesIn(program).sort()).toEqual(before);
+    expect(pageErrors).toEqual([]);
+  } finally {
+    writeFileSync(manifestFile, manifest);
+    rmSync(downloads, { recursive: true, force: true });
+    // The junction goes as a link (rmSync never walks into it), before afterAll removes the rest.
+    rmSync(join(app, "node_modules"), { recursive: true, force: true });
+  }
 });

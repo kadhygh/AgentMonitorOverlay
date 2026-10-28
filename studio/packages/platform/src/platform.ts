@@ -20,8 +20,11 @@ const KNOWN: Record<string, { name: string; desc: string }> = {
   studio: { name: "AMO Studio", desc: "工作台：看板、任务、和模型的会话。自带 AMO 便签和 Reviewer。" },
   reviewer: { name: "AMO Reviewer（独立版）", desc: "Git Review 和查看器，可以单独用。" },
   notes: { name: "AMO 便签（独立版）", desc: "随手记，托盘常驻，可以单独用。" },
+  // Since 2026-10-28 (the user): its desktop program comes from here too; what it shows still updates from the service.
+  relay: { name: "AMO 中转", desc: "策划的 AI 把要确认的事发给程序，人和人聊天。界面由服务器更新，桌面程序在这里更新。" },
 };
-const ORDER = ["studio", "reviewer", "notes"];
+/** Studio first; AMO 中转 next, a tool of its own, before the two that Studio already carries. */
+const ORDER = ["studio", "relay", "reviewer", "notes"];
 /** Listed by the server but not a tool to install from here: the platform updates itself (设置 → 平台更新, self-update.ts). */
 const HIDDEN = new Set([SELF]);
 
@@ -402,7 +405,7 @@ export class Platform implements PlatformCalls {
   }
 
   async open(tool: string): Promise<OpenResult> {
-    const plan = planLaunch(tool, this.programs()[tool], { studioDataDir: readSettings(this.options.env).studioDataDir, env: this.options.env, name: this.toolName(tool).replace(/（独立版）$/, "") });
+    const plan = planLaunch(tool, this.programs()[tool], { studioDataDir: readSettings(this.options.env).studioDataDir, env: this.options.env, name: this.toolName(tool).replace(/（独立版）$/, ""), server: this.account?.server ?? null });
     if (!plan.ok) return plan;
     try {
       await (this.options.launch ?? startDetached)(plan.spec);
