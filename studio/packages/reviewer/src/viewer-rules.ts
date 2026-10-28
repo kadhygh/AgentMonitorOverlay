@@ -12,7 +12,7 @@ const line = (v: unknown): number | null => (typeof v === "number" && Number.isS
  * change, so the same file asked for twice still scrolls the window back to its line.
  */
 export function viewerHash(target: unknown, nonce: number): string | null {
-  const t = target as { path?: unknown; pack?: unknown; item?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown; sessionId?: unknown } | null;
+  const t = target as { path?: unknown; pack?: unknown; item?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown; sessionId?: unknown; remote?: unknown; cwd?: unknown } | null;
   // 查看包 (2026-10-23): the window shows a pack by its id; it reads the pack itself.
   if (t && typeof t.pack === "string") {
     if (!ID.test(t.pack)) return null;
@@ -34,6 +34,11 @@ export function viewerHash(target: unknown, nonce: number): string | null {
   if (t.mode === "changes") q.set("mode", "changes");
   // The conversation it was opened from (S14-A): comments written in the viewer go there by default.
   if (typeof t.sessionId === "string" && ID.test(t.sessionId)) q.set("session", t.sessionId);
+  // 远程 step 3 (2026-10-29): a file of a remote task (its id), fetched from the computer it runs on first.
+  if (typeof t.remote === "string" && ID.test(t.remote)) {
+    q.set("remote", t.remote);
+    if (typeof t.cwd === "string" && t.cwd && t.cwd.length <= MAX_PATH && !/[\0\r\n]/.test(t.cwd)) q.set("cwd", t.cwd);
+  }
   q.set("n", String(nonce));
   return `#viewer?${q.toString()}`;
 }

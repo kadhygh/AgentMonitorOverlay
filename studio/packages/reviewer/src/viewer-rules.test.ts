@@ -21,6 +21,10 @@ describe("viewerHash", () => {
     expect(Object.fromEntries(q)).toEqual({ path: "a.md", n: "1" });
     expect(new URLSearchParams(viewerHash({ path: "a.md", line: 9, endLine: 4 }, 1)!.slice(8)).get("end")).toBeNull();
     for (const bad of [null, {}, { path: "" }, { path: 3 }, { path: "a\nb" }, { path: "x".repeat(1001) }]) expect(viewerHash(bad, 1)).toBeNull();
+    // 远程 step 3: a remote task's file, with where its relative name starts.
+    const remote = new URLSearchParams(viewerHash({ path: "docs/a.md", remote: "task-1", cwd: "任务文件夹\\docs" }, 2)!.slice(8));
+    expect([remote.get("remote"), remote.get("cwd")]).toEqual(["task-1", "任务文件夹\\docs"]);
+    expect(new URLSearchParams(viewerHash({ path: "a.md", remote: "bad id!", cwd: "x" }, 2)!.slice(8)).get("remote")).toBeNull();
   });
 });
 

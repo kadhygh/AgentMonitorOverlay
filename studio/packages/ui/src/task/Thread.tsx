@@ -666,7 +666,7 @@ ${d}` : back));
                 type="button"
                 className="round-btn attach"
                 aria-label="添加图片或文件"
-                title={isRemote ? "远程任务暂时不能发图片和文件（下一步做）" : "添加图片或文件（也可以粘贴或拖进来）"}
+                title={isRemote ? "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字" : "添加图片或文件（也可以粘贴或拖进来）"}
                 disabled={readOnly || isRemote}
                 onClick={() => picker.current?.click()}
               >

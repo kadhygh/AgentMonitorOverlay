@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GitChangedFile, Workspace } from "@amo-studio/protocol";
-import { findChangedFile, linesLabel, parseViewerHash, projectOf, relativeIn, viewerHash } from "./logic.js";
+import { findChangedFile, linesLabel, parseViewerHash, projectOf, relativeIn, remoteLinkPath, viewerHash } from "./logic.js";
+import { resolveLink } from "./passages.js";
 
 const ws = (id: string, path: string, extra: Partial<Workspace> = {}): Workspace => ({ id, name: id, path, createdAt: "", ...extra });
 const changed = (path: string, extra: Partial<GitChangedFile> = {}): GitChangedFile => ({ path, status: "modified", additions: 1, deletions: 0, binary: false, ...extra });
@@ -10,6 +11,20 @@ describe("the viewer's address", () => {
     const t = { path: "G:\\game\\a b\\Drop.cs", workspaceId: "w1", line: 12, endLine: 20, mode: "changes" as const, sessionId: "s-9", nonce: "4" };
     expect(parseViewerHash(viewerHash(t))).toEqual(t);
     expect(parseViewerHash(viewerHash({ path: "README.md" }))).toEqual({ path: "README.md" });
+  });
+
+  it("carries a remote task's file and where its relative name starts (远程 step 3)", () => {
+    const t = { path: "docs/a.md", remote: "task-1", cwd: "任务文件夹\\docs", sessionId: "s-1", nonce: "2" };
+    expect(parseViewerHash(viewerHash(t))).toEqual(t);
+    expect(parseViewerHash("#viewer?path=a.md&cwd=x")).toEqual({ path: "a.md" });
+  });
+
+  it("points a remote file's links into the task's folder over there", () => {
+    expect(remoteLinkPath("docs/a.md", "img/p.png", resolveLink)).toEqual({ path: "任务文件夹/docs/img/p.png" });
+    expect(remoteLinkPath("docs/a.md", "../README.md#L3", resolveLink)).toEqual({ path: "任务文件夹/README.md", line: 3 });
+    expect(remoteLinkPath("a.md", "G:/proj/b.md", resolveLink)).toEqual({ path: "G:/proj/b.md" });
+    expect(remoteLinkPath("a.md", "https://example.com", resolveLink)).toBeNull();
+    expect(remoteLinkPath("a.md", "#top", resolveLink)).toBeNull();
   });
 
   it("drops a range that ends before it starts, and reads only #viewer with a path", () => {

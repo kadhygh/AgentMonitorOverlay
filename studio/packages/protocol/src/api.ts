@@ -672,6 +672,8 @@ export type HostEvent = { seq: number } & (
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
   /** 远程 (2026-10-29): the connection, the paired devices or the pairing requests changed. Not kept in the log. */
   | { type: "remote.updated"; remote: import("./remote.js").RemoteState }
+  /** 远程 step 3: how far a file being fetched from a paired device has come (`fetchId` as POST /api/remote/files was given). Not kept in the log. */
+  | { type: "remote.file"; fetchId: string; received: number; total: number }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -931,4 +933,9 @@ export interface HostRoutes {
   "POST /api/remote/grants/revoke": { req: { taskId: Id; account: string; device: string }; res: import("./remote.js").RemoteState };
   /** Step 2: 远端允许的默认配置. */
   "PUT /api/remote/allowed": { req: import("./remote.js").RemoteAllowed; res: import("./remote.js").RemoteState };
+  /**
+   * Step 3, on B: a file of a remote task, fetched from the computer it runs on (or found unchanged) and kept in this
+   * computer's data folder. `fetchId` names the remote.file events that say how far it came.
+   */
+  "POST /api/remote/files": { req: { taskId: Id; path: string; cwd?: string; fetchId?: string }; res: import("./remote.js").RemoteFetchedFile };
 }

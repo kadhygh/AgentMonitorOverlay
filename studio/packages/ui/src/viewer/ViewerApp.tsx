@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { StateSnapshot } from "@amo-studio/protocol";
+import { REMOTE_ATTACHMENTS_FOLDER, REMOTE_TASK_FOLDER, type StateSnapshot } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
@@ -17,6 +17,7 @@ import { RenderedReview } from "./RenderedReview.js";
 import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTarget } from "./logic.js";
 import { pinViewer, viewerPinned } from "./open.js";
 import { PackViewer } from "../viewpacks/PackViewer.js";
+import { RemoteViewer, type RemoteShown } from "./RemoteViewer.js";
 
 // The viewer window (查看器, stage 13; #viewer?path=…): a file opened from a conversation, a mark or a Review, in one
 // of two modes. 文件: the file as it is now (code coloured, the asked line or range marked and scrolled to; Markdown
@@ -38,6 +39,8 @@ export function ViewerApp() {
   if (!target) return <div className="placeholder">没有要查看的文件。</div>;
   // 查看包 (2026-10-23): the same window, showing a pack.
   if (target.pack) return <PackViewer link={host.link} state={host.state} packId={target.pack} focus={target.item ?? null} nonce={target.nonce ?? ""} />;
+  // 远程 step 3 (2026-10-29): a remote task's file is fetched from its computer first, then shown as any other.
+  if (target.remote) return <RemoteViewer link={host.link} state={host.state} target={target} render={(t, remote) => <ViewerPage link={host.link} state={host.state} target={t} remote={remote} />} />;
   return <ViewerPage link={host.link} state={host.state} target={target} />;
 }
 
@@ -46,8 +49,9 @@ const MODES: { id: ViewerMode; label: string; hint: string }[] = [
   { id: "changes", label: "改动", hint: "这个项目未提交的改动（Git Review），选中这个文件" },
 ];
 
-function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnapshot; target: ViewerTarget }) {
-  const workspace = projectOf(target.path, state.workspaces, target.workspaceId);
+function ViewerPage({ link, state, target, remote }: { link: HostLink; state: StateSnapshot; target: ViewerTarget; remote?: RemoteShown }) {
+  // A remote task's file is a copy in this computer's data folder: no project of this computer's, so no comments.
+  const workspace = remote ? null : projectOf(target.path, state.workspaces, target.workspaceId);
   const file: FileRef = { path: target.path, ...(target.workspaceId && workspace?.id === target.workspaceId ? { workspaceId: target.workspaceId } : {}) };
   const repo = useIsGitRepo(link, workspace?.id);
   const vscode = useVsCode(link);
@@ -67,16 +71,19 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
       const el = e.target as HTMLElement | null;
       if (e.key.toLowerCase() !== "r" || e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
-      setReload((n) => n + 1);
+      if (remote) remote.reload();
+      else setReload((n) => n + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode]);
+  }, [mode, remote]);
   const [pinned, setPinned] = useState(false);
   // Every open is a fresh read, including the same path after the agent saved another edit.
   const readVersion = `${reload}:${target.nonce ?? ""}`;
   const loaded = useTextFile(link, file, !isImage(file.path), readVersion);
   const absolute = loaded.state === "ok" ? loaded.file.path : file.path;
+  /** A remote file as its computer has it, without that computer's own folder (任务文件夹/…). */
+  const remotePath = remote ? (remote.rel.startsWith(`${REMOTE_ATTACHMENTS_FOLDER}/`) ? remote.rel : `${REMOTE_TASK_FOLDER}/${remote.rel}`) : "";
   const markdown = isMarkdownText(file.path, loaded);
   // Markdown and HTML show rendered, their passages taking comments (2026-10-28), or as source.
   const html = isHtmlText(file.path, loaded);
@@ -95,8 +102,8 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
     void viewerPinned().then(setPinned).catch(() => undefined);
   }, []);
   useEffect(() => {
-    document.title = `${fileName(target.path)} · 查看器`;
-  }, [target.path]);
+    document.title = `${fileName(remote?.rel ?? target.path)} · 查看器`;
+  }, [target.path, remote?.rel]);
 
   const fail = (err: unknown) => showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
   const pick = (m: ViewerMode) => {
@@ -125,7 +132,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
                 type="button"
                 aria-pressed={mode === m.id}
                 disabled={off}
-                title={off ? (workspace ? `${workspace.name} 不是 git 仓库` : "这个文件不在任何项目里") : m.hint}
+                title={off ? (remote ? "远程任务的文件只能看现在的样子；改动要在运行任务的电脑上看" : workspace ? `${workspace.name} 不是 git 仓库` : "这个文件不在任何项目里") : m.hint}
                 onClick={() => pick(m.id)}
                 data-testid={`viewer-mode-${m.id}`}
               >
@@ -135,18 +142,24 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
           })}
         </div>
         <div className="vw-title">
-          <span className="vw-name" title={absolute} data-testid="viewer-name">
-            {fileName(target.path)}
+          <span className="vw-name" title={remote ? remotePath : absolute} data-testid="viewer-name">
+            {fileName(remote?.rel ?? target.path)}
           </span>
           {where && mode === "file" && !(renderable && rendered) && (
             <span className="vw-lines" data-testid="viewer-lines">
               {where}
             </span>
           )}
-          <span className="vw-dir" title={absolute}>
-            {workspace ? `${workspace.name} · ` : ""}
-            {folderOf(absolute)}
-          </span>
+          {remote ? (
+            <span className="vw-dir vw-dir-remote" title={`从 ${remote.device} 取来的，存在这台电脑上：${absolute}`} data-testid="viewer-remote-where">
+              <span className="remote-badge">远程</span> {remote.device} · {folderOf(remotePath)}
+            </span>
+          ) : (
+            <span className="vw-dir" title={absolute}>
+              {workspace ? `${workspace.name} · ` : ""}
+              {folderOf(absolute)}
+            </span>
+          )}
         </div>
         {/* The file's actions in 文件 mode; 改动 has its own on the file's head. */}
         <div className="vw-actions">
@@ -164,19 +177,23 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
                   跳到行
                 </button>
               )}
-              {vscode && (
+              {/* A remote task's file: no VS Code, Explorer or 书签 here (they would be this computer's copy). */}
+              {vscode && !remote && (
                 <button type="button" className="btn-ghost small" onClick={() => openInEditor(link, file, target.line).catch(fail)} data-testid="viewer-vscode">
                   VS Code 打开
                 </button>
               )}
-              <button type="button" className="btn-ghost small" onClick={() => revealInExplorer(link, file).catch(fail)} data-testid="viewer-reveal">
-                在资源管理器中显示
-              </button>
+              {!remote && (
+                <button type="button" className="btn-ghost small" onClick={() => revealInExplorer(link, file).catch(fail)} data-testid="viewer-reveal">
+                  在资源管理器中显示
+                </button>
+              )}
               <button
                 type="button"
                 className="btn-ghost small"
+                title={remote ? `在 ${remote.device} 的任务文件夹里的位置` : undefined}
                 onClick={() =>
-                  void copyText(absolute).then(() => {
+                  void copyText(remote ? remotePath : absolute).then(() => {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1200);
                   })
@@ -184,8 +201,8 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
               >
                 {copied ? "已复制" : "复制路径"}
               </button>
-              <MarkButton link={link} file={file} line={target.line ?? null} sessionId={target.sessionId ?? null} />
-              <button type="button" className="btn-ghost small dim" title="重新读取文件（R）" onClick={() => setReload((n) => n + 1)}>
+              {!remote && <MarkButton link={link} file={file} line={target.line ?? null} sessionId={target.sessionId ?? null} />}
+              <button type="button" className="btn-ghost small dim" title={remote ? `从 ${remote.device} 重新取一次（R）` : "重新读取文件（R）"} onClick={() => (remote ? remote.reload() : setReload((n) => n + 1))} data-testid="viewer-reload">
                 重新载入
                 <kbd className="gr-key">R</kbd>
               </button>
@@ -208,6 +225,11 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
           </button>
         </div>
       </header>
+      {remote?.stale && (
+        <div className="vw-stale" role="status" data-testid="viewer-remote-stale">
+          {remote.stale}
+        </div>
+      )}
       <main className="vw-body">
         <div className="vw-file" hidden={mode !== "file"} data-testid="viewer-file">
           {code && loaded.state === "ok" ? (
@@ -224,7 +246,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
               active={mode === "file"}
             />
           ) : renderable && rendered && loaded.state === "ok" ? (
-            <RenderedReview key={`${loaded.file.path}#${readVersion}`} link={link} workspace={workspace} file={loaded.file} kind={html ? "html" : "markdown"} active={mode === "file"} />
+            <RenderedReview key={`${loaded.file.path}#${readVersion}`} link={link} workspace={workspace} file={loaded.file} kind={html ? "html" : "markdown"} active={mode === "file"} {...(remote ? { remote: { taskId: remote.taskId, rel: remote.rel, key: remote.key } } : {})} />
           ) : (
             <div className="vw-content">
               <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={readVersion} />

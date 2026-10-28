@@ -34,6 +34,8 @@ export class FileReply {
   constructor(
     readonly path: string,
     readonly mime: string,
+    /** `fresh`: not to be kept by the browser (the same address may stand for a newer file: 远程 step 3). */
+    readonly options: { fresh?: boolean } = {},
   ) {}
 }
 

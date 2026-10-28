@@ -530,11 +530,15 @@ function frameMain(makeKit: typeof passageKit) {
 
 const FRAME_SCRIPT = `<script>(${frameMain.toString()})(${passageKit.toString()})</script>`;
 
-/** The HTML file as its frame gets it: our script first in <head>, before the page's own; its tags marked with their lines. */
-export function frameDoc(source: string): string {
+/**
+ * The HTML file as its frame gets it: our script first in <head>, before the page's own; its tags marked with their
+ * lines. `base` (远程 step 3): where the page's relative addresses (its images) load from.
+ */
+export function frameDoc(source: string, base: string | null = null): string {
   const html = lineTags(source);
+  const first = (base ? `<base href="${base.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">` : "") + FRAME_SCRIPT;
   const head = /<head[^>]*>/i.exec(html);
-  if (head) return html.slice(0, head.index + head[0].length) + FRAME_SCRIPT + html.slice(head.index + head[0].length);
+  if (head) return html.slice(0, head.index + head[0].length) + first + html.slice(head.index + head[0].length);
   const top = /^\s*(<!doctype[^>]*>)?\s*(<html[^>]*>)?/i.exec(html)!;
-  return html.slice(0, top[0].length) + FRAME_SCRIPT + html.slice(top[0].length);
+  return html.slice(0, top[0].length) + first + html.slice(top[0].length);
 }

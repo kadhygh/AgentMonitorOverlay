@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemotePermission, type RemotePush, type RemoteTaskSnapshot, type RemoteTaskView, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { HostService } from "../../service.js";
 import { HostError, boundedText } from "../../core/shared.js";
 import type { DeviceLink } from "./link.js";
+import { attachedPaths, itemForPeer, readRemoteFile, type FileRoots } from "./files.js";
 
 // 远程, step 2 on A (plans/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
 // a device may ask of them, and what A tells it unasked as they change. The grant is the whole task: every session in
@@ -239,11 +240,29 @@ export class RemoteGrants {
     return { task: this.view(task), sessions: this.store.listSessions({ taskId }), profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt };
   }
 
+  /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
+  private taskRoot(taskId: Id | null): string | null {
+    const task = taskId ? this.store.getTask(taskId) : undefined;
+    return task ? (this.store.getWorkspace(task.workspaceId)?.path ?? null) : null;
+  }
+
+  /** Step 3: what a file request of a granted task may reach — its folder and the pictures sent in its conversations. */
+  private fileRoots(taskId: Id): FileRoots {
+    const root = this.taskRoot(taskId);
+    if (!root) throw new HostError("not_found", "任务的文件夹不在了");
+    return {
+      root,
+      attachments: this.ctx.host.attachments.dir(),
+      attached: () => this.store.listSessions({ taskId }).flatMap((s) => attachedPaths(this.store.listItems(s.id))),
+    };
+  }
+
   items(sessionId: Id, since: number): RemoteItemsAnswer {
     const out: SessionItem[] = [];
     let bytes = 0;
+    const root = this.taskRoot(this.taskIdOf(sessionId));
     for (const it of this.store.listItems(sessionId, since)) {
-      const fitted = fitItem(it);
+      const fitted = itemForPeer(fitItem(it), root);
       const n = Buffer.byteLength(JSON.stringify(fitted));
       if (out.length && (bytes + n > ITEMS_BYTES || out.length >= ITEMS_MAX)) return { items: out, more: true };
       out.push(fitted);
@@ -304,6 +323,11 @@ export class RemoteGrants {
           const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(options ? { options } : {}) });
           return ok({ session: this.store.getSession(session.id) ?? session });
         }
+        case REMOTE_KINDS.file: {
+          const taskId = id(b.taskId, "taskId");
+          this.grantFor(from, taskId);
+          return ok(await readRemoteFile(this.fileRoots(taskId), b as unknown as RemoteFileAsk, this.ctx.deviceName()));
+        }
         default:
           return fail("unknown_kind", `${this.ctx.deviceName()} 的 Studio 不认识「${kind}」，可能版本不同`);
       }
@@ -352,9 +376,10 @@ export class RemoteGrants {
         return;
       case "item.appended":
       case "item.updated": {
-        const gs = to(this.taskIdOf(e.item.sessionId));
+        const taskId = this.taskIdOf(e.item.sessionId);
+        const gs = to(taskId);
         if (!gs.length) return;
-        const item = fitItem(e.item);
+        const item = itemForPeer(fitItem(e.item), this.taskRoot(taskId));
         for (const g of gs) this.push(g, { type: "item", item });
         return;
       }

@@ -1,9 +1,9 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteProfileId, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteProfileId, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -344,3 +344,59 @@ describe("remote limits on A", () => {
 });
 
 const toA = (a: Pair["a"]) => ({ account: "台式机的我", device: a.state().device!.id });
+
+describe("remote files between two Hosts (step 3)", () => {
+  it("B fetches a granted task's files from A, keeps them by task, asks again with what it has, and throws them away with the copy", async () => {
+    const { a, b, toB } = await paired();
+    const proj = tempDir("proj");
+    mkdirSync(join(proj, "docs", "img"), { recursive: true });
+    writeFileSync(join(proj, "docs", "a.md"), "# 说明\n\n见 ![图](img/p.png)");
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(REMOTE_FILE_CHUNK * 2 + 10, 3)]);
+    writeFileSync(join(proj, "docs", "img", "p.png"), png);
+    writeFileSync(join(proj, "run.exe"), "MZ");
+    const ws = a.service.projects.addWorkspace({ path: proj });
+    const { task, session } = await a.service.tasks.createTask({ title: "带文件的任务", workspaceId: ws.id, firstSession: { profileId: "p", text: "看 docs/a.md" } });
+    await until(() => agentTexts(a, session!.id), (t) => t.length > 0, "A's reply");
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id)?.remote?.state, (s) => s === "active", "B's copy");
+
+    // A's absolute path, as the conversation shows it: B gets it named by its place in the task's folder.
+    const progress: Array<[number, number]> = [];
+    b.service.on("event", (e) => e.type === "remote.file" && e.fetchId === "f1" && progress.push([e.received, e.total]));
+    const md = await b.remote.fetchFile(task.id, join(proj, "docs", "a.md"), undefined, "f1");
+    expect(md).toMatchObject({ rel: "docs/a.md", kind: "markdown", device: "A-PC", cached: false });
+    expect(readFileSync(md.path, "utf8")).toContain("# 说明");
+    expect(md.path.startsWith(join(b.store.path, "..", "remote-files", task.id))).toBe(true);
+    expect(progress.at(-1)).toEqual([md.size, md.size]);
+    // Asked again, unchanged on A: nothing comes over; changed: the new one does.
+    expect(await b.remote.fetchFile(task.id, join(proj, "docs", "a.md"))).toMatchObject({ cached: true, path: md.path });
+    writeFileSync(join(proj, "docs", "a.md"), "# 改过了");
+    const changed = await b.remote.fetchFile(task.id, join(proj, "docs", "a.md"));
+    expect(changed.cached).toBe(false);
+    expect(readFileSync(changed.path, "utf8")).toBe("# 改过了");
+    // A big picture comes in pieces, through the page's own address (the key) too.
+    const img = await b.remote.fetchFile(task.id, "docs/img/p.png", undefined, "f2");
+    expect(readFileSync(img.path).equals(png)).toBe(true);
+    const served = await b.remote.serveFile(img.key, "docs/img/p.png");
+    expect(served).toMatchObject({ path: img.path, mime: "image/png" });
+    await expect(b.remote.serveFile("nokeynokeynokey", "docs/img/p.png")).rejects.toThrow();
+    await expect(b.remote.serveFile(img.key, "docs/a.md")).rejects.toThrow("only images");
+    // Refused on A, said on B.
+    await expect(b.remote.fetchFile(task.id, "run.exe")).rejects.toThrow("只能看 HTML、Markdown 和图片");
+    await expect(b.remote.fetchFile(task.id, join(proj, "..", "elsewhere.md"))).rejects.toThrow();
+    // An ordinary task of B's own is not fetched from anywhere.
+    const own = await b.service.tasks.createTask({ title: "B 自己的" });
+    await expect(b.remote.fetchFile(own.task.id, "a.md")).rejects.toThrow("这不是远程任务");
+
+    // A away: the copy from last time, saying so; a file never fetched cannot be had.
+    a.remote.stop();
+    await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
+    const stale = await b.remote.fetchFile(task.id, join(proj, "docs", "a.md"));
+    expect(stale).toMatchObject({ cached: true, stale: "A-PC 现在连不上，显示的是上次取来的版本" });
+    await expect(b.remote.fetchFile(task.id, "docs/other.md")).rejects.toThrow("A-PC 离线，取不到文件");
+
+    // Archived on B: the copy goes, its files too.
+    await b.service.tasks.archiveTask(task.id);
+    expect(existsSync(join(b.store.path, "..", "remote-files", task.id))).toBe(false);
+  }, 60_000);
+});

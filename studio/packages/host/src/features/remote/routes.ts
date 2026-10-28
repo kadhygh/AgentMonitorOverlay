@@ -1,5 +1,5 @@
 import type { HostService } from "../../service.js";
-import { obj, route, str, type Route } from "../../http/route.js";
+import { FileReply, obj, route, str, type Route } from "../../http/route.js";
 import { HostError } from "../../core/shared.js";
 
 /** The HTTP routes of 远程 (see protocol/src/api.ts for each route's request and response). */
@@ -24,5 +24,23 @@ export function remoteRoutes(service: HostService): Route[] {
     route("POST", "/api/remote/grants", ({ body }) => service.remote.grant(str(obj(body).taskId, "taskId"), peer(body))),
     route("POST", "/api/remote/grants/revoke", ({ body }) => service.remote.revoke(str(obj(body).taskId, "taskId"), peer(body))),
     route("PUT", "/api/remote/allowed", ({ body }) => service.remote.setAllowed(body)),
+    route("POST", "/api/remote/files", ({ body }) => {
+      const b = obj(body);
+      const opt = (v: unknown, name: string) => (v === undefined || v === null || v === "" ? undefined : str(v, name));
+      return service.remote.fetchFile(str(b.taskId, "taskId"), str(b.path, "path"), opt(b.cwd, "cwd"), opt(b.fetchId, "fetchId"));
+    }),
+    // Step 3: images a remote task's HTML page loads, by their place in the task's folder (the page gets <base> here).
+    // An <img> sends no token and <base> drops a query, so the key in the path (random, per task, per Host run) is it.
+    {
+      method: "GET",
+      path: "/api/remote/files/:key/*",
+      pattern: /^\/api\/remote\/files\/([\w-]{8,64})\/(.+)$/,
+      keys: ["key", "rel"],
+      open: true,
+      handle: async ({ params }) => {
+        const f = await service.remote.serveFile(params.key!, params.rel!);
+        return new FileReply(f.path, f.mime, { fresh: true });
+      },
+    },
   ];
 }

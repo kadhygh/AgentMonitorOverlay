@@ -42,7 +42,7 @@ import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import type { ReadPlace } from "./readPlace.js";
-import { copyStatus, grantsOf, REMOTE_FILES_LATER, useRemote } from "../settings/remote.js";
+import { copyStatus, grantsOf, useRemote } from "../settings/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
@@ -579,7 +579,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             ) : (
               <>
                 <b>在 {copy.name} 上运行</b>
-                <span>这是 {task.remote!.account} 的「{copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。文件查看、Git Review、终端要在那边用。</span>
+                <span>这是 {task.remote!.account} 的「{copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。对话里的 HTML、Markdown 和图片可以点开看（从那台电脑取过来）；其他文件、Git Review、终端要在那边用。</span>
               </>
             )}
           </span>
@@ -678,7 +678,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
           )}
           {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
-          <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError} {...(copy ? { remoteNote: REMOTE_FILES_LATER } : {})}>
+          <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError} {...(copy ? { remoteTask: task.id } : {})}>
             <Thread
               link={link}
               {...(copy ? { remote: { blocked: copy.blocked, revoked: copy.state === "revoked" } } : {})}

@@ -142,7 +142,27 @@ export function parseBlocks(source: string): Block[] {
   return blocks;
 }
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(!\[[^\]]*\]\([^)\s]+\))|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+
+/**
+ * Where an image of the Markdown loads from (2026-10-29: the viewer gives one, for pictures beside the file — a remote
+ * task's fetched from its computer); null shows it as a link. Without a provider (a conversation) `![a](b)` stays a link.
+ */
+export const MarkdownImages = createContext<((src: string) => string | null) | null>(null);
+
+function InlineImage({ alt, src }: { alt: string; src: string }) {
+  const resolve = useContext(MarkdownImages);
+  const url = resolve?.(src) ?? null;
+  const [broken, setBroken] = useState(false);
+  if (!url || broken)
+    return (
+      <>
+        {"!"}
+        <ExternalLink href={src}>{alt || src}</ExternalLink>
+      </>
+    );
+  return <img className="md-img" src={url} alt={alt} title={alt || src} onError={() => setBroken(true)} data-testid="md-image" />;
+}
 
 /**
  * Turns inline code and links to local paths into file links where the page provides one (the conversation, stage
@@ -198,6 +218,9 @@ export function renderInline(text: string): ReactNode[] {
     else if (m[2]) out.push(<strong key={key++}>{token.slice(2, -2)}</strong>);
     else if (m[3]) out.push(<em key={key++}>{token.slice(1, -1)}</em>);
     else if (m[4]) {
+      const image = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(token)!;
+      out.push(<InlineImage key={key++} alt={image[1]!} src={image[2]!} />);
+    } else if (m[5]) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)!;
       out.push(
         <ExternalLink key={key++} href={link[2]!}>

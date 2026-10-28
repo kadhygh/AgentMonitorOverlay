@@ -198,6 +198,11 @@ export const REMOTE_KINDS = {
   interrupt: "rt.interrupt",
   /** B → A: a new session in the task, on an allowed model. {taskId, profileId (A's), text?} → {session} */
   start: "rt.start",
+  /**
+   * Step 3, B → A: a file of a granted task (HTML, Markdown or an image, under the task's folder or among its
+   * attachments), one piece at a time. RemoteFileAsk → RemoteFileAnswer
+   */
+  file: "rt.file",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -245,6 +250,7 @@ export interface RemoteCommandBodies {
   "rt.answer": { sessionId: Id; itemId: Id; reply: QuestionReply };
   "rt.interrupt": { sessionId: Id };
   "rt.start": { taskId: Id; profileId: Id; text?: string };
+  "rt.file": RemoteFileAsk;
 }
 
 /** A → B, unasked. B checks seq: a gap (or anything it cannot place) makes it ask for what it missed. */
@@ -259,3 +265,89 @@ export type RemotePush =
   | { type: "item"; item: SessionItem }
   /** Streaming text of an agent item (not stored on its own on either side). */
   | { type: "delta"; sessionId: Id; itemId: Id; append: string };
+
+// ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
+// A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under
+// the task's folder (links and junctions resolved first) or one of its attachments, that it is HTML, Markdown or an
+// image, and not too big, and sends it in pieces. B keeps it in its own data folder, by task, and opens it from there; the
+// same file unchanged is not sent again. Paths between the two say where in the task's folder, never A's user folder.
+
+/** Biggest file B may take from A. */
+export const REMOTE_FILE_MAX_BYTES = 20 * 1024 * 1024;
+/** One piece of a file (base64 in a frame of at most 1 MB). */
+export const REMOTE_FILE_CHUNK = 512 * 1024;
+/** How paths name A's task folder for B (instead of A's own path, which has the user's name in it). */
+export const REMOTE_TASK_FOLDER = "任务文件夹";
+/** How paths name the task's attachments (pictures sent in its conversation) for B. */
+export const REMOTE_ATTACHMENTS_FOLDER = "附件";
+
+export type RemoteFileKind = "html" | "markdown" | "image";
+const REMOTE_FILE_EXT: Record<string, RemoteFileKind> = {
+  ".html": "html",
+  ".htm": "html",
+  ".md": "markdown",
+  ".markdown": "markdown",
+  ".png": "image",
+  ".jpg": "image",
+  ".jpeg": "image",
+  ".gif": "image",
+  ".webp": "image",
+  ".bmp": "image",
+  ".svg": "image",
+  ".ico": "image",
+};
+
+/** What kind of file remote viewing takes, by extension; null for every other kind. */
+export function remoteFileKind(path: string): RemoteFileKind | null {
+  const m = /\.[^./\\]+$/.exec(path.trim());
+  return m ? (REMOTE_FILE_EXT[m[0].toLowerCase()] ?? null) : null;
+}
+
+/** B → A: a piece of a file of a granted task. */
+export interface RemoteFileAsk {
+  taskId: Id;
+  /** As the conversation names it: A's absolute path, `任务文件夹/…`, or relative (to `cwd`, else the task's folder). */
+  path: string;
+  /** Where a relative `path` starts (a command's working directory as B has it), when not the task's folder. */
+  cwd?: string;
+  /** The first byte wanted (0 for the start). */
+  offset: number;
+  /** B's kept copy: A answers `unchanged` when the file is still the same. */
+  have?: { size: number; mtime: number; sha256: string };
+  /** After the first piece: the file as it was then; changed since, A says so and B starts again. */
+  expect?: { size: number; mtime: number };
+}
+
+export interface RemoteFileAnswer {
+  /** Where the file is in the task's folder (`docs/a.md`), or `附件/<name>`; forward slashes. */
+  rel: string;
+  size: number;
+  /** Modified, ms since 1970. */
+  mtime: number;
+  /** Of the whole file; on the first piece (and with `unchanged`). */
+  sha256?: string;
+  kind: RemoteFileKind;
+  /** B's copy is the file as it is: nothing sent. */
+  unchanged?: true;
+  /** The piece: from `offset`, base64. */
+  offset?: number;
+  data?: string;
+}
+
+/** On B: a remote task's file, fetched (or found unchanged) and kept here (POST /api/remote/files). */
+export interface RemoteFetchedFile {
+  /** The copy on this computer (in the data folder, by task). */
+  path: string;
+  /** Where it is in the task's folder, as A said. */
+  rel: string;
+  kind: RemoteFileKind;
+  size: number;
+  /** A's device name. */
+  device: string;
+  /** Served from the copy here without a transfer (A said it is unchanged, or A could not be reached: `stale`). */
+  cached: boolean;
+  /** A could not be reached (or the grant is gone): this is the copy fetched last time — why. */
+  stale?: string;
+  /** For pages that load the task's images: `/api/remote/files/<key>/<rel>` serves them (fetched from A as asked). */
+  key: string;
+}

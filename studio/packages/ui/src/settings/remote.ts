@@ -63,6 +63,3 @@ export function copyStatus(task: Task, remote: RemoteState | null, now: number =
 
 /** On A: the devices a task is granted to. */
 export const grantsOf = (remote: RemoteState | null, taskId: string): RemoteGrant[] => remote?.grants.filter((g) => g.taskId === taskId) ?? [];
-
-/** The note shown where a file of a remote task would open (step 3 brings them over). */
-export const REMOTE_FILES_LATER = "远程任务的文件要从授权它的电脑上取，这一步还没做（下一步做）；现在可以在那台电脑上打开。";

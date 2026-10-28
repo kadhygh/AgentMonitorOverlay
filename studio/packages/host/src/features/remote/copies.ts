@@ -6,6 +6,7 @@ import type { HostErrorCode } from "@amo-studio/protocol";
 import type { HostEventInput } from "../../store/store.js";
 import { CommandError } from "./link.js";
 import type { RemoteContext } from "./grants.js";
+import { RemoteFiles } from "./files.js";
 
 // 远程, step 2 on B (plans/remote-session.md, 2026-10-29): this computer's copies of the tasks paired devices granted
 // it. A copy is an ordinary task of this Host (in the common space, Task.remote saying where it runs) with sessions whose
@@ -28,7 +29,12 @@ export class RemoteCopies {
   private readonly again = new Set<Id>();
   private readonly syncing = new Map<string, Promise<void>>();
 
-  constructor(private readonly ctx: RemoteContext) {}
+  /** Step 3: the files fetched from A for the copies (thrown away with a copy). */
+  readonly files: RemoteFiles;
+
+  constructor(private readonly ctx: RemoteContext) {
+    this.files = new RemoteFiles(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
+  }
 
   private get store() {
     return this.ctx.host.store;
@@ -58,7 +64,8 @@ export class RemoteCopies {
 
   // ---- asking A
 
-  private async ask<T>(peer: DeviceRef, kind: string, body: unknown, timeoutMs = COMMAND_MS): Promise<T> {
+  /** A command to A and its answer; `offline`: what to say when A is not online (default: about sending). */
+  async ask<T>(peer: DeviceRef, kind: string, body: unknown, timeoutMs = COMMAND_MS, offline?: string): Promise<T> {
     const name = this.ctx.peer(peer)?.name ?? peer.account;
     const link = this.ctx.link();
     if (!link || link.state !== "online") throw new HostError("runtime_error", "这台电脑没有连上团队服务器，回来后再试");
@@ -67,7 +74,7 @@ export class RemoteCopies {
       f = await link.request(peer, kind, body, timeoutMs);
     } catch (err) {
       if (!(err instanceof CommandError)) throw err;
-      if (err.code === "offline") throw new HostError("runtime_error", `${name} 离线，回来后再发`);
+      if (err.code === "offline") throw new HostError("runtime_error", offline ?? `${name} 离线，回来后再发`);
       if (err.code === "not_paired") throw new HostError("read_only", `已经不和 ${name} 配对了`);
       if (err.code === "unconfirmed" || err.code === "timeout") throw new HostError("runtime_error", `结果未确认：连接断了或 ${name} 没有及时回音。重连后核对（不会自动重发）`);
       throw new HostError("runtime_error", err.message);
@@ -293,6 +300,8 @@ export class RemoteCopies {
     this.store.purge({ sessionIds, taskIds: [task.id], topicIds: [], workspaceIds: [] });
     this.publish({ type: "data.purged", workspaceIds: [], topicIds: [], taskIds: [task.id], sessionIds });
     this.profilesChanged(before);
+    // The files fetched for it go too (plans/remote-session.md: 归档时一起清掉).
+    this.files.drop(task.id);
   }
 
   // ---- what the person does in a copy, sent to A
@@ -307,7 +316,7 @@ export class RemoteCopies {
   }
 
   async send(sessionId: Id, text: string, images: readonly unknown[]): Promise<{ mode: SendMode }> {
-    if (images.length) throw new HostError("bad_request", "远程任务暂时不能发图片和文件（下一步做）");
+    if (images.length) throw new HostError("bad_request", "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字");
     const { peer } = this.target(sessionId);
     return this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text });
   }
@@ -331,7 +340,7 @@ export class RemoteCopies {
   async start(task: Task, input: NewSessionInput): Promise<Session> {
     const r = task.remote!;
     if (r.state !== "active") throw new HostError("read_only", "授权已收回，不能再开会话");
-    if (input.attachments?.length) throw new HostError("bad_request", "远程任务暂时不能发图片和文件（下一步做）");
+    if (input.attachments?.length) throw new HostError("bad_request", "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字");
     const ref = parseRemoteProfileId(input.profileId);
     if (!ref || ref.device !== r.device || !r.allowed.includes(input.profileId)) throw new HostError("bad_request", `这个模型不在 ${r.name} 允许远程使用的模型里`);
     const peer = peerOf(task);

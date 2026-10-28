@@ -56,3 +56,16 @@ button.vw-note-quote:hover { color: var(--text); }
 .vw-note-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
 .vw-note-line code { font-family: var(--font-code); color: var(--text); }
 .vw-notes-empty { margin: 4px 14px; color: var(--text-faint); font-size: var(--fs-cap); line-height: 1.6; }
+/* 远程 step 3 (2026-10-29): a remote task's file — where it came from in the title; fetching it, as 正在启动 looks. */
+.vw-dir .remote-badge { display: inline-block; margin-right: 2px; font-family: var(--font-ui, inherit); }
+.vw-dir-remote { direction: ltr; }
+.vw-stale { flex: none; padding: 6px 16px; border-bottom: 1px solid var(--border); background: var(--attention-bg); color: var(--attention); font-size: var(--fs-sm); }
+.vw-remote { align-items: center; justify-content: center; }
+.vw-remote-box { display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(380px, calc(100% - 32px)); padding: 20px 24px; border-radius: var(--r-l); background: var(--panel-raised); border: 1px solid var(--border-strong); box-shadow: 0 8px 24px var(--shadow); text-align: center; }
+.vw-remote-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); }
+.vw-remote-bar { width: 100%; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--primary) 15%, transparent); overflow: hidden; }
+.vw-remote-bar > span { display: block; height: 100%; background: var(--primary); transition: width 0.2s ease-out; }
+.vw-remote-amount { font-size: var(--fs-cap); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.vw-remote-fail { font-size: var(--fs-body); font-weight: 600; color: var(--danger, var(--attention)); }
+.vw-remote-why { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh, 1.6); overflow-wrap: anywhere; }
+.fp-md .md-img { display: block; max-width: 100%; height: auto; margin: 6px 0; border-radius: 4px; }

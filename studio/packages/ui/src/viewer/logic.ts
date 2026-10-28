@@ -1,4 +1,4 @@
-import { isCommon, type GitChangedFile, type Workspace } from "@amo-studio/protocol";
+import { isCommon, REMOTE_TASK_FOLDER, type GitChangedFile, type Workspace } from "@amo-studio/protocol";
 
 // Pure logic of the viewer window (查看器, stage 13): its address, which project a file belongs to, and which changed
 // file in a Review is the one asked for.
@@ -22,6 +22,12 @@ export interface ViewerTarget {
   sessionId?: string;
   /** Changes on every open (the shell sets it), so the same file opened again scrolls back to its line. */
   nonce?: string;
+  /**
+   * 远程 step 3 (2026-10-29): the file is in this remote task's folder on the computer it runs on — `path` as its
+   * conversation names it (relative to `cwd` when given). The viewer fetches it from there first.
+   */
+  remote?: string;
+  cwd?: string;
 }
 
 const int = (s: string | null): number | undefined => {
@@ -40,6 +46,10 @@ export function viewerHash(t: ViewerTarget): string {
   }
   if (t.mode === "changes") q.set("mode", "changes");
   if (t.sessionId) q.set("session", t.sessionId);
+  if (t.remote) {
+    q.set("remote", t.remote);
+    if (t.cwd) q.set("cwd", t.cwd);
+  }
   if (t.nonce) q.set("n", t.nonce);
   return `#viewer?${q.toString()}`;
 }
@@ -56,14 +66,28 @@ export function parseViewerHash(hash: string): ViewerTarget | null {
   const end = int(q.get("end"));
   const nonce = q.get("n");
   const sessionId = q.get("session");
+  const remote = q.get("remote");
+  const cwd = q.get("cwd");
   return {
     path,
     ...(workspaceId ? { workspaceId } : {}),
     ...(line ? { line, ...(end && end > line ? { endLine: end } : {}) } : {}),
     ...(q.get("mode") === "changes" ? { mode: "changes" as const } : {}),
     ...(sessionId ? { sessionId } : {}),
+    ...(remote ? { remote, ...(cwd ? { cwd } : {}) } : {}),
     ...(nonce ? { nonce } : {}),
   };
+}
+
+/**
+ * 远程 step 3: where a link of a remote file points, as the task's computer understands it — `任务文件夹/…` for a
+ * relative link (from the file's place `rel` there), the link itself when absolute. Null for the web, headings, mailto…
+ */
+export function remoteLinkPath(rel: string, href: string, resolve: (from: string, href: string) => { kind: string; path?: string; line?: number } | null): { path: string; line?: number } | null {
+  const to = resolve(`/${REMOTE_TASK_FOLDER}/${rel}`, href);
+  if (!to || to.kind !== "file" || !to.path) return null;
+  const p = to.path.startsWith(`/${REMOTE_TASK_FOLDER}/`) ? to.path.slice(1) : to.path.replace(/^\/(?=[a-z]:\/)/i, "");
+  return { path: p.startsWith("/") ? `${REMOTE_TASK_FOLDER}${p}` : p, ...(to.line ? { line: to.line } : {}) };
 }
 
 const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();

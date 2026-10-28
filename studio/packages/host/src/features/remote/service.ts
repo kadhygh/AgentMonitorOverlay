@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemotePingResult, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteFetchedFile, type RemotePingResult, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -95,6 +95,8 @@ export class RemoteFeature extends Feature {
       console.log(`remote: cannot make device.json: ${String(err)}`);
     }
     this.seenFiles = this.fileStamp();
+    // Files fetched for copies that are gone (step 3).
+    this.copies.files.sweep();
     void this.loadAccount();
     this.watch = setInterval(() => this.checkFiles(), options.watchMs ?? 5000);
     this.watch.unref();
@@ -554,6 +556,17 @@ export class RemoteFeature extends Feature {
 
   dropCopy(task: Task): void {
     this.copies.drop(task);
+  }
+
+  /** Step 3: a file of a remote task's copy, fetched from the computer it runs on and kept here. */
+  async fetchFile(taskId: Id, path: string, cwd?: string, fetchId?: string): Promise<RemoteFetchedFile> {
+    if (!this.store.getTask(taskId)?.remote) throw new HostError("not_found", "这不是远程任务");
+    return this.copies.files.fetch(taskId, path, cwd, fetchId);
+  }
+
+  /** Step 3: an image a remote page loads (GET /api/remote/files/<key>/<rel>). */
+  serveFile(key: string, rel: string): Promise<{ path: string; mime: string }> {
+    return this.copies.files.serve(key, rel);
   }
 
   /**

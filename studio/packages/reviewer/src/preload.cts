@@ -10,7 +10,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
   setMinWidth: (px: number): void => electron.ipcRenderer.send("amo:min-width", px),
   openReview: (target: { workspaceId: string; sessionId?: string; file?: string; commit?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-review", target),
   switchReview: (target: { workspaceId: string; commit: string }): Promise<void> => electron.ipcRenderer.invoke("amo:switch-review", target),
-  openViewer: (target: { path: string; pack?: string; item?: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes" }): Promise<void> =>
+  openViewer: (target: { path: string; pack?: string; item?: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes"; remote?: string; cwd?: string }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-viewer", target),
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
   viewerState: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:viewer-state"),

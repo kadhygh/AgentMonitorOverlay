@@ -1,15 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { sortComments, type GitCommentPoint, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_TASK_FOLDER, remoteFileKind, sortComments, type GitCommentPoint, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
 import { ActionMenu } from "../lib/ActionMenu.js";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
-import { Markdown, MarkdownFileLinks } from "../lib/markdown.js";
+import { Markdown, MarkdownFileLinks, MarkdownImages } from "../lib/markdown.js";
+import { rawFileUrl } from "../lib/openin.js";
+import { viewRemoteFile } from "../files/FileLinks.js";
 import { highlightsSupported } from "../review/highlights.js";
 import { CommentDraft } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey, setDraftText, useEditing } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
-import { relativeIn } from "./logic.js";
+import { relativeIn, remoteLinkPath } from "./logic.js";
 import { passageKit, type PassageAnchor } from "./passageKit.js";
 import { frameDoc, headingSlug, resolveLink, sourceCandidates, sourceLine, type FrameMessage, type ToFrame } from "./passages.js";
 import { openViewer } from "./open.js";
@@ -74,7 +76,18 @@ function useHtmlSource(link: HostLink, ws: Workspace | null, rel: string | null,
   return source;
 }
 
-export function RenderedReview({ link, workspace, file, kind, active }: { link: HostLink; workspace: Workspace | null; file: TextFile; kind: "markdown" | "html"; active: boolean }) {
+/** 远程 step 3: the file is a remote task's, fetched from the computer it runs on (`rel`: its place in the task's folder). */
+export interface RemoteFileContext {
+  taskId: string;
+  rel: string;
+  /** Serves the task's images: /api/remote/files/<key>/<rel>. */
+  key: string;
+}
+
+/** `/api/remote/files/<key>/<a/b>` for a place in a remote task's folder, each part escaped. */
+export const remoteFileUrl = (link: HostLink, key: string, rel: string) => `${link.url}/api/remote/files/${key}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+
+export function RenderedReview({ link, workspace, file, kind, active, remote }: { link: HostLink; workspace: Workspace | null; file: TextFile; kind: "markdown" | "html"; active: boolean; remote?: RemoteFileContext }) {
   const text = file.text ?? "";
   const rel = workspace ? relativeIn(file.path, workspace.path) : null;
   const ws = rel !== null ? workspace : null;
@@ -175,7 +188,9 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   };
 
   // ---- HTML: painted in its frame ----
-  const srcDoc = useMemo(() => (kind === "html" ? frameDoc(text) : ""), [kind, text]);
+  // A remote page's own images load from the task's folder there, through this Host (fetched as the page asks).
+  const base = remote ? remoteFileUrl(link, remote.key, `${remote.rel.includes("/") ? remote.rel.slice(0, remote.rel.lastIndexOf("/") + 1) : ""}`) : null;
+  const srcDoc = useMemo(() => (kind === "html" ? frameDoc(text, base) : ""), [kind, text, base]);
   const toFrame = (m: ToFrame) => frame.current?.contentWindow?.postMessage({ amoPassage: m }, "*");
   const anchorOf = (p: PassageAnchor) => ({ quote: p.quote, prefix: p.prefix, suffix: p.suffix });
   const sendMarks = () =>
@@ -196,6 +211,12 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
     const to = resolveLink(file.path, href);
     if (!to) return showToast({ text: `这个链接在查看器里打不开：${href}`, error: true });
     if (to.kind === "web") return void window.amo?.openExternal?.(to.url);
+    if (to.kind === "file" && remote) {
+      // A remote file's links are files of the task's folder over there: fetched as this one was.
+      const there = remoteLinkPath(remote.rel, href, resolveLink);
+      if (!there) return showToast({ text: `这个链接在查看器里打不开：${href}`, error: true });
+      return viewRemoteFile({ file: { path: there.path }, ...(there.line ? { line: there.line } : {}) }, remote.taskId);
+    }
     if (to.kind === "file") return openViewer({ path: to.path, ...(to.line ? { line: to.line } : {}) });
     const root = doc.current;
     // Written by hand, a link may have one dash where the heading's anchor has two.
@@ -208,6 +229,20 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   const latest = useRef({ sendMarks, follow });
   latest.current = { sendMarks, follow };
   const followLink = useCallback((href: string) => latest.current.follow(href), []);
+  // Pictures beside the Markdown file show in it (2026-10-29): a remote task's through this Host from its computer.
+  const imageUrl = useCallback(
+    (src: string): string | null => {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src) && !/^file:/i.test(src) && !/^[a-z]:[\\/]/i.test(src)) return null;
+      if (remote) {
+        const there = remoteLinkPath(remote.rel, src, resolveLink);
+        if (!there || remoteFileKind(there.path) !== "image" || !there.path.startsWith(`${REMOTE_TASK_FOLDER}/`)) return null;
+        return remoteFileUrl(link, remote.key, there.path.slice(REMOTE_TASK_FOLDER.length + 1));
+      }
+      const to = resolveLink(file.path, src);
+      return to?.kind === "file" && remoteFileKind(to.path) === "image" ? rawFileUrl(link, { path: to.path }) : null;
+    },
+    [remote?.rel, remote?.key, file.path, link], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   useEffect(() => {
     if (kind !== "html") return;
     const on = (e: MessageEvent) => {
@@ -302,7 +337,9 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
                 <div className="fp-md" ref={doc} onMouseUp={onMdMouseUp} onScroll={() => setPick(null)} data-testid="viewer-md">
                   <Follow.Provider value={followLink}>
                     <MarkdownFileLinks.Provider value={ViewerLink}>
-                      <Markdown source={text} />
+                      <MarkdownImages.Provider value={imageUrl}>
+                        <Markdown source={text} />
+                      </MarkdownImages.Provider>
                     </MarkdownFileLinks.Provider>
                   </Follow.Provider>
                 </div>
@@ -376,7 +413,7 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
             )}
           </div>
           <div className="vw-notes-list" ref={list}>
-            {!ws && <p className="vw-notes-empty">这个文件不在任何项目里，不能批注。</p>}
+            {!ws && <p className="vw-notes-empty">{remote ? "远程任务的文件只能看，不能批注（批注写回以后再做）。" : "这个文件不在任何项目里，不能批注。"}</p>}
             {draft && (
               <div className="gr-comment vw-note" data-testid="passage-draft">
                 {draft.point ? <PlaceLabel n="+" where={draft.point.where} /> : <blockquote className="vw-note-quote">{draft.quote}</blockquote>}

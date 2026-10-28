@@ -124,7 +124,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** A commit's review window only: show another commit of the same project here. */
   switchReview: (target: { workspaceId: string; commit: string }): Promise<void> => electron.ipcRenderer.invoke("amo:switch-review", target),
   /** The viewer (查看器, stage 13): a file in the preview window (reused until 固定), at a line or range; or a 查看包. */
-  openViewer: (target: { path: string; pack?: string; item?: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes"; sessionId?: string }): Promise<void> =>
+  openViewer: (target: { path: string; pack?: string; item?: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes"; sessionId?: string; remote?: string; cwd?: string }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-viewer", target),
   /** Viewer windows only: 固定 this window (the next file opens another), and whether it is. */
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),

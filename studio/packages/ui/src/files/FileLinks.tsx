@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import type { FileDiff } from "@amo-studio/protocol";
+import { remoteFileKind, type FileDiff } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { ActionMenu } from "../lib/ActionMenu.js";
 import { MarkdownFileLinks } from "../lib/markdown.js";
@@ -24,6 +24,8 @@ export interface PreviewTarget {
   endLine?: number;
   column?: number;
   diff?: FileDiff;
+  /** Where a relative name starts (a tool call's working directory), for a remote task's file (远程 step 3). */
+  cwd?: string;
 }
 
 interface FileLinksValue {
@@ -61,6 +63,24 @@ export function viewFile(t: PreviewTarget, workspaceId: string | null, sessionId
   });
 }
 
+/**
+ * 远程 step 3 (2026-10-29): a file of a remote task opens in the viewer, which fetches it from the computer the task
+ * runs on — HTML, Markdown and images only (that computer checks again); anything else says so here.
+ */
+export function viewRemoteFile(t: PreviewTarget, taskId: string, sessionId: string | null = null): void {
+  if (!remoteFileKind(t.file.path)) {
+    showToast({ text: "远程任务暂时只能看 HTML、Markdown 和图片；这个文件要在运行任务的那台电脑上打开。" });
+    return;
+  }
+  openViewer({
+    path: t.file.path,
+    remote: taskId,
+    ...(t.cwd ? { cwd: t.cwd } : {}),
+    ...(t.line ? { line: t.line, ...(t.endLine ? { endLine: t.endLine } : {}) } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  });
+}
+
 /** Whether this machine has VS Code (false until known). */
 export function useVsCode(link: HostLink): boolean {
   const [vscode, setVscode] = useState(false);
@@ -83,7 +103,7 @@ export function FileLinks({
   sessionId = null,
   onPreview,
   onError,
-  remoteNote,
+  remoteTask,
   children,
 }: {
   link: HostLink;
@@ -94,19 +114,19 @@ export function FileLinks({
   onPreview(target: PreviewTarget): void;
   onError?(text: string): void;
   /**
-   * 远程 (step 2, 2026-10-29): the conversation is a copy of another computer's session, whose files are there — a click
-   * or a right click on one says this note instead of opening anything (step 3 brings them over).
+   * 远程 (2026-10-29): the conversation is a copy of another computer's session (this remote task), whose files are
+   * there — a click opens one in the viewer, which fetches it first (step 3); the menu has only that and 复制路径.
    */
-  remoteNote?: string;
+  remoteTask?: string;
   children: ReactNode;
 }) {
   const vscode = useVsCode(link);
   const [menu, setMenu] = useState<Menu>(null);
   const remote = useMemo<FileLinksValue | null>(() => {
-    if (!remoteNote) return null;
-    const note = () => showToast({ text: remoteNote });
-    return { link, workspaceId, sessionId, vscode: false, remote: true, open: note, preview: note, editor: note, menu: (e) => (e.preventDefault(), note()) };
-  }, [remoteNote, link, workspaceId, sessionId]);
+    if (!remoteTask) return null;
+    const open = (t: PreviewTarget) => viewRemoteFile(t, remoteTask, sessionId);
+    return { link, workspaceId, sessionId, vscode: false, remote: true, open, preview: open, editor: open, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) };
+  }, [remoteTask, link, workspaceId, sessionId]);
 
   const fail = useCallback((err: unknown) => onError?.(message(err)), [onError]);
   const editor = useCallback(
@@ -138,6 +158,18 @@ export function FileLinks({
     return (
       <Ctx.Provider value={remote}>
         <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
+        {menu && t && remoteTask && (
+          <ActionMenu
+            label="文件"
+            at={menu}
+            testId="file-menu"
+            onClose={() => setMenu(null)}
+            groups={[
+              [{ label: "在查看器中打开", key: "O", title: "从运行任务的电脑取过来再打开（只能看 HTML、Markdown 和图片）", run: () => viewRemoteFile(t, remoteTask, sessionId) }],
+              [{ label: "复制路径", key: "C", title: "那台电脑上的路径", run: () => void copyText(t.file.path) }],
+            ]}
+          />
+        )}
       </Ctx.Provider>
     );
   return (
@@ -212,11 +244,11 @@ export function FileLink({
 }) {
   const ctx = useFileLinks();
   const checked = useExistingPath(ctx?.link ?? null, { workspaceId: ctx?.workspaceId ?? null, cwd }, ctx && !ctx.remote ? path : null);
-  // A remote session's files are on its own computer: this one cannot tell whether they exist (a click says so).
+  // A remote session's files are on its own computer: this one cannot tell whether they exist (a click fetches it).
   const found = ctx?.remote ? { path, dir: false } : checked;
   if (!ctx || !found || found.dir) return <>{fallback ?? children}</>;
   const range = !!line && !!endLine && endLine > line;
-  const target: PreviewTarget = { file: { path: found.path }, ...(line ? { line, ...(range ? { endLine } : {}) } : {}), ...(line && column ? { column } : {}) };
+  const target: PreviewTarget = { file: { path: found.path }, ...(line ? { line, ...(range ? { endLine } : {}) } : {}), ...(line && column ? { column } : {}), ...(ctx.remote && cwd ? { cwd } : {}) };
   const where = `${found.path}${line ? `:${line}${range ? `-${endLine}` : column ? `:${column}` : ""}` : ""}`;
   const open = (e: MouseEvent | KeyboardEvent) => {
     e.preventDefault();
