@@ -14,7 +14,7 @@ export interface FakePlatformManifest {
   tool: string;
   name: string;
   version: string;
-  builtAt: string;
+  builtAt: number;
   exe: string;
   notes: string;
   files: Array<{ path: string; size: number; sha256: string }>;
@@ -30,6 +30,8 @@ export interface FakePlatformServer {
   corruptObject(sha256: string): void;
   /** The next downloads of this object send half the bytes and then drop the connection. */
   breakObject(sha256: string): void;
+  /** Holds every object download this long before sending it (to see the progress on screen). */
+  delayObjects(ms: number): void;
   /** Makes every later request with this key fail as logged out. */
   revokeKeys(): void;
   /** Every request, as "METHOD /path". */
@@ -48,6 +50,20 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   const corrupt = new Set<string>();
   const broken = new Set<string>();
   const requests: string[] = [];
+  let delay = 0;
+  // As the real server (10-28): stable is never older than test — pointing stable at a version moves test along when
+  // test has an older one or none.
+  const newer = (a: string, b: string) => {
+    const x = a.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+    const y = b.split(/[.-]/).map((n) => Number.parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+    return false;
+  };
+  const point = (channel: "stable" | "test", tool: string, version: string) => {
+    channels[channel][tool] = version;
+    const test = channels.test[tool];
+    if (channel === "stable" && (!test || newer(version, test))) channels.test[tool] = version;
+  };
 
   const send = (res: ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -103,6 +119,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         const sha = object[1]!;
         const data = objects.get(sha);
         if (!data) return fail(res, 404, "not_found", "没有这个文件");
+        if (delay) await new Promise((r) => setTimeout(r, delay));
         if (corrupt.has(sha)) {
           corrupt.delete(sha);
           const bad = Buffer.from(data);
@@ -135,15 +152,16 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         objects.set(sha, data);
         return { path, size: data.length, sha256: sha };
       });
-      const manifest: FakePlatformManifest = { tool: toolId, name: o.name ?? toolId, version, builtAt: new Date().toISOString(), exe: o.exe ?? list[0]?.path ?? "", notes: o.notes ?? "", files: list };
+      const manifest: FakePlatformManifest = { tool: toolId, name: o.name ?? toolId, version, builtAt: Date.now(), exe: o.exe ?? list[0]?.path ?? "", notes: o.notes ?? "", files: list };
       manifests.set(`${toolId}@${version}`, manifest);
-      if (o.channel !== null) channels[o.channel ?? "stable"][toolId] = version;
+      if (o.channel !== null) point(o.channel ?? "stable", toolId, version);
       return manifest;
     },
     setChannel(channel, toolId, version) {
       if (version === null) delete channels[channel][toolId];
-      else channels[channel][toolId] = version;
+      else point(channel, toolId, version);
     },
+    delayObjects: (ms) => void (delay = ms),
     corruptObject: (sha) => void corrupt.add(sha),
     breakObject: (sha) => void broken.add(sha),
     revokeKeys: () => keys.clear(),

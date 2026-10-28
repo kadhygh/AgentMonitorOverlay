@@ -33,6 +33,8 @@ export interface ToolView {
   notes: string | null;
   /** The version `current` points at, or null when not installed. */
   installed: string | null;
+  /** How the installed version stands against the channel's. */
+  standing: "not-installed" | "latest" | "update" | "ahead" | "not-in-channel";
   /** The version 回滚 goes back to (the other one kept), if any. */
   rollbackTo: string | null;
   /** A process runs from this tool's folder. */

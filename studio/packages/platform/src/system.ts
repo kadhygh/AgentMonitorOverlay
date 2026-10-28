@@ -34,23 +34,28 @@ export function foldersInUse(paths: readonly string[], folders: readonly string[
 }
 
 /**
- * Whether Studio is running on this data dir and how many sessions it has going: the data dir's host.json (url) and
- * host-token, then the Host's GET /api/health. `running` there is being added (10-28); without it the count is null
- * (unknown). Anything that does not answer reads as "not running".
+ * Whether Studio is running on this data dir and how many sessions it has going: the data dir's host.json (url), then
+ * the Host's GET /api/health → { ok, pid, running } (running added 10-28; an older Studio without it gives null,
+ * unknown). Anything that does not answer reads as "not running".
  */
 export async function studioHealth(dataDir: string | null, fetchImpl: typeof fetch = fetch): Promise<StudioHealthView> {
   if (!dataDir) return { hostUp: false, sessions: null };
   let url: string;
-  let token: string;
   try {
     url = (JSON.parse(readFileSync(join(dataDir, "host.json"), "utf8")) as { url?: string }).url ?? "";
-    token = readFileSync(join(dataDir, "host-token"), "utf8").trim();
   } catch {
     return { hostUp: false, sessions: null };
   }
+  // /api/health needs no token (10-28); an older Host may still want it, so it goes along when it is there.
+  let token = "";
+  try {
+    token = readFileSync(join(dataDir, "host-token"), "utf8").trim();
+  } catch {
+    // none: fine
+  }
   if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(url.replace(/\/+$/, ""))) return { hostUp: false, sessions: null };
   try {
-    const res = await fetchImpl(`${url.replace(/\/+$/, "")}/api/health`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(1500) });
+    const res = await fetchImpl(`${url.replace(/\/+$/, "")}/api/health`, { ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}), signal: AbortSignal.timeout(1500) });
     if (!res.ok) return { hostUp: false, sessions: null };
     const body = (await res.json().catch(() => null)) as { running?: unknown } | null;
     return { hostUp: true, sessions: sessionCount(body?.running) };

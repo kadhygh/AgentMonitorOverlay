@@ -8,6 +8,7 @@ export default defineConfig({
     { name: "notes", testDir: "./notes" },
     { name: "reviewer", testDir: "./reviewer" },
     { name: "relay", testDir: "./relay" },
+    { name: "platform", testDir: "./platform" },
   ],
   timeout: 90_000,
   workers: 1,

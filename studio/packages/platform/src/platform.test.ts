@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Protector } from "@amo-studio/account";
 import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
+import { PlatformClient } from "./client.js";
 import { planLaunch, type LaunchSpec } from "./launch.js";
 import { Platform } from "./platform.js";
 import { channelFromArgs } from "./settings.js";
@@ -113,7 +114,7 @@ describe("Platform", () => {
     server.revokeKeys();
     await platform.refresh();
     expect(platform.view()).toMatchObject({ account: null, loginError: "登录已失效，请重新登录。" });
-    server.setChannel("test", "studio", null);
+    server.setChannel("test", "studio", "0.9.0");
   });
 });
 
@@ -130,6 +131,11 @@ describe("launch and the machine", () => {
     expect(p).toMatchObject({ ok: true, spec: { file: join(root, "1.0.0", "Tool.exe"), cwd: join(root, "1.0.0"), env: { PATH: "x" } } });
     expect(channelFromArgs(["--channel=test"])).toBe("test");
     expect(channelFromArgs(["--channel", "beta"])).toBeNull();
+  });
+
+  it("a service with no platform folder or nothing published (404) has no tools, not an error", async () => {
+    const notFound = (async () => new Response(JSON.stringify({ error: "not_found", message: "还没有发布过" }), { status: 404 })) as unknown as typeof fetch;
+    expect(await new PlatformClient("http://127.0.0.1:1", "k", notFound).channels()).toEqual({ stable: {}, test: {} });
   });
 
   it("reads Studio's sessions from its Host, read only; no `running` field is unknown", async () => {

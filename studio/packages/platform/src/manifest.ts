@@ -17,7 +17,8 @@ export interface Manifest {
   tool: string;
   name: string;
   version: string;
-  builtAt: string;
+  /** When it was built, in ms since 1970 (the server writes a number; 10-28). */
+  builtAt: number;
   /** The main program, relative to the program folder (`AMO Studio.exe`). */
   exe: string;
   notes: string;
@@ -73,7 +74,7 @@ export function checkManifest(value: unknown, tool: string, version: string): Ma
     tool,
     version,
     name: typeof m.name === "string" && m.name ? m.name : tool,
-    builtAt: typeof m.builtAt === "string" ? m.builtAt : "",
+    builtAt: typeof m.builtAt === "number" ? m.builtAt : typeof m.builtAt === "string" ? Date.parse(m.builtAt) || 0 : 0,
     exe: m.exe,
     notes: typeof m.notes === "string" ? m.notes : "",
     files,

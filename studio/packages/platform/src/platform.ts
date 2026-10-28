@@ -124,6 +124,7 @@ export class Platform implements PlatformCalls {
         available,
         notes: manifest?.notes ?? null,
         installed,
+        standing: !installed ? "not-installed" : !available ? "not-in-channel" : compareVersions(available, installed) > 0 ? "update" : compareVersions(available, installed) < 0 ? "ahead" : "latest",
         rollbackTo: installed ? (this.installer.rollbackTarget(id)?.version ?? null) : null,
         running: this.running[id] === true,
         hint,
@@ -276,10 +277,11 @@ export class Platform implements PlatformCalls {
       this.results.set(tool, { tone: "error", text: this.failed(err) });
     } finally {
       this.tasks.delete(tool);
-      const ids = this.toolIds();
-      this.running = await this.checkRunning(ids).catch(() => this.running);
       this.changed();
     }
+    // Asking Windows what runs takes a moment (PowerShell): the result is shown first, the running marks follow.
+    this.running = await this.checkRunning(this.toolIds()).catch(() => this.running);
+    this.changed();
   }
 
   /** Installs the channel's version, or updates to it (also back to it, when what is installed is newer). */
@@ -298,11 +300,13 @@ export class Platform implements PlatformCalls {
     const kind = installed ? "update" : "install";
     const task: TaskView = { kind, version, phase: "manifest", doneBytes: 0, totalBytes: 0, doneFiles: 0, totalFiles: 0, reused: 0 };
     await this.run(tool, task, async () => {
-      const wasRunning = (await this.checkRunning([tool]))[tool] === true;
+      // Asked alongside the download, not before it: it only decides how the result is worded.
+      const runningCheck = this.checkRunning([tool]).catch(() => ({}) as Record<string, boolean>);
       const r = await this.installer.install(tool, version, client, (p: InstallProgress) => {
         Object.assign(task, p);
         this.changed();
       });
+      const wasRunning = (await runningCheck)[tool] === true;
       const name = this.toolName(tool);
       const what = kind === "install" ? `已装好 ${version}` : installed && compareVersions(version, installed) < 0 ? `已换回 ${version}` : `已更新到 ${version}`;
       const later = wasRunning ? `，${name.replace(/（独立版）$/, "")} 正在运行，下次打开生效` : "";
@@ -314,8 +318,9 @@ export class Platform implements PlatformCalls {
   async rollback(tool: string): Promise<void> {
     const target = this.installer.rollbackTarget(tool)?.version ?? null;
     await this.run(tool, { kind: "rollback", version: target, phase: "switching", doneBytes: 0, totalBytes: 0, doneFiles: 0, totalFiles: 0, reused: 0 }, async () => {
-      const wasRunning = (await this.checkRunning([tool]))[tool] === true;
+      const runningCheck = this.checkRunning([tool]).catch(() => ({}) as Record<string, boolean>);
       const r = this.installer.rollback(tool);
+      const wasRunning = (await runningCheck)[tool] === true;
       return { tone: "ok", text: `已回到 ${r.version}${wasRunning ? "，正在运行的那个下次打开生效" : ""}` };
     });
   }

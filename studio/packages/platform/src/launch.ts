@@ -23,7 +23,7 @@ const DROP = /^(ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE|CLAUDECODE|CLAUD
 export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string }): LaunchPlan {
   const name = options.name ?? tool;
   if (!entry) return { ok: false, reason: "not-installed", message: `${name} 还没装。` };
-  if (tool === "studio" && !options.studioDataDir) return { ok: false, reason: "need-studio-dir", message: "先在「目录」里设好 Studio 数据目录，再打开 Studio。" };
+  if (tool === "studio" && !options.studioDataDir) return { ok: false, reason: "need-studio-dir", message: "先设好 Studio 数据目录，再打开 Studio。" };
   const parts = safeParts(entry.exe.replace(/\\/g, "/"));
   let dir: string;
   try {

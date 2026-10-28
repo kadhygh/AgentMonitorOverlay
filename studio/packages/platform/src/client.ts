@@ -38,8 +38,14 @@ export class PlatformClient implements Source {
   }
 
   async channels(): Promise<Channels> {
-    const res = await this.get("/api/platform/channels");
-    return checkChannels(await res.json().catch(() => null));
+    try {
+      const res = await this.get("/api/platform/channels");
+      return checkChannels(await res.json().catch(() => null));
+    } catch (err) {
+      // 404: the service has no platform folder yet, or nothing was ever published — no tools, not a failure.
+      if (err instanceof PlatformError && err.code === "not_found") return { stable: {}, test: {} };
+      throw err;
+    }
   }
 
   async manifest(tool: string, version: string): Promise<Manifest> {

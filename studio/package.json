@@ -34,6 +34,7 @@
     "start": "npm run build && electron packages/app",
     "notes": "npm run build && electron packages/notes",
     "reviewer": "npm run build && electron packages/reviewer/dist/main.js",
+    "platform": "npm run build && electron packages/platform",
     "relay": "tsc -b packages/relay && node packages/relay/dist/bin.js",
     "relay:release": "node scripts/relay-release.mjs",
     "relay:mac": "node scripts/relay-mac.mjs",
