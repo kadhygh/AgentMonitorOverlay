@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -128,7 +129,7 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await expect(status(page, "reviewer")).toHaveText("✓ 1.1.0 · 已是最新", { timeout: 20_000 });
   server.delayObjects(0);
   // Only the changed files came down; the rest were hard-linked from 1.0.0.
-  await expect(result(page, "reviewer")).toHaveText(/已更新到 1\.1\.0（2 个文件和上一版一样，没有重新下载）/);
+  await expect(result(page, "reviewer")).toHaveText(/已更新到 1\.1\.0（2 个文件本机已经有了，没有重新下载）/);
   expect(programs().tools.reviewer!.version).toBe("1.1.0");
   await screenshot(app, "platform", "P7-updated", page);
 
@@ -200,6 +201,49 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
 
   // Nothing landed in the real shared folders.
   expect([realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null))).toEqual(before);
+});
+
+test("a second tool downloads only its own files: the shared runtime is hard-linked from the first; uninstalling one leaves the other whole", async () => {
+  // A server of its own, so the traffic counts only this test's downloads.
+  const shared = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+  try {
+    // As the platform's builds (2026-10-29, 「共用 Electron」): the same runtime files in both tools, their own app.
+    const runtime = { "resources/electron.pak": randomBytes(512 * 1024) };
+    shared.publish("reviewer", "1.0.0", { ...tool("reviewer", "1.0.0"), ...runtime }, { name: "AMO Reviewer", exe: "run.cmd" });
+    const notes = shared.publish("notes", "1.0.0", { ...tool("notes", "1.0.0"), ...runtime }, { name: "AMO Notes", exe: "run.cmd" });
+    const { page } = await launch();
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(shared.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await expect(status(page, "notes")).toHaveText("○ 没装 · 服务器上是 1.0.0");
+
+    await row(page, "reviewer").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 已是最新");
+    const afterFirst = shared.objectTraffic.original;
+    await row(page, "notes").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+    // Only run.cmd and app.txt came down; the runtime, the pak and the licence were already here (the Reviewer's).
+    await expect(result(page, "notes")).toHaveText(/已装好 1\.0\.0（3 个文件本机已经有了，没有重新下载）/);
+    const own = notes.files.filter((f) => f.path === "run.cmd" || f.path === "resources/app.txt").reduce((n, f) => n + f.size, 0);
+    expect(shared.objectTraffic.original - afterFirst).toBe(own);
+    const apps = join(root, "local", "apps");
+    const ino = (p: string) => statSync(p, { bigint: true }).ino;
+    expect(ino(join(apps, "notes", "1.0.0", "resources", "electron.pak"))).toBe(ino(join(apps, "reviewer", "1.0.0", "resources", "electron.pak")));
+    expect(existsSync(join(root, "local", "file-index.json"))).toBe(true);
+    await screenshot(app!, "platform", "P17-shared-runtime", page);
+
+    // The Reviewer uninstalled: the 便签's copy of the shared files is still whole.
+    await row(page, "reviewer").getByRole("button", { name: "卸载" }).click();
+    await row(page, "reviewer").getByRole("group", { name: "卸载 AMO Reviewer" }).getByRole("button", { name: "卸载" }).click();
+    await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0");
+    expect(existsSync(join(apps, "reviewer"))).toBe(false);
+    expect(readFileSync(join(apps, "notes", "current", "resources", "electron.pak"))).toEqual(runtime["resources/electron.pak"]);
+    expect(readFileSync(join(apps, "notes", "current", "resources", "runtime.bin"), "utf8")).toBe("R".repeat(256 * 1024));
+  } finally {
+    await shared.close();
+  }
 });
 
 test("注册 on the login page: the passphrase only when the server wants one, errors in the form, then 工具; log out and back in", async () => {

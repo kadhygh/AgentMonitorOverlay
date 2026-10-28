@@ -11,7 +11,8 @@
 //                              migrate --from <data dir> [--force]   one-off: a running service's data copied over
 //   The AMO platform (2026-10-28, plans/amo-lan-platform.md):
 //                              publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>]
-//                                  release/<Name>/ (npm run package:portable -- --only <tool>) as the tool's version
+//                                  release/platform/<Name>/ (npm run package:platform -- --only <tool>: the exe left
+//                                  as Electron's own, so the tools share it; a portable folder is refused) as the tool's version
 //                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md
 //                              promote <tool> <version>     the stable channel to a version already published
 //                              platform-status              both channels' versions per tool, and what is stored
@@ -195,10 +196,10 @@ ${START}`);
     if (!notes) throw new Error(`packages/${t.pkg}/CHANGELOG.md 里没有 ${version} 这一节：写上再发布，或者用 --notes "…"`);
     const channel = flag("--channel") ?? "test";
     const target = platformTarget();
-    const dir = join(resolve(studio, flag("--release") ?? "release"), t.name);
+    const dir = join(resolve(studio, flag("--release") ?? join("release", "platform")), t.name);
     const r = await publish(target, { id, dir, version, notes, channel, log: (s) => console.log(s) });
     console.log(`${r.existed ? "这个版本已经发布过，文件相同：只改了通道" : "已发布"}：${id} ${version} → ${channel === "stable" ? "稳定" : "测试"}通道（${target.where}）`);
-    console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}，压缩后 ${mb(r.sentBytes)}）`);
+    console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}，压缩后 ${mb(r.sentBytes)}）${r.manifest.runtime ? `，Electron ${r.manifest.runtime}` : ""}`);
     if (channel === "test") console.log(`转成正式版：npm run relay:mac -- promote ${id} ${version}${flag("--target-dir") ? ` --target-dir "${flag("--target-dir")}"` : ""}`);
     break;
   }

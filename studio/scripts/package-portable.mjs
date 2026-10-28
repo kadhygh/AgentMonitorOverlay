@@ -5,6 +5,7 @@
 //   AMO Notes     the 便签 on its own
 //   npm run build && node scripts/package-portable.mjs [outDir] [--zip] [--only studio,reviewer,notes]   (npm run package:portable)
 //   npm run package:portable -- --only notes      one tool only
+//   npm run package:platform [-- --only studio]   the platform's folders (below), release/platform/<Name>/
 // Each tool has its own version (2026-10-28): its package's package.json (scripts/amo-tools.mjs says which package), in
 // the zip's name, the exe's version info, resources/app/package.json and 使用说明.txt. Studio's download still carries
 // the 便签 and the Reviewer, at whatever they are in this checkout.
@@ -17,15 +18,27 @@
 //   <out>/<Name>/resources/app/node_modules/         production dependencies, copied from studio/node_modules
 //   <out>/<Name>/使用说明.txt
 // No network: Electron comes from node_modules/electron/dist and dependencies from the installed tree.
+//
+// Platform mode (2026-10-29, plans/amo-lan-platform.md 「共用 Electron」): `--platform` (npm run package:platform) builds
+// the folders the platform installs, into release/platform/<Name>/ by default (platform-publish reads them from there).
+// The exe is only renamed, never edited (no rcedit), so every tool's Electron files — the exe included — are byte for
+// byte the same and the platform keeps one copy of them on a machine, hard-linked into each tool's folder (the cost:
+// Explorer shows Electron's icon on these exes; windows and trays set their own). resources/app/package.json says which
+// mode built the folder ("amoBuild": { mode, runtime }), and publish refuses a portable folder: its exes differ per
+// tool, so nothing would be shared. The portable zips (the tools used without the platform) keep their own exe icons.
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { TOOLS, studio, toolVersion } from "./amo-tools.mjs";
 
 const args = process.argv.slice(2);
-const outRoot = resolve(studio, args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--only") ?? "release");
+const platformMode = args.includes("--platform");
+const outRoot = resolve(studio, args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--only") ?? (platformMode ? join("release", "platform") : "release"));
 const zip = args.includes("--zip");
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",") : null;
+if (platformMode && zip) throw new Error("--platform 打的是给平台发布的文件夹，不打 zip；portable zip 用 npm run package:portable");
+/** The Electron the folders are built from (the manifest's `runtime`). */
+const RUNTIME = JSON.parse(readFileSync(join(studio, "node_modules", "electron", "package.json"), "utf8")).version;
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 /** The program each package runs as (launch.js), when it is one. */
@@ -195,21 +208,26 @@ function build(id) {
       "",
     ].join("\n"),
   );
-  writeFileSync(join(app, "package.json"), JSON.stringify({ name: spec.zip.toLowerCase(), productName: spec.name, version, type: "module", main: "launch.js" }, null, 2));
+  const amoBuild = { mode: platformMode ? "platform" : "portable", runtime: RUNTIME };
+  writeFileSync(join(app, "package.json"), JSON.stringify({ name: spec.zip.toLowerCase(), productName: spec.name, version, type: "module", main: "launch.js", amoBuild }, null, 2));
 
-  // 4. The exe's own icon and version info (Explorer, taskbar pin), with rcedit from devDependencies.
-  const icon = spec.icon(target);
-  execFileSync(join(studio, "node_modules", "rcedit", "bin", "rcedit-x64.exe"), [
-    join(target, `${spec.name}.exe`),
-    "--set-icon", icon,
-    "--set-version-string", "ProductName", spec.name,
-    "--set-version-string", "FileDescription", spec.description,
-    "--set-version-string", "CompanyName", "AMO",
-    "--set-version-string", "OriginalFilename", `${spec.name}.exe`,
-    "--set-file-version", version,
-    "--set-product-version", version,
-  ]);
-  if (icon.startsWith(target)) rmSync(icon);
+  // 4. Portable: the exe's own icon and version info (Explorer, taskbar pin), with rcedit from devDependencies.
+  //    Platform: the exe stays Electron's own, the same file in every tool. Windows and trays set their own icons; the
+  //    platform makes no shortcuts (the user, 2026-10-29: tools it installed start from it), so no .ico goes along.
+  if (!platformMode) {
+    const icon = spec.icon(target);
+    execFileSync(join(studio, "node_modules", "rcedit", "bin", "rcedit-x64.exe"), [
+      join(target, `${spec.name}.exe`),
+      "--set-icon", icon,
+      "--set-version-string", "ProductName", spec.name,
+      "--set-version-string", "FileDescription", spec.description,
+      "--set-version-string", "CompanyName", "AMO",
+      "--set-version-string", "OriginalFilename", `${spec.name}.exe`,
+      "--set-file-version", version,
+      "--set-product-version", version,
+    ]);
+    if (icon.startsWith(target)) rmSync(icon);
+  }
   writeFileSync(join(target, "使用说明.txt"), [...spec.readme, "", `版本 ${version}`, ""].join("\r\n"), "utf8");
 
   // 5. Production dependencies of the packages, with their dependency closure, copied from the installed tree. A package
@@ -237,6 +255,8 @@ function build(id) {
     program: spec.name,
     target,
     version,
+    mode: amoBuild.mode,
+    runtime: RUNTIME,
     seconds: Math.round((Date.now() - started) / 1000),
     dependencies: [...copied].sort(),
     size: { total: mb(size(target)), electron: mb(size(target) - size(app)), app: mb(size(app)) },

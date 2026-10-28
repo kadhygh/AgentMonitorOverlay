@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -191,6 +191,84 @@ describe("Installer", () => {
     expect(safeParts("resources/app.asar")).toEqual(["resources", "app.asar"]);
     writeFileSync(join(root, "x"), "");
     expect(inst.versions("lambda")).toEqual([]);
+  });
+
+  /** Two tools built the platform's way: the same Electron files (the exe too, under each tool's name), their own app. */
+  function publishPair(a: string, b: string) {
+    const runtime = { "ffmpeg.dll": big("F"), "resources.pak": big("P", 96), "locales/zh-CN.pak": big("Z", 8) };
+    const ma = server.publish(a, "1.0.0", { "A Tool.exe": big("E"), ...runtime, "resources/app/main.js": `console.log("${a}")`, "resources/app/package.json": `{"name":"${a}"}` }, { exe: "A Tool.exe" });
+    const mb = server.publish(b, "1.0.0", { "B Tool.exe": big("E"), ...runtime, "resources/app/main.js": `console.log("${b}")`, "resources/app/notes.css": "body{}" }, { exe: "B Tool.exe" });
+    return { ma, mb };
+  }
+  const ino = (...parts: string[]) => statSync(join(root, "apps", ...parts), { bigint: true }).ino;
+  const index = () => JSON.parse(readFileSync(join(root, "file-index.json"), "utf8")) as { format: number; files: Record<string, { size: number; paths: string[] }> };
+
+  it("a second tool hard-links the files another tool already has and downloads only its own", async () => {
+    const inst = setup();
+    const { mb } = publishPair("s-one", "n-one");
+    await inst.install("s-one", "1.0.0", client);
+    const before = objectGets();
+    const r = await inst.install("n-one", "1.0.0", client);
+    // The exe (another name, same content) and the three runtime files came from s-one; main.js and notes.css came down.
+    expect(r).toMatchObject({ reused: 4, downloaded: 2, downloadedBytes: Buffer.byteLength('console.log("n-one")') + "body{}".length });
+    expect(objectGets() - before).toBe(2);
+    expect(ino("n-one", "1.0.0", "B Tool.exe")).toBe(ino("s-one", "1.0.0", "A Tool.exe"));
+    expect(ino("n-one", "1.0.0", "locales", "zh-CN.pak")).toBe(ino("s-one", "1.0.0", "locales", "zh-CN.pak"));
+    expect(Number(statSync(join(root, "apps", "n-one", "1.0.0", "ffmpeg.dll"), { bigint: true }).nlink)).toBe(2);
+    for (const f of mb.files) expect(sha256Of(readFileSync(join(root, "apps", "n-one", "1.0.0", ...f.path.split("/")))), f.path).toBe(f.sha256);
+    // The index (beside apps\) knows both names of the exe.
+    expect(index().files[sha256Of(big("E"))]!.paths.sort()).toEqual(["n-one/1.0.0/B Tool.exe", "s-one/1.0.0/A Tool.exe"]);
+  });
+
+  it("a file the index points at that is gone (or changed size) is skipped and downloaded; no index at all is rebuilt from the records", async () => {
+    const inst = setup();
+    publishPair("s-two", "n-two");
+    await inst.install("s-two", "1.0.0", client);
+    // Behind the platform's back: one shared file removed, another cut short.
+    unlinkSync(join(root, "apps", "s-two", "1.0.0", "ffmpeg.dll"));
+    writeFileSync(join(root, "apps", "s-two", "1.0.0", "resources.pak"), "short");
+    const before = objectGets();
+    const r = await inst.install("n-two", "1.0.0", client);
+    expect(r).toMatchObject({ reused: 2, downloaded: 4 });
+    expect(objectGets() - before).toBe(4);
+    expect(statSync(join(root, "apps", "n-two", "1.0.0", "ffmpeg.dll")).size).toBe(64 * 1024);
+    expect(statSync(join(root, "apps", "n-two", "1.0.0", "resources.pak")).size).toBe(96 * 1024);
+    // The stale paths were dropped; the downloaded copies took their place.
+    expect(index().files[sha256Of(big("F"))]!.paths).toEqual(["n-two/1.0.0/ffmpeg.dll"]);
+
+    // No index (deleted, or a platform from before it): a new Installer rebuilds it from the version records.
+    unlinkSync(join(root, "file-index.json"));
+    const again = new Installer({ appsDir: join(root, "apps"), programsFile: join(root, "home", "programs.json") });
+    server.publish("s-two", "1.1.0", { "A Tool.exe": big("E"), "ffmpeg.dll": big("F"), "resources.pak": big("P", 96), "locales/zh-CN.pak": big("Z", 8), "resources/app/main.js": "v1.1" }, { exe: "A Tool.exe" });
+    const before2 = objectGets();
+    expect(await again.install("s-two", "1.1.0", client)).toMatchObject({ reused: 4, downloaded: 1 });
+    expect(objectGets() - before2).toBe(1);
+    expect(index().files[sha256Of(big("F"))]!.paths.sort()).toEqual(["n-two/1.0.0/ffmpeg.dll", "s-two/1.1.0/ffmpeg.dll"]);
+    // repair() builds the tool's entries again from what is there.
+    writeFileSync(join(root, "file-index.json"), JSON.stringify({ format: 1, files: {} }));
+    const third = new Installer({ appsDir: join(root, "apps"), programsFile: join(root, "home", "programs.json") });
+    third.repair("n-two");
+    expect(index().files[sha256Of(big("F"))]!.paths).toEqual(["n-two/1.0.0/ffmpeg.dll"]);
+  });
+
+  it("uninstalling one tool removes only its own names: the other tool's shared files stay, and the index forgets it", async () => {
+    const inst = setup();
+    const { ma } = publishPair("s-three", "n-three");
+    await inst.install("s-three", "1.0.0", client);
+    await inst.install("n-three", "1.0.0", client);
+    await inst.uninstall("n-three");
+    expect(existsSync(join(root, "apps", "n-three"))).toBe(false);
+    for (const f of ma.files) expect(sha256Of(readFileSync(join(root, "apps", "s-three", "current", ...f.path.split("/")))), f.path).toBe(f.sha256);
+    expect(Number(statSync(join(root, "apps", "s-three", "1.0.0", "ffmpeg.dll"), { bigint: true }).nlink)).toBe(1);
+    expect(JSON.stringify(index())).not.toContain("n-three/");
+    // Installed again: still only its own files come down.
+    const before = objectGets();
+    expect(await inst.install("n-three", "1.0.0", client)).toMatchObject({ reused: 4, downloaded: 2 });
+    expect(objectGets() - before).toBe(2);
+    // And the other way round: the first tool uninstalled, the second keeps working.
+    await inst.uninstall("s-three");
+    expect(readFileSync(join(root, "apps", "n-three", "current", "B Tool.exe"))).toEqual(big("E"));
+    expect(Object.values(index().files).flatMap((e) => e.paths).every((p) => p.startsWith("n-three/1.0.0/"))).toBe(true);
   });
 
   it("objects the server sends gzipped are installed as the originals; the bar runs on their sizes", async () => {

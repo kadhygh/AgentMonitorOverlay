@@ -350,7 +350,8 @@ export class Platform implements PlatformCalls {
       const name = this.toolName(tool);
       const what = kind === "install" ? `已装好 ${version}` : installed && compareVersions(version, installed) < 0 ? `已换回 ${version}` : `已更新到 ${version}`;
       const later = wasRunning ? `，${name.replace(/（独立版）$/, "")} 正在运行，下次打开生效` : "";
-      const reused = r.reused ? `（${r.reused} 个文件和上一版一样，没有重新下载）` : "";
+      // Reused from any tool here (2026-10-29: the tools share their Electron files), not only this tool's last version.
+      const reused = r.reused ? `（${r.reused} 个文件本机已经有了，没有重新下载）` : "";
       return { tone: "ok", text: `${what}${later}${reused}` };
     });
   }

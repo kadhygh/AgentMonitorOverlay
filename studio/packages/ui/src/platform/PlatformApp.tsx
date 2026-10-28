@@ -364,7 +364,7 @@ function taskLine(task: TaskView): string {
     case "manifest":
       return "正在读取清单…";
     case "linking":
-      return `正在准备 · ${task.reused} 个文件和上一版一样，直接带过来`;
+      return `正在准备 · ${task.reused} 个文件本机已经有了，直接带过来`;
     case "downloading":
       return task.totalBytes === 0 ? "没有要下载的文件" : `正在下载 · ${formatBytes(task.doneBytes)} / ${formatBytes(task.totalBytes)} · ${task.doneFiles} / ${task.totalFiles} 个文件`;
     case "switching":

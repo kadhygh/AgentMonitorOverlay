@@ -5,7 +5,9 @@
 //   objects/<sha256 first two>/<sha256>.gz   gzipped (2026-10-29), when that makes it at least 10% smaller; the sha256 is
 //                                         always the original's. The service sends the .gz as Content-Encoding: gzip,
 //                                         or unpacks it for a client that does not take gzip.
-//   tools/<tool>/<version>.json           { tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }
+//   tools/<tool>/<version>.json           { tool, name, version, builtAt, exe, runtime, notes, files: [{ path, size, sha256 }] }
+//                                         (runtime: the Electron version, 2026-10-29; only folders package-portable built
+//                                         with --platform are published, so every tool's Electron files are the same)
 //   channels.json                         { "stable": { "studio": "0.9.0", … }, "test": { … } }
 // A publish: hash the program folder (release/<Name>/, from package-portable.mjs), ask the target which objects it lacks,
 // send only those, then write the manifest, then the channel — each step only after the one it depends on, each file
@@ -92,18 +94,31 @@ function walk(dir) {
   return out;
 }
 
-/** The version package-portable wrote into the program folder (resources/app/package.json), or null. */
-export function builtVersion(dir) {
+function appPackage(dir) {
   try {
-    return JSON.parse(readFileSync(join(dir, "resources", "app", "package.json"), "utf8")).version ?? null;
+    return JSON.parse(readFileSync(join(dir, "resources", "app", "package.json"), "utf8"));
   } catch {
     return null;
   }
 }
 
+/** The version package-portable wrote into the program folder (resources/app/package.json), or null. */
+export function builtVersion(dir) {
+  return appPackage(dir)?.version ?? null;
+}
+
+/**
+ * How package-portable built the folder (resources/app/package.json "amoBuild", 2026-10-29): { mode: "platform" |
+ * "portable", runtime: the Electron version }, or null for a folder built before that (portable, exe icons written).
+ */
+export function builtFor(dir) {
+  const b = appPackage(dir)?.amoBuild;
+  return b && typeof b === "object" && typeof b.mode === "string" ? { mode: b.mode, runtime: typeof b.runtime === "string" ? b.runtime : null } : null;
+}
+
 /**
  * The manifest of a program folder, and where each object's content is on this machine. `builtAt` is when the folder
- * was written (its newest file), in ms.
+ * was written (its newest file), in ms. `runtime` (2026-10-29) is the Electron version it was built with.
  */
 export async function buildManifest(id, dir, { version, notes }) {
   const t = tool(id);
@@ -121,7 +136,8 @@ export async function buildManifest(id, dir, { version, notes }) {
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const exe = `${t.name}.exe`;
   if (!files.some((f) => f.path === exe)) throw new Error(`${dir} 里没有 ${exe}：这不是 ${t.name} 的程序文件夹`);
-  return { manifest: { tool: id, name: t.name, version, builtAt, exe, notes, files }, sources };
+  const runtime = builtFor(dir)?.runtime;
+  return { manifest: { tool: id, name: t.name, version, builtAt, exe, ...(runtime ? { runtime } : {}), notes, files }, sources };
 }
 
 const fileKey = (f) => `${f.path}\0${f.size}\0${f.sha256}`;
@@ -184,9 +200,13 @@ function check(id, version, channel) {
  */
 export async function publish(target, { id, dir, version, notes, channel = "test", log = () => {} }) {
   check(id, version, channel);
-  if (!existsSync(dir)) throw new Error(`没有程序文件夹 ${dir}：先打包（npm run package:portable -- --only ${id}）`);
+  if (!existsSync(dir)) throw new Error(`没有程序文件夹 ${dir}：先打包（npm run package:platform -- --only ${id}）`);
+  // Only folders built for the platform (2026-10-29): a portable one has the tool's icon written into its exe, so its
+  // Electron files are not the same as the other tools' and every machine would download and keep them again.
+  const mode = builtFor(dir)?.mode ?? "portable";
+  if (mode !== "platform") throw new Error(`${dir} 是 ${mode} 模式打的包（exe 里写了图标，各工具的 Electron 文件不一样，平台没法共用）：先用平台模式打包（npm run package:platform -- --only ${id}），再发布`);
   const built = builtVersion(dir);
-  if (built && built !== version) throw new Error(`${dir} 是 ${built} 打的包，现在的版本是 ${version}：先重新打包（npm run package:portable -- --only ${id}）`);
+  if (built && built !== version) throw new Error(`${dir} 是 ${built} 打的包，现在的版本是 ${version}：先重新打包（npm run package:platform -- --only ${id}）`);
   if (!notes?.trim()) throw new Error(`没有改动说明：在 CHANGELOG.md 里写 ${version} 这一节，或者用 --notes "…"`);
   log(`计算 ${dir} 的清单…`);
   const { manifest, sources } = await buildManifest(id, dir, { version, notes: notes.trim() });

@@ -9,12 +9,20 @@ import { compareVersions, isToolId, isVersion, PlatformError, safeParts, type Ma
 //   <apps>\<tool>\<version>\        one whole program folder per version, never changed in place
 //   <apps>\<tool>\<version>.json    what the platform knows of it: the manifest, when installed, when last made current
 //   <apps>\<tool>\current           a directory junction to the version in use (shortcuts point here)
-// A new version is put together in <tool>\.partial-<version>-…: files the kept versions already have (same sha256)
-// are hard-linked from them, the rest are downloaded and checked, and only then is the folder renamed to <version>.
+// A new version is put together in <tool>\.partial-<version>-…: files this machine already has (same sha256) are
+// hard-linked, the rest are downloaded and checked, and only then is the folder renamed to <version>.
 // So a version folder exists only when it is complete — a failure half way leaves a .partial folder, which the next
 // start or install removes. Then `current` is pointed at it and the oldest versions go, keeping the 2 last in use.
 // A program running from the old folder is not touched: it keeps its files until it is restarted.
 // programs.json (%APPDATA%\AMO) says for every installed tool where `current` is and its exe; other tools read it.
+//
+// Shared files (2026-10-29, plans/amo-lan-platform.md 「共用 Electron」): the platform's builds leave every tool's
+// Electron files the same (321 MB of a 340–400 MB tool), so "already has" means any kept version of any tool, not only
+// this tool's last one. file-index.json (beside apps\, in %LOCALAPPDATA%\AMO) maps sha256 → the files here with that
+// content, as paths relative to apps\. It is only a cache of the version records: rebuilt from them when it is missing
+// or unreadable, and by repair(); every path is checked (there, a file, the manifest's size) before it is linked, and
+// one that is not is dropped and the file downloaded instead. Each tool's folder holds only its own links: removing a
+// version or uninstalling a tool removes its names, the other tools' names of the same files stay.
 
 export interface VersionRecord {
   manifest: Manifest;
@@ -41,8 +49,11 @@ export interface InstallProgress {
 export interface InstallResult {
   version: string;
   previous: string | null;
+  /** Files linked (or copied) from what this machine already had, any tool's. */
   reused: number;
   downloaded: number;
+  /** The bytes of the files that had to be downloaded (as the manifest counts them, before gzip). */
+  downloadedBytes: number;
   /** Already there: only `current` moved. */
   switchedOnly: boolean;
   /** Old version folders that could not be removed yet (a program still runs from them); tried again later. */
@@ -53,6 +64,12 @@ export interface ProgramsFile {
   tools: Record<string, { version: string; dir: string; exe: string }>;
 }
 
+/** file-index.json: sha256 → { size, paths relative to apps\ (`studio/0.9.2/AMO Studio.exe`) }. */
+export interface FileIndex {
+  format: 1;
+  files: Record<string, { size: number; paths: string[] }>;
+}
+
 const KEEP = 2;
 const PARALLEL = 4;
 
@@ -61,6 +78,8 @@ export interface InstallerOptions {
   appsDir: string;
   /** %APPDATA%\AMO\programs.json */
   programsFile: string;
+  /** The sha256 index of the files here (default: file-index.json beside appsDir, i.e. <localappdata>\AMO). */
+  indexFile?: string;
   /** Whether a program runs from this tool's folder (uninstall refuses then). */
   isRunning?: (tool: string) => Promise<boolean>;
   now?: () => Date;
@@ -92,6 +111,8 @@ export async function fileSha256(file: string): Promise<string> {
 
 export class Installer {
   private readonly now: () => Date;
+  /** file-index.json as last read or written; one Installer per process, so installs running side by side share it. */
+  private index: FileIndex | null = null;
 
   constructor(private readonly options: InstallerOptions) {
     this.now = options.now ?? (() => new Date());
@@ -99,6 +120,74 @@ export class Installer {
 
   get appsDir(): string {
     return this.options.appsDir;
+  }
+
+  get indexFile(): string {
+    return this.options.indexFile ?? join(dirname(this.options.appsDir), "file-index.json");
+  }
+
+  // ---- the sha256 index of the files here
+
+  private loadIndex(): FileIndex {
+    if (this.index) return this.index;
+    const read = readJsonFile<FileIndex>(this.indexFile);
+    if (read && read.format === 1 && read.files && typeof read.files === "object") return (this.index = read);
+    return this.rebuildIndex();
+  }
+
+  /** Builds file-index.json again from the version records of every tool (what each kept version's folder holds). */
+  rebuildIndex(): FileIndex {
+    this.index = { format: 1, files: {} };
+    for (const tool of this.tools()) for (const v of this.versions(tool)) this.indexAdd(tool, v.version, v.manifest.files);
+    this.saveIndex();
+    return this.index;
+  }
+
+  private indexAdd(tool: string, version: string, files: Manifest["files"]): void {
+    const index = this.index ?? this.loadIndex();
+    for (const f of files) {
+      const rel = `${tool}/${version}/${f.path}`;
+      const entry = index.files[f.sha256];
+      if (!entry) index.files[f.sha256] = { size: f.size, paths: [rel] };
+      else if (!entry.paths.includes(rel)) entry.paths.push(rel);
+    }
+  }
+
+  /** Forgets every path under `prefix` (`studio/` or `studio/0.9.1/`). */
+  private indexDrop(prefix: string): void {
+    const index = this.loadIndex();
+    for (const [sha, entry] of Object.entries(index.files)) {
+      const paths = entry.paths.filter((p) => !p.startsWith(prefix));
+      if (!paths.length) delete index.files[sha];
+      else if (paths.length !== entry.paths.length) entry.paths = paths;
+    }
+  }
+
+  private saveIndex(): void {
+    if (this.index) writeJsonFile(this.indexFile, this.index);
+  }
+
+  /**
+   * A file here with this content: the first of the index's paths that is still a file of the manifest's size (the
+   * others are dropped from the index). Null when there is none.
+   */
+  private findHere(sha256: string, size: number): string | null {
+    const index = this.loadIndex();
+    const entry = index.files[sha256];
+    if (!entry) return null;
+    const alive = entry.paths.filter((rel) => {
+      const parts = safeParts(rel);
+      if (!parts) return false;
+      try {
+        const st = statSync(join(this.options.appsDir, ...parts));
+        return st.isFile() && st.size === size;
+      } catch {
+        return false;
+      }
+    });
+    if (!alive.length) delete index.files[sha256];
+    else if (alive.length !== entry.paths.length) entry.paths = alive;
+    return alive.length ? join(this.options.appsDir, ...safeParts(alive[0]!)!) : null;
   }
 
   toolDir(tool: string): string {
@@ -158,7 +247,11 @@ export class Installer {
    */
   repair(tool: string): void {
     const dir = this.toolDir(tool);
-    if (!existsSync(dir)) return;
+    if (!existsSync(dir)) {
+      this.indexDrop(`${tool}/`);
+      this.saveIndex();
+      return;
+    }
     const link = this.currentLink(tool);
     if (!exists(link) && exists(`${link}.next`)) renameSync(`${link}.next`, link);
     else if (exists(`${link}.next`)) removeLink(`${link}.next`);
@@ -170,6 +263,10 @@ export class Installer {
     }
     this.prune(tool);
     this.syncPrograms(tool);
+    // The index's entries for this tool, again from its records.
+    this.indexDrop(`${tool}/`);
+    for (const v of this.versions(tool)) this.indexAdd(tool, v.version, v.manifest.files);
+    this.saveIndex();
   }
 
   /**
@@ -190,7 +287,9 @@ export class Installer {
       progress.phase = "switching";
       report();
       this.activate(tool, version);
-      return { version, previous, reused: 0, downloaded: 0, switchedOnly: true, leftover: this.prune(tool) };
+      const leftover = this.prune(tool);
+      this.saveIndex();
+      return { version, previous, reused: 0, downloaded: 0, downloadedBytes: 0, switchedOnly: true, leftover };
     }
 
     const manifest = await source.manifest(tool, version);
@@ -202,27 +301,27 @@ export class Installer {
       progress.phase = "linking";
       report();
 
-      // Files any kept version has, by sha256 (size checked: a file someone changed by hand is not reused).
-      const have = new Map<string, string>();
-      for (const v of this.versions(tool)) {
-        for (const f of v.manifest.files) {
-          if (have.has(f.sha256)) continue;
-          const p = join(v.dir, ...safeParts(f.path)!);
-          try {
-            if (statSync(p).size === f.size) have.set(f.sha256, p);
-          } catch {
-            // gone: downloaded instead
-          }
-        }
-      }
+      // Files this machine has, by sha256, in any kept version of any tool (file-index.json; each path checked there and
+      // of the manifest's size: a file someone changed by hand, or one gone since, is not reused).
+      const have = new Map<string, string | null>();
+      const findHere = (f: Manifest["files"][number]) => {
+        if (!have.has(f.sha256)) have.set(f.sha256, this.findHere(f.sha256, f.size));
+        return have.get(f.sha256)!;
+      };
 
-      const place = (from: string, to: string) => {
+      /** A hard link; a copy when that fails (another volume, a file system without them, 1024 links). False when the file went away meanwhile. */
+      const place = (from: string, to: string): boolean => {
         mkdirSync(dirname(to), { recursive: true });
         try {
           linkSync(from, to);
+          return true;
         } catch {
-          // Another volume, or a file system without hard links: a copy does the same, only slower.
-          copyFileSync(from, to);
+          try {
+            copyFileSync(from, to);
+            return true;
+          } catch {
+            return false;
+          }
         }
       };
 
@@ -230,13 +329,14 @@ export class Installer {
       const missing = new Map<string, { size: number; paths: string[][] }>();
       for (const f of manifest.files) {
         const parts = safeParts(f.path)!;
-        const from = have.get(f.sha256);
-        if (from) {
-          place(from, join(partial, ...parts));
+        const from = findHere(f);
+        if (from && place(from, join(partial, ...parts))) {
           progress.reused++;
           progress.doneFiles++;
           continue;
         }
+        // Gone since it was looked up (another tool uninstalled meanwhile): downloaded like the rest.
+        if (from) have.set(f.sha256, null);
         const m = missing.get(f.sha256);
         if (m) m.paths.push(parts);
         else missing.set(f.sha256, { size: f.size, paths: [parts] });
@@ -295,12 +395,17 @@ export class Installer {
       renameSync(partial, target);
     } catch (err) {
       rmSync(partial, { recursive: true, force: true, maxRetries: 3 });
+      // Paths found missing on the way are forgotten all the same.
+      this.saveIndex();
       throw err;
     }
     const at = this.now().toISOString();
     writeJsonFile(join(dir, `${version}.json`), { manifest, installedAt: at, activatedAt: at } satisfies VersionRecord);
+    this.indexAdd(tool, version, manifest.files);
     this.activate(tool, version);
-    return { version, previous, reused: progress.reused, downloaded: manifest.files.length - progress.reused, switchedOnly: false, leftover: this.prune(tool) };
+    const leftover = this.prune(tool);
+    this.saveIndex();
+    return { version, previous, reused: progress.reused, downloaded: manifest.files.length - progress.reused, downloadedBytes: progress.totalBytes, switchedOnly: false, leftover };
   }
 
   /** Points `current` back at the other kept version. */
@@ -320,6 +425,9 @@ export class Installer {
     if (exists(link)) removeLink(link);
     if (exists(`${link}.next`)) removeLink(`${link}.next`);
     this.syncPrograms(tool);
+    // Its own names of shared files go with its folder; the other tools' names of the same files stay.
+    this.indexDrop(`${tool}/`);
+    this.saveIndex();
     if (!existsSync(dir)) return;
     try {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
@@ -346,8 +454,10 @@ export class Installer {
   private prune(tool: string): string[] {
     const leftover: string[] = [];
     for (const v of this.versions(tool).slice(KEEP)) {
-      if (this.tryRemove(v.dir)) rmSync(`${v.dir}.json`, { force: true });
-      else leftover.push(v.version);
+      if (this.tryRemove(v.dir)) {
+        rmSync(`${v.dir}.json`, { force: true });
+        this.indexDrop(`${tool}/${v.version}/`);
+      } else leftover.push(v.version);
     }
     return leftover;
   }

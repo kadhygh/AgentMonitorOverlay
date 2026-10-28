@@ -1,6 +1,6 @@
 // The server's data as the contract has it (plans/amo-lan-platform.md, 「第一版的接口约定」):
 //   channels.json  { "stable": { "studio": "0.9.0", … }, "test": { … } }
-//   a manifest     { tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }
+//   a manifest     { tool, name, version, builtAt, exe, runtime?, notes, files: [{ path, size, sha256 }] }
 // Checked here before anything is written to disk: a path that leaves the program folder, or a bad sha256, never
 // reaches the installer.
 
@@ -21,6 +21,8 @@ export interface Manifest {
   builtAt: number;
   /** The main program, relative to the program folder (`AMO Studio.exe`). */
   exe: string;
+  /** The Electron version it was built with (2026-10-29; absent in manifests published before). */
+  runtime?: string;
   notes: string;
   files: ManifestFile[];
 }
@@ -76,6 +78,7 @@ export function checkManifest(value: unknown, tool: string, version: string): Ma
     name: typeof m.name === "string" && m.name ? m.name : tool,
     builtAt: typeof m.builtAt === "number" ? m.builtAt : typeof m.builtAt === "string" ? Date.parse(m.builtAt) || 0 : 0,
     exe: m.exe,
+    ...(typeof m.runtime === "string" && m.runtime ? { runtime: m.runtime } : {}),
     notes: typeof m.notes === "string" ? m.notes : "",
     files,
   };

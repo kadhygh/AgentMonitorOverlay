@@ -20,11 +20,14 @@ const temp = (name) => {
 };
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
+/** resources/app/package.json as package-portable writes it (--platform: mode "platform"). */
+const appJson = (version, mode = "platform") => JSON.stringify({ version, amoBuild: { mode, runtime: "44.7.0" } });
+
 /** A program folder shaped like package-portable's: the exe, resources/app/package.json with the version, more files. */
-function programFolder(root, version, files) {
+function programFolder(root, version, files, appPackage = appJson(version)) {
   const dir = join(root, "AMO Notes");
   rmSync(dir, { recursive: true, force: true });
-  const all = { "AMO Notes.exe": "exe", "resources/app/package.json": JSON.stringify({ version }), "使用说明.txt": "便签", ...files };
+  const all = { "AMO Notes.exe": "exe", "resources/app/package.json": appPackage, "使用说明.txt": "便签", ...files };
   for (const [path, content] of Object.entries(all)) {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), content);
@@ -45,7 +48,7 @@ async function scenario(target, platformDir) {
   expect(first.existed).toBe(false);
   // Two files with the same content are one object.
   expect(first.uploaded.length).toBe(5);
-  expect(first.manifest).toMatchObject({ tool: "notes", name: "AMO Notes", version: "0.9.0", exe: "AMO Notes.exe", notes: "- 第一版" });
+  expect(first.manifest).toMatchObject({ tool: "notes", name: "AMO Notes", version: "0.9.0", exe: "AMO Notes.exe", runtime: "44.7.0", notes: "- 第一版" });
   expect(first.manifest.files.map((f) => f.path)).toEqual(["AMO Notes.exe", "locales/zh-CN.pak", "resources/app/main.js", "resources/app/package.json", "resources/app/same.js", "使用说明.txt"]);
   expect(first.manifest.files.find((f) => f.path === "resources/app/main.js")).toEqual({ path: "resources/app/main.js", size: 2, sha256: sha("v1") });
   expect(typeof first.manifest.builtAt).toBe("number");
@@ -63,7 +66,7 @@ async function scenario(target, platformDir) {
   // 2. 0.9.1 with one file changed (and its version stamp): only those two objects go up.
   dir = programFolder(release, "0.9.1", { "resources/app/main.js": "v2", "resources/app/same.js": "same", "locales/zh-CN.pak": "same" });
   const second = await publish(target, { id: "notes", dir, version: "0.9.1", notes: "- 改了一处", channel: "test" });
-  expect(second.uploaded.sort()).toEqual([sha("v2"), sha(JSON.stringify({ version: "0.9.1" }))].sort());
+  expect(second.uploaded.sort()).toEqual([sha("v2"), sha(appJson("0.9.1"))].sort());
   expect(await target.readChannels()).toEqual({ stable: {}, test: { notes: "0.9.1" } });
   if (platformDir) expect(objectsIn(platformDir).length).toBe(7);
 
@@ -196,6 +199,15 @@ describe("platform publish", () => {
     await expect(publish(target, { id: "notes", dir, version: "0.9.0", notes: "x", channel: "beta" })).rejects.toThrow(/通道/);
     await expect(publish(target, { id: "notes", dir, version: "0.9.0", notes: " " })).rejects.toThrow(/没有改动说明/);
     await expect(publish(target, { id: "studio", dir, version: "0.9.0", notes: "x" })).rejects.toThrow(/没有 AMO Studio.exe/);
+  });
+
+  it("publishes only folders built for the platform: a portable one (or one from before the mark) is refused", async () => {
+    const target = new LocalTarget(temp("platform"));
+    const portable = programFolder(temp("release"), "0.9.0", {}, appJson("0.9.0", "portable"));
+    await expect(publish(target, { id: "notes", dir: portable, version: "0.9.0", notes: "x" })).rejects.toThrow(/portable 模式打的包.*npm run package:platform -- --only notes/);
+    const old = programFolder(temp("release"), "0.9.0", {}, JSON.stringify({ version: "0.9.0" }));
+    await expect(publish(target, { id: "notes", dir: old, version: "0.9.0", notes: "x" })).rejects.toThrow(/portable 模式打的包/);
+    expect(await target.listVersions()).toEqual({});
   });
 
   it("reads a version's section of a CHANGELOG", () => {
