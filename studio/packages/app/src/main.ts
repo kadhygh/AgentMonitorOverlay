@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
+import { connectHost, HostStartError, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync } from "node:fs";
@@ -417,6 +417,13 @@ if (!app.requestSingleInstanceLock()) {
     })
     .catch((err: unknown) => {
       console.error("AMO Studio failed to start:", err);
+      // Said to the person, not only logged (2026-10-28): the shell runs detached, and without a window it just
+      // vanished. A Host that said why in words (data of a newer Studio) is shown as it is. Tests only log.
+      if (!testMode) {
+        const detail = err instanceof Error ? err.message : String(err);
+        const text = err instanceof HostStartError ? (err.forPerson ?? `Studio 的后台（Host）没能启动：${detail}\n\n记录在 ${join(dataDir, "host.log")}。`) : `启动时出错：${detail}`;
+        dialog.showErrorBox("AMO Studio 没能启动", text);
+      }
       app.exit(1);
     });
 

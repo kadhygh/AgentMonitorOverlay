@@ -1,10 +1,12 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Session, SessionItem } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
-import { Store } from "./store.js";
+import { MIGRATIONS } from "./migrations.js";
+import { Store, StoreTooNewError } from "./store.js";
 
 const open: Store[] = [];
 const dirs: string[] = [];
@@ -44,6 +46,27 @@ describe("Store", () => {
     expect(makeStore(path).schemaVersion()).toBe(22);
     open.pop()!.close();
     expect(makeStore(path).schemaVersion()).toBe(22);
+  });
+
+  it("refuses data a newer Studio migrated, says so for the person, and leaves the file alone (2026-10-28)", () => {
+    const path = tempDbPath();
+    const store = makeStore(path);
+    store.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(MIGRATIONS.length + 3, "2026-10-28T00:00:00.000Z");
+    open.pop()!.close();
+    let caught: unknown;
+    try {
+      makeStore(path);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(StoreTooNewError);
+    expect((caught as StoreTooNewError).message).toBe(
+      `这份数据（${dirname(path)}）被更新版本的 AMO Studio 用过（数据库版本 ${MIGRATIONS.length + 3}，这个版本只认识到 ${MIGRATIONS.length}）。请先把 Studio 更新到新版本再打开。`,
+    );
+    // Closed again (the temp dir can be removed) and unchanged: nothing was migrated or written.
+    const db = new DatabaseSync(path);
+    expect((db.prepare("SELECT MAX(version) AS v FROM schema_migrations").get() as { v: number }).v).toBe(MIGRATIONS.length + 3);
+    db.close();
   });
 
   it("keeps a session's wake until it is cleared (stage 15)", () => {

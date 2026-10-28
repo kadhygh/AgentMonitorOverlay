@@ -7,6 +7,8 @@ import { removeTempDir } from "@amo-studio/testkit";
 import { HostAlreadyRunningError, hostPaths, readHostInfo, startHost, type RunningHost } from "./host-process.js";
 import { FakeServers } from "./runtime/codex/fake-servers.test-support.js";
 import { TERMINAL_TOKEN_ENV } from "./service.js";
+import { MIGRATIONS } from "./store/migrations.js";
+import { StoreTooNewError } from "./store/store.js";
 import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 
 // Each test boots a fresh server, and the OS may hand out a port that a closed server just used. A pooled keep-alive
@@ -69,6 +71,16 @@ describe("Host process", () => {
     expect(readHostInfo(dataDir)).toBeNull();
     const second = await boot();
     expect(second.token).toBe(token);
+  });
+
+  it("does not start on data a newer Studio migrated, and leaves the data dir free (2026-10-28)", async () => {
+    const first = await boot();
+    first.service.store.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(MIGRATIONS.length + 1, "2026-10-28T00:00:00.000Z");
+    await first.shutdown();
+    running.splice(running.indexOf(first), 1);
+    await expect(startHost({ dataDir, port: 0, profiles: PROFILES, servers: new FakeServers(PROFILES), launcher })).rejects.toBeInstanceOf(StoreTooNewError);
+    expect(existsSync(hostPaths(dataDir).lock)).toBe(false);
+    expect(readHostInfo(dataDir)).toBeNull();
   });
 
   it("clears a stale lock left by a dead process", async () => {

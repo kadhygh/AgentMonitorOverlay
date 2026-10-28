@@ -3,6 +3,16 @@ import type { AccountUsage, Annotation, FolderAccessStatus, CanvasDoc, Checklist
 
 export const HOST_DEFAULT_PORT = 47900;
 
+/**
+ * What a Host that cannot start sends its shell over the IPC channel before it exits (2026-10-28): `message` is for the
+ * person, shown as it is (e.g. the data was migrated by a newer Studio).
+ */
+export const HOST_START_FAILED = "amo:host-start-failed";
+export interface HostStartFailedMessage {
+  type: typeof HOST_START_FAILED;
+  message: string;
+}
+
 export interface StateSnapshot {
   /** Includes the common space (`builtin: "common"`), which the UI does not list as a project. */
   workspaces: Workspace[];

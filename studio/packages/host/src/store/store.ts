@@ -12,6 +12,17 @@ export type HostEventInput = HostEvent extends infer E ? (E extends HostEvent ? 
 /** A SessionItem before the store assigns its sequence number. */
 export type SessionItemInput = SessionItem extends infer I ? (I extends SessionItem ? Omit<I, "seq"> : never) : never;
 
+/**
+ * The database was migrated by a newer AMO Studio than this one. Its message is for the person as it is: the shell
+ * shows it in a dialog when the Host cannot start (host-link.ts).
+ */
+export class StoreTooNewError extends Error {
+  constructor(readonly dbPath: string, readonly dbVersion: number, readonly knownVersion: number) {
+    super(`这份数据（${dirname(dbPath)}）被更新版本的 AMO Studio 用过（数据库版本 ${dbVersion}，这个版本只认识到 ${knownVersion}）。请先把 Studio 更新到新版本再打开。`);
+    this.name = "StoreTooNewError";
+  }
+}
+
 export function newId(prefix: string): Id {
   return `${prefix}-${randomUUID()}`;
 }
@@ -27,8 +38,14 @@ export class Store extends DocumentStore {
     super();
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;");
-    this.migrate();
+    try {
+      this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;");
+      this.migrate();
+    } catch (err) {
+      // Not left open: the file stays free for the newer Studio, and the Host can exit cleanly.
+      this.db.close();
+      throw err;
+    }
   }
 
   close(): void {
@@ -57,6 +74,10 @@ export class Store extends DocumentStore {
     this.db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
     const row = this.db.prepare("SELECT MAX(version) AS v FROM schema_migrations").get() as Row | undefined;
     const current = Number(row?.v ?? 0);
+    // A newer Studio already migrated this data (2026-10-28: one data dir on the machine, opened by the Studio run from
+    // source and by the one the AMO platform installed, which may be older). Its tables are not what this code knows:
+    // refuse rather than read or write them.
+    if (current > MIGRATIONS.length) throw new StoreTooNewError(this.path, current, MIGRATIONS.length);
     MIGRATIONS.forEach((migration, index) => {
       const version = index + 1;
       if (version <= current) return;

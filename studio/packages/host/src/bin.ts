@@ -4,6 +4,8 @@ import { HostAlreadyRunningError, startHost, type StartHostOptions } from "./hos
 import { StaticCredentialReader } from "./runtime/credentials.js";
 import { resolveNode } from "./runtime/dsh/install.js";
 import { RecordingTerminalLauncher } from "./terminal/launcher.js";
+import { StoreTooNewError } from "./store/store.js";
+import { HOST_START_FAILED, type HostStartFailedMessage } from "@amo-studio/protocol";
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
 // Env: AMO_STUDIO_DATA_DIR (default studio/.data), AMO_STUDIO_PORT (default 47900), AMO_STUDIO_UI_DIR,
@@ -129,6 +131,13 @@ try {
     console.error(err.message);
     process.exit(3);
   }
-  console.error(err);
-  process.exit(1);
+  if (err instanceof StoreTooNewError) {
+    console.error(err.message);
+    // The shell shows this message as it is (host-link.ts), not only host.log; exit once it went out (2026-10-28).
+    if (process.send) process.send({ type: HOST_START_FAILED, message: err.message } satisfies HostStartFailedMessage, () => process.exit(4));
+    else process.exit(4);
+  } else {
+    console.error(err);
+    process.exit(1);
+  }
 }

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { HOST_START_FAILED, type HostStartFailedMessage } from "@amo-studio/protocol";
 
 // Finds a running Host for the data dir, or starts one with Electron's own Node (ELECTRON_RUN_AS_NODE).
 // The Host is a resident process: in normal use it keeps running after the window closes so sessions continue.
@@ -21,6 +22,20 @@ export interface HostLinkOptions {
   attached?: boolean;
   timeoutMs?: number;
 }
+
+/**
+ * The Host did not start. `forPerson` is set when the Host said why in words for the person (e.g. the data was migrated
+ * by a newer Studio, 2026-10-28): the shell shows it as it is.
+ */
+export class HostStartError extends Error {
+  constructor(message: string, readonly forPerson: string | null = null) {
+    super(message);
+    this.name = "HostStartError";
+  }
+}
+
+const isStartFailed = (msg: unknown): msg is HostStartFailedMessage =>
+  !!msg && typeof msg === "object" && (msg as { type?: unknown }).type === HOST_START_FAILED && typeof (msg as { message?: unknown }).message === "string";
 
 function readJson<T>(file: string): T | null {
   try {
@@ -82,6 +97,10 @@ export async function connectHost(options: HostLinkOptions): Promise<HostConnect
     child.unref();
     child.channel?.unref();
   }
+  const refusal: { message: string | null } = { message: null };
+  child.on("message", (msg) => {
+    if (isStartFailed(msg)) refusal.message = msg.message;
+  });
 
   const deadline = Date.now() + (options.timeoutMs ?? 20_000);
   while (Date.now() < deadline) {
@@ -89,14 +108,17 @@ export async function connectHost(options: HostLinkOptions): Promise<HostConnect
       // Exit code 3: another Host owns the data dir (started concurrently); use it.
       const other = current(options.dataDir);
       if (other && (await ping(other.url, other.token))) return { url: other.url, token: other.token, child: null };
-      throw new Error(`Host exited with code ${child.exitCode}; see ${join(options.dataDir, "host.log")}`);
+      // Its message is sent before it exits, but may be read just after the exit is seen.
+      for (let i = 0; i < 10 && refusal.message === null; i++) await new Promise((r) => setTimeout(r, 50));
+      if (refusal.message !== null) throw new HostStartError(refusal.message, refusal.message);
+      throw new HostStartError(`Host exited with code ${child.exitCode}; see ${join(options.dataDir, "host.log")}`);
     }
     const info = current(options.dataDir);
     if (info && info.pid === child.pid && (await ping(info.url, info.token))) return { url: info.url, token: info.token, child };
     await new Promise((r) => setTimeout(r, 150));
   }
   child.kill();
-  throw new Error("Host did not start in time");
+  throw new HostStartError("Host did not start in time");
 }
 
 export interface KeepAliveOptions {
