@@ -1,13 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { sectionOf } from "./amo-tools.mjs";
-import { LocalTarget, ShellTarget, compareVersions, platformCompress, promote, publish, status } from "./platform-publish.mjs";
+import { LocalTarget, ShellTarget, compareVersions, platformCompress, promote, prune, pruneText, publish, status } from "./platform-publish.mjs";
 
 const dirs = [];
 afterEach(() => {
@@ -24,10 +24,10 @@ const sha = (s) => createHash("sha256").update(s).digest("hex");
 const appJson = (version, mode = "platform") => JSON.stringify({ version, amoBuild: { mode, runtime: "44.7.0" } });
 
 /** A program folder shaped like package-portable's: the exe, resources/app/package.json with the version, more files. */
-function programFolder(root, version, files, appPackage = appJson(version)) {
-  const dir = join(root, "AMO Notes");
+function programFolder(root, version, files, appPackage = appJson(version), name = "AMO Notes") {
+  const dir = join(root, name);
   rmSync(dir, { recursive: true, force: true });
-  const all = { "AMO Notes.exe": "exe", "resources/app/package.json": appPackage, "使用说明.txt": "便签", ...files };
+  const all = { [`${name}.exe`]: "exe", "resources/app/package.json": appPackage, "使用说明.txt": "便签", ...files };
   for (const [path, content] of Object.entries(all)) {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), content);
@@ -110,6 +110,82 @@ async function gzScenario(target, platform) {
   expect((await status(target)).split("\n").at(-1)).toMatch(/（压缩存放的 1 个）$/);
 }
 
+/** Whether the object for `content` is stored (either way), and its path when it is. */
+function stored(platform, content) {
+  const p = objectPath(platform, sha(content));
+  return existsSync(p) ? p : existsSync(`${p}.gz`) ? `${p}.gz` : null;
+}
+
+/**
+ * Old versions pruned: each tool keeps its 3 newest and the channels' versions; a removed version's objects go unless a
+ * manifest left (of any tool) lists them; nothing else in the platform dir is touched.
+ */
+async function pruneScenario(target, platform) {
+  const release = temp("release");
+  // Big enough to be stored gzipped: removal finds either form.
+  const own = (v) => `notes ${v}\n`.repeat(2_000);
+  const electron = "the Electron files, the same in every tool";
+  const notesAt = (v, extra = {}) => programFolder(release, v, { "resources/app/main.js": own(v), ...extra });
+  const pub = (v, opts = {}, extra) => publish(target, { id: "notes", dir: notesAt(v, extra), version: v, notes: "x", ...opts });
+  // Not prune's business: the platform's own download, an object no manifest lists, a temp file.
+  mkdirSync(join(platform, "downloads"), { recursive: true });
+  writeFileSync(join(platform, "downloads", "AMO-Platform-win.zip"), "zip");
+  mkdirSync(dirname(objectPath(platform, sha("nobody's"))), { recursive: true });
+  writeFileSync(objectPath(platform, sha("nobody's")), "nobody's");
+  writeFileSync(`${objectPath(platform, sha("nobody's"))}.gz.tmp-1-abcd`, "half");
+
+  // 0.9.0 on the stable channel; reviewer and notes 0.9.1 share a file no other version has.
+  await pub("0.9.0");
+  await promote(target, { id: "notes", version: "0.9.0" });
+  await publish(target, { id: "reviewer", dir: programFolder(release, "0.9.0", { "electron.dll": electron }, appJson("0.9.0"), "AMO Reviewer"), version: "0.9.0", notes: "x" });
+  await pub("0.9.1", {}, { "electron.dll": electron });
+  await pub("0.9.2");
+  // Four versions: the three newest and stable's.
+  const fourth = await pub("0.9.3");
+  expect(fourth.pruned).toMatchObject({ versions: 0, tools: [{ id: "notes", kept: ["0.9.3", "0.9.2", "0.9.1", "0.9.0"], removed: [] }] });
+  // --keep-all
+  expect((await pub("0.9.4", { keep: null })).pruned).toBeNull();
+  expect((await target.listVersions()).notes.sort(compareVersions)).toEqual(["0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4"]);
+
+  // --dry-run: counted, nothing removed.
+  const before = objectsIn(platform);
+  const dry = await prune(target, { dryRun: true });
+  expect(dry).toMatchObject({ keep: 3, dryRun: true, versions: 1, manifests: 1, objects: 2 });
+  expect(dry.tools).toEqual([
+    { id: "notes", kept: ["0.9.4", "0.9.3", "0.9.2", "0.9.0"], removed: ["0.9.1"], stable: "0.9.0", test: "0.9.4" },
+    { id: "reviewer", kept: ["0.9.0"], removed: [], stable: null, test: "0.9.0" },
+  ]);
+  expect(dry.bytes).toBe([own("0.9.1"), appJson("0.9.1")].reduce((n, c) => n + statSync(stored(platform, c)).size, 0));
+  expect(pruneText(dry)).toBe(`notes：留 0.9.4（测试）、0.9.3、0.9.2、0.9.0（稳定）；删 0.9.1\nreviewer：留 0.9.0（测试）\n会删 1 个版本：1 个清单，2 个文件，0.0 MB（--dry-run：什么都没删）`);
+  expect(objectsIn(platform)).toEqual(before);
+  expect((await target.listVersions()).notes.length).toBe(5);
+
+  // A publish prunes its tool: 0.9.5 leaves the three newest and stable's 0.9.0.
+  const sixth = await pub("0.9.5");
+  expect(sixth.pruneError).toBeNull();
+  expect(sixth.pruned).toMatchObject({ versions: 2, manifests: 2, objects: 4, tools: [{ id: "notes", kept: ["0.9.5", "0.9.4", "0.9.3", "0.9.0"], removed: ["0.9.2", "0.9.1"] }] });
+  expect(pruneText(sixth.pruned, { all: false })).toMatch(/^notes：留 0\.9\.5（测试）、0\.9\.4、0\.9\.3、0\.9\.0（稳定）；删 0\.9\.2、0\.9\.1\n删了 2 个版本：2 个清单，4 个文件，[\d.]+ MB$/);
+  expect((await target.listVersions()).notes.sort(compareVersions)).toEqual(["0.9.0", "0.9.3", "0.9.4", "0.9.5"]);
+  for (const c of [own("0.9.1"), appJson("0.9.1"), own("0.9.2"), appJson("0.9.2")]) expect(stored(platform, c)).toBeNull();
+  // Reviewer still lists the file it shared with 0.9.1; what every version has, and what the kept ones have, stay.
+  for (const c of [electron, "exe", "便签", appJson("0.9.0"), own("0.9.0"), own("0.9.3"), own("0.9.5")]) expect(stored(platform, c)).not.toBeNull();
+  expect(await target.missing([sha(electron)])).toEqual([]);
+
+  // Every tool, keeping one: the channels' versions stay however old.
+  const one = await prune(target, { keep: 1 });
+  expect(one.tools.map((t) => [t.id, t.kept, t.removed])).toEqual([
+    ["notes", ["0.9.5", "0.9.0"], ["0.9.4", "0.9.3"]],
+    ["reviewer", ["0.9.0"], []],
+  ]);
+  expect(await prune(target, { keep: 1 })).toMatchObject({ versions: 0, manifests: 0, objects: 0 });
+  await expect(prune(target, { keep: 0 })).rejects.toThrow(/1 以上的整数/);
+  expect(await target.readManifest("notes", "0.9.0")).toMatchObject({ version: "0.9.0" });
+  expect(stored(platform, electron)).not.toBeNull();
+  expect(readFileSync(join(platform, "downloads", "AMO-Platform-win.zip"), "utf8")).toBe("zip");
+  expect(objectsIn(platform)).toEqual(expect.arrayContaining([sha("nobody's"), `${sha("nobody's")}.gz.tmp-1-abcd`]));
+  expect(await target.readChannels()).toEqual({ stable: { notes: "0.9.0" }, test: { notes: "0.9.5", reviewer: "0.9.0" } });
+}
+
 /**
  * A platform dir as the first publishes left it (every object as it is), plus the odd cases: an object whose content
  * does not match its name, one already compressed by a run that stopped before removing the original, a temp file.
@@ -190,6 +266,32 @@ describe("platform publish", () => {
     expect(objectsIn(o.platform)).not.toContain(sha(o.text));
   });
 
+  it("prunes old versions: the 3 newest and the channels' stay, objects another manifest lists stay", async () => {
+    const platform = temp("platform");
+    await pruneScenario(new LocalTarget(platform), platform);
+  });
+
+  it("platform-prune --target-dir from the command line: --dry-run lists, --keep", async () => {
+    const platform = temp("platform");
+    const target = new LocalTarget(platform);
+    const release = temp("release");
+    for (const v of ["0.9.0", "0.9.1", "0.9.2", "0.9.3"]) await publish(target, { id: "notes", dir: programFolder(release, v, { "main.js": v }), version: v, notes: "x", keep: null });
+    const script = join(dirname(fileURLToPath(import.meta.url)), "relay-mac.mjs");
+    const run = (...args) => spawnSync(process.execPath, [script, "platform-prune", ...args, "--target-dir", platform], { encoding: "utf8" });
+    const dry = run("--dry-run", "--keep", "2");
+    expect(dry.status).toBe(0);
+    expect(dry.stdout).toContain("留最新 2 个版本和两个通道指向的（--dry-run：只列出来，不删）");
+    expect(dry.stdout).toContain("notes：留 0.9.3（测试）、0.9.2；删 0.9.1、0.9.0");
+    expect(dry.stdout).toMatch(/会删 2 个版本：2 个清单，4 个文件，0\.0 MB（--dry-run：什么都没删）/);
+    expect((await target.listVersions()).notes.length).toBe(4);
+    expect(run("--keep", "0").stderr).toMatch(/1 以上的整数/);
+    const real = run();
+    expect(real.status).toBe(0);
+    expect(real.stdout).toContain("notes：留 0.9.3（测试）、0.9.2、0.9.1；删 0.9.0");
+    expect(real.stdout).toMatch(/删了 1 个版本：1 个清单，2 个文件/);
+    expect((await target.listVersions()).notes.sort(compareVersions)).toEqual(["0.9.1", "0.9.2", "0.9.3"]);
+  });
+
   it("checks what it is given", async () => {
     const target = new LocalTarget(temp("platform"));
     const dir = programFolder(temp("release"), "0.9.0", {});
@@ -264,4 +366,9 @@ describe("platform publish", () => {
     const target = shellTarget(o.platform);
     await checkCompressed(await platformCompress(target), o, target);
   }, BASH_MS);
+
+  it.skipIf(!bash)("prunes old versions through bash the way it does over SSH", async () => {
+    const platform = temp("platform");
+    await pruneScenario(shellTarget(platform), platform);
+  }, BASH_MS * 2);
 });

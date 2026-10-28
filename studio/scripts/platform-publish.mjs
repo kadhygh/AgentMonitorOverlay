@@ -14,6 +14,8 @@
 // written beside its place and renamed in, so a reader never sees a manifest whose files are not there yet. Objects are
 // compressed here (Node zlib) before they are sent: installing Studio fetched 375 MB, its exe alone 246 MB → 109 MB.
 // platformCompress (relay-mac.mjs platform-compress) does the same for objects stored as they are before that.
+// Old versions are pruned (2026-10-28, the user: updates come often, older ones are no use): each tool keeps its
+// KEEP_VERSIONS newest plus whatever a channel points at; a publish prunes its tool, relay-mac.mjs platform-prune all.
 // Two targets: LocalTarget (a folder on this machine: tests, or a relay service started here with --platform-dir) and
 // ShellTarget (bash on the far side of a runner: relay-mac.mjs gives it SSH to the Mac).
 import { createHash, randomBytes } from "node:crypto";
@@ -35,6 +37,11 @@ export const GZIP_WORTH = 0.9;
 export const GZIP_LEVEL = 6;
 /** An object's name in objects/<first two>/: the sha256, plus .gz when it is stored gzipped. */
 export const OBJECT_NAME = /^([0-9a-f]{64})(\.gz)?$/;
+/**
+ * How many versions of each tool the server keeps (the user, 2026-10-28), besides the ones a channel points at. A
+ * platform rolls back to the version it keeps on its own machine, so nothing older is needed here.
+ */
+export const KEEP_VERSIONS = 3;
 
 /** sha256 of a file, streamed (Electron's own files are over 100 MB). */
 export function hashFile(file) {
@@ -195,10 +202,13 @@ function check(id, version, channel) {
 
 /**
  * Publishes the program folder `dir` as `id` `version` on `channel`. The same version again with the same files only
- * moves the channel; with other files it is refused (a new version number first).
- * Returns { manifest, existed, uploaded: [sha256], uploadedBytes (their size), sentBytes (as stored: gzipped or not), channels }.
+ * moves the channel; with other files it is refused (a new version number first). Then the tool's old versions are
+ * pruned (`keep`; null keeps them all: --keep-all); a prune that fails does not undo the publish, it is in `pruneError`.
+ * Returns { manifest, existed, uploaded: [sha256], uploadedBytes (their size), sentBytes (as stored: gzipped or not), channels,
+ * pruned (prune's result, or null), pruneError }.
  */
-export async function publish(target, { id, dir, version, notes, channel = "test", log = () => {} }) {
+export async function publish(target, { id, dir, version, notes, channel = "test", keep = KEEP_VERSIONS, log = () => {} }) {
+  if (keep != null) checkKeep(keep);
   check(id, version, channel);
   if (!existsSync(dir)) throw new Error(`没有程序文件夹 ${dir}：先打包（npm run package:platform -- --only ${id}）`);
   // Only folders built for the platform (2026-10-29): a portable one has the tool's icon written into its exe, so its
@@ -219,7 +229,73 @@ export async function publish(target, { id, dir, version, notes, channel = "test
   if (!existing) await target.writeManifest(manifest);
   const channels = pointChannel(await target.readChannels(), channel, id, version);
   await target.writeChannels(channels);
-  return { manifest: existing ?? manifest, existed: !!existing, uploaded: missing, uploadedBytes, sentBytes, channels };
+  let pruned = null;
+  let pruneError = null;
+  if (keep != null) {
+    try {
+      pruned = await prune(target, { ids: [id], keep });
+    } catch (err) {
+      pruneError = err;
+    }
+  }
+  return { manifest: existing ?? manifest, existed: !!existing, uploaded: missing, uploadedBytes, sentBytes, channels, pruned, pruneError };
+}
+
+function checkKeep(keep) {
+  if (!Number.isInteger(keep) || keep < 1) throw new Error(`保留的版本数要是 1 以上的整数：${keep}`);
+}
+
+/**
+ * Removes old versions: per tool (`ids`, or every tool published) all but the `keep` newest by version number and the
+ * ones a channel points at (else that channel's people could not install). A removed version's manifest goes, and so
+ * do its objects that no manifest left — of any tool: they share the Electron files — still lists. Manifests go
+ * first: the service reads a manifest before its objects, so the other order could show one whose files are gone.
+ * Nothing outside tools/ and objects/ is touched, nor an object no removed manifest lists. `dryRun` only counts.
+ * Returns { keep, dryRun, tools: [{ id, kept, removed, stable, test }] (versions newest first), versions (removed),
+ * manifests, objects (files: an object stored both ways is two), bytes (as stored) }.
+ */
+export async function prune(target, { ids, keep = KEEP_VERSIONS, dryRun = false } = {}) {
+  checkKeep(keep);
+  for (const id of ids ?? []) if (!TOOL_ID.test(id)) throw new Error(`工具名不对：${id}`);
+  const channels = { ...emptyChannels(), ...(await target.readChannels()) };
+  const versions = await target.listVersions();
+  const tools = [];
+  for (const id of Object.keys(versions).sort()) {
+    if (ids && !ids.includes(id)) continue;
+    const newest = [...versions[id]].sort(compareVersions).reverse();
+    const pinned = new Set([channels.stable[id], channels.test[id]].filter(Boolean));
+    const kept = newest.filter((v, i) => i < keep || pinned.has(v));
+    tools.push({ id, kept, removed: newest.filter((v) => !kept.includes(v)), stable: channels.stable[id] ?? null, test: channels.test[id] ?? null });
+  }
+  const gone = tools.flatMap((t) => t.removed.map((version) => ({ id: t.id, version })));
+  const result = { keep, dryRun, tools, versions: gone.length, manifests: 0, objects: 0, bytes: 0 };
+  if (!gone.length) return result;
+  const key = (m) => `${m.id}/${m.version}`;
+  const goneKeys = new Set(gone.map(key));
+  const all = Object.entries(versions).flatMap(([id, vs]) => vs.map((version) => ({ id, version })));
+  const manifests = await target.readManifests(all);
+  const used = new Set();
+  const listed = new Set();
+  all.forEach((m, i) => {
+    const manifest = manifests[i];
+    if (!manifest) return; // removed since it was listed
+    if (!Array.isArray(manifest.files)) throw new Error(`清单读不懂（没有 files）：tools/${key(m)}.json，什么都没删`);
+    for (const f of manifest.files) (goneKeys.has(key(m)) ? listed : used).add(f.sha256);
+  });
+  const objects = [...listed].filter((sha) => !used.has(sha) && SHA256.test(sha));
+  return { ...result, ...(await target.removeVersions({ manifests: gone, objects, dryRun })) };
+}
+
+/** prune's result as text: per tool what stays (a channel's version marked) and what goes, then the totals. */
+export function pruneText(r, { all = true } = {}) {
+  const mark = (t, v) => {
+    const on = [t.stable === v && "稳定", t.test === v && "测试"].filter(Boolean);
+    return on.length ? `${v}（${on.join("、")}）` : v;
+  };
+  const lines = r.tools.filter((t) => all || t.removed.length).map((t) => `${t.id}：留 ${t.kept.map((v) => mark(t, v)).join("、") || "-"}${t.removed.length ? `；删 ${t.removed.join("、")}` : ""}`);
+  if (!r.versions) lines.push(`没有要删的版本（每个工具留最新 ${r.keep} 个和通道指向的）`);
+  else lines.push(`${r.dryRun ? "会删" : "删了"} ${r.versions} 个版本：${r.manifests} 个清单，${r.objects} 个文件，${mb(r.bytes)}${r.dryRun ? "（--dry-run：什么都没删）" : ""}`);
+  return lines.join("\n");
 }
 
 /** Points the stable channel at a version already published. */
@@ -409,6 +485,41 @@ export class LocalTarget {
     const files = existsSync(objects) ? walk(objects).filter((f) => OBJECT_NAME.test(f.split(sep).pop())) : [];
     return { count: files.length, gz: files.filter((f) => f.endsWith(".gz")).length, bytes: files.reduce((n, f) => n + statSync(f).size, 0) };
   }
+
+  /** The manifests of [{ id, version }], in that order (null for one not there). */
+  async readManifests(list) {
+    return list.map(({ id, version }) => {
+      if (!TOOL_ID.test(id) || !VERSION.test(version)) throw new Error(`工具名或版本号不对：${id} ${version}`);
+      try {
+        return readJsonOrNull(join(this.dir, "tools", id, `${version}.json`));
+      } catch {
+        throw new Error(`清单读不懂：tools/${id}/${version}.json，什么都没删`);
+      }
+    });
+  }
+
+  /** prune's removal: the manifests, then the objects (either way stored). Returns { manifests, objects, bytes }. */
+  async removeVersions({ manifests, objects, dryRun }) {
+    const r = { manifests: 0, objects: 0, bytes: 0 };
+    // recursive only for maxRetries: a file the service is reading can be held a moment on Windows.
+    const remove = (f) => dryRun || rmSync(f, { force: true, recursive: true, maxRetries: 10 });
+    for (const { id, version } of manifests) {
+      if (!TOOL_ID.test(id) || !VERSION.test(version)) throw new Error(`工具名或版本号不对：${id} ${version}`);
+      const f = join(this.dir, "tools", id, `${version}.json`);
+      if (!existsSync(f)) continue;
+      r.manifests++;
+      remove(f);
+    }
+    for (const sha of objects) {
+      for (const f of [this.objectFile(sha), `${this.objectFile(sha)}.gz`]) {
+        if (!existsSync(f)) continue;
+        r.objects++;
+        r.bytes += statSync(f).size;
+        remove(f);
+      }
+    }
+    return r;
+  }
 }
 
 /**
@@ -537,6 +648,74 @@ mv -f "$f.tmp-${tag}" "$f"`,
     const text = await this.sh(`if [ -d "$PLATFORM/objects" ]; then find "$PLATFORM/objects" -type f ! -name '*.tmp-*' | wc -l; find "$PLATFORM/objects" -type f -name '*.gz' | wc -l; du -sk "$PLATFORM/objects" | cut -f1; else echo 0; echo 0; echo 0; fi`);
     const [count = 0, gz = 0, kb = 0] = text.trim().split(/\s+/).map(Number);
     return { count, gz, bytes: kb * 1024 };
+  }
+
+  /** The manifests of [{ id, version }], in that order (null for one not there), in one script. */
+  async readManifests(list) {
+    for (const { id, version } of list) if (!TOOL_ID.test(id) || !VERSION.test(version)) throw new Error(`工具名或版本号不对：${id} ${version}`);
+    if (!list.length) return [];
+    // Each behind a line of its own: pretty-printed JSON never has a line that starts with AMO_MANIFEST.
+    const text = await this.sh(`cd "$PLATFORM"
+while read -r m; do [ -z "$m" ] && continue; echo "AMO_MANIFEST $m"; if [ -f "tools/$m.json" ]; then cat "tools/$m.json"; echo; fi; done <<'AMO_LIST'
+${list.map(({ id, version }) => `${id}/${version}`).join("\n")}
+AMO_LIST`);
+    const found = new Map();
+    for (const part of text.split(/^AMO_MANIFEST /m).slice(1)) {
+      const nl = part.indexOf("\n");
+      const name = (nl < 0 ? part : part.slice(0, nl)).trim();
+      const body = nl < 0 ? "" : part.slice(nl + 1).trim();
+      if (!body) continue;
+      try {
+        found.set(name, JSON.parse(body));
+      } catch {
+        throw new Error(`清单读不懂：tools/${name}.json，什么都没删`);
+      }
+    }
+    return list.map(({ id, version }) => found.get(`${id}/${version}`) ?? null);
+  }
+
+  /**
+   * prune's removal in one script (macOS bash 3.2, BSD tools): the manifests first, then the objects — found with the
+   * shell's own tests, sized and removed with one wc / rm per batch of xargs, not a process per file (8000+ objects).
+   * Returns { manifests, objects, bytes }.
+   */
+  async removeVersions({ manifests, objects, dryRun }) {
+    for (const { id, version } of manifests) if (!TOOL_ID.test(id) || !VERSION.test(version)) throw new Error(`工具名或版本号不对：${id} ${version}`);
+    for (const s of objects) if (!SHA256.test(s)) throw new Error(`不是 sha256：${s}`);
+    const text = await this.sh(`cd "$PLATFORM"; DRY=${dryRun ? 1 : 0}
+while read -r m; do
+  [ -z "$m" ] && continue
+  if [ -f "tools/$m.json" ]; then echo "AMO_MANIFEST $m"; if [ "$DRY" = 0 ]; then rm -f "tools/$m.json"; fi; fi
+done <<'AMO_MANIFESTS'
+${manifests.map(({ id, version }) => `${id}/${version}`).join("\n")}
+AMO_MANIFESTS
+files=()
+while read -r s; do
+  [ -z "$s" ] && continue
+  d="objects/\${s:0:2}"
+  if [ -f "$d/$s" ]; then files+=("$d/$s"); fi
+  if [ -f "$d/$s.gz" ]; then files+=("$d/$s.gz"); fi
+done <<'AMO_OBJECTS'
+${objects.join("\n")}
+AMO_OBJECTS
+if [ \${#files[@]} -gt 0 ]; then
+  # A file gone meanwhile only makes wc complain; the removal still runs (the manifests are already gone).
+  printf '%s\\n' "\${files[@]}" | xargs wc -c || true
+  if [ "$DRY" = 0 ]; then printf '%s\\n' "\${files[@]}" | xargs rm -f; fi
+fi
+echo AMO_DONE`);
+    if (!/^AMO_DONE$/m.test(text)) throw new Error(`清理没有正常结束：${text.trim().slice(-500)}`);
+    const r = { manifests: 0, objects: 0, bytes: 0 };
+    for (const line of text.split(/\r?\n/)) {
+      if (line.startsWith("AMO_MANIFEST ")) r.manifests++;
+      // wc -c: "<size> <file>" per file, plus a "total" line per batch.
+      const m = /^\s*(\d+)\s+objects\/[0-9a-f]{2}\/[0-9a-f]{64}(\.gz)?$/.exec(line);
+      if (m) {
+        r.objects++;
+        r.bytes += Number(m[1]);
+      }
+    }
+    return r;
   }
 
   /**

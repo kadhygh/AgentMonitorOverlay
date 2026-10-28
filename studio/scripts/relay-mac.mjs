@@ -10,17 +10,22 @@
 //                              backup                        a copy of the database in data/backup-<time>.db
 //                              migrate --from <data dir> [--force]   one-off: a running service's data copied over
 //   The AMO platform (2026-10-28, plans/amo-lan-platform.md):
-//                              publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>]
+//                              publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>] [--keep <n> | --keep-all]
 //                                  release/platform/<Name>/ (npm run package:platform -- --only <tool>: the exe left
 //                                  as Electron's own, so the tools share it; a portable folder is refused) as the tool's version
-//                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md
+//                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md;
+//                                  then the tool's old versions pruned as platform-prune does (--keep-all: not)
 //                              promote <tool> <version>     the stable channel to a version already published
 //                              platform-status              both channels' versions per tool, and what is stored
 //                              platform-compress            gzip the objects stored as they are (published before
 //                                                           2026-10-29; publish now sends them gzipped), each only when
 //                                                           worth it, checked, renamed in, then the original removed;
 //                                                           safe while the service runs, and to run again
-//                              --target-dir <dir>           any of these on a folder here instead of the Mac (tests,
+//                              platform-prune [--dry-run] [--keep <n>]   every tool keeps its n (3) newest versions
+//                                                           and the ones a channel points at; the rest go, with their
+//                                                           files no version left uses (2026-10-28, the user);
+//                                                           --dry-run only lists what would go
+//                              --target-dir <dir>          any of these on a folder here instead of the Mac (tests,
 //                                                           or a relay service started here with --platform-dir <dir>)
 // SSH_HOST=<alias> to use another machine. Content updates need no restart: the service reads app/client per request.
 import { spawn, spawnSync } from "node:child_process";
@@ -30,7 +35,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOLS, changelogSection, tool, toolVersion } from "./amo-tools.mjs";
-import { LocalTarget, ShellTarget, mb, platformCompress, promote, publish, status } from "./platform-publish.mjs";
+import { KEEP_VERSIONS, LocalTarget, ShellTarget, mb, platformCompress, promote, prune, pruneText, publish, status } from "./platform-publish.mjs";
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const release = join(studio, "release", "relay");
@@ -39,8 +44,12 @@ const LABEL = "com.amo.relay";
 const PORT = 47120;
 const [cmd = "status", ...rest] = process.argv.slice(2);
 const flag = (name) => (rest.includes(name) ? rest[rest.indexOf(name) + 1] : undefined);
-/** The arguments that are not flags or their values (every flag of these commands takes a value, except --force). */
-const positional = rest.filter((a, i) => !a.startsWith("--") && !(rest[i - 1]?.startsWith("--") && rest[i - 1] !== "--force"));
+/** Flags that take no value; every other flag of these commands takes one. */
+const SWITCHES = ["--force", "--dry-run", "--keep-all"];
+/** The arguments that are not flags or their values. */
+const positional = rest.filter((a, i) => !a.startsWith("--") && !(rest[i - 1]?.startsWith("--") && !SWITCHES.includes(rest[i - 1])));
+/** --keep <n>: the versions per tool the server keeps (prune checks it). */
+const keepFlag = () => (flag("--keep") === undefined ? KEEP_VERSIONS : Number(flag("--keep")));
 
 /** The shell code every remote script starts with: where things are, and how to reach launchd. */
 const PRELUDE = `set -e
@@ -197,10 +206,16 @@ ${START}`);
     const channel = flag("--channel") ?? "test";
     const target = platformTarget();
     const dir = join(resolve(studio, flag("--release") ?? join("release", "platform")), t.name);
-    const r = await publish(target, { id, dir, version, notes, channel, log: (s) => console.log(s) });
+    const r = await publish(target, { id, dir, version, notes, channel, keep: rest.includes("--keep-all") ? null : keepFlag(), log: (s) => console.log(s) });
     console.log(`${r.existed ? "这个版本已经发布过，文件相同：只改了通道" : "已发布"}：${id} ${version} → ${channel === "stable" ? "稳定" : "测试"}通道（${target.where}）`);
     console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}，压缩后 ${mb(r.sentBytes)}）${r.manifest.runtime ? `，Electron ${r.manifest.runtime}` : ""}`);
+    if (r.pruned?.versions) console.log(`清理旧版本：\n${pruneText(r.pruned, { all: false })}`);
     if (channel === "test") console.log(`转成正式版：npm run relay:mac -- promote ${id} ${version}${flag("--target-dir") ? ` --target-dir "${flag("--target-dir")}"` : ""}`);
+    // Published all the same; the next publish or a platform-prune tries again.
+    if (r.pruneError) {
+      console.error(`已发布，但清理旧版本失败：${r.pruneError.message}\n之后可以再跑 npm run relay:mac -- platform-prune`);
+      process.exitCode = 1;
+    }
     break;
   }
   case "promote": {
@@ -226,6 +241,14 @@ ${START}`);
     if (r.damaged) throw new Error(`${r.damaged} 个文件的内容和名字对不上，没有压缩：重新发布用到它们的版本`);
     break;
   }
+  case "platform-prune": {
+    const target = platformTarget();
+    const dryRun = rest.includes("--dry-run");
+    const r = await prune(target, { keep: keepFlag(), dryRun });
+    console.log(`清理 ${target.where}：每个工具留最新 ${r.keep} 个版本和两个通道指向的${dryRun ? "（--dry-run：只列出来，不删）" : ""}`);
+    console.log(pruneText(r));
+    break;
+  }
   default:
-    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status | platform-compress`);
+    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status | platform-compress | platform-prune`);
 }
