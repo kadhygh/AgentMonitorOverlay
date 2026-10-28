@@ -1,9 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
+import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
@@ -12,7 +13,9 @@ import { RelayError, type RelayStore } from "./store.js";
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
 // every other call carries (Authorization: Bearer, or ?key= for the WebSocket). Any origin may call it — the key, not a
 // cookie, is the credential — so the desktop client's pages, loaded from disk, reach it. It also hands out the client
-// (public.ts): / is the page to send people, /client/ and /app/ the client's content, /downloads/ its zip.
+// (public.ts): / is the page to send people, /client/ and /app/ the client's content, /downloads/ its zip. With a
+// platform dir it also hands out the AMO platform's tools to people signed in (platform.ts): /api/platform/channels,
+// /api/platform/tools/<tool>/<version> and /platform/objects/<sha256>.
 
 export interface RelayServerOptions {
   store: RelayStore;
@@ -26,6 +29,8 @@ export interface RelayServerOptions {
   port?: number;
   /** Where uploaded files are kept (one file per upload, named by its id); none = no files. */
   filesDir?: string;
+  /** The AMO platform's files (platform.ts: channels, manifests, objects); none = the platform calls answer 404. */
+  platformDir?: string;
   /** How often to look for a newer client build (default 5 s) and to send a tick (default TICK_MS). Tests shorten them. */
   clientWatchMs?: number;
   tickMs?: number;
@@ -112,6 +117,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const { store } = opts;
   const serviceName = opts.name?.trim() || "AMO 中转";
   const files = new PublicFiles(opts.publicDir);
+  const platform = new PlatformFiles(opts.platformDir);
   const sockets = new Map<string, Set<WebSocket>>();
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
@@ -208,8 +214,46 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       const body = await readJson(req);
       return send(res, 200, store.login(body.name, body.password));
     }
+    // The AMO platform's files (platform.ts, plans/amo-lan-platform.md): for people signed in; objects also take ?key=,
+    // so a download can be a plain URL.
+    if (method === "GET" && (path.startsWith("/api/platform/") || path.startsWith("/platform/"))) {
+      auth(req, url);
+      if (!platform.dir) throw new RelayError("not_found", "这个服务没有放 AMO 平台的文件：启动时用 --platform-dir 或环境变量 AMO_RELAY_PLATFORM_DIR 指定平台目录");
+      const part = (s: string) => {
+        try {
+          return decodeURIComponent(s);
+        } catch {
+          throw new RelayError("bad_request", `路径不对：${path}`);
+        }
+      };
+      if (path === "/api/platform/channels") return send(res, 200, platform.channels());
+      const tm = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)$/.exec(path);
+      if (tm) {
+        const [tool, version] = [part(tm[1]!), part(tm[2]!)];
+        if (!TOOL_ID.test(tool)) throw new RelayError("bad_request", `工具名不对：${tool}`);
+        if (!VERSION.test(version)) throw new RelayError("bad_request", `版本号不对：${version}`);
+        const file = platform.manifest(tool, version);
+        if (!file) throw new RelayError("not_found", `${tool} 还没有发布 ${version}`);
+        return sendFile(res, file);
+      }
+      const om = /^\/platform\/objects\/([^/]+)$/.exec(path);
+      if (om) {
+        const sha = part(om[1]!);
+        if (!SHA256.test(sha)) throw new RelayError("bad_request", "文件的 sha256 要是 64 位小写十六进制");
+        const file = platform.object(sha);
+        if (!file) throw new RelayError("not_found", `服务器上没有这个文件：${sha}`);
+        // Named by its content: it never changes.
+        res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(statSync(file).size), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
+        createReadStream(file).pipe(res);
+        return;
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
     if (method === "GET" && !path.startsWith("/api/")) {
-      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads()));
+      // The platform's own zip: in downloads/ beside the client's, or in the platform dir (which deploy leaves alone).
+      const platformZip = files.file("downloads", PLATFORM_ZIP) ?? platform.zip();
+      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads().filter((f) => f.name !== PLATFORM_ZIP), platformZip ? { size: statSync(platformZip).size } : null));
+      if (path === `/downloads/${PLATFORM_ZIP}` && platformZip) return sendFile(res, platformZip, true);
       if (path === "/app" || path === "/client") {
         res.writeHead(302, { location: `${path}/` });
         res.end();

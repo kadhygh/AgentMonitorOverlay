@@ -89,9 +89,12 @@ export function sendHtml(res: ServerResponse, html: string): void {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** The page to send people: download the desktop client, or use it in the browser. */
-export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>): string {
+/** The page to send people: download the desktop client, or use it in the browser; and the AMO platform, when it is here. */
+export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null): string {
   const zips = files.filter((f) => f.name.endsWith(".zip"));
+  const platformLink = platform
+    ? `<a class="btn" href="/downloads/AMO-Platform-win.zip">下载 AMO 平台<small>安装和更新团队的 AMO 工具 · ${(platform.size / 1024 / 1024).toFixed(0)} MB</small></a>`
+    : "";
   const list = zips.length
     ? zips.map((f) => `<a class="btn" href="/downloads/${encodeURIComponent(f.name)}">下载 Windows 客户端<small>${escapeHtml(f.name)} · ${(f.size / 1024 / 1024).toFixed(0)} MB</small></a>`).join("")
     : `<p class="muted">还没有放桌面客户端的安装包。</p>`;
@@ -111,6 +114,7 @@ small{font-weight:400;opacity:.85}ol{padding-left:20px}code{background:var(--bg)
 <h1>${escapeHtml(service)}</h1><p class="muted">AMO 中转：和团队里的人直接沟通，AI 也能把要确认的问题发给对方。${client ? `当前客户端版本 ${escapeHtml(client.version)}。` : ""}</p>
 ${list}
 ${web}
+${platformLink}
 <ol class="muted">
 <li>下载后解压到任意文件夹，双击 <code>AMO Relay.exe</code>。</li>
 <li>第一次打开时，服务器地址填 <code id="addr"></code>。</li>

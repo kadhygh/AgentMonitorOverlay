@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +24,7 @@ afterEach(async () => {
   store = null;
 });
 
-async function service(publicDir?: string, timing: { clientWatchMs?: number; tickMs?: number } = {}) {
+async function service(publicDir?: string, timing: { clientWatchMs?: number; tickMs?: number; platformDir?: string } = {}) {
   store = new RelayStore(":memory:");
   const filesDir = mkdtempSync(join(tmpdir(), "relay-files-"));
   closers.push(() => rmSync(filesDir, { recursive: true, force: true }));
@@ -92,6 +93,60 @@ describe("relay service", () => {
     expect((await get("/downloads/AMO-Relay.zip")).headers.get("content-disposition")).toContain("attachment");
     expect((await get("/client/..%2Fsecret.txt")).status).toBe(404);
     expect((await get("/client/nope.js")).status).toBe(404);
+  });
+
+  it("hands out the AMO platform's files to people signed in, never outside the platform dir", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    const body = "hello platform";
+    const sha = createHash("sha256").update(body).digest("hex");
+    mkdirSync(join(dir, "objects", sha.slice(0, 2)), { recursive: true });
+    writeFileSync(join(dir, "objects", sha.slice(0, 2), sha), body);
+    mkdirSync(join(dir, "tools", "notes"), { recursive: true });
+    const manifest = { tool: "notes", name: "AMO Notes", version: "0.9.0", builtAt: 1, exe: "AMO Notes.exe", notes: "- 第一版", files: [{ path: "a.txt", size: body.length, sha256: sha }] };
+    writeFileSync(join(dir, "tools", "notes", "0.9.0.json"), JSON.stringify(manifest));
+    writeFileSync(join(dir, "tools", "secret.json"), "{}");
+    writeFileSync(join(dir, "channels.json"), JSON.stringify({ stable: { notes: "0.9.0" }, test: { notes: "0.9.0" } }));
+    mkdirSync(join(dir, "downloads"));
+    writeFileSync(join(dir, "downloads", "AMO-Platform-win.zip"), "zip");
+    const { url, plannerSettings } = await service(undefined, { platformDir: dir });
+    const key = plannerSettings.key;
+    const get = (p: string, k: string | null = key) => fetch(`${url}${p}`, { headers: k ? { authorization: `Bearer ${k}` } : {} });
+
+    expect((await get("/api/platform/channels", null)).status).toBe(401);
+    expect((await get(`/platform/objects/${sha}`, null)).status).toBe(401);
+    expect(await (await get("/api/platform/channels")).json()).toEqual({ stable: { notes: "0.9.0" }, test: { notes: "0.9.0" } });
+    expect(await (await get("/api/platform/tools/notes/0.9.0")).json()).toEqual(manifest);
+    const obj = await get(`/platform/objects/${sha}`);
+    expect(obj.headers.get("content-type")).toBe("application/octet-stream");
+    expect(await obj.text()).toBe(body);
+    // A plain URL with ?key= works too (downloads).
+    expect(await (await get(`/platform/objects/${sha}?key=${encodeURIComponent(key)}`, null)).text()).toBe(body);
+
+    expect((await get("/api/platform/tools/notes/0.9.1")).status).toBe(404);
+    expect((await get(`/platform/objects/${"0".repeat(64)}`)).status).toBe(404);
+    // Names that fail their pattern never reach the disk.
+    for (const p of ["/api/platform/tools/Notes/0.9.0", "/api/platform/tools/notes/..%2Fsecret", "/api/platform/tools/..%2Ftools/0.9.0", "/api/platform/tools/notes/0.9", `/platform/objects/${sha.toUpperCase()}`, `/platform/objects/${sha.slice(1)}`, "/platform/objects/..%2Fchannels.json", "/platform/objects/%E0%A4%A"]) {
+      expect((await get(p)).status, p).toBe(400);
+    }
+    expect((await get("/api/platform/tools/secret")).status).toBe(404);
+
+    // The download page offers the platform; the zip needs no login.
+    const landing = await (await get("/", null)).text();
+    expect(landing).toContain("下载 AMO 平台");
+    expect(landing).toContain("/downloads/AMO-Platform-win.zip");
+    expect(landing).not.toContain("下载 Windows 客户端");
+    const zip = await get("/downloads/AMO-Platform-win.zip", null);
+    expect(zip.headers.get("content-disposition")).toContain("attachment");
+    expect(await zip.text()).toBe("zip");
+  });
+
+  it("says when it has no platform dir", async () => {
+    const { url, plannerSettings } = await service();
+    const res = await fetch(`${url}/api/platform/channels`, { headers: { authorization: `Bearer ${plannerSettings.key}` } });
+    expect(res.status).toBe(404);
+    expect((await res.json()).message).toContain("AMO_RELAY_PLATFORM_DIR");
+    expect(await (await fetch(`${url}/`)).text()).not.toContain("AMO 平台");
   });
 
   it("pushes a newly published client build and ticks", async () => {

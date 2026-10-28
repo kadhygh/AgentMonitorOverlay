@@ -12,8 +12,9 @@ import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } 
 import { typeOf } from "./types.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
-//   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name 策划组] [--passphrase <邀请口令>]
-//         (passphrase also from AMO_RELAY_PASSPHRASE; public = client/ + downloads/, default: next to this file)
+//   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name 策划组] [--passphrase <邀请口令>]
+//         (passphrase also from AMO_RELAY_PASSPHRASE; public = client/ + downloads/, default: next to this file;
+//         platform dir = the AMO platform's files, platform.ts, also from AMO_RELAY_PLATFORM_DIR, default: none)
 //   passwd --data <dir> <名字> <新密码>        on the service machine, while it is stopped or running
 //   register --server <host:port> --name <名字> --password <密码> [--role …] [--passphrase …] | login --server … --name … --password …
 //   whoami | people | prompt | mcp
@@ -22,7 +23,7 @@ import { typeOf } from "./types.js";
 //   tasks [--mine]   task <taskId>   transfer <taskId> --to <名字> [--status …] --reason <text>
 
 const USAGE = `amo-relay <command>
-  serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--name <服务名>] [--passphrase <邀请口令>]
+  serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name <服务名>] [--passphrase <邀请口令>]
   passwd   [--data <dir>] <名字> <新密码>          （在服务那台机器上重设某人的密码）
   register --server <地址:端口> --name <名字> --password <密码> [--role <负责什么>] [--passphrase <邀请口令>]
   login    --server <地址:端口> --name <名字> --password <密码>
@@ -94,9 +95,11 @@ async function main(): Promise<void> {
       const passphrase = flags.passphrase ?? process.env.AMO_RELAY_PASSPHRASE;
       const data = resolve(flags.data ?? join(relayHome(), "server"));
       const publicDir = resolve(flags.public ?? dirname(fileURLToPath(import.meta.url)));
+      const platformGiven = flags["platform-dir"] ?? process.env.AMO_RELAY_PLATFORM_DIR;
+      const platformDir = platformGiven && platformGiven !== "true" ? resolve(platformGiven) : undefined;
       const store = new RelayStore(join(data, "relay.db"));
-      const server = await startRelayServer({ store, passphrase, publicDir, filesDir: join(data, "files"), name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
-      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
+      const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
+      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
       const stop = () => void server.close().then(() => (store.close(), process.exit(0)));
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
