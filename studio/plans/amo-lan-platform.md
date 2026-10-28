@@ -168,6 +168,7 @@ platform/
 - `programs.json` 的 `exe` 是相对 `dir` 的路径，读的人用 `join(dir, exe)`。
 - 测试和开发用的变量：`AMO_HOME`（代替 `%APPDATA%\AMO`）、`AMO_LOCAL_HOME`（代替 `%LOCALAPPDATA%\AMO`）、`AMO_PLATFORM_UI_DIR`、`AMO_PLATFORM_TEST=1`（e2e 的测试模式）。以后中转、Studio 读 `account.json`、`programs.json` 也认 `AMO_HOME`。
 - 平台的 Chromium 配置在 `%LOCALAPPDATA%\AMO\platform-profile`；每个已装版本的记录在 `apps\<tool>\<version>.json`（在程序文件夹外面）。
+- **压缩存放（10-28 晚）**：object 存成 `objects/<前两位>/<sha256>` 或 `<sha256>.gz`，sha256 永远是原文件的；gzip 后小于原大小 90% 才存 `.gz`，两种都有时服务优先用 `.gz`。发布问「缺哪些」时两种名字都算已有，上传的 `.gz` 在服务器端解压核对 sha256。`GET /platform/objects/<sha256>`：有 `.gz` 且请求接受 gzip 就发 `.gz`（`Content-Encoding: gzip`）；不接受就边解压边发原文；客户端拿到的永远是原文，按清单的 size 和 sha256 校验。`relay-mac.mjs platform-compress` 把原样存放的压成 `.gz`（原子替换，服务运行时也能跑，能重复跑）。**先部署新服务再压缩**，旧服务不认 `.gz`。
 - 平台第一次下载用的 zip：服务先找 `<平台目录>/downloads/AMO-Platform-win.zip`（deploy 不碰），再找客户端的 `downloads/`。还没有命令负责放这个 zip，第一次发布平台时定。
 
 ## 共用 Electron（10-28 晚用户要做，排在下载压缩之后）

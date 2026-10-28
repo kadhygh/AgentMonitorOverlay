@@ -45,6 +45,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-28 夜 · 图标、注册、下载压缩，测试通道发 0.9.1**：图标定成「取景框」一家（`design/icon/tools/`，生成器 `gen-tools.mjs`，`make-icons.mjs` 出各工具的 png/ico/托盘图，Reviewer 和平台有了自己的，AMO 娘没动，`5d8d3cd`）；平台登录页能注册（`d1ad3e1`）；下载压缩（`707b3c6`，规则写进方案的接口约定）。Mac：先 deploy 新服务（一次成功，START 的修复有效），再 `platform-compress`：8463 个文件 1077 MB → 467 MB，167 秒。四个工具升 0.9.1（各自 CHANGELOG），打包、发到测试通道：每个工具新上传 3–21 个文件，约 235 MB、压缩后 104 MB（几乎都是 exe：rcedit 给每个 exe 写了自己的图标，每版都不同，共用 Electron 会解决）；平台 zip 换成 0.9.1。中转下载页只给平台（`8387fc7`）。验证：合并后 typecheck、account/platform/relay/testkit/scripts 的单测 103 条、平台 e2e 2 条都过；压缩脚本在 Mac 上每个文件解压核对 sha256。没在真服务器上用账号装过（等用户第一次用平台）。下一步：共用 Electron（方案「共用 Electron」一节）。
+
 **2026-10-28 晚 · 平台部署到 Mac、测试通道第一批发布**：本机 Studio 关掉前没有会话在跑（17 空闲、26 完成），库备份 `.data/backup-before-platform-20261028`。`relay:release` → `relay:mac -- deploy`：重启时 launchd 报 `Bootstrap failed: 5`（`bootout` 是异步的，紧接着 `bootstrap` 会撞上），服务停了一两分钟，`start` 拉起来了；`relay-mac.mjs` 的 START 改成等旧任务真正卸载再 bootstrap。plist 带 `--platform-dir /Users/td/Services/amo-relay/platform`。Studio / Reviewer / 便签 / 平台 0.9.0 都发到测试通道（Mac 上 bash 3.2 + BSD tar 那条路正常；Studio 传 6571 个文件 269 MB，Reviewer 只缺 4 个），共 8463 个文件 1.1 GB。平台 zip 手动放在 `platform/downloads/AMO-Platform-win.zip`（sha256 和本地一致），下载页有「下载 AMO 平台」。还没做：用户用 `start-platform.cmd -Test` 登录、装 Studio、把数据目录设成 `studio\.data` 后从平台打开（第一次由用户操作）；稳定通道还空着。
 
 **2026-10-28 晚 · AMO 平台第一版**（方案 `plans/amo-lan-platform.md`「10-28 晚定的推进方式」「第一版的接口约定」「进度」；三个子 agent 在 worktree 里并行做，主会话合并和联调）：
