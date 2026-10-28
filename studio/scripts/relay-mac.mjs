@@ -86,6 +86,8 @@ EOF
 const START = `mkdir -p "$DATA" "$PLATFORM" "$LOGS" "$HOME/Library/LaunchAgents"
 ${plist()}
 launchctl bootout "$DOMAIN/${LABEL}" 2>/dev/null || true
+# bootout returns before the job is gone; bootstrapping it then fails with "5: Input/output error" (deploy, 2026-10-28).
+for i in 1 2 3 4 5 6 7 8 9 10; do launchctl print "$DOMAIN/${LABEL}" >/dev/null 2>&1 || break; sleep 1; done
 launchctl bootstrap "$DOMAIN" "$PLIST"
 for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 2 "http://127.0.0.1:${PORT}/api/health" >/dev/null && break; sleep 1; done
 health

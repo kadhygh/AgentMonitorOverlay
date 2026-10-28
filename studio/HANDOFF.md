@@ -45,6 +45,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-28 晚 · 平台部署到 Mac、测试通道第一批发布**：本机 Studio 关掉前没有会话在跑（17 空闲、26 完成），库备份 `.data/backup-before-platform-20261028`。`relay:release` → `relay:mac -- deploy`：重启时 launchd 报 `Bootstrap failed: 5`（`bootout` 是异步的，紧接着 `bootstrap` 会撞上），服务停了一两分钟，`start` 拉起来了；`relay-mac.mjs` 的 START 改成等旧任务真正卸载再 bootstrap。plist 带 `--platform-dir /Users/td/Services/amo-relay/platform`。Studio / Reviewer / 便签 / 平台 0.9.0 都发到测试通道（Mac 上 bash 3.2 + BSD tar 那条路正常；Studio 传 6571 个文件 269 MB，Reviewer 只缺 4 个），共 8463 个文件 1.1 GB。平台 zip 手动放在 `platform/downloads/AMO-Platform-win.zip`（sha256 和本地一致），下载页有「下载 AMO 平台」。还没做：用户用 `start-platform.cmd -Test` 登录、装 Studio、把数据目录设成 `studio\.data` 后从平台打开（第一次由用户操作）；稳定通道还空着。
+
 **2026-10-28 晚 · AMO 平台第一版**（方案 `plans/amo-lan-platform.md`「10-28 晚定的推进方式」「第一版的接口约定」「进度」；三个子 agent 在 worktree 里并行做，主会话合并和联调）：
 - 小改动：Host 遇到被更新版本迁移过的数据库拒绝启动，弹窗说明（以前启动失败是一声不响地退出，现在都弹窗）；`/api/health` 不要令牌，多返回 `running`；设置 → 维护的终端可选 Claude Code / Codex。
 - 服务器发布：Studio（`packages/app`）、Reviewer、便签、平台各自的版本号（都 0.9.0）和 `CHANGELOG.md`，工具表 `scripts/amo-tools.mjs`；`package:portable -- --only <工具>`；中转服务 `--platform-dir` 和三个平台接口；`npm run relay:mac -- publish/promote/platform-status`（`--target-dir` 发到本机文件夹）。
