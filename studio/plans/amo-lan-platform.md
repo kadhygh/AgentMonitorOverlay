@@ -116,6 +116,50 @@
 
 另外，worktree `AgentMonitorOverlay-review` 现在没有未合并的提交（`studio/review-canvas` 和 `studio/stage3-topics` 都已经在 master 里），文档移动不会和它冲突。但如果其他会话正在别的分支上改 `HANDOFF.md` 或 `plans/`，移动前要先确认。
 
+## 10-28 晚定的推进方式（用户和主会话讨论后定）
+
+- **两种开发方式并存**：
+  1. 照旧：脚本启动、随用随改，每个模块可以单独起，完成后可以打 portable；
+  2. 脚本启动平台（`start-platform.cmd`，带 `--channel test`），平台装的是测试通道的版本。日常：本机改完 → 发布到测试通道 → 本机平台更新测试版 → 确认没问题 → 转成正式版（`promote`，不重新打包，同事拿到的就是测试过的那批文件）。用户日常的 Studio 也从平台拉起，每次改完发一版测试版，重启也由用户在平台里点。
+- **叫「测试通道」不叫「测试模式」**：`AMO_STUDIO_TEST` 等是 e2e 的测试模式，不混用。平台设置里有「更新通道：稳定 / 测试」，启动参数 `--channel test` 效果一样。
+- **本机只有一份 Studio 数据目录**：平台第一次拉起 Studio 之前，在「目录」里先设 Studio 数据目录（用户会填现在的 `studio\.data`，源码启动默认也是它）。同一时间只开一份 Studio。Host 发现数据库的迁移版本比自己认识的新时拒绝启动，提示先更新（源码版比测试版新，可能先升级了数据库）。
+- **维护终端**：只在源码启动时有，用户从平台拉起时自己开 CLI。维护终端加 Codex：两种终端可选（Claude Code / Codex），都是在工程目录里开用户自己的 CLI。
+- **登录只在平台**：账号就是团队服务器（中转服务）的账号。装平台时就要登录。登录代码抽成共用模块，平台用；中转客户端到平台发布时一起改成用平台的登录，不再保留自己的登录页（策划还没装中转，到时直接发平台版）。Studio 不做登录界面，需要登录的功能（以后的远程会话）读平台存的登录，没有就提示「在 AMO 平台里登录」。凭据放 `%APPDATA%\AMO\`，按当前 Windows 用户加密（DPAPI），工具只读，**不通过环境变量传**（Studio 会把环境变量传给 agent 的命令）。
+- **测试通道谁能看到**：所有登录的人都能在设置里切换。
+- 这次先不管 Codex / Claude Code 的会话记录写在 C 盘用户目录的问题（`~/.codex/sessions` 28 GB、`~/.claude/projects` 1.1 GB）。
+
+## 第一版的接口约定（10-28，各部分并行开发时以这里为准）
+
+**服务器（Mac，`~/Services/amo-relay/platform/`，在 `app/` 外面，deploy 不碰）**
+
+```
+platform/
+  objects/<sha256 前两位>/<sha256>        文件内容，按 sha256 存，同一个文件只存一份
+  tools/<tool>/<version>.json             一个工具一个版本的清单
+  channels.json                           { "stable": { "studio": "0.9.0", … }, "test": { "studio": "0.9.1", … } }
+```
+
+- 工具 id：`studio`、`reviewer`、`notes`、`platform`。
+- 清单：`{ tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }`，`path` 用 `/` 分隔、相对程序文件夹，`exe` 是程序文件夹里主程序的相对路径（如 `AMO Studio.exe`），`notes` 是这次的改动说明（Markdown）。
+- 中转服务加的接口（都要登录，`Authorization: Bearer <key>`）：`GET /api/platform/channels`、`GET /api/platform/tools/<tool>/<version>`、`GET /platform/objects/<sha256>`（也接受 `?key=`）。目录由服务的启动参数或环境变量给，Mac 上是 `$ROOT/platform`。下载页（`/`）加平台的下载：`downloads/AMO-Platform-win.zip`。
+- 发布在本机通过 SSH 做，不开 HTTP 写接口：`npm run relay:mac -- publish <tool> [--channel test|stable] [--notes "…"]`（读 `release/<Name>/`，算清单，只上传服务器上没有的文件，写清单，改 `channels.json`；`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本的一节）；`promote <tool> <version>`（把稳定通道指过去，版本必须已经发布过）；`platform-status`（列出两个通道各工具的版本）。
+
+**版本号**：每个工具的版本在各自包的 `package.json`（Studio = `packages/app`、`packages/reviewer`、`packages/notes`、`packages/platform`），都从 0.9.0 起，以后发布哪个升哪个。改动说明写在各自包的 `CHANGELOG.md`（`## 0.9.1（2026-10-29）` 这样一节一版）。`package-portable.mjs` 按工具取版本，可以只打一个工具。
+
+**本机（平台写，工具读）**
+
+```
+%LOCALAPPDATA%\AMO\apps\<tool>\<version>\   一个版本一个完整的程序文件夹
+%LOCALAPPDATA%\AMO\apps\<tool>\current      目录联接，指向正在用的版本
+%APPDATA%\AMO\platform.json                 平台设置：服务器、最近 3 个服务器、通道、Studio 数据目录、开机启动
+%APPDATA%\AMO\programs.json                 { "tools": { "studio": { "version", "dir"（current 的路径）, "exe" }, … } }
+%APPDATA%\AMO\account.json                  { server, name, key（DPAPI 加密，base64） }
+```
+
+- 新版本：先用硬链接把上一版里 sha256 相同的文件带过来，再下载缺的，校验 sha256，最后把 `current` 指过去。保留最近 2 个版本。
+- 拉起 Studio：环境变量 `AMO_STUDIO_DATA_DIR` = 平台设置里的 Studio 数据目录，没设时不让拉起，先去「目录」设。
+- Studio 有没有会话在跑：读数据目录里的 `host.json` 和 `host-token`，问 Host（只读）。
+
 ## 分几步
 
 1. **服务器发布**：每个工具单独的版本号（上面第 3 条）、版本清单格式（带改动说明）、`relay:mac -- publish <工具> --notes "…"`、中转服务的 `/platform/` 静态目录、下载页加「AMO 平台」。
