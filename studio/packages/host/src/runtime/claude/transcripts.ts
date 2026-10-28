@@ -75,9 +75,14 @@ export function bundledClaudeExe(): string {
  * 设置 → 维护: it updates itself and may be newer than the SDK's. Null when there is none.
  */
 export function installedClaudeExe(env: NodeJS.ProcessEnv = process.env): string | null {
+  return firstOnPath(["claude.exe", "claude.cmd"], env);
+}
+
+/** The first of `names` in PATH order (in each folder in the order given), as a terminal would find the command. */
+export function firstOnPath(names: readonly string[], env: NodeJS.ProcessEnv = process.env): string | null {
   const path = env.PATH ?? env.Path ?? "";
   for (const dir of path.split(delimiter).filter(Boolean)) {
-    for (const name of ["claude.exe", "claude.cmd"]) {
+    for (const name of names) {
       const exe = join(dir, name);
       if (existsSync(exe)) return exe;
     }

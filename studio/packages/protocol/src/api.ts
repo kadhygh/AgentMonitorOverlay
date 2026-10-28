@@ -881,6 +881,6 @@ export interface HostRoutes {
 // ---- 设置 → 维护 (2026-10-20): how Studio was started, a model's CLI in a terminal at the repo (maintenance.ts) ------
 export interface HostRoutes {
   "GET /api/maintenance": { req: void; res: import("./maintenance.js").MaintenanceInfo };
-  /** Opens a terminal in the Studio repo running the profile's CLI (Claude Code or Codex); 400 when not run from source. */
-  "POST /api/maintenance/terminal": { req: void; res: import("./maintenance.js").MaintenanceTerminalResult };
+  /** Opens a terminal in the Studio repo running the person's own CLI (Claude Code or Codex); 400 when not run from source or the CLI is not found. */
+  "POST /api/maintenance/terminal": { req: import("./maintenance.js").MaintenanceTerminalRequest; res: import("./maintenance.js").MaintenanceTerminalResult };
 }

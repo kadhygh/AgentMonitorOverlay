@@ -40,6 +40,12 @@
 /* 设置 → 模型 → Claude 订阅: its own Claude Code login (the only way since 2026-10-27), with what that means. */
 .claude-login-notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .login-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12px; color: var(--text-dim); }
+/* 设置 → 维护 → 维护终端: a row per CLI (Claude Code, Codex, 2026-10-28), its path cut short so the button stays on the row. */
+.maintenance-cli { display: flex; flex-direction: column; gap: 4px; }
+.maintenance-cli .settings-row { flex-wrap: nowrap; }
+.maintenance-cli .settings-label { min-width: 88px; flex: none; }
+.maintenance-cli button { flex: none; white-space: nowrap; }
+.maintenance-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12px; }
 
 /* A second dialog over 设置: a decision with risks. */
 .confirm-backdrop { z-index: 60; padding-top: 120px; }

@@ -91,6 +91,38 @@ describe("maintenance", () => {
     expect(Object.keys(launch.env).filter((k) => /^(NO_COLOR|COLOR|FORCE_COLOR|TERM)$/i.test(k))).toEqual([]);
     expect(launch.env.AMO_TEST_KEPT).toBe("kept");
   });
+
+  it("opens the person's own codex from PATH instead when asked, with the same environment as the Claude one (2026-10-28)", async () => {
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "codex.cmd"), "");
+    vi.stubEnv("PATH", [join(root, "nothing-here"), bin, process.env.PATH ?? ""].join(delimiter));
+    vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
+    vi.stubEnv("AMO_STUDIO_DATA_DIR", "D:\\data");
+    vi.stubEnv("CLAUDECODE", "1");
+    vi.stubEnv("ANTHROPIC_BASE_URL", "https://elsewhere.example/");
+    vi.stubEnv("NO_COLOR", "1");
+    vi.stubEnv("AMO_TEST_KEPT", "kept");
+    expect((await api<MaintenanceInfo>("GET", "/api/maintenance")).data.codex).toBe(join(bin, "codex.cmd"));
+    const { status, data } = await api<MaintenanceTerminalResult>("POST", "/api/maintenance/terminal", { cli: "codex" });
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ cli: "codex", command: `& '${join(bin, "codex.cmd")}'` });
+    const launch = launcher.launches[0]!;
+    expect(launch).toMatchObject({ command: data.command, cwd: data.cwd, envMode: "replace", title: "AMO Studio 维护 · Codex" });
+    expect(existsSync(join(launch.cwd, ".git"))).toBe(true);
+    expect(Object.keys(launch.env).filter((k) => /^(CLAUDE|ANTHROPIC_|ELECTRON_RUN_AS_NODE|AMO_STUDIO_|NO_COLOR)/i.test(k))).toEqual([]);
+    expect(launch.env.AMO_TEST_KEPT).toBe("kept");
+  });
+
+  it("says plainly that there is no codex when PATH has none, and opens nothing", async () => {
+    vi.stubEnv("PATH", join(root, "nothing-here"));
+    expect((await api<MaintenanceInfo>("GET", "/api/maintenance")).data.codex).toBeNull();
+    const { status, data } = await api<{ error: { message: string } }>("POST", "/api/maintenance/terminal", { cli: "codex" });
+    expect(status).toBe(400);
+    expect(data.error.message).toContain("没有找到 Codex");
+    expect(launcher.launches).toHaveLength(0);
+    expect((await api("POST", "/api/maintenance/terminal", { cli: "bash" })).status).toBe(400);
+  });
 });
 
 describe("Claude CLI for the terminal", () => {
