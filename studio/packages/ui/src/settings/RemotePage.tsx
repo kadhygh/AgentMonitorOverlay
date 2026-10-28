@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { PEER_PRESENCE_LABEL, peerPresence, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, RUNTIME_LABELS, type ModelProfile, type RemoteAllowed, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task } from "@amo-studio/protocol";
+import { PEER_PRESENCE_LABEL, peerPresence, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, RUNTIME_LABELS, type ModelProfile, type RemoteAllowed, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { relativeTime } from "../lib/status.js";
 import { useRemote } from "./remote.js";
+import { AskDialog, IncomingTaskRequests, PeerAsks } from "./RemoteRequests.js";
 
 // 设置 → 远程 (2026-10-29, plans/remote-session.md step 1): this computer as a device on the team server, the devices
 // paired with it, pairing requests both ways. Pairing is for the person's own other computers only: a remote session
@@ -23,7 +24,7 @@ const CONNECTION_LABEL: Record<RemoteConnection["state"], string> = {
 const peerKey = (p: { account: string; device: string }) => `${p.account}\n${p.device}`;
 const fmtTime = (iso: string) => new Date(iso).toLocaleString("zh-CN", { hour12: false });
 
-export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink; tasks?: readonly Task[]; profiles?: readonly ModelProfile[] }) {
+export function RemotePage({ link, tasks = [], profiles = [], workspaces = [], topics = [] }: { link: HostLink; tasks?: readonly Task[]; profiles?: readonly ModelProfile[]; workspaces?: readonly Workspace[]; topics?: readonly Topic[] }) {
   const remote = useRemote(link);
   const taskTitle = (id: string) => tasks.find((t) => t.id === id)?.title || "未命名任务";
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -32,6 +33,8 @@ export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink
   const [account, setAccount] = useState("");
   const [pings, setPings] = useState<Record<string, RemotePingResult | "busy">>({});
   const [unpairing, setUnpairing] = useState<RemotePeer | null>(null);
+  /** Step 4: the device being asked to run a task. */
+  const [asking, setAsking] = useState<RemotePeer | null>(null);
   // 刚失联 turns into 离线 by the clock alone.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -153,6 +156,8 @@ export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink
         </section>
       )}
 
+      {loggedIn && <IncomingTaskRequests link={link} remote={remote} workspaces={workspaces} topics={topics} profiles={profiles} busy={busy} run={run} />}
+
       {loggedIn && (
         <section className="settings-section" aria-label="已配对的设备" data-testid="remote-peers">
           <span className="settings-heading">已配对的设备</span>
@@ -191,6 +196,16 @@ export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink
                       解除配对
                     </button>
                   </div>
+                  {/* Step 4: a device that allowed this computer can be asked to run a task. */}
+                  {p.role === "guest" && (
+                    <PeerAsks
+                      peer={p}
+                      asks={remote.asks ?? []}
+                      busy={busy}
+                      onAsk={() => setAsking(p)}
+                      onWithdraw={(r) => void run(() => call(link, "DELETE /api/remote/asks/:id", { id: r.id }), r.state === "pending" ? `已撤回「${r.title}」` : undefined)}
+                    />
+                  )}
                 </div>
               );
             })
@@ -272,6 +287,17 @@ export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink
         <span className={message.error ? "form-error" : "settings-hint"} role={message.error ? "alert" : "status"} data-testid="remote-message">
           {message.text}
         </span>
+      )}
+      {asking && (
+        <AskDialog
+          link={link}
+          peer={asking}
+          onClose={() => setAsking(null)}
+          onDone={(text) => {
+            setAsking(null);
+            setMessage({ text });
+          }}
+        />
       )}
       {unpairing && (
         <ConfirmDialog

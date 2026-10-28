@@ -345,6 +345,78 @@ describe("remote limits on A", () => {
 
 const toA = (a: Pair["a"]) => ({ account: "台式机的我", device: a.state().device!.id });
 
+describe("requests for tasks between two Hosts (step 4)", () => {
+  it("B asks, A allows on an allowed model: the task is made, granted and running on B's board; A refuses another, saying why; B takes a third back", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    // Allowing needs 远端允许的模型 chosen first.
+    await b.remote.sendAsk(A, "先没选模型", "跑一下");
+    const first = await until(a.state, (s) => s.taskRequests.length === 1, "A has the request");
+    expect(first.taskRequests[0]).toMatchObject({ title: "先没选模型", text: "跑一下", name: "B-PC", state: "pending" });
+    await expect(a.remote.acceptRequest(first.taskRequests[0]!.id, { workspaceId: a.service.commonWorkspace().id, profileId: "p" })).rejects.toThrow("还没有选远端允许的模型");
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: "read-only" });
+    await expect(a.remote.acceptRequest(first.taskRequests[0]!.id, { workspaceId: a.service.commonWorkspace().id, profileId: "q" })).rejects.toThrow("不在远端允许的模型里");
+    // B sees it waiting.
+    expect(b.state().asks).toMatchObject([{ title: "先没选模型", name: "A-PC", state: "pending" }]);
+
+    // Allowed: a task with the request as its 说明, granted to B, its session started with the request.
+    const proj = tempDir("asked-proj");
+    const ws = a.service.projects.addWorkspace({ path: proj });
+    await a.remote.acceptRequest(first.taskRequests[0]!.id, { workspaceId: ws.id, profileId: "p" });
+    expect(a.state().taskRequests).toEqual([]);
+    const accepted = await until(b.state, (s) => s.asks[0]?.state === "accepted", "B hears it was allowed");
+    const taskId = accepted.asks[0]!.taskId!;
+    expect(a.store.getTask(taskId)).toMatchObject({ title: "先没选模型", description: "跑一下", workspaceId: ws.id, column: "doing" });
+    expect(a.state().grants).toMatchObject([{ taskId, account: "笔记本的我" }]);
+    const session = (await until(() => a.store.listSessions({ taskId })[0], Boolean, "A's session"))!;
+    expect(session).toMatchObject({ profileId: "p", options: { permission: "read-only" } });
+    await until(() => b.store.getTask(taskId)?.remote?.state, (s) => s === "active", "B's copy");
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 跑一下"), "B sees it run");
+
+    // Refused, saying why.
+    await b.remote.sendAsk(A, "第二个", "这个不行吧");
+    const second = (await until(a.state, (s) => s.taskRequests.length === 1, "second request")).taskRequests[0]!;
+    a.remote.refuseRequest(second.id, "今天不跑这个");
+    await until(b.state, (s) => s.asks.some((r) => r.id === second.id && r.state === "refused" && r.reason === "今天不跑这个"), "B hears why");
+    await expect(async () => a.remote.refuseRequest(second.id, "again")).rejects.toThrow("已经拒绝了");
+    // Put away on B: gone from its list (and from A's).
+    await b.remote.withdrawAsk(second.id);
+    expect(b.state().asks.some((r) => r.id === second.id)).toBe(false);
+
+    // Taken back while waiting: A no longer has it.
+    await b.remote.sendAsk(A, "第三个", "算了");
+    const third = (await until(a.state, (s) => s.taskRequests.length === 1, "third request")).taskRequests[0]!;
+    await b.remote.withdrawAsk(third.id);
+    expect(a.state().taskRequests).toEqual([]);
+    await expect(a.remote.acceptRequest(third.id, { workspaceId: ws.id, profileId: "p" })).rejects.toThrow("没有这个请求");
+
+    // A away: B's request does not go (the server keeps none), and says why.
+    a.remote.stop();
+    await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
+    await expect(b.remote.sendAsk(A, "A 不在", "发不出去")).rejects.toThrow("A-PC 不在线，请求没发出去");
+    expect(b.state().asks.some((r) => r.title === "A 不在")).toBe(false);
+    // Only to a device that allowed this computer; empty texts are refused.
+    await expect(a.remote.sendAsk({ account: "笔记本的我", device: b.state().device!.id }, "反过来", "不行")).rejects.toThrow();
+  }, 90_000);
+
+  it("A answers while B is away: B learns it when it is back; unpairing drops the requests", async () => {
+    const { a, b, toB } = await paired();
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: null, permission: null });
+    await b.remote.sendAsk(toA(a), "B 走开时回答", "第一句");
+    const r = (await until(a.state, (s) => s.taskRequests.length === 1, "request")).taskRequests[0]!;
+    b.remote.stop();
+    await until(a.state, (s) => s.peers[0]?.online === false, "A sees B gone");
+    a.remote.refuseRequest(r.id, "等你回来再说");
+    b.restart();
+    await until(b.state, (s) => s.asks.some((x) => x.id === r.id && x.state === "refused" && x.reason === "等你回来再说"), "B catches up on the answer");
+    await b.remote.sendAsk(toA(a), "还没回答", "等着");
+    await until(a.state, (s) => s.taskRequests.length === 1, "pending");
+    await a.remote.unpair(toB);
+    expect(a.state().taskRequests).toEqual([]);
+    await until(b.state, (s) => s.asks.length === 0, "B's requests to A gone with the pairing");
+  }, 60_000);
+});
+
 describe("remote files between two Hosts (step 3)", () => {
   it("B fetches a granted task's files from A, keeps them by task, asks again with what it has, and throws them away with the copy", async () => {
     const { a, b, toB } = await paired();

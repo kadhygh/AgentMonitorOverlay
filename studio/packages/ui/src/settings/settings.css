@@ -243,6 +243,13 @@
 .remote-allowed-list { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .remote-allowed-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
 .grant-modal { width: 480px; }
+/* Step 4: requests for tasks — the request's text, the boxes to ask and to allow. */
+.remote-request-modal { width: 500px; max-width: calc(100vw - 32px); }
+.remote-request-field { display: flex; flex-direction: column; gap: 4px; }
+.remote-request-field > .field, .remote-request-field > select { width: 100%; box-sizing: border-box; }
+.remote-request-field > textarea { resize: vertical; min-height: 64px; font: inherit; }
+.remote-request-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.remote-ask-refused { color: var(--attention); }
 .grant-peers { display: flex; flex-direction: column; gap: 6px; }
 .grant-peer { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-m); cursor: pointer; }
 .grant-peer:has(input:checked) { border-color: var(--primary); }

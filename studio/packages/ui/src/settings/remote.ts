@@ -29,8 +29,11 @@ export function useRemote(link: HostLink | null): RemoteState | null {
   return remote;
 }
 
-/** Pairing requests waiting for an answer here: the dot beside 设置 and on the 远程 tab. */
-export const remoteWaiting = (remote: RemoteState | null): number => remote?.incoming.length ?? 0;
+/**
+ * What waits for the person in 设置 → 远程: the dot beside 设置 and on the 远程 tab — pairing requests and requests for
+ * tasks to answer here (step 4), and refusals of this computer's requests not yet put away.
+ */
+export const remoteWaiting = (remote: RemoteState | null): number => (remote ? remote.incoming.length + (remote.taskRequests?.length ?? 0) + (remote.asks?.filter((r) => r.state === "refused").length ?? 0) : 0);
 
 /**
  * Step 2 (2026-10-29), on B: how a copy of a remote task stands — `online`: its computer is reachable; `offline`: it is

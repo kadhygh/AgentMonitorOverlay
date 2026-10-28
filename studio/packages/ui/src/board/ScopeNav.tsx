@@ -91,7 +91,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
   const [collapsed, setCollapsedState] = useState(readNavFolded);
   // 远程 (2026-10-29): a pairing request waits → a dot beside 设置 (not a place of its own on the main window).
   const remoteWaits = remoteWaiting(useRemote(link)) > 0;
-  const settingsTitle = remoteWaits ? "设置：有配对请求等你处理（设置 → 远程）" : "设置：界面主题、公共目录、模型、便签、功能、数据管理";
+  const settingsTitle = remoteWaits ? "设置：远程有请求或回复等你看（设置 → 远程）" : "设置：界面主题、公共目录、模型、便签、功能、数据管理";
   // The column's width, dragged at its right edge (2026-10-15); it also lines up the brand in the title bar.
   const navW = useDragWidth("amo.navWidth", 224, 180, 420);
   useNavWidthVar(navW.width, !collapsed);

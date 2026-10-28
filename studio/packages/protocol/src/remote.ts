@@ -76,6 +76,10 @@ export interface RemoteState {
   grants: RemoteGrant[];
   /** Step 2: 远端允许的默认配置 — what sessions started from a paired device may run. */
   allowed: RemoteAllowed;
+  /** Step 4, as A: tasks paired devices ask this computer to run, waiting for an answer. */
+  taskRequests: RemoteTaskRequest[];
+  /** Step 4, as B: what this computer asked paired devices to run, and their answers (until put away). */
+  asks: RemoteTaskRequest[];
 }
 
 export interface RemotePingResult {
@@ -203,6 +207,10 @@ export const REMOTE_KINDS = {
    * attachments), one piece at a time. RemoteFileAsk → RemoteFileAnswer
    */
   file: "rt.file",
+  /** Step 4, B → A: please run a task for me (RemoteTaskRequestAsk); A's person allows or refuses it later. → {request} */
+  request: "rt.request",
+  /** Step 4, B → A: B takes a request back, or puts A's answer to it away. {requestId} → {ok} */
+  withdraw: "rt.withdraw",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -232,6 +240,8 @@ export interface RemoteTaskSnapshot {
 
 export interface RemoteListAnswer {
   tasks: Array<{ taskId: Id; grantedAt: Timestamp }>;
+  /** Step 4: the asking device's requests as A has them (an older A leaves it out). */
+  requests?: RemoteTaskRequest[];
 }
 
 export interface RemoteItemsAnswer {
@@ -251,6 +261,8 @@ export interface RemoteCommandBodies {
   "rt.interrupt": { sessionId: Id };
   "rt.start": { taskId: Id; profileId: Id; text?: string };
   "rt.file": RemoteFileAsk;
+  "rt.request": RemoteTaskRequestAsk;
+  "rt.withdraw": { requestId: string };
 }
 
 /** A → B, unasked. B checks seq: a gap (or anything it cannot place) makes it ask for what it missed. */
@@ -264,7 +276,9 @@ export type RemotePush =
   /** An item appended or changed. */
   | { type: "item"; item: SessionItem }
   /** Streaming text of an agent item (not stored on its own on either side). */
-  | { type: "delta"; sessionId: Id; itemId: Id; append: string };
+  | { type: "delta"; sessionId: Id; itemId: Id; append: string }
+  /** Step 4: A's person answered one of B's requests. */
+  | { type: "request"; request: RemoteTaskRequest };
 
 // ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
 // A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under
@@ -351,3 +365,44 @@ export interface RemoteFetchedFile {
   /** For pages that load the task's images: `/api/remote/files/<key>/<rel>` serves them (fetched from A as asked). */
   key: string;
 }
+
+// ---- Step 4 (2026-10-29): B asks A to run a task ------------------------------------------------------------------
+// B writes a title and what to do (the first message); A's person sees it on Focus and in 设置 → 远程, picks the
+// project, topic and model (from 远端允许的模型) and allows it — A makes the task, starts its session with that message
+// and grants it to B — or refuses it, saying why. Only while A is online: the team server keeps no requests.
+
+export interface RemoteTaskRequestAsk {
+  /** B's id for it (rq_…), so a request sent twice is one. */
+  id: string;
+  title: string;
+  /** What to do: the task's first message. */
+  text: string;
+}
+
+export type RemoteTaskRequestState = "pending" | "accepted" | "refused";
+
+/** A request for a task, as both sides see it (on A from a device, on B to one). */
+export interface RemoteTaskRequest {
+  id: string;
+  title: string;
+  text: string;
+  /** The other side: on A the device that asked, on B the device asked. */
+  account: string;
+  device: string;
+  name: string;
+  state: RemoteTaskRequestState;
+  /** Refused: what A's person wrote (may be empty). */
+  reason?: string;
+  /** Accepted: the task made on A (B's copy has the same id). */
+  taskId?: Id;
+  createdAt: Timestamp;
+  answeredAt?: Timestamp;
+}
+
+/** On A: what allowing a request needs — where the task goes and the model its session runs on. */
+export interface RemoteAcceptInput {
+  workspaceId: Id;
+  topicId?: Id | null;
+  profileId: Id;
+}
+

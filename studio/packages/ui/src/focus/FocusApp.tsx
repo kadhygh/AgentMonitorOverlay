@@ -24,6 +24,7 @@ import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
 import { useWindowShape } from "./windowShape.js";
 import { useRemote } from "../settings/remote.js";
 import { FocusPairRequest } from "./FocusPairRequest.js";
+import { FocusTaskRequest } from "./FocusTaskRequest.js";
 import "./focus.css";
 
 export { isToReview, latestSnippet, summary } from "./FocusEntry.js";
@@ -73,6 +74,8 @@ export function FocusApp() {
   // 远程 (2026-10-29): someone asks to pair with this computer — answered here, like an approval.
   const remote = useRemote(host.kind === "ready" ? host.link : null);
   const pairAsks = remote?.incoming ?? [];
+  // 远程 step 4: another computer asks this one to run a task.
+  const taskAsks = remote?.taskRequests ?? [];
   // 远程 step 2 (用户 10-28: 提醒只给 B): a task granted to a device that is online (or went less than 5 minutes ago)
   // reminds there, not here. Re-read by the clock too, so 刚失联 turns back into this computer's after 5 minutes.
   const [clock, setClock] = useState(() => Date.now());
@@ -147,7 +150,7 @@ export function FocusApp() {
   // title folded it). Opening it here no longer counts as seeing it.
   const list = [...waiting, ...finished];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id)]);
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -178,7 +181,7 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
-  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length - toReview.length;
+  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length + taskAsks.length - toReview.length;
 
   // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
   const firstSeen = useRef<Map<string, number>>(new Map());
@@ -241,7 +244,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length + taskAsks.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
   // show under 进行中 either (10-22).
@@ -279,7 +282,7 @@ export function FocusApp() {
     const d = asks[0];
     if (s) goToDeal(s.id, s.taskId);
     else if (d) goToDeal(d.sessionId, d.taskId);
-    else if (pairAsks.length) void window.amo?.openInWorkbench?.({ settings: "remote" });
+    else if (pairAsks.length || taskAsks.length) void window.amo?.openInWorkbench?.({ settings: "remote" });
     else void window.amo?.openInWorkbench?.({ taskId: "" });
   };
   caught.current = () => (demo ? setDemo(null) : openFirst());
@@ -438,6 +441,9 @@ export function FocusApp() {
             ))}
             {pairAsks.map((r) => (
               <FocusPairRequest key={r.id} link={link} request={r} />
+            ))}
+            {taskAsks.map((r) => (
+              <FocusTaskRequest key={r.id} link={link} request={r} />
             ))}
             {relays.map((r) => (
               <div key={r.id} className="focus-entry open" data-testid="focus-relay">

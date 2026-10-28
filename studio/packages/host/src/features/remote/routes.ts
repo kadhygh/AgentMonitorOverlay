@@ -29,6 +29,13 @@ export function remoteRoutes(service: HostService): Route[] {
       const opt = (v: unknown, name: string) => (v === undefined || v === null || v === "" ? undefined : str(v, name));
       return service.remote.fetchFile(str(b.taskId, "taskId"), str(b.path, "path"), opt(b.cwd, "cwd"), opt(b.fetchId, "fetchId"));
     }),
+    route("POST", "/api/remote/asks", ({ body }) => {
+      const b = obj(body);
+      return service.remote.sendAsk(peer(body), b.title, b.text);
+    }),
+    route("DELETE", "/api/remote/asks/:id", ({ params }) => service.remote.withdrawAsk(params.id!)),
+    route("POST", "/api/remote/task-requests/:id/accept", ({ params, body }) => service.remote.acceptRequest(params.id!, body)),
+    route("POST", "/api/remote/task-requests/:id/refuse", ({ params, body }) => service.remote.refuseRequest(params.id!, obj(body).reason)),
     // Step 3: images a remote task's HTML page loads, by their place in the task's folder (the page gets <base> here).
     // An <img> sends no token and <base> drops a query, so the key in the path (random, per task, per Host run) is it.
     {

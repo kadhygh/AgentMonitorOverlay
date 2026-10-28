@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteFetchedFile, type RemotePingResult, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteFetchedFile, type RemoteListAnswer, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -7,6 +7,7 @@ import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
 import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
 import { RemoteCopies } from "./copies.js";
+import { TaskAsks, TaskRequests } from "./requests.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login (account.json, Studio has none of its own) and device.json — and the devices paired with it. The Host connects
@@ -77,6 +78,10 @@ export class RemoteFeature extends Feature {
   readonly grants = new RemoteGrants(this.context);
   /** Step 2 as B: the copies of tasks granted to this computer. */
   readonly copies = new RemoteCopies(this.context);
+  /** Step 4 as A: tasks paired devices ask this computer to run. */
+  readonly taskRequests = new TaskRequests(this.context, this.grants);
+  /** Step 4 as B: tasks this computer asked paired devices to run. */
+  readonly asks = new TaskAsks(this.context, (peer, kind, body, timeoutMs, offline) => this.copies.ask(peer, kind, body, timeoutMs, offline));
   private readonly onHostEvent = (e: HostEvent) => {
     try {
       this.grants.onHostEvent(e);
@@ -89,6 +94,7 @@ export class RemoteFeature extends Feature {
   start(options: RemoteOptions = {}): void {
     if (this.opts) return;
     this.opts = options;
+    this.copies.onList = (peer, list) => this.asks.sync(peer, list.requests);
     try {
       this.device = ensureDevice({ env: options.env });
     } catch (err) {
@@ -255,7 +261,10 @@ export class RemoteFeature extends Feature {
     // An answer that came after its wait ended: nothing waits for it, and answering it would start an endless echo.
     if (f.re) return;
     if (f.kind === REMOTE_KINDS.push) {
-      if (this.pairs().some((p) => same(p, f.from) && p.role === "guest")) this.copies.apply(f.from, f.body);
+      if (!this.pairs().some((p) => same(p, f.from) && p.role === "guest")) return;
+      const push = f.body as RemotePush | null;
+      if (push && push.type === "request") this.asks.apply(f.from, push.request);
+      else this.copies.apply(f.from, f.body);
       return;
     }
     const reply = (answer: Answer) => this.link?.send({ type: "relay", to: f.from, id: `r_${f.id}`.slice(0, 64), kind: answer.kind, re: f.id, body: answer.body });
@@ -277,6 +286,23 @@ export class RemoteFeature extends Feature {
     // The server forwards between devices it has as paired; this computer's own list has the last word.
     if (!this.pairs().some((p) => same(p, f.from))) return { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
     if (f.kind === "ping") return { kind: "pong", body: { at: Date.now() } };
+    const body = f.body && typeof f.body === "object" ? (f.body as Record<string, unknown>) : {};
+    const said = (run: () => unknown): Answer => {
+      try {
+        return { kind: REMOTE_KINDS.ok, body: run() };
+      } catch (err) {
+        if (err instanceof HostError) return { kind: "error", body: { code: err.code, message: err.message } };
+        return { kind: "error", body: { code: "runtime_error", message: err instanceof Error ? err.message : String(err) } };
+      }
+    };
+    // Step 4: a request for a task, or taking one back.
+    if (f.kind === REMOTE_KINDS.request) return said(() => ({ request: this.taskRequests.receive(f.from, body) }));
+    if (f.kind === REMOTE_KINDS.withdraw) return said(() => (this.taskRequests.withdraw(f.from, body.requestId), { ok: true }));
+    if (f.kind === REMOTE_KINDS.list) {
+      const answer = await this.grants.serve(f.from, f.kind, f.body);
+      if (answer.kind === REMOTE_KINDS.ok) (answer.body as RemoteListAnswer).requests = this.taskRequests.of(f.from);
+      return answer;
+    }
     if (f.kind.startsWith("rt.")) return this.grants.serve(f.from, f.kind, f.body);
     return { kind: "error", body: { code: "unknown_kind", message: `对方的 Studio 不认识「${f.kind}」，可能版本不同` } };
   }
@@ -371,8 +397,13 @@ export class RemoteFeature extends Feature {
     this.store.setKv(PAIRS_KEY, JSON.stringify(list));
     for (const p of before) {
       if (list.some((x) => same(x, p) && x.role === p.role)) continue;
-      if (p.role === "owner") this.grants.dropPeer(p);
-      else this.copies.revokePeer(p, "配对已解除");
+      if (p.role === "owner") {
+        this.grants.dropPeer(p);
+        this.taskRequests.dropPeer(p);
+      } else {
+        this.copies.revokePeer(p, "配对已解除");
+        this.asks.dropPeer(p);
+      }
     }
   }
 
@@ -417,6 +448,8 @@ export class RemoteFeature extends Feature {
       outgoing,
       grants: this.grants.list(),
       allowed: this.grants.allowed(),
+      taskRequests: this.taskRequests.pending(),
+      asks: this.asks.list(),
     };
   }
 
@@ -540,6 +573,37 @@ export class RemoteFeature extends Feature {
 
   setAllowed(body: unknown): RemoteState {
     this.grants.setAllowed(body);
+    return this.state();
+  }
+
+  // ---- step 4: requests for tasks
+
+  /** As B: asks a device that allowed this computer to run a task (while it is online). */
+  async sendAsk(peer: DeviceRef, title: unknown, text: unknown): Promise<RemoteState> {
+    this.requireStarted();
+    if (this.link?.state !== "online") throw new HostError("runtime_error", "这台电脑没有连上团队服务器，请求发不出去");
+    await this.asks.send(peer, title, text);
+    return this.state();
+  }
+
+  /** As B: takes a request back, or puts an answer away. */
+  async withdrawAsk(id: string): Promise<RemoteState> {
+    this.requireStarted();
+    await this.asks.withdraw(id);
+    return this.state();
+  }
+
+  /** As A: allows a request — the task made, granted, its session started. */
+  async acceptRequest(id: string, input: unknown): Promise<RemoteState> {
+    this.requireStarted();
+    await this.taskRequests.accept(id, (input ?? {}) as RemoteAcceptInput);
+    return this.state();
+  }
+
+  /** As A: refuses a request. */
+  refuseRequest(id: string, reason: unknown): RemoteState {
+    this.requireStarted();
+    this.taskRequests.refuse(id, reason);
     return this.state();
   }
 

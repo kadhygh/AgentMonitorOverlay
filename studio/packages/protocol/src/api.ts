@@ -938,4 +938,12 @@ export interface HostRoutes {
    * computer's data folder. `fetchId` names the remote.file events that say how far it came.
    */
   "POST /api/remote/files": { req: { taskId: Id; path: string; cwd?: string; fetchId?: string }; res: import("./remote.js").RemoteFetchedFile };
+  /** Step 4, on B: asks a paired device (one that allowed this computer) to run a task — only while it is online. */
+  "POST /api/remote/asks": { req: { account: string; device: string; title: string; text: string }; res: import("./remote.js").RemoteState };
+  /** Step 4, on B: takes a request back (still waiting), or puts an answer away. */
+  "DELETE /api/remote/asks/:id": { req: void; res: import("./remote.js").RemoteState };
+  /** Step 4, on A: allows a request — the task is made where asked, its session starts with the request, and it is granted. */
+  "POST /api/remote/task-requests/:id/accept": { req: import("./remote.js").RemoteAcceptInput; res: import("./remote.js").RemoteState };
+  /** Step 4, on A: refuses a request, saying why (or not). */
+  "POST /api/remote/task-requests/:id/refuse": { req: { reason?: string }; res: import("./remote.js").RemoteState };
 }

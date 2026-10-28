@@ -31,6 +31,8 @@ export class RemoteCopies {
 
   /** Step 3: the files fetched from A for the copies (thrown away with a copy). */
   readonly files: RemoteFiles;
+  /** Step 4: what A's list says besides its grants (this computer's requests to it). */
+  onList: ((peer: DeviceRef, list: RemoteListAnswer) => void) | null = null;
 
   constructor(private readonly ctx: RemoteContext) {
     this.files = new RemoteFiles(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
@@ -102,6 +104,7 @@ export class RemoteCopies {
         // Not reachable now: nothing changes; the next reconnect asks again.
         return;
       }
+      this.onList?.(peer, list);
       const granted = new Map(list.tasks.map((t) => [t.taskId, t.grantedAt]));
       for (const t of this.copies(peer)) if (t.remote!.state === "active" && !t.archivedAt && !granted.has(t.id)) this.revokeCopy(t.id, "授权已收回");
       for (const [taskId, grantedAt] of granted) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { REMOTE_LOST_MS, type RemotePeer, type RemoteState, type Task } from "@amo-studio/protocol";
-import { copyStatus, grantsOf } from "./remote.js";
+import { copyStatus, grantsOf, remoteWaiting } from "./remote.js";
 
 // 远程 step 2 (2026-10-29): how a copy of a remote task stands on B — usable, its computer away (or this one not
 // connected), or revoked — and what the composer says while nothing can be sent.
@@ -27,6 +27,17 @@ const state = (peers: RemotePeer[], connected = true): RemoteState => ({
   outgoing: [],
   grants: [{ taskId: "task_9", account: "x", device: "d_x", name: "X", grantedAt: "" }],
   allowed: { profiles: [], defaultProfile: null, permission: null },
+  taskRequests: [],
+  asks: [],
+});
+
+describe("remoteWaiting (the dot beside 设置)", () => {
+  const req = (state: "pending" | "accepted" | "refused") => ({ id: `rq_${state}`, title: "t", text: "x", account: "a", device: "d", name: "A", state, createdAt: "" });
+  it("counts pairing requests, requests for tasks to answer here, and refusals not put away", () => {
+    expect(remoteWaiting(null)).toBe(0);
+    expect(remoteWaiting(state([]))).toBe(0);
+    expect(remoteWaiting({ ...state([]), taskRequests: [req("pending")], asks: [req("pending"), req("accepted"), req("refused")] })).toBe(2);
+  });
 });
 
 describe("copyStatus", () => {
