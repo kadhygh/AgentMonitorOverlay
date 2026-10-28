@@ -66,7 +66,8 @@ Mac 用的是 Homebrew 的 Node（需要 22.13 或更新），防火墙是关着
 
 ```
 platform/
-  objects/<sha256 前两位>/<sha256>     文件内容，按 sha256 存，同一个文件只存一份
+  objects/<sha256 前两位>/<sha256>     文件内容，按 sha256 存，同一个文件只存一份：原样存，
+  objects/<sha256 前两位>/<sha256>.gz  或者 gzip 后存（10-29 起；sha256 永远是原文件的）
   tools/<tool>/<version>.json          一个工具一个版本的清单
   channels.json                        { "stable": { "studio": "0.9.0", … }, "test": { "studio": "0.9.1", … } }
   downloads/AMO-Platform-win.zip       平台自己的下载（可选）
@@ -82,9 +83,9 @@ platform/
 |---|---|
 | `GET /api/platform/channels` | `channels.json` 的内容；还没发布过时是 `{ "stable": {}, "test": {} }` |
 | `GET /api/platform/tools/<tool>/<version>` | 这个版本的清单；没发布过是 404 |
-| `GET /platform/objects/<sha256>` | 文件内容（`application/octet-stream`，可以长期缓存）；sha256 是 64 位小写十六进制 |
+| `GET /platform/objects/<sha256>` | 文件内容（`application/octet-stream`，可以长期缓存）；sha256 是 64 位小写十六进制。存的是 `.gz` 时：请求带 `Accept-Encoding: gzip`（平台、浏览器都会带）就原样发 `.gz`，加 `Content-Encoding: gzip`；不带的（比如不加 `--compressed` 的 curl）由服务边解压边发原文，这时没有 `Content-Length` |
 
-工具 id、版本号、sha256 不合格式时返回 400，不会去读磁盘；读到的文件一定在平台目录里面。下载页（`/`）在 `downloads/AMO-Platform-win.zip` 存在时（客户端的 `downloads/` 里，或者平台目录的 `downloads/` 里）显示「下载 AMO 平台」，这个 zip 不用登录就能下载。放在平台目录里更稳：deploy 换客户端 zip 时会整个换掉 `app/downloads`。
+工具 id、版本号、sha256 不合格式时返回 400，不会去读磁盘；读到的文件一定在平台目录里面。同一个 sha256 两种都有时（`platform-compress` 做到一半）先用 `.gz`，两种都是对的。下载页（`/`）在 `downloads/AMO-Platform-win.zip` 存在时（客户端的 `downloads/` 里，或者平台目录的 `downloads/` 里）显示「下载 AMO 平台」，这个 zip 不用登录就能下载。放在平台目录里更稳：deploy 换客户端 zip 时会整个换掉 `app/downloads`。
 
 发布（在本机，通过 SSH，不开 HTTP 写接口）：
 
@@ -92,13 +93,16 @@ platform/
 npm run package:portable -- --only notes               # 先打包：release/AMO Notes/
 npm run relay:mac -- publish notes [--channel test|stable] [--notes "…"] [--release <目录>]
 npm run relay:mac -- promote notes 0.9.1               # 把稳定通道指向一个已经发布过的版本
-npm run relay:mac -- platform-status                   # 两个通道各工具的版本、发布过的版本、存了多少文件
+npm run relay:mac -- platform-status                   # 两个通道各工具的版本、发布过的版本、存了多少文件（几个压缩存放）
+npm run relay:mac -- platform-compress                 # 把服务器上原样存放的文件压成 .gz（10-29 之前发布的）
 ```
 
 - `publish`：版本号取工具自己的 `package.json`（Studio 是 `packages/app`），读 `release/<Name>/`，算每个文件的 sha256，先问服务器缺哪些，只把缺的用 tar 经 SSH 传过去（到了那边按 sha256 校验后再放进 `objects/`），再写清单，最后改通道。不写 `--channel` 时发到测试通道。`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本那一节（`## 0.9.1（2026-10-29）`）。打包的版本和现在的版本号不一样时拒绝（先重新打包）；同一个版本号已经发布过：文件相同就只改通道，文件不同就拒绝（先升版本号）。
+- 压缩（10-29 起）：`publish` 在本机用 gzip -6 压每个要传的文件，比原来小 10% 以上的就传 `.gz`，其余原样传；到了服务器那边 `.gz` 解开后校验 sha256。问「缺哪些」时两种名字都算已有。实测 AMO Notes 0.9.0：1854 个文件 337.9 MB，存的是 153.6 MB（729 个 `.gz`），平台安装时实际传了 155.0 MB；Studio 的 exe 246 MB 压到 109 MB。图片、字体这类本来就压过的文件原样存。
+- `platform-compress`：把已经在服务器上、原样存放的文件压成 `.gz`：每个先压到临时文件，解开校验 sha256，确实变小才改名成 `<sha256>.gz`，然后删掉原文件；服务一直能找到其中一份，所以服务在跑时也可以做。内容和名字对不上的文件不动，最后报错列出来。打印压缩前后的大小；再跑一次只会跳过已经压过的。在 Mac 上用 bash 3.2 和系统自带的 gzip、shasum。
 - 稳定通道不会比测试通道旧：发到稳定或 `promote` 时，如果测试通道的版本更旧（或没有），测试通道也指过去。
 - 清单和 `channels.json` 都先写临时文件再改名，平台不会读到写了一半的文件，也不会读到文件还没传完的清单。
-- 三个命令都可以加 `--target-dir <本机目录>`：不走 SSH，直接发布到这个目录。用来测试，也可以在本机起一个带平台目录的服务做联调：`node release/relay/amo-relay.mjs serve --port 47130 --data <临时目录> --platform-dir <同一个目录>`。
+- 这几个命令都可以加 `--target-dir <本机目录>`：不走 SSH，直接发布到这个目录。用来测试，也可以在本机起一个带平台目录的服务做联调：`node release/relay/amo-relay.mjs serve --port 47130 --data <临时目录> --platform-dir <同一个目录>`。
 - 核心逻辑在 `scripts/platform-publish.mjs`（测试 `scripts/platform-publish.test.mjs`），工具表在 `scripts/amo-tools.mjs`。
 
 ## 给同事用

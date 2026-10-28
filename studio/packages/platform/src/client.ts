@@ -64,7 +64,10 @@ export class PlatformClient implements Source {
     try {
       let res: Response;
       try {
-        res = await this.fetchImpl(`${this.server}/platform/objects/${sha256}`, { headers: { authorization: `Bearer ${this.key}` }, signal: abort.signal });
+        // The server keeps most objects gzipped (2026-10-29) and sends them as Content-Encoding: gzip when asked to; fetch
+        // unpacks them, so what is written, counted (onBytes: the progress bar runs on the manifest's sizes) and checked
+        // is always the original file.
+        res = await this.fetchImpl(`${this.server}/platform/objects/${sha256}`, { headers: { authorization: `Bearer ${this.key}`, "accept-encoding": "gzip" }, signal: abort.signal });
       } catch (err) {
         throw new PlatformError("unreachable", `下载 ${sha256.slice(0, 12)} 时连不上服务器（${err instanceof Error ? err.message : String(err)}）`);
       }

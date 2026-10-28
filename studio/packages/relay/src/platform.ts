@@ -1,10 +1,14 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { open, type FileHandle } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 
 // The AMO platform's files on the relay service (2026-10-28, plans/amo-lan-platform.md 「第一版的接口约定」). The
 // platform dir is outside the service's app/ (deploy never touches it) and is written only by the publisher
 // (scripts/platform-publish.mjs, over SSH):
-//   objects/<sha256 first two>/<sha256>   file contents by sha256, each stored once
+//   objects/<sha256 first two>/<sha256>   file contents by sha256, each stored once — as it is, or
+//   objects/<sha256 first two>/<sha256>.gz   gzipped (2026-10-29: Studio's install was 375 MB); the sha256 is always the
+//                                         original's. Sent as it is with Content-Encoding: gzip to a client that takes
+//                                         gzip, unpacked on the way to one that does not (server.ts).
 //   tools/<tool>/<version>.json           one tool's manifest for one version
 //   channels.json                         { "stable": { "studio": "0.9.0", … }, "test": { … } }
 //   downloads/AMO-Platform-win.zip        the platform itself for the download page (optional; here because deploy
@@ -51,9 +55,33 @@ export class PlatformFiles {
     return this.file("tools", tool, `${version}.json`);
   }
 
-  object(sha256: string): string | null {
-    if (!SHA256.test(sha256)) return null;
-    return this.file("objects", sha256.slice(0, 2), sha256);
+  /**
+   * An object opened for sending: the .gz when there is one, else the file as it is; null when neither is there. Opened
+   * rather than looked up, so platform-compress swapping one for the other (the .gz renamed in, then the original
+   * removed) never leaves a request with a name that is gone: the original is tried after the .gz, and the .gz again.
+   */
+  async openObject(sha256: string): Promise<{ handle: FileHandle; size: number; gzip: boolean } | null> {
+    if (!SHA256.test(sha256) || !this.dir) return null;
+    const base = resolve(this.dir, "objects", sha256.slice(0, 2), sha256);
+    if (!base.startsWith(this.dir + sep)) return null;
+    const tryOpen = async (file: string) => {
+      let handle: FileHandle;
+      try {
+        handle = await open(file, "r");
+      } catch (err) {
+        if (["ENOENT", "EISDIR"].includes((err as NodeJS.ErrnoException).code ?? "")) return null;
+        throw err;
+      }
+      const st = await handle.stat();
+      if (st.isFile()) return { handle, size: st.size };
+      await handle.close();
+      return null;
+    };
+    for (const [file, gzip] of [[`${base}.gz`, true], [base, false], [`${base}.gz`, true]] as const) {
+      const got = await tryOpen(file);
+      if (got) return { ...got, gzip };
+    }
+    return null;
   }
 
   /** downloads/AMO-Platform-win.zip, when there is one. */

@@ -3,6 +3,8 @@ import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSyn
 import { join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { pipeline } from "node:stream";
+import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
@@ -104,6 +106,20 @@ function keyOf(req: IncomingMessage, url: URL): string | null {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) return auth.slice(7).trim() || null;
   return url.searchParams.get("key");
+}
+
+/** Whether an Accept-Encoding takes gzip: `gzip` (or `x-gzip`, or `*` when gzip is not named) with a q above 0. */
+export function acceptsGzip(header: string | undefined): boolean {
+  if (!header) return false;
+  let star = false;
+  for (const part of header.toLowerCase().split(",")) {
+    const [coding = "", ...params] = part.split(";").map((s) => s.trim());
+    const q = params.find((p) => p.startsWith("q="));
+    const ok = !q || Number(q.slice(2)) > 0;
+    if (coding === "gzip" || coding === "x-gzip") return ok;
+    if (coding === "*") star = ok;
+  }
+  return star;
 }
 
 interface Waiter {
@@ -240,11 +256,22 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       if (om) {
         const sha = part(om[1]!);
         if (!SHA256.test(sha)) throw new RelayError("bad_request", "文件的 sha256 要是 64 位小写十六进制");
-        const file = platform.object(sha);
-        if (!file) throw new RelayError("not_found", `服务器上没有这个文件：${sha}`);
+        const obj = await platform.openObject(sha);
+        if (!obj) throw new RelayError("not_found", `服务器上没有这个文件：${sha}`);
         // Named by its content: it never changes.
-        res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(statSync(file).size), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
-        createReadStream(file).pipe(res);
+        const headers: Record<string, string> = { "content-type": "application/octet-stream", "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" };
+        // Stored gzipped (2026-10-29): sent as it is to a client that takes gzip (the platform's fetch does), unpacked on
+        // the way for one that does not (curl without --compressed), whose length is then not known up front.
+        if (obj.gzip) headers.vary = "accept-encoding";
+        const gzipped = obj.gzip && acceptsGzip(req.headers["accept-encoding"]);
+        if (!obj.gzip || gzipped) headers["content-length"] = String(obj.size);
+        if (gzipped) headers["content-encoding"] = "gzip";
+        res.writeHead(200, headers);
+        // A client that goes away part way, or a damaged .gz, ends the response early: the client checks size and sha256.
+        const ended = (err: unknown) => void (err && res.destroy());
+        const stream = obj.handle.createReadStream();
+        if (obj.gzip && !gzipped) pipeline(stream, createGunzip(), res, ended);
+        else pipeline(stream, res, ended);
         return;
       }
       throw new RelayError("not_found", `没有这个接口：${method} ${path}`);

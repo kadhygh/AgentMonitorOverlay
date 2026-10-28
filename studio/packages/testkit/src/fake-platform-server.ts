@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { gzipSync } from "node:zlib";
 import { listenInStudioRange } from "./ports.js";
 
 // A stand-in for the team server's side of AMO 平台 (plans/amo-lan-platform.md, 「第一版的接口约定」), for the platform's
@@ -8,8 +9,9 @@ import { listenInStudioRange } from "./ports.js";
 //   GET /api/platform/channels                → { stable: { <tool>: <version> }, test: { … } }
 //   GET /api/platform/tools/<tool>/<version>  → { tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }
 //   GET /platform/objects/<sha256>            → the bytes (Authorization: Bearer <key>, or ?key=)
-// Tests publish versions with their files; objects are stored by sha256 once, as on the real server. Hooks make an
-// object come back wrong or break off half way.
+// Tests publish versions with their files; objects are stored by sha256 once, as on the real server. With `gzip`, an
+// object gzip makes at least 10% smaller goes as Content-Encoding: gzip to a request that takes it, as the real server
+// sends the .gz objects it stores (2026-10-29). Hooks make an object come back wrong or break off half way.
 
 export interface FakePlatformManifest {
   tool: string;
@@ -39,16 +41,28 @@ export interface FakePlatformServer {
   requests: string[];
   /** The accounts, those registered included: name → { password, role }. */
   members(): Record<string, { password: string; role: string }>;
+  /** Object downloads so far: the bytes sent on the wire (gzipped or not), the original bytes they carry, how many gzipped. */
+  objectTraffic: { sent: number; original: number; gzipped: number };
   close(): Promise<void>;
 }
 
 export const sha256Of = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 
-export async function startFakePlatformServer(options: { users?: Record<string, string>; passphrase?: string; name?: string } = {}): Promise<FakePlatformServer> {
+export async function startFakePlatformServer(options: { users?: Record<string, string>; passphrase?: string; name?: string; gzip?: boolean } = {}): Promise<FakePlatformServer> {
   // The users given log in as 程序 (what the tests have always seen); people who register keep the role they gave.
   const members = new Map<string, { password: string; role: string }>(Object.entries(options.users ?? { 小王: "secret" }).map(([n, password]) => [n, { password, role: "程序" }]));
   const keys = new Map<string, string>();
   const objects = new Map<string, Buffer>();
+  const gzipped = new Map<string, Buffer | null>();
+  const objectTraffic = { sent: 0, original: 0, gzipped: 0 };
+  /** The object as the real server would store it: gzipped when that is under 90% of it. */
+  const stored = (sha: string, data: Buffer) => {
+    if (!gzipped.has(sha)) {
+      const gz = gzipSync(data);
+      gzipped.set(sha, gz.length < data.length * 0.9 ? gz : null);
+    }
+    return gzipped.get(sha) ?? null;
+  };
   const manifests = new Map<string, FakePlatformManifest>();
   const channels: Record<"stable" | "test", Record<string, string>> = { stable: {}, test: {} };
   const corrupt = new Set<string>();
@@ -155,6 +169,14 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
           setTimeout(() => res.destroy(), 20);
           return;
         }
+        const gz = options.gzip && /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? "")) ? stored(sha, data) : null;
+        objectTraffic.original += data.length;
+        objectTraffic.sent += (gz ?? data).length;
+        if (gz) {
+          objectTraffic.gzipped++;
+          res.writeHead(200, { "content-type": "application/octet-stream", "content-encoding": "gzip", "content-length": gz.length });
+          return res.end(gz);
+        }
         res.writeHead(200, { "content-type": "application/octet-stream", "content-length": data.length });
         return res.end(data);
       }
@@ -167,6 +189,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     url: `http://127.0.0.1:${port}`,
     requests,
     members: () => Object.fromEntries([...members].map(([n, m]) => [n, { ...m }])),
+    objectTraffic,
     publish(toolId, version, files, o = {}) {
       const list = Object.entries(files).map(([path, content]) => {
         const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");

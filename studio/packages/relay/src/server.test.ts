@@ -2,14 +2,16 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { get as httpGet, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
 import type { RelayEvent } from "./protocol.js";
-import { startRelayServer, type RelayServer } from "./server.js";
+import { acceptsGzip, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 import { usagePrompt } from "./usage.js";
 
@@ -140,6 +142,82 @@ describe("relay service", () => {
     const zip = await get("/downloads/AMO-Platform-win.zip", null);
     expect(zip.headers.get("content-disposition")).toContain("attachment");
     expect(await zip.text()).toBe("zip");
+  });
+
+  it("sends an object stored gzipped as gzip to a client that takes it, and unpacked to one that does not", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    const body = "AMO Studio ".repeat(50_000);
+    const gz = gzipSync(body);
+    const sha = createHash("sha256").update(body).digest("hex");
+    const plain = "stored as it is";
+    const plainSha = createHash("sha256").update(plain).digest("hex");
+    const both = "both a .gz and the original (platform-compress half way) ".repeat(100);
+    const bothSha = createHash("sha256").update(both).digest("hex");
+    const put = (name: string, data: string | Buffer) => {
+      mkdirSync(join(dir, "objects", name.slice(0, 2)), { recursive: true });
+      writeFileSync(join(dir, "objects", name.slice(0, 2), name), data);
+    };
+    put(`${sha}.gz`, gz);
+    put(plainSha, plain);
+    put(bothSha, both);
+    put(`${bothSha}.gz`, gzipSync(both));
+    put(`${"a".repeat(64)}.gz`, Buffer.from("not gzip at all"));
+    const { url, plannerSettings } = await service(undefined, { platformDir: dir });
+    const key = plannerSettings.key;
+
+    // fetch asks for gzip and unpacks it.
+    const viaFetch = await fetch(`${url}/platform/objects/${sha}`, { headers: { authorization: `Bearer ${key}` } });
+    expect(viaFetch.headers.get("content-encoding")).toBe("gzip");
+    expect(viaFetch.headers.get("vary")).toBe("accept-encoding");
+    expect(await viaFetch.text()).toBe(body);
+
+    // On the wire, without anything unpacking it.
+    const raw = (path: string, acceptEncoding?: string) =>
+      new Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+        const req = httpGet(`${url}${path}`, { headers: { authorization: `Bearer ${key}`, ...(acceptEncoding === undefined ? {} : { "accept-encoding": acceptEncoding }) } }, (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+      });
+    const gzipped = await raw(`/platform/objects/${sha}`, "gzip, deflate, br");
+    expect(gzipped.headers["content-encoding"]).toBe("gzip");
+    expect(gzipped.headers["content-length"]).toBe(String(gz.length));
+    expect(gzipped.body.equals(gz)).toBe(true);
+    // A client that does not take gzip (curl without --compressed, gzip;q=0, identity) gets the original, unpacked on the way.
+    for (const ae of [undefined, "identity", "gzip;q=0", "br", "*;q=0"]) {
+      const r = await raw(`/platform/objects/${sha}`, ae);
+      expect(r.status, String(ae)).toBe(200);
+      expect(r.headers["content-encoding"], String(ae)).toBeUndefined();
+      expect(r.body.toString(), String(ae)).toBe(body);
+    }
+    expect((await raw(`/platform/objects/${sha}`, "*")).headers["content-encoding"]).toBe("gzip");
+    // Stored as it is: as before, whatever the client takes.
+    for (const ae of [undefined, "gzip"]) {
+      const r = await raw(`/platform/objects/${plainSha}`, ae);
+      expect(r.headers["content-encoding"]).toBeUndefined();
+      expect(r.headers["content-length"]).toBe(String(plain.length));
+      expect(r.body.toString()).toBe(plain);
+    }
+    // Both there: either is right; the .gz is taken.
+    expect((await raw(`/platform/objects/${bothSha}`, "gzip")).headers["content-encoding"]).toBe("gzip");
+    expect((await raw(`/platform/objects/${bothSha}`)).body.toString()).toBe(both);
+    // A damaged .gz unpacked on the way ends the response early instead of sending something else.
+    await expect(raw(`/platform/objects/${"a".repeat(64)}`)).rejects.toThrow();
+  });
+
+  it("reads Accept-Encoding", () => {
+    expect(acceptsGzip(undefined)).toBe(false);
+    expect(acceptsGzip("gzip, deflate")).toBe(true);
+    expect(acceptsGzip("deflate, GZIP;q=0.5")).toBe(true);
+    expect(acceptsGzip("gzip;q=0")).toBe(false);
+    expect(acceptsGzip("x-gzip")).toBe(true);
+    expect(acceptsGzip("*")).toBe(true);
+    expect(acceptsGzip("*, gzip;q=0")).toBe(false);
+    expect(acceptsGzip("identity")).toBe(false);
   });
 
   it("says when it has no platform dir", async () => {

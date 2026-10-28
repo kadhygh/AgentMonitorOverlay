@@ -15,7 +15,11 @@
 //                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md
 //                              promote <tool> <version>     the stable channel to a version already published
 //                              platform-status              both channels' versions per tool, and what is stored
-//                              --target-dir <dir>           any of the three on a folder here instead of the Mac (tests,
+//                              platform-compress            gzip the objects stored as they are (published before
+//                                                           2026-10-29; publish now sends them gzipped), each only when
+//                                                           worth it, checked, renamed in, then the original removed;
+//                                                           safe while the service runs, and to run again
+//                              --target-dir <dir>           any of these on a folder here instead of the Mac (tests,
 //                                                           or a relay service started here with --platform-dir <dir>)
 // SSH_HOST=<alias> to use another machine. Content updates need no restart: the service reads app/client per request.
 import { spawn, spawnSync } from "node:child_process";
@@ -25,7 +29,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOLS, changelogSection, tool, toolVersion } from "./amo-tools.mjs";
-import { LocalTarget, ShellTarget, mb, promote, publish, status } from "./platform-publish.mjs";
+import { LocalTarget, ShellTarget, mb, platformCompress, promote, publish, status } from "./platform-publish.mjs";
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const release = join(studio, "release", "relay");
@@ -194,7 +198,7 @@ ${START}`);
     const dir = join(resolve(studio, flag("--release") ?? "release"), t.name);
     const r = await publish(target, { id, dir, version, notes, channel, log: (s) => console.log(s) });
     console.log(`${r.existed ? "这个版本已经发布过，文件相同：只改了通道" : "已发布"}：${id} ${version} → ${channel === "stable" ? "稳定" : "测试"}通道（${target.where}）`);
-    console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}）`);
+    console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}，压缩后 ${mb(r.sentBytes)}）`);
     if (channel === "test") console.log(`转成正式版：npm run relay:mac -- promote ${id} ${version}${flag("--target-dir") ? ` --target-dir "${flag("--target-dir")}"` : ""}`);
     break;
   }
@@ -212,6 +216,15 @@ ${START}`);
     console.log(await status(target, { tools: Object.keys(TOOLS).filter((id) => TOOLS[id].platform) }));
     break;
   }
+  case "platform-compress": {
+    const target = platformTarget();
+    console.log(`压缩 ${target.where} 上原样存放的文件…`);
+    const t = Date.now();
+    const r = await platformCompress(target, { log: (s) => console.log(s) });
+    console.log(`原样存放的 ${r.files} 个文件，压缩了 ${r.compressed} 个：${mb(r.before)} → ${mb(r.after)}（${((Date.now() - t) / 1000).toFixed(0)} 秒）`);
+    if (r.damaged) throw new Error(`${r.damaged} 个文件的内容和名字对不上，没有压缩：重新发布用到它们的版本`);
+    break;
+  }
   default:
-    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status`);
+    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status | platform-compress`);
 }

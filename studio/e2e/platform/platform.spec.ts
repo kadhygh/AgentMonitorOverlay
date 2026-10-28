@@ -29,7 +29,8 @@ let app: ElectronApplication | undefined;
 let root = "";
 
 test.beforeAll(async () => {
-  server = await startFakePlatformServer({ users: { 小王: "secret" } });
+  // gzip: as the real server sends the objects it stores gzipped (2026-10-29).
+  server = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
 });
 test.afterAll(() => server.close());
 test.afterEach(async () => {
@@ -105,6 +106,10 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 已是最新");
   await expect(result(page, "reviewer")).toContainText("已装好 1.0.0");
   expect(programs().tools.reviewer).toEqual({ version: "1.0.0", dir: join(root, "local", "apps", "reviewer", "current"), exe: "run.cmd" });
+  // The runtime came gzipped and was unpacked on the way (the installer checked its sha256).
+  expect(server.objectTraffic.gzipped).toBeGreaterThan(0);
+  expect(server.objectTraffic.sent).toBeLessThan(server.objectTraffic.original / 2);
+  expect(readFileSync(join(root, "local", "apps", "reviewer", "current", "resources", "runtime.bin"), "utf8")).toBe("R".repeat(256 * 1024));
   await screenshot(app, "platform", "P4-installed", page);
   await row(page, "reviewer").getByRole("button", { name: "打开" }).click();
   await expect.poll(() => (existsSync(join(root, "launched.reviewer")) ? readFileSync(join(root, "launched.reviewer"), "utf8").trim() : "")).toMatch(/^reviewer 1\.0\.0/);

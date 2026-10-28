@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -190,6 +191,30 @@ describe("Installer", () => {
     expect(safeParts("resources/app.asar")).toEqual(["resources", "app.asar"]);
     writeFileSync(join(root, "x"), "");
     expect(inst.versions("lambda")).toEqual([]);
+  });
+
+  it("objects the server sends gzipped are installed as the originals; the bar runs on their sizes", async () => {
+    const gz = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+    try {
+      const login = await fetch(`${gz.url}/api/login`, { method: "POST", body: JSON.stringify({ name: "小王", password: "secret" }) });
+      const gzClient = new PlatformClient(gz.url, ((await login.json()) as { key: string }).key);
+      const inst = setup();
+      const files = { "Tool.exe": big("E", 1024), "resources/app.js": "console.log('mu');\n".repeat(5000), "packed.bin": randomBytes(256 * 1024), "tiny.txt": "x" };
+      const m = gz.publish("mu", "1.0.0", files, { exe: "Tool.exe" });
+      const seen: Array<{ doneBytes: number; totalBytes: number }> = [];
+      await inst.install("mu", "1.0.0", gzClient, (p) => p.phase === "downloading" && seen.push({ doneBytes: p.doneBytes, totalBytes: p.totalBytes }));
+      for (const f of m.files) expect(sha256Of(readFileSync(join(root, "apps", "mu", "1.0.0", ...f.path.split("/")))), f.path).toBe(f.sha256);
+      // The exe and app.js went gzipped, the random and tiny files as they are; far fewer bytes than the files hold.
+      expect(gz.objectTraffic.gzipped).toBe(2);
+      expect(gz.objectTraffic.original).toBe(m.files.reduce((n, f) => n + f.size, 0));
+      expect(gz.objectTraffic.sent).toBeLessThan(256 * 1024 + 64 * 1024);
+      // Counted in original bytes: never past the total, and it ends at the total.
+      const total = m.files.reduce((n, f) => n + f.size, 0);
+      expect(seen.every((p) => p.totalBytes === total && p.doneBytes <= total)).toBe(true);
+      expect(seen.at(-1)!.doneBytes).toBe(total);
+    } finally {
+      await gz.close();
+    }
   });
 });
 

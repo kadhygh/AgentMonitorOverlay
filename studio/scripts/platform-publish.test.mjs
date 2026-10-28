@@ -1,11 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { sectionOf } from "./amo-tools.mjs";
-import { LocalTarget, ShellTarget, compareVersions, promote, publish, status } from "./platform-publish.mjs";
+import { LocalTarget, ShellTarget, compareVersions, platformCompress, promote, publish, status } from "./platform-publish.mjs";
 
 const dirs = [];
 afterEach(() => {
@@ -76,8 +78,80 @@ async function scenario(target, platformDir) {
   expect(lines[0]).toMatch(/^工具\s+稳定\s+测试\s+已发布$/);
   expect(lines).toContainEqual(expect.stringMatching(/^studio\s+-\s+-\s+-$/));
   expect(lines).toContainEqual(expect.stringMatching(/^notes\s+0\.9\.1\s+0\.9\.1\s+0\.9\.0, 0\.9\.1$/));
-  expect(lines.at(-1)).toMatch(/^文件：7 个，/);
+  expect(lines.at(-1)).toMatch(/^文件：7 个，.*（压缩存放的 0 个）$/);
   return { first, second };
+}
+
+const objectPath = (platform, name) => join(platform, "objects", name.slice(0, 2), name);
+
+/** Compressible files go up gzipped, the rest as they are; either way the object counts as there. */
+async function gzScenario(target, platform) {
+  const release = temp("release");
+  const text = "console.log('AMO');\n".repeat(20_000);
+  const packed = randomBytes(64 * 1024);
+  const dir = programFolder(release, "0.9.0", { "resources/app/main.js": text, "resources/app.asar.unpacked/packed.bin": packed });
+  const r = await publish(target, { id: "notes", dir, version: "0.9.0", notes: "- 第一版" });
+  const names = objectsIn(platform);
+  expect(names).toContain(`${sha(text)}.gz`);
+  expect(names).not.toContain(sha(text));
+  expect(names).toContain(sha(packed));
+  expect(names).not.toContain(`${sha(packed)}.gz`);
+  // The tiny files (the exe stand-in, package.json) are not worth it either.
+  expect(names).toContain(sha("exe"));
+  expect(gunzipSync(readFileSync(objectPath(platform, `${sha(text)}.gz`))).toString()).toBe(text);
+  expect(r.uploadedBytes).toBeGreaterThan(text.length + packed.length);
+  expect(r.sentBytes).toBeLessThan(packed.length + text.length / 10);
+  expect(await target.missing([sha(text), sha(packed), sha("exe"), sha("nope")])).toEqual([sha("nope")]);
+  // Published again: nothing goes up.
+  expect(await publish(target, { id: "notes", dir, version: "0.9.0", notes: "- 第一版" })).toMatchObject({ existed: true, uploaded: [], sentBytes: 0 });
+  expect((await status(target)).split("\n").at(-1)).toMatch(/（压缩存放的 1 个）$/);
+}
+
+/**
+ * A platform dir as the first publishes left it (every object as it is), plus the odd cases: an object whose content
+ * does not match its name, one already compressed by a run that stopped before removing the original, a temp file.
+ */
+function oldPlatform() {
+  const platform = temp("platform");
+  const put = (name, data) => {
+    mkdirSync(dirname(objectPath(platform, name)), { recursive: true });
+    writeFileSync(objectPath(platform, name), data);
+  };
+  const text = "AMO Studio ".repeat(30_000);
+  const packed = randomBytes(32 * 1024);
+  const half = "half done ".repeat(5_000);
+  const tiny = "x";
+  const damaged = "this is not what the name says ".repeat(1_000);
+  put(sha(text), text);
+  put(sha(packed), packed);
+  put(sha(half), half);
+  put(`${sha(half)}.gz`, gzipSync(half));
+  put(sha(tiny), tiny);
+  put(sha("something else"), damaged);
+  put(`${sha(text)}.gz.tmp-1-abcd`, "leftover");
+  const sizes = text.length + packed.length + half.length + tiny.length + damaged.length;
+  return { platform, text, packed, half, tiny, damaged, sizes };
+}
+
+async function checkCompressed(r, o, target) {
+  expect(r).toMatchObject({ files: 5, compressed: 2, damaged: 1, before: o.sizes });
+  expect(r.after).toBeLessThan(o.sizes - o.text.length + o.text.length / 10);
+  const names = objectsIn(o.platform);
+  for (const s of [o.text, o.half]) {
+    expect(names).toContain(`${sha(s)}.gz`);
+    expect(names).not.toContain(sha(s));
+    expect(gunzipSync(readFileSync(objectPath(o.platform, `${sha(s)}.gz`))).toString()).toBe(s);
+  }
+  // Not worth it, or not what its name says: left as they are.
+  expect(names).toContain(sha(o.packed));
+  expect(names).toContain(sha(o.tiny));
+  expect(readFileSync(objectPath(o.platform, sha("something else")), "utf8")).toBe(o.damaged);
+  // Its own temp files are gone; another's (by its name) is not its business.
+  expect(names.filter((n) => n.includes(".tmp-"))).toEqual([`${sha(o.text)}.gz.tmp-1-abcd`]);
+  expect(await target.missing([sha(o.text), sha(o.packed), sha(o.half), sha(o.tiny)])).toEqual([]);
+  // Again: nothing left to do.
+  const again = await platformCompress(target);
+  expect(again).toMatchObject({ files: 3, compressed: 0, damaged: 1 });
 }
 
 describe("platform publish", () => {
@@ -88,6 +162,29 @@ describe("platform publish", () => {
     expect(manifest.notes).toBe("- 改了一处");
     // Nothing half-written is left behind.
     expect(readdirSync(platform).sort()).toEqual(["channels.json", "objects", "tools"]);
+  });
+
+  it("stores compressible objects gzipped, the rest as they are; missing counts both", async () => {
+    const platform = temp("platform");
+    await gzScenario(new LocalTarget(platform), platform);
+  });
+
+  it("platform-compress gzips the objects stored as they are, checked, and is safe to run again", async () => {
+    const o = oldPlatform();
+    const target = new LocalTarget(o.platform);
+    await checkCompressed(await platformCompress(target), o, target);
+  });
+
+  it("platform-compress --target-dir from the command line", () => {
+    const o = oldPlatform();
+    const script = join(dirname(fileURLToPath(import.meta.url)), "relay-mac.mjs");
+    const res = spawnSync(process.execPath, [script, "platform-compress", "--target-dir", o.platform], { encoding: "utf8" });
+    // The damaged object is reported and makes it fail, after the rest are done.
+    expect(res.status).not.toBe(0);
+    expect(res.stdout).toMatch(/原样存放的 5 个文件，压缩了 2 个：[\d.]+ MB → [\d.]+ MB/);
+    expect(res.stderr).toMatch(/1 个文件的内容和名字对不上/);
+    expect(objectsIn(o.platform)).toContain(`${sha(o.text)}.gz`);
+    expect(objectsIn(o.platform)).not.toContain(sha(o.text));
   });
 
   it("checks what it is given", async () => {
@@ -115,8 +212,9 @@ describe("platform publish", () => {
 
   // The scripts relay-mac.mjs sends over SSH, run by a local bash (Git Bash on Windows) against a temp folder.
   const bash = process.platform === "win32" ? ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files\\Git\\usr\\bin\\bash.exe"].find((p) => existsSync(p)) : "/bin/bash";
-  it.skipIf(!bash)("publishes through bash the way it does over SSH", async () => {
-    const platform = temp("platform");
+  // Many bash processes (one per step, a few per object): slow on Git Bash while the rest of the suite runs.
+  const BASH_MS = 60_000;
+  const shellTarget = (platform) => {
     const posix = (p) => (process.platform === "win32" ? p.replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`).replace(/\\/g, "/") : p);
     // Git Bash has no shasum outside a login shell; the Mac has it.
     const shim = 'command -v shasum >/dev/null || shasum() { shift 2; sha256sum "$@"; }\n';
@@ -132,8 +230,25 @@ describe("platform publish", () => {
         tar.stdout.pipe(into.stdin);
         into.on("close", (code) => (code === 0 ? done() : fail(new Error(`upload: exit ${code}`))));
       });
-    await scenario(new ShellTarget({ run, upload, root: posix(platform) }), platform);
+    return new ShellTarget({ run, upload, root: posix(platform) });
+  };
+
+  it.skipIf(!bash)("publishes through bash the way it does over SSH", async () => {
+    const platform = temp("platform");
+    await scenario(shellTarget(platform), platform);
     expect(readdirSync(platform).sort()).toEqual(["channels.json", "objects", "tools"]);
     expect(JSON.parse(readFileSync(join(platform, "tools", "notes", "0.9.0.json"), "utf8")).notes).toBe("- 第一版");
-  });
+  }, BASH_MS);
+
+  it.skipIf(!bash)("sends compressible objects gzipped through bash, checked there by unpacking them", async () => {
+    const platform = temp("platform");
+    await gzScenario(shellTarget(platform), platform);
+    expect(readdirSync(platform).sort()).toEqual(["channels.json", "objects", "tools"]);
+  }, BASH_MS);
+
+  it.skipIf(!bash)("platform-compress through bash the way it runs on the Mac", async () => {
+    const o = oldPlatform();
+    const target = shellTarget(o.platform);
+    await checkCompressed(await platformCompress(target), o, target);
+  }, BASH_MS);
 });
