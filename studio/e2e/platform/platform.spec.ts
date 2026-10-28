@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -695,6 +695,130 @@ test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO �
     await expect(status(page, "relay")).toHaveText("✓ 0.9.1 · 已是最新", { timeout: 20_000 });
     expect(programs().tools.relay!.version).toBe("0.9.1");
   } finally {
+    await own.close();
+  }
+});
+
+/**
+ * A stand-in Studio for the card (2026-10-29): a Node process answering /api/health and /api/shutdown on a local port
+ * as Studio's Host does, with host.json and host-token in the data dir, and a second process as its shell (shell.json)
+ * that ends with it. What it says (version, running) is read from control.json each time.
+ */
+const FAKE_STUDIO = `
+const http = require("node:http"), fs = require("node:fs"), path = require("node:path"), { spawn } = require("node:child_process");
+const [dataDir, control] = process.argv.slice(2);
+const read = () => JSON.parse(fs.readFileSync(control, "utf8"));
+const shell = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+fs.writeFileSync(path.join(dataDir, "shell.json"), JSON.stringify({ pid: shell.pid, version: "old" }));
+const server = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => (body += c));
+  req.on("end", () => {
+    const c = read();
+    const send = (status, value) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)); };
+    if (req.method === "GET" && req.url === "/api/health") return send(200, { ok: true, pid: process.pid, running: c.running, ...(c.version ? { version: c.version } : {}) });
+    if (req.method === "POST" && req.url === "/api/shutdown") {
+      fs.appendFileSync(path.join(dataDir, "shutdown-requests.log"), (req.headers.authorization || "") + " " + body + "\\n");
+      if (req.headers.authorization !== "Bearer tok") return send(401, { error: { code: "bad_request", message: "token" } });
+      const interrupt = (() => { try { return JSON.parse(body || "{}").interrupt === true; } catch { return false; } })();
+      if (c.running > 0 && !interrupt) return send(409, { ok: false, running: c.running });
+      send(200, { ok: true, running: c.running });
+      return setTimeout(() => { shell.kill(); fs.rmSync(path.join(dataDir, "host.json"), { force: true }); process.exit(0); }, 300);
+    }
+    send(404, { error: { code: "not_found", message: "no route" } });
+  });
+});
+server.listen(0, "127.0.0.1", () => {
+  const port = server.address().port;
+  fs.writeFileSync(path.join(dataDir, "host-token"), "tok");
+  fs.writeFileSync(path.join(dataDir, "host.json"), JSON.stringify({ url: "http://127.0.0.1:" + port, port, pid: process.pid }));
+});
+`;
+
+test("Studio's card (2026-10-29): the Host's state and version; 重启 Studio when the Host is older than what is installed — not while sessions are at work; then the old one ends and the installed one opens", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" } });
+  let fake: ChildProcess | null = null;
+  try {
+    own.publish("studio", "0.9.1", tool("studio", "0.9.1"), { name: "AMO Studio", exe: "run.cmd", notes: "- 托盘" });
+    const { app, page } = await launch();
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await row(page, "studio").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "studio")).toHaveText("✓ 0.9.1 · 已是最新");
+    // Done (not still switching, which greys out every button of the card).
+    await expect(result(page, "studio")).toContainText("已装好 0.9.1");
+    const host = page.getByTestId("tool-studio-host");
+    const restart = page.getByTestId("tool-studio-restart");
+    const button = (name: string | RegExp) => row(page, "studio").getByRole("button", { name });
+    await expect(host).toHaveText("○ 后台没在运行");
+    await expect(restart).toHaveCount(0);
+
+    // The data dir, and a Studio running on it that an older version started, with a session at work.
+    const dataDir = join(root, "studio-data");
+    mkdirSync(dataDir, { recursive: true });
+    const control = join(root, "control.json");
+    writeFileSync(control, JSON.stringify({ version: "0.9.0", running: 1 }));
+    const script = join(root, "fake-studio.cjs");
+    writeFileSync(script, FAKE_STUDIO);
+    fake = spawn(process.execPath, [script, dataDir, control], { stdio: "ignore" });
+    await expect.poll(() => existsSync(join(dataDir, "host.json")) && existsSync(join(dataDir, "shell.json"))).toBe(true);
+    const shellPid = (JSON.parse(readFileSync(join(dataDir, "shell.json"), "utf8")) as { pid: number }).pid;
+    await app.evaluate((_e, dir) => ((globalThis as { __platformPicks?: string[] }).__platformPicks = [dir]), dataDir);
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "目录" }).click();
+    await page.getByRole("button", { name: "选择文件夹…" }).click();
+    await expect(page.getByTestId("pf-studio-data")).toHaveText(dataDir);
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "工具" }).click();
+    await expect(host).toHaveText("✓ 后台在运行 · 1 个会话进行中 · 后台版本 0.9.0");
+    await expect(restart).toHaveText("! 正在运行的后台还是 0.9.0，已装的是 0.9.1。1 个会话进行中，停下后再重启。");
+    await expect(button("重启 Studio")).toBeDisabled();
+    await expect(button("重启 Studio")).toHaveAttribute("title", "1 个会话进行中，停下后再重启");
+    await screenshot(app, "platform", "P33-studio-restart-busy", page);
+
+    // The session stopped: the card follows when asked again (opening 工具, or every 10 s), and 重启 Studio can be clicked.
+    writeFileSync(control, JSON.stringify({ version: "0.9.0", running: 0 }));
+    await page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("refreshStudio", []));
+    await expect(host).toHaveText("✓ 后台在运行 · 没有会话在跑 · 后台版本 0.9.0");
+    await expect(restart).toHaveText("! 正在运行的后台还是 0.9.0，已装的是 0.9.1：重启 Studio 才会用上。");
+    await expect(button("重启 Studio")).toBeEnabled();
+    await screenshot(app, "platform", "P34-studio-restart-ready", page);
+
+    // 重启 Studio: the Host is asked to stop (its token, never `interrupt`), the old shell ends with it, the installed one opens.
+    await button("重启 Studio").click();
+    await expect(result(page, "studio")).toContainText("✓ 已重启 Studio，现在是 0.9.1", { timeout: 30_000 });
+    expect(readFileSync(join(dataDir, "shutdown-requests.log"), "utf8").trim()).toBe("Bearer tok {}");
+    await expect.poll(() => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "")).toBe(`studio 0.9.1 ${dataDir}`);
+    expect(fake.exitCode ?? (await new Promise((r) => fake!.once("exit", r)))).toBe(0);
+    let shellAlive = true;
+    try {
+      process.kill(shellPid, 0);
+    } catch {
+      shellAlive = false;
+    }
+    expect(shellAlive).toBe(false);
+    await expect(host).toHaveText("○ 后台没在运行");
+    await expect(restart).toHaveCount(0);
+    await screenshot(app, "platform", "P35-studio-restarted", page);
+
+    // A Studio from before 2026-10-29 says no version: not offered, and said why.
+    writeFileSync(control, JSON.stringify({ version: null, running: 0 }));
+    fake = spawn(process.execPath, [script, dataDir, control], { stdio: "ignore" });
+    await expect.poll(() => existsSync(join(dataDir, "host.json"))).toBe(true);
+    await page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("refreshStudio", []));
+    await expect(host).toHaveText("✓ 后台在运行 · 没有会话在跑");
+    await expect(restart).toHaveText("这个后台是更早的 Studio 启动的，看不到它的版本，也不能从这里重启。");
+    await expect(button("重启 Studio")).toHaveCount(0);
+  } finally {
+    if (fake && fake.exitCode === null) fake.kill();
+    // Its pretend shell too, when a failure left it running.
+    try {
+      const pid = (JSON.parse(readFileSync(join(root, "studio-data", "shell.json"), "utf8")) as { pid: number }).pid;
+      process.kill(pid);
+    } catch {
+      // gone already
+    }
     await own.close();
   }
 });

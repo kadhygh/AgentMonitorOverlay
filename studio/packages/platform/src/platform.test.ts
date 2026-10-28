@@ -7,9 +7,9 @@ import type { Protector } from "@amo-studio/account";
 import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
 import { PlatformClient } from "./client.js";
 import { planLaunch, type LaunchSpec } from "./launch.js";
-import { Platform } from "./platform.js";
+import { Platform, type PlatformOptions } from "./platform.js";
 import { channelFromArgs } from "./settings.js";
-import { sessionCount, studioHealth } from "./system.js";
+import { sessionCount, stopStudio, studioHealth, studioRestart, waitForExit, type StudioStop } from "./system.js";
 
 const fake: Protector = { protect: async (t) => Buffer.from(t).toString("base64"), unprotect: async (d) => Buffer.from(d, "base64").toString() };
 
@@ -24,7 +24,7 @@ beforeAll(async () => {
 afterAll(() => server.close());
 afterEach(() => root && removeTempDir(root));
 
-function make(options: { argv?: string[]; running?: string[] } = {}) {
+function make(options: { argv?: string[]; running?: string[]; extra?: Partial<PlatformOptions> } = {}) {
   root = mkdtempSync(join(tmpdir(), "amo-platform-"));
   const env = { AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), PATH: process.env.PATH, ELECTRON_RUN_AS_NODE: "1", AMO_STUDIO_DATA_DIR: "X:\\inherited" };
   const launched: LaunchSpec[] = [];
@@ -40,6 +40,7 @@ function make(options: { argv?: string[]; running?: string[] } = {}) {
     runningPaths: async () => running,
     launch: async (spec) => void launched.push(spec),
     rootDrive: async () => "local",
+    ...options.extra,
   });
   return { platform, env, launched, picks, running };
 }
@@ -215,17 +216,133 @@ describe("launch and the machine", () => {
     const port = await listenInStudioRange(host);
     root = mkdtempSync(join(tmpdir(), "amo-platform-health-"));
     try {
-      expect(await studioHealth(root)).toEqual({ hostUp: false, sessions: null });
+      expect(await studioHealth(root)).toEqual({ hostUp: false, sessions: null, version: null });
       writeFileSync(join(root, "host.json"), JSON.stringify({ url: `http://127.0.0.1:${port}`, port, pid: 1 }));
       writeFileSync(join(root, "host-token"), "tok\n");
-      expect(await studioHealth(root)).toEqual({ hostUp: true, sessions: null });
+      expect(await studioHealth(root)).toEqual({ hostUp: true, sessions: null, version: null });
       expect(auth).toBe("Bearer tok");
       body = { ok: true, running: 2 };
-      expect(await studioHealth(root)).toEqual({ hostUp: true, sessions: 2 });
+      expect(await studioHealth(root)).toEqual({ hostUp: true, sessions: 2, version: null });
+      // 2026-10-29: the version of the Studio that started the Host.
+      body = { ok: true, running: 0, version: "0.9.4" };
+      expect(await studioHealth(root)).toEqual({ hostUp: true, sessions: 0, version: "0.9.4" });
       expect(sessionCount([{}, {}, {}])).toBe(3);
       expect(sessionCount(true)).toBeNull();
     } finally {
       await new Promise<void>((r) => host.close(() => r()));
     }
+  });
+
+  it("重启 Studio is offered only when the running Host is older than the installed Studio, and not while sessions are at work (2026-10-29)", () => {
+    const up = (version: string | null, sessions: number | null = 0) => ({ hostUp: true, sessions, version });
+    expect(studioRestart(up("0.9.3"), "0.9.4")).toBe("ready");
+    expect(studioRestart(up("0.9.3", 2), "0.9.4")).toBe("busy");
+    // Sessions unknown (not expected with a version, both came 10-28/29) is not taken for busy; the Host refuses anyway.
+    expect(studioRestart(up("0.9.3", null), "0.9.4")).toBe("ready");
+    expect(studioRestart(up("0.9.4"), "0.9.4")).toBe("none");
+    // Newer than installed (went back a version): not offered (the user's rule is "older").
+    expect(studioRestart(up("0.9.5"), "0.9.4")).toBe("none");
+    expect(studioRestart(up("dev"), "0.9.4")).toBe("none");
+    expect(studioRestart(up(null), "0.9.4")).toBe("unsupported");
+    expect(studioRestart({ hostUp: false, sessions: null, version: null }, "0.9.4")).toBe("none");
+    expect(studioRestart(up("0.9.3"), null)).toBe("none");
+  });
+
+  it("stopStudio: POST /api/shutdown with the data dir's token and never `interrupt`; 409 says how many, 404 is an older Studio; the Host and shell pids to wait for (2026-10-29)", async () => {
+    let reply: { status: number; body: unknown } = { status: 200, body: { ok: true, running: 0 } };
+    const seen: Array<{ method: string; path: string; auth: string; body: string }> = [];
+    const host = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c: Buffer) => (body += c.toString()));
+      req.on("end", () => {
+        seen.push({ method: req.method ?? "", path: req.url ?? "", auth: req.headers.authorization ?? "", body });
+        res.writeHead(reply.status, { "content-type": "application/json" });
+        res.end(JSON.stringify(reply.body));
+      });
+    });
+    const port = await listenInStudioRange(host);
+    root = mkdtempSync(join(tmpdir(), "amo-platform-stop-"));
+    try {
+      expect(await stopStudio(root)).toMatchObject({ ok: false, reason: "not-running" });
+      writeFileSync(join(root, "host.json"), JSON.stringify({ url: `http://127.0.0.1:${port}`, port, pid: 4242 }));
+      expect(await stopStudio(root)).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("host-token") });
+      writeFileSync(join(root, "host-token"), "tok\n");
+      writeFileSync(join(root, "shell.json"), JSON.stringify({ pid: 4343, version: "0.9.3" }));
+      reply = { status: 409, body: { ok: false, running: 2, error: { code: "conflict", message: "2 个会话正在进行" } } };
+      expect(await stopStudio(root)).toEqual({ ok: false, reason: "running", running: 2 });
+      expect(seen.at(-1)).toEqual({ method: "POST", path: "/api/shutdown", auth: "Bearer tok", body: "{}" });
+      reply = { status: 404, body: { error: { code: "not_found", message: "no route" } } };
+      expect(await stopStudio(root)).toMatchObject({ ok: false, reason: "unsupported" });
+      reply = { status: 200, body: { ok: true, running: 0 } };
+      expect(await stopStudio(root)).toEqual({ ok: true, pids: [4242, 4343] });
+      expect(seen.every((r) => !r.body.includes("interrupt"))).toBe(true);
+    } finally {
+      await new Promise<void>((r) => host.close(() => r()));
+    }
+    let oneGone = false;
+    setTimeout(() => (oneGone = true), 100);
+    expect(await waitForExit([1, 2], 2000, (pid) => pid === 1 && !oneGone)).toEqual([]);
+    expect(await waitForExit([3], 300, () => true)).toEqual([3]);
+  });
+
+  it("the Studio card: the Host's state and version; 重启 Studio — refused while sessions are at work, else the old one stops and the installed one opens (2026-10-29)", async () => {
+    let health: Record<string, unknown> = { ok: true, pid: 4242, running: 0, version: "0.8.0" };
+    // The Host is a stand-in at 127.0.0.1:47999; the team server's requests go out for real.
+    const routed = ((url: string | URL, init?: RequestInit) =>
+      String(url).startsWith("http://127.0.0.1:47999/") ? Promise.resolve(new Response(JSON.stringify(health), { status: 200, headers: { "content-type": "application/json" } })) : fetch(url, init)) as typeof fetch;
+    let stop: StudioStop = { ok: false, reason: "running", running: 1 };
+    let left: number[] = [];
+    const waited: Array<readonly number[]> = [];
+    const { platform, launched, picks } = make({
+      extra: {
+        fetch: routed,
+        stopStudio: async () => stop,
+        waitForExit: async (pids) => (waited.push(pids), left),
+      },
+    });
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    await platform.install("studio");
+    const card = () => platform.view().tools.find((t) => t.id === "studio")!;
+    // No data dir: nothing to ask.
+    expect(card().studio).toEqual({ hostUp: false, sessions: null, version: null, restart: "none", restarting: false });
+    const data = join(root, "studio-data");
+    mkdirSync(data, { recursive: true });
+    writeFileSync(join(data, "host.json"), JSON.stringify({ url: "http://127.0.0.1:47999", port: 47999, pid: 4242 }));
+    picks.push(data);
+    await platform.pickStudioDataDir();
+    expect(card().studio).toEqual({ hostUp: true, sessions: 0, version: "0.8.0", restart: "ready", restarting: false });
+    health = { ...health, running: 2 };
+    await platform.refreshStudio();
+    expect(card().studio).toMatchObject({ sessions: 2, restart: "busy" });
+
+    // The Host refuses (a session started meanwhile): said, nothing opened.
+    await platform.restartStudio();
+    expect(card().result).toEqual({ tone: "warn", text: "1 个会话进行中，没有重启。等它们停下后再重启 Studio。" });
+    expect(launched).toEqual([]);
+    // An older Host without the route.
+    stop = { ok: false, reason: "unsupported", message: "这个后台是更早的 Studio 启动的，不能从这里关掉。" };
+    await platform.restartStudio();
+    expect(card().result).toMatchObject({ tone: "error", text: expect.stringContaining("任务管理器") });
+    // Accepted, but the old shell does not end in time: the new one is not opened.
+    stop = { ok: true, pids: [4242, 4343] };
+    left = [4343];
+    await platform.restartStudio();
+    expect(waited.at(-1)).toEqual([4242, 4343]);
+    expect(card().result).toMatchObject({ tone: "error", text: expect.stringContaining("旧的 Studio 还没退出（进程 4343") });
+    expect(launched).toEqual([]);
+    // Both ended: the installed Studio opens with its data dir.
+    left = [];
+    health = { ok: true, pid: 5000, running: 0, version: "0.9.0" };
+    await platform.restartStudio();
+    expect(card().result).toEqual({ tone: "ok", text: "已重启 Studio，现在是 0.9.0" });
+    expect(launched).toHaveLength(1);
+    expect(launched[0]!.file).toMatch(/\\0\.9\.0\\AMO Studio\.exe$/);
+    expect(launched[0]!.env.AMO_STUDIO_DATA_DIR).toBe(data);
+    expect(card().studio).toEqual({ hostUp: true, sessions: 0, version: "0.9.0", restart: "none", restarting: false });
+    // A Host too old to say its version.
+    health = { ok: true, pid: 5000, running: 0 };
+    await platform.refreshStudio();
+    expect(card().studio).toMatchObject({ version: null, restart: "unsupported" });
   });
 });

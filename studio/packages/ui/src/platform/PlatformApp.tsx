@@ -425,11 +425,30 @@ function statusLine(t: ToolView): { tone: "ok" | "warn" | "idle"; text: string }
   }
 }
 
+/** Studio's card (2026-10-29): whether its Host (后台) runs, with how many sessions and which version, when installed. */
 function studioLine(t: ToolView): string | null {
   const s = t.studio;
-  if (!s?.hostUp) return null;
-  const sessions = s.sessions === null ? "有几个会话在跑看不到（Studio 版本较旧）" : s.sessions === 0 ? "没有会话在跑" : `有 ${s.sessions} 个会话在跑`;
-  return `Studio 的后台在运行 · ${sessions}`;
+  if (!s || !t.installed) return null;
+  if (!s.hostUp) return "○ 后台没在运行";
+  const sessions = s.sessions === null ? "看不到有几个会话在跑" : s.sessions === 0 ? "没有会话在跑" : `${s.sessions} 个会话进行中`;
+  const version = s.version === null ? "" : s.version === "dev" ? " · 后台是开发版" : ` · 后台版本 ${s.version}`;
+  return `✓ 后台在运行 · ${sessions}${version}`;
+}
+
+/** Why 重启 Studio is offered, or why it cannot be clicked now; null when there is nothing to say. */
+function studioRestartLine(t: ToolView): string | null {
+  const s = t.studio;
+  if (!s || !t.installed) return null;
+  switch (s.restart) {
+    case "ready":
+      return `! 正在运行的后台还是 ${s.version}，已装的是 ${t.installed}：重启 Studio 才会用上。`;
+    case "busy":
+      return `! 正在运行的后台还是 ${s.version}，已装的是 ${t.installed}。${s.sessions} 个会话进行中，停下后再重启。`;
+    case "unsupported":
+      return "这个后台是更早的 Studio 启动的，看不到它的版本，也不能从这里重启。";
+    default:
+      return null;
+  }
 }
 
 function taskLine(task: TaskView): string {
@@ -453,6 +472,7 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
   const busy = t.task !== null;
   const status = statusLine(t);
   const studio = studioLine(t);
+  const studioRestart = studioRestartLine(t);
   const short = t.name.replace(/（独立版）$/, "");
 
   const open = () => {
@@ -470,6 +490,16 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
   if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
+  // 重启 Studio (2026-10-29): the Host is older than what is installed; never while sessions are at work (AGENTS.md, 6).
+  const st = t.studio;
+  if (st && (st.restart === "ready" || st.restart === "busy" || st.restarting))
+    actions.unshift({
+      label: st.restarting ? "正在重启…" : "重启 Studio",
+      kind: "primary",
+      run: () => void call("restartStudio"),
+      disabled: st.restarting || st.restart === "busy",
+      title: st.restart === "busy" ? `${st.sessions} 个会话进行中，停下后再重启` : "关掉正在运行的 Studio 和它的后台，再用已装的版本打开",
+    });
 
   // The rest in 「⋯」 (2026-10-28, the user: going back a version is not shown on the card): 换成, 回到, 卸载.
   const more: MenuItem[] = [];
@@ -491,7 +521,16 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
           <div className={`pf-status ${status.tone}`} data-testid={`tool-${t.id}-status`}>
             {status.text}
           </div>
-          {studio && <div className="pf-hint">{studio}</div>}
+          {studio && (
+            <div className="pf-hint" data-testid="tool-studio-host">
+              {studio}
+            </div>
+          )}
+          {studioRestart && (
+            <div className={`pf-hint${t.studio?.restart === "unsupported" ? "" : " pf-warn-text"}`} data-testid="tool-studio-restart">
+              {studioRestart}
+            </div>
+          )}
           {t.hint && <div className="pf-hint">{t.hint}</div>}
         </div>
         <div className="pf-actions">
@@ -516,7 +555,7 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
       {t.result && (
         <div className={`pf-result ${t.result.tone}`} role={t.result.tone === "error" ? "alert" : "status"} data-testid={`tool-${t.id}-result`}>
           <span>
-            {t.result.tone === "error" ? "! " : "✓ "}
+            {t.result.tone === "ok" ? "✓ " : "! "}
             {t.result.text}
           </span>
           <button type="button" className="pf-x" aria-label="知道了" title="知道了" onClick={() => void call("dismiss", t.id)}>

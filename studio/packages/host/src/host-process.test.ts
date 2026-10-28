@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProfile, Session, Task, TerminalAttach, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
-import { HostAlreadyRunningError, hostPaths, readHostInfo, startHost, type RunningHost } from "./host-process.js";
+import { HostAlreadyRunningError, hostPaths, readHostInfo, startHost, type RunningHost, type StartHostOptions } from "./host-process.js";
 import { FakeServers } from "./runtime/codex/fake-servers.test-support.js";
 import { TERMINAL_TOKEN_ENV } from "./service.js";
 import { MIGRATIONS } from "./store/migrations.js";
@@ -23,9 +23,9 @@ let servers: FakeServers;
 let launcher: RecordingTerminalLauncher;
 const running: RunningHost[] = [];
 
-async function boot() {
+async function boot(extra: Partial<StartHostOptions> = {}) {
   servers = new FakeServers(PROFILES);
-  const host = await startHost({ dataDir, port: 0, profiles: PROFILES, servers: Object.assign(servers, { stopAll: () => servers.close() }), launcher });
+  const host = await startHost({ dataDir, port: 0, profiles: PROFILES, servers: Object.assign(servers, { stopAll: () => servers.close() }), launcher, ...extra });
   running.push(host);
   return host;
 }
@@ -86,17 +86,67 @@ describe("Host process", () => {
   it("answers /api/health without the token, with the number of sessions at work and nothing else (2026-10-28)", async () => {
     const host = await boot();
     const health = async () => (await (await fetch(`${host.info.url}/api/health`)).json()) as Record<string, unknown>;
-    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0 });
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0, version: "dev" });
     const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
     const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { workspaceId: ws.id, firstSession: { profileId: "p-ds" } });
-    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0 });
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 0, version: "dev" });
     // Counted as the board's 进行中 counts them (sessionMoving): running, or waiting for the person mid-turn.
     host.service.store.updateSession(session.id, { status: "running" });
-    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 1 });
+    expect(await health()).toEqual({ ok: true, pid: process.pid, running: 1, version: "dev" });
     host.service.store.updateSession(session.id, { status: "awaiting-approval" });
     expect((await health()).running).toBe(1);
     host.service.store.updateSession(session.id, { status: "idle" });
     expect((await health()).running).toBe(0);
+  });
+
+  it("/api/health says the version of the Studio that started the Host (2026-10-29)", async () => {
+    const host = await boot({ version: "0.9.4" });
+    const res = await fetch(`${host.info.url}/api/health`);
+    expect(await res.json()).toEqual({ ok: true, pid: process.pid, running: 0, version: "0.9.4" });
+  });
+
+  it("POST /api/shutdown needs the token, refuses while sessions are at work unless told to interrupt them, then stops the Host and marks why (2026-10-29)", async () => {
+    let exited = 0;
+    const host = await boot({ exit: () => exited++ });
+    const shutdown = (body: unknown, token: string | null = host.token) =>
+      fetch(`${host.info.url}/api/shutdown`, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+    // Never without the token (POST is never open), not even with nothing at work.
+    expect((await shutdown({}, null)).status).toBe(401);
+    expect((await shutdown({}, "wrong")).status).toBe(401);
+    const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
+    const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { workspaceId: ws.id, firstSession: { profileId: "p-ds" } });
+    host.service.store.updateSession(session.id, { status: "running" });
+    // A session at work: refused, with how many, and the Host goes on.
+    const refused = await shutdown({});
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ ok: false, running: 1 });
+    expect((await shutdown({ interrupt: "yes" })).status).toBe(409);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(exited).toBe(0);
+    expect(existsSync(hostPaths(dataDir).exit)).toBe(false);
+    expect(((await (await fetch(`${host.info.url}/api/health`)).json()) as { ok: boolean }).ok).toBe(true);
+    // Told to interrupt it: accepted, then the Host stops — the mark, host.json and the lock gone, exit called.
+    const accepted = await shutdown({ interrupt: true });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toEqual({ ok: true, running: 1 });
+    await expect.poll(() => exited, { timeout: 5000 }).toBe(1);
+    expect(JSON.parse(readFileSync(hostPaths(dataDir).exit, "utf8"))).toMatchObject({ pid: process.pid, reason: "shutdown" });
+    expect(readHostInfo(dataDir)).toBeNull();
+    expect(existsSync(hostPaths(dataDir).lock)).toBe(false);
+    await expect(fetch(`${host.info.url}/api/health`)).rejects.toThrow();
+    running.splice(running.indexOf(host), 1);
+    // The next Host clears the mark: it has not been asked to stop.
+    await boot();
+    expect(existsSync(hostPaths(dataDir).exit)).toBe(false);
+  });
+
+  it("POST /api/shutdown with nothing at work stops the Host without asking to interrupt (2026-10-29)", async () => {
+    let exited = 0;
+    const host = await boot({ exit: () => exited++ });
+    expect(await call(host, "POST", "/api/shutdown", {})).toEqual({ ok: true, running: 0 });
+    await expect.poll(() => exited, { timeout: 5000 }).toBe(1);
+    expect(readHostInfo(dataDir)).toBeNull();
+    running.splice(running.indexOf(host), 1);
   });
 
   it("clears a stale lock left by a dead process", async () => {

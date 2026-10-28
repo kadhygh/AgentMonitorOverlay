@@ -174,6 +174,12 @@ function createWindow(): BrowserWindow {
   });
   // Coming forward: what runs may have changed (a tool closed, Studio's sessions).
   w.on("focus", () => void platform.refresh());
+  // Studio's card (2026-10-29: its Host's state, and whether 重启 Studio can be clicked): asked again every 10 s while the
+  // window is shown — only the Host's /api/health, not the server or Windows' process list.
+  const studioTimer = setInterval(() => {
+    if (!w.isDestroyed() && w.isVisible() && !w.isMinimized()) void platform.refreshStudio().catch(() => undefined);
+  }, 10_000);
+  w.on("closed", () => clearInterval(studioTimer));
   void w.loadURL(PAGE);
   return w;
 }
@@ -249,7 +255,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());

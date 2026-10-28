@@ -22,6 +22,16 @@ export interface StudioHealthView {
   hostUp: boolean;
   /** Sessions running, when the Host says (/api/health → running); null when it does not. */
   sessions: number | null;
+  /** The Studio version that started the Host (/api/health → version, 2026-10-29): "dev" from the sources; null when an older Host does not say. */
+  version: string | null;
+  /**
+   * 重启 Studio (system.ts's studioRestart): "ready" — the Host is older than the installed Studio and nothing is at work;
+   * "busy" — older, but sessions are at work (not until they stop); "unsupported" — a Host too old to say its version or
+   * be asked to stop; "none".
+   */
+  restart: "none" | "ready" | "busy" | "unsupported";
+  /** 重启 Studio is under way: stopping the old one, then opening the installed one. */
+  restarting: boolean;
 }
 
 export interface ToolView {
@@ -137,6 +147,13 @@ export interface PlatformCalls {
   rollback(tool: string): Promise<void>;
   uninstall(tool: string): Promise<void>;
   open(tool: string): Promise<OpenResult>;
+  /**
+   * 重启 Studio (2026-10-29): the running Studio and its Host stop (refused by the Host while sessions are at work), then
+   * the installed Studio opens. Only when clicked (AGENTS.md, constraint 6).
+   */
+  restartStudio(): Promise<void>;
+  /** Studio's card: its Host asked again (opening 工具, every 10 s while the window is shown). */
+  refreshStudio(): Promise<void>;
   setChannel(channel: Channel): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
   pickStudioDataDir(): Promise<void>;

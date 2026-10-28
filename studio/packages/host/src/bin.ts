@@ -9,7 +9,8 @@ import { HOST_START_FAILED, type HostStartFailedMessage } from "@amo-studio/prot
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
 // Env: AMO_STUDIO_DATA_DIR (default studio/.data), AMO_STUDIO_PORT (default 47900), AMO_STUDIO_UI_DIR,
-// AMO_STUDIO_DEV_ORIGIN (allowed CORS origin for the Vite dev server).
+// AMO_STUDIO_DEV_ORIGIN (allowed CORS origin for the Vite dev server), AMO_STUDIO_VERSION (the Studio that starts it,
+// for /api/health; "dev" when not given).
 // Test-only: AMO_STUDIO_TEST_PROVIDER_URL (+ AMO_STUDIO_TEST_CATALOG, AMO_STUDIO_TEST_CODEX_HOME) replaces every model
 // profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home;
 // AMO_STUDIO_TEST_CLAUDE_URL adds a Claude profile routed to the mock Anthropic API; AMO_STUDIO_TEST_DSH_AGENT (a
@@ -111,6 +112,9 @@ try {
     ...(process.env.AMO_STUDIO_UI_DIR ? { uiDir: process.env.AMO_STUDIO_UI_DIR } : {}),
     ...(process.env.AMO_STUDIO_DEV_ORIGIN ? { allowedOrigins: [process.env.AMO_STUDIO_DEV_ORIGIN] } : {}),
     ...testModelOptions(),
+    version: process.env.AMO_STUDIO_VERSION || "dev",
+    // POST /api/shutdown (完全退出, 重启 Studio) stopped it: the process ends too.
+    exit: () => process.exit(0),
     // Test runs never open terminal windows (LOOP_RULES red line 7); launches are only recorded.
     ...(process.env.AMO_STUDIO_TEST === "1" ? { launcher: new RecordingTerminalLauncher() } : {}),
     // 远程 (2026-10-29): the AMO platform's login and device in %APPDATA%\AMO (AMO_HOME moves it; e2e runs set it).

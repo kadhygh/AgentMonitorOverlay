@@ -9,10 +9,10 @@ import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.j
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
-import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
+import { foldersInUse, runningExePaths, stopStudio, studioHealth, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
 import type { EnvironmentView } from "./environment-view.js";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
+import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -59,7 +59,14 @@ export interface PlatformOptions {
   /** Whether the platform's folder takes files, and the drive it is on (root-check.ts; tests hand in their own). */
   rootWritable?: (root: string) => boolean;
   rootDrive?: (root: string) => Promise<RootDrive>;
+  /** 重启 Studio: asks the running Studio's Host to stop (system.ts's stopStudio; tests hand in their own). */
+  stopStudio?: (dataDir: string) => Promise<StudioStop>;
+  /** 重启 Studio: waits for the old processes to end, returns those still running (system.ts's waitForExit). */
+  waitForExit?: (pids: readonly number[], timeoutMs: number) => Promise<number[]>;
 }
+
+/** How long 重启 Studio waits for the old Studio and its Host to end (closing sessions and app-servers takes a moment). */
+const STUDIO_STOP_WAIT_MS = 60_000;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -71,7 +78,9 @@ export class Platform implements PlatformCalls {
   private readonly manifests = new Map<string, Manifest>();
   private connection: PlatformView["connection"] = { state: "idle", message: null };
   private running: Record<string, boolean> = {};
-  private studio: StudioHealthView = { hostUp: false, sessions: null };
+  private studio: StudioHealth = { hostUp: false, sessions: null, version: null };
+  /** 重启 Studio is under way. */
+  private studioRestarting = false;
   private readonly tasks = new Map<string, TaskView>();
   private readonly results = new Map<string, ToolView["result"]>();
   private loginError: string | null = null;
@@ -165,7 +174,7 @@ export class Platform implements PlatformCalls {
         hint,
         task: this.tasks.get(id) ?? null,
         result: this.results.get(id) ?? null,
-        studio: id === "studio" ? this.studio : null,
+        studio: id === "studio" ? { ...this.studio, restart: studioRestart(this.studio, installed), restarting: this.studioRestarting } : null,
       };
     });
     return {
@@ -535,6 +544,57 @@ export class Platform implements PlatformCalls {
     // It takes a moment to show up among the processes.
     setTimeout(() => void this.checkRunning(this.toolIds()).then((r) => ((this.running = r), this.changed())).catch(() => undefined), 2000);
     return { ok: true };
+  }
+
+  /** Studio's card: its Host asked again (cheap: two small files and a local request), without the server or Windows. */
+  async refreshStudio(): Promise<void> {
+    this.studio = await studioHealth(readSettings(this.options.env).studioDataDir, this.options.fetch);
+    this.changed();
+  }
+
+  /**
+   * 重启 Studio (2026-10-29): the Host was started by an older Studio than the one installed. The Host is asked to stop
+   * (never cutting sessions: with any at work it refuses, and that is said), the old shell quits with it; once both have
+   * ended, the installed Studio opens as 打开 does (its data dir in AMO_STUDIO_DATA_DIR). Only when clicked (AGENTS.md,
+   * constraint 6).
+   */
+  async restartStudio(): Promise<void> {
+    const done = (tone: "ok" | "warn" | "error", text: string) => this.results.set("studio", { tone, text });
+    if (this.studioRestarting) return;
+    const dataDir = readSettings(this.options.env).studioDataDir;
+    if (!dataDir) {
+      done("error", "还没设 Studio 数据目录。");
+      return this.changed();
+    }
+    if (this.tasks.has("studio")) {
+      done("error", "Studio 正在安装或更新，等它做完再重启。");
+      return this.changed();
+    }
+    this.studioRestarting = true;
+    this.results.delete("studio");
+    this.changed();
+    try {
+      const stop = await (this.options.stopStudio ?? ((dir: string) => stopStudio(dir, this.options.fetch)))(dataDir);
+      if (!stop.ok) {
+        if (stop.reason === "running") done("warn", `${stop.running} 个会话进行中，没有重启。等它们停下后再重启 Studio。`);
+        else done("error", stop.reason === "unsupported" ? `${stop.message}关掉它要在任务管理器里结束，或者重启电脑。` : stop.message);
+        return;
+      }
+      const left = await (this.options.waitForExit ?? waitForExit)(stop.pids, STUDIO_STOP_WAIT_MS);
+      if (left.length) {
+        done("error", `旧的 Studio 还没退出（进程 ${left.join("、")}，等了 ${STUDIO_STOP_WAIT_MS / 1000} 秒），没有打开新版。它退出后点「打开」就是新版。`);
+        return;
+      }
+      const opened = await this.open("studio");
+      const installed = this.installer.currentVersion("studio");
+      done(opened.ok ? "ok" : "error", opened.ok ? `已重启 Studio${installed ? `，现在是 ${installed}` : ""}` : `旧的 Studio 已经退出，但新版没能打开：${opened.message}`);
+      // The new Host takes a moment to answer: asked again then.
+      if (opened.ok) setTimeout(() => void this.refreshStudio().catch(() => undefined), 5000).unref?.();
+    } finally {
+      this.studioRestarting = false;
+      this.studio = await studioHealth(dataDir, this.options.fetch);
+      this.changed();
+    }
   }
 
   // ---- settings

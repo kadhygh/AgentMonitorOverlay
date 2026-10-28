@@ -11,6 +11,8 @@ export interface HostConnection {
   token: string;
   /** Present when this shell started the Host. */
   child: ChildProcess | null;
+  /** The Host's process (host.json), to tell it was asked to stop (stoppedOnPurpose) and to wait for it to end. */
+  pid?: number;
 }
 
 export interface HostLinkOptions {
@@ -20,6 +22,8 @@ export interface HostLinkOptions {
   port?: number;
   /** Tests: keep the Host attached so it can be stopped with the app. */
   attached?: boolean;
+  /** Studio's version, handed to a Host this shell starts (its /api/health says it, for the AMO platform). */
+  version?: string;
   timeoutMs?: number;
 }
 
@@ -78,7 +82,7 @@ function current(dataDir: string): { url: string; token: string; pid: number } |
 export async function connectHost(options: HostLinkOptions): Promise<HostConnection> {
   mkdirSync(options.dataDir, { recursive: true });
   const existing = current(options.dataDir);
-  if (existing && (await ping(existing.url, existing.token))) return { url: existing.url, token: existing.token, child: null };
+  if (existing && (await ping(existing.url, existing.token))) return { url: existing.url, token: existing.token, child: null, pid: existing.pid };
 
   const log = openSync(join(options.dataDir, "host.log"), "a");
   const child = spawn(process.execPath, [options.hostBin], {
@@ -88,6 +92,7 @@ export async function connectHost(options: HostLinkOptions): Promise<HostConnect
       AMO_STUDIO_DATA_DIR: options.dataDir,
       ...(options.uiDir ? { AMO_STUDIO_UI_DIR: options.uiDir } : {}),
       ...(options.port !== undefined ? { AMO_STUDIO_PORT: String(options.port) } : {}),
+      ...(options.version ? { AMO_STUDIO_VERSION: options.version } : {}),
     },
     detached: !options.attached,
     stdio: ["ignore", log, log, "ipc"],
@@ -107,14 +112,14 @@ export async function connectHost(options: HostLinkOptions): Promise<HostConnect
     if (child.exitCode !== null) {
       // Exit code 3: another Host owns the data dir (started concurrently); use it.
       const other = current(options.dataDir);
-      if (other && (await ping(other.url, other.token))) return { url: other.url, token: other.token, child: null };
+      if (other && (await ping(other.url, other.token))) return { url: other.url, token: other.token, child: null, pid: other.pid };
       // Its message is sent before it exits, but may be read just after the exit is seen.
       for (let i = 0; i < 10 && refusal.message === null; i++) await new Promise((r) => setTimeout(r, 50));
       if (refusal.message !== null) throw new HostStartError(refusal.message, refusal.message);
       throw new HostStartError(`Host exited with code ${child.exitCode}; see ${join(options.dataDir, "host.log")}`);
     }
     const info = current(options.dataDir);
-    if (info && info.pid === child.pid && (await ping(info.url, info.token))) return { url: info.url, token: info.token, child };
+    if (info && info.pid === child.pid && (await ping(info.url, info.token))) return { url: info.url, token: info.token, child, pid: info.pid };
     await new Promise((r) => setTimeout(r, 150));
   }
   child.kill();
@@ -137,6 +142,13 @@ export interface KeepAliveOptions {
   /** Restarts allowed within `windowMs`; past that the shell stops trying (something keeps killing it). */
   maxRestarts?: number;
   windowMs?: number;
+  /**
+   * The Host went quiet because it was asked to stop (POST /api/shutdown: the tray's 完全退出, or the platform's 重启
+   * Studio, 2026-10-29): not started again; this is called instead, and the keepalive ends. Default check: host-exit.json
+   * names the Host's pid (stoppedOnPurpose).
+   */
+  onStopped?(): void;
+  stoppedOnPurpose?(conn: HostConnection): boolean;
 }
 
 /**
@@ -169,6 +181,14 @@ export function keepHostAlive(options: KeepAliveOptions): () => void {
         if (busySince !== null) options.log(`Host answers again after ${Math.round((Date.now() - busySince) / 1000)} s`);
         busySince = null;
         misses = 0;
+        return;
+      }
+      // Asked to stop: at the first missed answer, without waiting for more.
+      if (options.onStopped && (options.stoppedOnPurpose ?? ((c) => stoppedOnPurpose(options.link.dataDir, c.pid)))(conn)) {
+        stopped = true;
+        clearInterval(timer);
+        options.log("Host was asked to stop (host-exit.json); not starting it again");
+        options.onStopped();
         return;
       }
       if (++misses < needed || stopped) return;
@@ -206,6 +226,49 @@ export function keepHostAlive(options: KeepAliveOptions): () => void {
     stopped = true;
     clearInterval(timer);
   };
+}
+
+/** Whether the Host with this pid was asked to stop: POST /api/shutdown wrote host-exit.json naming it (a crash does not). */
+export function stoppedOnPurpose(dataDir: string, pid: number | undefined): boolean {
+  if (!pid) return false;
+  return readJson<{ pid?: unknown }>(join(dataDir, "host-exit.json"))?.pid === pid;
+}
+
+export type ShutdownAnswer =
+  | { ok: true; running: number }
+  /** Sessions are at work and `interrupt` was not given. */
+  | { ok: false; reason: "running"; running: number }
+  /** A Host from before 2026-10-29: it has no such route. */
+  | { ok: false; reason: "unsupported" }
+  | { ok: false; reason: "failed"; message: string };
+
+/** POST /api/shutdown (完全退出): `interrupt` only after the person agreed to cut the sessions at work. */
+export async function requestShutdown(conn: HostConnection, interrupt: boolean, timeoutMs = 5000): Promise<ShutdownAnswer> {
+  try {
+    const res = await fetch(`${conn.url}/api/shutdown`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${conn.token}`, "content-type": "application/json" },
+      body: JSON.stringify(interrupt ? { interrupt: true } : {}),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = (await res.json().catch(() => null)) as { running?: unknown; error?: { message?: unknown } } | null;
+    const running = typeof body?.running === "number" ? body.running : 0;
+    if (res.ok) return { ok: true, running };
+    if (res.status === 409 && running > 0) return { ok: false, reason: "running", running };
+    if (res.status === 404) return { ok: false, reason: "unsupported" };
+    return { ok: false, reason: "failed", message: typeof body?.error?.message === "string" ? body.error.message : `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, reason: "failed", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Waits until the process ends; false when it still runs after `timeoutMs`. */
+export async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  for (const until = Date.now() + timeoutMs; Date.now() < until; ) {
+    if (!alive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return !alive(pid);
 }
 
 /** Asks a Host started by this shell to stop (tests, or an explicit "quit Studio"). */

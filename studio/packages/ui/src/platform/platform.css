@@ -165,6 +165,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-profile-preview { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pf-aka { margin-left: 2px; color: var(--text-faint); font-weight: 400; }
 .pf-status.error { color: var(--error-text); }
+/* Studio's card: 重启 Studio is offered, or waits for sessions to stop (2026-10-29). */
+.pf-hint.pf-warn-text { color: var(--attention); }
 .pf-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin: 0 0 12px; align-items: baseline; }
 .pf-facts dt { font-size: var(--fs-sm); color: var(--text-dim); }
 .pf-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

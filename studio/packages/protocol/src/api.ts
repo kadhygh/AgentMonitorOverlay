@@ -397,9 +397,16 @@ export interface HostRoutes {
   /**
    * Whether the Host answers (the shell's keepalive). No token needed (2026-10-28). `running`: sessions at work, counted
    * as the board's 进行中 (running, waiting for the person mid-turn, about to go on by itself, or in a terminal), for the
-   * AMO platform to ask before it updates Studio.
+   * AMO platform to ask before it updates Studio. `version` (2026-10-29): the Studio that started this Host ("dev" from
+   * the sources), so the platform can tell a Host older than the Studio it has installed.
    */
-  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number } };
+  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number; version: string } };
+  /**
+   * Stops the Host (2026-10-29: the tray's 完全退出, the platform's 重启 Studio). Token needed. With sessions at work it
+   * answers 409 `{ ok: false, running }` unless `interrupt` is true (the person agreed to cut them). Accepted, the Host
+   * writes host-exit.json and stops; a shell on it quits too.
+   */
+  "POST /api/shutdown": { req: { interrupt?: boolean }; res: { ok: true; running: number } };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   /** 编辑项目: its name in Studio (the folder keeps its own) and its note; an empty note clears it. */

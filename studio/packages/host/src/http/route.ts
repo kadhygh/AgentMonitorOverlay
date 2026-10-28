@@ -36,6 +36,14 @@ export class FileReply {
   ) {}
 }
 
+/** A handler's JSON answer with a status of its own (e.g. 409 with the details a caller needs, not only a message). */
+export class JsonReply {
+  constructor(
+    readonly status: number,
+    readonly body: unknown,
+  ) {}
+}
+
 /** The raw body of a `rawBody` route. */
 export const bytes = (v: unknown): Buffer => {
   if (!Buffer.isBuffer(v)) throw new HostError("bad_request", "the body must be the file itself");

@@ -66,6 +66,13 @@ export interface StartHostOptions {
    * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
    */
   remote?: RemoteOptions;
+  /** Studio's version, for /api/health (bin.ts: AMO_STUDIO_VERSION from the shell, else "dev"). */
+  version?: string;
+  /**
+   * After POST /api/shutdown has stopped this Host (2026-10-29): bin.ts ends the process. The route is there either way;
+   * without this the Host only stops (tests).
+   */
+  exit?: () => void;
 }
 
 export interface RunningHost {
@@ -91,6 +98,8 @@ export const hostPaths = (dataDir: string) => ({
   info: join(dataDir, "host.json"),
   token: join(dataDir, "host-token"),
   mcpToken: join(dataDir, "mcp-token"),
+  /** Written when POST /api/shutdown stops the Host ({ pid, reason, at }): the shell sees it was asked to, not a crash. */
+  exit: join(dataDir, "host-exit.json"),
   db: join(dataDir, "studio.db"),
   codex: join(dataDir, "codex"),
   claudeHome: join(dataDir, "claude-home"),
@@ -153,10 +162,14 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   let claude: ClaudeRuntime | undefined;
   let dsh: DshRuntime | undefined;
   try {
+    // An earlier Host's 「asked to stop」 mark: this one has not been asked.
+    rmSync(paths.exit, { force: true });
     const token = loadOrCreateToken(paths.token);
     // Agents get a token that opens the read-only MCP only, never the writable REST API.
     const mcpToken = loadOrCreateToken(paths.mcpToken);
     let mcp: { url: string; token: string } | null = null;
+    /** The RunningHost returned below, for POST /api/shutdown (the server is made before it). */
+    let self: RunningHost | null = null;
     store = new Store(paths.db);
     const liveKv = store;
     // The event log only serves windows catching up: its newest part is kept, now and every hour (2026-10-20).
@@ -280,6 +293,21 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       port: options.port ?? HOST_DEFAULT_PORT,
       ...(options.uiDir ? { uiDir: options.uiDir } : {}),
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
+      ...(options.version ? { version: options.version } : {}),
+      // 完全退出 / 重启 Studio (2026-10-29): the mark first, so a shell that sees the Host go quiet knows it was asked to
+      // stop (host-link.ts) and quits with it instead of starting it again; then the same shutdown as SIGTERM.
+      onShutdown: (running) => {
+        console.log(`Asked to stop over HTTP${running ? ` (interrupting ${running} sessions at work)` : ""}`);
+        try {
+          writeFileSync(paths.exit, JSON.stringify({ pid: process.pid, reason: "shutdown", at: new Date().toISOString() }));
+        } catch (err) {
+          console.error(`could not write ${paths.exit}:`, err);
+        }
+        void self
+          ?.shutdown()
+          .catch((err: unknown) => console.error("stopping the Host failed:", err))
+          .finally(() => options.exit?.());
+      },
     });
     mcp = { url: `${http.url}/mcp`, token: mcpToken };
     if (options.remote) service.remote.start(options.remote);
@@ -304,7 +332,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         .then((n) => n && console.log(`Claude: filled in the tokens and speed of ${n} subagents from Claude Code's transcripts`))
         .catch((err: unknown) => console.log(`Claude subagent stats backfill failed: ${String(err)}`));
     }, 20_000).unref();
-    return {
+    self = {
       info,
       token,
       service,
@@ -324,6 +352,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         release();
       },
     };
+    return self;
   } catch (err) {
     await http?.close();
     await dsh?.closeAll();

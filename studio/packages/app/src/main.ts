@@ -1,10 +1,10 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectHost, HostStartError, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
+import { connectHost, HostStartError, keepHostAlive, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { platformDataDir, resolveDataDir } from "./paths.js";
@@ -23,14 +23,20 @@ import { installFolderIpc } from "./folders.js";
 //                         data/ next to the exe, see paths.ts)
 //   AMO_STUDIO_PORTABLE_DIR  tests: behave as the portable build installed in this folder
 //   AMO_STUDIO_DEV_URL    load the UI from the Vite dev server instead of the Host
-//   AMO_STUDIO_TEST=1     test mode: hidden window that never takes focus, Host stops with the app
+//   AMO_STUDIO_TEST=1     test mode: hidden window that never takes focus, Host stops with the app, no tray icon (its
+//                         menu is reached through globals instead)
 //   AMO_STUDIO_PORT       Host port (tests use 0)
+// The tray (2026-10-29, the user): × on the workbench only hides it; Studio and the Host stay, sessions go on. The tray
+// icon (or starting Studio again) brings the window back; its 完全退出 stops the Host too (POST /api/shutdown, asking
+// first when sessions are at work), and so does the AMO platform's 重启 Studio — either way this shell quits with it.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(here, "..", "..", "..");
 const testMode = process.env.AMO_STUDIO_TEST === "1";
 /** Window and taskbar icon (the exe's own icon is set when packaging). */
 const APP_ICON = join(here, "..", "assets", "icon.png");
+/** Studio's version, handed to the Host it starts (its /api/health says it, for the AMO platform); "dev" from the sources. */
+const STUDIO_VERSION = app.isPackaged ? app.getVersion() : "dev";
 // The portable build is Electron itself with Studio in resources/app; the exe's folder is the portable root.
 const portableDir = process.env.AMO_STUDIO_PORTABLE_DIR ?? (app.isPackaged ? dirname(process.execPath) : null);
 const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot, platformDataDir: app.isPackaged ? platformDataDir(app.getAppPath(), process.env) : null });
@@ -60,6 +66,11 @@ let host: HostConnection | null = null;
 let stopKeepAlive: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+/** The app is quitting: the workbench window really closes (otherwise × only hides it). */
+let appQuitting = false;
+/** 完全退出 is under way (asking, stopping the Host). */
+let quittingCompletely = false;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
 /** Whether the Focus window lets clicks through right now (点击穿透), for the trace. */
@@ -132,11 +143,130 @@ function bringForward(win: BrowserWindow): void {
   }, 300);
 }
 
+/** The workbench window back from the tray (or from behind other windows). Tests only show it, without activating. */
+function showMain(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (testMode) {
+    mainWindow.showInactive();
+    const g = globalThis as { __amoMainShown?: number };
+    g.__amoMainShown = (g.__amoMainShown ?? 0) + 1;
+    return;
+  }
+  bringForward(mainWindow);
+}
+
+/** A question of 完全退出: the system's dialog; in tests recorded and answered from __amoQuitAnswers (default: 取消). */
+async function ask(options: { message: string; detail: string; yes: string }): Promise<boolean> {
+  if (testMode) {
+    const g = globalThis as { __amoQuitAsked?: Array<{ message: string; detail: string; yes: string }>; __amoQuitAnswers?: boolean[] };
+    (g.__amoQuitAsked ??= []).push(options);
+    return g.__amoQuitAnswers?.shift() ?? false;
+  }
+  const r = await dialog.showMessageBox({ type: "warning", title: "完全退出 AMO Studio", message: options.message, detail: options.detail, buttons: [options.yes, "取消"], defaultId: 1, cancelId: 1, noLink: true });
+  return r.response === 0;
+}
+
+/**
+ * The tray's 完全退出 (2026-10-29): the Host stops too, then this shell. With sessions at work the Host refuses until the
+ * person agrees to cut them (asked once the Host has said how many, so a session started meanwhile is counted). A Host
+ * that cannot be asked (an older one without the route, or one not answering) is left as it is, after saying so.
+ */
+async function quitCompletely(): Promise<void> {
+  if (quittingCompletely) return;
+  const conn = host;
+  if (!conn) {
+    appQuitting = true;
+    app.quit();
+    return;
+  }
+  quittingCompletely = true;
+  try {
+    let answer = await requestShutdown(conn, false);
+    if (!answer.ok && answer.reason === "running") {
+      const n = answer.running;
+      const yes = await ask({
+        message: `有 ${n} 个会话正在进行，完全退出会中断${n === 1 ? "它" : "它们"}。`,
+        detail: "完全退出会连 Studio 的后台（Host）一起关掉，这些会话正在做的事会被打断。\n只想关掉窗口的话，点窗口右上角的 ×：会话会在后台继续，点托盘图标就能回来。",
+        yes: "中断会话并退出",
+      });
+      if (!yes) return;
+      answer = await requestShutdown(conn, true);
+    }
+    if (!answer.ok) {
+      if (answer.reason === "running") return; // more came up while asking: the person asks again
+      const pid = conn.pid ? `（进程 ${conn.pid}）` : "";
+      const why = answer.reason === "unsupported" ? `Studio 的后台${pid}是更早的版本启动的，不能从这里关掉。` : `Studio 的后台${pid}没有回应，没能让它关掉：${answer.message}`;
+      const yes = await ask({ message: why, detail: "可以只退出 Studio 的窗口和托盘，后台留着；要关掉后台，可以在任务管理器里结束它，或者重启电脑。", yes: "只退出窗口和托盘" });
+      if (!yes) return;
+      trace?.note("host", `完全退出: the Host was left running (${answer.reason})`);
+    } else {
+      // Stopping: nothing to start again; out of sight while the Host finishes (closing sessions takes a moment).
+      stopKeepAlive?.();
+      mainWindow?.hide();
+      focusWindow?.hide();
+      tray?.setToolTip("AMO Studio · 正在退出…");
+      trace?.note("host", `完全退出: the Host is stopping${answer.running ? ` (${answer.running} sessions interrupted)` : ""}`);
+      if (conn.pid && !(await waitForExit(conn.pid, 30_000))) trace?.note("host", "完全退出: the Host still runs after 30 s; quitting anyway");
+    }
+    appQuitting = true;
+    app.quit();
+  } finally {
+    quittingCompletely = false;
+  }
+}
+
+function trayItems(): Array<{ label: string; click: () => void } | { type: "separator" }> {
+  return [{ label: "打开 Studio", click: showMain }, { type: "separator" }, { label: "完全退出", click: () => void quitCompletely() }];
+}
+
+/** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs), else the window icon shrunk. */
+function trayImage(): Electron.NativeImage {
+  const image = nativeImage.createEmpty();
+  for (const [size, scaleFactor] of [
+    [16, 1],
+    [20, 1.25],
+    [24, 1.5],
+    [32, 2],
+  ] as const) {
+    const file = join(here, "..", "assets", `icon-${size}.png`);
+    if (existsSync(file)) image.addRepresentation({ scaleFactor, buffer: readFileSync(file) });
+  }
+  return image.isEmpty() ? nativeImage.createFromPath(APP_ICON).resize({ width: 16, height: 16 }) : image;
+}
+
+function createTray(): void {
+  tray = new Tray(trayImage());
+  tray.setToolTip("AMO Studio");
+  tray.on("click", showMain);
+  tray.setContextMenu(Menu.buildFromTemplate(trayItems()));
+}
+
+/**
+ * shell.json in the data dir (2026-10-29): this shell's pid, so the AMO platform's 重启 Studio can wait for it to end
+ * before starting the new version (otherwise the new one would only find this one by the single-instance lock).
+ */
+const shellFile = join(dataDir, "shell.json");
+function writeShellFile(): void {
+  try {
+    writeFileSync(shellFile, JSON.stringify({ pid: process.pid, version: STUDIO_VERSION, startedAt: new Date().toISOString() }, null, 2));
+  } catch {
+    // the platform then only waits for the Host
+  }
+}
+function removeShellFile(): void {
+  try {
+    const was = JSON.parse(readFileSync(shellFile, "utf8")) as { pid?: unknown };
+    if (was.pid === process.pid) rmSync(shellFile, { force: true });
+  } catch {
+    // not there, or another shell's
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    // A user launched Studio again: bring the existing window forward (never happens in tests).
+    // A user launched Studio again: bring the existing window forward, also out of the tray (never happens in tests).
     if (mainWindow && !testMode) bringForward(mainWindow);
   });
 
@@ -362,8 +492,10 @@ if (!app.requestSingleInstanceLock()) {
         uiDir: join(studioRoot, "packages", "ui", "dist"),
         ...(process.env.AMO_STUDIO_PORT !== undefined ? { port: Number(process.env.AMO_STUDIO_PORT) } : {}),
         attached: testMode,
+        version: STUDIO_VERSION,
       };
       host = await connectHost(link);
+      writeShellFile();
       // The Host crashed or was killed: start it again; the windows reconnect and say what happened.
       stopKeepAlive = keepHostAlive({
         link,
@@ -378,6 +510,12 @@ if (!app.requestSingleInstanceLock()) {
           trace?.note("host", line);
         },
         ...(process.env.AMO_STUDIO_KEEPALIVE_MS ? { intervalMs: Number(process.env.AMO_STUDIO_KEEPALIVE_MS) } : {}),
+        // Asked to stop (完全退出 from another place, the platform's 重启 Studio): this shell goes with it (2026-10-29).
+        onStopped: () => {
+          trace?.note("host", "the Host was asked to stop; quitting with it");
+          appQuitting = true;
+          app.quit();
+        },
       });
       mainWindow = createMainWindow(host);
       mainWindow.on("closed", () => {
@@ -389,6 +527,16 @@ if (!app.requestSingleInstanceLock()) {
         viewers.closeAll();
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
+      // The tray (2026-10-29). Tests make no icon: they reach its menu through these.
+      if (!testMode) createTray();
+      else
+        Object.assign(globalThis, {
+          __studioTray: () => trayItems().map((i) => ("label" in i ? i.label : "—")),
+          __studioTrayClick: (label: string) => {
+            const item = trayItems().find((i) => "label" in i && i.label === label);
+            if (item && "click" in item) item.click();
+          },
+        });
       // 便签 is a program of its own (packages/notes, 2026-10-23): started with Studio, brought up from the title bar.
       installNotesLink({ studioRoot, dataDir, host, testMode, log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
       // The file marks window (文件标记).
@@ -433,6 +581,8 @@ if (!app.requestSingleInstanceLock()) {
 
   let quitting = false;
   app.on("before-quit", (event) => {
+    // Now the workbench window really closes (× only hides it).
+    appQuitting = true;
     // Quitting stops (in tests) or leaves the Host; it is not to be restarted.
     stopKeepAlive?.();
     // The Host is resident; only a Host this shell attached (tests) stops with the app.
@@ -440,6 +590,11 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     quitting = true;
     void stopHost(host).finally(() => app.quit());
+  });
+  app.on("will-quit", () => {
+    removeShellFile();
+    tray?.destroy();
+    tray = null;
   });
 
   // A window's page process crashed (or ran out of memory): load it again; the Host and the sessions never stopped.
@@ -506,6 +661,17 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       event.preventDefault();
       trace?.note("main", `min-refused ${next.width}×${next.height}`);
     });
+  // × (the page's, Alt+F4) only hides the window (2026-10-29, the user): Studio and the Host stay, in the tray, and the
+  // sessions go on. Quitting (完全退出, the platform's restart, Windows shutting down) closes it for real.
+  win.on("close", (event) => {
+    if (appQuitting) return;
+    event.preventDefault();
+    win.hide();
+    trace?.note("main", "hidden (×): Studio stays in the tray");
+  });
+  win.on("session-end", () => {
+    appQuitting = true;
+  });
   win.on("maximize", () => win.webContents.send("amo:window-maximized", true));
   win.on("unmaximize", () => win.webContents.send("amo:window-maximized", false));
   // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.

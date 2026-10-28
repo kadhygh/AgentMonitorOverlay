@@ -4,7 +4,8 @@
 // - Each tool's own icon (2026-10-28, the user's pick 方向一「取景框」): design/icon/tools/<tool>.svg is the full drawing,
 //   used from 32 px up; <tool>-small.svg is the 16–24 px cut (heavier corners at the edge, a bigger tile). Per tool:
 //   - Studio: the UI's icon.svg (ui/public: favicon, Focus, the running mark in the conversation), the window icon
-//     (app/assets/icon.png) and the exe icon (app/assets/icon.ico); design/icon/viewfinder-512.png (an e2e test picture).
+//     (app/assets/icon.png), the tray icon-16…32.png (2026-10-29) and the exe icon (app/assets/icon.ico);
+//     design/icon/viewfinder-512.png (an e2e test picture).
 //   - Reviewer: reviewer/assets/icon.png (its windows when it runs on its own) and icon.ico (its exe).
 //   - 便签: notes/assets/icon.png and icon-16…64.png (window, tray, and package-portable.mjs builds its exe icon from them).
 //   - 平台: platform/assets/icon.png, icon-16…32.png (tray) and icon.ico.
@@ -93,6 +94,7 @@ const studioIcon = tool("studio");
 writeFileSync(join(studio, "design", "icon", "viewfinder-512.png"), await studioIcon.png(512));
 writeFileSync(join(assets("app"), "icon.png"), await studioIcon.png(256));
 writeFileSync(join(assets("app"), "icon.ico"), await ico(studioIcon));
+await trayPngs(studioIcon, assets("app"));
 copyFileSync(studioIcon.svgPath, join(studio, "packages", "ui", "public", "icon.svg"));
 
 // AMO Reviewer.

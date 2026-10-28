@@ -212,7 +212,8 @@ function WindowControls() {
           {maximized ? <path d="M2.5 2.5 V0.5 H9.5 V7.5 H7.5 M0.5 2.5 H7.5 V9.5 H0.5 Z" /> : <path d="M0.5 0.5 H9.5 V9.5 H0.5 Z" />}
         </svg>
       </button>
-      <button type="button" className="win-btn close" aria-label="关闭" title="关闭" onClick={api.close}>
+      {/* 2026-10-29: × only hides the window; Studio and the sessions go on in the tray (完全退出 is in the tray's menu). */}
+      <button type="button" className="win-btn close" aria-label="关闭" title="关闭窗口（Studio 留在托盘里，会话继续；完全退出在托盘图标的右键菜单里）" onClick={api.close}>
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5" />
         </svg>
