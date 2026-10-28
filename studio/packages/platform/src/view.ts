@@ -83,12 +83,26 @@ export interface RootView {
   drive: "local" | "network" | "removable" | "unknown";
 }
 
+/** 账号 (2026-10-28: moved here from the relay client): what the team server says of the account (GET /api/me). */
+export interface ProfileView {
+  /** The team server's name (e.g. 「策划组」), "" when it has none. */
+  service: string;
+  /** 负责什么. */
+  role: string;
+  /** "" for none: the account name is shown. */
+  nick: string;
+  /** A data: URL, or null for the initial on a colour. */
+  avatar: string | null;
+}
+
 export interface PlatformView {
   /** The platform's own version. */
   version: string;
   self: SelfView;
   testMode: boolean;
   account: { server: string; name: string } | null;
+  /** The account's profile: read with the channels (refresh); `profile` stays what was last read when a read fails. */
+  profile: { state: "idle" | "loading" | "ready" | "error"; data: ProfileView | null; message: string | null };
   /** The login page: why it is shown again (a key that stopped working), or why the last try failed. */
   loginError: string | null;
   loggingIn: boolean;
@@ -114,6 +128,10 @@ export interface PlatformCalls {
   /** For the register form: whether the server is there and wants the invite passphrase. */
   serverInfo(server: string): Promise<ServerCheck>;
   logout(): Promise<void>;
+  /** 账号: the profile read again from the team server. */
+  loadProfile(): Promise<void>;
+  /** 账号's 保存: the nickname, picture and 负责什么 on the team server (PATCH /api/me); errors come back to the page. */
+  saveProfile(patch: ProfilePatch): Promise<ProfileSaveResult>;
   refresh(): Promise<void>;
   install(tool: string): Promise<void>;
   rollback(tool: string): Promise<void>;
@@ -148,6 +166,15 @@ export interface RegisterForm {
 
 /** `code` as @amo-studio/account's AccountError: conflict = the name is taken, unauthorized = the passphrase is wrong. */
 export type RegisterResult = { ok: true } | { ok: false; code: string; message: string };
+
+/** Only what is given changes (@amo-studio/account's ProfilePatch); avatar null for the initial. */
+export interface ProfilePatch {
+  nick?: string;
+  role?: string;
+  avatar?: string | null;
+}
+
+export type ProfileSaveResult = { ok: true } | { ok: false; message: string };
 
 export type ServerCheck = { ok: true; name: string | null; invite: boolean } | { ok: false; message: string };
 

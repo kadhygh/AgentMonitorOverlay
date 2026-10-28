@@ -95,7 +95,7 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
         </button>
       </div>
       <div className="me-row">
-        <button type="button" className="me-chip" title={`编辑资料：昵称、头像、负责什么 · 服务器 ${session.me.server}`} onClick={props.onProfile}>
+        <button type="button" className="me-chip" title={`我的资料（昵称、头像、负责什么在 AMO 平台的「账号」里改） · 服务器 ${session.me.server}`} onClick={props.onProfile}>
           <Avatar name={session.me.name} />
           <span className="me-lines">
             <span className="me-name">

@@ -188,6 +188,66 @@ export async function logout(options: AccountOptions = {}): Promise<void> {
   }
 }
 
+// ---- 资料 (2026-10-28, the user: editing the nickname, picture and 负责什么 moved from the relay client to the platform's
+// 账号 page). The relay service's GET / PATCH /api/me (server.ts, store.setProfile), with the account's key.
+
+/** What the team sees of an account (GET /api/me). */
+export interface Profile {
+  name: string;
+  /** The service's name (e.g. 「策划组」), "" when it has none. */
+  service: string;
+  /** 负责什么: the relay's AI reads it to decide whom to ask. */
+  role: string;
+  /** "" for none: the account name is shown. */
+  nick: string;
+  /** A data: URL (PNG, JPEG or WebP), null for the initial on a colour. */
+  avatar: string | null;
+}
+
+export type ProfilePatch = Partial<Pick<Profile, "nick" | "role" | "avatar">>;
+
+/** The service's limits (store.ts: LIMITS.name for the nickname, LIMITS.role, the avatar check in setProfile). */
+export const PROFILE_LIMITS = { nick: 32, role: 60, avatarChars: 96 * 1024 } as const;
+
+/**
+ * Why the service would refuse this change, in its words, or null. Checked here first so the platform can say so
+ * without a round trip; the service checks again and its message is what counts.
+ */
+export function profileProblem(p: ProfilePatch): string | null {
+  if (p.nick !== undefined) {
+    const nick = p.nick.trim();
+    if (nick.length > PROFILE_LIMITS.nick) return `昵称 太长（最多 ${PROFILE_LIMITS.nick} 字）`;
+    if (/[\u0000-\u001f\u007f]/.test(nick)) return "昵称里不能有控制字符";
+  }
+  if (p.role !== undefined && p.role.trim().length > PROFILE_LIMITS.role) return `角色 太长（最多 ${PROFILE_LIMITS.role} 字）`;
+  if (p.avatar && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(p.avatar) || p.avatar.length > PROFILE_LIMITS.avatarChars)) return "头像要是不超过 64 KB 的 PNG、JPEG 或 WebP 图片";
+  return null;
+}
+
+type KeyedAccount = Pick<Account, "server" | "key">;
+
+/** The account's profile from its server (`GET /api/me`). Throws AccountError (unauthorized: the key no longer works). */
+export async function fetchProfile(account: KeyedAccount, options: AccountOptions = {}): Promise<Profile> {
+  const r = await call<{ name?: unknown; service?: unknown; role?: unknown; nick?: unknown; avatar?: unknown }>(options.fetch ?? fetch, `${account.server}/api/me`, { method: "GET", headers: { authorization: `Bearer ${account.key}` } });
+  if (typeof r.name !== "string") throw new AccountError("not_amo", "这个地址上不是 AMO 的团队服务器");
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return { name: r.name, service: str(r.service), role: str(r.role), nick: str(r.nick), avatar: typeof r.avatar === "string" && r.avatar ? r.avatar : null };
+}
+
+/**
+ * Changes the account's profile on its server (`PATCH /api/me`; only what is given changes, text trimmed, avatar null
+ * or "" for none). Checked first with profileProblem (bad_request); then the service's message, as it says it.
+ */
+export async function updateProfile(account: KeyedAccount, patch: ProfilePatch, options: AccountOptions = {}): Promise<void> {
+  const problem = profileProblem(patch);
+  if (problem) throw new AccountError("bad_request", problem);
+  const body: Record<string, unknown> = {};
+  if (patch.nick !== undefined) body.nick = patch.nick.trim();
+  if (patch.role !== undefined) body.role = patch.role.trim();
+  if (patch.avatar !== undefined) body.avatar = patch.avatar || null;
+  await call<{ ok?: unknown }>(options.fetch ?? fetch, `${account.server}/api/me`, { method: "PATCH", headers: { "content-type": "application/json", authorization: `Bearer ${account.key}` }, body: JSON.stringify(body) });
+}
+
 /** Puts `server` first, without repeats, at most RECENT_SERVERS_MAX. */
 export function pushRecent(list: readonly string[], server: string, max = RECENT_SERVERS_MAX): string[] {
   const s = normalizeServer(server);

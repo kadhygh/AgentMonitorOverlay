@@ -25,6 +25,8 @@ const built = join(process.env.AMO_RELAY_E2E_RELEASE ?? join(studio, "release", 
 const shots = join(studio, "screenshots", "relay");
 
 const relay = await import(pathToFileURL(join(studio, "packages", "relay", "dist", "index.js")).href) as typeof import("../../packages/relay/src/index.js");
+// The platform's account module: the profile is edited there now (2026-10-28), against this same service.
+const account = await import(pathToFileURL(join(studio, "packages", "account", "dist", "index.js")).href) as typeof import("../../packages/account/src/index.js");
 
 let root: string;
 let publicDir: string;
@@ -359,11 +361,20 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".scope-nav .srow", { hasText: "美术小周" })).toContainText("3 人");
   await b.page.locator(".view-tab", { hasText: "聊天" }).click();
 
-  // 编辑资料: a nickname shows first, the account name faintly after it.
+  // 我的资料 (2026-10-28): shown here, edited in AMO 平台's 账号 — the me-chip opens it with no way to edit.
   await a.page.locator(".me-chip").click();
-  await a.page.locator(".dialog").getByPlaceholder("策划小王", { exact: true }).fill("小王");
+  const mine = a.page.locator(".settings-dialog");
+  await expect(mine.locator(".settings-nav [aria-current=page]")).toHaveText("我的资料");
+  await expect(mine.getByTestId("profile-in-platform")).toHaveText("在 AMO 平台的「账号」里改昵称、头像和负责什么，改完这里会跟着变。");
+  await expect(mine.getByRole("button", { name: "编辑资料" })).toHaveCount(0);
+  await expect(mine.locator("input")).toHaveCount(0);
+  // The platform's way (@amo-studio/account's updateProfile, with this account's key): a nickname shows first, the
+  // account name faintly after it, in the open client and the other one, without a restart.
+  const planner = await new relay.RelayClient(server.url).login("策划小王", "pw-1234");
+  await account.updateProfile({ server: server.url, key: planner.key }, { nick: "小王" });
+  await expect(mine.locator(".me-card b")).toHaveText("小王(策划小王)");
   await shot(a.app, "20-profile");
-  await a.page.getByRole("button", { name: "保存", exact: true }).click();
+  await a.page.keyboard.press("Escape");
   await expect(a.page.locator(".me-chip .me-name")).toHaveText("小王(策划小王)");
   await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".aka")).toHaveText("(策划小王)");
 

@@ -5,7 +5,8 @@ import { listenInStudioRange } from "./ports.js";
 
 // A stand-in for the team server's side of AMO 平台 (plans/amo-lan-platform.md, 「第一版的接口约定」), for the platform's
 // tests: the relay's /api/health, /api/register (its checks and messages, the invite passphrase when one is given),
-// /api/login and /api/logout, and the three platform routes —
+// /api/login and /api/logout, GET / PATCH /api/me (资料: the nickname, picture and role, with store.setProfile's checks
+// and messages), and the three platform routes —
 //   GET /api/platform/channels                → { stable: { <tool>: <version> }, test: { … } }
 //   GET /api/platform/tools/<tool>/<version>  → { tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }
 //   GET /platform/objects/<sha256>            → the bytes (Authorization: Bearer <key>, or ?key=)
@@ -41,6 +42,8 @@ export interface FakePlatformServer {
   requests: string[];
   /** The accounts, those registered included: name → { password, role }. */
   members(): Record<string, { password: string; role: string }>;
+  /** What /api/me says of an account (role, nickname, picture), or null when there is no such account. */
+  profile(name: string): { role: string; nick: string; avatar: string | null } | null;
   /** Object downloads so far: the bytes sent on the wire (gzipped or not), the original bytes they carry, how many gzipped. */
   objectTraffic: { sent: number; original: number; gzipped: number };
   close(): Promise<void>;
@@ -52,6 +55,8 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   // The users given log in as 程序 (what the tests have always seen); people who register keep the role they gave.
   const members = new Map<string, { password: string; role: string }>(Object.entries(options.users ?? { 小王: "secret" }).map(([n, password]) => [n, { password, role: "程序" }]));
   const keys = new Map<string, string>();
+  /** 资料: the nickname and picture (the role is the member's). */
+  const looks = new Map<string, { nick: string; avatar: string | null }>();
   const objects = new Map<string, Buffer>();
   const gzipped = new Map<string, Buffer | null>();
   const objectTraffic = { sent: 0, original: 0, gzipped: 0 };
@@ -143,6 +148,38 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         keys.delete(key);
         return send(res, 200, { ok: true });
       }
+      if (path === "/api/me" && (req.method === "GET" || req.method === "PATCH")) {
+        const me = keys.get(key)!;
+        const member = members.get(me)!;
+        if (req.method === "GET") return send(res, 200, { name: me, service: options.name ?? "AMO 中转", role: member.role, nick: looks.get(me)?.nick ?? "", avatar: looks.get(me)?.avatar ?? null });
+        // store.setProfile: role, then nick, then avatar; only what is given changes; each checked as there.
+        const body = await readBody(req);
+        const text = (v: unknown, what: string, max: number): string | { error: string } => {
+          if (v === null) return "";
+          if (typeof v !== "string") return { error: `${what} 必须是文字` };
+          return v.trim().length > max ? { error: `${what} 太长（最多 ${max} 字）` } : v.trim();
+        };
+        const next = { role: member.role, ...(looks.get(me) ?? { nick: "", avatar: null }) };
+        if (body.role !== undefined) {
+          const role = text(body.role, "角色", 60);
+          if (typeof role !== "string") return fail(res, 400, "bad_request", role.error);
+          next.role = role;
+        }
+        if (body.nick !== undefined) {
+          const nick = text(body.nick, "昵称", 32);
+          if (typeof nick !== "string") return fail(res, 400, "bad_request", nick.error);
+          if (/[\u0000-\u001f\u007f]/.test(nick)) return fail(res, 400, "bad_request", "昵称里不能有控制字符");
+          next.nick = nick;
+        }
+        if (body.avatar !== undefined) {
+          const avatar = body.avatar === null || body.avatar === "" ? null : String(body.avatar);
+          if (avatar && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 96 * 1024)) return fail(res, 400, "bad_request", "头像要是不超过 64 KB 的 PNG、JPEG 或 WebP 图片");
+          next.avatar = avatar;
+        }
+        member.role = next.role;
+        looks.set(me, { nick: next.nick, avatar: next.avatar });
+        return send(res, 200, { ok: true });
+      }
       if (req.method === "GET" && path === "/api/platform/channels") return send(res, 200, channels);
       const tool = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)$/.exec(path);
       if (req.method === "GET" && tool) {
@@ -189,6 +226,10 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     url: `http://127.0.0.1:${port}`,
     requests,
     members: () => Object.fromEntries([...members].map(([n, m]) => [n, { ...m }])),
+    profile: (name) => {
+      const m = members.get(name);
+      return m ? { role: m.role, nick: looks.get(name)?.nick ?? "", avatar: looks.get(name)?.avatar ?? null } : null;
+    },
     objectTraffic,
     publish(toolId, version, files, o = {}) {
       const list = Object.entries(files).map(([path, content]) => {

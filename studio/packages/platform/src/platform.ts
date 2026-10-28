@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { amoHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, type Account, type Env, type Protector } from "@amo-studio/account";
+import { amoHome, AccountError, clearAccount, fetchProfile, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, updateProfile, type Account, type Env, type Protector } from "@amo-studio/account";
 import { PlatformClient } from "./client.js";
 import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./entry.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
@@ -12,7 +12,7 @@ import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
 import type { EnvironmentView } from "./environment-view.js";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
+import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -76,6 +76,7 @@ export class Platform implements PlatformCalls {
   private readonly results = new Map<string, ToolView["result"]>();
   private loginError: string | null = null;
   private loggingIn = false;
+  private profile: PlatformView["profile"] = { state: "idle", data: null, message: null };
   private readonly listeners = new Set<(v: PlatformView) => void>();
   private readonly argChannel: Channel | null;
   readonly place: SelfPlace;
@@ -172,6 +173,7 @@ export class Platform implements PlatformCalls {
       self: this.selfView(channel),
       testMode: this.options.testMode,
       account: this.account ? { server: this.account.server, name: this.account.name } : null,
+      profile: this.profile,
       loginError: this.loginError,
       loggingIn: this.loggingIn,
       servers: settings.recentServers,
@@ -337,12 +339,53 @@ export class Platform implements PlatformCalls {
     this.channels = null;
     this.manifests.clear();
     this.connection = { state: "idle", message: null };
+    this.profile = { state: "idle", data: null, message: null };
     this.loginError = why;
     this.changed();
   }
 
+  // ---- 账号 (2026-10-28, the user: the nickname, picture and 负责什么 are edited here, no longer in the relay client)
+
+  /** The profile read from the team server into the view; a key it no longer takes logs out, as elsewhere. */
+  private async readProfile(account: Account): Promise<void> {
+    this.profile = { ...this.profile, state: "loading", message: null };
+    try {
+      const p = await fetchProfile(account, this.accountOptions());
+      if (this.account !== account) return;
+      this.profile = { state: "ready", data: { service: p.service, role: p.role, nick: p.nick, avatar: p.avatar }, message: null };
+    } catch (err) {
+      if (this.account !== account) return;
+      const text = this.failed(err);
+      // Logged out by it: the login page says why.
+      if (this.account !== account) return;
+      this.profile = { state: "error", data: this.profile.data, message: text };
+    }
+  }
+
+  async loadProfile(): Promise<void> {
+    if (!this.account) return;
+    const read = this.readProfile(this.account);
+    this.changed();
+    await read;
+    this.changed();
+  }
+
+  async saveProfile(patch: ProfilePatch): Promise<ProfileSaveResult> {
+    const account = this.account;
+    if (!account) return { ok: false, message: "还没登录" };
+    try {
+      await updateProfile(account, patch, this.accountOptions());
+    } catch (err) {
+      const text = this.failed(err);
+      return { ok: false, message: err instanceof AccountError ? text : `没保存上：${text}` };
+    }
+    // What the server keeps (trimmed), read back.
+    await this.loadProfile();
+    return { ok: true };
+  }
+
   private failed(err: unknown): string {
-    if (err instanceof PlatformError && err.code === "unauthorized") {
+    if ((err instanceof PlatformError || err instanceof AccountError) && err.code === "unauthorized") {
       clearAccount({ env: this.options.env });
       this.forget("登录已失效，请重新登录。");
     }
@@ -372,6 +415,8 @@ export class Platform implements PlatformCalls {
       return;
     }
     this.connection = { state: "checking", message: null };
+    // The profile (账号, and the face at the foot of the pages) alongside; its failure does not stop the tools.
+    const profile = this.account ? this.readProfile(this.account) : null;
     this.changed();
     try {
       const channels = await client.channels();
@@ -395,6 +440,7 @@ export class Platform implements PlatformCalls {
       const text = this.failed(err);
       if (this.account) this.connection = { state: "offline", message: text };
     }
+    await profile;
     await local();
     this.changed();
   }

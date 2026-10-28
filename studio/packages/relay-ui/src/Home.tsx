@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import iconUrl from "./icon.svg";
 import { Avatar, PeopleContext, preview, sessionStatus, waitedText, Who } from "./bits.js";
-import { ChatTree, ChatView, GroupRows, ProfileDialog } from "./Chats.js";
+import { ChatTree, ChatView, GroupRows } from "./Chats.js";
 import { FileViewer, PickFiles } from "./Files.js";
 import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
@@ -30,7 +30,6 @@ import { saveResume, useUpdates } from "./update.js";
 type View = "queue" | "tasks" | "chat" | "people";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
-  | { kind: "profile" }
   | { kind: "oldShell" }
   | { kind: "task" }
   | { kind: "transfer"; task: TaskView; thread?: Thread }
@@ -386,7 +385,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             onFlow={openFlow}
             onQuick={() => setDialog({ kind: "flow" })}
             onCopyUsage={() => void copyUsage()}
-            onProfile={() => setDialog({ kind: "profile" })}
+            onProfile={() => setDialog({ kind: "settings", part: "profile" })}
             onSettings={() => setDialog({ kind: "settings" })}
           />
         </aside>
@@ -409,7 +408,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         />
       )}
       {dialog?.kind === "oldShell" && shellUpdate && <ShellUpdatePage update={shellUpdate} server={session.me.server} onClose={() => setDialog(null)} />}
-      {dialog?.kind === "profile" && <ProfileDialog session={session} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "task" && <NewTaskDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showTask(id))} />}
       {dialog?.kind === "transfer" && <TransferDialog session={session} task={tasks.find((t) => t.id === dialog.task.id) ?? dialog.task} thread={dialog.thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === "flow" && <FlowDialog settings={settings} onClose={() => setDialog(null)} toast={toast} />}
@@ -420,7 +418,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           onClose={() => setDialog(null)}
           toast={toast}
           onCopyUsage={() => void copyUsage()}
-          onProfile={() => setDialog({ kind: "profile" })}
           onLogout={onLogout}
           onOpenFile={(id) => setDialog({ kind: "file", id, scripts: settings.flowScripts !== false && !!flowDoc && /\.html?$/i.test(flowDoc.name) })}
         />

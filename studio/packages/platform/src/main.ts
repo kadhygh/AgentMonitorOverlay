@@ -249,7 +249,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());

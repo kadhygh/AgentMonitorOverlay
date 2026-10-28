@@ -118,6 +118,29 @@ describe("Platform", () => {
     expect(server.members()["小周"]).toEqual({ password: "abcd", role: "策划" });
   });
 
+  it("账号: the profile comes with the login, 保存 changes it on the server, a refused change comes back to the page; logged out, it is gone", async () => {
+    const { platform } = make();
+    await platform.init();
+    expect(platform.view().profile).toEqual({ state: "idle", data: null, message: null });
+    expect(await platform.register({ server: server.url, name: "小吴", password: "abcd", role: "策划" })).toEqual({ ok: true });
+    expect(platform.view().profile).toEqual({ state: "ready", data: { service: "AMO 中转", role: "策划", nick: "", avatar: null }, message: null });
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    expect(await platform.saveProfile({ nick: " 吴吴 ", avatar: png, role: "策划 · 数值" })).toEqual({ ok: true });
+    expect(server.profile("小吴")).toEqual({ role: "策划 · 数值", nick: "吴吴", avatar: png });
+    expect(platform.view().profile.data).toEqual({ service: "AMO 中转", role: "策划 · 数值", nick: "吴吴", avatar: png });
+    expect(await platform.saveProfile({ nick: "x".repeat(40) })).toEqual({ ok: false, message: "昵称 太长（最多 32 字）" });
+    expect(platform.view().account).not.toBeNull();
+    // Someone changed it elsewhere: 账号 reads it again.
+    await fetch(`${server.url}/api/login`, { method: "POST", body: JSON.stringify({ name: "小吴", password: "abcd" }) })
+      .then((r) => r.json() as Promise<{ key: string }>)
+      .then(({ key }) => fetch(`${server.url}/api/me`, { method: "PATCH", headers: { authorization: `Bearer ${key}` }, body: JSON.stringify({ avatar: null }) }));
+    await platform.loadProfile();
+    expect(platform.view().profile.data?.avatar).toBeNull();
+    await platform.logout();
+    expect(platform.view().profile).toEqual({ state: "idle", data: null, message: null });
+    expect(await platform.saveProfile({ nick: "a" })).toEqual({ ok: false, message: "还没登录" });
+  });
+
   it("--channel test wins over the setting; a key the server no longer takes goes back to the login page", async () => {
     server.publish("studio", "0.9.5", { "AMO Studio.exe": "studio 0.9.5" }, { exe: "AMO Studio.exe", channel: "test" });
     const { platform } = make({ argv: ["electron", ".", "--channel", "test"] });

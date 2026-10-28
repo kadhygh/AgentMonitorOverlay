@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
-import { amoHome, amoLocalHome, accountFile, AccountError, clearAccount, dpapi, login, logout, normalizeServer, platformFile, pushRecent, readAccount, readAccountInfo, recentServers, register, rememberServer, serverInfo, type Protector } from "./index.js";
+import { RelayStore, startRelayServer } from "@amo-studio/relay";
+import { amoHome, amoLocalHome, accountFile, AccountError, clearAccount, dpapi, fetchProfile, login, logout, normalizeServer, platformFile, PROFILE_LIMITS, profileProblem, pushRecent, readAccount, readAccountInfo, recentServers, register, rememberServer, serverInfo, updateProfile, type Protector } from "./index.js";
 
 // A reversible stand-in for DPAPI, so most tests do not start PowerShell.
 const fake: Protector = {
@@ -123,6 +124,59 @@ describe("register", () => {
     const a = await register({ server: invited.url, name: "小赵", password: "abcd", passphrase: "芝麻开门" }, o);
     expect(a).toMatchObject({ server: invited.url, name: "小赵", role: "" });
     expect(readAccountInfo({ env: env() })).toEqual({ server: invited.url, name: "小赵" });
+  });
+});
+
+describe("资料 (GET / PATCH /api/me)", () => {
+  const png = "data:image/png;base64,iVBORw0KGgo=";
+
+  it("reads the profile, changes only what is given (trimmed), and the avatar goes back to none", async () => {
+    fresh();
+    const a = await login({ server: server.url, name: "小王", password: "secret" }, { env: env(), protector: fake });
+    expect(await fetchProfile(a)).toEqual({ name: "小王", service: "AMO 中转", role: "程序", nick: "", avatar: null });
+    await updateProfile(a, { nick: " 王哥 ", avatar: png });
+    expect(server.profile("小王")).toEqual({ role: "程序", nick: "王哥", avatar: png });
+    await updateProfile(a, { role: "程序 · 战斗" });
+    expect(await fetchProfile(a)).toEqual({ name: "小王", service: "AMO 中转", role: "程序 · 战斗", nick: "王哥", avatar: png });
+    await updateProfile(a, { avatar: null, nick: "" });
+    expect(server.profile("小王")).toEqual({ role: "程序 · 战斗", nick: "", avatar: null });
+    await updateProfile(a, { role: "程序" });
+  });
+
+  it("says what is wrong before asking, and a key the server dropped is unauthorized", async () => {
+    fresh();
+    const a = await login({ server: server.url, name: "小王", password: "secret" }, { env: env(), protector: fake });
+    expect(profileProblem({ nick: "x".repeat(33) })).toBe("昵称 太长（最多 32 字）");
+    expect(profileProblem({ nick: "a\u0007b" })).toBe("昵称里不能有控制字符");
+    expect(profileProblem({ role: "x".repeat(61) })).toBe("角色 太长（最多 60 字）");
+    expect(profileProblem({ avatar: "data:image/gif;base64,R0lGOD==" })).toBe("头像要是不超过 64 KB 的 PNG、JPEG 或 WebP 图片");
+    expect(profileProblem({ avatar: `data:image/jpeg;base64,${"A".repeat(PROFILE_LIMITS.avatarChars)}` })).toBe("头像要是不超过 64 KB 的 PNG、JPEG 或 WebP 图片");
+    expect(profileProblem({ nick: "王哥", role: "", avatar: png })).toBeNull();
+    await expect(updateProfile(a, { nick: "x".repeat(33) })).rejects.toMatchObject({ code: "bad_request", message: "昵称 太长（最多 32 字）" });
+    await logout({ env: env(), protector: fake });
+    await expect(fetchProfile(a)).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(updateProfile(a, { nick: "王哥" })).rejects.toMatchObject({ code: "unauthorized" });
+  });
+
+  it("works against the relay service itself: what it keeps, and its refusals as it words them", async () => {
+    const store = new RelayStore(":memory:");
+    const relay = await startRelayServer({ store, host: "127.0.0.1", port: 0, name: "测试组" });
+    try {
+      fresh();
+      const a = await register({ server: relay.url, name: "小周", password: "abcd", role: "美术" }, { env: env(), protector: fake });
+      expect(await fetchProfile(a)).toEqual({ name: "小周", service: "测试组", role: "美术", nick: "", avatar: null });
+      await updateProfile(a, { nick: " 周周 ", avatar: png, role: " 美术 · 角色 " });
+      expect(await fetchProfile(a)).toEqual({ name: "小周", service: "测试组", role: "美术 · 角色", nick: "周周", avatar: png });
+      expect(store.members().find((m) => m.name === "小周")).toMatchObject({ nick: "周周", avatar: png, role: "美术 · 角色" });
+      // The service's own check, past ours (a fetch that skips profileProblem is the same request): its message comes back.
+      const res = await fetch(`${relay.url}/api/me`, { method: "PATCH", headers: { authorization: `Bearer ${a.key}`, "content-type": "application/json" }, body: JSON.stringify({ avatar: "data:image/gif;base64,R0lGOD==" }) });
+      expect(((await res.json()) as { message: string }).message).toBe(profileProblem({ avatar: "data:image/gif;base64,R0lGOD==" }));
+      await updateProfile(a, { avatar: null });
+      expect((await fetchProfile(a)).avatar).toBeNull();
+    } finally {
+      await relay.close();
+      store.close();
+    }
   });
 });
 

@@ -64,6 +64,9 @@ const programs = () => JSON.parse(readFileSync(join(root, "roaming", "programs.j
 const row = (page: Page, id: string) => page.getByTestId(`tool-${id}`);
 const status = (page: Page, id: string) => page.getByTestId(`tool-${id}-status`);
 const result = (page: Page, id: string) => page.getByTestId(`tool-${id}-result`);
+/** A tool's 「⋯」 and the menu it opens (回到 x, 卸载…). */
+const more = (page: Page, id: string) => row(page, id).getByRole("button", { name: "更多操作" });
+const menu = (page: Page, id: string) => row(page, id).getByRole("menu");
 const refresh = (page: Page) => page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("refresh", []));
 
 test("log in → install → a new version → update → 回滚 → 卸载; Studio waits for its data dir", async () => {
@@ -139,16 +142,29 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   expect(programs().tools.reviewer!.version).toBe("1.1.0");
   await screenshot(app, "platform", "P7-updated", page);
 
-  // ---- 回滚
-  await row(page, "reviewer").getByRole("button", { name: "回到 1.0.0" }).click();
+  // ---- 回滚: not on the card (2026-10-28, the user), in its 「⋯」
+  await expect(row(page, "reviewer").getByRole("button", { name: /回到|卸载/ })).toHaveCount(0);
+  await expect(row(page, "reviewer").getByText("回到 1.0.0")).toHaveCount(0);
+  await more(page, "reviewer").click();
+  await expect(menu(page, "reviewer").getByRole("menuitem")).toHaveText([/^回到 1\.0\.0/, /^卸载…/]);
+  await screenshot(app, "platform", "P28-more-menu", page);
+  // Esc closes it, and so does a click elsewhere.
+  await page.keyboard.press("Escape");
+  await expect(menu(page, "reviewer")).toHaveCount(0);
+  await more(page, "reviewer").click();
+  await page.getByRole("heading", { name: "工具" }).click();
+  await expect(menu(page, "reviewer")).toHaveCount(0);
+  await more(page, "reviewer").click();
+  await menu(page, "reviewer").getByRole("menuitem", { name: /^回到 1\.0\.0/ }).click();
   await expect(result(page, "reviewer")).toContainText("已回到 1.0.0");
   await expect(status(page, "reviewer")).toHaveText("! 1.0.0 · 有新版 1.1.0");
   expect(programs().tools.reviewer!.version).toBe("1.0.0");
   expect(readFileSync(join(root, "local", "apps", "reviewer", "current", "resources", "app.txt"), "utf8")).toBe("reviewer 1.0.0");
   await screenshot(app, "platform", "P8-rolled-back", page);
 
-  // ---- 卸载 (asks first)
-  await row(page, "reviewer").getByRole("button", { name: "卸载" }).click();
+  // ---- 卸载 (in 「⋯」 too, and asks first)
+  await more(page, "reviewer").click();
+  await menu(page, "reviewer").getByRole("menuitem", { name: /^卸载/ }).click();
   const confirm = row(page, "reviewer").getByRole("group", { name: "卸载 AMO Reviewer" });
   await expect(confirm).toContainText("1.0.0 和留着的 1.1.0 都会删掉");
   await screenshot(app, "platform", "P9-uninstall-confirm", page);
@@ -198,8 +214,55 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   const again = await reopened;
   await expect(again.getByRole("heading", { name: "工具" })).toBeVisible();
 
-  // ---- 退出登录 → the login page, with the recent server and the name filled in
+  // ---- 账号 (2026-10-28: out of 设置, with the profile editing that left the relay client)
   await again.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
+  await expect(again.getByRole("button", { name: /退出登录/ })).toHaveCount(0);
+  await expect(again.getByRole("region", { name: "团队服务器" })).toHaveCount(0);
+  const navAccount = again.getByTestId("pf-nav-account");
+  await expect(navAccount.locator(".pf-nav-me-name")).toHaveText("小王");
+  await navAccount.click();
+  await expect(again.getByRole("heading", { name: "账号", exact: true })).toBeVisible();
+  await expect(again.getByTestId("pf-account-server")).toHaveText(server.url.replace("http://", ""));
+  await expect(again.getByTestId("pf-account-name")).toContainText("小王");
+  const profileForm = again.getByRole("form", { name: "编辑资料" });
+  await expect(profileForm.getByLabel("负责什么")).toHaveValue("程序");
+  await expect(profileForm.getByLabel("昵称")).toHaveValue("");
+  await expect(profileForm.getByRole("button", { name: "保存" })).toBeDisabled();
+  await screenshot(app, "platform", "P29-account", again);
+  // A nickname, 负责什么 and a picture (cut to a 128 px JPEG here), saved on the team server.
+  await profileForm.getByLabel("昵称").fill("王哥");
+  await profileForm.getByLabel("负责什么").fill("程序 · 战斗");
+  await again.getByTestId("pf-avatar-file").setInputFiles(join(studioRoot, "packages", "app", "assets", "icon.png"));
+  await expect(profileForm.locator("img.pf-face.big")).toBeVisible();
+  await expect(again.getByTestId("pf-profile-preview")).toHaveText("别人看到的是王哥(小王)");
+  await profileForm.getByRole("button", { name: "保存" }).click();
+  await expect(again.getByTestId("pf-profile-result")).toHaveText("✓ 已保存，团队里的人都会看到，AMO 中转里也是");
+  const saved = server.profile("小王")!;
+  expect(saved).toMatchObject({ nick: "王哥", role: "程序 · 战斗" });
+  expect(saved.avatar).toMatch(/^data:image\/jpeg;base64,/);
+  await expect(navAccount.locator(".pf-nav-me-name")).toHaveText("王哥");
+  await expect(navAccount.locator("img.pf-face")).toHaveAttribute("src", saved.avatar!);
+  await expect(profileForm.getByRole("button", { name: "保存" })).toBeDisabled();
+  await screenshot(app, "platform", "P30-account-saved", again);
+  // A refusal comes back to the page in the service's words (the account module checks first, as store.setProfile does).
+  await profileForm.getByLabel("昵称").fill("王\u0007哥");
+  await profileForm.getByRole("button", { name: "保存" }).click();
+  await expect(again.getByTestId("pf-profile-result")).toHaveText("! 昵称里不能有控制字符");
+  await profileForm.getByRole("button", { name: "还原" }).click();
+  await expect(profileForm.getByLabel("昵称")).toHaveValue("王哥");
+  // Back to the text face.
+  await profileForm.getByRole("button", { name: "用文字头像" }).click();
+  await profileForm.getByRole("button", { name: "保存" }).click();
+  await expect(again.getByTestId("pf-profile-result")).toContainText("已保存");
+  expect(server.profile("小王")).toEqual({ nick: "王哥", role: "程序 · 战斗", avatar: null });
+  await expect(navAccount.locator(".pf-face")).toHaveText("王");
+  // A narrow window (the platform's smallest): the page still fits.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(760, 520));
+  await expect.poll(() => again.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await screenshot(app, "platform", "P31-account-narrow", again);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(960, 640));
+
+  // ---- 退出登录 (on 账号) → the login page, with the recent server and the name filled in
   await again.getByRole("button", { name: "退出登录…" }).click();
   await again.getByRole("button", { name: "退出登录", exact: true }).click();
   const form2 = again.getByRole("form", { name: "登录" });
@@ -244,8 +307,20 @@ test("a second tool downloads only its own files: the shared runtime is hard-lin
     expect(existsSync(join(root, "local", "apps", "file-index.json"))).toBe(true);
     await screenshot(app!, "platform", "P17-shared-runtime", page);
 
+    // A narrow window: the 「⋯」 menu opens inside it.
+    await app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(760, 520));
+    await more(page, "reviewer").click();
+    await expect(menu(page, "reviewer")).toBeVisible();
+    const box = await menu(page, "reviewer").boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+    await screenshot(app!, "platform", "P32-more-menu-narrow", page);
+    await page.keyboard.press("Escape");
+    await app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(960, 640));
+
     // The Reviewer uninstalled: the 便签's copy of the shared files is still whole.
-    await row(page, "reviewer").getByRole("button", { name: "卸载" }).click();
+    await more(page, "reviewer").click();
+    await menu(page, "reviewer").getByRole("menuitem", { name: /^卸载/ }).click();
     await row(page, "reviewer").getByRole("group", { name: "卸载 AMO Reviewer" }).getByRole("button", { name: "卸载" }).click();
     // Uninstalling asks Windows what runs first (PowerShell, a few seconds on a busy machine).
     await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0", { timeout: 20_000 });
@@ -499,8 +574,12 @@ test("注册 on the login page: the passphrase only when the server wants one, e
     await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0");
     expect(invited.members()["小李"]).toEqual({ password: "pass1", role: "策划 · 关卡" });
     expect(JSON.parse(readFileSync(join(root, "roaming", "account.json"), "utf8"))).toMatchObject({ server: invited.url, name: "小李" });
-    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
-    await expect(page.getByText("已登录：小李")).toBeVisible();
+    // 账号: the new account, with the 负责什么 given when registering.
+    await page.getByTestId("pf-nav-account").click();
+    await expect(page.getByTestId("pf-account-name")).toContainText("小李");
+    await expect(page.getByTestId("pf-account-server")).toHaveText(invited.url.replace("http://", ""));
+    await expect(page.getByRole("region", { name: "登录" })).toContainText("团队「策划组」");
+    await expect(page.getByRole("form", { name: "编辑资料" }).getByLabel("负责什么")).toHaveValue("策划 · 关卡");
     await screenshot(app, "platform", "P16-registered", page);
 
     // 退出登录, then in again with the new account (its name and server filled in).

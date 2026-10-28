@@ -1,13 +1,15 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AccountPage, Face } from "./AccountPage.js";
 import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 import { EnvironmentPage } from "./EnvironmentPage.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
-// page (with 注册 for people without an account) until there is an account, then 工具 / 环境 / 目录 / 设置. Everything it shows comes from the main process
+// page (with 注册 for people without an account) until there is an account, then 工具 / 环境 / 目录 / 设置, and 账号 at the
+// foot of the pages (2026-10-28: the account out of 设置, with the profile editing that left the relay client). Everything it shows comes from the main process
 // (platform:view) and every button is a call back to it; the page keeps only which page is open.
 // The prototype's 更新 page (per-tool update modes, updates.json) is step 3 and not here yet.
 
-type Page = "tools" | "environment" | "dirs" | "settings";
+type Page = "tools" | "environment" | "dirs" | "settings" | "account";
 
 const PAGES: Array<[Page, string]> = [
   ["tools", "工具"],
@@ -39,7 +41,7 @@ export function PlatformApp() {
     };
   }, []);
 
-  // Logged out (退出登录 is on 设置): the next login or registration starts on 工具.
+  // Logged out (退出登录 is on 账号): the next login or registration starts on 工具.
   const loggedIn = !!view?.account;
   useEffect(() => {
     if (!loggedIn) setPage("tools");
@@ -65,6 +67,7 @@ export function PlatformApp() {
               </button>
             ))}
             <span className="pf-spacer" />
+            <NavAccount view={view} current={page === "account"} onOpen={() => setPage("account")} />
             <div className="pf-nav-foot">
               平台 {view.version} · {view.channel === "test" ? "测试通道" : "稳定通道"}
             </div>
@@ -74,6 +77,7 @@ export function PlatformApp() {
             {page === "environment" && <EnvironmentPage />}
             {page === "dirs" && <DirsPage view={view} notice={dirNotice} onNoticeDone={() => setDirNotice(null)} />}
             {page === "settings" && <SettingsPage view={view} />}
+            {page === "account" && <AccountPage view={view} />}
           </main>
         </div>
       ) : (
@@ -134,6 +138,22 @@ function TitleBar({ view, onSelf }: { view: PlatformView; onSelf: () => void }) 
         </button>
       </div>
     </header>
+  );
+}
+
+/** 账号 at the foot of the pages: the face and the name as the team sees them (the profile, once read). */
+function NavAccount({ view, current, onOpen }: { view: PlatformView; current: boolean; onOpen: () => void }) {
+  const name = view.account?.name ?? "";
+  const profile = view.profile.data;
+  const nick = profile?.nick ?? "";
+  return (
+    <button type="button" className="pf-nav-item pf-nav-me" aria-current={current ? "page" : undefined} onClick={onOpen} title="账号：昵称、头像、负责什么，退出登录" data-testid="pf-nav-account">
+      <Face name={name} nick={nick} avatar={profile?.avatar ?? null} size="small" />
+      <span className="pf-nav-me-text">
+        <span className="pf-nav-me-name">{nick || name}</span>
+        <span className="pf-nav-me-sub">账号</span>
+      </span>
+    </button>
   );
 }
 
@@ -342,7 +362,7 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
       <RootBanner view={view} />
       {offline && (
         <div className="pf-banner warn" role="status">
-          <span>! 连不上服务器：{view.connection.message}。已经装好的工具照样能打开、回滚、卸载。</span>
+          <span>! 连不上服务器：{view.connection.message}。已经装好的工具照样能打开，「⋯」里的回到上个版本、卸载也能用。</span>
           <button type="button" className="btn-ghost pf-small" onClick={() => void call("refresh")}>
             重试
           </button>
@@ -451,10 +471,11 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
   if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
 
-  const more: typeof actions = [];
-  if (t.standing === "ahead") more.push({ label: `换成 ${t.available}`, kind: "quiet", run: () => void call("install", t.id), disabled: !!cannot, title: cannot ?? "装这个通道里的版本" });
-  if (t.rollbackTo) more.push({ label: `回到 ${t.rollbackTo}`, kind: "quiet", run: () => void call("rollback", t.id), title: "换回上一个装过的版本（还留在这台电脑上，不用下载）" });
-  if (t.installed) more.push({ label: "卸载", kind: "quiet", run: () => setConfirmUninstall(true), title: t.running ? "正在运行时不能卸载" : undefined });
+  // The rest in 「⋯」 (2026-10-28, the user: going back a version is not shown on the card): 换成, 回到, 卸载.
+  const more: MenuItem[] = [];
+  if (t.standing === "ahead") more.push({ label: `换成 ${t.available}`, note: cannot ?? "装这个通道里的版本", run: () => void call("install", t.id), disabled: !!cannot });
+  if (t.rollbackTo) more.push({ label: `回到 ${t.rollbackTo}`, note: "上一个装过的版本，还在这台电脑上，不用下载", run: () => void call("rollback", t.id) });
+  if (t.installed) more.push({ label: "卸载…", note: t.running ? "正在运行，先关掉它再卸载" : "会先问一下；数据和设置不受影响", run: () => setConfirmUninstall(true), danger: true });
 
   const showNotes = !!t.notes && (t.standing === "update" || t.standing === "not-installed");
 
@@ -479,6 +500,7 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
               {a.label}
             </button>
           ))}
+          {more.length > 0 && <MoreMenu items={more} label={short} disabled={busy} />}
         </div>
       </div>
 
@@ -530,26 +552,75 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
         </div>
       )}
 
-      {(showNotes || more.length > 0) && (
+      {showNotes && (
         <div className="pf-tool-foot">
-          {showNotes ? (
-            <details className="pf-notes" open={t.standing === "update"}>
-              <summary>{t.available} 改了什么</summary>
-              <div className="pf-notes-text">{t.notes}</div>
-            </details>
-          ) : (
-            <span className="pf-spacer" />
-          )}
-          <div className="pf-more">
-            {more.map((a) => (
-              <button key={a.label} type="button" className="pf-link" disabled={busy || a.disabled} title={a.title} onClick={a.run}>
-                {a.label}
-              </button>
-            ))}
-          </div>
+          <details className="pf-notes" open={t.standing === "update"}>
+            <summary>{t.available} 改了什么</summary>
+            <div className="pf-notes-text">{t.notes}</div>
+          </details>
         </div>
       )}
     </section>
+  );
+}
+
+interface MenuItem {
+  label: string;
+  /** A second, quieter line: what it does, or why it cannot now. */
+  note?: string;
+  run: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+/** A tool's 「⋯」: the actions not needed every day, in a small menu under the button (closes on a click outside or Esc). */
+function MoreMenu({ items, label, disabled }: { items: MenuItem[]; label: string; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+  return (
+    <div className="pf-menu-wrap" ref={wrap}>
+      <button type="button" className="btn-ghost pf-more-btn" aria-label={`${label} 的更多操作`} title={`更多：${items.map((i) => i.label.replace(/…$/, "")).join("、")}`} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)}>
+        ⋯
+      </button>
+      {open && (
+        <div className="pf-menu" role="menu" aria-label={`${label} 的更多操作`}>
+          {items.map((i) => (
+            <button
+              key={i.label}
+              type="button"
+              role="menuitem"
+              className={`pf-menu-item${i.danger ? " danger" : ""}`}
+              disabled={i.disabled}
+              onClick={() => {
+                setOpen(false);
+                i.run();
+              }}
+            >
+              <span className="pf-menu-label">{i.label}</span>
+              {i.note && <span className="pf-menu-note">{i.note}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -739,37 +810,12 @@ const CHANNELS: Array<[Channel, string, string]> = [
 ];
 
 function SettingsPage({ view }: { view: PlatformView }) {
-  const [confirmLogout, setConfirmLogout] = useState(false);
+  // The team server and 退出登录 are on 账号 (2026-10-28).
   return (
     <div className="pf-page">
       <h1 className="pf-h1">设置</h1>
 
       <SelfSection view={view} />
-
-      <section className="pf-section" aria-label="团队服务器">
-        <h2 className="pf-h2">团队服务器</h2>
-        <div className="pf-row">
-          <code className="pf-path">{view.account ? serverLabel(view.account.server) : ""}</code>
-          <span className="pf-hint">已登录：{view.account?.name}</span>
-          <span className="pf-spacer" />
-          {confirmLogout ? (
-            <>
-              <span className="pf-hint">退出后要重新登录才能安装和更新。</span>
-              <button type="button" className="btn-ghost pf-small" onClick={() => void call("logout")}>
-                退出登录
-              </button>
-              <button type="button" className="pf-link" onClick={() => setConfirmLogout(false)}>
-                取消
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn-ghost pf-small" onClick={() => setConfirmLogout(true)}>
-              退出登录…
-            </button>
-          )}
-        </div>
-        <p className="pf-hint">换服务器或账号：先退出登录，登录页上能选最近用过的 3 个服务器。已经装好的工具不受影响。</p>
-      </section>
 
       <section className="pf-section" aria-label="更新通道">
         <h2 className="pf-h2">更新通道</h2>

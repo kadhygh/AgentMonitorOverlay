@@ -19,7 +19,7 @@ const PARTS: Array<[SettingsPart, string]> = [
   ["profile", "我的资料"],
 ];
 
-export function SettingsDialog(props: { session: Session; part?: SettingsPart; onClose: () => void; toast: (t: string) => void; onCopyUsage: () => void; onProfile: () => void; onLogout: () => void; onOpenFile: (id: string) => void }) {
+export function SettingsDialog(props: { session: Session; part?: SettingsPart; onClose: () => void; toast: (t: string) => void; onCopyUsage: () => void; onLogout: () => void; onOpenFile: (id: string) => void }) {
   const [part, setPart] = useState<SettingsPart>(props.part ?? "general");
   const flow = useFlowForm(props.session, props.onClose, props.toast);
   return (
@@ -54,7 +54,7 @@ export function SettingsDialog(props: { session: Session; part?: SettingsPart; o
           {part === "general" && <GeneralPart />}
           {part === "flow" && <FlowPart session={props.session} form={flow} toast={props.toast} onOpenFile={props.onOpenFile} />}
           {part === "ai" && <AiPart onCopyUsage={props.onCopyUsage} toast={props.toast} />}
-          {part === "profile" && <ProfilePart session={props.session} onProfile={props.onProfile} onLogout={props.onLogout} />}
+          {part === "profile" && <ProfilePart session={props.session} onLogout={props.onLogout} />}
         </div>
       </div>
     </Dialog>
@@ -301,7 +301,9 @@ function AiPart({ onCopyUsage, toast }: { onCopyUsage: () => void; toast: (t: st
   );
 }
 
-function ProfilePart({ session, onProfile, onLogout }: { session: Session; onProfile: () => void; onLogout: () => void }) {
+// 我的资料: shown, not edited (2026-10-28, the user: the nickname, picture and 负责什么 are edited in AMO 平台's 账号 page,
+// where the team login lives; a change there reaches here through the service's members push).
+function ProfilePart({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const me = session.me.name;
   const role = useSession(session).members.find((m) => m.name === me)?.role ?? session.me.role;
   return (
@@ -315,9 +317,9 @@ function ProfilePart({ session, onProfile, onLogout }: { session: Session; onPro
             </b>
             <span className="dim small">{role || "（没写负责什么）"}</span>
           </span>
-          <button type="button" onClick={onProfile}>
-            编辑资料
-          </button>
+        </div>
+        <div className="me-card-note" data-testid="profile-in-platform">
+          在 AMO 平台的「账号」里改昵称、头像和负责什么，改完这里会跟着变。
         </div>
       </Part>
       <Part title="账号">
