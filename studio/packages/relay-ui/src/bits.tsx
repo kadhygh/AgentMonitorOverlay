@@ -80,8 +80,8 @@ export function preview(m: Message | null): string {
 
 // ---- sessions (stage 2a, plans/relay-tasks.md): where one stands for me
 
-/** A session back with the asker's AI and not fetched this long is flagged; fetched and untouched this long is 卡住. */
-export const AI_LATE_MS = 10 * 60_000;
+/** A session the asker's AI fetched and left untouched this long is 卡住. Back and not fetched, it is the asker's at
+ * once: since 2026-10-28 the AI does not wait for a reply, the asker copies it over (plans/relay-tasks.md「卡点」). */
 export const AI_STUCK_MS = 30 * 60_000;
 
 export interface SessionStatus {
@@ -96,12 +96,11 @@ export interface SessionStatus {
 /** `limits`: the team's settings in minutes; Studio-wide defaults otherwise. */
 export function sessionStatus(t: ThreadView, me: string, now = Date.now(), limits?: { aiLateMinutes: number; aiStuckMinutes: number }): SessionStatus {
   const r = t.request!;
-  const lateMs = limits ? limits.aiLateMinutes * 60_000 : AI_LATE_MS;
   const stuckMs = limits ? limits.aiStuckMinutes * 60_000 : AI_STUCK_MS;
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
   if (r.state === "done") return { text: "已完成", dot: "done", needsMe: false, warn: false };
   if (r.waitingOn !== me) {
-    if (r.state === "returned" && r.handler === "ai") return { text: r.pickedAt ? `${r.from} 的 AI 处理中` : `等 ${r.from} 的 AI 取回`, dot: "run", needsMe: false, warn: false };
+    if (r.state === "returned" && r.handler === "ai") return { text: r.pickedAt ? `${r.from} 的 AI 处理中` : `已返回给 ${r.from}`, dot: "run", needsMe: false, warn: false };
     return { text: `等 ${r.waitingOn} 处理`, dot: "idle", needsMe: false, warn: false };
   }
   if (r.state === "open") return { text: `${asker} 发来 · 等你处理`, dot: "attn", needsMe: true, warn: true };
@@ -110,8 +109,7 @@ export function sessionStatus(t: ThreadView, me: string, now = Date.now(), limit
     if (now - r.pickedAt > stuckMs) return { text: `! AI 取回后 ${waitedText(now - r.pickedAt)}没有动作，可能卡住了`, dot: "attn", needsMe: true, warn: true };
     return { text: "AI 已取回，正在处理", dot: "run", needsMe: false, warn: false };
   }
-  const late = now - (r.returnedAt ?? now) > lateMs;
-  return { text: `回复已到 · AI 还没取回（${waitedText(now - (r.returnedAt ?? now))}）`, dot: late ? "attn" : "run", needsMe: true, warn: late };
+  return { text: "回复已到 · 复制给 AI 继续", dot: "attn", needsMe: true, warn: true };
 }
 
 export function VerdictChip({ thread }: { thread: ThreadView }) {

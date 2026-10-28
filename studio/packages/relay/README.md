@@ -36,36 +36,26 @@ powershell -File scripts/relay-service.ps1 start|stop|restart|status [-Passphras
 
 数据在 `%APPDATA%\AMO Relay\server\relay.db`，上传的文件在同一目录的 `files` 下，日志也在这个目录。默认监听 `0.0.0.0:47120`，不设邀请口令，同一网络里谁都能注册。
 
-## 在 Mac 上跑服务
+## 在 Mac 上跑服务（团队用的这台，2026-10-28 起）
 
-把整个 `release/relay/` 拷过去（下载页、客户端更新都从里面读）：
+服务在团队的 Mac mini 上：`http://172.16.8.85:47120/`。在这台 Windows 上用 `scripts/relay-mac.mjs` 通过 SSH 管它（`~/.ssh/config` 里的别名 `mac`，换机器时设 `SSH_HOST`）：
 
-```sh
-node ~/amo-relay/amo-relay.mjs serve --name 策划组 [--passphrase 邀请口令]
-# 数据在 ~/Library/Application Support/AMO Relay/server/relay.db
+```
+npm run relay:release                 # 先在本机生成 release/relay
+npm run relay:mac -- deploy           # 传到 Mac；只改了界面不重启，服务本身变了会先备份数据库再重启
+npm run relay:mac -- status | start | stop | restart | logs [行数] | backup
+npm run relay:mac -- passwd <名字> [新密码]          # 忘了密码：重设并打印新密码（不填就随机生成 8 位）
+npm run relay:mac -- migrate --from <数据目录> [--force]   # 一次性把另一台的数据搬过来（先备份 Mac 上的）
 ```
 
-第一次运行时 macOS 会问是否允许 node 接受传入连接，选允许。
+Mac 上的位置：
 
-要开机自动运行，用 launchd：把下面这段存成 `~/Library/LaunchAgents/com.amo.relay.plist`，然后 `launchctl load` 它。`node` 的路径用 `which node` 查到的。
+- 程序 `~/Services/amo-relay/app`（每次 deploy 整个换掉）
+- 数据 `~/Services/amo-relay/data`（relay.db、上传的文件、`backup-*.db`；deploy 不碰）
+- 开机自启 `~/Library/LaunchAgents/com.amo.relay.plist`（登录后启动，退出了自动拉起）
+- 日志 `~/Library/Logs/AMO Relay/`
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.amo.relay</string>
-  <key>ProgramArguments</key><array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/你/amo-relay/amo-relay.mjs</string>
-    <string>serve</string><string>--name</string><string>策划组</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>/tmp/amo-relay.log</string>
-</dict></plist>
-```
-
-在服务那台机器上给某人重设密码：`node amo-relay.mjs passwd <名字> <新密码>`。他之前的登录会全部失效。
+Mac 用的是 Homebrew 的 Node（需要 22.13 或更新），防火墙是关着的，也不会睡眠。重设密码后，这个人之前的登录会全部失效。
 
 ## 给同事用
 

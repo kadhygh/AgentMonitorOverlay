@@ -226,9 +226,6 @@ function FlowPart({ session, form, toast, onOpenFile }: { session: Session; form
       <Part title="AI 提醒">
         <div className="ai-limits">
           <label>
-            AI 超过 <input type="number" min={1} max={1440} value={form.late} onChange={(e) => form.setLate(e.target.value)} aria-label="还没取回的分钟数" /> 分钟没取回，标「还没取回」
-          </label>
-          <label>
             取回后超过 <input type="number" min={1} max={1440} value={form.stuck} onChange={(e) => form.setStuck(e.target.value)} aria-label="卡住的分钟数" /> 分钟没动作，标「卡住」
           </label>
         </div>

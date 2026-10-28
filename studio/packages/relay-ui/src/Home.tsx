@@ -5,6 +5,7 @@ import { ChatTree, ChatView, GroupRows, ProfileDialog } from "./Chats.js";
 import { FileViewer, PickFiles } from "./Files.js";
 import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
+import { fullUi } from "./features.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { SessionView } from "./SessionView.js";
@@ -23,6 +24,8 @@ import { saveResume, useUpdates } from "./update.js";
 // ones folded) and 成员 — the view's list on the left, the open one on the right. The top bar holds only those and
 // ＋ 新会话; the bottom of the left column (SideFoot) what wants me, the shortcuts, me and 设置. A newer client the
 // service publishes is applied once the window is not in use and nothing is typed.
+// Tightened (2026-10-28, features.ts): only 待处理 / 聊天 / 成员 and no ＋ 新会话 — sessions come from AIs, people chat;
+// the task views, transfers and the flow shortcuts come back with fullUi().
 
 type View = "queue" | "tasks" | "chat" | "people";
 type Dialogs =
@@ -39,6 +42,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const { threads, members, connection, client, tasks, settings } = useSession(session);
   const me = session.me.name;
   useMinuteTick();
+  const full = fullUi();
   const [view, setView] = useState<View>("queue");
   const [openId, setOpenId] = useState<string | null>(resumeOpen);
   const [person, setPerson] = useState<string | null>(null);
@@ -72,9 +76,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     const done = withStatus.filter((x) => x.t.request!.state === "done").map((x) => x.t);
     const chats = threads.filter((t) => t.kind !== "request" && !t.archived);
     const archived = threads.filter((t) => t.kind !== "request" && t.archived);
-    const handed = tasks.filter((t) => t.unseen && !t.archived);
+    const handed = full ? tasks.filter((t) => t.unseen && !t.archived) : [];
     return { mine, waiting, done, chats, archived, handed };
-  }, [threads, tasks, me, settings]);
+  }, [threads, tasks, me, settings, full]);
   const openTask = tasks.find((t) => t.id === taskId) ?? null;
   const queueCount = groups.mine.length + groups.handed.length;
   const open = threads.find((t) => t.id === openId) ?? null;
@@ -172,10 +176,10 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     const hookup = shell ? await shell.mcp().catch(() => null) : null;
     if (hookup?.cli) {
       // An older desktop client cannot write the file: point the agent at the command that prints the usage.
-      await copyText(`请先运行 "${hookup.cli}" prompt（PowerShell 里写 & "${hookup.cli}" prompt），按它打印的说明用 AMO 中转（团队里互相传话、发会话找人确认、推进团队任务）。`);
+      await copyText(`请先运行 "${hookup.cli}" prompt（PowerShell 里写 & "${hookup.cli}" prompt），按它打印的说明用 AMO 中转（推进中卡住、或方案要人把关时，发会话找人确认）。`);
       return toast("已复制一行指令，贴给 agent，它会自己去看用法");
     }
-    await copyText(usagePrompt({ me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow }));
+    await copyText(usagePrompt({ me, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow, tasks: full }));
     toast("用法已复制，贴给 agent 就行");
   };
 
@@ -285,7 +289,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   let main;
   if (view === "queue" && open?.kind === "request")
-    main = <SessionView key={open.id} session={session} thread={open} toast={toast} onOpenTask={(id) => showTask(id, open.id)} onTakeover={(t) => { const task = tasks.find((x) => x.id === t.request?.taskId); if (task) setDialog({ kind: "transfer", task, thread: t }); }} />;
+    main = <SessionView key={open.id} session={session} thread={open} toast={toast} onOpenTask={full ? (id) => showTask(id, open.id) : undefined} onTakeover={full ? (t) => { const task = tasks.find((x) => x.id === t.request?.taskId); if (task) setDialog({ kind: "transfer", task, thread: t }); } : undefined} />;
   else if (view === "tasks" && openTask)
     main = (
       <TaskPage
@@ -304,14 +308,18 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   else if (view === "chat" && open && open.kind !== "request")
     main = <ChatView key={open.id} session={session} thread={open} toast={toast} onArchive={(t, a) => void archive(t, a)} />;
   else if (view === "people" && person)
-    main = <PersonView name={person} session={session} threads={threads} onChat={(n) => void chatWith(n)} onAsk={(n) => setDialog({ kind: "session", to: n })} onOpen={(id) => (setView("queue"), setOpenId(id))} />;
+    main = <PersonView name={person} session={session} threads={threads} onChat={(n) => void chatWith(n)} onAsk={full ? (n) => setDialog({ kind: "session", to: n }) : undefined} onOpen={(id) => (setView("queue"), setOpenId(id))} />;
   else
     main = (
       <div className="placeholder">
         {view === "queue" ? (
           <>
             <h2>手上的事都在左边</h2>
-            <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点左下的「复制用法」。</p>
+            {full ? (
+              <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点左下的「复制用法」。</p>
+            ) : (
+              <p>同事的 AI 卡住了、或方案想让你把关时，会发会话给你，出现在左边；你回复后，会话回到它手里。想让自己的 AI 这样找人，点左下的「复制用法」贴给它。人和人之间直接在「聊天」里说。</p>
+            )}
           </>
         ) : view === "chat" ? (
           <>
@@ -326,7 +334,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   const tabs: Array<[View, string, number]> = [
     ["queue", "待处理", queueCount],
-    ["tasks", "任务", 0],
+    ...(full ? [["tasks", "任务", 0] as [View, string, number]] : []),
     ["chat", "聊天", chatUnread],
     ["people", "成员", 0],
   ];
@@ -349,7 +357,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           ))}
         </nav>
         <span className="grow" />
-        {view === "tasks" ? (
+        {!full ? null : view === "tasks" ? (
           <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "task" })}>
             ＋ 新任务
           </button>
@@ -371,6 +379,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             updates={updates}
             shellUpdate={shellUpdate}
             flowNew={flowIsNew(flowDoc, me, session.me.server)}
+            flowShortcuts={full}
             onQueue={() => goQueue("mine")}
             onWaiting={() => goQueue("waiting")}
             onShellUpdate={() => setDialog({ kind: "oldShell" })}
@@ -453,7 +462,7 @@ function SessionRow({ thread, me, current, onOpen, limits }: { thread: Thread; m
   );
 }
 
-function PersonView(props: { name: string; session: Session; threads: Thread[]; onChat: (name: string) => void; onAsk: (name: string) => void; onOpen: (id: string) => void }) {
+function PersonView(props: { name: string; session: Session; threads: Thread[]; onChat: (name: string) => void; onAsk?: (name: string) => void; onOpen: (id: string) => void }) {
   const me = props.session.me.name;
   const m = props.session.snapshot.members.find((x) => x.name === props.name);
   const between = props.threads.filter((t) => t.kind === "request" && t.members.includes(props.name) && t.members.includes(me) && props.name !== me);
@@ -473,9 +482,11 @@ function PersonView(props: { name: string; session: Session; threads: Thread[]; 
             <button type="button" onClick={() => props.onChat(props.name)}>
               私聊
             </button>
-            <button type="button" className="primary" onClick={() => props.onAsk(props.name)}>
-              发起会话
-            </button>
+            {props.onAsk && (
+              <button type="button" className="primary" onClick={() => props.onAsk!(props.name)}>
+                发起会话
+              </button>
+            )}
           </>
         )}
       </div>

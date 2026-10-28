@@ -5,6 +5,7 @@ import { copyText } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
 import { threadAsText, VERDICT_LABEL, type Answer, type FileNote, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+import { writeUsageFile } from "./usageFile.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
 // the person asked answers it one question at a time and returns it (回复并返回); back with the asker, their AI takes it
@@ -50,11 +51,18 @@ export function SessionView(props: {
   };
   const copyAll = async () => {
     if (!messages) return;
+    // Back with me: my AI ended its turn after asking, so the reply goes over by hand, with what to do next.
+    if (r.from === me && r.state === "returned") {
+      const usage = await writeUsageFile(session);
+      await copyText(`${r.to} 回复了你发的会话（threadId ${thread.id}），内容在下面。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。${usage ? `命令见 ${usage.file}。` : ""}\n\n${threadAsText(thread, messages)}`);
+      toast("已复制回复，贴给你的 AI（原来的对话或新对话都行）");
+      return;
+    }
     await copyText(threadAsText(thread, messages));
     toast("已复制整个会话（含逐条回答），可以贴给 AI");
   };
   const copyPickup = async () => {
-    await copyText(`用 amo-relay 的 relay_session_get 取会话 ${thread.id} 的回复，按团队流程继续；处理完用 relay_session_reply 继续追问（then: "ask"）或标记完成（then: "done"）。`);
+    await copyText(`用 AMO 中转取会话 ${thread.id} 的回复（命令行 relay replies ${thread.id}，或 MCP 的 relay_session_get），按回复接着推进：没问清楚就追问（send --then ask / relay_session_reply then="ask"），已经敲定就标记完成（--then done / then="done"）。`);
     toast("已复制取回指令，贴给任何 agent 都行");
   };
 
@@ -143,13 +151,16 @@ export function SessionView(props: {
         <div className="head-main">
           {!props.embedded && (
             <div className="page-crumb">
-              待处理 /{" "}
-              {task ? (
-                <button type="button" className="link" onClick={() => props.onOpenTask?.(task.id)}>
-                  任务 · {task.title}
-                </button>
+              待处理
+              {!props.onOpenTask ? null : task ? (
+                <>
+                  {" / "}
+                  <button type="button" className="link" onClick={() => props.onOpenTask?.(task.id)}>
+                    任务 · {task.title}
+                  </button>
+                </>
               ) : (
-                "单独会话"
+                " / 单独会话"
               )}
             </div>
           )}
@@ -187,7 +198,9 @@ export function SessionView(props: {
   );
 }
 
-/** Back with me and handled by my AI: has it taken it, is it stuck — and ways to take it myself. */
+const agoText = (ms: number) => (ms < 60_000 ? "刚刚" : `${waitedText(ms)}前`);
+
+/** Back with me and handled by my AI: copy it over to it, has it taken it, is it stuck — and ways to take it myself. */
 function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: ThreadView; me: string; limits: { aiLateMinutes: number; aiStuckMinutes: number }; onPickup: () => void; onCopy: () => void; onAct: (a: SessionAction, toast: string) => void }) {
   const r = thread.request!;
   if (r.from !== me || r.state !== "returned" || r.waitingOn !== me) return null;
@@ -206,13 +219,13 @@ function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: Threa
   const now = Date.now();
   const tools = (
     <>
-      <button type="button" className="small" onClick={onPickup} title="一行提示词，贴给任何 agent，它就会去取这条回复并继续">
-        复制取回指令
-      </button>
-      <button type="button" className="small" onClick={onCopy}>
+      <button type="button" className="small primary" onClick={onCopy} title="复制回复和接下来怎么做，贴给你的 AI">
         复制给 AI
       </button>
-      <button type="button" className="small primary" onClick={() => onAct("handle", "你接手了：可以继续追问或标记完成")}>
+      <button type="button" className="small" onClick={onPickup} title="一行提示词，贴给 agent，它自己去取这条回复并继续">
+        复制取回指令
+      </button>
+      <button type="button" className="small" onClick={() => onAct("handle", "你接手了：可以继续追问或标记完成")}>
         我来处理
       </button>
     </>
@@ -237,10 +250,9 @@ function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: Threa
       </div>
     );
   }
-  const late = now - (r.returnedAt ?? now) > limits.aiLateMinutes * 60_000;
   return (
-    <div className={`aiband ${late ? "warn" : ""}`}>
-      ○ 回复已到，你的 AI 还没取回（{waitedText(now - (r.returnedAt ?? now))}）。它在等就会自动拿到；没在等的话，新对话开始时会先查待处理。
+    <div className="aiband warn">
+      ! {r.to} 回复了（{agoText(now - (r.returnedAt ?? now))}）。点「复制给 AI」，贴给你的 AI（原来的对话或新对话都行），它会接着推进。
       <span className="grow" />
       {tools}
     </div>

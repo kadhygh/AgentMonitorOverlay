@@ -34,6 +34,7 @@
     "reviewer": "npm run build && electron packages/reviewer/dist/main.js",
     "relay": "tsc -b packages/relay && node packages/relay/dist/bin.js",
     "relay:release": "node scripts/relay-release.mjs",
+    "relay:mac": "node scripts/relay-mac.mjs",
     "host:stop": "node scripts/host-stop.mjs",
     "package:portable": "npm run build && node scripts/package-portable.mjs release --zip",
     "smoke:portable": "node scripts/smoke-portable.mjs release"

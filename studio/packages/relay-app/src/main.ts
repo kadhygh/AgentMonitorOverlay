@@ -69,19 +69,27 @@ const BUILD = (() => {
   }
 })();
 
-// ---- config (the service address)
+// ---- config (the service address, and the last few connected to: offered when asking for one)
 
 const configFile = join(home, "shell.json");
-function readServer(): string | null {
+const RECENT_SERVERS = 3;
+function readConfig(): { server?: string; recent?: string[] } {
   try {
-    return (JSON.parse(readFileSync(configFile, "utf8")) as { server?: string }).server ?? null;
+    return JSON.parse(readFileSync(configFile, "utf8")) as { server?: string; recent?: string[] };
   } catch {
-    return null;
+    return {};
   }
+}
+const readServer = (): string | null => readConfig().server ?? null;
+/** Newest first, the last one connected to at the top. */
+function recentServers(): string[] {
+  const c = readConfig();
+  return [...new Set([c.server, ...(c.recent ?? [])].filter((s): s is string => !!s))].slice(0, RECENT_SERVERS);
 }
 function saveServer(value: string): void {
   mkdirSync(home, { recursive: true });
-  writeFileSync(configFile, JSON.stringify({ server: value }, null, 2));
+  const recent = [value, ...recentServers().filter((s) => s !== value)].slice(0, RECENT_SERVERS);
+  writeFileSync(configFile, JSON.stringify({ server: value, recent }, null, 2));
 }
 const argServer = () => {
   const i = process.argv.indexOf("--server");
@@ -198,7 +206,7 @@ async function boot(askAddress = false): Promise<void> {
   let tried: string | null = null;
   for (;;) {
     if (!address) {
-      loaderState({ step: "ask-server", server: tried ?? server ?? readServer() ?? argServer() ?? "", error: askError });
+      loaderState({ step: "ask-server", server: tried ?? server ?? readServer() ?? argServer() ?? "", recent: recentServers(), error: askError });
       const a = await wait();
       if (a.kind !== "server") continue;
       address = normalizeServer(a.value);

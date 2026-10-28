@@ -1,4 +1,5 @@
 import { shell } from "./env.js";
+import { fullUi } from "./features.js";
 import type { Session } from "./session.js";
 import { usagePrompt } from "./shared.js";
 
@@ -10,7 +11,7 @@ export async function writeUsageFile(session: Session): Promise<{ file: string; 
   if (!shell?.writeUsage) return null;
   const hookup = await shell.mcp().catch(() => null);
   const { members, settings } = session.snapshot;
-  const text = usagePrompt({ me: session.me.name, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow });
+  const text = usagePrompt({ me: session.me.name, role: session.me.role, members, cli: hookup?.cli, flow: settings.flow, tasks: fullUi() });
   try {
     return { file: await shell.writeUsage(text), cli: hookup?.cli ?? "" };
   } catch {

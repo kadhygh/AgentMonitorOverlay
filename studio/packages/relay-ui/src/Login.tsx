@@ -30,6 +30,9 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   const shellUpdate = useShellUpdate(checkHealth);
   const [shellOpen, setShellOpen] = useState(false);
   const [accounts, setAccounts] = useState<SavedAccount[]>([]);
+  // None saved for this address: the ones saved for others, so a service that moved to another machine (its data
+  // copied along, 2026-10-28) still finds them; a login here saves them under this address.
+  const [borrowed, setBorrowed] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +51,9 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
     if (!server) return;
     const client = new RelayClient(server);
     void (shell ? shell.accounts() : Promise.resolve(browserAccounts())).then((all) => {
-      const here = all.filter((a) => a.server === client.server).sort((a, b) => b.lastUsed - a.lastUsed);
+      let here = all.filter((a) => a.server === client.server).sort((a, b) => b.lastUsed - a.lastUsed);
+      setBorrowed(!here.length && all.length > 0);
+      if (!here.length) here = [...all].sort((a, b) => b.lastUsed - a.lastUsed).filter((a, i, list) => list.findIndex((x) => x.name === a.name) === i);
       setAccounts(here);
       const last = here[0];
       if (last) {
@@ -122,6 +127,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
           </button>
         )}
 
+        {mode === "login" && accounts.length > 0 && borrowed && <div className="muted tiny">这些账号是在别的服务器地址上记住的，服务器搬过家的话照样能登录。</div>}
         {mode === "login" && accounts.length > 0 && (
           <div className="saved">
             {accounts.map((a) => (

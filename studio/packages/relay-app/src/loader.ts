@@ -17,7 +17,7 @@ const ICON_SVG = (() => {
 
 export type LoaderState =
   | { step: "progress"; text: string; progress: number | null; server: string | null }
-  | { step: "ask-server"; server: string; error: string | null }
+  | { step: "ask-server"; server: string; recent: string[]; error: string | null }
   | { step: "error"; text: string; server: string | null; download: string | null };
 
 export const LOADER_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>AMO 中转</title>
@@ -47,10 +47,15 @@ input:focus{border-color:var(--accent)}
 button{font:inherit;cursor:pointer;border:1px solid var(--strong);background:var(--panel);color:var(--ink);border-radius:3px;padding:5px 14px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .err{color:var(--error);font-size:13px;margin-top:8px;white-space:pre-wrap}
+.recent{display:flex;flex-direction:column;gap:4px;margin:4px 0 12px}
+.recent button{display:flex;align-items:center;gap:8px;text-align:left;padding:6px 10px;border-color:var(--line)}
+.recent button::before{content:"";width:10px;height:10px;flex:none;border:1px solid var(--strong);border-radius:50%}
+.recent button.on{border-color:var(--accent)}.recent button.on::before{background:var(--accent);border-color:var(--accent)}
+.recent .tag{margin-left:auto;font-size:12px;color:var(--muted)}
 </style></head><body><div class="titlebar" id="titlebar"><button id="wmin" title="最小化"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0.5 5.5 H9.5"/></svg></button><button id="wclose" class="close" title="关闭"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5"/></svg></button></div><div class="card">
 <div class="brand"><div class="mark">${ICON_SVG}</div><div><h1>AMO 中转</h1><div class="muted small" id="where"></div></div></div>
 <div id="progress"><div id="text">正在启动…</div><div class="bar busy" id="bar"><div></div></div></div>
-<form id="ask" class="hide"><label>服务器地址<input id="server" placeholder="例如 192.168.1.20:47120" required></label>
+<form id="ask" class="hide"><div id="recentBox" class="hide"><div class="muted small">最近连过的（双击直接连接）</div><div class="recent" id="recent"></div></div><label>服务器地址<input id="server" placeholder="例如 192.168.1.20:47120" required></label>
 <div class="muted small" style="margin-top:6px">在同事发给你的下载页上能看到这个地址。</div><div class="err" id="askErr"></div>
 <div class="row"><button class="primary">连接</button></div></form>
 <div id="error" class="hide"><div class="err" id="errText"></div>
@@ -64,9 +69,18 @@ window.relayLoader.onState((s)=>{
   if(s.step==="progress"){show("progress");$("text").textContent=s.text;const bar=$("bar");
     if(s.progress==null){bar.classList.add("busy");bar.firstElementChild.style.width="30%"}
     else{bar.classList.remove("busy");bar.firstElementChild.style.width=Math.round(s.progress*100)+"%"}}
-  if(s.step==="ask-server"){show("ask");$("server").value=s.server||"";$("askErr").textContent=s.error||"";$("server").focus();$("server").select()}
+  if(s.step==="ask-server"){show("ask");$("server").value=s.server||"";$("askErr").textContent=s.error||"";showRecent(s.recent||[]);$("server").focus();$("server").select()}
   if(s.step==="error"){show("error");$("errText").textContent=s.text;download=s.download;$("download").classList.toggle("hide",!download)}
 });
+// The last few servers, newest first: picking one fills in the address; the one in the field is marked.
+function showRecent(list){const box=$("recent");box.textContent="";$("recentBox").classList.toggle("hide",!list.length);
+  list.forEach((addr,i)=>{const b=document.createElement("button");b.type="button";b.dataset.addr=addr;
+    const t=document.createElement("span");t.textContent=addr.replace(/^https?:[/][/]/,"");b.append(t);
+    if(i===0){const tag=document.createElement("span");tag.className="tag";tag.textContent="上次连接";b.append(tag)}
+    b.onclick=()=>{$("server").value=addr;markRecent()};b.ondblclick=()=>$("ask").requestSubmit();box.append(b)});
+  markRecent()}
+function markRecent(){const v=$("server").value.trim().replace(/[/]+$/,"");for(const b of $("recent").children)b.classList.toggle("on",b.dataset.addr===v||b.dataset.addr.replace(/^https?:[/][/]/,"")===v)}
+$("server").addEventListener("input",markRecent);
 $("ask").addEventListener("submit",(e)=>{e.preventDefault();$("askErr").textContent="";window.relayLoader.submitServer($("server").value)});
 $("retry").onclick=()=>window.relayLoader.retry();
 $("change").onclick=()=>window.relayLoader.changeServer();

@@ -239,8 +239,12 @@ describe("usage prompt", () => {
     expect(p).not.toContain("- 小王");
     expect(p).toContain("`relay ask --json <文件>`");
     expect(p).toContain('PowerShell 写 `& "amo-relay" people`');
-    expect(p).toContain("`relay newtask --title");
+    expect(p).not.toContain("newtask");
+    expect(p).toContain("`relay put <本机文件> --thread <threadId>`");
+    expect(usagePrompt({ me: "小王", cli: "amo-relay", tasks: true })).toContain("`relay newtask --title");
     expect(usagePrompt({ me: "小王" })).not.toContain("命令行");
     expect(usagePrompt({ me: "小王" })).toContain("relay_session_open");
+    expect(usagePrompt({ me: "小王" })).not.toContain("relay_task_");
+    expect(usagePrompt({ me: "小王", tasks: true })).toContain("relay_task_list");
   });
 });

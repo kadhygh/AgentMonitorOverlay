@@ -8,7 +8,8 @@ import { spanText, useSecondTick, type Updates } from "./update.js";
 
 // The bottom of the left column (the layout redesign, 2026-10-27, as AMO Studio's): what wants me first — offline,
 // what waits on me (or that nothing does), a newer version — as strips to click; then the shortcuts (团队流程,
-// 流程速查, 复制用法); then me, how the service is, and 设置.
+// 流程速查, 复制用法); then me, how the service is, and 设置. 团队流程 and 流程速查 only with flowShortcuts (hidden since the
+// tightening, features.ts).
 
 const FLOW_SEEN = "amo-relay.flowSeen";
 
@@ -41,7 +42,7 @@ export interface FootActions {
   onSettings: () => void;
 }
 
-export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean } & FootActions) {
+export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean; flowShortcuts: boolean } & FootActions) {
   const { session, mine, handed, waiting, updates, shellUpdate } = props;
   const { connection, offlineSince, retryAt, settings } = useSession(session);
   const now = useSecondTick(connection === "offline");
@@ -72,16 +73,20 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
     <div className="side-foot">
       <div className="strips">{strips}</div>
       <div className="shortcuts">
-        <button type="button" className="shortcut" onClick={props.onFlow} title={doc ? `打开团队流程（第 ${doc.version} 版 · ${doc.by} 更新）` : "还没有上传团队流程，点一下去设置里上传"}>
-          <Ico d="M4 2.5 H11 L14 5.5 V15.5 H4 Z M11 2.5 V5.5 H14 M6.5 9 H11.5 M6.5 12 H10" />
-          <span className="grow">团队流程</span>
-          {props.flowNew && <span className="chip attn">有更新</span>}
-          {!doc && <span className="muted tiny">未上传</span>}
-        </button>
-        <button type="button" className="shortcut" onClick={props.onQuick} title="推进方式、常用指令，点开可以复制">
-          <Ico d="M3 4.5 H15 M3 9 H15 M3 13.5 H10" />
-          <span className="grow">流程速查</span>
-        </button>
+        {props.flowShortcuts && (
+          <>
+            <button type="button" className="shortcut" onClick={props.onFlow} title={doc ? `打开团队流程（第 ${doc.version} 版 · ${doc.by} 更新）` : "还没有上传团队流程，点一下去设置里上传"}>
+              <Ico d="M4 2.5 H11 L14 5.5 V15.5 H4 Z M11 2.5 V5.5 H14 M6.5 9 H11.5 M6.5 12 H10" />
+              <span className="grow">团队流程</span>
+              {props.flowNew && <span className="chip attn">有更新</span>}
+              {!doc && <span className="muted tiny">未上传</span>}
+            </button>
+            <button type="button" className="shortcut" onClick={props.onQuick} title="推进方式、常用指令，点开可以复制">
+              <Ico d="M3 4.5 H15 M3 9 H15 M3 13.5 H10" />
+              <span className="grow">流程速查</span>
+            </button>
+          </>
+        )}
         <button type="button" className="shortcut" onClick={props.onCopyUsage} title="复制本机用法文档的位置，贴给 agent，它会自己去读，用命令行收发会话；不占它平时的上下文">
           <Ico d="M6 6 H14.5 V14.5 H6 Z M3.5 11.5 V3.5 H11.5" />
           <span className="grow">复制用法</span>

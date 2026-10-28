@@ -13,6 +13,8 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 // closes it), team tasks (files on it, a note in the viewer sent with a reply, an HTML file without its scripts; a session under one, 接手任务 from it, 流转 back, seen, archived, shared settings), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself
 // while signed in, when the window is not in use), and the service going away and coming back (the bar, the login
 // screen's status). Needs `npm run relay:release` first (release/relay/client).
+// That one runs with the full UI (localStorage amo-relay.full); the second test is the tightened one people see
+// (2026-10-28, relay-ui/src/features.ts): an AI's session answered, asked again with a new round, closed by the AI.
 
 // Async: the service runs in this process, so a blocking exec would stall it.
 const exec = async (file: string, args: string[]) => (await promisify(execFile)(file, args, { encoding: "utf8" })).stdout;
@@ -69,8 +71,9 @@ async function shot(app: ElectronApplication, name: string): Promise<void> {
   writeFileSync(join(shots, `${name}.png`), Buffer.from(png, "base64"));
 }
 
-async function register(page: Page, name: string, role: string): Promise<void> {
+async function register(page: Page, name: string, role: string, full = true): Promise<void> {
   await expect(page.getByRole("button", { name: "没有账号？注册一个" })).toBeVisible({ timeout: 30_000 });
+  if (full) await page.evaluate(() => localStorage.setItem("amo-relay.full", "1"));
   await page.getByRole("button", { name: "没有账号？注册一个" }).click();
   await page.getByLabel("名字").fill(name);
   await page.getByLabel("密码", { exact: true }).fill("pw-1234");
@@ -120,13 +123,13 @@ test("register, an AI's request answered in the other client, updates, the servi
   await shot(b.app, "02-reply-form");
   await b.page.getByRole("button", { name: "回复并返回给 策划小王 的 AI" }).click();
   await expect(b.page.locator(".msg.kind-reply")).toContainText("两天");
-  await expect(row(b.page, "技能冷却按等级递减")).toContainText("等 策划小王 的 AI 取回");
+  await expect(row(b.page, "技能冷却按等级递减")).toContainText("已返回给 策划小王");
 
   // Back with the planner: the AI has not taken it yet; the AI reads it through the command line — 「已取回」 —
   // then the planner takes it over (我来处理): the AI is refused from then on; the planner closes it.
   await row(a.page, "技能冷却按等级递减").click();
   await expect(a.page.locator(".msg.kind-reply .verdict")).toContainText("同意");
-  await expect(a.page.locator(".aiband")).toContainText("还没取回");
+  await expect(a.page.locator(".aiband")).toContainText("程序老李 回复了");
   await shot(a.app, "03-planner-returned");
   const threadId = /threadId: (\S+)/.exec(asked)![1]!;
   const replies = await exec("cmd.exe", ["/c", cli, "replies", threadId]);
@@ -434,5 +437,122 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".nav-fold", { hasText: "已完成" }).click();
   await row(b.page, "技能冷却按等级递减").click();
   await shot(b.app, "10-dark-session");
+  expect(pageErrors).toEqual([]);
+});
+
+test("tightened: an AI's session answered over two rounds, closed by the AI; no tasks, no 新会话", async () => {
+  const a = await launch("planner2");
+  await register(a.page, "策划小张", "策划", false);
+  const b = await launch("coder2");
+  await register(b.page, "程序老赵", "程序 · 系统", false);
+  for (const p of [a.page, b.page]) {
+    await expect(p.locator(".view-tab")).toHaveText(["待处理", "聊天", "成员"]);
+    await expect(p.getByRole("button", { name: /＋ 新/ })).toHaveCount(0);
+    await expect(p.locator(".shortcut")).toHaveText(["复制用法"]);
+  }
+  await a.page.getByRole("button", { name: "复制用法" }).click();
+  const usageFile = join(a.home, "AMO中转用法.md");
+  await expect.poll(() => existsSync(usageFile) && readFileSync(usageFile, "utf8").includes("策划小张")).toBe(true);
+  const usage = readFileSync(usageFile, "utf8");
+  expect(usage).not.toContain("newtask");
+  expect(usage).toContain("`relay put <本机文件> --thread <threadId>`");
+  expect(usage).toContain("发完就结束这一轮");
+  expect(usage).not.toContain("wait <threadId>");
+
+  // The planner's AI hits a snag: it asks the coder, with its designdoc in the session, and ends its turn.
+  const cli = join(a.home, "amo-relay.cmd");
+  const req = join(root, "req2.json");
+  writeFileSync(req, JSON.stringify({ to: "程序老赵", title: "背包格子上限怎么存", body: "打算把上限写死在客户端常量里，**每升 10 级 +5 格**。", questions: [{ text: "上限放哪", options: ["客户端常量", "服务端配置表"] }] }));
+  const threadId = /threadId: (\S+)/.exec(await exec("cmd.exe", ["/c", cli, "ask", "--json", req]))![1]!;
+  const doc = join(root, "bag-design.md");
+  writeFileSync(doc, "# 背包\n\n初始 40 格，每升 10 级 +5 格。");
+  expect(await exec("cmd.exe", ["/c", cli, "put", doc, "--thread", threadId])).toContain("已上传 bag-design.md v1");
+
+  // The coder: told it waits on them; the session has the attachment; only 回复并返回 — no task to take over.
+  const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+  await expect(b.page.locator(".strip.attn")).toContainText("1 件等你处理");
+  await expect(row(b.page, "背包格子上限怎么存")).toContainText("等你处理");
+  await row(b.page, "背包格子上限怎么存").click();
+  await expect(b.page.locator(".page-crumb")).toHaveText("待处理");
+  await expect(b.page.locator(".atts .att", { hasText: "bag-design.md" })).toBeVisible();
+  await expect(b.page.getByRole("button", { name: /接手任务/ })).toHaveCount(0);
+  await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
+  await b.page.locator(".reply-form .opt", { hasText: "服务端配置表" }).click();
+  await b.page.getByPlaceholder("补充说明（支持 Markdown）").fill("运营会调上限，放配置表；客户端从登录数据里取。");
+  await b.page.locator(".vbtn", { hasText: "需要改" }).click();
+  await shot(b.app, "30-tight-reply");
+  await b.page.getByRole("button", { name: "回复并返回给 策划小张 的 AI" }).click();
+  await expect(row(b.page, "背包格子上限怎么存")).toContainText("已返回给 策划小张");
+
+  // The planner sees it waiting on them and copies it over to the AI, with what to do next.
+  await expect(a.page.locator(".strip.attn")).toContainText("1 件等你处理");
+  await expect(row(a.page, "背包格子上限怎么存")).toContainText("回复已到 · 复制给 AI 继续");
+  await row(a.page, "背包格子上限怎么存").click();
+  await expect(a.page.locator(".aiband")).toContainText("程序老赵 回复了");
+  await shot(a.app, "33-tight-planner-back");
+  await a.page.locator(".aiband").getByRole("button", { name: "复制给 AI" }).click();
+  await expect.poll(() => a.app.evaluate(({ clipboard }) => clipboard.readText())).toContain(`程序老赵 回复了你发的会话（threadId ${threadId}）`);
+  expect(await a.app.evaluate(({ clipboard }) => clipboard.readText())).toContain("**上限放哪** → 服务端配置表");
+
+  // The AI reads it and asks again with a new round; the coder answers that one too.
+  expect(await exec("cmd.exe", ["/c", cli, "replies", threadId])).toContain("**上限放哪** → 服务端配置表");
+  await expect(row(a.page, "背包格子上限怎么存")).toContainText("AI 已取回");
+  const qs = join(root, "qs2.json");
+  writeFileSync(qs, JSON.stringify([{ text: "配置表用哪张", options: ["player_level", "新建 bag_limit"] }]));
+  expect(await exec("cmd.exe", ["/c", cli, "send", threadId, "--body", "好，改放配置表。", "--then", "ask", "--questions", qs])).toContain("会话回到对方手里");
+  await expect(row(b.page, "背包格子上限怎么存")).toContainText("等你处理");
+  await expect(b.page.locator(".reply-form")).toContainText("配置表用哪张");
+  await b.page.locator(".reply-form .opt", { hasText: "新建 bag_limit" }).click();
+  await b.page.getByRole("button", { name: "回复并返回给 策划小张 的 AI" }).click();
+
+  // Settled: the AI closes it; both see it done.
+  expect(await exec("cmd.exe", ["/c", cli, "replies", threadId])).toContain("**配置表用哪张** → 新建 bag_limit");
+  expect(await exec("cmd.exe", ["/c", cli, "send", threadId, "--body", "按 bag_limit 表做，谢谢。", "--then", "done"])).toContain("已标记完成");
+  await expect(b.page.getByRole("button", { name: "重新打开" })).toBeVisible();
+  await expect(b.page.locator(".strip.calm")).toContainText("没有等你处理的");
+  await a.page.locator(".nav-fold", { hasText: "已完成" }).click();
+  await row(a.page, "背包格子上限怎么存").click();
+  await expect(a.page.locator(".msg.kind-reply")).toHaveCount(2);
+  await shot(a.app, "31-tight-planner-done");
+
+  // Between people: a chat, not a session.
+  await b.page.locator(".view-tab", { hasText: "成员" }).click();
+  await b.page.locator(".nav-row.person", { hasText: "策划小张" }).click();
+  await expect(b.page.getByRole("button", { name: "私聊" })).toBeVisible();
+  await expect(b.page.getByRole("button", { name: "发起会话" })).toHaveCount(0);
+  await shot(b.app, "32-tight-member");
+  expect(pageErrors).toEqual([]);
+});
+
+test("a moved service: the last 3 servers offered, the last one picked; accounts saved for the old address still sign in", async () => {
+  const first = await launch("mover");
+  await register(first.page, "搬家小周", "测试", false);
+  await first.app.close();
+  // The service "moved": the one used last is gone, the same one is now at another address (localhost), and the list
+  // holds four addresses, of which three are offered.
+  const port = new URL(server.url).port;
+  const moved = `http://localhost:${port}`;
+  const gone = "http://127.0.0.1:1";
+  writeFileSync(join(root, "mover", "shell.json"), JSON.stringify({ server: gone, recent: [gone, moved, server.url, "http://127.0.0.1:2"] }));
+  const again = await launch("mover");
+  const page = again.page;
+  await expect(page.locator(".server-down")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "更换" }).click();
+  const rows = page.locator("#recent button");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("127.0.0.1:1");
+  await expect(rows.nth(0)).toContainText("上次连接");
+  await expect(rows.nth(0)).toHaveClass(/on/);
+  await rows.nth(1).click();
+  await expect(rows.nth(1)).toHaveClass(/on/);
+  await expect(page.locator("#server")).toHaveValue(moved);
+  await shot(again.app, "34-recent-servers");
+  await page.getByRole("button", { name: "连接", exact: true }).click();
+  await expect(page.getByText("这些账号是在别的服务器地址上记住的")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel("名字")).toHaveValue("搬家小周");
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page.locator(".view-tabs")).toBeVisible();
+  const saved = JSON.parse(readFileSync(join(root, "mover", "shell.json"), "utf8")) as { server: string; recent: string[] };
+  expect(saved).toEqual({ server: moved, recent: [moved, gone, server.url] });
   expect(pageErrors).toEqual([]);
 });
