@@ -8,10 +8,11 @@
     "paths": {
       "@amo-studio/protocol": ["./packages/protocol/src/index.ts"],
       "@amo-studio/testkit": ["./packages/testkit/src/index.ts"],
+      "@amo-studio/account": ["./packages/account/src/index.ts"],
       "@amo-studio/host": ["./packages/host/src/index.ts"],
       "@amo-studio/reviewer": ["./packages/reviewer/src/index.ts"],
       "@amo-studio/relay": ["./packages/relay/src/index.ts"]
     }
   },
-  "include": ["packages/protocol/src", "packages/testkit/src", "packages/host/src", "packages/app/src", "packages/notes/src", "packages/reviewer/src", "packages/relay/src", "packages/relay-app/src", "e2e", "vitest.config.ts"]
+  "include": ["packages/protocol/src", "packages/testkit/src", "packages/host/src", "packages/app/src", "packages/notes/src", "packages/reviewer/src", "packages/relay/src", "packages/relay-app/src", "packages/account/src", "packages/platform/src", "e2e", "vitest.config.ts"]
 }

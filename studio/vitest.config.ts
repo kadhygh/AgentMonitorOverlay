@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@amo-studio/protocol": src("protocol"),
       "@amo-studio/testkit": src("testkit"),
+      "@amo-studio/account": src("account"),
       "@amo-studio/host": src("host"),
       "@amo-studio/reviewer": src("reviewer"),
       "@amo-studio/relay": src("relay"),

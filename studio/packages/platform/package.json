@@ -1,0 +1,16 @@
+{
+  "name": "@amo-studio/platform",
+  "private": true,
+  "version": "0.9.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@amo-studio/account": "0.0.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.0"
+  }
+}

@@ -5,3 +5,4 @@ export * from "./temp.js";
 export * from "./mock-anthropic.js";
 export * from "./ports.js";
 export * from "./fake-acp.js";
+export * from "./fake-platform-server.js";
