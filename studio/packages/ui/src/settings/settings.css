@@ -238,6 +238,14 @@
 .remote-ping.error { color: var(--error); }
 .remote-warning { color: var(--attention); }
 .remote-outgoing { flex-wrap: nowrap; }
+/* Step 2: tasks granted to other devices, 远端允许的模型, and the 授权给… box on the task page. */
+.remote-grant { flex-wrap: wrap; row-gap: 2px; }
+.remote-allowed-list { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.remote-allowed-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.grant-modal { width: 480px; }
+.grant-peers { display: flex; flex-direction: column; gap: 6px; }
+.grant-peer { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-m); cursor: pointer; }
+.grant-peer:has(input:checked) { border-color: var(--primary); }
 /* A pairing request waits: the dot beside 设置 and on the 远程 tab. */
 .settings-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--attention); margin-left: 6px; vertical-align: middle; flex: none; }
 .nav-settings-folded { position: relative; }

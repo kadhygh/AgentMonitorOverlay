@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -42,6 +42,8 @@ import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import type { ReadPlace } from "./readPlace.js";
+import { copyStatus, grantsOf, REMOTE_FILES_LATER, useRemote } from "../settings/remote.js";
+import { GrantDialog } from "./GrantDialog.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -121,8 +123,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);
   const modelText = session ? sessionModelName(sessionChoices, session.options) : null;
   const profile = (id: string) => profiles.find((p) => p.id === id);
+  // 远程 (step 2, 2026-10-29): a copy of a task another computer granted this one (it runs there: no Git Review,
+  // terminal, files or changes to the task here), or a task of this computer granted to other devices.
+  const remote = useRemote(link);
+  const copy = copyStatus(task, remote);
+  const granted = grantsOf(remote, task.id);
+  const remoteHeld = remoteHeldTasks(remote).has(task.id);
+  const [granting, setGranting] = useState(false);
   // Git Review: only for a project under git; the branch shows in the line under the title.
-  const gitRepo = useIsGitRepo(link, task.workspaceId);
+  const gitRepo = useIsGitRepo(link, task.workspaceId) && !copy;
   const git = useGitBranch(link, task.workspaceId);
   const taskWorkspace = workspaces.find((w) => w.id === task.workspaceId);
   const taskTopic = topics.find((t) => t.id === task.topicId);
@@ -347,7 +356,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               value={task.title}
               placeholder="未命名任务"
               label="任务名"
-              disabled={!!task.archivedAt}
+              disabled={!!task.archivedAt || !!copy}
               onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
             />
             {task.lead && (
@@ -360,19 +369,19 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             task={task}
             workspace={taskWorkspace}
             topic={taskTopic}
-            branch={git.repo ? git.branch : null}
-            disabled={!!task.archivedAt || busy}
+            branch={git.repo && !copy ? git.branch : null}
+            disabled={!!task.archivedAt || busy || !!copy}
             onStatus={setStatusAt}
             onTopic={() => setPicking("topic")}
           />
         </div>
         <div className="task-head-actions">
-          {!task.archivedAt && (
+          {!task.archivedAt && !(copy && copy.state === "revoked") && (
             <button
               type="button"
               className="btn-ghost small with-icon"
               aria-expanded={creating}
-              title="在这个任务里开一个新会话"
+              title={copy ? `在这个任务里开一个新会话（在 ${copy.name} 上跑，只能选那边允许的模型）` : "在这个任务里开一个新会话"}
               onClick={() => {
                 setCreating(!creating);
                 if (!creating) setSessionsHidden(false);
@@ -404,15 +413,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               Review
             </button>
           )}
+          {!copy && (
           <button type="button" className="btn-ghost small with-icon" title="书签：这个专题记下的文件和对话片段（Ctrl+Shift+M）" onClick={() => openMarks({ topicId: task.topicId ?? "none", workspaceId: task.workspaceId, taskId: task.id })} data-testid="task-marks">
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z" />
             </svg>
             书签
           </button>
+          )}
           {/* 归档 on its own, left of ⋯ (2026-10-23). */}
           {!task.archivedAt && (
-            <button type="button" className="btn-ghost small with-icon soft-danger" title="归档任务：任务和它的会话变成只读，之后可以恢复" disabled={busy} onClick={() => void archiveTask()} data-testid="task-archive">
+            <button type="button" className="btn-ghost small with-icon soft-danger" title={copy ? `归档：清掉这台电脑上的副本（任务在 ${copy.name} 上照常${copy.state === "revoked" ? "" : "；以后那边重新授权才会再出现"}）` : "归档任务：任务和它的会话变成只读，之后可以恢复"} disabled={busy} onClick={() => void archiveTask()} data-testid="task-archive">
               <ArchiveIcon size={15} />
               归档
             </button>
@@ -459,7 +470,38 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       )}
       {taskMenu && (
         <PopMenu at={taskMenu} label="任务" onClose={() => setTaskMenu(null)} testId="task-menu">
-          {!task.archivedAt && (
+          {copy && <span className="menu-note">远程任务：名字、状态、说明在 {copy.name} 上改</span>}
+          {!task.archivedAt && !copy && (
+            <button
+              type="button"
+              role="menuitem"
+              title="让你的另一台电脑远程使用这个任务：会话还在这台电脑上跑"
+              onClick={() => {
+                setTaskMenu(null);
+                setGranting(true);
+              }}
+              data-testid="task-grant"
+            >
+              授权给…
+            </button>
+          )}
+          {granted.map((g) => (
+            <button
+              key={`${g.account}\n${g.device}`}
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              title="那边保留已经同步的记录（只读），不能再操作这个任务"
+              onClick={() => {
+                setTaskMenu(null);
+                void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: task.id, account: g.account, device: g.device }), () => setToast({ text: `已收回 ${g.name} 的授权` }));
+              }}
+              data-testid="task-revoke"
+            >
+              收回 {g.name} 的授权
+            </button>
+          ))}
+          {!task.archivedAt && !copy && (
             <button
               type="button"
               role="menuitem"
@@ -472,7 +514,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.description ? "编辑说明…" : "添加说明…"}
             </button>
           )}
-          {!task.archivedAt && (
+          {!task.archivedAt && !copy && (
             <button
               type="button"
               role="menuitem"
@@ -487,7 +529,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.lead ? "取消主控" : "设为主控"}
             </button>
           )}
-          {!task.archivedAt && (
+          {!task.archivedAt && !copy && (
             <button
               type="button"
               role="menuitemcheckbox"
@@ -503,15 +545,60 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.relayAuto ? "✓ " : ""}主控传话不用确认
             </button>
           )}
-          {task.topicId && <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />}
+          {task.topicId && !copy && <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />}
           {task.archivedAt && <span className="menu-note">任务已归档</span>}
         </PopMenu>
+      )}
+      {granting && <GrantDialog link={link} task={task} remote={remote} onClose={() => setGranting(false)} onDone={(text) => {
+        setGranting(false);
+        setToast({ text });
+      }} />}
+
+      {copy && (
+        <div className={`remote-banner ${copy.state}`} role="status" data-testid="remote-banner" data-state={copy.state}>
+          <span className="remote-badge">远程</span>
+          <span className="remote-banner-text">
+            {copy.state === "revoked" ? (
+              <>
+                <b>授权已收回</b>
+                <span>
+                  {task.remote!.reason && task.remote!.reason !== "授权已收回" ? `${task.remote!.reason}。` : `${copy.name} 收回了这个任务的授权。`}已经同步的记录还能看，不会再连回去。归档会清掉这台电脑上的副本。
+                </span>
+              </>
+            ) : copy.state === "offline" ? (
+              <>
+                <b>{copy.label}</b>
+                <span>记录能看；现在不能发消息、不能审批，写好的消息留在输入框里。{copy.self ? "这台电脑连上团队服务器后" : `${copy.name} 回来后`}会自动重连，补齐这段时间的记录。</span>
+              </>
+            ) : (
+              <>
+                <b>在 {copy.name} 上运行</b>
+                <span>这是 {task.remote!.account} 的「{copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。文件查看、Git Review、终端要在那边用。</span>
+              </>
+            )}
+          </span>
+        </div>
+      )}
+      {granted.length > 0 && (
+        <div className="remote-banner granted" role="status" data-testid="granted-banner">
+          <span className="remote-badge">已授权</span>
+          <span className="remote-banner-text">
+            <span>
+              {granted.map((g) => g.name).join("、")} 可以远程使用这个任务（会话还在这台电脑上跑）。{remoteHeld ? "它在线，这个任务的提醒只在它那边出现。" : ""}
+            </span>
+          </span>
+          {granted.map((g) => (
+            <button key={`${g.account}\n${g.device}`} type="button" className="btn-ghost small" disabled={busy} onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: task.id, account: g.account, device: g.device }), () => setToast({ text: `已收回 ${g.name} 的授权` }))} data-testid="granted-revoke">
+              收回{granted.length > 1 ? ` ${g.name}` : ""}
+            </button>
+          ))}
+        </div>
       )}
 
       {task.description && (
         <div className="task-desc" data-testid="task-description">
           <p className="task-desc-text">{task.description}</p>
-          {!task.archivedAt && (
+          {!task.archivedAt && !copy && (
             <button type="button" className="link-btn" onClick={() => setDescribing(true)}>
               编辑
             </button>
@@ -555,6 +642,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             onPreset={openPreset}
             creating={creating}
             onCreating={setCreating}
+            {...(copy ? { remote: { name: copy.name, allowed: task.remote!.allowed, blocked: copy.blocked } } : {})}
           />
         )}
         <div className="thread-col">
@@ -584,9 +672,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
           )}
           {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
-          <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError}>
+          <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError} {...(copy ? { remoteNote: REMOTE_FILES_LATER } : {})}>
             <Thread
               link={link}
+              {...(copy ? { remote: { blocked: copy.blocked, revoked: copy.state === "revoked" } } : {})}
               presets={settings?.presets ?? []}
               session={session}
               {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}

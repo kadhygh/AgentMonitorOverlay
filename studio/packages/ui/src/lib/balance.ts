@@ -47,16 +47,19 @@ export function useBalance(link: HostLink, profile: ModelProfile | undefined): {
   return { balance, loading, refresh: () => load(true) };
 }
 
-/** Every model profile, following `profiles.updated`. */
+/** This computer's own profiles: not the (hidden) models of remote tasks' computers (远程 step 2), only there for names. */
+const own = (list: readonly ModelProfile[]): ModelProfile[] => list.filter((p) => p.runtime !== "remote");
+
+/** Every model profile of this computer, following `profiles.updated`. */
 export function useProfiles(link: HostLink): ModelProfile[] | null {
   const [profiles, setProfiles] = useState<ModelProfile[] | null>(null);
   useEffect(() => {
     let live = true;
     call(link, "GET /api/state")
-      .then((s) => live && setProfiles(s.profiles))
+      .then((s) => live && setProfiles(own(s.profiles)))
       .catch(() => undefined);
     const off = onHostEvent((e) => {
-      if (e.type === "profiles.updated") setProfiles(e.profiles);
+      if (e.type === "profiles.updated") setProfiles(own(e.profiles));
     });
     return () => {
       live = false;

@@ -284,7 +284,7 @@ export function App() {
         </div>
       </div>
       <HostErrorToast />
-      {settingsOpen && <SettingsDialog key={settingsOpen.at} link={link} settings={settings} workspaces={state.workspaces} {...(settingsOpen.page ? { page: settingsOpen.page } : {})} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog key={settingsOpen.at} link={link} settings={settings} workspaces={state.workspaces} tasks={state.tasks} profiles={state.profiles} {...(settingsOpen.page ? { page: settingsOpen.page } : {})} onClose={() => setSettingsOpen(false)} />}
       {quickOpen && (
         <QuickStart
           link={link}

@@ -47,10 +47,48 @@ interface SessionTreeProps {
   /** The new-session form, opened from 新会话 in the task head (2026-10-14). */
   creating: boolean;
   onCreating(open: boolean): void;
+  /**
+   * 远程 (step 2): a copy of another computer's task — new sessions start there, on the models it allows (this
+   * computer's ids of them), and not while `blocked` says why.
+   */
+  remote?: { name: string; allowed: readonly string[]; blocked: string | null };
+}
+
+/** 新会话 in a copy of a remote task: one of the models its own computer allows, nothing else to choose here. */
+function RemoteNewSession({ name, allowed, blocked, profiles, busy, onStart }: { name: string; allowed: readonly string[]; blocked: string | null; profiles: readonly ModelProfile[]; busy: boolean; onStart(profileId: string): void }) {
+  const [pick, setPick] = useState(allowed[0] ?? "");
+  useEffect(() => {
+    if (!allowed.includes(pick)) setPick(allowed[0] ?? "");
+  }, [allowed.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const label = (id: string) => profiles.find((p) => p.id === id)?.label ?? id;
+  return (
+    <div className="new-session" aria-label="新会话" data-testid="remote-new-session">
+      {allowed.length === 0 ? (
+        <span className="settings-hint">{name} 没有允许远程新开会话的模型：在那台电脑的 设置 → 远程 里勾选。</span>
+      ) : (
+        <>
+          <label className="stack-field">
+            模型（{name} 允许的）
+            <select value={pick} onChange={(e) => setPick(e.target.value)} disabled={busy || !!blocked} aria-label="远程会话的模型" data-testid="remote-model">
+              {allowed.map((id) => (
+                <option key={id} value={id}>
+                  {label(id)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="btn-primary small" disabled={busy || !pick || !!blocked} onClick={() => onStart(pick)} data-testid="remote-start">
+            在 {name} 上开始新会话
+          </button>
+        </>
+      )}
+      {blocked && <span className="settings-hint">{blocked}</span>}
+    </div>
+  );
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. Shown or hidden as a whole by 会话 in the task head (2026-10-15). */
-export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating }: SessionTreeProps) {
+export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating, remote }: SessionTreeProps) {
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
@@ -114,7 +152,11 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
         )}
       </div>
 
-      {formOpen && (
+      {formOpen && remote && <RemoteNewSession name={remote.name} allowed={remote.allowed} blocked={remote.blocked} profiles={profiles} busy={busy} onStart={(profileId) => {
+        onNewSession({ profileId });
+        setCreating(false);
+      }} />}
+      {formOpen && !remote && (
         <div className="new-session" aria-label="新会话">
           <ModelRow
             link={link}

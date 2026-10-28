@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { projectWorkspaces, type StudioSettings, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, type ModelProfile, type StudioSettings, type Task, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
@@ -65,7 +65,7 @@ let lastPage: SettingsPage = "ui";
  * new tasks, and the common folder for sessions that belong to no single project: the scheduler's rounds, and the default
  * for cross-workspace sessions), 功能 and 便签.
  */
-export function SettingsDialog({ link, settings, workspaces = [], page: startPage, onClose }: { link: HostLink; settings: StudioSettings | null; workspaces?: readonly Workspace[]; /** Opens on this page (Focus's 「在设置里看」). */ page?: SettingsPage; onClose(): void }) {
+export function SettingsDialog({ link, settings, workspaces = [], tasks = [], profiles = [], page: startPage, onClose }: { link: HostLink; settings: StudioSettings | null; workspaces?: readonly Workspace[]; /** 远程: the tasks granted to other devices, and the models they may use. */ tasks?: readonly Task[]; profiles?: readonly ModelProfile[]; /** Opens on this page (Focus's 「在设置里看」). */ page?: SettingsPage; onClose(): void }) {
   const [page, setPage] = useState<SettingsPage>(startPage ?? lastPage);
   const remoteWaits = remoteWaiting(useRemote(link)) > 0;
   const [theme, setTheme] = useState<ThemePref>(themePref);
@@ -273,7 +273,7 @@ export function SettingsDialog({ link, settings, workspaces = [], page: startPag
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
-            {page === "remote" && <RemotePage link={link} />}
+            {page === "remote" && <RemotePage link={link} tasks={tasks} profiles={profiles} />}
             {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>

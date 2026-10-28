@@ -90,11 +90,16 @@ interface ThreadProps {
   onError?(text: string): void;
   /** Open decisions of this session (AMO decision_request), answered in the question popup. */
   decisions?: readonly DecisionRequest[];
+  /**
+   * 远程 (step 2): the session is a copy of one on another computer. `blocked`: why nothing can be sent or answered now
+   * (that computer is away: the draft stays, the send button greys); `revoked`: the grant is gone, read only.
+   */
+  remote?: { blocked: string | null; revoked: boolean };
 }
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -290,7 +295,12 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
 
   // A Claude subagent has no conversation of its own; it is followed from its parent session.
   const claudeSub = session?.runtime === "claude" && session.kind === "sub";
-  const readOnly = !session || claudeSub || session.writer === "archived" || session.writer === "terminal-handoff";
+  // 远程 (step 2): a copy of another computer's session — its subagents follow their parent there too, a revoked one is
+  // only read, and while that computer is away nothing goes out (what is typed stays).
+  const isRemote = session?.runtime === "remote";
+  const remoteSub = isRemote && session.kind === "sub";
+  const blocked = isRemote ? (remote?.blocked ?? null) : null;
+  const readOnly = !session || claudeSub || remoteSub || !!remote?.revoked || session.writer === "archived" || session.writer === "terminal-handoff";
   // An archived session has no composer (stage 14): the task page's banner says so and restores it.
   const archived = !!session && (session.writer === "archived" || !!session.archivedAt);
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval" || session.status === "awaiting-answer");
@@ -310,13 +320,17 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn; DSH only
   // after the turn (stage 17: one prompt at a time).
   const queues = session?.runtime === "claude" || session?.runtime === "dsh";
-  const placeholder = composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues, waitsForTurn: session?.runtime === "dsh" });
+  const placeholder = remoteSub
+    ? "子 agent 不能单独接收消息，请在父会话里继续。"
+    : blocked
+      ? `${blocked}${readOnly ? "" : "（可以先写好）"}`
+      : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues, waitsForTurn: session?.runtime === "dsh" });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
   const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
   const referring = !isRevising && (annotationRefs?.list.length ?? 0) > 0;
-  const canSend = !readOnly && !attachHold && (!!draft.trim() || (!attach.empty && !isRevising) || referring);
+  const canSend = !readOnly && !blocked && !attachHold && (!!draft.trim() || (!attach.empty && !isRevising) || referring);
 
   /** "要修改": text already typed goes at once; otherwise the composer collects it. */
   async function revise(feedback: string): Promise<boolean> {
@@ -390,7 +404,8 @@ ${d}` : back));
   // dialog holds the keys.
   const askCommit = mentions.askCommit;
   useEffect(() => {
-    if (readOnly) return;
+    // A remote session's files are on its own computer (step 3).
+    if (readOnly || isRemote) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "p") return;
       if (document.querySelector('[role="dialog"]')) return;
@@ -401,10 +416,10 @@ ${d}` : back));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly, askCommit]);
+  }, [readOnly, askCommit, isRemote]);
 
-  // Files dragged in from Explorer (or anywhere) over the conversation or the composer.
-  const dropTarget = readOnly
+  // Files dragged in from Explorer (or anywhere) over the conversation or the composer (not into a remote session yet).
+  const dropTarget = readOnly || isRemote
     ? {}
     : {
         onDragOver: (e: DragEvent) => {
@@ -498,7 +513,8 @@ ${d}` : back));
             {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
-                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} />
+                {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
+                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} />
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>
@@ -566,7 +582,7 @@ ${d}` : back));
             <IconArrowDown />
           </button>
         )}
-        {session && !readOnly && (nativeQuestionOpen || decision) && (
+        {session && !readOnly && !blocked && (nativeQuestionOpen || decision) && (
           <div className="q-popup" data-testid="question-popup">
             {nativeQuestionOpen && asked ? <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => hideCard(asked.id)} /> : decision && <DecisionPrompt link={link} decision={decision} onClose={() => hideCard(decision.id)} />}
           </div>
@@ -593,9 +609,9 @@ ${d}` : back));
               onCancelRevise={() => setRevising(null)}
             />
           )}
-          <BackgroundTasks link={link} sessionId={session.id} items={items} readOnly={readOnly} onError={(text) => onError?.(text)} />
-          {!readOnly && <WakeBar link={link} session={session} />}
-          {!readOnly && <ContextHint link={link} session={session} context={stats.context} items={items} busy={generating || compacting} onCompact={() => void runCommand(COMPACT, "")} />}
+          <BackgroundTasks link={link} sessionId={session.id} items={items} readOnly={readOnly || isRemote} onError={(text) => onError?.(text)} />
+          {!readOnly && !isRemote && <WakeBar link={link} session={session} />}
+          {!readOnly && !isRemote && <ContextHint link={link} session={session} context={stats.context} items={items} busy={generating || compacting} onCompact={() => void runCommand(COMPACT, "")} />}
           {suggestion && chat.settings.promptSuggestions && !generating && !readOnly && !planReview && !draft.trim() && (
             <SuggestionChips
               text={suggestion}
@@ -624,7 +640,7 @@ ${d}` : back));
                   mentions.track(e.currentTarget);
                   slash.track(e.currentTarget);
                 }}
-                onPaste={readOnly ? undefined : attach.onPaste}
+                onPaste={readOnly || isRemote ? undefined : attach.onPaste}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
@@ -650,8 +666,8 @@ ${d}` : back));
                 type="button"
                 className="round-btn attach"
                 aria-label="添加图片或文件"
-                title="添加图片或文件（也可以粘贴或拖进来）"
-                disabled={readOnly}
+                title={isRemote ? "远程任务暂时不能发图片和文件（下一步做）" : "添加图片或文件（也可以粘贴或拖进来）"}
+                disabled={readOnly || isRemote}
                 onClick={() => picker.current?.click()}
               >
                 <IconPaperclip />
@@ -667,10 +683,10 @@ ${d}` : back));
                   e.currentTarget.value = "";
                 }}
               />
-              <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
-              <span className="composer-hint">{attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
+              <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly || isRemote} />
+              <span className="composer-hint" {...(blocked ? { "data-testid": "remote-blocked" } : {})}>{blocked || attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
-              {generating && !readOnly && (
+              {generating && !readOnly && !blocked && (
                 <button type="button" className="round-btn stop" onClick={stop} aria-label="打断" title={unansweredPrompt(items) ? "停止生成：还没有回复，刚发的消息放回输入框" : "停止生成"}>
                   <IconStop />
                 </button>
@@ -688,7 +704,7 @@ ${d}` : back));
             </div>
           </div>
           )}
-          <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh"} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
+          <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh" && !isRemote} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
       {finding && session && (

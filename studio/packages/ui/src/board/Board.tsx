@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, taskProject, type RemoteState, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import type { HostLink } from "../host/client.js";
+import { copyStatus, grantsOf, useRemote, type CopyStatus } from "../settings/remote.js";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
@@ -49,10 +51,13 @@ interface BoardProps {
   checklist?: ReadonlyMap<string, { done: number; total: number }>;
   /** 归档已完成: 归档 at the right of the 完成 column's head archives its cards, the one on a topic group's head that group's (2026-10-28; a right-click menu before). */
   onArchive?(tasks: readonly Task[]): void;
+  /** 远程 (step 2): where copies of remote tasks run and whether they can be reached; what this computer granted. */
+  link?: HostLink;
 }
 
 /** Four columns; the person moves cards (drag a card onto another column), agents never do. Cards carry no buttons. */
-export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist, onArchive }: BoardProps) {
+export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist, onArchive, link }: BoardProps) {
+  const remote = useRemote(link ?? null);
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskColumn | null>(null);
@@ -74,7 +79,9 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
       workspaces={workspaces}
       topics={topics}
       onOpen={onOpen}
-      draggable={!!onMove}
+      remote={remote}
+      // A copy of a remote task has the column its own computer gives it.
+      draggable={!!onMove && !task.remote}
       onDragStart={() => setDragging(task)}
       onDragEnd={() => {
         setDragging(null);
@@ -172,7 +179,9 @@ function TaskCard({
   mail = 0,
   decisions = 0,
   checklist,
+  remote = null,
 }: {
+  remote?: RemoteState | null;
   task: Task;
   sessions: Session[];
   scope: Scope;
@@ -190,13 +199,18 @@ function TaskCard({
 }) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
+  // 远程 (step 2): a copy says where it runs and whether that computer can be reached; a task of this computer says
+  // which devices it is granted to.
+  const copy: CopyStatus | null = copyStatus(task, remote);
+  const off = !!copy && (copy.state === "offline" || copy.state === "revoked");
+  const granted = grantsOf(remote, task.id);
   const live = sessions.filter((s) => !s.archivedAt);
   const mains = live.filter((s) => s.kind === "main");
   const branches = live.length - mains.length;
 
   // 归属行 (2026-10-19): 「专题 › 项目」 above the title, naming only what the scope (or the topic group) does not
   // already say. In 全部任务 a task in no topic says so; a task in the common space names no project.
-  const project = scope.kind === "workspace" ? null : (taskProject(task, workspaces)?.name ?? null);
+  const project = scope.kind === "workspace" || copy ? null : (taskProject(task, workspaces)?.name ?? null);
   const showTopic = scope.kind !== "topic" && !grouped;
   const topic = showTopic && task.topicId ? (topics.find((t) => t.id === task.topicId)?.title ?? null) : null;
   const noTopic = showTopic && !topic && scope.kind === "all";
@@ -207,7 +221,7 @@ function TaskCard({
   return (
     <button
       type="button"
-      className="card"
+      className={off ? "card remote-off" : "card"}
       onClick={() => onOpen(task)}
       draggable={draggable}
       onDragStart={(e) => {
@@ -218,8 +232,15 @@ function TaskCard({
       onDragEnd={onDragEnd}
       data-testid="task-card"
       data-task-id={task.id}
+      {...(copy ? { "data-remote": copy.state } : {})}
     >
-      {(topic || noTopic || project) && (
+      {copy && (
+        <span className="card-where card-remote" data-testid="card-remote" title={`在 ${copy.name}（${task.remote!.account}）上运行：模型调用和命令都在那台电脑上`}>
+          <span className="remote-badge">远程</span>
+          <span className="card-remote-where">{off ? copy.label : `在 ${copy.name} 上`}</span>
+        </span>
+      )}
+      {(topic || noTopic || project) && !copy && (
         <span className="card-where" data-testid="card-where">
           {topic && (
             <span className="card-topic" title={`专题：${topic}`}>
@@ -268,6 +289,11 @@ function TaskCard({
       {asks && (
         <span className="card-asks" data-testid="card-asks">
           {asks}
+        </span>
+      )}
+      {granted.length > 0 && (
+        <span className="card-granted" data-testid="card-granted" title="这个任务授权给了你的其他设备远程使用（任务页的 ⋯ 或 设置 → 远程 里可以收回）">
+          已授权给 {granted.map((g) => g.name).join("、")}
         </span>
       )}
     </button>

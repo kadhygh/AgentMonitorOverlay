@@ -24,6 +24,14 @@
 .card-where-sep { flex: none; color: var(--text-faint); padding: 0 1px; }
 .card-project { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; color: var(--text-dim); }
 .card-project-name { font-family: var(--font-code); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 远程 (step 2, 2026-10-29): a copy of a task that runs on another computer — 「远程 · 在 <设备> 上」 where the topic and
+   project would be; greyed while that computer cannot be reached or the grant is gone. A task of this computer granted
+   to a device says so at the foot. */
+.remote-badge { flex: none; padding: 0 5px; border-radius: var(--r-btn); border: 1px solid var(--primary); color: var(--primary); font-weight: 600; font-size: 11px; line-height: 16px; letter-spacing: 0.05em; }
+.card-remote-where { min-width: 0; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.remote-off { opacity: 0.62; border-style: dashed; }
+.card.remote-off .remote-badge { border-color: var(--text-faint); color: var(--text-faint); }
+.card-granted { font-size: var(--fs-cap); color: var(--primary); }
 
 /* 按专题分组: the toggle above the columns, and each column's topic groups. */
 .board.with-tools { grid-template-rows: auto 1fr; row-gap: 8px; }

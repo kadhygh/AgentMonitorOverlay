@@ -39,6 +39,16 @@
 .archived-banner-text b { font-weight: 700; }
 .archived-banner-text span { color: var(--text-dim); }
 
+/* 远程 (step 2, 2026-10-29): under the head of a copy of another computer's task (where it runs, or that it is away or
+   revoked), and of a task of this computer granted to other devices. */
+.remote-banner { display: flex; align-items: center; gap: 12px; margin: 10px 24px 0; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); font-size: 13px; }
+.remote-banner.offline, .remote-banner.revoked { border-style: dashed; border-color: var(--border-strong); background: repeating-linear-gradient(135deg, var(--chip) 0 8px, var(--panel) 8px 16px); }
+.remote-banner.offline .remote-badge, .remote-banner.revoked .remote-badge { border-color: var(--text-faint); color: var(--text-faint); }
+.remote-banner-text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.remote-banner-text b { font-weight: 700; }
+.remote-banner-text span { color: var(--text-dim); }
+.meta-item .remote-badge { margin-right: 5px; }
+
 /* The box after 归档任务 (stage 14). */
 .archived-dialog { width: 440px; gap: 12px; }
 .archived-dialog-head { display: flex; align-items: center; gap: 10px; }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Session, StateSnapshot } from "@amo-studio/protocol";
+import { remoteHeldTasks, type Session, type StateSnapshot } from "@amo-studio/protocol";
 import { useHostState } from "../host/useHostState.js";
 import { needsPerson } from "../lib/status.js";
 import { noteFocusJump } from "../lib/focusJump.js";
@@ -71,7 +71,18 @@ export function FocusApp() {
   // 画布审阅 (2026-10-27): topics whose canvas has questions waiting for the person, oldest question first.
   const questionsByTopic = useWaitingQuestionList(host.kind === "ready" ? host.link : null);
   // 远程 (2026-10-29): someone asks to pair with this computer — answered here, like an approval.
-  const pairAsks = useRemote(host.kind === "ready" ? host.link : null)?.incoming ?? [];
+  const remote = useRemote(host.kind === "ready" ? host.link : null);
+  const pairAsks = remote?.incoming ?? [];
+  // 远程 step 2 (用户 10-28: 提醒只给 B): a task granted to a device that is online (or went less than 5 minutes ago)
+  // reminds there, not here. Re-read by the clock too, so 刚失联 turns back into this computer's after 5 minutes.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!remote?.grants.length) return;
+    const t = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [remote?.grants.length]);
+  const held = remoteHeldTasks(remote, clock);
+  const mine = (s: Session) => !s.taskId || !held.has(s.taskId);
   const canvasAsks = Object.entries(questionsByTopic)
     .filter(([topicId]) => host.kind !== "ready" || host.state.topics.some((t) => t.id === topicId && !t.archivedAt))
     .map(([topicId, w]) => ({ topicId, ...w }))
@@ -129,8 +140,8 @@ export function FocusApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
   useEffect(() => void (liveSessionsId !== null && subsOpen.keepOnly(new Set(liveSessionsId.split("|")))), [liveSessionsId]);
   const subs = live ? subsByParent(live.sessions) : new Map<string, Session[]>();
-  const waiting = live ? needsMe(live) : [];
-  const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s)) : [];
+  const waiting = live ? needsMe(live).filter(mine) : [];
+  const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s) && mine(s)) : [];
   // Seen means reviewed (我知道了, 在工作台打开, or looked at in the workbench) and it leaves at once, open or not
   // (2026-10-26: an entry kept while open looked unreviewed for half an hour after 在工作台打开, then vanished when its
   // title folded it). Opening it here no longer counts as seeing it.

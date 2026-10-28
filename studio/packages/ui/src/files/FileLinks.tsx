@@ -8,6 +8,7 @@ import { openReview } from "../gitreview/open.js";
 import { markOrShow } from "../marks/open.js";
 import { openViewer } from "../viewer/open.js";
 import { useExistingPath } from "./exists.js";
+import { showToast } from "../lib/toast.js";
 import { parseInlinePath, parseLinkTarget } from "./paths.js";
 
 // Files named in the conversation become links (stage 12, S12-C). Stage 13: a click opens the file in the viewer
@@ -35,6 +36,8 @@ interface FileLinksValue {
   preview(target: PreviewTarget): void;
   editor(target: PreviewTarget): void;
   menu(e: MouseEvent, target: PreviewTarget): void;
+  /** 远程 (step 2): the conversation's files are on another computer. */
+  remote?: boolean;
 }
 
 const Ctx = createContext<FileLinksValue | null>(null);
@@ -80,6 +83,7 @@ export function FileLinks({
   sessionId = null,
   onPreview,
   onError,
+  remoteNote,
   children,
 }: {
   link: HostLink;
@@ -89,10 +93,20 @@ export function FileLinks({
   sessionId?: string | null;
   onPreview(target: PreviewTarget): void;
   onError?(text: string): void;
+  /**
+   * 远程 (step 2, 2026-10-29): the conversation is a copy of another computer's session, whose files are there — a click
+   * or a right click on one says this note instead of opening anything (step 3 brings them over).
+   */
+  remoteNote?: string;
   children: ReactNode;
 }) {
   const vscode = useVsCode(link);
   const [menu, setMenu] = useState<Menu>(null);
+  const remote = useMemo<FileLinksValue | null>(() => {
+    if (!remoteNote) return null;
+    const note = () => showToast({ text: remoteNote });
+    return { link, workspaceId, sessionId, vscode: false, remote: true, open: note, preview: note, editor: note, menu: (e) => (e.preventDefault(), note()) };
+  }, [remoteNote, link, workspaceId, sessionId]);
 
   const fail = useCallback((err: unknown) => onError?.(message(err)), [onError]);
   const editor = useCallback(
@@ -120,6 +134,12 @@ export function FileLinks({
   const reviewIn = t ? (t.file.workspaceId ?? workspaceId) : null;
   const rendered = t && /\.(md|markdown|html?)$/i.test(t.file.path);
 
+  if (remote)
+    return (
+      <Ctx.Provider value={remote}>
+        <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
+      </Ctx.Provider>
+    );
   return (
     <Ctx.Provider value={value}>
       <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
@@ -191,7 +211,9 @@ export function FileLink({
   children: ReactNode;
 }) {
   const ctx = useFileLinks();
-  const found = useExistingPath(ctx?.link ?? null, { workspaceId: ctx?.workspaceId ?? null, cwd }, ctx ? path : null);
+  const checked = useExistingPath(ctx?.link ?? null, { workspaceId: ctx?.workspaceId ?? null, cwd }, ctx && !ctx.remote ? path : null);
+  // A remote session's files are on its own computer: this one cannot tell whether they exist (a click says so).
+  const found = ctx?.remote ? { path, dir: false } : checked;
   if (!ctx || !found || found.dir) return <>{fallback ?? children}</>;
   const range = !!line && !!endLine && endLine > line;
   const target: PreviewTarget = { file: { path: found.path }, ...(line ? { line, ...(range ? { endLine } : {}) } : {}), ...(line && column ? { column } : {}) };

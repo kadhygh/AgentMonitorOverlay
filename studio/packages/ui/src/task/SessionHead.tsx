@@ -48,6 +48,8 @@ export function SessionHead({
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
+  // 远程 (step 2): a copy of another computer's session — its folder, terminal, branches, name and archive are there.
+  const remote = session.runtime === "remote";
   return (
     <div className="thread-head" data-testid="thread-head">
       <span className="thread-title">
@@ -55,7 +57,7 @@ export function SessionHead({
           value={session.title}
           placeholder="新会话"
           label="会话名"
-          disabled={!!session.archivedAt}
+          disabled={!!session.archivedAt || remote}
           onSave={onRename}
         />
       </span>
@@ -72,9 +74,9 @@ export function SessionHead({
       <span className="spacer" />
       {/* Where the session works, opened outside Studio: editor, folder, terminal. */}
       <span className="bar-group" role="group" aria-label="在外部打开">
-        {workdir && <WorkdirActions link={link} path={workdir} onError={onError} compact />}
+        {workdir && !remote && <WorkdirActions link={link} path={workdir} onError={onError} compact />}
         {/* DSH sessions (stage 17) have no terminal of their own to hand to, and no fork. */}
-        {!session.archivedAt && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
+        {!session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
           <button
             type="button"
             className="bar-btn"
@@ -90,7 +92,7 @@ export function SessionHead({
           </button>
         )}
       </span>
-      {!session.archivedAt && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
+      {!session.archivedAt && !remote && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
         <>
           <span className="head-sep" aria-hidden="true" />
           <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={onFork} data-testid="session-fork">
@@ -105,7 +107,7 @@ export function SessionHead({
         </>
       )}
       {/* 归档 out of ⋯, right of 分支 (2026-10-28); an archived session is restored from its banner below. */}
-      {!session.archivedAt && (
+      {!session.archivedAt && !remote && (
         <button type="button" className="bar-btn labeled soft-danger" aria-label="归档会话" title="归档会话：变成只读，从它开出的分支一起归档；之后可以恢复" disabled={busy} onClick={onArchive} data-testid="session-archive">
           <ArchiveIcon />
           <span className="bar-label">归档</span>

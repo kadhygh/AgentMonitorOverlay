@@ -244,7 +244,14 @@ export function TaskMeta({
       {COLUMN_NAMES[task.column]}
     </button>,
   ];
-  if (workspace && !isCommon(workspace))
+  // 远程 (step 2): a copy runs in a project of another computer's, which this one does not show.
+  if (task.remote)
+    parts.push(
+      <span key="project" className="meta-item static" title="模型调用和命令都在那台电脑上，用的是那边的项目文件夹" data-testid="task-remote-where">
+        <span className="remote-badge">远程</span>在 {task.remote.name} 上（{task.remote.account}）
+      </span>,
+    );
+  else if (workspace && !isCommon(workspace))
     parts.push(
       <span key="project" className="meta-item static" title={[workspace.path, workspace.description, "左栏右键项目可以改名字和说明"].filter(Boolean).join("\n")} data-testid="task-project">
         {Icon.folder}
@@ -264,7 +271,7 @@ export function TaskMeta({
         {branch}
       </span>,
     );
-  parts.push(
+  if (!task.remote) parts.push(
     <button key="topic" type="button" className="meta-item" disabled={disabled} aria-label={topic ? `专题：${topic.title}` : "专题：无"} title={topic ? [`专题：${topic.title}`, topic.description, "点击换专题；左栏右键专题可以改名字和说明"].filter(Boolean).join("\n") : "不在专题里；点击放进专题"} onClick={onTopic} data-testid="task-topic">
       {Icon.topic}
       {topic ? topic.title : "—"}

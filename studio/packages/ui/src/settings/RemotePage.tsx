@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PEER_PRESENCE_LABEL, peerPresence, type RemoteConnection, type RemotePeer, type RemotePingResult, type RemoteState } from "@amo-studio/protocol";
+import { PEER_PRESENCE_LABEL, peerPresence, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, RUNTIME_LABELS, type ModelProfile, type RemoteAllowed, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { relativeTime } from "../lib/status.js";
@@ -23,8 +23,9 @@ const CONNECTION_LABEL: Record<RemoteConnection["state"], string> = {
 const peerKey = (p: { account: string; device: string }) => `${p.account}\n${p.device}`;
 const fmtTime = (iso: string) => new Date(iso).toLocaleString("zh-CN", { hour12: false });
 
-export function RemotePage({ link }: { link: HostLink }) {
+export function RemotePage({ link, tasks = [], profiles = [] }: { link: HostLink; tasks?: readonly Task[]; profiles?: readonly ModelProfile[] }) {
   const remote = useRemote(link);
+  const taskTitle = (id: string) => tasks.find((t) => t.id === id)?.title || "未命名任务";
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState<string | null>(null);
@@ -198,6 +199,41 @@ export function RemotePage({ link }: { link: HostLink }) {
       )}
 
       {loggedIn && (
+        <section className="settings-section" aria-label="授权出去的任务" data-testid="remote-grants">
+          <span className="settings-heading">授权出去的任务</span>
+          {remote.grants.length === 0 ? (
+            <span className="settings-hint" data-testid="remote-no-grants">
+              还没有。在任务页右上角的 ⋯ 里点「授权给…」，你的另一台电脑就能远程使用那个任务（会话还在这台电脑上跑）。
+            </span>
+          ) : (
+            remote.grants.map((g) => {
+              const peer = remote.peers.find((p) => p.account === g.account && p.device === g.device && p.role === "owner");
+              const presence = peer ? peerPresence(peer) : "unknown";
+              return (
+                <div key={`${g.taskId}\n${g.account}\n${g.device}`} className="settings-row remote-grant" data-testid="remote-grant">
+                  <span className="remote-card-title">{taskTitle(g.taskId)}</span>
+                  <span className="settings-hint">
+                    → {g.name}（{g.account}）· {fmtTime(g.grantedAt)} 授权
+                  </span>
+                  <span className={`remote-presence remote-presence-${presence}`}>
+                    <span className="dot" aria-hidden="true" />
+                    {PEER_PRESENCE_LABEL[presence]}
+                  </span>
+                  <span className="spacer" />
+                  <button type="button" className="btn-ghost small danger" disabled={busy} title="那边保留已经同步的记录（只读），不能再操作这个任务" onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: g.taskId, account: g.account, device: g.device }), `已收回 ${g.name} 对「${taskTitle(g.taskId)}」的授权`)} data-testid="remote-revoke">
+                    收回
+                  </button>
+                </div>
+              );
+            })
+          )}
+          <span className="settings-hint">被授权的设备在线时，这些任务的提醒（审批、提问、回复完了）只在它那边出现；它断开 5 分钟后交回这台电脑。</span>
+        </section>
+      )}
+
+      {loggedIn && <AllowedModels key={JSON.stringify(remote.allowed)} allowed={remote.allowed} profiles={profiles} busy={busy} onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed", {}, next), "已保存远端允许的模型")} />}
+
+      {loggedIn && (
         <section className="settings-section" aria-label="配对一台设备" data-testid="remote-pair">
           <span className="settings-heading">配对一台设备</span>
           <span className="settings-hint remote-warning" data-testid="remote-own-only">
@@ -254,12 +290,76 @@ export function RemotePage({ link }: { link: HostLink }) {
             <li>
               两边的「已配对的设备」里都不再有对方（{unpairing.account} 的「{unpairing.name}」{unpairing.role === "owner" ? "不能再通过服务器找到这台电脑" : "这台电脑也不能再找到它"}）。
             </li>
+            {(() => {
+              const gone = remote.grants.filter((g) => g.account === unpairing.account && g.device === unpairing.device);
+              return gone.length > 0 ? (
+                <li data-testid="remote-unpair-grants">
+                  同时收回授权给它的 {gone.length} 个任务：{gone.map((g) => `「${taskTitle(g.taskId)}」`).join("、")}。那边保留已经同步的记录（只读），任务在这台电脑上照常。
+                </li>
+              ) : null;
+            })()}
+            {unpairing.role === "guest" && <li>它授权给这台电脑的远程任务会变成「授权已收回」，记录还能看。</li>}
             <li>对方现在不在线的话，它下次连上服务器时就会知道。</li>
             <li>以后想再用，要重新发配对请求，再在被找的那台电脑上允许一次。</li>
           </ul>
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+/**
+ * 远端允许的默认配置 (远程 step 2): which of this computer's models sessions started from a paired device may use, the one
+ * offered first, and the permissions they get. Nothing ticked: only the models a task's own sessions already use.
+ */
+function AllowedModels({ allowed, profiles, busy, onSave }: { allowed: RemoteAllowed; profiles: readonly ModelProfile[]; busy: boolean; onSave(next: RemoteAllowed): void }) {
+  const [picked, setPicked] = useState<string[]>(allowed.profiles);
+  const [first, setFirst] = useState<string>(allowed.defaultProfile ?? "");
+  const [permission, setPermission] = useState<RemotePermission | "">(allowed.permission ?? "");
+  const own = profiles.filter((p) => p.runtime !== "remote" && (!p.hidden || allowed.profiles.includes(p.id)) && (!p.unavailable || allowed.profiles.includes(p.id)));
+  const changed = JSON.stringify([picked, first, permission]) !== JSON.stringify([allowed.profiles, allowed.defaultProfile ?? "", allowed.permission ?? ""]);
+  const firstOk = !first || !picked.length || picked.includes(first);
+  return (
+    <section className="settings-section" aria-label="远端允许的模型" data-testid="remote-allowed">
+      <span className="settings-heading">远端允许的模型</span>
+      <span className="settings-hint">被授权的设备在任务里新开会话时能选的模型（会话里 agent 委派的会话也照这个来）。一个都不勾时，只能用这个任务现在的会话已经在用的模型。</span>
+      <div className="remote-allowed-list">
+        {own.map((p) => (
+          <label key={p.id} className="remote-allowed-item" data-testid="remote-allowed-item">
+            <input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked((l) => (e.target.checked ? [...l, p.id] : l.filter((x) => x !== p.id)))} />
+            {RUNTIME_LABELS[p.runtime]} · {p.label}
+          </label>
+        ))}
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">默认</span>
+        <select value={first} onChange={(e) => setFirst(e.target.value)} aria-label="默认的模型" data-testid="remote-allowed-default">
+          <option value="">（第一个允许的）</option>
+          {(picked.length ? own.filter((p) => picked.includes(p.id)) : own).map((p) => (
+            <option key={p.id} value={p.id}>
+              {RUNTIME_LABELS[p.runtime]} · {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">权限</span>
+        <select value={permission} onChange={(e) => setPermission(e.target.value as RemotePermission | "")} aria-label="远程会话的权限" data-testid="remote-allowed-permission">
+          <option value="">模型自己的默认</option>
+          {REMOTE_PERMISSIONS.map((l) => (
+            <option key={l} value={l}>
+              {REMOTE_PERMISSION_LABEL[l]}
+            </option>
+          ))}
+        </select>
+        <span className="spacer" />
+        <button type="button" className="btn-primary small" disabled={busy || !changed || !firstOk} onClick={() => onSave({ profiles: picked, defaultProfile: first || null, permission: permission || null })} data-testid="remote-allowed-save">
+          保存
+        </button>
+      </div>
+      {!firstOk && <span className="form-error">默认的模型要在勾选的里面</span>}
+      <span className="settings-hint">远程会话的命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</span>
+    </section>
   );
 }
 
