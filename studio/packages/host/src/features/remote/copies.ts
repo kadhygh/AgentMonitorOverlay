@@ -108,7 +108,11 @@ export class RemoteCopies {
       const granted = new Map(list.tasks.map((t) => [t.taskId, t.grantedAt]));
       for (const t of this.copies(peer)) if (t.remote!.state === "active" && !t.archivedAt && !granted.has(t.id)) this.revokeCopy(t.id, "授权已收回");
       for (const [taskId, grantedAt] of granted) {
-        if (this.dismissed(peer, taskId, grantedAt)) continue;
+        // Put away here while A was away (or from before A knew rt.drop): A hears it now.
+        if (this.dismissed(peer, taskId, grantedAt)) {
+          this.tellDropped(peer, taskId);
+          continue;
+        }
         await this.syncTask(peer, taskId).catch((err: unknown) => this.ctx.host.emit("event", { type: "host.error", message: `远程任务同步失败：${err instanceof Error ? err.message : String(err)}`, seq: this.store.lastEventSeq() }));
       }
     })().finally(() => this.syncing.delete(key));
@@ -297,7 +301,11 @@ export class RemoteCopies {
   drop(task: Task): void {
     const r = task.remote;
     if (!r) return;
-    if (r.state === "active") this.store.setKv(DISMISSED_KEY, JSON.stringify([...this.dismissedList(), `${r.account}\n${r.device}\n${task.id}\n${r.grantedAt}`].slice(-500)));
+    if (r.state === "active") {
+      this.store.setKv(DISMISSED_KEY, JSON.stringify([...this.dismissedList(), `${r.account}\n${r.device}\n${task.id}\n${r.grantedAt}`].slice(-500)));
+      // A hears it and ends the grant, so it stops sending what happens in the task; away now, it hears at the next sync.
+      this.tellDropped(peerOf(task), task.id);
+    }
     const before = this.profilesStamp();
     const sessionIds = this.store.listSessions({ taskId: task.id }).map((s) => s.id);
     this.store.purge({ sessionIds, taskIds: [task.id], topicIds: [], workspaceIds: [] });
@@ -305,6 +313,10 @@ export class RemoteCopies {
     this.profilesChanged(before);
     // The files fetched for it go too (plans/remote-session.md: 归档时一起清掉).
     this.files.drop(task.id);
+  }
+
+  private tellDropped(peer: DeviceRef, taskId: Id): void {
+    void this.ask(peer, REMOTE_KINDS.drop, { taskId }).catch(() => undefined);
   }
 
   // ---- what the person does in a copy, sent to A

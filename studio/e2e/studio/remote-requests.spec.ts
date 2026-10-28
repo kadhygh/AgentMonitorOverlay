@@ -64,7 +64,8 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
     account.setDeviceName(device, { env: { AMO_HOME: dir } });
     return dir;
   };
-  const a = await launchStudio({ env: { AMO_HOME: await home("台式机的我", store.register("台式机的我", "pw-aaaa").key, "A 台式机") } });
+  // A looks every 500 ms whether its tasks are used from elsewhere (it keeps the computer awake meanwhile).
+  const a = await launchStudio({ env: { AMO_HOME: await home("台式机的我", store.register("台式机的我", "pw-aaaa").key, "A 台式机"), AMO_STUDIO_REMOTE_WATCH_MS: "500" } });
   studios.push(a);
   const b = await launchStudio({ env: { AMO_HOME: await home("笔记本的我", store.register("笔记本的我", "pw-bbbb").key, "B 笔记本") } });
   studios.push(b);
@@ -74,6 +75,8 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   const asked = await until(() => a.api<RemoteState>("GET", "/api/remote"), (s) => s.incoming.length === 1, "A sees the pairing request");
   await a.api("POST", `/api/remote/requests/${asked.incoming[0]!.id}/answer`, { allow: true });
   await until(() => b.api<RemoteState>("GET", "/api/remote"), (s) => s.peers[0]?.online === true, "B sees A online");
+  const sleepBlocked = () => a.app.evaluate(() => (globalThis as { __amoSleepBlocked?: boolean }).__amoSleepBlocked ?? null);
+  await expect.poll(sleepBlocked).toBe(false);
   // A: a project to put the task in, and the model remote work may use (设置 → 远程 → 远端允许的模型).
   const proj = await a.api<Workspace>("POST", "/api/workspaces", { path: a.workspace("请求的项目") });
   await a.api("PUT", "/api/remote/allowed", { profiles: ["codex-mock"], defaultProfile: "codex-mock", permission: null });
@@ -146,4 +149,19 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await screenshot(b.app, "studio", "remote-ask-refused", b.page);
   await refused.getByTestId("remote-ask-withdraw").click();
   await expect(again.getByTestId("remote-ask").filter({ hasText: "第二个请求" })).toHaveCount(0);
+
+  // A while its task is used from B (online): kept awake, and 完全退出 asks first, even with no session at work.
+  await expect.poll(sleepBlocked, { timeout: 10_000 }).toBe(true);
+  await until(() => a.api<{ running: number }>("GET", "/api/health"), (h) => h.running === 0, "A's session idle");
+  await a.app.evaluate(() => (globalThis as { __studioTrayClick?: (l: string) => void }).__studioTrayClick!("完全退出"));
+  const quitAsked = () => a.app.evaluate(() => (globalThis as { __amoQuitAsked?: Array<{ message: string; detail: string; yes: string }> }).__amoQuitAsked ?? []);
+  await expect.poll(async () => (await quitAsked()).length).toBe(1);
+  expect((await quitAsked())[0]).toMatchObject({ message: "有 1 个任务正被 B 笔记本 远程使用，退出后那边会暂停。", yes: "仍然退出" });
+  // 取消 (the default in tests): A goes on.
+  await new Promise((r) => setTimeout(r, 300));
+  expect((await a.api<{ ok: boolean }>("GET", "/api/health")).ok).toBe(true);
+  // B goes away: nothing is used from elsewhere any more, the computer may sleep.
+  await b.close();
+  studios.splice(studios.indexOf(b), 1);
+  await expect.poll(sleepBlocked, { timeout: 90_000 }).toBe(false);
 });

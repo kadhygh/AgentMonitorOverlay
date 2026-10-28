@@ -262,6 +262,16 @@ export async function requestShutdown(conn: HostConnection, interrupt: boolean, 
   }
 }
 
+/** GET one of the Host's JSON routes (with the token); null when it does not answer as expected. */
+export async function readHostJson<T>(conn: HostConnection, path: string, timeoutMs = 3000): Promise<T | null> {
+  try {
+    const res = await fetch(`${conn.url}${path}`, { headers: { authorization: `Bearer ${conn.token}` }, signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Waits until the process ends; false when it still runs after `timeoutMs`. */
 export async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   for (const until = Date.now() + timeoutMs; Date.now() < until; ) {

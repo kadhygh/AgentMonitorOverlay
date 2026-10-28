@@ -1,6 +1,7 @@
 import type { HostService } from "../service.js";
 import { FEATURES } from "../features/index.js";
-import { toolContext, type AmoTool, type McpCaller } from "./tool-kit.js";
+import type { Task } from "@amo-studio/protocol";
+import { fail, toolContext, type AmoTool, type McpCaller } from "./tool-kit.js";
 
 // The AMO MCP tools, defined once: the Host serves them over HTTP at /mcp (Codex sessions), and Claude sessions get the
 // same tools in-process through the SDK, so no token has to reach the Claude CLI.
@@ -30,6 +31,44 @@ export const AMO_MCP_INSTRUCTIONS = [
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
   const ctx = toolContext(service, caller);
   const off = new Set<string>(service.config.disabledFeatures());
-  const tools = FEATURES.filter((f) => !off.has(f.name)).flatMap((f) => f.tools?.(ctx) ?? []);
+  const tools = FEATURES.filter((f) => !off.has(f.name)).flatMap((f) => f.tools?.(ctx) ?? []).map((t) => keepOffRemoteCopies(service, t));
   return [...tools.filter((t) => t.readOnly), ...tools.filter((t) => !t.readOnly)];
+}
+
+/**
+ * 远程 (2026-10-29): a copy of a task another computer granted this one (Task.remote, sessions running "remote") is that
+ * computer's task — agents here neither read nor change it (no notes, 说明, mail, sessions, canvas). Any tool given the id
+ * of such a task or of one of its sessions answers so; board_list leaves them out (read-model.ts).
+ */
+function keepOffRemoteCopies(service: HostService, tool: AmoTool): AmoTool {
+  return {
+    ...tool,
+    run: (args) => {
+      const copy = remoteCopyNamed(service, args);
+      if (!copy?.remote) return tool.run(args);
+      return fail(`「${copy.title || "未命名任务"}」是 ${copy.remote.name}（${copy.remote.account}）授权给这台电脑的远程任务，在那台电脑上运行：这里的 AMO 工具不读也不改它（只能由人在 Studio 里打开它操作）。`);
+    },
+  };
+}
+
+/** The remote copy whose id (a task's or a session's) is among a call's arguments, if any. */
+export function remoteCopyNamed(service: HostService, args: unknown): Task | null {
+  const ids = new Set<string>();
+  const collect = (v: unknown, depth: number) => {
+    if (typeof v === "string") {
+      if (v.length <= 100) ids.add(v);
+    } else if (depth < 2 && Array.isArray(v)) for (const x of v) collect(x, depth + 1);
+    else if (depth < 2 && v && typeof v === "object") for (const x of Object.values(v)) collect(x, depth + 1);
+  };
+  collect(args, 0);
+  for (const id of ids) {
+    const task = service.store.getTask(id);
+    if (task?.remote) return task;
+    const session = task ? undefined : service.store.getSession(id);
+    if (session?.runtime === "remote" && session.taskId) {
+      const owner = service.store.getTask(session.taskId);
+      if (owner?.remote) return owner;
+    }
+  }
+  return null;
 }

@@ -83,7 +83,8 @@ export class ReadModel {
     const topicId = filter.topic ? this.topic(filter.topic).id : null;
     const tasks = this.store
       .listTasks()
-      .filter((t) => !t.archivedAt)
+      // 远程 (2026-10-29): copies of tasks another computer granted this one run there, not here: not on agents' board.
+      .filter((t) => !t.archivedAt && !t.remote)
       .filter((t) => !filter.column || t.column === filter.column)
       .filter((t) => !wsId || t.workspaceId === wsId)
       .filter((t) => !topicId || t.topicId === topicId)

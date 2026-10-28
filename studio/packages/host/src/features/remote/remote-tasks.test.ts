@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteProfileId, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -13,6 +13,7 @@ import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { Backoff } from "./link.js";
 import { fitItem } from "./grants.js";
+import { amoToolsFor } from "../../mcp/tools.js";
 
 // 远程, step 2 (plans/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
 // approvals, 打断 and new sessions run on A, a revoked grant stays readable on B, and catch-up goes by seq. Two Hosts
@@ -333,6 +334,20 @@ describe("remote limits on A", () => {
     expect(remoteHeldTasks(null, now).size).toBe(0);
   });
 
+  it("says when tasks are used from another device: 完全退出's question and keeping the computer awake", () => {
+    const grant = (taskId: string, device = "d_b") => ({ taskId, account: "b", device, name: "旧名字", grantedAt: "" });
+    const peer = (online: boolean | null, device = "d_b", name = "B 笔记本") => ({ account: "b", device, name, role: "owner" as const, pairedAt: "", online, lastSeen: null });
+    const conn = (state: "online" | "offline") => ({ state, message: null, retryAt: null, since: null });
+    expect(remoteInUse(null)).toEqual([]);
+    expect(remoteInUse({ grants: [grant("t1"), grant("t2")], peers: [peer(true)], connection: conn("online") })).toEqual([{ name: "B 笔记本", tasks: 2 }]);
+    // Away, or this computer not connected: nobody uses it now.
+    expect(remoteInUse({ grants: [grant("t1")], peers: [peer(false)], connection: conn("online") })).toEqual([]);
+    expect(remoteInUse({ grants: [grant("t1")], peers: [peer(true)], connection: conn("offline") })).toEqual([]);
+    const two = remoteInUse({ grants: [grant("t1"), grant("t2", "d_c")], peers: [peer(true), peer(true, "d_c", "平板")], connection: conn("online") });
+    expect(remoteQuitNote(two)).toBe("有 2 个任务正被 B 笔记本、平板 远程使用，退出后那边会暂停。");
+    expect(remoteQuitNote([])).toBeNull();
+  });
+
   it("cuts an item too big for one frame, saying so", () => {
     const big = { id: "i1", sessionId: "s", seq: 1, createdAt: "", type: "agent", markdown: "长".repeat(200_000), streaming: false } as SessionItem;
     const cut = fitItem(big) as Extract<SessionItem, { type: "agent" }>;
@@ -344,6 +359,41 @@ describe("remote limits on A", () => {
 });
 
 const toA = (a: Pair["a"]) => ({ account: "台式机的我", device: a.state().device!.id });
+
+describe("wrapping up step 2", () => {
+  it("B's agents neither see nor touch the copies (AMO MCP); archiving a copy tells A, which ends the grant and stops sending", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a, "A 的任务");
+    a.remote.grant(task.id, toB);
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 第一句"), "B's copy");
+    const own = await b.service.tasks.createTask({ title: "B 自己的任务" });
+    const tools = amoToolsFor(b.service, null);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = await tools.find((t) => t.name === name)!.run(args);
+      return { error: !!r.isError, text: r.content[0]!.text };
+    };
+    const board = await call("board_list", {});
+    expect(board.text).toContain("B 自己的任务");
+    expect(board.text).not.toContain("A 的任务");
+    for (const [name, args] of [
+      ["task_get", { taskId: task.id }],
+      ["session_tree", { taskId: task.id }],
+      ["task_describe", { taskId: task.id, description: "改说明" }],
+      ["mailbox_send", { to: session.id, text: "留言" }],
+    ] as const) {
+      const r = await call(name, args);
+      expect(r.error, name).toBe(true);
+      expect(r.text, name).toContain("是 A-PC（台式机的我）授权给这台电脑的远程任务");
+    }
+    expect((await call("task_get", { taskId: own.task.id })).error).toBe(false);
+    expect(b.store.getTask(task.id)!.description ?? "").toBe("");
+
+    // Archived on B (the grant still on): B tells A, A's grant ends, nothing more is sent.
+    await b.service.tasks.archiveTask(task.id);
+    await until(a.state, (s) => s.grants.length === 0, "A's grant ends");
+    expect(a.store.getTask(task.id)!.archivedAt).toBeNull();
+  }, 60_000);
+});
 
 describe("requests for tasks between two Hosts (step 4)", () => {
   it("B asks, A allows on an allowed model: the task is made, granted and running on B's board; A refuses another, saying why; B takes a third back", async () => {

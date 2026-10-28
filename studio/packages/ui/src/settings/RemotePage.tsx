@@ -243,6 +243,9 @@ export function RemotePage({ link, tasks = [], profiles = [], workspaces = [], t
             })
           )}
           <span className="settings-hint">被授权的设备在线时，这些任务的提醒（审批、提问、回复完了）只在它那边出现；它断开 5 分钟后交回这台电脑。</span>
+          <span className="settings-hint" data-testid="remote-awake-note">
+            有任务授权给在线的设备时，这台电脑不会自动睡眠（屏幕照常会关），免得那边用到一半断掉；设备都断开或授权都收回后恢复。托盘「完全退出」前也会先提醒。
+          </span>
         </section>
       )}
 

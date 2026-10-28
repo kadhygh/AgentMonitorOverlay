@@ -1,7 +1,8 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectHost, HostStartError, keepHostAlive, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
+import { connectHost, HostStartError, keepHostAlive, readHostJson, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
+import { remoteInUse, remoteQuitNote, type RemoteState } from "@amo-studio/protocol";
 import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -181,7 +182,21 @@ async function quitCompletely(): Promise<void> {
   }
   quittingCompletely = true;
   try {
-    let answer = await requestShutdown(conn, false);
+    // Tasks used from another device (远程, 2026-10-29): asked once, even with no session at work here — that device
+    // pauses until Studio runs here again. Sessions at work are named in the same question.
+    const note = remoteQuitNote(remoteInUse(await readHostJson<RemoteState>(conn, "/api/remote")));
+    let interrupt = false;
+    if (note) {
+      const running = (await readHostJson<{ running?: number }>(conn, "/api/health"))?.running ?? 0;
+      const yes = await ask({
+        message: running > 0 ? `${note}另外有 ${running} 个会话正在进行，完全退出会中断${running === 1 ? "它" : "它们"}。` : note,
+        detail: "完全退出会连 Studio 的后台（Host）一起关掉：那边的远程任务发不了消息、等不到回复，这台电脑再打开 Studio 后自动接上。\n只想关掉窗口的话，点窗口右上角的 ×：任务和会话会在后台继续，那边照常能用。",
+        yes: running > 0 ? "中断会话并退出" : "仍然退出",
+      });
+      if (!yes) return;
+      interrupt = running > 0;
+    }
+    let answer = await requestShutdown(conn, interrupt);
     if (!answer.ok && answer.reason === "running") {
       const n = answer.running;
       const yes = await ask({
@@ -213,6 +228,33 @@ async function quitCompletely(): Promise<void> {
   } finally {
     quittingCompletely = false;
   }
+}
+
+/** powerSaveBlocker's id while this computer is kept awake for a device using its tasks; null otherwise. */
+let sleepBlocker: number | null = null;
+
+/**
+ * 被远程使用时不睡眠 (plans/remote-session.md, 2026-10-29): while a task is granted to a device that is online, the
+ * system does not sleep (prevent-app-suspension: the screen still turns off); released when none is. Read from the Host
+ * every 20 s (AMO_STUDIO_REMOTE_WATCH_MS in tests). Tests record it in __amoSleepBlocked instead of asking Windows.
+ */
+function watchRemoteUse(): void {
+  const set = (on: boolean) => {
+    if (testMode) (globalThis as { __amoSleepBlocked?: boolean }).__amoSleepBlocked = on;
+    else if (on && sleepBlocker === null) sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
+    else if (!on && sleepBlocker !== null) {
+      powerSaveBlocker.stop(sleepBlocker);
+      sleepBlocker = null;
+    }
+  };
+  const look = async () => {
+    const conn = host;
+    const state = conn ? await readHostJson<RemoteState>(conn, "/api/remote") : null;
+    // The Host not answering: nobody can use this computer from elsewhere right now either.
+    set(remoteInUse(state).length > 0);
+  };
+  void look();
+  setInterval(() => void look(), Number(process.env.AMO_STUDIO_REMOTE_WATCH_MS) || 20_000).unref();
 }
 
 function trayItems(): Array<{ label: string; click: () => void } | { type: "separator" }> {
@@ -517,6 +559,7 @@ if (!app.requestSingleInstanceLock()) {
           app.quit();
         },
       });
+      watchRemoteUse();
       mainWindow = createMainWindow(host);
       mainWindow.on("closed", () => {
         mainWindow = null;

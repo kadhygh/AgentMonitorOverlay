@@ -211,6 +211,8 @@ export const REMOTE_KINDS = {
   request: "rt.request",
   /** Step 4, B → A: B takes a request back, or puts A's answer to it away. {requestId} → {ok} */
   withdraw: "rt.withdraw",
+  /** B → A: B archived its copy of a granted task — the grant ends, A stops telling B about it. {taskId} → {ok} */
+  drop: "rt.drop",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -263,6 +265,7 @@ export interface RemoteCommandBodies {
   "rt.file": RemoteFileAsk;
   "rt.request": RemoteTaskRequestAsk;
   "rt.withdraw": { requestId: string };
+  "rt.drop": { taskId: Id };
 }
 
 /** A → B, unasked. B checks seq: a gap (or anything it cannot place) makes it ask for what it missed. */
@@ -406,3 +409,28 @@ export interface RemoteAcceptInput {
   profileId: Id;
 }
 
+// ---- Wrapping up step 2 (2026-10-29): A while it is used from another device -------------------------------------
+
+/**
+ * On A: the devices tasks are granted to that are online now, with how many tasks each (for 完全退出's question and for
+ * keeping this computer awake while it is used from another). Empty when nothing is in use.
+ */
+export function remoteInUse(state: Pick<RemoteState, "grants" | "peers" | "connection"> | null): Array<{ name: string; tasks: number }> {
+  if (!state || state.connection.state !== "online") return [];
+  const by = new Map<string, { name: string; tasks: number }>();
+  for (const g of state.grants) {
+    const peer = state.peers.find((p) => p.account === g.account && p.device === g.device && p.role === "owner");
+    if (!peer?.online) continue;
+    const key = `${g.account}\n${g.device}`;
+    const had = by.get(key);
+    by.set(key, { name: peer.name || g.name, tasks: (had?.tasks ?? 0) + 1 });
+  }
+  return [...by.values()];
+}
+
+/** 完全退出's line about remote use (2026-10-29), or null when nothing is used from another device. */
+export function remoteQuitNote(inUse: ReadonlyArray<{ name: string; tasks: number }>): string | null {
+  if (!inUse.length) return null;
+  const n = inUse.reduce((sum, x) => sum + x.tasks, 0);
+  return `有 ${n} 个任务正被 ${inUse.map((x) => x.name).join("、")} 远程使用，退出后那边会暂停。`;
+}

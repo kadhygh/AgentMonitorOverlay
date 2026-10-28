@@ -323,6 +323,17 @@ export class RemoteGrants {
           const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(options ? { options } : {}) });
           return ok({ session: this.store.getSession(session.id) ?? session });
         }
+        case REMOTE_KINDS.drop: {
+          // B archived its copy (2026-10-29): the grant ends without a word back — B has put the task away.
+          const taskId = id(b.taskId, "taskId");
+          const list = this.list();
+          const g = list.find((x) => x.taskId === taskId && same(x, from));
+          if (g) {
+            this.save(list.filter((x) => x !== g));
+            this.ctx.changed();
+          }
+          return ok({ ok: true });
+        }
         case REMOTE_KINDS.file: {
           const taskId = id(b.taskId, "taskId");
           this.grantFor(from, taskId);
