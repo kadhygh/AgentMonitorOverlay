@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,7 +11,8 @@ import { screenshot, studioRoot } from "../support/studio.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2) against testkit's fake team server: log in, install a stand-in tool
 // (a .cmd, not a real build), a new version published → update, 回滚, 卸载; Studio only opens once its data dir is set.
-// Everything under temp folders (AMO_HOME, AMO_LOCAL_HOME): the real %APPDATA%\AMO and %LOCALAPPDATA%\AMO stay untouched.
+// Everything under temp folders (AMO_HOME, AMO_LOCAL_HOME; the self-update tests unpack the platform there instead and
+// point %LOCALAPPDATA% there): the real %APPDATA%\AMO and %LOCALAPPDATA%\AMO stay untouched.
 
 const require = createRequire(import.meta.url);
 const electronPath = require("electron") as unknown as string;
@@ -151,7 +153,7 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await expect(confirm).toContainText("1.0.0 和留着的 1.1.0 都会删掉");
   await screenshot(app, "platform", "P9-uninstall-confirm", page);
   await confirm.getByRole("button", { name: "卸载" }).click();
-  await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.1.0");
+  await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.1.0", { timeout: 20_000 });
   expect(programs().tools.reviewer).toBeUndefined();
   expect(existsSync(join(root, "local", "apps", "reviewer"))).toBe(false);
 
@@ -239,13 +241,14 @@ test("a second tool downloads only its own files: the shared runtime is hard-lin
     const apps = join(root, "local", "apps");
     const ino = (p: string) => statSync(p, { bigint: true }).ino;
     expect(ino(join(apps, "notes", "1.0.0", "resources", "electron.pak"))).toBe(ino(join(apps, "reviewer", "1.0.0", "resources", "electron.pak")));
-    expect(existsSync(join(root, "local", "file-index.json"))).toBe(true);
+    expect(existsSync(join(root, "local", "apps", "file-index.json"))).toBe(true);
     await screenshot(app!, "platform", "P17-shared-runtime", page);
 
     // The Reviewer uninstalled: the 便签's copy of the shared files is still whole.
     await row(page, "reviewer").getByRole("button", { name: "卸载" }).click();
     await row(page, "reviewer").getByRole("group", { name: "卸载 AMO Reviewer" }).getByRole("button", { name: "卸载" }).click();
-    await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0");
+    // Uninstalling asks Windows what runs first (PowerShell, a few seconds on a busy machine).
+    await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0", { timeout: 20_000 });
     expect(existsSync(join(apps, "reviewer"))).toBe(false);
     expect(readFileSync(join(apps, "notes", "current", "resources", "electron.pak"))).toEqual(runtime["resources/electron.pak"]);
     expect(readFileSync(join(apps, "notes", "current", "resources", "runtime.bin"), "utf8")).toBe("R".repeat(256 * 1024));
@@ -254,7 +257,26 @@ test("a second tool downloads only its own files: the shared runtime is hard-lin
   }
 });
 
-test("平台更新: unzipped, a new platform on the server → 更新平台 → apps\\platform\\<version> → 重启平台 (recorded); started from there: still logged in, the zip folder can go; the old zip again offers 打开那个", async () => {
+/**
+ * The platform as unpacked from the download page (2026-10-28: it and its tools stay in that folder): 0.9.1's entry at
+ * <root>\<where>\AMO Platform, with a file of the person's own beside it. No AMO_LOCAL_HOME — the folder comes from where
+ * the program is (test mode: AMO_PLATFORM_TEST_EXE) — and %LOCALAPPDATA% in the temp root, for the Chromium profile.
+ */
+function unpackedPlatform(r: string, where: string, extra: (dir: string) => void = () => undefined): string {
+  const dir = join(r, where, "AMO Platform");
+  mkdirSync(join(dir, "resources", "app"), { recursive: true });
+  writeFileSync(join(dir, "AMO Platform.exe"), "the unpacked platform 0.9.1");
+  writeFileSync(join(dir, "resources", "app", "package.json"), '{"version":"0.9.1"}');
+  writeFileSync(join(dir, "resources", "app", "main.js"), "platform 0.9.1");
+  writeFileSync(join(dir, "resources", "app", "only-in-0.9.1.js"), "old");
+  writeFileSync(join(dir, "使用说明.txt"), "0.9.1");
+  writeFileSync(join(dir, "我的笔记.txt"), "mine");
+  extra(dir);
+  return dir;
+}
+const asPlatform = (r: string, exe: string, version: string) => ({ AMO_LOCAL_HOME: "", LOCALAPPDATA: join(r, "localappdata"), AMO_PLATFORM_TEST_EXE: exe, AMO_PLATFORM_TEST_VERSION: version });
+
+test("平台更新: tools go into the unpacked folder's apps → 更新平台 → apps\\platform\\0.9.2 → 重启平台 (recorded); the old entry forwards there; run from there, the entry becomes 0.9.2 and opens it directly", async () => {
   const realHome = join(process.env.APPDATA ?? "", "AMO");
   const realLocal = join(process.env.LOCALAPPDATA ?? "", "AMO");
   const before = [realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null));
@@ -263,47 +285,57 @@ test("平台更新: unzipped, a new platform on the server → 更新平台 → 
   try {
     const runtime = { "resources/electron.pak": randomBytes(256 * 1024) };
     own.publish("notes", "1.0.0", { ...tool("notes", "1.0.0"), ...runtime }, { name: "AMO Notes", exe: "run.cmd" });
-    own.publish("platform", "0.9.2", { "AMO Platform.exe": "a stand-in platform", "resources/app.txt": "platform 0.9.2", ...runtime }, { name: "AMO Platform", exe: "AMO Platform.exe", notes: "- 平台能自己更新了：设置里的「平台更新」\n- 顶栏有一个不占地方的提示" });
-    // As if packaged and unzipped from the download page: 0.9.1, run from <root>\Downloads\AMO Platform (test mode only).
-    const zipDir = () => join(root, "Downloads", "AMO Platform");
-    const fromZip = (r: string) => {
-      mkdirSync(join(r, "Downloads", "AMO Platform"), { recursive: true });
-      writeFileSync(join(r, "Downloads", "AMO Platform", "AMO Platform.exe"), "the unzipped platform");
-      return { AMO_PLATFORM_TEST_EXE: join(r, "Downloads", "AMO Platform", "AMO Platform.exe"), AMO_PLATFORM_TEST_VERSION: "0.9.1" };
-    };
-    const apps = () => join(root, "local", "apps");
+    own.publish("platform", "0.9.2", { "AMO Platform.exe": "a stand-in platform", "resources/app/package.json": '{"version":"0.9.2"}', "resources/app/main.js": "platform 0.9.2", "使用说明.txt": "0.9.2", ...runtime }, { name: "AMO Platform", exe: "AMO Platform.exe", notes: "- 平台能自己更新了：设置里的「平台更新」\n- 顶栏有一个不占地方的提示" });
+    const unpacked = () => join(root, "TOOLS", "AMO Platform");
+    const entry = () => join(unpacked(), "AMO Platform.exe");
+    const apps = () => join(unpacked(), "apps");
+    const v092 = () => join(apps(), "platform", "0.9.2");
     const restartSpec = () => app!.evaluate(() => (globalThis as { __platformRestart?: { file: string; args: string[]; cwd: string; env: Record<string, string> } }).__platformRestart ?? null);
+    const forwardSpec = () => app!.evaluate(() => (globalThis as { __platformForward?: { file: string; args: string[]; cwd: string } }).__platformForward ?? null);
+    const loginExe = () => app!.evaluate(() => (globalThis as { __platformOpenAtLoginExe?: string | null }).__platformOpenAtLoginExe);
     const nav = (page: Page, name: string) => page.getByRole("navigation", { name: "页面" }).getByRole("button", { name }).click();
+    const ino = (p: string) => statSync(p, { bigint: true }).ino;
 
-    let { page } = await launch([], fromZip);
+    let { page } = await launch([], (r) => asPlatform(r, join(unpackedPlatform(r, "TOOLS"), "AMO Platform.exe"), "0.9.1"));
     const form = page.getByRole("form", { name: "登录" });
     await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
     await form.getByLabel("名字").fill("小王");
     await form.getByLabel("密码").fill("secret");
     await form.getByRole("button", { name: "登录" }).click();
     await expect(status(page, "notes")).toHaveText("○ 没装 · 服务器上是 1.0.0");
-    // The platform is not a tool on 工具; the title bar says, quietly, that it has a new version.
+    // The platform is not a tool on 工具; the title bar says, quietly, that it has a new version. The folder is fine.
     await expect(page.getByTestId("tool-platform")).toHaveCount(0);
     await expect(page.getByTestId("pf-self-hint")).toHaveText("! 平台有新版 0.9.2");
+    await expect(page.getByTestId("pf-root-issue")).toHaveCount(0);
+    // A tool goes into the folder the platform was unpacked to, not into AppData.
     await row(page, "notes").getByRole("button", { name: "安装" }).click();
     await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+    expect(programs().tools.notes).toEqual({ version: "1.0.0", dir: join(apps(), "notes", "current"), exe: "run.cmd" });
+    expect(existsSync(join(apps(), "file-index.json"))).toBe(true);
+    expect(existsSync(join(root, "localappdata", "AMO", "apps"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8")).root).toBe(unpacked());
 
-    // 设置: starting with Windows, on while it still runs from the zip folder, registers that program.
+    // 目录: where the tools are, and how to move them.
+    await nav(page, "目录");
+    await expect(page.getByTestId("pf-root")).toHaveText(unpacked());
+    await expect(page.getByRole("region", { name: "工具装在哪" })).toContainText("工具装在平台所在的文件夹里；要换位置，把整个文件夹移过去");
+    await screenshot(app!, "platform", "P26-dirs-root", page);
+
+    // 设置: starting with Windows registers the entry.
     await nav(page, "设置");
     await page.getByTestId("pf-login-start").check();
-    const loginExe = () => app!.evaluate(() => (globalThis as { __platformOpenAtLoginExe?: string | null }).__platformOpenAtLoginExe);
-    await expect.poll(loginExe).toBe(join(zipDir(), "AMO Platform.exe"));
+    await expect.poll(loginExe).toBe(entry());
     // The hint leads to 平台更新.
     await nav(page, "工具");
     await page.getByTestId("pf-self-hint").click();
     const section = page.getByRole("region", { name: "平台更新" });
     await expect(section.getByTestId("pf-self-status")).toHaveText("! 有新版 0.9.2");
-    await expect(section.getByTestId("pf-self-place")).toHaveText(`从解压出来的文件夹运行：${zipDir()}。第一次更新时会装进 ${join(apps(), "platform")}，以后从那里启动。`);
+    await expect(section.getByTestId("pf-self-place")).toHaveText(`从 ${entry()} 运行。新版会装进同一个文件夹的 apps\\platform，之后 AMO Platform.exe 跟着换成新版，以后还是双击它打开。`);
     await expect(section.locator(".pf-notes-text")).toContainText("平台能自己更新了");
     await expect(section.getByRole("button", { name: "更新平台" })).toBeEnabled();
     await screenshot(app!, "platform", "P19-self-update-available", page);
 
-    // 更新平台: the same engine as the tools, into AMO_LOCAL_HOME\apps\platform\0.9.2 (slowed, to see the bar).
+    // 更新平台: the same engine as the tools, into <root>\apps\platform\0.9.2 (slowed, to see the bar).
     own.delayObjects(1200);
     await section.getByRole("button", { name: "更新平台" }).click();
     await expect(section.getByRole("status", { name: "平台更新进度" })).toBeVisible();
@@ -312,62 +344,111 @@ test("平台更新: unzipped, a new platform on the server → 更新平台 → 
     await expect(section.getByTestId("pf-self-status")).toHaveText("✓ 0.9.2 已装好，点「重启平台」换成新版", { timeout: 20_000 });
     own.delayObjects(0);
     await expect(section.getByTestId("pf-self-result")).toHaveText(/已装好 0\.9\.2（1 个文件本机已经有了，没有重新下载）/);
-    expect(readFileSync(join(apps(), "platform", "0.9.2", "resources", "app.txt"), "utf8")).toBe("platform 0.9.2");
-    expect(readFileSync(join(apps(), "platform", "current", "AMO Platform.exe"), "utf8")).toBe("a stand-in platform");
-    const ino = (p: string) => statSync(p, { bigint: true }).ino;
-    expect(ino(join(apps(), "platform", "0.9.2", "resources", "electron.pak"))).toBe(ino(join(apps(), "notes", "1.0.0", "resources", "electron.pak")));
-    // Starting with Windows now points at current, so it follows the next updates too.
-    await expect.poll(loginExe).toBe(join(apps(), "platform", "current", "AMO Platform.exe"));
+    expect(readFileSync(join(v092(), "resources", "app", "main.js"), "utf8")).toBe("platform 0.9.2");
+    expect(ino(join(v092(), "resources", "electron.pak"))).toBe(ino(join(apps(), "notes", "1.0.0", "resources", "electron.pak")));
+    // The running entry is not touched; starting with Windows stays on it.
+    expect(readFileSync(entry(), "utf8")).toBe("the unpacked platform 0.9.1");
+    expect(await loginExe()).toBe(entry());
+    await expect(section.getByTestId("pf-self-place")).toHaveText("新版已经装进同一个文件夹的 apps\\platform。点「重启平台」换过去，之后 AMO Platform.exe 也会换成新版。");
     await expect(page.getByTestId("pf-self-hint")).toHaveText("! 重启平台换成 0.9.2");
     // Nothing restarted by itself.
     expect(await restartSpec()).toBeNull();
     await screenshot(app!, "platform", "P21-self-restart", page);
 
-    // 重启平台: the installed platform's real version folder would start, waiting for this one to go (recorded in tests).
+    // 重启平台: apps\platform's real 0.9.2 folder would start, waiting for this one to go (recorded in tests).
     const pid = await app!.evaluate(() => process.pid);
     await section.getByRole("button", { name: "重启平台" }).click();
-    await expect.poll(restartSpec).toMatchObject({ file: join(apps(), "platform", "0.9.2", "AMO Platform.exe"), args: [`--after=${pid}`], cwd: join(apps(), "platform", "0.9.2") });
-    // The new one keeps the same AMO_HOME / AMO_LOCAL_HOME (settings, login), without the variables only this run had.
+    await expect.poll(restartSpec).toMatchObject({ file: join(v092(), "AMO Platform.exe"), args: [`--after=${pid}`], cwd: v092() });
     const env = (await restartSpec())!.env as Record<string, string>;
-    expect(env).toMatchObject({ AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local") });
+    expect(env).toMatchObject({ AMO_HOME: join(root, "roaming") });
     expect(Object.keys(env).filter((k) => k.startsWith("AMO_PLATFORM_"))).toEqual([]);
     await app!.close();
     app = undefined;
 
-    // Started again from apps\platform\current, as the restart does: still logged in, the same settings, up to date, and
-    // the zip folder named so it can be deleted.
-    ({ page } = await launch([], () => ({ AMO_PLATFORM_TEST_EXE: join(apps(), "platform", "current", "AMO Platform.exe"), AMO_PLATFORM_TEST_VERSION: "0.9.2" }), true));
-    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
-    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线");
-    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
-    await expect(page.getByTestId("pf-old-folder")).toContainText(zipDir());
-    await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
-    await screenshot(app!, "platform", "P22-self-moved", page);
-    await nav(page, "设置");
-    await expect(page.getByTestId("pf-self-status")).toHaveText("✓ 已是最新");
-    await expect(page.getByTestId("pf-self-place")).toHaveText(`装在 ${join(apps(), "platform", "current")}`);
-    await expect(page.getByTestId("pf-self-old-folder")).toContainText(zipDir());
-    await expect(page.getByTestId("pf-login-start")).toBeChecked();
-    await nav(page, "工具");
-    await page.getByTestId("pf-old-folder").getByRole("button", { name: "知道了" }).click();
-    await expect(page.getByTestId("pf-old-folder")).toHaveCount(0);
-    expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8")).zipFolder).toBeNull();
+    // The old entry double-clicked before the new one ever ran: it hands over to apps\platform\0.9.2 (with its own
+    // arguments, and --after so the new one waits for it) and quits. Test mode records that and goes on, showing the
+    // fallback 打开那个 a real entry only shows when it could not start the new one.
+    ({ page } = await launch(["--channel", "stable"], (r) => asPlatform(r, join(r, "TOOLS", "AMO Platform", "AMO Platform.exe"), "0.9.1"), true));
+    const entryPid = await app!.evaluate(() => process.pid);
+    expect(await forwardSpec()).toMatchObject({ file: join(v092(), "AMO Platform.exe"), args: ["--channel", "stable", `--after=${entryPid}`], cwd: v092() });
+    await expect(page.getByTestId("pf-self-hint")).toHaveText("! 有更新的平台 0.9.2");
+    await page.getByTestId("pf-self-hint").click();
+    await expect(page.getByTestId("pf-self-status")).toHaveText("! 有更新的平台 0.9.2，打开那个");
+    await expect(page.getByTestId("pf-self-place")).toHaveText("这个是旧的 0.9.1。同一个文件夹的 apps\\platform 里有更新的平台，点「打开那个」换过去。");
+    await screenshot(app!, "platform", "P23-self-newer-here", page);
     await app!.close();
     app = undefined;
 
-    // The old zip opened again: apps\platform has a newer platform — 打开那个.
-    ({ page } = await launch([], fromZip, true));
-    await expect(page.getByTestId("pf-self-hint")).toHaveText("! 有更新的平台 0.9.2");
-    await page.getByTestId("pf-self-hint").click();
-    await expect(page.getByTestId("pf-self-status")).toHaveText("! AMO 文件夹里有更新的平台 0.9.2，打开那个");
-    await expect(page.getByTestId("pf-self-place")).toHaveText(`这个是旧的 0.9.1，从解压出来的文件夹运行：${zipDir()}。点「打开那个」换到 ${join(apps(), "platform")} 里的平台；这个文件夹不再用了，可以删掉。`);
-    await screenshot(app!, "platform", "P23-self-newer-here", page);
-    await page.getByRole("region", { name: "平台更新" }).getByRole("button", { name: "打开那个" }).click();
-    await expect.poll(async () => (await restartSpec())?.file).toBe(join(apps(), "platform", "0.9.2", "AMO Platform.exe"));
+    // Run from apps\platform\0.9.2, as the restart and the forward do: still logged in, up to date — and the entry's
+    // files are 0.9.2's now (hard links of that folder's; its old file gone, the person's own file and apps\ untouched).
+    const notesPak = readFileSync(join(apps(), "notes", "1.0.0", "resources", "electron.pak"));
+    ({ page } = await launch([], (r) => asPlatform(r, join(r, "TOOLS", "AMO Platform", "apps", "platform", "0.9.2", "AMO Platform.exe"), "0.9.2"), true));
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线");
+    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+    await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
+    for (const f of ["AMO Platform.exe", "resources/app/package.json", "resources/app/main.js", "使用说明.txt", "resources/electron.pak"]) expect(ino(join(unpacked(), ...f.split("/"))), f).toBe(ino(join(v092(), ...f.split("/"))));
+    expect(JSON.parse(readFileSync(join(unpacked(), "resources", "app", "package.json"), "utf8")).version).toBe("0.9.2");
+    expect(existsSync(join(unpacked(), "resources", "app", "only-in-0.9.1.js"))).toBe(false);
+    expect(readFileSync(join(unpacked(), "我的笔记.txt"), "utf8")).toBe("mine");
+    expect(readFileSync(join(apps(), "notes", "1.0.0", "resources", "electron.pak"))).toEqual(notesPak);
+    expect(readFileSync(join(apps(), "notes", "current", "resources", "app.txt"), "utf8")).toBe("notes 1.0.0");
+    await nav(page, "设置");
+    await expect(page.getByTestId("pf-self-status")).toHaveText("✓ 已是最新");
+    await expect(page.getByTestId("pf-self-place")).toHaveText(`正在运行 apps\\platform\\0.9.2 里的版本（平台的文件夹：${unpacked()}）。AMO Platform.exe 已经换成这一版，以后还是双击它打开平台。`);
+    await expect(page.getByTestId("pf-login-start")).toBeChecked();
+    await expect.poll(loginExe).toBe(entry());
+    await screenshot(app!, "platform", "P22-self-entry-refreshed", page);
+    await app!.close();
+    app = undefined;
+
+    // The entry double-clicked now: it is 0.9.2 itself, nothing to forward to.
+    ({ page } = await launch([], (r) => asPlatform(r, join(r, "TOOLS", "AMO Platform", "AMO Platform.exe"), "0.9.2"), true));
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线");
+    expect(await forwardSpec()).toBeNull();
+    await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
+    await nav(page, "设置");
+    await expect(page.getByTestId("pf-self-status")).toHaveText("✓ 已是最新");
   } finally {
     await own.close();
   }
   expect([realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null))).toEqual(before);
+});
+
+test("a platform folder it cannot write to (no administrator rights): 工具 says to move it; 安装 and 更新平台 are greyed out", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" } });
+  const who = `${process.env.USERDOMAIN ?? "."}\\${process.env.USERNAME ?? ""}`;
+  let locked = "";
+  try {
+    own.publish("notes", "1.0.0", tool("notes", "1.0.0"), { name: "AMO Notes", exe: "run.cmd" });
+    own.publish("platform", "0.9.2", { "AMO Platform.exe": "p" }, { name: "AMO Platform", exe: "AMO Platform.exe" });
+    // Unpacked as into Program Files: files can be read there, none made (this user denied adding files and folders).
+    const { app, page } = await launch([], (r) => {
+      const dir = unpackedPlatform(r, "Program Files");
+      execFileSync("icacls", [dir, "/deny", `${who}:(WD,AD)`], { stdio: "ignore" });
+      locked = dir;
+      return asPlatform(r, join(dir, "AMO Platform.exe"), "0.9.1");
+    });
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    // The list shows once Windows has said what runs (PowerShell, a few seconds on a busy machine).
+    await expect(status(page, "notes")).toHaveText("○ 没装 · 服务器上是 1.0.0", { timeout: 20_000 });
+    await expect(page.getByTestId("pf-root-issue")).toHaveText(`! 这个文件夹不能写入（${locked}），平台装不了工具也更新不了。把整个文件夹移到能写的位置（比如 D:\\TOOLS）再打开。`);
+    await expect(row(page, "notes").getByRole("button", { name: "安装" })).toBeDisabled();
+    await screenshot(app, "platform", "P27-root-readonly", page);
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
+    const section = page.getByRole("region", { name: "平台更新" });
+    await expect(section.getByRole("button", { name: "更新平台" })).toBeDisabled();
+    await expect(section.getByRole("alert")).toContainText("这个文件夹不能写入");
+    expect(existsSync(join(locked, "apps"))).toBe(false);
+  } finally {
+    if (locked) execFileSync("icacls", [locked, "/remove:d", who], { stdio: "ignore" });
+    await own.close();
+  }
 });
 
 test("注册 on the login page: the passphrase only when the server wants one, errors in the form, then 工具; log out and back in", async () => {

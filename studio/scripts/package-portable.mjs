@@ -108,9 +108,9 @@ const BUILDS = {
     readme: [
       "AMO 平台",
       "",
-      "双击 AMO Platform.exe，用团队服务器的账号登录（和 AMO 中转同一个账号）。之后它待在托盘里：",
+      "这个文件夹要放在能写入的地方（比如 D:\\TOOLS\\AMO Platform；不要放进 Program Files）。双击 AMO Platform.exe，用团队服务器的账号登录（和 AMO 中转同一个账号）。之后它待在托盘里：",
       "在「工具」里安装、打开、更新、回滚 AMO Studio、AMO Reviewer、AMO 便签；第一次打开 Studio 前先在「目录」里设好 Studio 数据目录。",
-      "工具装在 %LOCALAPPDATA%\\AMO\\apps（每个版本一个文件夹），设置和登录在 %APPDATA%\\AMO。",
+      "工具和平台自己的新版都装在这个文件夹的 apps 里（每个版本一个文件夹），AMO Platform.exe 会跟着换成新版，以后照旧双击它。要换位置，把整个文件夹移过去。设置和登录在 %APPDATA%\\AMO。",
       "想先用测试版：设置里把更新通道换成「测试」，或者带参数 --channel test 启动。",
     ],
   },

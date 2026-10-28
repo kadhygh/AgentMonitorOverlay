@@ -3,9 +3,11 @@ import { join, resolve } from "node:path";
 
 // Where the AMO tools keep what they share on this machine (plans/amo-lan-platform.md, 2026-10-28):
 //   %APPDATA%\AMO          account.json, platform.json, programs.json (later updates.json) — small, per Windows user
-//   %LOCALAPPDATA%\AMO     apps\<tool>\<version>\ and apps\<tool>\current — the programs the platform installs
+//   %LOCALAPPDATA%\AMO     the platform's Chromium profile; the programs it installs live in the platform's own folder
+//                          (apps\<tool>\…, packages/platform/src/self-update.ts), here only for the development build
 // AMO_HOME and AMO_LOCAL_HOME move either one (tests point them at temp folders, so a test run never touches the real
-// ones); every file of the set follows the variable, not only the account.
+// ones); every file of the set follows the variable, not only the account. AMO_LOCAL_HOME also stands in for the
+// platform's folder.
 
 export type Env = Record<string, string | undefined>;
 

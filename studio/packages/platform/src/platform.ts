@@ -1,16 +1,18 @@
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { amoHome, amoLocalHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, type Account, type Env, type Protector } from "@amo-studio/account";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { amoHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, type Account, type Env, type Protector } from "@amo-studio/account";
 import { PlatformClient } from "./client.js";
+import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./entry.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
-import { currentExe, loginItemExe, oldFolder, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
+import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
+import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
 import type { EnvironmentView } from "./environment-view.js";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
+import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -54,6 +56,9 @@ export interface PlatformOptions {
   /** 重启平台: starts `spec` and ends this process (main.ts; tests record it). */
   restart?: (spec: LaunchSpec) => Promise<void>;
   pid?: number;
+  /** Whether the platform's folder takes files, and the drive it is on (root-check.ts; tests hand in their own). */
+  rootWritable?: (root: string) => boolean;
+  rootDrive?: (root: string) => Promise<RootDrive>;
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -78,16 +83,22 @@ export class Platform implements PlatformCalls {
   private selfResult: SelfView["result"] = null;
   /** This run installed the platform version `current` points at (so 重启平台, not 打开那个). */
   private selfInstalledThisRun = false;
+  /** The platform's folder: writable until init has looked (so nothing is greyed out for a moment), the drive unknown. */
+  private readonly rootView: RootView;
+  /** Run from apps\platform: how bringing the entry to this version went (entry.ts), for 设置 and the tests. */
+  lastEntryRefresh: EntryRefresh | null = null;
+  private entryState: SelfView["entryState"] = null;
 
   constructor(private readonly options: PlatformOptions) {
     this.argChannel = channelFromArgs(options.argv);
-    const appsDir = join(amoLocalHome(options.env), "apps");
+    // Everything in the platform's own folder (self-update.ts's root, 2026-10-28), not in AppData.
+    this.place = selfPlace(options.selfExe ?? null, options.env);
+    this.rootView = { path: this.place.root, writable: true, drive: "unknown" };
     this.installer = new Installer({
-      appsDir,
+      appsDir: join(this.place.root, "apps"),
       programsFile: programsFile(options.env),
       isRunning: async (tool) => (await this.checkRunning([tool]))[tool] === true,
     });
-    this.place = selfPlace(options.selfExe ?? null, appsDir);
   }
 
   // ---- state
@@ -158,7 +169,7 @@ export class Platform implements PlatformCalls {
     });
     return {
       version: this.options.version,
-      self: this.selfView(channel, settings.zipFolder),
+      self: this.selfView(channel),
       testMode: this.options.testMode,
       account: this.account ? { server: this.account.server, name: this.account.name } : null,
       loginError: this.loginError,
@@ -169,31 +180,89 @@ export class Platform implements PlatformCalls {
       channelFromArgs: this.argChannel !== null,
       connection: this.connection,
       tools,
-      dirs: { apps: this.installer.appsDir, studioData: settings.studioDataDir, settings: amoHome(this.options.env) },
+      root: { ...this.rootView },
+      dirs: { root: this.place.root, apps: this.installer.appsDir, studioData: settings.studioDataDir, settings: amoHome(this.options.env) },
       openAtLogin: settings.openAtLogin,
     };
   }
 
   // ---- start, account
 
-  /** Reads the saved login, cleans up after any install that stopped half way, and asks the server. */
+  /**
+   * Looks at the platform's folder (can it take files, which drive), cleans up after any install that stopped half way,
+   * brings the entry to this version when run from apps\platform, reads the saved login, and asks the server.
+   */
   async init(): Promise<void> {
-    for (const tool of this.installer.tools()) {
+    const root = this.place.root;
+    this.rootView.writable = (this.options.rootWritable ?? rootWritable)(root);
+    const drive = (this.options.rootDrive ?? rootDrive)(root)
+      .then((d) => {
+        this.rootView.drive = d;
+        this.changed();
+      })
+      .catch(() => undefined);
+    if (this.rootView.writable) {
+      for (const tool of this.installer.tools()) {
+        try {
+          this.installer.repair(tool);
+        } catch {
+          // a folder in use: left for the next time
+        }
+      }
+      await this.refreshEntry();
+    }
+    // Only a record of where the platform's folder is, for other programs (programs.json has each tool's own path).
+    if (readSettings(this.options.env).root !== root) {
       try {
-        this.installer.repair(tool);
+        updateSettings({ root }, this.options.env);
       } catch {
-        // a folder in use: left for the next time
+        // %APPDATA%\AMO not writable: the platform works without the record
       }
     }
     this.account = await readAccount({ env: this.options.env, ...(this.options.protector ? { protector: this.options.protector } : {}) });
     this.client = this.account ? new PlatformClient(this.account.server, this.account.key, this.options.fetch) : null;
     if (this.account) {
-      // Registered again on every start: it follows where the platform is now (<apps>\platform\current once installed).
+      // Registered again on every start: it follows the folder (the entry, <root>\AMO Platform.exe), moved or not.
       const s = readSettings(this.options.env);
       if (s.openAtLogin) this.options.shell.setOpenAtLogin(true, this.loginExe());
     }
     this.changed();
     await this.refresh();
+    await drive;
+  }
+
+  /**
+   * Run from <root>\apps\platform\<version>: the entry's files (<root>\AMO Platform.exe and the rest the zip unpacked)
+   * brought to this version (entry.ts), so the next double-click opens it without forwarding. Not when there is no
+   * entry, nor when the entry is newer (unpacked again from a newer zip). A failure is tried again at the next start.
+   */
+  private async refreshEntry(): Promise<void> {
+    if (this.place.kind !== "installed") return;
+    const entry = entryExe(this.place)!;
+    if (!existsSync(entry)) {
+      this.entryState = "absent";
+      return;
+    }
+    let versionDir: string;
+    try {
+      versionDir = realpathSync(this.place.dir);
+    } catch {
+      return;
+    }
+    const version = basename(versionDir);
+    const versions = this.installer.versions(SELF);
+    const record = versions.find((v) => v.version === version);
+    if (!record) return;
+    const told = entryVersion(this.place.root);
+    if (told && compareVersions(told, version) > 0) return;
+    const filesOf = (v: string) => versions.find((x) => x.version === v)?.manifest.files.map((f) => f.path) ?? null;
+    this.lastEntryRefresh = await refreshEntry({ root: this.place.root, version, versionDir, files: record.manifest.files, oldFiles: entryOldFiles(this.place.root, filesOf) });
+    this.entryState = this.lastEntryRefresh.error ? "failed" : "current";
+  }
+
+  /** Why nothing can be installed here, or null: the platform's folder takes no files. */
+  private readonlyText(): string | null {
+    return this.rootView.writable ? null : `这个文件夹不能写入（${this.place.root}），装不了也更新不了。把整个文件夹移到能写的位置（比如 D:\\TOOLS）再打开。`;
   }
 
   private accountOptions() {
@@ -353,6 +422,11 @@ export class Platform implements PlatformCalls {
   /** Installs the channel's version, or updates to it (also back to it, when what is installed is newer). */
   async install(tool: string): Promise<void> {
     const client = this.client;
+    const readonly = this.readonlyText();
+    if (readonly) {
+      this.results.set(tool, { tone: "error", text: readonly });
+      return this.changed();
+    }
     if (!client || !this.channels) {
       this.results.set(tool, { tone: "error", text: "现在连不上服务器，装不了。" });
       return this.changed();
@@ -454,15 +528,15 @@ export class Platform implements PlatformCalls {
     return null;
   }
 
-  async openPath(which: "apps" | "studioData" | "settings"): Promise<void> {
+  async openPath(which: "root" | "apps" | "studioData" | "settings"): Promise<void> {
     const v = this.view();
-    const path = which === "apps" ? v.dirs.apps : which === "settings" ? v.dirs.settings : v.dirs.studioData;
+    const path = which === "root" ? v.dirs.root : which === "apps" ? v.dirs.apps : which === "settings" ? v.dirs.settings : v.dirs.studioData;
     if (path) await this.options.shell.openPath(path);
   }
 
   // ---- the platform's own updates (self-update.ts)
 
-  /** <apps>\platform\current\<exe> when a platform is installed there. */
+  /** <root>\apps\platform\current\<exe> when a platform is installed there. */
   private installedSelfExe(): string | null {
     const current = this.installer.versions(SELF).find((v) => v.current);
     return current ? currentExe(this.installer.appsDir, current.manifest.exe) : null;
@@ -472,12 +546,14 @@ export class Platform implements PlatformCalls {
     return loginItemExe(this.place, this.installedSelfExe());
   }
 
-  private selfView(channel: Channel, zipFolder: string | null): SelfView {
+  private selfView(channel: Channel): SelfView {
     const installed = this.installer.currentVersion(SELF);
     const available = this.channels ? channelVersion(this.channels, channel, SELF) : null;
     return {
       place: this.place.kind,
       dir: this.place.kind === "dev" ? null : this.place.dir,
+      entry: entryExe(this.place),
+      entryState: this.entryState,
       standing: selfStanding({ place: this.place.kind, running: this.options.version, installed, available, installedThisRun: this.selfInstalledThisRun }),
       available,
       notes: available ? (this.manifests.get(`${SELF}@${available}`)?.notes ?? null) : null,
@@ -485,15 +561,13 @@ export class Platform implements PlatformCalls {
       home: this.installer.toolDir(SELF),
       task: this.selfTask,
       result: this.selfResult,
-      oldFolder: oldFolder(zipFolder, this.place),
     };
   }
 
   /**
-   * 更新平台: the channel's platform installed into <apps>\platform by the same engine as the tools (the shared files are
-   * linked, not downloaded) and made current. The running platform is not touched; 重启平台 switches to it. From an
-   * unpacked zip, the folder is remembered (it can be deleted once the platform runs from <apps>\platform), and
-   * starting with Windows moves to <apps>\platform\current.
+   * 更新平台: the channel's platform installed into <root>\apps\platform by the same engine as the tools (the shared
+   * files are linked, not downloaded) and made current. The running platform is not touched; 重启平台 switches to it,
+   * and that one brings the entry (<root>\AMO Platform.exe) to its version. Starting with Windows stays on the entry.
    */
   async updateSelf(): Promise<void> {
     if (this.selfTask) return;
@@ -502,6 +576,8 @@ export class Platform implements PlatformCalls {
       this.changed();
     };
     if (this.place.kind === "dev") return done("warn", "这是从源码启动的开发版，不自己更新。");
+    const readonly = this.readonlyText();
+    if (readonly) return done("error", readonly);
     const client = this.client;
     if (!client || !this.channels) return done("error", "现在连不上服务器，更新不了。");
     const version = channelVersion(this.channels, this.channel(), SELF);
@@ -517,8 +593,6 @@ export class Platform implements PlatformCalls {
         this.changed();
       });
       this.selfInstalledThisRun = true;
-      if (this.place.kind === "loose") updateSettings({ zipFolder: this.place.dir }, this.options.env);
-      if (readSettings(this.options.env).openAtLogin) this.options.shell.setOpenAtLogin(true, this.loginExe());
       const reused = r.reused ? `（${r.reused} 个文件本机已经有了，没有重新下载）` : "";
       this.selfResult = { tone: "ok", text: `已装好 ${version}${reused}` };
     } catch (err) {
@@ -530,10 +604,12 @@ export class Platform implements PlatformCalls {
   }
 
   /**
-   * 重启平台 (after an update) or 打开那个 (an older platform opened while <apps>\platform has a newer one): the installed
-   * platform starts — from its real version folder, as the tools do (launch.ts), so switching `current` later never
-   * meets a folder in use through the junction — and this one quits. Only when clicked (AGENTS.md, constraint 6), and
-   * not while something is being installed. The tools started from here are detached and keep running.
+   * 重启平台 (after an update) or 打开那个 (an older platform running while apps\platform has a newer one, when the
+   * entry could not forward): the installed platform starts — from its real version folder, as the tools do
+   * (launch.ts), so switching `current` later never meets a folder in use through the junction — and this one quits.
+   * Not the entry: it still has the old files until the new platform brings them over, so it would only forward.
+   * Only when clicked (AGENTS.md, constraint 6), and not while something is being installed. The tools started from
+   * here are detached and keep running.
    */
   async restartSelf(): Promise<void> {
     const refuse = (text: string) => {
@@ -548,7 +624,7 @@ export class Platform implements PlatformCalls {
       if (!exe || !existsSync(exe)) throw new Error("missing");
       file = realpathSync(exe);
     } catch {
-      return refuse(`AMO 文件夹里没有装好的平台（${this.installer.toolDir(SELF)}），先点「更新平台」。`);
+      return refuse(`${this.installer.toolDir(SELF)} 里没有装好的平台，先点「更新平台」。`);
     }
     const spec: LaunchSpec = { file, args: restartArgs(this.options.argv, this.options.pid ?? process.pid), cwd: dirname(file), env: startEnv(this.options.env) };
     try {
@@ -559,9 +635,8 @@ export class Platform implements PlatformCalls {
     }
   }
 
-  async dismissSelf(what: "result" | "old-folder"): Promise<void> {
+  async dismissSelf(what: "result"): Promise<void> {
     if (what === "result") this.selfResult = null;
-    else updateSettings({ zipFolder: null }, this.options.env);
     this.changed();
   }
 

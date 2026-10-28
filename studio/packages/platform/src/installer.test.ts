@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -201,7 +201,7 @@ describe("Installer", () => {
     return { ma, mb };
   }
   const ino = (...parts: string[]) => statSync(join(root, "apps", ...parts), { bigint: true }).ino;
-  const index = () => JSON.parse(readFileSync(join(root, "file-index.json"), "utf8")) as { format: number; files: Record<string, { size: number; paths: string[] }> };
+  const index = () => JSON.parse(readFileSync(join(root, "apps", "file-index.json"), "utf8")) as { format: number; files: Record<string, { size: number; paths: string[] }> };
 
   it("a second tool hard-links the files another tool already has and downloads only its own", async () => {
     const inst = setup();
@@ -216,7 +216,7 @@ describe("Installer", () => {
     expect(ino("n-one", "1.0.0", "locales", "zh-CN.pak")).toBe(ino("s-one", "1.0.0", "locales", "zh-CN.pak"));
     expect(Number(statSync(join(root, "apps", "n-one", "1.0.0", "ffmpeg.dll"), { bigint: true }).nlink)).toBe(2);
     for (const f of mb.files) expect(sha256Of(readFileSync(join(root, "apps", "n-one", "1.0.0", ...f.path.split("/")))), f.path).toBe(f.sha256);
-    // The index (beside apps\) knows both names of the exe.
+    // The index (in apps\) knows both names of the exe.
     expect(index().files[sha256Of(big("E"))]!.paths.sort()).toEqual(["n-one/1.0.0/B Tool.exe", "s-one/1.0.0/A Tool.exe"]);
   });
 
@@ -237,7 +237,7 @@ describe("Installer", () => {
     expect(index().files[sha256Of(big("F"))]!.paths).toEqual(["n-two/1.0.0/ffmpeg.dll"]);
 
     // No index (deleted, or a platform from before it): a new Installer rebuilds it from the version records.
-    unlinkSync(join(root, "file-index.json"));
+    unlinkSync(join(root, "apps", "file-index.json"));
     const again = new Installer({ appsDir: join(root, "apps"), programsFile: join(root, "home", "programs.json") });
     server.publish("s-two", "1.1.0", { "A Tool.exe": big("E"), "ffmpeg.dll": big("F"), "resources.pak": big("P", 96), "locales/zh-CN.pak": big("Z", 8), "resources/app/main.js": "v1.1" }, { exe: "A Tool.exe" });
     const before2 = objectGets();
@@ -245,7 +245,7 @@ describe("Installer", () => {
     expect(objectGets() - before2).toBe(1);
     expect(index().files[sha256Of(big("F"))]!.paths.sort()).toEqual(["n-two/1.0.0/ffmpeg.dll", "s-two/1.1.0/ffmpeg.dll"]);
     // repair() builds the tool's entries again from what is there.
-    writeFileSync(join(root, "file-index.json"), JSON.stringify({ format: 1, files: {} }));
+    writeFileSync(join(root, "apps", "file-index.json"), JSON.stringify({ format: 1, files: {} }));
     const third = new Installer({ appsDir: join(root, "apps"), programsFile: join(root, "home", "programs.json") });
     third.repair("n-two");
     expect(index().files[sha256Of(big("F"))]!.paths).toEqual(["n-two/1.0.0/ffmpeg.dll"]);
@@ -269,6 +269,28 @@ describe("Installer", () => {
     await inst.uninstall("s-three");
     expect(readFileSync(join(root, "apps", "n-three", "current", "B Tool.exe"))).toEqual(big("E"));
     expect(Object.values(index().files).flatMap((e) => e.paths).every((p) => p.startsWith("n-three/1.0.0/"))).toBe(true);
+  });
+
+  it("the whole folder moved (the platform's folder is the user's, 2026-10-28): repair points `current` at the version here, programs.json follows", async () => {
+    const inst = setup();
+    publishThree("moving");
+    await inst.install("moving", "1.0.0", client);
+    await inst.install("moving", "1.1.0", client);
+    const moved = join(root, "moved");
+    mkdirSync(moved);
+    renameSync(join(root, "apps"), join(moved, "apps"));
+    const after = new Installer({ appsDir: join(moved, "apps"), programsFile: join(root, "home", "programs.json") });
+    // The junction still names the old place, which is gone.
+    expect(after.currentVersion("moving")).toBeNull();
+    after.repair("moving");
+    expect(after.currentVersion("moving")).toBe("1.1.0");
+    expect(realpathSync(join(moved, "apps", "moving", "current"))).toBe(realpathSync(join(moved, "apps", "moving", "1.1.0")));
+    expect(programs().tools.moving).toEqual({ version: "1.1.0", dir: join(moved, "apps", "moving", "current"), exe: "Tool.exe" });
+    expect(after.rollbackTarget("moving")?.version).toBe("1.0.0");
+    // A `current` already pointing here is left as it is.
+    const link = readlinkSync(join(moved, "apps", "moving", "current"));
+    after.repair("moving");
+    expect(readlinkSync(join(moved, "apps", "moving", "current"))).toBe(link);
   });
 
   it("objects the server sends gzipped are installed as the originals; the bar runs on their sizes", async () => {

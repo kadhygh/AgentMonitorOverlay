@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, linkSync, copyFileSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { createReadStream, existsSync, linkSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { readJsonFile, updateJsonFile, writeJsonFile } from "@amo-studio/account";
 import type { Source } from "./client.js";
 import { compareVersions, isToolId, isVersion, PlatformError, safeParts, type Manifest } from "./manifest.js";
@@ -15,10 +15,12 @@ import { compareVersions, isToolId, isVersion, PlatformError, safeParts, type Ma
 // start or install removes. Then `current` is pointed at it and the oldest versions go, keeping the 2 last in use.
 // A program running from the old folder is not touched: it keeps its files until it is restarted.
 // programs.json (%APPDATA%\AMO) says for every installed tool where `current` is and its exe; other tools read it.
+// apps\ is in the platform's folder (self-update.ts's root, 2026-10-28), which may be moved as a whole: the junctions
+// keep absolute targets, so repair() points a `current` left on the old place at its version here again.
 //
 // Shared files (2026-10-29, plans/amo-lan-platform.md 「共用 Electron」): the platform's builds leave every tool's
 // Electron files the same (321 MB of a 340–400 MB tool), so "already has" means any kept version of any tool, not only
-// this tool's last one. file-index.json (beside apps\, in %LOCALAPPDATA%\AMO) maps sha256 → the files here with that
+// this tool's last one. file-index.json (in apps\, 2026-10-28) maps sha256 → the files here with that
 // content, as paths relative to apps\. It is only a cache of the version records: rebuilt from them when it is missing
 // or unreadable, and by repair(); every path is checked (there, a file, the manifest's size) before it is linked, and
 // one that is not is dropped and the file downloaded instead. Each tool's folder holds only its own links: removing a
@@ -74,11 +76,11 @@ const KEEP = 2;
 const PARALLEL = 4;
 
 export interface InstallerOptions {
-  /** <localappdata>\AMO\apps */
+  /** <the platform's folder>\apps (self-update.ts's root) */
   appsDir: string;
   /** %APPDATA%\AMO\programs.json */
   programsFile: string;
-  /** The sha256 index of the files here (default: file-index.json beside appsDir, i.e. <localappdata>\AMO). */
+  /** The sha256 index of the files here (default: file-index.json in appsDir, so the platform's folder holds only its entry and apps\). */
   indexFile?: string;
   /** Whether a program runs from this tool's folder (uninstall refuses then). */
   isRunning?: (tool: string) => Promise<boolean>;
@@ -123,7 +125,7 @@ export class Installer {
   }
 
   get indexFile(): string {
-    return this.options.indexFile ?? join(dirname(this.options.appsDir), "file-index.json");
+    return this.options.indexFile ?? join(this.options.appsDir, "file-index.json");
   }
 
   // ---- the sha256 index of the files here
@@ -255,6 +257,7 @@ export class Installer {
     const link = this.currentLink(tool);
     if (!exists(link) && exists(`${link}.next`)) renameSync(`${link}.next`, link);
     else if (exists(`${link}.next`)) removeLink(`${link}.next`);
+    this.relink(tool);
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
       if (e.name.startsWith(".partial-") || e.name.endsWith(".tmp")) rmSync(p, { recursive: true, force: true, maxRetries: 3 });
@@ -434,6 +437,29 @@ export class Installer {
     } catch (err) {
       throw new PlatformError("io", `${name} 的文件夹没删干净（${err instanceof Error ? err.message : String(err)}），可能有程序还在用里面的文件。`);
     }
+  }
+
+  /**
+   * `current` still aimed at the folder's old place (the platform's folder moved as a whole): pointed at the version of
+   * the same name here, when that is here. A `current` aimed here, or at nothing known, is left as it is.
+   */
+  private relink(tool: string): void {
+    const dir = this.toolDir(tool);
+    const link = this.currentLink(tool);
+    if (!exists(link)) return;
+    let target: string;
+    try {
+      target = readlinkSync(link).replace(/^\\\\\?\\/, "").replace(/[\\/]+$/, "");
+    } catch {
+      return;
+    }
+    const version = basename(target);
+    const here = join(dir, version);
+    if (!isVersion(version) || resolve(target).toLowerCase() === here.toLowerCase() || !existsSync(here) || !existsSync(`${here}.json`)) return;
+    const next = `${link}.next`;
+    symlinkSync(here, next, "junction");
+    removeLink(link);
+    renameSync(next, link);
   }
 
   /** Makes `version` current: a new junction beside the old one, then swapped in by rename. */

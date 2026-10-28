@@ -339,7 +339,7 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
         <h1 className="pf-h1">工具</h1>
         <p className="pf-hint">团队服务器上{view.channel === "test" ? "测试通道" : "稳定通道"}里的工具，各自安装、各自更新。更新不会关掉正在用的工具，下次打开就是新版。</p>
       </div>
-      {view.self.oldFolder && <OldFolderBanner view={view} />}
+      <RootBanner view={view} />
       {offline && (
         <div className="pf-banner warn" role="status">
           <span>! 连不上服务器：{view.connection.message}。已经装好的工具照样能打开、回滚、卸载。</span>
@@ -350,24 +350,43 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
       )}
       {view.tools.length === 0 && <p className="pf-hint">{view.connection.state === "checking" ? "正在读取服务器上的工具…" : "服务器上还没有发布工具。"}</p>}
       {view.tools.map((t) => (
-        <ToolRow key={t.id} tool={t} online={view.connection.state === "online"} onNeedStudioDir={onNeedStudioDir} />
+        <ToolRow key={t.id} tool={t} online={view.connection.state === "online"} writable={view.root.writable} onNeedStudioDir={onNeedStudioDir} />
       ))}
     </div>
   );
 }
 
-/** After the first update moved the platform out of its unzipped folder: that folder can go (工具 and 设置 both say it). */
-function OldFolderBanner({ view }: { view: PlatformView }) {
-  return (
-    <div className="pf-banner ok" role="status" data-testid="pf-old-folder">
-      <span>
-        ✓ 平台已经装进 AMO 文件夹（{view.self.home}），以后从那里启动。原来解压出来的文件夹不再用了，可以删掉：<code className="pf-path">{view.self.oldFolder}</code>
-      </span>
-      <button type="button" className="btn-ghost pf-small" onClick={() => void call("dismissSelf", "old-folder")}>
-        知道了
-      </button>
-    </div>
-  );
+/**
+ * The platform's folder (2026-10-28: the tools go where the platform was unpacked, no administrator rights): one it
+ * cannot write to stops installing and updating, and says to move the folder; a network or removable drive only warns.
+ */
+function RootBanner({ view }: { view: PlatformView }) {
+  const r = view.root;
+  if (!r.writable)
+    return (
+      <div className="pf-banner error" role="alert" data-testid="pf-root-issue">
+        <span>
+          ! 这个文件夹不能写入（<code className="pf-path inline">{r.path}</code>），平台装不了工具也更新不了。把整个文件夹移到能写的位置（比如 D:\TOOLS）再打开。
+        </span>
+      </div>
+    );
+  if (r.drive === "network")
+    return (
+      <div className="pf-banner warn" role="status" data-testid="pf-root-issue">
+        <span>
+          ! 平台在网络盘上（<code className="pf-path inline">{r.path}</code>）：工具共用的文件在这里多半没法硬链接，每个工具会各复制一份；网络断了平台和工具都打不开。建议把整个文件夹移到本机硬盘（比如 D:\TOOLS）。
+        </span>
+      </div>
+    );
+  if (r.drive === "removable")
+    return (
+      <div className="pf-banner warn" role="status" data-testid="pf-root-issue">
+        <span>
+          ! 平台在可移动盘上（<code className="pf-path inline">{r.path}</code>）：盘拔掉后平台和工具都打不开；有的盘不支持硬链接，工具共用的文件会各复制一份。建议把整个文件夹移到本机硬盘（比如 D:\TOOLS）。
+        </span>
+      </div>
+    );
+  return null;
 }
 
 function statusLine(t: ToolView): { tone: "ok" | "warn" | "idle"; text: string } {
@@ -408,7 +427,7 @@ function taskLine(task: TaskView): string {
   }
 }
 
-function ToolRow({ tool: t, online, onNeedStudioDir }: { tool: ToolView; online: boolean; onNeedStudioDir: (message: string) => void }) {
+function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolView; online: boolean; writable: boolean; onNeedStudioDir: (message: string) => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const busy = t.task !== null;
@@ -426,12 +445,14 @@ function ToolRow({ tool: t, online, onNeedStudioDir }: { tool: ToolView; online:
   };
 
   const actions: Array<{ label: string; kind: "primary" | "plain" | "quiet"; run: () => void; disabled?: boolean; title?: string }> = [];
-  if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !online });
-  if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !online });
+  // A folder it cannot write to: nothing to install or update (RootBanner says why); offline: nothing to fetch.
+  const cannot = !writable ? "这个文件夹不能写入，见上面的提示" : !online ? "现在连不上服务器" : undefined;
+  if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
+  if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
 
   const more: typeof actions = [];
-  if (t.standing === "ahead") more.push({ label: `换成 ${t.available}`, kind: "quiet", run: () => void call("install", t.id), disabled: !online, title: "装这个通道里的版本" });
+  if (t.standing === "ahead") more.push({ label: `换成 ${t.available}`, kind: "quiet", run: () => void call("install", t.id), disabled: !!cannot, title: cannot ?? "装这个通道里的版本" });
   if (t.rollbackTo) more.push({ label: `回到 ${t.rollbackTo}`, kind: "quiet", run: () => void call("rollback", t.id), title: "换回上一个装过的版本（还留在这台电脑上，不用下载）" });
   if (t.installed) more.push({ label: "卸载", kind: "quiet", run: () => setConfirmUninstall(true), title: t.running ? "正在运行时不能卸载" : undefined });
 
@@ -549,12 +570,17 @@ function DirsPage({ view, notice, onNoticeDone }: { view: PlatformView; notice: 
         <div className="pf-dir-head">
           <span className="pf-tool-name">工具装在哪</span>
           <span className="pf-spacer" />
-          <button type="button" className="pf-link" onClick={() => void call("openPath", "apps")}>
+          <button type="button" className="pf-link" onClick={() => void call("openPath", "root")}>
             打开
           </button>
         </div>
-        <code className="pf-path">{view.dirs.apps}</code>
-        <p className="pf-hint">每个工具每个版本一个文件夹，current 指向正在用的那个；更新是装一个新文件夹再把 current 指过去，留着上一版方便回滚。</p>
+        <code className="pf-path" data-testid="pf-root">
+          {view.dirs.root}
+        </code>
+        <p className="pf-hint">工具装在平台所在的文件夹里；要换位置，把整个文件夹移过去（先退出平台和从它打开的工具），再打开里面的 AMO Platform.exe。</p>
+        <p className="pf-hint">
+          里面的 apps 放着每个工具的每个版本，current 指向正在用的那个；更新是装一个新版本再把 current 指过去，留着上一版方便回滚。平台自己的新版也装在 apps\platform 里，外面的 AMO Platform.exe 会跟着换成新版。
+        </p>
       </section>
       <section className={`pf-dir${notice && !view.dirs.studioData ? " attention" : ""}`} aria-label="Studio 数据目录">
         {notice && !view.dirs.studioData && (
@@ -590,15 +616,30 @@ function DirsPage({ view, notice, onNoticeDone }: { view: PlatformView; notice: 
 
 // ---- 设置
 
-/** Where the running platform is, in words. */
+/**
+ * Where the running platform is, in words (2026-10-28: the platform and its tools stay in the folder it was unpacked
+ * to; its updates go to apps\platform there, and the AMO Platform.exe people double-click follows them).
+ */
 function selfPlaceLine(view: PlatformView): string {
   const s = view.self;
   if (s.place === "dev") return "开发版（从源码启动），不自己更新。";
-  if (s.place === "installed") return `装在 ${s.dir}`;
-  // An old zip opened again: AMO 文件夹 already has a newer one, and this folder is not needed any more.
-  if (s.standing === "newer-here") return `这个是旧的 ${view.version}，从解压出来的文件夹运行：${s.dir}。点「打开那个」换到 ${s.home} 里的平台；这个文件夹不再用了，可以删掉。`;
-  if (s.standing === "restart") return `从解压出来的文件夹运行：${s.dir}。新版已经装进 ${s.home}，重启后从那里启动，这个文件夹就不再用了。`;
-  return `从解压出来的文件夹运行：${s.dir}。第一次更新时会装进 ${s.home}，以后从那里启动。`;
+  const entry = s.entry ?? "AMO Platform.exe";
+  const cut = entry.lastIndexOf("\\");
+  const name = entry.slice(cut + 1);
+  const folder = entry.slice(0, Math.max(cut, 0));
+  // Paths inside the platform's folder said relative to it (the folder itself is on 目录), else in full.
+  const inFolder = (p: string) => (folder && p.toLowerCase().startsWith(`${folder.toLowerCase()}\\`) ? p.slice(folder.length + 1) : null);
+  const home = inFolder(s.home) ? `同一个文件夹的 ${inFolder(s.home)}` : s.home;
+  if (s.place === "installed") {
+    const here = s.dir && inFolder(s.dir) ? `${inFolder(s.dir)} 里的版本（平台的文件夹：${folder}）` : `${s.dir} 里的版本`;
+    if (s.entryState === "current") return `正在运行 ${here}。${name} 已经换成这一版，以后还是双击它打开平台。`;
+    if (s.entryState === "failed") return `正在运行 ${here}。${name} 这次没换成新版（文件可能正被占用），下次启动平台时再换；现在双击它也会转到新版。`;
+    return `正在运行 ${here}。`;
+  }
+  // Only when the entry could not hand over to the newer version by itself.
+  if (s.standing === "newer-here") return `这个是旧的 ${view.version}。${home} 里有更新的平台，点「打开那个」换过去。`;
+  if (s.standing === "restart") return `新版已经装进${home}。点「重启平台」换过去，之后 ${name} 也会换成新版。`;
+  return `从 ${entry} 运行。新版会装进${home}，之后 ${name} 跟着换成新版，以后还是双击它打开。`;
 }
 
 function selfStatus(view: PlatformView): { tone: "ok" | "warn" | "idle"; text: string } | null {
@@ -611,7 +652,7 @@ function selfStatus(view: PlatformView): { tone: "ok" | "warn" | "idle"; text: s
     case "restart":
       return { tone: "ok", text: `✓ ${s.installed} 已装好，点「重启平台」换成新版` };
     case "newer-here":
-      return { tone: "warn", text: `! AMO 文件夹里有更新的平台 ${s.installed}，打开那个` };
+      return { tone: "warn", text: `! 有更新的平台 ${s.installed}，打开那个` };
     default:
       return s.available ? { tone: "ok", text: s.available === view.version ? "✓ 已是最新" : `✓ 已是最新（通道里是 ${s.available}）` } : view.connection.state === "online" ? { tone: "idle", text: "○ 这个通道里还没有平台" } : null;
   }
@@ -639,7 +680,7 @@ function SelfSection({ view }: { view: PlatformView }) {
         )}
         <span className="pf-spacer" />
         {s.standing === "update" && (
-          <button type="button" className="btn-primary" disabled={busy || !online} title={online ? undefined : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
+          <button type="button" className="btn-primary" disabled={busy || !online || !view.root.writable} title={!view.root.writable ? "这个文件夹不能写入，见「工具」页上的提示" : online ? undefined : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
             更新平台
           </button>
         )}
@@ -683,9 +724,9 @@ function SelfSection({ view }: { view: PlatformView }) {
           <div className="pf-notes-text">{s.notes}</div>
         </details>
       )}
-      {s.oldFolder && (
-        <p className="pf-hint" data-testid="pf-self-old-folder">
-          原来解压出来的文件夹不再用了，可以删掉：<code className="pf-path">{s.oldFolder}</code>
+      {!view.root.writable && s.standing === "update" && (
+        <p className="form-error" role="alert">
+          这个文件夹不能写入（{view.root.path}），平台更新不了。把整个文件夹移到能写的位置（比如 D:\TOOLS）再打开。
         </p>
       )}
     </section>

@@ -54,22 +54,33 @@ export type SelfStanding = "dev" | "latest" | "update" | "restart" | "newer-here
 
 /** The platform's own updates (设置 → 平台更新, and the hint in the title bar). */
 export interface SelfView {
-  /** dev: from the sources; installed: from <apps>\platform; loose: from the folder its zip was unpacked to. */
-  place: "dev" | "installed" | "loose";
+  /** dev: from the sources; installed: from <root>\apps\platform; outer: the entry, <root>\AMO Platform.exe (self-update.ts). */
+  place: "dev" | "installed" | "outer";
   /** The folder the running platform's program is in (null in development). */
   dir: string | null;
+  /** The entry the person double-clicks (<root>\AMO Platform.exe); null in development. */
+  entry: string | null;
+  /** Run from apps\platform: whether the entry was brought to this version (entry.ts) — "absent" when there is no entry. */
+  entryState: "current" | "failed" | "absent" | null;
   standing: SelfStanding;
   /** The version the chosen channel has, or null. */
   available: string | null;
   notes: string | null;
-  /** The version <apps>\platform\current points at, or null. */
+  /** The version <root>\apps\platform\current points at, or null. */
   installed: string | null;
-  /** Where the installed platform is (<apps>\platform). */
+  /** Where the platform's updates go (<root>\apps\platform). */
   home: string;
   task: TaskView | null;
   result: { tone: "ok" | "warn" | "error"; text: string } | null;
-  /** The unpacked zip folder the platform ran from before its first update, while it is still there: it can go. */
-  oldFolder: string | null;
+}
+
+/** The platform's folder (self-update.ts's root) and whether it can hold the tools (root-check.ts). */
+export interface RootView {
+  path: string;
+  /** False: nothing can be installed or updated; 工具 says to move the folder. */
+  writable: boolean;
+  /** Network and removable drives work, with a warning; "unknown" until Windows has said (or when it does not). */
+  drive: "local" | "network" | "removable" | "unknown";
 }
 
 export interface PlatformView {
@@ -90,7 +101,8 @@ export interface PlatformView {
   channelFromArgs: boolean;
   connection: { state: "idle" | "checking" | "online" | "offline"; message: string | null };
   tools: ToolView[];
-  dirs: { apps: string; studioData: string | null; settings: string };
+  root: RootView;
+  dirs: { root: string; apps: string; studioData: string | null; settings: string };
   openAtLogin: boolean;
 }
 
@@ -110,18 +122,18 @@ export interface PlatformCalls {
   setChannel(channel: Channel): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
   pickStudioDataDir(): Promise<void>;
-  openPath(which: "apps" | "studioData" | "settings"): Promise<void>;
+  openPath(which: "root" | "apps" | "studioData" | "settings"): Promise<void>;
   dismiss(tool: string): Promise<void>;
   /** 环境 (environment-view.ts): the last check, or a new one. */
   environment(fresh?: boolean): Promise<EnvironmentView>;
   openDownload(id: string): Promise<void>;
   copyInstallCommand(): Promise<void>;
-  /** 更新平台: the channel's platform into <apps>\platform, made current; the running one stays until 重启平台. */
+  /** 更新平台: the channel's platform into <root>\apps\platform, made current; the running one stays until 重启平台. */
   updateSelf(): Promise<void>;
-  /** 重启平台 / 打开那个: <apps>\platform\current's platform starts and this one quits. */
+  /** 重启平台 / 打开那个: <root>\apps\platform\current's platform starts and this one quits. */
   restartSelf(): Promise<void>;
-  /** 知道了 on the platform's update result, or on the line about the unpacked zip folder. */
-  dismissSelf(what: "result" | "old-folder"): Promise<void>;
+  /** 知道了 on the platform's update result. */
+  dismissSelf(what: "result"): Promise<void>;
 }
 
 export interface RegisterForm {

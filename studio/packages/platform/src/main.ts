@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { amoLocalHome } from "@amo-studio/account";
-import { startDetached, type LaunchSpec } from "./launch.js";
+import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
-import { afterPid } from "./self-update.js";
+import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
 import type { PlatformCalls, PlatformView } from "./view.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2): a tray program that installs, updates and starts the AMO tools from the
@@ -13,15 +13,16 @@ import type { PlatformCalls, PlatformView } from "./view.js";
 // with only its main process (user, 10-28). The page is packages/ui's platform.html, served on amo-platform://.
 // Env:
 //   AMO_HOME            %APPDATA%\AMO: account.json, platform.json, programs.json
-//   AMO_LOCAL_HOME      %LOCALAPPDATA%\AMO: apps\<tool>\…, and this program's Chromium profile
+//   AMO_LOCAL_HOME      the platform's folder (apps\<tool>\…) in place of the one it was unpacked to (self-update.ts:
+//                       tests, and development, where it defaults to %LOCALAPPDATA%\AMO); also moves the Chromium profile
 //   AMO_PLATFORM_UI_DIR the UI build (default packages/ui/dist)
-//   AMO_PLATFORM_TEST=1 test mode (e2e): window off-screen and never focused, no tray, dialogs, starting with Windows
-//                       and 重启平台 recorded instead of done
+//   AMO_PLATFORM_TEST=1 test mode (e2e): window off-screen and never focused, no tray, dialogs, starting with Windows,
+//                       重启平台 and the entry's forwarding recorded instead of done
 //   AMO_PLATFORM_TEST_EXE, AMO_PLATFORM_TEST_VERSION  test mode only: run as if packaged, as this program and version
 //                       (the self-update tests; a real build is that from app.isPackaged and its package.json)
 // Args: --channel test|stable  overrides the 更新通道 setting for this run (start-platform.cmd uses test)
 //       --hidden               start in the tray only (how Windows starts it at login)
-//       --after=<pid>          a restart (self-update.ts): wait for that platform to be gone before taking over
+//       --after=<pid>          a restart or a forward (self-update.ts): wait for that platform to be gone first
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_PLATFORM_TEST === "1";
@@ -46,7 +47,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
+type TestGlobals = { __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -75,9 +76,9 @@ const platformShell: PlatformShell = {
       g.__platformOpenAtLoginExe = exe;
       return;
     }
-    // Packaged: the program the platform names (<apps>\platform\current\AMO Platform.exe once installed there, so it
-    // follows every self-update); in development: electron with this package. The same registry value either way
-    // (named after the AppUserModelID), so a new path replaces the old one.
+    // Packaged: the program the platform names (the entry, <root>\AMO Platform.exe, which forwards to a newer version
+    // by itself); in development: electron with this package. The same registry value either way (named after the
+    // AppUserModelID), so a new path replaces the old one.
     if (exe) app.setLoginItemSettings({ openAtLogin: on, path: exe, args: ["--hidden"] });
     else app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: app.isPackaged ? ["--hidden"] : [app.getAppPath(), "--hidden"] });
   },
@@ -308,7 +309,41 @@ async function waitForPrevious(): Promise<void> {
   for (const until = Date.now() + 15_000; alive() && Date.now() < until; ) await new Promise((r) => setTimeout(r, 100));
 }
 
-void waitForPrevious().then(() => {
+/** This run's own arguments: after the exe when packaged; after this script when run by electron (the tests add theirs before it). */
+function ownArgs(): string[] {
+  if (app.isPackaged) return process.argv.slice(1);
+  const self = fileURLToPath(import.meta.url).toLowerCase();
+  const i = process.argv.findIndex((a, n) => n > 0 && resolve(a).toLowerCase() === self);
+  return process.argv.slice(i > 0 ? i + 1 : 2);
+}
+
+/**
+ * The entry forwarding (self-update.ts): run as <root>\AMO Platform.exe while <root>\apps\platform\current is a newer
+ * version, that one starts — with this run's arguments and --after=<this pid>, so it takes over once this process is
+ * gone — and this one quits before making anything. Tests record it and go on.
+ */
+async function forwardToNewer(): Promise<boolean> {
+  const place = platform.place;
+  if (place.kind !== "outer") return false;
+  const file = forwardTarget(place.root, place.exe, VERSION);
+  if (!file) return false;
+  const spec: LaunchSpec = { file, args: forwardArgs(ownArgs(), process.pid), cwd: dirname(file), env: startEnv(process.env) };
+  if (testMode) {
+    g.__platformForward = spec;
+    return false;
+  }
+  try {
+    await startDetached(spec);
+    return true;
+  } catch {
+    // Not started: this one runs (and offers 打开那个).
+    return false;
+  }
+}
+
+void forwardToNewer().then(async (forwarded) => {
+  if (forwarded) return app.exit(0);
+  await waitForPrevious();
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;

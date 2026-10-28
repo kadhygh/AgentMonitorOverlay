@@ -2,7 +2,8 @@ import { platformFile, readJsonFile, RECENT_SERVERS_MAX, updateJsonFile, type En
 import type { Channel } from "./view.js";
 
 // %APPDATA%\AMO\platform.json (the contract): the server, the 3 recent ones (written by the account module's
-// rememberServer), the channel, Studio's data dir, starting with Windows. Unknown keys are kept as they are.
+// rememberServer), the channel, Studio's data dir, starting with Windows, the platform's folder. Unknown keys are kept
+// as they are.
 
 export interface PlatformSettings {
   server: string | null;
@@ -12,8 +13,8 @@ export interface PlatformSettings {
   openAtLogin: boolean;
   /** The name last logged in with, for the login form. */
   lastName: string | null;
-  /** Where the platform ran from (its unzipped folder) when its first update moved it into <apps>\platform. */
-  zipFolder: string | null;
+  /** The platform's folder (self-update.ts's root: its entry and apps\), as the platform last ran. Only a record, for other programs. */
+  root: string | null;
 }
 
 export function readSettings(env: Env = process.env): PlatformSettings {
@@ -26,7 +27,7 @@ export function readSettings(env: Env = process.env): PlatformSettings {
     studioDataDir: str(p.studioDataDir),
     openAtLogin: p.openAtLogin === true,
     lastName: str(p.lastName),
-    zipFolder: str(p.zipFolder),
+    root: str(p.root),
   };
 }
 

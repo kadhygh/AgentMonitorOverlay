@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 // too; AGENTS.md constraint 3). scripts/package-portable.mjs writes `amoBuild: { mode, runtime }` into
 // resources/app/package.json:
 //   portable  the zip people unpacked themselves: 更新桌面程序 swaps its own files from the service's zip, as before.
-//   platform  a version folder of the platform (%LOCALAPPDATA%\AMO\apps\relay\<version>\): never rewritten by itself —
+//   platform  a version folder of the platform (<the platform's folder>\apps\relay\<version>\): never rewritten by itself —
 //             the platform hard-links Electron's files between the tools it installs, so changing one here would change
 //             them in the others — and a newer shell comes from the platform. The content still updates from the service.
 // A dev build (electron packages/relay-app) has no amoBuild: it behaves as portable without a build stamp (no updates).

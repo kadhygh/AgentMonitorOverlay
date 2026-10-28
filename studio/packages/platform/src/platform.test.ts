@@ -39,6 +39,7 @@ function make(options: { argv?: string[]; running?: string[] } = {}) {
     shell: { pickFolder: async () => picks.shift() ?? null, openPath: async () => undefined, setOpenAtLogin: () => undefined },
     runningPaths: async () => running,
     launch: async (spec) => void launched.push(spec),
+    rootDrive: async () => "local",
   });
   return { platform, env, launched, picks, running };
 }

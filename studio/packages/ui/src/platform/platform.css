@@ -40,7 +40,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-banner.warn { border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--text); }
 .pf-banner span { flex: 1 1 auto; }
 .pf-banner.ok { border: 1px solid var(--border); background: var(--tint); color: var(--text); }
+.pf-banner.error { border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error-text); font-weight: 600; }
 .pf-banner .pf-path { display: inline-block; margin-top: 4px; }
+.pf-banner .pf-path.inline { display: inline; margin: 0; padding: 1px 4px; font-weight: 400; }
 
 /* The platform's own update: a quiet line in the title bar (设置 → 平台更新 has the rest). */
 .pf-self-hint { height: 26px; margin-right: 6px; padding: 0 10px; border: 1px solid var(--attention-border); border-radius: var(--r-m); background: var(--attention-bg); color: var(--attention); font: inherit; font-size: var(--fs-cap); font-weight: 600; white-space: nowrap; cursor: pointer; }
