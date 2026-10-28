@@ -186,6 +186,8 @@ platform/
 
 ## 进度
 
+- **接下来的顺序（10-28 夜，用户定）**：共用 Electron → 环境页（检测 Claude Code、DSH 桌面版 https://www.deepseek.com/harness/ 、Codex、git，没装给官方下载链接，不替人安装；两个在并行做）→ **平台自更新**（平台发现自己有新版就装到 `apps\platform\<版本>`，提示「重启平台」；第一次运行时把从 zip 解压在别处的平台搬进 `apps\platform`；之后同事只下载一次）。平台不建开始菜单快捷方式：从平台装的工具从平台启动（用户 10-28）。
+
 - **10-28 晚 · 第一版（第 1、2 步）合进 master**：每个工具单独的版本号和 `CHANGELOG.md`；中转服务的平台接口和 `publish` / `promote` / `platform-status`（含 `--target-dir` 本地模式）；共用登录模块 `packages/account`；平台 `packages/platform` + 界面 `packages/ui/src/platform`（登录、工具、目录、设置）；`start-platform.cmd`（`-Test` 用测试通道）。另有 Host 的数据库版本保护、`/api/health` 带 `running`、维护终端加 Codex。验证见 `HANDOFF.md` 10-28 那条。
 - 还没做：部署到 Mac（会重启一次中转）和第一次真实发布；平台 zip 怎么放上服务器；第 3 步（更新页、`updates.json`、各工具的设置旁的点、目录页的便签工作文件夹、托盘上的新版提示）；第 4 步；平台自己的图标（家族方案在 `design/icon/platform/`，等用户定）；打包后的开机启动应指向 `current` 而不是某个版本文件夹（现在注册的是 `process.execPath`）。
 
