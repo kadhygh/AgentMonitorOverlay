@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { amoLocalHome } from "@amo-studio/account";
+import { startDetached, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
+import { afterPid } from "./self-update.js";
 import type { PlatformCalls, PlatformView } from "./view.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2): a tray program that installs, updates and starts the AMO tools from the
@@ -13,19 +15,25 @@ import type { PlatformCalls, PlatformView } from "./view.js";
 //   AMO_HOME            %APPDATA%\AMO: account.json, platform.json, programs.json
 //   AMO_LOCAL_HOME      %LOCALAPPDATA%\AMO: apps\<tool>\…, and this program's Chromium profile
 //   AMO_PLATFORM_UI_DIR the UI build (default packages/ui/dist)
-//   AMO_PLATFORM_TEST=1 test mode (e2e): window off-screen and never focused, no tray, dialogs and starting with
-//                       Windows recorded instead of done
+//   AMO_PLATFORM_TEST=1 test mode (e2e): window off-screen and never focused, no tray, dialogs, starting with Windows
+//                       and 重启平台 recorded instead of done
+//   AMO_PLATFORM_TEST_EXE, AMO_PLATFORM_TEST_VERSION  test mode only: run as if packaged, as this program and version
+//                       (the self-update tests; a real build is that from app.isPackaged and its package.json)
 // Args: --channel test|stable  overrides the 更新通道 setting for this run (start-platform.cmd uses test)
 //       --hidden               start in the tray only (how Windows starts it at login)
+//       --after=<pid>          a restart (self-update.ts): wait for that platform to be gone before taking over
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_PLATFORM_TEST === "1";
+/** The running program for self-updates; null from the sources (development never updates itself). */
+const selfExe = testMode ? process.env.AMO_PLATFORM_TEST_EXE || null : app.isPackaged ? process.execPath : null;
 const uiDir = resolve(process.env.AMO_PLATFORM_UI_DIR ?? join(here, "..", "..", "ui", "dist"));
 const ICON = [join(here, "..", "assets", "icon.png"), join(here, "..", "..", "app", "assets", "icon.png")].find((p) => existsSync(p)) ?? "";
 const SCHEME = "amo-platform";
 const PAGE = `${SCHEME}://app/platform.html`;
 const startHidden = process.argv.includes("--hidden");
 const VERSION = (() => {
+  if (testMode && process.env.AMO_PLATFORM_TEST_VERSION) return process.env.AMO_PLATFORM_TEST_VERSION;
   try {
     return (JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as { version?: string }).version ?? "0.0.0";
   } catch {
@@ -38,7 +46,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
+type TestGlobals = { __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -61,14 +69,17 @@ const platformShell: PlatformShell = {
     }
     await shell.openPath(path);
   },
-  setOpenAtLogin(on) {
+  setOpenAtLogin(on, exe) {
     if (testMode) {
       g.__platformOpenAtLogin = on;
+      g.__platformOpenAtLoginExe = exe;
       return;
     }
-    // Packaged: the exe itself; in development: electron with this package.
-    const args = app.isPackaged ? ["--hidden"] : [app.getAppPath(), "--hidden"];
-    app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args });
+    // Packaged: the program the platform names (<apps>\platform\current\AMO Platform.exe once installed there, so it
+    // follows every self-update); in development: electron with this package. The same registry value either way
+    // (named after the AppUserModelID), so a new path replaces the old one.
+    if (exe) app.setLoginItemSettings({ openAtLogin: on, path: exe, args: ["--hidden"] });
+    else app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: app.isPackaged ? ["--hidden"] : [app.getAppPath(), "--hidden"] });
   },
   // 环境: the official pages (environment.ts's list) in the system browser, and Claude Code's install command copied.
   async openExternal(url) {
@@ -88,7 +99,28 @@ const platformShell: PlatformShell = {
   },
 };
 
-const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell });
+/**
+ * 重启平台: the installed platform starts on its own and this one quits. The single-instance lock is let go first, and
+ * the new one (--after=<this pid>) waits until this process is gone, so it never finds itself the second instance or
+ * shares the Chromium profile with a platform on its way out. Tests record what would start instead.
+ */
+async function restart(spec: LaunchSpec): Promise<void> {
+  if (testMode) {
+    g.__platformRestart = spec;
+    return;
+  }
+  app.releaseSingleInstanceLock();
+  try {
+    await startDetached(spec);
+  } catch (err) {
+    // Not started: this one stays, as the only instance.
+    app.requestSingleInstanceLock();
+    throw err;
+  }
+  quit();
+}
+
+const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart });
 
 // ---- the window
 
@@ -216,7 +248,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());
@@ -261,9 +293,26 @@ async function start(): Promise<void> {
   await platform.init();
 }
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
+/** A restart's new platform: until the old one (--after=<pid>) has exited, at most 15 s. */
+async function waitForPrevious(): Promise<void> {
+  const pid = afterPid(process.argv);
+  if (!pid) return;
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const until = Date.now() + 15_000; alive() && Date.now() < until; ) await new Promise((r) => setTimeout(r, 100));
+}
+
+void waitForPrevious().then(() => {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+    return;
+  }
   app.on("second-instance", (_event, argv) => {
     if (!argv.includes("--hidden")) showWindow();
   });
@@ -275,4 +324,4 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
   });
   void app.whenReady().then(start);
-}
+});

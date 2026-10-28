@@ -1,14 +1,16 @@
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { amoHome, amoLocalHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, type Account, type Env, type Protector } from "@amo-studio/account";
 import { PlatformClient } from "./client.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
-import { planLaunch, startDetached, type LaunchSpec } from "./launch.js";
+import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
+import { currentExe, loginItemExe, oldFolder, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
 import type { EnvironmentView } from "./environment-view.js";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
+import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, SelfView, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -20,13 +22,14 @@ const KNOWN: Record<string, { name: string; desc: string }> = {
   notes: { name: "AMO 便签（独立版）", desc: "随手记，托盘常驻，可以单独用。" },
 };
 const ORDER = ["studio", "reviewer", "notes"];
-/** Listed by the server but not a tool to install from here (the platform updates itself later, step 3). */
-const HIDDEN = new Set(["platform"]);
+/** Listed by the server but not a tool to install from here: the platform updates itself (设置 → 平台更新, self-update.ts). */
+const HIDDEN = new Set([SELF]);
 
 export interface PlatformShell {
   pickFolder(title: string, start: string | null): Promise<string | null>;
   openPath(path: string): Promise<void>;
-  setOpenAtLogin(on: boolean): void;
+  /** `exe`: the program to register (self-update.ts's loginItemExe); null in development (electron with this package). */
+  setOpenAtLogin(on: boolean, exe: string | null): void;
   /** The 环境 page's 去下载 (the system browser) and 复制; absent where nothing should open (unit tests). */
   openExternal?(url: string): Promise<void>;
   copyText?(text: string): void;
@@ -43,6 +46,11 @@ export interface PlatformOptions {
   /** Exe paths of running processes (tests hand in their own). */
   runningPaths?: () => Promise<string[]>;
   launch?: (spec: LaunchSpec) => Promise<void>;
+  /** The running platform's program; null or absent when it runs from the sources (development: no self-updates). */
+  selfExe?: string | null;
+  /** 重启平台: starts `spec` and ends this process (main.ts; tests record it). */
+  restart?: (spec: LaunchSpec) => Promise<void>;
+  pid?: number;
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -62,14 +70,21 @@ export class Platform implements PlatformCalls {
   private loggingIn = false;
   private readonly listeners = new Set<(v: PlatformView) => void>();
   private readonly argChannel: Channel | null;
+  readonly place: SelfPlace;
+  private selfTask: TaskView | null = null;
+  private selfResult: SelfView["result"] = null;
+  /** This run installed the platform version `current` points at (so 重启平台, not 打开那个). */
+  private selfInstalledThisRun = false;
 
   constructor(private readonly options: PlatformOptions) {
     this.argChannel = channelFromArgs(options.argv);
+    const appsDir = join(amoLocalHome(options.env), "apps");
     this.installer = new Installer({
-      appsDir: join(amoLocalHome(options.env), "apps"),
+      appsDir,
       programsFile: programsFile(options.env),
       isRunning: async (tool) => (await this.checkRunning([tool]))[tool] === true,
     });
+    this.place = selfPlace(options.selfExe ?? null, appsDir);
   }
 
   // ---- state
@@ -140,6 +155,7 @@ export class Platform implements PlatformCalls {
     });
     return {
       version: this.options.version,
+      self: this.selfView(channel, settings.zipFolder),
       testMode: this.options.testMode,
       account: this.account ? { server: this.account.server, name: this.account.name } : null,
       loginError: this.loginError,
@@ -169,8 +185,9 @@ export class Platform implements PlatformCalls {
     this.account = await readAccount({ env: this.options.env, ...(this.options.protector ? { protector: this.options.protector } : {}) });
     this.client = this.account ? new PlatformClient(this.account.server, this.account.key, this.options.fetch) : null;
     if (this.account) {
+      // Registered again on every start: it follows where the platform is now (<apps>\platform\current once installed).
       const s = readSettings(this.options.env);
-      if (s.openAtLogin) this.options.shell.setOpenAtLogin(true);
+      if (s.openAtLogin) this.options.shell.setOpenAtLogin(true, this.loginExe());
     }
     this.changed();
     await this.refresh();
@@ -289,7 +306,8 @@ export class Platform implements PlatformCalls {
       const channel = this.channel();
       for (const id of new Set([...Object.keys(channels.stable), ...Object.keys(channels.test)])) {
         const v = channelVersion(channels, channel, id);
-        if (!v || HIDDEN.has(id) || this.manifests.has(`${id}@${v}`)) continue;
+        // The platform's own manifest too: its notes are shown under 平台更新.
+        if (!v || this.manifests.has(`${id}@${v}`)) continue;
         try {
           this.manifests.set(`${id}@${v}`, await client.manifest(id, v));
         } catch (err) {
@@ -405,7 +423,7 @@ export class Platform implements PlatformCalls {
   }
 
   async setOpenAtLogin(on: boolean): Promise<void> {
-    this.options.shell.setOpenAtLogin(on);
+    this.options.shell.setOpenAtLogin(on, this.loginExe());
     updateSettings({ openAtLogin: on }, this.options.env);
     this.changed();
   }
@@ -437,6 +455,111 @@ export class Platform implements PlatformCalls {
     const v = this.view();
     const path = which === "apps" ? v.dirs.apps : which === "settings" ? v.dirs.settings : v.dirs.studioData;
     if (path) await this.options.shell.openPath(path);
+  }
+
+  // ---- the platform's own updates (self-update.ts)
+
+  /** <apps>\platform\current\<exe> when a platform is installed there. */
+  private installedSelfExe(): string | null {
+    const current = this.installer.versions(SELF).find((v) => v.current);
+    return current ? currentExe(this.installer.appsDir, current.manifest.exe) : null;
+  }
+
+  private loginExe(): string | null {
+    return loginItemExe(this.place, this.installedSelfExe());
+  }
+
+  private selfView(channel: Channel, zipFolder: string | null): SelfView {
+    const installed = this.installer.currentVersion(SELF);
+    const available = this.channels ? channelVersion(this.channels, channel, SELF) : null;
+    return {
+      place: this.place.kind,
+      dir: this.place.kind === "dev" ? null : this.place.dir,
+      standing: selfStanding({ place: this.place.kind, running: this.options.version, installed, available, installedThisRun: this.selfInstalledThisRun }),
+      available,
+      notes: available ? (this.manifests.get(`${SELF}@${available}`)?.notes ?? null) : null,
+      installed,
+      home: this.installer.toolDir(SELF),
+      task: this.selfTask,
+      result: this.selfResult,
+      oldFolder: oldFolder(zipFolder, this.place),
+    };
+  }
+
+  /**
+   * 更新平台: the channel's platform installed into <apps>\platform by the same engine as the tools (the shared files are
+   * linked, not downloaded) and made current. The running platform is not touched; 重启平台 switches to it. From an
+   * unpacked zip, the folder is remembered (it can be deleted once the platform runs from <apps>\platform), and
+   * starting with Windows moves to <apps>\platform\current.
+   */
+  async updateSelf(): Promise<void> {
+    if (this.selfTask) return;
+    const done = (tone: "ok" | "warn" | "error", text: string) => {
+      this.selfResult = { tone, text };
+      this.changed();
+    };
+    if (this.place.kind === "dev") return done("warn", "这是从源码启动的开发版，不自己更新。");
+    const client = this.client;
+    if (!client || !this.channels) return done("error", "现在连不上服务器，更新不了。");
+    const version = channelVersion(this.channels, this.channel(), SELF);
+    if (!version) return done("error", "这个通道里没有平台。");
+    if (compareVersions(version, this.options.version) <= 0) return done("ok", `平台 ${this.options.version} 已是最新。`);
+    const task: TaskView = { kind: "update", version, phase: "manifest", doneBytes: 0, totalBytes: 0, doneFiles: 0, totalFiles: 0, reused: 0 };
+    this.selfTask = task;
+    this.selfResult = null;
+    this.changed();
+    try {
+      const r = await this.installer.install(SELF, version, client, (p: InstallProgress) => {
+        Object.assign(task, p);
+        this.changed();
+      });
+      this.selfInstalledThisRun = true;
+      if (this.place.kind === "loose") updateSettings({ zipFolder: this.place.dir }, this.options.env);
+      if (readSettings(this.options.env).openAtLogin) this.options.shell.setOpenAtLogin(true, this.loginExe());
+      const reused = r.reused ? `（${r.reused} 个文件本机已经有了，没有重新下载）` : "";
+      this.selfResult = { tone: "ok", text: `已装好 ${version}${reused}` };
+    } catch (err) {
+      this.selfResult = { tone: "error", text: `平台没更新成功：${this.failed(err)}` };
+    } finally {
+      this.selfTask = null;
+      this.changed();
+    }
+  }
+
+  /**
+   * 重启平台 (after an update) or 打开那个 (an older platform opened while <apps>\platform has a newer one): the installed
+   * platform starts — from its real version folder, as the tools do (launch.ts), so switching `current` later never
+   * meets a folder in use through the junction — and this one quits. Only when clicked (AGENTS.md, constraint 6), and
+   * not while something is being installed. The tools started from here are detached and keep running.
+   */
+  async restartSelf(): Promise<void> {
+    const refuse = (text: string) => {
+      this.selfResult = { tone: "error", text };
+      this.changed();
+    };
+    if (this.place.kind === "dev") return refuse("这是从源码启动的开发版，不从这里重启。");
+    if (this.selfTask || this.tasks.size) return refuse("正在安装或更新，等它做完再重启平台。");
+    const exe = this.installedSelfExe();
+    let file: string;
+    try {
+      if (!exe || !existsSync(exe)) throw new Error("missing");
+      file = realpathSync(exe);
+    } catch {
+      return refuse(`AMO 文件夹里没有装好的平台（${this.installer.toolDir(SELF)}），先点「更新平台」。`);
+    }
+    const spec: LaunchSpec = { file, args: restartArgs(this.options.argv, this.options.pid ?? process.pid), cwd: dirname(file), env: startEnv(this.options.env) };
+    try {
+      if (!this.options.restart) throw new Error("这里不能重启");
+      await this.options.restart(spec);
+    } catch (err) {
+      refuse(`没能重启平台：${message(err)}`);
+    }
+  }
+
+  async dismissSelf(what: "result" | "old-folder"): Promise<void> {
+    if (what === "result") this.selfResult = null;
+    else updateSettings({ zipFolder: null }, this.options.env);
+    this.changed();
   }
 
   // ---- 环境 (environment.ts): only looking, and links to the official pages

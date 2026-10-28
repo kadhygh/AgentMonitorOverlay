@@ -12,6 +12,8 @@ export interface PlatformSettings {
   openAtLogin: boolean;
   /** The name last logged in with, for the login form. */
   lastName: string | null;
+  /** Where the platform ran from (its unzipped folder) when its first update moved it into <apps>\platform. */
+  zipFolder: string | null;
 }
 
 export function readSettings(env: Env = process.env): PlatformSettings {
@@ -24,6 +26,7 @@ export function readSettings(env: Env = process.env): PlatformSettings {
     studioDataDir: str(p.studioDataDir),
     openAtLogin: p.openAtLogin === true,
     lastName: str(p.lastName),
+    zipFolder: str(p.zipFolder),
   };
 }
 

@@ -20,6 +20,13 @@ export type LaunchPlan = { ok: true; spec: LaunchSpec } | { ok: false; reason: "
 /** Environment the platform has that a tool must not inherit. */
 const DROP = /^(ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE|CLAUDECODE|CLAUDE_CODE_ENTRYPOINT|AMO_PLATFORM_.*|AMO_STUDIO_DATA_DIR)$/i;
 
+/** The platform's environment without what a program it starts must not inherit (a tool, or the platform restarted). */
+export function startEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && !DROP.test(k)) out[k] = v;
+  return out;
+}
+
 export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string }): LaunchPlan {
   const name = options.name ?? tool;
   if (!entry) return { ok: false, reason: "not-installed", message: `${name} 还没装。` };
@@ -33,8 +40,7 @@ export function planLaunch(tool: string, entry: { dir: string; exe: string } | u
   }
   const file = parts ? join(dir, ...parts) : "";
   if (!file || !existsSync(file)) return { ok: false, reason: "not-installed", message: `${name} 的主程序不在了，重新安装一下。` };
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(options.env)) if (v !== undefined && !DROP.test(k)) env[k] = v;
+  const env = startEnv(options.env);
   if (tool === "studio") env.AMO_STUDIO_DATA_DIR = options.studioDataDir!;
   return { ok: true, spec: { file, args: [], cwd: dir, env } };
 }

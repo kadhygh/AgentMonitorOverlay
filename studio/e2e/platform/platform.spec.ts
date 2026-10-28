@@ -46,9 +46,12 @@ function cleanEnv(): Record<string, string> {
   return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_FAKE_TOOL_MARK: join(root, "launched") };
 }
 
-/** `machine` lays out a pretend machine under the temp root and returns the environment that points at it. */
-async function launch(args: string[] = [], machine?: (root: string) => Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
-  root = mkdtempSync(join(tmpdir(), "amo-platform-e2e-"));
+/**
+ * `machine` lays out a pretend machine under the temp root and returns the environment that points at it. `again`
+ * starts on the same machine as the last launch (its root kept), as a platform started a second time.
+ */
+async function launch(args: string[] = [], machine?: (root: string) => Record<string, string>, again = false): Promise<{ app: ElectronApplication; page: Page }> {
+  if (!again || !root) root = mkdtempSync(join(tmpdir(), "amo-platform-e2e-"));
   app = await _electron.launch({ executablePath: electronPath, args: [MAIN, ...args], env: { ...cleanEnv(), ...machine?.(root) } });
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
@@ -177,6 +180,10 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await expect(page.getByText("--channel test")).toBeVisible();
   await page.getByTestId("pf-login-start").check();
   await expect.poll(() => app.evaluate(() => (globalThis as { __platformOpenAtLogin?: boolean }).__platformOpenAtLogin)).toBe(true);
+  // Started from the sources: it does not update itself (the server's platform 0.9.0 is not offered), nor hint at it.
+  await expect(page.getByTestId("pf-self-place")).toHaveText("开发版（从源码启动），不自己更新。");
+  await expect(page.getByTestId("pf-self-status")).toHaveCount(0);
+  await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
   await screenshot(app, "platform", "P12-settings", page);
   expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8"))).toMatchObject({ server: server.url, recentServers: [server.url], studioDataDir: dataDir, openAtLogin: true });
 
@@ -245,6 +252,122 @@ test("a second tool downloads only its own files: the shared runtime is hard-lin
   } finally {
     await shared.close();
   }
+});
+
+test("平台更新: unzipped, a new platform on the server → 更新平台 → apps\\platform\\<version> → 重启平台 (recorded); started from there: still logged in, the zip folder can go; the old zip again offers 打开那个", async () => {
+  const realHome = join(process.env.APPDATA ?? "", "AMO");
+  const realLocal = join(process.env.LOCALAPPDATA ?? "", "AMO");
+  const before = [realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null));
+  // A server of its own; the platform shares its runtime file with the 便签 (共用 Electron), so its update links it.
+  const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+  try {
+    const runtime = { "resources/electron.pak": randomBytes(256 * 1024) };
+    own.publish("notes", "1.0.0", { ...tool("notes", "1.0.0"), ...runtime }, { name: "AMO Notes", exe: "run.cmd" });
+    own.publish("platform", "0.9.2", { "AMO Platform.exe": "a stand-in platform", "resources/app.txt": "platform 0.9.2", ...runtime }, { name: "AMO Platform", exe: "AMO Platform.exe", notes: "- 平台能自己更新了：设置里的「平台更新」\n- 顶栏有一个不占地方的提示" });
+    // As if packaged and unzipped from the download page: 0.9.1, run from <root>\Downloads\AMO Platform (test mode only).
+    const zipDir = () => join(root, "Downloads", "AMO Platform");
+    const fromZip = (r: string) => {
+      mkdirSync(join(r, "Downloads", "AMO Platform"), { recursive: true });
+      writeFileSync(join(r, "Downloads", "AMO Platform", "AMO Platform.exe"), "the unzipped platform");
+      return { AMO_PLATFORM_TEST_EXE: join(r, "Downloads", "AMO Platform", "AMO Platform.exe"), AMO_PLATFORM_TEST_VERSION: "0.9.1" };
+    };
+    const apps = () => join(root, "local", "apps");
+    const restartSpec = () => app!.evaluate(() => (globalThis as { __platformRestart?: { file: string; args: string[]; cwd: string; env: Record<string, string> } }).__platformRestart ?? null);
+    const nav = (page: Page, name: string) => page.getByRole("navigation", { name: "页面" }).getByRole("button", { name }).click();
+
+    let { page } = await launch([], fromZip);
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await expect(status(page, "notes")).toHaveText("○ 没装 · 服务器上是 1.0.0");
+    // The platform is not a tool on 工具; the title bar says, quietly, that it has a new version.
+    await expect(page.getByTestId("tool-platform")).toHaveCount(0);
+    await expect(page.getByTestId("pf-self-hint")).toHaveText("! 平台有新版 0.9.2");
+    await row(page, "notes").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+
+    // 设置: starting with Windows, on while it still runs from the zip folder, registers that program.
+    await nav(page, "设置");
+    await page.getByTestId("pf-login-start").check();
+    const loginExe = () => app!.evaluate(() => (globalThis as { __platformOpenAtLoginExe?: string | null }).__platformOpenAtLoginExe);
+    await expect.poll(loginExe).toBe(join(zipDir(), "AMO Platform.exe"));
+    // The hint leads to 平台更新.
+    await nav(page, "工具");
+    await page.getByTestId("pf-self-hint").click();
+    const section = page.getByRole("region", { name: "平台更新" });
+    await expect(section.getByTestId("pf-self-status")).toHaveText("! 有新版 0.9.2");
+    await expect(section.getByTestId("pf-self-place")).toHaveText(`从解压出来的文件夹运行：${zipDir()}。第一次更新时会装进 ${join(apps(), "platform")}，以后从那里启动。`);
+    await expect(section.locator(".pf-notes-text")).toContainText("平台能自己更新了");
+    await expect(section.getByRole("button", { name: "更新平台" })).toBeEnabled();
+    await screenshot(app!, "platform", "P19-self-update-available", page);
+
+    // 更新平台: the same engine as the tools, into AMO_LOCAL_HOME\apps\platform\0.9.2 (slowed, to see the bar).
+    own.delayObjects(1200);
+    await section.getByRole("button", { name: "更新平台" }).click();
+    await expect(section.getByRole("status", { name: "平台更新进度" })).toBeVisible();
+    await expect(page.getByTestId("pf-self-hint")).toHaveText("◐ 正在更新平台…");
+    await screenshot(app!, "platform", "P20-self-updating", page);
+    await expect(section.getByTestId("pf-self-status")).toHaveText("✓ 0.9.2 已装好，点「重启平台」换成新版", { timeout: 20_000 });
+    own.delayObjects(0);
+    await expect(section.getByTestId("pf-self-result")).toHaveText(/已装好 0\.9\.2（1 个文件本机已经有了，没有重新下载）/);
+    expect(readFileSync(join(apps(), "platform", "0.9.2", "resources", "app.txt"), "utf8")).toBe("platform 0.9.2");
+    expect(readFileSync(join(apps(), "platform", "current", "AMO Platform.exe"), "utf8")).toBe("a stand-in platform");
+    const ino = (p: string) => statSync(p, { bigint: true }).ino;
+    expect(ino(join(apps(), "platform", "0.9.2", "resources", "electron.pak"))).toBe(ino(join(apps(), "notes", "1.0.0", "resources", "electron.pak")));
+    // Starting with Windows now points at current, so it follows the next updates too.
+    await expect.poll(loginExe).toBe(join(apps(), "platform", "current", "AMO Platform.exe"));
+    await expect(page.getByTestId("pf-self-hint")).toHaveText("! 重启平台换成 0.9.2");
+    // Nothing restarted by itself.
+    expect(await restartSpec()).toBeNull();
+    await screenshot(app!, "platform", "P21-self-restart", page);
+
+    // 重启平台: the installed platform's real version folder would start, waiting for this one to go (recorded in tests).
+    const pid = await app!.evaluate(() => process.pid);
+    await section.getByRole("button", { name: "重启平台" }).click();
+    await expect.poll(restartSpec).toMatchObject({ file: join(apps(), "platform", "0.9.2", "AMO Platform.exe"), args: [`--after=${pid}`], cwd: join(apps(), "platform", "0.9.2") });
+    // The new one keeps the same AMO_HOME / AMO_LOCAL_HOME (settings, login), without the variables only this run had.
+    const env = (await restartSpec())!.env as Record<string, string>;
+    expect(env).toMatchObject({ AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local") });
+    expect(Object.keys(env).filter((k) => k.startsWith("AMO_PLATFORM_"))).toEqual([]);
+    await app!.close();
+    app = undefined;
+
+    // Started again from apps\platform\current, as the restart does: still logged in, the same settings, up to date, and
+    // the zip folder named so it can be deleted.
+    ({ page } = await launch([], () => ({ AMO_PLATFORM_TEST_EXE: join(apps(), "platform", "current", "AMO Platform.exe"), AMO_PLATFORM_TEST_VERSION: "0.9.2" }), true));
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线");
+    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+    await expect(page.getByTestId("pf-old-folder")).toContainText(zipDir());
+    await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
+    await screenshot(app!, "platform", "P22-self-moved", page);
+    await nav(page, "设置");
+    await expect(page.getByTestId("pf-self-status")).toHaveText("✓ 已是最新");
+    await expect(page.getByTestId("pf-self-place")).toHaveText(`装在 ${join(apps(), "platform", "current")}`);
+    await expect(page.getByTestId("pf-self-old-folder")).toContainText(zipDir());
+    await expect(page.getByTestId("pf-login-start")).toBeChecked();
+    await nav(page, "工具");
+    await page.getByTestId("pf-old-folder").getByRole("button", { name: "知道了" }).click();
+    await expect(page.getByTestId("pf-old-folder")).toHaveCount(0);
+    expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8")).zipFolder).toBeNull();
+    await app!.close();
+    app = undefined;
+
+    // The old zip opened again: apps\platform has a newer platform — 打开那个.
+    ({ page } = await launch([], fromZip, true));
+    await expect(page.getByTestId("pf-self-hint")).toHaveText("! 有更新的平台 0.9.2");
+    await page.getByTestId("pf-self-hint").click();
+    await expect(page.getByTestId("pf-self-status")).toHaveText("! AMO 文件夹里有更新的平台 0.9.2，打开那个");
+    await expect(page.getByTestId("pf-self-place")).toHaveText(`这个是旧的 0.9.1，从解压出来的文件夹运行：${zipDir()}。点「打开那个」换到 ${join(apps(), "platform")} 里的平台；这个文件夹不再用了，可以删掉。`);
+    await screenshot(app!, "platform", "P23-self-newer-here", page);
+    await page.getByRole("region", { name: "平台更新" }).getByRole("button", { name: "打开那个" }).click();
+    await expect.poll(async () => (await restartSpec())?.file).toBe(join(apps(), "platform", "0.9.2", "AMO Platform.exe"));
+  } finally {
+    await own.close();
+  }
+  expect([realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null))).toEqual(before);
 });
 
 test("注册 on the login page: the passphrase only when the server wants one, errors in the form, then 工具; log out and back in", async () => {

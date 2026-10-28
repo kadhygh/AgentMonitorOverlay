@@ -49,9 +49,33 @@ export interface ToolView {
   studio: StudioHealthView | null;
 }
 
+/** How the running platform stands against its own updates (self-update.ts's selfStanding). */
+export type SelfStanding = "dev" | "latest" | "update" | "restart" | "newer-here";
+
+/** The platform's own updates (设置 → 平台更新, and the hint in the title bar). */
+export interface SelfView {
+  /** dev: from the sources; installed: from <apps>\platform; loose: from the folder its zip was unpacked to. */
+  place: "dev" | "installed" | "loose";
+  /** The folder the running platform's program is in (null in development). */
+  dir: string | null;
+  standing: SelfStanding;
+  /** The version the chosen channel has, or null. */
+  available: string | null;
+  notes: string | null;
+  /** The version <apps>\platform\current points at, or null. */
+  installed: string | null;
+  /** Where the installed platform is (<apps>\platform). */
+  home: string;
+  task: TaskView | null;
+  result: { tone: "ok" | "warn" | "error"; text: string } | null;
+  /** The unpacked zip folder the platform ran from before its first update, while it is still there: it can go. */
+  oldFolder: string | null;
+}
+
 export interface PlatformView {
   /** The platform's own version. */
   version: string;
+  self: SelfView;
   testMode: boolean;
   account: { server: string; name: string } | null;
   /** The login page: why it is shown again (a key that stopped working), or why the last try failed. */
@@ -92,6 +116,12 @@ export interface PlatformCalls {
   environment(fresh?: boolean): Promise<EnvironmentView>;
   openDownload(id: string): Promise<void>;
   copyInstallCommand(): Promise<void>;
+  /** 更新平台: the channel's platform into <apps>\platform, made current; the running one stays until 重启平台. */
+  updateSelf(): Promise<void>;
+  /** 重启平台 / 打开那个: <apps>\platform\current's platform starts and this one quits. */
+  restartSelf(): Promise<void>;
+  /** 知道了 on the platform's update result, or on the line about the unpacked zip folder. */
+  dismissSelf(what: "result" | "old-folder"): Promise<void>;
 }
 
 export interface RegisterForm {

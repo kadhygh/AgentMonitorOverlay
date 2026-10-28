@@ -55,7 +55,7 @@ export function PlatformApp() {
 
   return (
     <div className="pf-root">
-      <TitleBar view={view} />
+      <TitleBar view={view} onSelf={() => setPage("settings")} />
       {view.account ? (
         <div className="pf-main">
           <nav className="pf-nav" aria-label="页面">
@@ -83,8 +83,19 @@ export function PlatformApp() {
   );
 }
 
-function TitleBar({ view }: { view: PlatformView }) {
+/** The title bar's quiet line about the platform's own update (设置 → 平台更新 has the rest); null when there is none. */
+function selfHint(view: PlatformView): string | null {
+  const s = view.self;
+  if (s.task) return "正在更新平台…";
+  if (s.standing === "update") return `平台有新版 ${s.available}`;
+  if (s.standing === "restart") return `重启平台换成 ${s.installed}`;
+  if (s.standing === "newer-here") return `有更新的平台 ${s.installed}`;
+  return null;
+}
+
+function TitleBar({ view, onSelf }: { view: PlatformView; onSelf: () => void }) {
   const c = view.connection;
+  const hint = view.account ? selfHint(view) : null;
   const server = view.account ? serverLabel(view.account.server) : null;
   const status =
     !server || c.state === "idle"
@@ -105,6 +116,11 @@ function TitleBar({ view }: { view: PlatformView }) {
       )}
       {view.testMode && <span className="pf-tag">测试模式</span>}
       <span className="pf-spacer" />
+      {hint && (
+        <button type="button" className="pf-self-hint" onClick={onSelf} title="在「设置 → 平台更新」里看" data-testid="pf-self-hint">
+          <span aria-hidden="true">{view.self.task ? "◐" : "!"}</span> {hint}
+        </button>
+      )}
       <div className="pf-winbtns">
         <button type="button" aria-label="最小化" title="最小化" onClick={() => bridge()?.windowAction("minimize")}>
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -323,6 +339,7 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
         <h1 className="pf-h1">工具</h1>
         <p className="pf-hint">团队服务器上{view.channel === "test" ? "测试通道" : "稳定通道"}里的工具，各自安装、各自更新。更新不会关掉正在用的工具，下次打开就是新版。</p>
       </div>
+      {view.self.oldFolder && <OldFolderBanner view={view} />}
       {offline && (
         <div className="pf-banner warn" role="status">
           <span>! 连不上服务器：{view.connection.message}。已经装好的工具照样能打开、回滚、卸载。</span>
@@ -335,6 +352,20 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
       {view.tools.map((t) => (
         <ToolRow key={t.id} tool={t} online={view.connection.state === "online"} onNeedStudioDir={onNeedStudioDir} />
       ))}
+    </div>
+  );
+}
+
+/** After the first update moved the platform out of its unzipped folder: that folder can go (工具 and 设置 both say it). */
+function OldFolderBanner({ view }: { view: PlatformView }) {
+  return (
+    <div className="pf-banner ok" role="status" data-testid="pf-old-folder">
+      <span>
+        ✓ 平台已经装进 AMO 文件夹（{view.self.home}），以后从那里启动。原来解压出来的文件夹不再用了，可以删掉：<code className="pf-path">{view.self.oldFolder}</code>
+      </span>
+      <button type="button" className="btn-ghost pf-small" onClick={() => void call("dismissSelf", "old-folder")}>
+        知道了
+      </button>
     </div>
   );
 }
@@ -559,6 +590,108 @@ function DirsPage({ view, notice, onNoticeDone }: { view: PlatformView; notice: 
 
 // ---- 设置
 
+/** Where the running platform is, in words. */
+function selfPlaceLine(view: PlatformView): string {
+  const s = view.self;
+  if (s.place === "dev") return "开发版（从源码启动），不自己更新。";
+  if (s.place === "installed") return `装在 ${s.dir}`;
+  // An old zip opened again: AMO 文件夹 already has a newer one, and this folder is not needed any more.
+  if (s.standing === "newer-here") return `这个是旧的 ${view.version}，从解压出来的文件夹运行：${s.dir}。点「打开那个」换到 ${s.home} 里的平台；这个文件夹不再用了，可以删掉。`;
+  if (s.standing === "restart") return `从解压出来的文件夹运行：${s.dir}。新版已经装进 ${s.home}，重启后从那里启动，这个文件夹就不再用了。`;
+  return `从解压出来的文件夹运行：${s.dir}。第一次更新时会装进 ${s.home}，以后从那里启动。`;
+}
+
+function selfStatus(view: PlatformView): { tone: "ok" | "warn" | "idle"; text: string } | null {
+  const s = view.self;
+  switch (s.standing) {
+    case "dev":
+      return null;
+    case "update":
+      return { tone: "warn", text: `! 有新版 ${s.available}` };
+    case "restart":
+      return { tone: "ok", text: `✓ ${s.installed} 已装好，点「重启平台」换成新版` };
+    case "newer-here":
+      return { tone: "warn", text: `! AMO 文件夹里有更新的平台 ${s.installed}，打开那个` };
+    default:
+      return s.available ? { tone: "ok", text: s.available === view.version ? "✓ 已是最新" : `✓ 已是最新（通道里是 ${s.available}）` } : view.connection.state === "online" ? { tone: "idle", text: "○ 这个通道里还没有平台" } : null;
+  }
+}
+
+/**
+ * 平台更新 (2026-10-28, the user: people download the platform once, then it updates itself): the version running, a new
+ * one with its notes and 更新平台; once installed 重启平台 — only when clicked (AGENTS.md, constraint 6); the tools it
+ * started keep running. The development build only says it does not update itself.
+ */
+function SelfSection({ view }: { view: PlatformView }) {
+  const s = view.self;
+  const status = selfStatus(view);
+  const online = view.connection.state === "online";
+  const busy = s.task !== null || view.tools.some((t) => t.task !== null);
+  return (
+    <section className="pf-section" aria-label="平台更新" data-testid="pf-self">
+      <h2 className="pf-h2">平台更新</h2>
+      <div className="pf-row">
+        <span>当前版本 {view.version}</span>
+        {status && (
+          <span className={`pf-status ${status.tone}`} data-testid="pf-self-status">
+            {status.text}
+          </span>
+        )}
+        <span className="pf-spacer" />
+        {s.standing === "update" && (
+          <button type="button" className="btn-primary" disabled={busy || !online} title={online ? undefined : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
+            更新平台
+          </button>
+        )}
+        {s.standing === "restart" && (
+          <button type="button" className="btn-primary" disabled={busy} title={busy ? "正在安装或更新，等它做完" : undefined} onClick={() => void call("restartSelf")}>
+            重启平台
+          </button>
+        )}
+        {s.standing === "newer-here" && (
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => void call("restartSelf")}>
+            打开那个
+          </button>
+        )}
+      </div>
+      <p className="pf-hint" data-testid="pf-self-place">
+        {selfPlaceLine(view)}
+      </p>
+      {(s.standing === "restart" || s.standing === "newer-here") && <p className="pf-hint">重启只换平台自己：从平台打开的工具不会关，登录和设置照旧。</p>}
+      {s.task && (
+        <div className="pf-progress" role="status" aria-label="平台更新进度">
+          <div className="pf-bar" aria-hidden="true">
+            <div className={`pf-bar-fill${s.task.phase === "downloading" && s.task.totalBytes > 0 ? "" : " busy"}`} style={s.task.phase === "downloading" && s.task.totalBytes > 0 ? { width: `${Math.min(100, (100 * s.task.doneBytes) / s.task.totalBytes).toFixed(1)}%` } : undefined} />
+          </div>
+          <span className="pf-hint">{taskLine(s.task)}</span>
+        </div>
+      )}
+      {s.result && (
+        <div className={`pf-result ${s.result.tone}`} role={s.result.tone === "error" ? "alert" : "status"} data-testid="pf-self-result">
+          <span>
+            {s.result.tone === "ok" ? "✓ " : "! "}
+            {s.result.text}
+          </span>
+          <button type="button" className="pf-x" aria-label="知道了" title="知道了" onClick={() => void call("dismissSelf", "result")}>
+            ×
+          </button>
+        </div>
+      )}
+      {s.notes && (s.standing === "update" || s.standing === "restart") && (
+        <details className="pf-notes pf-self-notes" open={s.standing === "update"}>
+          <summary>{s.available} 改了什么</summary>
+          <div className="pf-notes-text">{s.notes}</div>
+        </details>
+      )}
+      {s.oldFolder && (
+        <p className="pf-hint" data-testid="pf-self-old-folder">
+          原来解压出来的文件夹不再用了，可以删掉：<code className="pf-path">{s.oldFolder}</code>
+        </p>
+      )}
+    </section>
+  );
+}
+
 const CHANNELS: Array<[Channel, string, string]> = [
   ["stable", "稳定", "团队确认过的版本。"],
   ["test", "测试", "刚发布的版本，先拿到，可能有问题。"],
@@ -569,6 +702,8 @@ function SettingsPage({ view }: { view: PlatformView }) {
   return (
     <div className="pf-page">
       <h1 className="pf-h1">设置</h1>
+
+      <SelfSection view={view} />
 
       <section className="pf-section" aria-label="团队服务器">
         <h2 className="pf-h2">团队服务器</h2>

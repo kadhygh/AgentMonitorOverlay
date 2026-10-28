@@ -39,6 +39,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-banner { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-l); font-size: var(--fs-sm); }
 .pf-banner.warn { border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--text); }
 .pf-banner span { flex: 1 1 auto; }
+.pf-banner.ok { border: 1px solid var(--border); background: var(--tint); color: var(--text); }
+.pf-banner .pf-path { display: inline-block; margin-top: 4px; }
+
+/* The platform's own update: a quiet line in the title bar (设置 → 平台更新 has the rest). */
+.pf-self-hint { height: 26px; margin-right: 6px; padding: 0 10px; border: 1px solid var(--attention-border); border-radius: var(--r-m); background: var(--attention-bg); color: var(--attention); font: inherit; font-size: var(--fs-cap); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.pf-self-hint:hover { filter: brightness(0.97); }
+.pf-self-notes { margin-top: 8px; }
 
 /* A tool */
 .pf-tool { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); }
