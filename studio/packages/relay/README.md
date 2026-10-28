@@ -74,7 +74,7 @@ platform/
 ```
 
 - 平台目录用 `serve --platform-dir <目录>` 或环境变量 `AMO_RELAY_PLATFORM_DIR` 指定；没指定时下面三个接口返回 404 和一句说明。Mac 上是 `$ROOT/platform`。
-- 清单：`{ tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }`。`path` 用 `/` 分隔、相对程序文件夹；`exe` 是主程序（如 `AMO Studio.exe`）；`notes` 是这次的改动说明（Markdown）；`builtAt` 是打包时间（毫秒）。
+- 清单：`{ tool, name, version, builtAt, exe, runtime, notes, files: [{ path, size, sha256 }] }`。`path` 用 `/` 分隔、相对程序文件夹；`exe` 是主程序（如 `AMO Studio.exe`）；`runtime` 是打包用的 Electron 版本（如 `44.7.0`，10-29 起，之前的清单没有）；`notes` 是这次的改动说明（Markdown）；`builtAt` 是打包时间（毫秒）。
 - 工具 id 是小写字母开头的小写字母、数字和 `-`（`studio`、`reviewer`、`notes`、`platform`）；版本号像 `0.9.1` 或 `0.9.1-test.1`。
 
 接口（都要登录，`Authorization: Bearer <key>`；objects 也接受 `?key=`，方便直接下载）：
@@ -90,14 +90,15 @@ platform/
 发布（在本机，通过 SSH，不开 HTTP 写接口）：
 
 ```
-npm run package:portable -- --only notes               # 先打包：release/AMO Notes/
+npm run package:platform -- --only notes               # 先用平台模式打包：release/platform/AMO Notes/
 npm run relay:mac -- publish notes [--channel test|stable] [--notes "…"] [--release <目录>]
 npm run relay:mac -- promote notes 0.9.1               # 把稳定通道指向一个已经发布过的版本
 npm run relay:mac -- platform-status                   # 两个通道各工具的版本、发布过的版本、存了多少文件（几个压缩存放）
 npm run relay:mac -- platform-compress                 # 把服务器上原样存放的文件压成 .gz（10-29 之前发布的）
 ```
 
-- `publish`：版本号取工具自己的 `package.json`（Studio 是 `packages/app`），读 `release/<Name>/`，算每个文件的 sha256，先问服务器缺哪些，只把缺的用 tar 经 SSH 传过去（到了那边按 sha256 校验后再放进 `objects/`），再写清单，最后改通道。不写 `--channel` 时发到测试通道。`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本那一节（`## 0.9.1（2026-10-29）`）。打包的版本和现在的版本号不一样时拒绝（先重新打包）；同一个版本号已经发布过：文件相同就只改通道，文件不同就拒绝（先升版本号）。
+- 平台模式打包（10-29 起，共用 Electron）：`npm run package:platform` 和 `package:portable` 用同一个脚本，区别只在 exe：平台模式只改名、不用 rcedit 写图标和版本信息，所以各工具的 Electron 文件（连 exe）逐字节相同，平台在每台电脑上只存一份，用硬链接放进各工具的文件夹，第二个工具只下载它自己的那部分。代价是资源管理器里这些 exe 显示 Electron 的图标（窗口和托盘图标是程序自己设的，不受影响）。portable zip（不装平台单独用）照旧用 `npm run package:portable`，exe 写各自的图标。两种产物分开放：平台模式在 `release/platform/<Name>/`，portable 在 `release/<Name>/`。`resources/app/package.json` 里的 `amoBuild: { mode, runtime }` 记着是哪种打的，`publish` 只收 `mode: "platform"` 的，拿到 portable 的（或者 10-29 之前打的，没有这一项）会拒绝并提示先用平台模式打包。实测（Studio + 便签 0.9.1，本机）：装 Studio 下载 372.4 MB（传输 162.7 MB），再装便签只下载 3 个文件 908 字节，两个工具在磁盘上一共 372.4 MB（不共用时 714.0 MB）；便签改一个文件发新版，更新只下载 2 个文件 19972 字节（传输 6719 字节）。
+- `publish`：版本号取工具自己的 `package.json`（Studio 是 `packages/app`），读 `release/platform/<Name>/`，算每个文件的 sha256，先问服务器缺哪些，只把缺的用 tar 经 SSH 传过去（到了那边按 sha256 校验后再放进 `objects/`），再写清单，最后改通道。不写 `--channel` 时发到测试通道。`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本那一节（`## 0.9.1（2026-10-29）`）。打包的版本和现在的版本号不一样时拒绝（先重新打包）；同一个版本号已经发布过：文件相同就只改通道，文件不同就拒绝（先升版本号）。
 - 压缩（10-29 起）：`publish` 在本机用 gzip -6 压每个要传的文件，比原来小 10% 以上的就传 `.gz`，其余原样传；到了服务器那边 `.gz` 解开后校验 sha256。问「缺哪些」时两种名字都算已有。实测 AMO Notes 0.9.0：1854 个文件 337.9 MB，存的是 153.6 MB（729 个 `.gz`），平台安装时实际传了 155.0 MB；Studio 的 exe 246 MB 压到 109 MB。图片、字体这类本来就压过的文件原样存。
 - `platform-compress`：把已经在服务器上、原样存放的文件压成 `.gz`：每个先压到临时文件，解开校验 sha256，确实变小才改名成 `<sha256>.gz`，然后删掉原文件；服务一直能找到其中一份，所以服务在跑时也可以做。内容和名字对不上的文件不动，最后报错列出来。打印压缩前后的大小；再跑一次只会跳过已经压过的。在 Mac 上用 bash 3.2 和系统自带的 gzip、shasum。
 - 稳定通道不会比测试通道旧：发到稳定或 `promote` 时，如果测试通道的版本更旧（或没有），测试通道也指过去。
