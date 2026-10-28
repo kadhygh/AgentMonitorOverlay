@@ -194,6 +194,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // from; restoring it is a plain notice.
   const [archivedBox, setArchivedBox] = useState<{ sessions: number } | null>(null);
   const archiveTask = () => {
+    // A copy of a remote task is deleted here, not kept as archived: back to where it was opened from.
+    if (copy)
+      return run(() => call(link, "POST /api/tasks/:id/archive", { id: task.id }), () => {
+        setToast({ text: `已清掉这台电脑上的副本，任务在 ${copy.name} 上照常` });
+        onBack();
+      });
     const liveSessions = own.filter((s) => !s.archivedAt).length;
     return run(() => call(link, "POST /api/tasks/:id/archive", { id: task.id }), () => setArchivedBox({ sessions: liveSessions }));
   };

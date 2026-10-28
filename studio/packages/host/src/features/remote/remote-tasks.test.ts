@@ -215,6 +215,34 @@ describe("remote tasks between two Hosts (step 2)", () => {
     expect(b.store.getTask(second.task.id)).toBeUndefined();
   }, 60_000);
 
+  it("A away: B cannot send (said why) and catches up once A is back; a question is answered from B", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 第一句"), "B's copy");
+
+    // A question from A's session, answered on B; A's reply comes back.
+    await b.service.sessions.sendMessage(session.id, "[[ask]]");
+    const q = await until(() => items(b, session.id).find((i) => i.type === "question" && i.state === "pending"), Boolean, "B has the question");
+    expect(b.store.getSession(session.id)!.status).toBe("awaiting-answer");
+    await b.service.sessions.answerQuestion(session.id, q!.id, { action: "answer", answers: [{ id: "target", selected: [], other: "从 B 答的" }, { id: "token", selected: [], other: "x" }] });
+    await until(() => agentTexts(b, session.id), (t) => t.some((x) => x.startsWith("FAKE-ANSWERS") && x.includes("从 B 答的")), "B sees A's reply to the answer");
+    await until(() => b.store.getItem(q!.id), (i) => (i as { state?: string })?.state === "answered", "B's question answered");
+
+    // A goes away (its Studio quits): B says so and sends nothing.
+    a.remote.stop();
+    await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
+    await expect(b.service.sessions.sendMessage(session.id, "A 不在")).rejects.toThrow("A-PC 离线，回来后再发");
+    expect(items(a, session.id).some((i) => i.type === "user" && i.text === "A 不在")).toBe(false);
+    // A works on meanwhile, and comes back: B catches up by itself.
+    await a.service.sessions.sendMessage(session.id, "A 自己接着做");
+    await until(() => agentTexts(a, session.id), (t) => t.includes("FAKE: A 自己接着做"), "A replies");
+    a.restart();
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: A 自己接着做"), "B catches up after A is back");
+    await b.service.sessions.sendMessage(session.id, "A 回来了");
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: A 回来了"), "B's message goes again");
+  }, 60_000);
+
   it("unpairing on A takes every grant with it; B's copies say the pairing ended", async () => {
     const { a, b, toB } = await paired();
     const { task } = await taskOnA(a);

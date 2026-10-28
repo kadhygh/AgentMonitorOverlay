@@ -191,4 +191,10 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await b.page.getByTestId("back").click();
   await expect(b.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" })).toHaveAttribute("data-remote", "revoked");
   await screenshot(b.app, "studio", "remote-b-board-revoked", b.page);
+  // Archived on B: the copy goes from B (back on the board), the task stays on A.
+  await b.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" }).click();
+  await b.page.getByTestId("task-archive").click();
+  await expect(b.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" })).toHaveCount(0);
+  await expect(b.page.getByTestId("column-doing")).toBeVisible();
+  expect((await a.api<{ tasks: Task[] }>("GET", "/api/state")).tasks.find((t) => t.id === task.id)?.archivedAt).toBeNull();
 });

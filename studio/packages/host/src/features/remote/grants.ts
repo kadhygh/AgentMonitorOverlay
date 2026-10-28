@@ -68,17 +68,23 @@ export class RemoteGrants {
     return this.ctx.host.store;
   }
 
+  /** Read once, then kept: every Host event (streamed text too) asks whether its task is granted. */
+  private cache: RemoteGrant[] | null = null;
+
   list(): RemoteGrant[] {
+    if (this.cache) return this.cache;
     try {
       const v = JSON.parse(this.store.getKv(GRANTS_KEY)?.value ?? "[]") as RemoteGrant[];
-      return Array.isArray(v) ? v : [];
+      this.cache = Array.isArray(v) ? v : [];
     } catch {
-      return [];
+      this.cache = [];
     }
+    return this.cache;
   }
 
   private save(list: RemoteGrant[]): void {
     this.store.setKv(GRANTS_KEY, JSON.stringify(list));
+    this.cache = list;
   }
 
   /** The grants of a task (a task can be granted to more than one device). */
