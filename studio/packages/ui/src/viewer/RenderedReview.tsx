@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { sortComments, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
@@ -10,7 +10,8 @@ import { dropDraft, editDraftKey, newDraftKey, setDraftText, useEditing } from "
 import { FindBar } from "../gitreview/FindBar.js";
 import { relativeIn } from "./logic.js";
 import { passageKit, type PassageAnchor } from "./passageKit.js";
-import { frameDoc, sourceCandidates, sourceLine, type FrameMessage, type ToFrame } from "./passages.js";
+import { frameDoc, headingSlug, resolveLink, sourceCandidates, sourceLine, type FrameMessage, type ToFrame } from "./passages.js";
+import { openViewer } from "./open.js";
 
 // 渲染批注 (2026-10-28): a Markdown or HTML file shown rendered in the viewer, its passages taking comments — select
 // words, 批注, write. They are the file's comments as in its source view (range `file`, at the line the passage starts
@@ -23,6 +24,28 @@ const MD_HIGHLIGHT = "amo-passage";
 const MD_HOT = "amo-passage-hot";
 /** Rendered Markdown's text, without the copy buttons of its code blocks. */
 const mdKit = passageKit("script, style, noscript, template, button");
+
+/** Follows a link of the rendered file (2026-10-28): the web in the browser, a heading here, a file in the viewer. */
+const Follow = createContext<(href: string) => void>(() => undefined);
+
+/** Rendered Markdown's links that are not web addresses: headings and files. */
+function ViewerLink({ kind, target, children, fallback }: { kind: "code" | "link"; target: string; children: ReactNode; fallback: ReactNode }) {
+  const follow = useContext(Follow);
+  if (kind !== "link") return <>{fallback}</>;
+  return (
+    <a
+      className="md-link"
+      href={target}
+      title={target}
+      onClick={(e) => {
+        e.preventDefault();
+        follow(target);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
 
 /** Where the HTML file's Markdown source is (relative to the project), when one is found. */
 function useHtmlSource(link: HostLink, ws: Workspace | null, rel: string | null, html: string | null): string | null {
@@ -151,8 +174,23 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   useEffect(() => {
     if (kind === "html") sendMarks();
   }, [kind, marksKey, hot]); // eslint-disable-line react-hooks/exhaustive-deps
-  const latest = useRef({ sendMarks });
-  latest.current = { sendMarks };
+  // Links: the web in the browser, a heading of this Markdown here, a file in the viewer (this window, unless 固定).
+  const follow = (href: string) => {
+    const to = resolveLink(file.path, href);
+    if (!to) return showToast({ text: `这个链接在查看器里打不开：${href}`, error: true });
+    if (to.kind === "web") return void window.amo?.openExternal?.(to.url);
+    if (to.kind === "file") return openViewer({ path: to.path, ...(to.line ? { line: to.line } : {}) });
+    const root = doc.current;
+    // Written by hand, a link may have one dash where the heading's anchor has two.
+    const loose = (s: string) => headingSlug(s).replace(/-+/g, "-");
+    const want = loose(to.id);
+    const h = root && [...root.querySelectorAll<HTMLElement>(".md-h")].find((el) => loose(el.textContent ?? "") === want);
+    if (!root || !h) return showToast({ text: `没有找到标题「${to.id}」` });
+    root.scrollTop += h.getBoundingClientRect().top - root.getBoundingClientRect().top - 12;
+  };
+  const latest = useRef({ sendMarks, follow });
+  latest.current = { sendMarks, follow };
+  const followLink = useCallback((href: string) => latest.current.follow(href), []);
   useEffect(() => {
     if (kind !== "html") return;
     const on = (e: MessageEvent) => {
@@ -163,9 +201,8 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
       else if (m.type === "placed") setFound(new Set(m.found));
       else if (m.type === "scroll") setPick(null);
       else if (m.type === "hit") goTo(m.id, false);
-      else if (m.type === "link") {
-        if (/^https?:\/\//i.test(m.href)) void window.amo?.openExternal?.(m.href);
-      } else if (m.type === "copy") void copyText(m.text).then(() => showToast({ text: "已复制" }));
+      else if (m.type === "link") latest.current.follow(m.href);
+      else if (m.type === "copy") void copyText(m.text).then(() => showToast({ text: "已复制" }));
       else if (m.type === "select") {
         const box = pane.current?.getBoundingClientRect();
         const at = frame.current.getBoundingClientRect();
@@ -239,9 +276,11 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
               <FindBar active={active} container={doc} />
               <div className="vw-content">
                 <div className="fp-md" ref={doc} onMouseUp={onMdMouseUp} onScroll={() => setPick(null)} data-testid="viewer-md">
-                  <MarkdownFileLinks.Provider value={null}>
-                    <Markdown source={text} />
-                  </MarkdownFileLinks.Provider>
+                  <Follow.Provider value={followLink}>
+                    <MarkdownFileLinks.Provider value={ViewerLink}>
+                      <Markdown source={text} />
+                    </MarkdownFileLinks.Provider>
+                  </Follow.Provider>
                 </div>
               </div>
             </>

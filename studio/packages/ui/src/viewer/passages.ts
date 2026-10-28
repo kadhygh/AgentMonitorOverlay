@@ -67,6 +67,57 @@ export function sourceCandidates(html: string, relPath: string): string[] {
   return out;
 }
 
+/** Where a link of a rendered file goes: the web, a heading of the same file, or another file (opened in the viewer). */
+export type LinkTarget = { kind: "web"; url: string } | { kind: "anchor"; id: string } | { kind: "file"; path: string; line?: number } | null;
+
+/**
+ * A link of the file at `fromPath` (absolute), as written: `https://…`, `#heading`, or a file — relative to the file's
+ * folder, absolute, or `file:///…` — maybe with `#L12` or `:12`. Null for what the viewer does not follow (mailto:,
+ * javascript:…).
+ */
+export function resolveLink(fromPath: string, href: string): LinkTarget {
+  const h = href.trim();
+  if (!h) return null;
+  if (/^https?:\/\//i.test(h)) return { kind: "web", url: h };
+  const decode = (s: string) => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  };
+  if (h.startsWith("#")) return h.length > 1 ? { kind: "anchor", id: decode(h.slice(1)) } : null;
+  const drive = /^\/?[a-z]:[\\/]/i;
+  if (/^[a-z][a-z0-9+.-]+:/i.test(h) && !/^file:/i.test(h) && !drive.test(h)) return null;
+  let p = h.replace(/^file:\/\//i, "");
+  const hash = p.indexOf("#");
+  const frag = hash >= 0 ? p.slice(hash + 1) : "";
+  p = decode((hash >= 0 ? p.slice(0, hash) : p).replace(/\?.*$/, "")).replace(/\\/g, "/");
+  if (!p) return null;
+  let line = Number(/^L?(\d+)/i.exec(frag)?.[1] ?? 0);
+  const colon = /^(.*\.[\w-]+):(\d+)(?::\d+)?$/.exec(p);
+  if (colon) (p = colon[1]!), (line = Number(colon[2]));
+  if (/^\/[a-z]:\//i.test(p)) p = p.slice(1);
+  const from = fromPath.replace(/\\/g, "/");
+  const abs = /^[a-z]:\//i.test(p) || p.startsWith("/") ? p : `${from.slice(0, from.lastIndexOf("/"))}/${p}`;
+  const out: string[] = [];
+  for (const part of abs.split("/")) {
+    if (part === ".") continue;
+    if (part === "..") {
+      if (out.length > 1) out.pop();
+    } else if (part || !out.length) out.push(part);
+  }
+  return { kind: "file", path: out.join("/"), ...(line > 0 ? { line } : {}) };
+}
+
+/** A heading's anchor as Markdown renderers write it: lower case, punctuation dropped, spaces as dashes. */
+export const headingSlug = (text: string) =>
+  text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+
 /** A message between the viewer and an HTML file's frame. */
 export type FrameMessage =
   | { type: "ready" }
@@ -212,13 +263,31 @@ function frameMain(makeKit: typeof passageKit) {
   document.addEventListener(
     "click",
     (e) => {
-      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-      if (!a || (a.getAttribute("href") ?? "").startsWith("#")) return;
+      // As written: resolved here it would be against the viewer's own address.
+      const href = ((e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null)?.getAttribute("href") ?? "";
+      if (!href || href.startsWith("#") || /^javascript:/i.test(href)) return;
       e.preventDefault();
-      post({ type: "link", href: a.href });
+      post({ type: "link", href });
     },
     true,
   );
+  // In-page anchors: a srcdoc page reads `#x` against the viewer's address, so they would not move; done here, after
+  // the page's own handlers (tabs and the like take theirs first).
+  window.addEventListener("click", (e) => {
+    const href = ((e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null)?.getAttribute("href") ?? "";
+    if (!href.startsWith("#") || e.defaultPrevented) return;
+    e.preventDefault();
+    let id = href.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      // as written
+    }
+    const to = id ? (document.getElementById(id) ?? document.getElementsByName(id)[0]) : null;
+    for (let el = to?.parentElement ?? null; el; el = el.parentElement) if (el.tagName === "DETAILS" && !(el as HTMLDetailsElement).open) (el as HTMLDetailsElement).open = true;
+    if (to) to.scrollIntoView({ block: "start" });
+    else if (!id || id === "top") scrollTo(0, 0);
+  });
   document.addEventListener("DOMContentLoaded", () => post({ type: "ready" }));
 }
 

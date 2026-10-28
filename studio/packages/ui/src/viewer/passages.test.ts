@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { composeGitReviewMessage } from "@amo-studio/protocol";
 import { passageKit } from "./passageKit.js";
-import { frameDoc, sourceCandidates, sourceLine } from "./passages.js";
+import { frameDoc, headingSlug, resolveLink, sourceCandidates, sourceLine } from "./passages.js";
 
 // 渲染批注 (2026-10-28): passages of rendered Markdown and HTML.
 
@@ -31,6 +31,21 @@ describe("passages of a rendered file", () => {
     expect(sourceCandidates(html, "out/html/a.html")).toEqual(["out/plans/a.md", "out/html/a.md", "out/html/plans/b.md", "plans/b.md", "G:/docs/c.md"]);
     // No footer element: the end of the page.
     expect(sourceCandidates("<p>源文件 notes.md</p>", "x.html")).toEqual(["x.md", "notes.md"]);
+  });
+
+  it("follows links: the web, headings, and files from the file's folder", () => {
+    const from = "G:/work/game/out/html/report.html";
+    expect(resolveLink(from, "https://example.com/a?b#c")).toEqual({ kind: "web", url: "https://example.com/a?b#c" });
+    expect(resolveLink(from, "#掉落%20调整")).toEqual({ kind: "anchor", id: "掉落 调整" });
+    expect(resolveLink(from, "../../plans/a.md")).toEqual({ kind: "file", path: "G:/work/game/plans/a.md" });
+    expect(resolveLink(from, "./b.html#section")).toEqual({ kind: "file", path: "G:/work/game/out/html/b.html" });
+    expect(resolveLink(from, "../src/drop.lua#L12")).toEqual({ kind: "file", path: "G:/work/game/out/src/drop.lua", line: 12 });
+    expect(resolveLink(from, "src/drop.lua:40")).toEqual({ kind: "file", path: "G:/work/game/out/html/src/drop.lua", line: 40 });
+    expect(resolveLink(from, "file:///G:/docs/%E8%AF%B4%E6%98%8E.md")).toEqual({ kind: "file", path: "G:/docs/说明.md" });
+    expect(resolveLink("G:\\work\\a.md", "G:\\docs\\b.md")).toEqual({ kind: "file", path: "G:/docs/b.md" });
+    expect(resolveLink(from, "mailto:a@b.c")).toBeNull();
+    expect(resolveLink(from, "#")).toBeNull();
+    expect(headingSlug("2. 掉落 & 调整（草案）")).toBe("2-掉落--调整草案");
   });
 
   it("puts its script first in the page, whole", () => {

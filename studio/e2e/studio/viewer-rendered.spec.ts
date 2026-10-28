@@ -29,10 +29,13 @@ document.addEventListener("DOMContentLoaded", () => {
 <p>结论：掉率 0.15 比较合适，见下表。</p>
 <button id="c" onclick="navigator.clipboard.writeText('复制的内容')">复制</button>
 <footer>取材：plans/report.md</footer>
+<p><a id="web" href="https://example.com/doc">外链</a> <a id="sec" href="#end">到结尾</a> <a id="src" href="../plans/report.md">源文件</a></p>
+<div style="height: 3000px"></div>
+<p id="end">结尾</p>
 </body></html>
 `;
 
-const MD = "# 掉落调整\n\n先看数据。\n\n结论：掉率 **0.15** 比较合适，见下表。\n\n| 等级 | 掉率 |\n| --- | --- |\n| 1 | 0.15 |\n";
+const MD = "# 掉落调整\n\n先看数据。\n\n结论：掉率 **0.15** 比较合适，见下表。\n\n| 等级 | 掉率 |\n| --- | --- |\n| 1 | 0.15 |\n\n[外链](https://example.com/md) [看表格](#表格) [回到报告](../out/report.html)\n\n" + "填充。\n\n".repeat(80) + "## 表格\n\n尾巴\n";
 
 async function openViewer(app: ElectronApplication, page: Page, target: Record<string, unknown>): Promise<Page> {
   const opened = app.waitForEvent("window");
@@ -78,6 +81,7 @@ test("passages of rendered HTML and Markdown take comments; HTML keeps its scrip
   writeFileSync(join(dir, "out", "report.html"), HTML);
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
   const copied = () => app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1));
+  const opened = () => app.evaluate(() => (globalThis as { __amoOpenedUrls?: string[] }).__amoOpenedUrls ?? []);
 
   // HTML opens rendered, its script having run (storage stands in for the sandbox's); its Markdown is found by the footer.
   const viewer = await openViewer(app, page, { path: join(dir, "out", "report.html"), workspaceId: ws.id });
@@ -128,6 +132,16 @@ test("passages of rendered HTML and Markdown take comments; HTML keeps its scrip
   expect(text).toContain("这份 HTML 由 `plans/report.md` 生成：请改 `plans/report.md`，再重新生成这份 HTML。");
   expect(text).toContain("out/report.html（渲染后的段落，源码约第 13 行）\n> 掉率 0.15 比较合适\n再低一点，0.12");
   await expect(notes).toHaveCount(0);
+
+  // Links: the web in the browser, an anchor in the page, a file in the viewer (relative to the HTML's folder).
+  const inFrame = viewer.frameLocator('[data-testid="viewer-html"]');
+  await inFrame.locator("#web").click();
+  await expect.poll(opened).toContain("https://example.com/doc");
+  await inFrame.locator("#sec").click();
+  await expect.poll(() => inFrame.locator("body").evaluate(() => scrollY)).toBeGreaterThan(1000);
+  await inFrame.locator("#src").click();
+  await expect(viewer.getByTestId("viewer-name")).toHaveText("report.md");
+  await expect(viewer.getByTestId("viewer-rendered")).toHaveAttribute("data-kind", "markdown");
   await viewer.close();
 
   // Markdown: the same, painted in the page; found again after the file is rewritten, marked when its words are gone.
@@ -150,4 +164,14 @@ test("passages of rendered HTML and Markdown take comments; HTML keeps its scrip
   await expect(md.getByTestId("passage-note")).toHaveAttribute("data-lost", "");
   await expect(md.getByTestId("passage-note")).toContainText("原文找不到了");
   await screenshot(app, "stage-18", "S25-rendered-md-notes", md, "viewer");
+
+  // Markdown's links: the web, a heading of the file, another file.
+  const mdDoc = md.getByTestId("viewer-md");
+  await mdDoc.getByRole("link", { name: "外链" }).click();
+  await expect.poll(opened).toContain("https://example.com/md");
+  await mdDoc.getByRole("link", { name: "看表格" }).click();
+  await expect.poll(() => mdDoc.evaluate((el) => el.scrollTop)).toBeGreaterThan(500);
+  await mdDoc.getByRole("link", { name: "回到报告" }).click();
+  await expect(md.getByTestId("viewer-name")).toHaveText("report.html");
+  await expect(md.getByTestId("viewer-rendered")).toHaveAttribute("data-kind", "html");
 });
