@@ -89,12 +89,33 @@
 - 第一次下载平台的 exe 会被 SmartScreen 拦一下；之后通过平台装的不会。
 - 只做 Windows。
 
+## 开工前先整理（10-28 调查的结果）
+
+新架构开工前，先做一轮只动文档和打包脚本的整理，不改功能代码：
+
+0. **项目说明**（已完成）：根目录新增 `AGENTS.md`（Codex 读）和 `CLAUDE.md`（只有一行 `@AGENTS.md`，Claude 读）。内容是工具和包的对应关系、上面这些架构约束、怎么干活。新会话打开就会自动读到。
+1. **`HANDOFF.md` 瘦身**：现在 319 行，大部分是 10-17 以来按日期堆的改动记录，新会话读起来很重。改成只留「当前状态 + 最近一两周」，更早的记录挪到 `docs/history/handoff-2026-10.md`（git 里本来也有）。
+2. **旧文档归档**：
+   - `studio/docs/` 里的 LOOP_LOG（1061 行）、LOOP_RULES、NEEDS_YOU、ROADMAP、STATUS，是 /loop 自动迭代时期的，最后一次更新是 10-23；
+   - `plans/stage-1…17` 都已经做完。
+
+   把这两部分挪到 `docs/archive/` 和 `plans/done/`，`studio/README.md` 的「开发者文件导航」也跟着改。`design/` 里 10-13 的架构文档标上「已过时的部分」，或者合进一份新的 `design/architecture.md`，把中转、便签、Reviewer、平台都写进去。
+3. **每个工具单独的版本号**：现在所有包都是 0.9.0，`package-portable.mjs` 也只用一个版本号。平台要按工具发布、按工具显示改动说明，所以给每个工具一个版本号和 `CHANGELOG`（或发布时写的 notes）。这一条是第 1 步「服务器发布」的前提，放在那一步里一起做。
+4. **数据位置检查**：确认 Studio、Reviewer、便签在设了对应变量（`AMO_STUDIO_DATA_DIR`、`AMO_REVIEWER_HOME`、`AMO_NOTES_HOME`）时，不往程序文件夹里写任何东西。Studio 的 `amo-studio.json` 现在写在 exe 旁边，平台装的版本要避开它。
+5. **顺手清掉**：仓库里没跟踪的 `plans/relay-tasks.html`、`relay-ui-prototype.html`、`token-stats-prototype.html` 由用户决定删还是留；`scripts/relay-service.ps1`（本机跑中转）已经不用了，保留作为退路，在 README 里注明。
+
+暂时不建议动的：
+- 把 `studio/` 改名，或者重新拆包：路径到处都在用（worktree、memory、e2e、打包脚本），收益小。
+- 拆 1000 行左右的大文件（`relay/src/store.ts`、`ui/src/canvas/CanvasPage.tsx`）：和新架构无关，碰到时再拆。
+
+另外，worktree `AgentMonitorOverlay-review` 现在没有未合并的提交（`studio/review-canvas` 和 `studio/stage3-topics` 都已经在 master 里），文档移动不会和它冲突。但如果其他会话正在别的分支上改 `HANDOFF.md` 或 `plans/`，移动前要先确认。
+
 ## 分几步
 
-1. **服务器发布**：版本清单格式（带改动说明）、`relay:mac -- publish <工具> --notes "…"`、中转服务的 `/platform/` 静态目录、下载页加「AMO 平台」。
+1. **服务器发布**：每个工具单独的版本号（上面第 3 条）、版本清单格式（带改动说明）、`relay:mac -- publish <工具> --notes "…"`、中转服务的 `/platform/` 静态目录、下载页加「AMO 平台」。
 2. **平台 v1**：托盘 + 「工具」和「设置」两页，能安装、打开、更新、回滚 Studio / Reviewer / 便签，服务器地址带最近列表，写 `programs.json`。
 3. **更新提示和目录**：「更新」页（会话在跑时等着），「目录」页（Studio 数据目录、便签工作文件夹、常用工程目录）。
 4. **中转改用 Reviewer**：读 `programs.json`，批注「发回会话」。
 5. 以后再考虑：共用 Electron 运行时、平台界面里的更多团队设置。
 
-动手前先在 Design 画布上出平台界面的可点原型（和中转一样），用户看过再做。
+界面原型（10-28，示例数据）：https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 ，有主窗口四页（可点）、托盘菜单、工具里的更新提示。用户看过再做第 2 步。
