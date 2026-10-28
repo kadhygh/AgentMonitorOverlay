@@ -348,9 +348,10 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
 function isOurServer(pid: number, tokenFile: string): boolean {
   if (process.platform !== "win32") return false;
   try {
-    const script = `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CommandLine`;
-    const encoded = Buffer.from(script, "utf16le").toString("base64");
-    const commandLine = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    // On stdin, not as an encoded command (10-28: an antivirus took encoded PowerShell in Studio for a trojan). UTF-8 out,
+    // so a token file under a folder with a Chinese name still matches.
+    const script = `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); (Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CommandLine\n`;
+    const commandLine = execFileSync("powershell", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"], { encoding: "utf8", windowsHide: true, input: script, stdio: ["pipe", "pipe", "ignore"] });
     return commandLine.includes("app-server") && commandLine.toLowerCase().includes(tokenFile.toLowerCase());
   } catch {
     return false;

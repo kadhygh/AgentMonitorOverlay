@@ -14,13 +14,16 @@ function powershell(): string {
 /** The exe paths of this user's running processes (UTF-8, so folders with Chinese names come through). */
 export function runningExePaths(): Promise<string[]> {
   if (process.platform !== "win32") return Promise.resolve([]);
-  const script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique";
+  // One line on stdin, not an encoded command (10-28: an antivirus took encoded PowerShell in AMO for a trojan).
+  const script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique\n";
   return new Promise((done) => {
-    const child = spawn(powershell(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(powershell(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
     let out = "";
     child.stdout.setEncoding("utf8").on("data", (d: string) => (out += d));
     child.on("error", () => done([]));
     child.on("close", () => done(out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)));
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(script);
   });
 }
 

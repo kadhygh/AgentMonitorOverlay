@@ -31,13 +31,20 @@ export interface TerminalLauncher {
  *
  * cmd's line is written out verbatim: Node's own quoting escapes inner quotes as `\"`, which cmd does not know, so a
  * title with spaces split into a title and a program (`AMO Studio 维护` → "Windows 找不到文件 'Studio'"). The PowerShell
- * command goes base64-encoded, out of reach of cmd's `&`, `%` and quotes.
+ * command travels in the window's environment ({@link TERMINAL_COMMAND_ENV}), out of reach of cmd's `&`, `%` and quotes;
+ * the fixed line on the command line takes it out of the environment (so the programs it starts do not inherit it) and
+ * runs it.
+ *
+ * 10-28: it went base64-encoded on the command line before; an antivirus took encoded PowerShell in Studio for a trojan,
+ * so no encoded command any more. Not a temporary .ps1 either: running a script file needs the execution policy to allow
+ * it (Windows' default does not, and overriding it looks just as suspect), and stdin cannot carry the command: the window
+ * reads the person's typing from it.
  */
 export class WindowsTerminalLauncher implements TerminalLauncher {
   launch({ command, cwd, env, title, envMode = "merge", track = false }: TerminalLaunch): TerminalHandle | undefined {
     if (process.platform !== "win32") throw new Error("terminal launch is only implemented on Windows");
-    const child = spawn("cmd.exe", [windowsStartLine({ command, cwd, title, track })], {
-      env: envMode === "replace" ? env : { ...process.env, ...env },
+    const child = spawn("cmd.exe", [windowsStartLine({ cwd, title, track })], {
+      env: { ...(envMode === "replace" ? env : { ...process.env, ...env }), [TERMINAL_COMMAND_ENV]: command },
       detached: true,
       stdio: "ignore",
       windowsHide: track,
@@ -68,12 +75,16 @@ export class WindowsTerminalLauncher implements TerminalLauncher {
   }
 }
 
-/** cmd.exe's arguments for {@link WindowsTerminalLauncher}, as one verbatim line. */
-export function windowsStartLine({ command, cwd, title, track }: Pick<TerminalLaunch, "command" | "cwd" | "title"> & { track: boolean }): string {
+/** The environment variable that hands the terminal's PowerShell its command. */
+export const TERMINAL_COMMAND_ENV = "AMO_STUDIO_TERMINAL_COMMAND";
+
+/** cmd.exe's arguments for {@link WindowsTerminalLauncher}, as one verbatim line; the command itself is in {@link TERMINAL_COMMAND_ENV}. */
+export function windowsStartLine({ cwd, title, track }: Pick<TerminalLaunch, "cwd" | "title"> & { track: boolean }): string {
   // Inside quotes cmd still ends the string at `"` and expands `%VAR%`.
   const safeTitle = title.replace(/["%\r\n]/g, "").trim() || "AMO Studio";
-  const encoded = Buffer.from(command, "utf16le").toString("base64");
-  const shellArgs = [...(track ? [] : ["-NoExit"]), "-NoLogo", "-EncodedCommand", encoded];
+  // No `"`, `%`, `&` or `^` inside: cmd passes it on as it is, and PowerShell gets it as one argument.
+  const run = `$c = $env:${TERMINAL_COMMAND_ENV}; Remove-Item Env:${TERMINAL_COMMAND_ENV}; Invoke-Expression $c`;
+  const shellArgs = [...(track ? [] : ["-NoExit"]), "-NoLogo", "-Command", `"${run}"`];
   return ["/d", "/c", "start", `"${safeTitle}"`, ...(track ? ["/WAIT"] : []), "/D", `"${cwd}"`, "powershell.exe", ...shellArgs].join(" ");
 }
 
