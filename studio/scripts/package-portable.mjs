@@ -29,7 +29,7 @@ const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 /** The program each package runs as (launch.js), when it is one. */
-const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js", relay: "packages/relay-app/dist/main.js" };
+const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js", platform: "packages/platform/dist/main.js", relay: "packages/relay-app/dist/main.js" };
 
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
@@ -84,6 +84,21 @@ const BUILDS = {
       "双击 AMO Notes.exe，它会待在托盘里：左键托盘图标显示 / 隐藏，右键是菜单（设置、退出）。",
       "全局快捷键默认 Ctrl+Shift+F12，Ctrl+Enter 复制当前页并隐藏，Alt+1…9 换页。",
       "设置和页面在 %APPDATA%\\AMO Notes（工作文件夹可以在设置里换）；和 AMO Studio 带的便签共用同一份。",
+    ],
+  },
+  // AMO 平台 (2026-10-28, plans/amo-lan-platform.md): the tray app that installs and updates the others from the team server.
+  platform: {
+    packages: ["platform", "account", "ui"],
+    programs: ["platform"],
+    // Its own icon is still being designed (design/icon/platform/): Studio's until then.
+    icon: () => join(studio, "packages", "app", "assets", "icon.ico"),
+    readme: [
+      "AMO 平台",
+      "",
+      "双击 AMO Platform.exe，用团队服务器的账号登录（和 AMO 中转同一个账号）。之后它待在托盘里：",
+      "在「工具」里安装、打开、更新、回滚 AMO Studio、AMO Reviewer、AMO 便签；第一次打开 Studio 前先在「目录」里设好 Studio 数据目录。",
+      "工具装在 %LOCALAPPDATA%\\AMO\\apps（每个版本一个文件夹），设置和登录在 %APPDATA%\\AMO。",
+      "想先用测试版：设置里把更新通道换成「测试」，或者带参数 --channel test 启动。",
     ],
   },
   // AMO 中转's desktop client (2026-10-26): a fixed shell; its content comes from the service (scripts/relay-release.mjs
@@ -163,15 +178,16 @@ function build(id) {
     // Window and tray icons (app, notes); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
     // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
-    if (["protocol", "host", "reviewer", "relay"].includes(name)) {
+    if (["protocol", "host", "reviewer", "relay", "account"].includes(name)) {
       cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
       cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
     }
   }
-  // The Reviewer's windows take Studio's mark when it has none of its own.
-  if (spec.packages.includes("reviewer") && !existsSync(join(app, "packages", "reviewer", "assets", "icon.png"))) {
-    mkdirSync(join(app, "packages", "reviewer", "assets"), { recursive: true });
-    cpSync(join(studio, "packages", "app", "assets", "icon.png"), join(app, "packages", "reviewer", "assets", "icon.png"));
+  // The Reviewer's and the platform's windows take Studio's mark when they have none of their own.
+  for (const name of ["reviewer", "platform"]) {
+    if (!spec.packages.includes(name) || existsSync(join(app, "packages", name, "assets", "icon.png"))) continue;
+    mkdirSync(join(app, "packages", name, "assets"), { recursive: true });
+    cpSync(join(studio, "packages", "app", "assets", "icon.png"), join(app, "packages", name, "assets", "icon.png"));
   }
 
   // 3. The launcher: this exe's own program, or the one --amo-app= names (only programs that are in this download).

@@ -17,6 +17,8 @@ export const TOOLS = {
   studio: { name: "AMO Studio", zip: "AMO-Studio", pkg: "app", description: "AMO Studio", platform: true },
   reviewer: { name: "AMO Reviewer", zip: "AMO-Reviewer", pkg: "reviewer", description: "AMO Reviewer", platform: true },
   notes: { name: "AMO Notes", zip: "AMO-Notes", pkg: "notes", description: "AMO 便签", platform: true },
+  // The platform publishes itself the same way (2026-10-28); its first download is the zip on the service's page.
+  platform: { name: "AMO Platform", zip: "AMO-Platform", pkg: "platform", description: "AMO 平台", platform: true },
   // AMO 中转 updates itself (its service hands out the client); the platform only links to it.
   relay: { name: "AMO Relay", zip: "AMO-Relay", pkg: "relay-app", description: "AMO 中转", platform: false },
 };
