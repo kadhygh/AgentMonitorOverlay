@@ -27,6 +27,8 @@ export function ActionMenu({ label, at, groups, onClose, testId }: { label: stri
     if (!el) return;
     const r = el.getBoundingClientRect();
     setPos({ x: Math.max(4, Math.min(at.x, window.innerWidth - r.width - 4)), y: Math.max(4, Math.min(at.y, window.innerHeight - r.height - 4)) });
+    // Opened from a page in a frame (位置批注): the keys would go to the frame, so the menu takes the focus.
+    if (document.activeElement?.tagName === "IFRAME") el.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
   }, [at.x, at.y]);
 
   useEffect(() => {

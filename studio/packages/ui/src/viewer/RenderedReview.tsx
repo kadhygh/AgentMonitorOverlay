@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { sortComments, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
+import { sortComments, type GitCommentPoint, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
+import { ActionMenu } from "../lib/ActionMenu.js";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
 import { Markdown, MarkdownFileLinks } from "../lib/markdown.js";
@@ -79,12 +80,18 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   const ws = rel !== null ? workspace : null;
   const comments = useReviewComments(link, workspace?.id ?? "", !!ws);
   const mine = useMemo(() => sortComments(comments.filter((c) => c.path === rel && c.state === "draft" && c.range === "file")), [comments, rel]);
-  const passages = useMemo(() => mine.filter((c) => c.passage), [mine]);
+  const passages = useMemo(() => mine.filter((c) => c.passage && !c.passage.point), [mine]);
+  const places = useMemo(() => mine.filter((c) => c.passage?.point), [mine]);
+  /** A place's label, on its pin and its card: 1, 2, … in the list's order. */
+  const placeNo = useMemo(() => new Map(places.map((c, i) => [c.id, String(i + 1)])), [places]);
   const source = useHtmlSource(link, ws, rel, kind === "html" ? text : null);
   const [found, setFound] = useState<ReadonlySet<string> | null>(null);
   const [hot, setHot] = useState<string | null>(null);
   const [pick, setPick] = useState<{ anchor: PassageAnchor; x: number; y: number } | null>(null);
-  const [draft, setDraft] = useState<PassageAnchor | null>(null);
+  /** 位置批注 (2026-10-28): the menu of a right click on an HTML page. */
+  const [menu, setMenu] = useState<{ x: number; y: number; line: number; point: GitCommentPoint; near: PassageAnchor; selection: PassageAnchor | null } | null>(null);
+  /** Words, or a place (with its element's line) and the words nearest it. */
+  const [draft, setDraft] = useState<(PassageAnchor & { point?: GitCommentPoint; line?: number }) | null>(null);
   const [busy, setBusy] = useState(false);
   const pane = useRef<HTMLDivElement>(null);
   /** Rendered Markdown, which scrolls itself. */
@@ -92,7 +99,7 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   const frame = useRef<HTMLIFrameElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const mdRanges = useRef(new Map<string, Range>());
-  const marksKey = passages.map((c) => c.id).join("|");
+  const marksKey = mine.map((c) => c.id).join("|");
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -170,10 +177,20 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   // ---- HTML: painted in its frame ----
   const srcDoc = useMemo(() => (kind === "html" ? frameDoc(text) : ""), [kind, text]);
   const toFrame = (m: ToFrame) => frame.current?.contentWindow?.postMessage({ amoPassage: m }, "*");
-  const sendMarks = () => toFrame({ type: "marks", marks: passages.map((c) => ({ id: c.id, quote: c.passage!.quote, prefix: c.passage!.prefix, suffix: c.passage!.suffix })), hot });
+  const anchorOf = (p: PassageAnchor) => ({ quote: p.quote, prefix: p.prefix, suffix: p.suffix });
+  const sendMarks = () =>
+    toFrame({
+      type: "marks",
+      marks: passages.map((c) => ({ id: c.id, ...anchorOf(c.passage!) })),
+      points: [
+        ...places.map((c) => ({ id: c.id, n: placeNo.get(c.id) ?? "", point: c.passage!.point!, ...anchorOf(c.passage!) })),
+        ...(draft?.point ? [{ id: "draft", n: "+", point: draft.point, ...anchorOf(draft), draft: true }] : []),
+      ],
+      hot,
+    });
   useEffect(() => {
     if (kind === "html") sendMarks();
-  }, [kind, marksKey, hot]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kind, marksKey, hot, draft]); // eslint-disable-line react-hooks/exhaustive-deps
   // Links: the web in the browser, a heading of this Markdown here, a file in the viewer (this window, unless 固定).
   const follow = (href: string) => {
     const to = resolveLink(file.path, href);
@@ -199,8 +216,15 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
       if (!m) return;
       if (m.type === "ready") latest.current.sendMarks();
       else if (m.type === "placed") setFound(new Set(m.found));
-      else if (m.type === "scroll") setPick(null);
-      else if (m.type === "hit") goTo(m.id, false);
+      else if (m.type === "scroll") {
+        setPick(null);
+        setMenu(null);
+      } else if (m.type === "press") setMenu(null);
+      else if (m.type === "point") {
+        const at = frame.current.getBoundingClientRect();
+        setPick(null);
+        setMenu({ x: at.left + m.x, y: at.top + m.y, line: m.line, point: m.point, near: m.near, selection: m.selection });
+      } else if (m.type === "hit") goTo(m.id, false);
       else if (m.type === "link") latest.current.follow(m.href);
       else if (m.type === "copy") void copyText(m.text).then(() => showToast({ text: "已复制" }));
       else if (m.type === "select") {
@@ -238,10 +262,10 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
         range: "file",
         path: rel,
         side: "new",
-        line: sourceLine(text, draft.quote, kind === "html"),
+        line: draft.line ?? sourceLine(text, draft.quote, kind === "html"),
         lineText: draft.quote,
         note,
-        passage: { ...draft, ...(source ? { source } : {}) },
+        passage: { ...anchorOf(draft), ...(source ? { source } : {}), ...(draft.point ? { point: draft.point } : {}) },
       });
       dropDraft(draftKey);
       setDraft(null);
@@ -312,6 +336,35 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
               批注
             </button>
           )}
+          {menu && ws && (
+            <ActionMenu
+              label="批注"
+              at={menu}
+              testId="point-menu"
+              onClose={() => setMenu(null)}
+              groups={[
+                [
+                  {
+                    label: "在这里批注",
+                    key: "A",
+                    title: "在这个位置钉一个点写意见；复制出去时写明它在源码里的行和附近的文字",
+                    run: () => {
+                      dropDraft(draftKey);
+                      setDraft({ ...menu.near, point: menu.point, line: menu.line });
+                    },
+                  },
+                  menu.selection && {
+                    label: "给选中的文字批注",
+                    key: "S",
+                    run: () => {
+                      dropDraft(draftKey);
+                      setDraft(menu.selection);
+                    },
+                  },
+                ],
+              ]}
+            />
+          )}
         </div>
         <aside className="vw-notes" aria-label="批注" data-testid="passage-notes">
           <div className="vw-notes-head">
@@ -326,12 +379,12 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
             {!ws && <p className="vw-notes-empty">这个文件不在任何项目里，不能批注。</p>}
             {draft && (
               <div className="gr-comment vw-note" data-testid="passage-draft">
-                <blockquote className="vw-note-quote">{draft.quote}</blockquote>
+                {draft.point ? <PlaceLabel n="+" where={draft.point.where} /> : <blockquote className="vw-note-quote">{draft.quote}</blockquote>}
                 <CommentDraft
                   busy={busy}
                   store={draftKey}
                   anchor="passage"
-                  placeholder="对这段话的意见或问题（Ctrl+Enter 保存）"
+                  placeholder={draft.point ? "对这个位置的意见或问题（Ctrl+Enter 保存）" : "对这段话的意见或问题（Ctrl+Enter 保存）"}
                   onSave={save}
                   onCancel={() => {
                     dropDraft(draftKey);
@@ -341,9 +394,13 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
               </div>
             )}
             {mine.map((c) => (
-              <NoteCard key={c.id} comment={c} busy={busy} hot={hot === c.id} lost={!!c.passage && found !== null && !found.has(c.id)} onGo={() => c.passage && goTo(c.id, true)} onEdit={edit} onDelete={remove} />
+              <NoteCard key={c.id} comment={c} n={placeNo.get(c.id)} busy={busy} hot={hot === c.id} lost={!!c.passage && found !== null && !found.has(c.id)} onGo={() => c.passage && goTo(c.id, true)} onEdit={edit} onDelete={remove} />
             ))}
-            {ws && !draft && !mine.length && <p className="vw-notes-empty">选中文字，点「批注」写意见。和「源码」里按行写的批注是同一批，用下面的按钮一起复制。</p>}
+            {ws && !draft && !mine.length && (
+              <p className="vw-notes-empty">
+                选中文字，点「批注」写意见{kind === "html" ? "；在页面任意位置右键「在这里批注」，给那个位置写意见" : ""}。和「源码」里按行写的批注是同一批，用下面的按钮一起复制。
+              </p>
+            )}
           </div>
         </aside>
       </div>
@@ -352,13 +409,46 @@ export function RenderedReview({ link, workspace, file, kind, active }: { link: 
   );
 }
 
-function NoteCard({ comment, busy, hot, lost, onGo, onEdit, onDelete }: { comment: GitReviewComment; busy: boolean; hot: boolean; lost: boolean; onGo(): void; onEdit(id: string, note: string): void; onDelete(id: string): void }) {
+/** A place's pin label and where it is, in words. */
+function PlaceLabel({ n, where }: { n: string; where: string }) {
+  return (
+    <span className="vw-place">
+      <span className="vw-place-pin">{n}</span>
+      <span className="vw-place-where">{where}</span>
+    </span>
+  );
+}
+
+function NoteCard({
+  comment,
+  n,
+  busy,
+  hot,
+  lost,
+  onGo,
+  onEdit,
+  onDelete,
+}: {
+  comment: GitReviewComment;
+  /** A place's label (位置批注). */
+  n: string | undefined;
+  busy: boolean;
+  hot: boolean;
+  lost: boolean;
+  onGo(): void;
+  onEdit(id: string, note: string): void;
+  onDelete(id: string): void;
+}) {
   const editing = useEditing(comment.id);
   const editKey = editDraftKey(comment.id);
   const p = comment.passage;
   return (
     <div className="gr-comment vw-note" data-id={comment.id} data-hot={hot ? "" : undefined} data-lost={lost ? "" : undefined} data-testid="passage-note">
-      {p ? (
+      {p?.point ? (
+        <button type="button" className="vw-note-quote vw-note-place" title={lost ? "页面上找不到这个位置了（可能已改写）" : `在页面上找到这个位置（源码第 ${comment.line} 行）`} onClick={onGo}>
+          <PlaceLabel n={n ?? ""} where={p.point.where} />
+        </button>
+      ) : p ? (
         <button type="button" className="vw-note-quote" title={lost ? "文件里找不到这段话了（可能已改写）" : "在文中找到这段话"} onClick={onGo}>
           {p.quote}
         </button>
@@ -367,7 +457,7 @@ function NoteCard({ comment, busy, hot, lost, onGo, onEdit, onDelete }: { commen
           源码第 {comment.line} 行 · <code>{comment.lineText.trim() || "（空行）"}</code>
         </div>
       )}
-      {lost && <span className="vw-note-lost">原文找不到了</span>}
+      {lost && <span className="vw-note-lost">{p?.point ? "位置找不到了" : "原文找不到了"}</span>}
       {editing ? (
         <CommentDraft busy={busy} store={editKey} anchor={`passage:${comment.id}`} initial={comment.note} label="修改批注" placeholder="对这段话的意见或问题（Ctrl+Enter 保存）" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
       ) : (

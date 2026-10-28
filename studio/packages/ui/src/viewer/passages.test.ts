@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { composeGitReviewMessage } from "@amo-studio/protocol";
 import { passageKit } from "./passageKit.js";
-import { frameDoc, headingSlug, resolveLink, sourceCandidates, sourceLine } from "./passages.js";
+import { frameDoc, headingSlug, lineTags, resolveLink, sourceCandidates, sourceLine } from "./passages.js";
 
 // 渲染批注 (2026-10-28): passages of rendered Markdown and HTML.
 
@@ -51,10 +51,41 @@ describe("passages of a rendered file", () => {
   it("puts its script first in the page, whole", () => {
     const page = frameDoc("<!doctype html><html><head><title>t</title><script>window.mine=1</script></head><body>x</body></html>");
     expect(page.indexOf("amoPassage")).toBeLessThan(page.indexOf("window.mine"));
-    expect(page.startsWith("<!doctype html><html><head><script>(")).toBe(true);
+    expect(page.startsWith('<!doctype html><html data-amo-line="1"><head data-amo-line="1"><script>(')).toBe(true);
     const ours = page.slice(page.indexOf("<script>") + 8, page.indexOf("</script>"));
     expect(() => new Function(ours)).not.toThrow();
-    expect(frameDoc("<p>bare</p>")).toMatch(/^<script>[\s\S]*<\/script><p>bare<\/p>$/);
+    expect(frameDoc("<p>bare</p>")).toMatch(/^<script>[\s\S]*<\/script><p data-amo-line="1">bare<\/p>$/);
+  });
+
+  it("marks each start tag with its source line, leaving comments, scripts and attribute values alone", () => {
+    const src = [
+      "<!doctype html>",
+      "<html><body>",
+      "<!-- <p>not a tag</p> -->",
+      '<p title="a > b">one</p>',
+      "<script>if (a <b) x = '<td>'</script>",
+      "<table><tr><td>2 < 3</td></tr></table>",
+      "<svg><rect/></svg>",
+    ].join("\n");
+    expect(lineTags(src)).toBe(
+      [
+        "<!doctype html>",
+        '<html data-amo-line="2"><body data-amo-line="2">',
+        "<!-- <p>not a tag</p> -->",
+        '<p data-amo-line="4" title="a > b">one</p>',
+        "<script data-amo-line=\"5\">if (a <b) x = '<td>'</script>",
+        '<table data-amo-line="6"><tr data-amo-line="6"><td data-amo-line="6">2 < 3</td></tr></table>',
+        '<svg data-amo-line="7"><rect data-amo-line="7"/></svg>',
+      ].join("\n"),
+    );
+  });
+
+  it("writes a place on the page with its element's line, where it is, and the words near it", () => {
+    const at = "2026-10-28T00:00:00.000Z";
+    const point = { where: "「3 风险」 › 表格第 2 行第 1 列「延期」", path: "table:1>tbody:1>tr:2>td:1", text: "延期", x: 0.9, y: 0.5 };
+    const text = composeGitReviewMessage([{ path: "out/a.html", side: "new", line: 42, lineText: "延期两周", note: "补原因", createdAt: at, range: "file", passage: { quote: "延期两周", prefix: "", suffix: "", point } }]);
+    expect(text).toContain("位置批注标在页面上的某一处");
+    expect(text).toContain("out/a.html:42（位置批注：「3 风险」 › 表格第 2 行第 1 列「延期」）\n> 延期两周\n补原因");
   });
 
   it("names the passage and, for HTML made from Markdown, the Markdown to change", () => {

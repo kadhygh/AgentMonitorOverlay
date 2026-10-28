@@ -184,6 +184,26 @@ export interface GitCommentPassage {
   suffix: string;
   /** An HTML file's Markdown source (relative to the project), when it has one: the changes go there. */
   source?: string;
+  /** 位置批注 (2026-10-28): a place on an HTML page rather than words; the passage is then the words nearest to it (maybe none). */
+  point?: GitCommentPoint;
+}
+
+/**
+ * A place on an HTML page, right-clicked: the element there and the point inside its box. Found again by the element's
+ * id, then its path checked against its text, then the words near it; the comment's `line` is the element's line in
+ * the HTML source (the nearest one the source has: a script may have made it).
+ */
+export interface GitCommentPoint {
+  /** Where it is in words, for the reader: the headings it is under, then the element (`「3 风险」 › 表格第 2 行第 1 列「延期」`). */
+  where: string;
+  /** From <body> down, tag:nth-of-type (`main:1>table:1>tbody:1>tr:2>td:1`). */
+  path: string;
+  id?: string;
+  /** The start of the element's text, to tell it is the same one. */
+  text: string;
+  /** The point inside the element's box, 0–1 from its left and top. */
+  x: number;
+  y: number;
 }
 
 export const PASSAGE_CONTEXT = 24;
@@ -226,13 +246,18 @@ export function composeGitReviewMessage(
     const body = list.map((c) => {
       const raw = (c.passage?.quote ?? c.lineText).replace(/\s+$/, "");
       const text = raw.length > GIT_REVIEW_LINE_LIMIT ? `${raw.slice(0, GIT_REVIEW_LINE_LIMIT)}…` : raw;
-      const where = c.passage ? `${c.path}（渲染后的段落，源码约第 ${c.line} 行）` : commentWhere(c);
-      return `${where}\n> ${text || "（空行）"}\n${c.note.trim()}`;
+      const point = c.passage?.point;
+      const where = point ? `${c.path}:${c.line}（位置批注：${point.where}）` : c.passage ? `${c.path}（渲染后的段落，源码约第 ${c.line} 行）` : commentWhere(c);
+      return `${where}\n> ${text || (point ? "（附近没有文字）" : "（空行）")}\n${c.note.trim()}`;
     });
     // HTML made from Markdown (2026-10-28): the Markdown is what to change.
     const source = list.find((c) => c.passage?.source)?.passage?.source;
     const from = source ? `这份 HTML 由 \`${source}\` 生成：请改 \`${source}\`，再重新生成这份 HTML。\n\n` : "";
-    return `### ${path}\n\n${from}${body.join("\n\n")}`;
+    // 位置批注 (2026-10-28): what its line and quote are.
+    const points = list.some((c) => c.passage?.point)
+      ? "位置批注标在页面上的某一处：行号是那里的元素在这份 HTML 源码里的行（脚本生成的元素取最近的上层元素），`>` 后是离它最近的文字。\n\n"
+      : "";
+    return `### ${path}\n\n${from}${points}${body.join("\n\n")}`;
   });
   // Only comments written in the viewer's 文件 mode (S14-A): they are on files, not on changes.
   if (comments.length && comments.every((c) => c.range === "file")) {

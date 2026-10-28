@@ -47,6 +47,11 @@
 button.vw-note-quote { cursor: pointer; }
 button.vw-note-quote:hover { color: var(--text); }
 .vw-note[data-lost] .vw-note-quote { border-left-color: var(--border-strong); opacity: 0.75; }
+/* 位置批注 (2026-10-28): the pin's label as on the page, then where it is in words. */
+.vw-place { display: flex; align-items: flex-start; gap: 6px; }
+.vw-place-pin { flex: none; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #d97757; color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.vw-place-where { min-width: 0; overflow-wrap: anywhere; }
+.vw-note-place { border-left: 0; padding-left: 0; }
 .vw-note-lost { align-self: flex-start; padding: 0 6px; border-radius: var(--r-btn); background: var(--attention-bg); color: var(--attention); font-size: var(--fs-cap); }
 .vw-note-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
 .vw-note-line code { font-family: var(--font-code); color: var(--text); }

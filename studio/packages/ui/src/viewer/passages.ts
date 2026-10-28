@@ -1,3 +1,4 @@
+import type { GitCommentPoint } from "@amo-studio/protocol";
 import { passageKit, type PassageAnchor } from "./passageKit.js";
 
 // 渲染批注 (2026-10-28): what the viewer needs around a rendered file's passages — where a passage sits in the source,
@@ -125,10 +126,70 @@ export type FrameMessage =
   | { type: "select"; anchor: PassageAnchor | null; rect?: { left: number; top: number; right: number; bottom: number } }
   | { type: "hit"; id: string }
   | { type: "scroll" }
+  | { type: "press" }
   | { type: "link"; href: string }
-  | { type: "copy"; text: string };
+  | { type: "copy"; text: string }
+  /** A right click on the page (位置批注): the place, its element's source line, the words nearest it, and the selection if any. */
+  | { type: "point"; x: number; y: number; line: number; point: GitCommentPoint; near: PassageAnchor; selection: PassageAnchor | null };
 
-export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; hot: string | null } | { type: "go"; id: string } | { type: "clear" };
+/** A place to pin on the page: `n` is the label on its pin, `draft` the one being written. */
+export type PointMark = PassageAnchor & { id: string; n: string; point: GitCommentPoint; draft?: boolean };
+
+export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; points: PointMark[]; hot: string | null } | { type: "go"; id: string } | { type: "clear" };
+
+/** Elements whose content is not markup: what is inside is left alone. */
+const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript", "iframe", "noembed", "noframes", "plaintext"]);
+
+/**
+ * 位置批注 (2026-10-28): each start tag of the HTML source gets `data-amo-line="N"`, the line it is on, so a place
+ * right-clicked on the page can name the line of its element. Only the attribute is added; comments, scripts and
+ * styles are copied as they are.
+ */
+export function lineTags(html: string): string {
+  const lower = html.toLowerCase();
+  const out: string[] = [];
+  let copied = 0;
+  let line = 1;
+  let counted = 0;
+  const lineAt = (at: number) => {
+    for (; counted < at; counted++) if (html.charCodeAt(counted) === 10) line++;
+    return line;
+  };
+  let i = html.indexOf("<");
+  while (i >= 0) {
+    if (html.startsWith("<!--", i)) {
+      const end = html.indexOf("-->", i + 4);
+      i = end < 0 ? -1 : html.indexOf("<", end + 3);
+      continue;
+    }
+    const name = /^<([a-zA-Z][\w:-]*)/.exec(html.slice(i, i + 80))?.[1];
+    if (!name) {
+      // An end tag, a doctype, or a lone `<` in the text.
+      const closes = /^<[/!?]/.test(html.slice(i, i + 2));
+      const end = closes ? html.indexOf(">", i + 1) : i;
+      i = end < 0 ? -1 : html.indexOf("<", end + 1);
+      continue;
+    }
+    const at = i + 1 + name.length;
+    out.push(html.slice(copied, at), ` data-amo-line="${lineAt(i)}"`);
+    copied = at;
+    let k = at;
+    for (let quote = ""; k < html.length; k++) {
+      const c = html[k];
+      if (quote) {
+        if (c === quote) quote = "";
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === ">") break;
+    }
+    const tag = name.toLowerCase();
+    if (RAW_TEXT.has(tag) && html[k - 1] !== "/") {
+      const end = lower.indexOf(`</${tag}`, k);
+      i = end;
+    } else i = html.indexOf("<", k + 1);
+  }
+  out.push(html.slice(copied));
+  return out.join("");
+}
 
 /**
  * Runs in the HTML file's frame, before the page's own scripts. The frame is sandboxed without this window's origin,
@@ -204,11 +265,180 @@ function frameMain(makeKit: typeof passageKit) {
       if (h) highlights.set("amo-passage-hot", new H(h));
       else highlights.delete("amo-passage-hot");
     }
-    post({ type: "placed", found: [...ranges.keys()] });
+    placePins(flat);
+    post({ type: "placed", found: [...ranges.keys(), ...located.filter((l) => !l.draft).map((l) => l.id)] });
   }
+
+  // ---- 位置批注 (2026-10-28): a right click anywhere offers a comment on that place; pins show where they are ----
+  let points: PointMark[] = [];
+  const tagOf = (el: Element) => el.tagName.toLowerCase();
+  const short = (s: string, n = 24) => (s.length > n ? `${s.slice(0, n)}…` : s);
+  const ownText = (el: Element) => kit.norm(el.getAttribute("aria-label") || (el as HTMLImageElement).alt || el.textContent || el.getAttribute("title") || "").slice(0, 40);
+  /** From <body> down, tag:nth-of-type; "body" for the body itself. */
+  function pathOf(el: Element): string {
+    const out: string[] = [];
+    for (let e: Element | null = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      let n = 1;
+      for (let s = e.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === e.tagName) n++;
+      out.unshift(`${tagOf(e)}:${n}`);
+    }
+    return out.join(">") || "body";
+  }
+  function byPath(path: string): Element | null {
+    let el: Element | null = document.body;
+    if (path === "body") return el;
+    for (const step of path.split(">")) {
+      const [tag, nth] = step.split(":");
+      let left = Number(nth);
+      let hit: Element | null = null;
+      for (const c of Array.from(el?.children ?? [])) if (tagOf(c) === tag && --left === 0) (hit = c);
+      if (!hit) return null;
+      el = hit;
+    }
+    return el;
+  }
+  const NAMES: Record<string, string> = { button: "按钮", a: "链接", p: "段落", pre: "代码块", code: "代码", summary: "折叠块的标题", details: "折叠块", figure: "图", figcaption: "图注", blockquote: "引用", table: "表格", nav: "导航", header: "页头", footer: "页脚", label: "标签", input: "输入框", select: "下拉框" };
+  /** Where `el` is, in words: the headings it is under, the element, and where in it when it is big. */
+  function describe(el: Element, fx: number, fy: number): string {
+    const trail: Array<{ level: number; text: string }> = [];
+    for (const h of Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))) {
+      if (h !== el && !h.contains(el) && h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) break;
+      const level = Number(h.tagName[1]);
+      while (trail.length && trail[trail.length - 1]!.level >= level) trail.pop();
+      trail.push({ level, text: short(kit.norm(h.textContent ?? ""), 20) });
+    }
+    const quoted = (s: string) => (s ? `「${short(s)}」` : "");
+    const tag = tagOf(el);
+    const cell = el.closest("td, th") as HTMLTableCellElement | null;
+    const svg = el.closest("svg");
+    const li = el.closest("li");
+    let what: string;
+    if (el === document.body || el === document.documentElement) what = "页面空白处";
+    else if (cell) {
+      const table = cell.closest("table");
+      const row = table ? Array.from(table.rows).indexOf(cell.parentElement as HTMLTableRowElement) + 1 : 0;
+      what = `表格第 ${row} 行第 ${cell.cellIndex + 1} 列${quoted(kit.norm(cell.textContent ?? ""))}`;
+    } else if (svg) what = `图（SVG）${quoted(kit.norm(el.textContent || svg.querySelector("title")?.textContent || svg.getAttribute("aria-label") || ""))}`;
+    else if (tag === "img") what = `图片${quoted(ownText(el))}`;
+    else if (tag === "canvas") what = "画布（canvas）";
+    else if (/^h[1-6]$/.test(tag)) what = `标题${quoted(ownText(el))}`;
+    else if (li?.parentElement) what = `列表第 ${Array.from(li.parentElement.children).indexOf(li) + 1} 项${quoted(kit.norm(li.textContent ?? ""))}`;
+    else what = `${NAMES[tag] ?? `<${tag}>`}${quoted(ownText(el))}`;
+    const box = el.getBoundingClientRect();
+    if (box.width > 160 || box.height > 80) {
+      const side = (fy < 1 / 3 ? "上" : fy > 2 / 3 ? "下" : "") + (fx < 1 / 3 ? "左" : fx > 2 / 3 ? "右" : "");
+      what += side ? `（偏${side}）` : "（中间）";
+    }
+    return [...trail.slice(-2).map((t) => `「${t.text}」`), what].join(" › ");
+  }
+  /** The words nearest a place: under the pointer, else the first in its element, else the last before it. */
+  function nearWords(x: number, y: number, el: Element) {
+    const body = document.body;
+    const none = { quote: "", prefix: "", suffix: "" };
+    if (!body) return none;
+    const flat = kit.flatten(body);
+    const caret = (document as unknown as { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint?.(x, y);
+    let at = -1;
+    if (caret && caret.startContainer.nodeType === 3 && el.contains(caret.startContainer)) at = flat.at.findIndex((p) => p.node === caret.startContainer && p.offset >= caret.startOffset);
+    if (at < 0) at = flat.at.findIndex((p) => el.contains(p.node));
+    if (at < 0) for (let k = flat.at.length - 1; k >= 0 && at < 0; k--) if (flat.at[k]!.node.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) at = k;
+    if (at < 0) return none;
+    let start = Math.max(0, at - 10);
+    let end = Math.min(flat.text.length, start + 30);
+    while (start < end && flat.text[start] === " ") start++;
+    while (end > start && flat.text[end - 1] === " ") end--;
+    return { quote: flat.text.slice(start, end), prefix: flat.text.slice(Math.max(0, start - kit.CONTEXT), start).trimStart(), suffix: flat.text.slice(end, end + kit.CONTEXT).trimEnd() };
+  }
+
+  let host: HTMLElement | null = null;
+  let pinRoot: ShadowRoot | null = null;
+  let located: Array<{ id: string; draft: boolean; el: Element; box: () => DOMRect; fx: number; fy: number; pin: HTMLElement }> = [];
+  function layer(): ShadowRoot {
+    if (host?.isConnected && pinRoot) return pinRoot;
+    host = document.createElement("amo-pins");
+    host.setAttribute("style", "all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647");
+    pinRoot = host.attachShadow({ mode: "open" });
+    const css = document.createElement("style");
+    css.textContent =
+      ".pin{position:absolute;box-sizing:border-box;min-width:20px;height:20px;margin:-10px 0 0 -10px;padding:0 4px;border:2px solid #fff;border-radius:10px;background:#d97757;color:#fff;font:600 11px/16px system-ui,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:auto;cursor:pointer}" +
+      ".pin.hot{background:#a8492a;transform:scale(1.2)}.pin.draft{background:#fff;color:#d97757;border-color:#d97757}";
+    pinRoot.appendChild(css);
+    document.documentElement.appendChild(host);
+    return pinRoot;
+  }
+  /** Where a place is now: its element by id, by path (the same text), else beside its words; null when gone. */
+  function find(m: PointMark, flat: ReturnType<typeof kit.flatten>) {
+    const p = m.point;
+    const byId = p.id ? document.getElementById(p.id) : null;
+    if (byId) return { el: byId as Element, box: () => byId.getBoundingClientRect(), fx: p.x, fy: p.y };
+    const el = byPath(p.path);
+    if (el && (!p.text || ownText(el).startsWith(p.text.slice(0, 12)))) return { el, box: () => el.getBoundingClientRect(), fx: p.x, fy: p.y };
+    const r = m.quote && document.body ? kit.rangeOf(document.body, m, flat) : null;
+    if (r) return { el: r.startContainer.parentElement ?? document.body, box: () => r.getBoundingClientRect(), fx: 0, fy: 0.5 };
+    return null;
+  }
+  function placePins(flat: ReturnType<typeof kit.flatten>) {
+    if (!points.length && !located.length) return;
+    const root = layer();
+    for (const l of located) l.pin.remove();
+    located = [];
+    for (const m of points) {
+      const f = find(m, flat);
+      if (!f) continue;
+      const pin = document.createElement("span");
+      pin.className = m.draft ? "pin draft" : "pin";
+      pin.textContent = m.n;
+      pin.title = m.point.where;
+      pin.addEventListener("click", () => !m.draft && post({ type: "hit", id: m.id }));
+      root.appendChild(pin);
+      located.push({ id: m.id, draft: !!m.draft, ...f, pin });
+    }
+    layoutPins();
+  }
+  function layoutPins() {
+    for (const l of located) {
+      const b = l.box();
+      // Folded away or not shown: no pin.
+      l.pin.style.display = b.width || b.height ? "" : "none";
+      l.pin.style.left = `${b.left + b.width * l.fx}px`;
+      l.pin.style.top = `${b.top + b.height * l.fy}px`;
+      l.pin.classList.toggle("hot", l.id === hot);
+    }
+  }
+  let pinFrame = 0;
+  const relayout = () => {
+    if (located.length && !pinFrame)
+      pinFrame = requestAnimationFrame(() => {
+        pinFrame = 0;
+        layoutPins();
+      });
+  };
+  window.addEventListener("scroll", relayout, { capture: true, passive: true });
+  window.addEventListener("resize", relayout);
+  document.addEventListener("toggle", relayout, true);
+  new ResizeObserver(relayout).observe(document.documentElement);
+  // After the page's own handlers: a page with a right-click menu of its own keeps it.
+  window.addEventListener("contextmenu", (e) => {
+    if (e.defaultPrevented || !document.body) return;
+    let el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || el === host) return;
+    e.preventDefault();
+    if (el === document.documentElement) el = document.body;
+    const box = el.getBoundingClientRect();
+    const frac = (v: number, from: number, size: number) => (size ? Math.min(1, Math.max(0, (v - from) / size)) : 0.5);
+    const fx = frac(e.clientX, box.left, box.width);
+    const fy = frac(e.clientY, box.top, box.height);
+    const line = Number(el.closest("[data-amo-line]")?.getAttribute("data-amo-line")) || 1;
+    const sel = getSelection();
+    const selection = sel && !sel.isCollapsed && sel.rangeCount ? kit.anchorOf(document.body, sel.getRangeAt(0)) : null;
+    const point = { where: describe(el, fx, fy), path: pathOf(el), ...(el.id ? { id: el.id } : {}), text: ownText(el), x: fx, y: fy };
+    post({ type: "point", x: e.clientX, y: e.clientY, line, point, near: nearWords(e.clientX, e.clientY, el), selection });
+  });
+  document.addEventListener("pointerdown", () => post({ type: "press" }), true);
+
   let timer: ReturnType<typeof setTimeout> | null = null;
   new MutationObserver(() => {
-    if (!marks.length || timer) return;
+    if ((!marks.length && !points.length) || timer) return;
     timer = setTimeout(() => {
       timer = null;
       paint();
@@ -217,14 +447,21 @@ function frameMain(makeKit: typeof passageKit) {
 
   window.addEventListener("message", (e) => {
     if (e.source !== parent) return;
-    const d = (e.data as { amoPassage?: { type: string; marks?: typeof marks; hot?: string | null; id?: string } } | null)?.amoPassage;
+    const d = (e.data as { amoPassage?: { type: string; marks?: typeof marks; points?: PointMark[]; hot?: string | null; id?: string } } | null)?.amoPassage;
     if (!d) return;
     if (d.type === "marks") {
       marks = d.marks ?? [];
+      points = d.points ?? [];
       hot = d.hot ?? null;
       paint();
     } else if (d.type === "go" && d.id) {
       hot = d.id;
+      const place = located.find((l) => l.id === d.id);
+      if (place) {
+        for (let el: Element | null = place.el; el; el = el.parentElement) if (el.tagName === "DETAILS" && !(el as HTMLDetailsElement).open) (el as HTMLDetailsElement).open = true;
+        place.el.scrollIntoView({ block: "center" });
+        return paint();
+      }
       const r0 = ranges.get(d.id);
       // A passage in a folded part: open it first.
       for (let el = r0?.startContainer.parentElement ?? null; el; el = el.parentElement) if (el.tagName === "DETAILS" && !(el as HTMLDetailsElement).open) (el as HTMLDetailsElement).open = true;
@@ -293,8 +530,9 @@ function frameMain(makeKit: typeof passageKit) {
 
 const FRAME_SCRIPT = `<script>(${frameMain.toString()})(${passageKit.toString()})</script>`;
 
-/** The HTML file as its frame gets it: our script first in <head>, before the page's own. */
-export function frameDoc(html: string): string {
+/** The HTML file as its frame gets it: our script first in <head>, before the page's own; its tags marked with their lines. */
+export function frameDoc(source: string): string {
+  const html = lineTags(source);
   const head = /<head[^>]*>/i.exec(html);
   if (head) return html.slice(0, head.index + head[0].length) + FRAME_SCRIPT + html.slice(head.index + head[0].length);
   const top = /^\s*(<!doctype[^>]*>)?\s*(<html[^>]*>)?/i.exec(html)!;

@@ -177,6 +177,15 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     expect(onPassage.passage).toEqual(passage);
     expect((await ok<GitReviewComment[]>("GET", base)).find((c) => c.id === onPassage.id)?.passage).toEqual(passage);
     expect((await ok<{ text: string }>("POST", `${base}/copy`, {})).text).toContain("这份 HTML 由 `plans/drop.md` 生成");
+
+    // 位置批注 (2026-10-28): a place on the page, maybe with no words near it; its fractions kept inside the box.
+    const point = { where: "「掉率」 › 图（SVG）", path: "main:1>figure:1>svg:1>rect:3", text: "", x: 1.4, y: 0.25 };
+    expect((await api("POST", base, { range: "file", path: "drop.html", side: "new", line: 9, lineText: "", note: "x", passage: { quote: "", point: { ...point, where: "" } } })).status).toBe(400);
+    const onPoint = await ok<GitReviewComment>("POST", base, { range: "file", path: "drop.html", side: "new", line: 9, lineText: "", note: "柱子颜色太浅", passage: { quote: "", prefix: "", suffix: "", point } });
+    expect(onPoint.passage?.point).toEqual({ ...point, x: 1 });
+    const text = (await ok<{ text: string }>("POST", `${base}/copy`, {})).text;
+    expect(text).toContain("drop.html:9（位置批注：「掉率」 › 图（SVG））\n> （附近没有文字）\n柱子颜色太浅");
+    expect(text).toContain("位置批注标在页面上的某一处");
   });
 });
 

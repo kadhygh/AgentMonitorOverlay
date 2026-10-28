@@ -175,3 +175,83 @@ test("passages of rendered HTML and Markdown take comments; HTML keeps its scrip
   await expect(md.getByTestId("viewer-name")).toHaveText("report.html");
   await expect(md.getByTestId("viewer-rendered")).toHaveAttribute("data-kind", "html");
 });
+
+// 位置批注 (2026-10-28): a right click anywhere on an HTML page comments on that place.
+const PAGE = `<!doctype html>
+<html><head><meta charset="utf-8"><title>风险</title></head>
+<body>
+<h1>报告</h1>
+<h2>3 风险</h2>
+<table>
+<tr><th>项</th><th>说明</th></tr>
+<tr><td>延期</td><td>延期两周，原因是美术资源</td></tr>
+</table>
+<h2>4 图</h2>
+<svg width="200" height="100"><rect x="10" y="10" width="80" height="80" fill="#888"></rect></svg>
+<div style="height: 1500px"></div>
+</body></html>
+`;
+
+test("a right click on an HTML page comments on that place: pinned, found again, copied with its element's line and where it is", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("design");
+  mkdirSync(join(dir, "out"), { recursive: true });
+  writeFileSync(join(dir, "out", "risk.html"), PAGE);
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  const copied = () => app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1));
+
+  const viewer = await openViewer(app, page, { path: join(dir, "out", "risk.html"), workspaceId: ws.id });
+  await expect(viewer.getByTestId("viewer-rendered")).toHaveAttribute("data-kind", "html");
+  const inFrame = viewer.frameLocator('[data-testid="viewer-html"]');
+  const notes = viewer.getByTestId("passage-note");
+  const pins = inFrame.locator(".pin");
+
+  // A table cell: the menu, its letter, a draft pin, then pin 1.
+  await inFrame.locator("tr").nth(1).locator("td").first().click({ button: "right" });
+  const menu = viewer.getByTestId("point-menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["在这里批注A"]);
+  await viewer.keyboard.press("a");
+  const draft = viewer.getByTestId("passage-draft");
+  await expect(draft).toContainText("「报告」 › 「3 风险」 › 表格第 2 行第 1 列「延期」");
+  await expect(pins).toHaveText(["+"]);
+  await draft.locator("textarea").fill("补上延期的原因");
+  await draft.locator("textarea").press("Control+Enter");
+  await expect(notes).toHaveCount(1);
+  await expect(pins).toHaveText(["1"]);
+
+  // A shape of a picture, no words in it.
+  await inFrame.locator("rect").click({ button: "right" });
+  await menu.getByRole("menuitem", { name: /在这里批注/ }).click();
+  await expect(draft).toContainText("「报告」 › 「4 图」 › 图（SVG）");
+  await draft.locator("textarea").fill("颜色太浅");
+  await draft.locator("textarea").press("Control+Enter");
+  await expect(notes).toHaveCount(2);
+  await expect(pins).toHaveText(["1", "2"]);
+  await pins.filter({ hasText: "2" }).click();
+  await expect(notes.filter({ hasText: "颜色太浅" })).toHaveAttribute("data-hot", "");
+
+  // With words selected the menu offers them too.
+  await inFrame.locator("tr").nth(1).locator("td").nth(1).selectText();
+  await inFrame.locator("tr").nth(1).locator("td").nth(1).click({ button: "right" });
+  await expect(menu.getByRole("menuitem")).toHaveText(["在这里批注A", "给选中的文字批注S"]);
+  await viewer.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await screenshot(app, "stage-18", "S26-point-notes", viewer, "viewer");
+
+  // Regenerated with a paragraph more: both places found again.
+  writeFileSync(join(dir, "out", "risk.html"), PAGE.replace("<h1>报告</h1>", "<h1>报告</h1>\n<p>新加的一段。</p>"));
+  await viewer.getByTestId("passage-notes").click();
+  await viewer.keyboard.press("r");
+  await expect(inFrame.locator("p")).toHaveText("新加的一段。");
+  await expect(pins).toHaveText(["1", "2"]);
+  await expect(viewer.locator('[data-testid="passage-note"][data-lost]')).toHaveCount(0);
+
+  // Copied: the element's line in the HTML, where it is, the words near it.
+  await viewer.getByTestId("review-copy").click();
+  await expect.poll(copied).toContain("文件批注");
+  const text = (await copied())!;
+  expect(text).toContain("位置批注标在页面上的某一处");
+  expect(text).toMatch(/out\/risk\.html:8（位置批注：「报告」 › 「3 风险」 › 表格第 2 行第 1 列「延期」）\n> [^\n]*延期[^\n]*\n补上延期的原因/);
+  expect(text).toContain("out/risk.html:11（位置批注：「报告」 › 「4 图」 › 图（SVG））\n> ");
+});

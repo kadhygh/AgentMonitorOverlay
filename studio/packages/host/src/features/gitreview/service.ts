@@ -9,6 +9,7 @@ import {
   sortComments,
   type GitChanges,
   type GitCommentPassage,
+  type GitCommentPoint,
   type GitCommentRange,
   type GitCommitChanges,
   type GitFileDiff,
@@ -314,9 +315,25 @@ export class GitReviewFeature extends Feature {
     const p = v as Record<string, unknown>;
     const text = (x: unknown, max: number) => (typeof x === "string" ? x.slice(0, max) : "");
     const quote = text(p.quote, LINE_TEXT_MAX).trim();
-    if (!quote) throw new HostError("bad_request", "a passage needs its words");
+    const point = this.point(p.point);
+    // A place on the page may have no words near it (a picture, an empty box).
+    if (!quote && !point) throw new HostError("bad_request", "a passage needs its words");
     const source = text(p.source, 1000).trim();
-    return { quote, prefix: text(p.prefix, PASSAGE_CONTEXT * 2), suffix: text(p.suffix, PASSAGE_CONTEXT * 2), ...(source ? { source } : {}) };
+    return { quote, prefix: text(p.prefix, PASSAGE_CONTEXT * 2), suffix: text(p.suffix, PASSAGE_CONTEXT * 2), ...(source ? { source } : {}), ...(point ? { point } : {}) };
+  }
+
+  /** 位置批注 (2026-10-28): a place on an HTML page — the element and the point inside its box. */
+  private point(v: unknown): GitCommentPoint | undefined {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v !== "object") throw new HostError("bad_request", "a point is an object");
+    const p = v as Record<string, unknown>;
+    const text = (x: unknown, max: number) => (typeof x === "string" ? x.slice(0, max).trim() : "");
+    const where = text(p.where, 300);
+    const path = text(p.path, 2000);
+    if (!where || !path) throw new HostError("bad_request", "a point needs where it is and its element's path");
+    const frac = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0.5);
+    const id = text(p.id, 200);
+    return { where, path, ...(id ? { id } : {}), text: text(p.text, 80), x: frac(p.x), y: frac(p.y) };
   }
 
   private note(v: unknown): string {
