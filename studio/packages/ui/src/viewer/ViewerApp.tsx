@@ -5,15 +5,15 @@ import { useHostState } from "../host/useHostState.js";
 import { openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { showToast } from "../lib/toast.js";
 import { useFitWidth } from "../lib/fitWidth.js";
-import { FileContent, isImage, isMarkdownText, RenderedToggle, useTextFile } from "../files/FilePreview.js";
+import { FileContent, isHtmlText, isImage, isMarkdownText, RenderedToggle, useTextFile } from "../files/FilePreview.js";
 import { useVsCode } from "../files/FileLinks.js";
 import { fileName, folderOf } from "../files/paths.js";
 import { ReviewPage } from "../gitreview/ReviewApp.js";
 import { useIsGitRepo } from "../gitreview/open.js";
 import { MarkButton } from "../marks/MarkButton.js";
-import { FindBar } from "../gitreview/FindBar.js";
 import { sessionChoices } from "../gitreview/logic.js";
 import { FileReview } from "./FileReview.js";
+import { RenderedReview } from "./RenderedReview.js";
 import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTarget } from "./logic.js";
 import { pinViewer, viewerPinned } from "./open.js";
 import { PackViewer } from "../viewpacks/PackViewer.js";
@@ -78,6 +78,9 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
   const loaded = useTextFile(link, file, !isImage(file.path), readVersion);
   const absolute = loaded.state === "ok" ? loaded.file.path : file.path;
   const markdown = isMarkdownText(file.path, loaded);
+  // Markdown and HTML show rendered, their passages taking comments (2026-10-28), or as source.
+  const html = isHtmlText(file.path, loaded);
+  const renderable = markdown || html;
 
   // Another file (or the same one again): back to its mode, its line, rendered unless a line was asked for.
   const openKey = `${target.path}\u0000${target.line ?? ""}\u0000${target.endLine ?? ""}\u0000${target.nonce ?? ""}`;
@@ -101,15 +104,14 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
     if (m === "changes") setChangesShown(true);
   };
   const where = linesLabel(target.line, target.endLine);
-  // Code (not an image, not Markdown shown rendered) is drawn by FileReview: comments, Ctrl+G, Ctrl+F.
-  const code = loaded.state === "ok" && !isImage(file.path) && !loaded.file.binary && !loaded.file.tooLarge && loaded.file.text !== undefined && !(markdown && rendered);
+  // Code (not an image, not Markdown or HTML shown rendered) is drawn by FileReview: comments, Ctrl+G, Ctrl+F.
+  const code = loaded.state === "ok" && !isImage(file.path) && !loaded.file.binary && !loaded.file.tooLarge && loaded.file.text !== undefined && !(renderable && rendered);
   // Comments go to the conversation that opened the file, else the project's most recently active session; fixed
   // per open, so sessions updating does not move the choice.
   const defaultSession = useMemo(
     () => target.sessionId ?? (workspace ? (sessionChoices(state, workspace.id)[0]?.id ?? null) : null),
     [openKey, workspace?.id], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const rendered_ = useRef<HTMLDivElement>(null);
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
@@ -136,7 +138,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
           <span className="vw-name" title={absolute} data-testid="viewer-name">
             {fileName(target.path)}
           </span>
-          {where && mode === "file" && !(markdown && rendered) && (
+          {where && mode === "file" && !(renderable && rendered) && (
             <span className="vw-lines" data-testid="viewer-lines">
               {where}
             </span>
@@ -150,7 +152,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
         <div className="vw-actions">
           {mode === "file" && (
             <>
-              {markdown && <RenderedToggle rendered={rendered} onChange={setRendered} />}
+              {renderable && <RenderedToggle rendered={rendered} onChange={setRendered} label={html ? "HTML" : "Markdown"} />}
               {code && (
                 <button
                   type="button"
@@ -221,14 +223,12 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
               defaultSession={defaultSession}
               active={mode === "file"}
             />
+          ) : renderable && rendered && loaded.state === "ok" ? (
+            <RenderedReview key={`${loaded.file.path}#${readVersion}`} link={link} workspace={workspace} file={loaded.file} kind={html ? "html" : "markdown"} active={mode === "file"} />
           ) : (
-            <>
-              {/* Rendered Markdown: Ctrl+F finds in the text on the page. */}
-              {markdown && rendered && <FindBar active={mode === "file"} container={rendered_} />}
-              <div className="vw-content" ref={rendered_}>
-                <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={readVersion} />
-              </div>
-            </>
+            <div className="vw-content">
+              <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={readVersion} />
+            </div>
           )}
         </div>
         {changesShown && workspace && (

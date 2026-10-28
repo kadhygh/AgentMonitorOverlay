@@ -3,12 +3,12 @@ import type { FileViewItem, StateSnapshot, ViewPack, Workspace } from "@amo-stud
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { showToast } from "../lib/toast.js";
-import { FileContent, isImage, isMarkdownText, RenderedToggle, useTextFile } from "../files/FilePreview.js";
+import { FileContent, isHtmlText, isImage, isMarkdownText, RenderedToggle, useTextFile } from "../files/FilePreview.js";
 import { useVsCode } from "../files/FileLinks.js";
 import { MarkButton } from "../marks/MarkButton.js";
-import { FindBar } from "../gitreview/FindBar.js";
 import type { ViewMark } from "../gitreview/DiffView.js";
 import { FileReview } from "../viewer/FileReview.js";
+import { RenderedReview } from "../viewer/RenderedReview.js";
 
 // A 查看包's file (2026-10-23): the file as it is now, as the viewer shows one — code drawn with its lines taking
 // comments (sent back to the pack's conversation by default), Markdown rendered — with the agent's 重点: tinted lines,
@@ -19,6 +19,9 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
   const [reload, setReload] = useState(0);
   const loaded = useTextFile(link, file, !isImage(item.path), `${reload}:${nonce}`);
   const markdown = isMarkdownText(item.path, loaded);
+  // Markdown and HTML show rendered, their passages taking comments (2026-10-28), or as source.
+  const html = isHtmlText(item.path, loaded);
+  const renderable = markdown || html;
   const [rendered, setRendered] = useState(!item.highlights.length);
   // The 重点 opened at (the window opens at the first; a click on top opens another), and the one shown pressed on
   // top: the same, or the one Tab or a click on its lines went to since (2026-10-23: Tab works the bar on top).
@@ -52,9 +55,8 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
     return () => window.removeEventListener("keydown", onKey);
   }, [active]);
   const absolute = loaded.state === "ok" ? loaded.file.path : `${workspace.path}/${item.path}`;
-  const code = loaded.state === "ok" && !isImage(item.path) && !loaded.file.binary && !loaded.file.tooLarge && loaded.file.text !== undefined && !(markdown && rendered);
+  const code = loaded.state === "ok" && !isImage(item.path) && !loaded.file.binary && !loaded.file.tooLarge && loaded.file.text !== undefined && !(renderable && rendered);
   const fail = (err: unknown) => showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
-  const renderedRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="vp-item" data-testid="viewpack-file">
@@ -63,7 +65,7 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
           {item.path}
         </span>
         <div className="vw-actions">
-          {markdown && <RenderedToggle rendered={rendered} onChange={setRendered} />}
+          {renderable && <RenderedToggle rendered={rendered} onChange={setRendered} label={html ? "HTML" : "Markdown"} />}
           {vscode && (
             <button type="button" className="btn-ghost small" onClick={() => openInEditor(link, file, at?.line).catch(fail)}>
               VS Code 打开
@@ -132,13 +134,12 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
             highlights={marks}
             onActiveRow={onActiveRow}
           />
+        ) : renderable && rendered && loaded.state === "ok" ? (
+          <RenderedReview key={`${loaded.file.path}#${reload}:${nonce}`} link={link} workspace={workspace} file={loaded.file} kind={html ? "html" : "markdown"} active={active} />
         ) : (
-          <>
-            {markdown && rendered && <FindBar active={active} container={renderedRef} />}
-            <div className="vw-content" ref={renderedRef}>
-              <FileContent link={link} file={file} loaded={loaded} rendered={rendered} reload={`${reload}:${nonce}`} />
-            </div>
-          </>
+          <div className="vw-content">
+            <FileContent link={link} file={file} loaded={loaded} rendered={rendered} reload={`${reload}:${nonce}`} />
+          </div>
         )}
       </div>
     </div>

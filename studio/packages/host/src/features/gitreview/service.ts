@@ -4,9 +4,11 @@ import {
   isCommitRef,
   isGitRange,
   isObjectId,
+  PASSAGE_CONTEXT,
   rangeBase,
   sortComments,
   type GitChanges,
+  type GitCommentPassage,
   type GitCommentRange,
   type GitCommitChanges,
   type GitFileDiff,
@@ -219,6 +221,7 @@ export class GitReviewFeature extends Feature {
     const line = Number(input.line);
     if (!Number.isInteger(line) || line < 1) throw new HostError("bad_request", "line must be a line number");
     const note = this.note(input.note);
+    const passage = this.passage(input.passage, range);
     const at = new Date().toISOString();
     const comment: GitReviewComment = {
       id: newId("rc"),
@@ -234,6 +237,7 @@ export class GitReviewFeature extends Feature {
       createdAt: at,
       updatedAt: at,
       sentAt: null,
+      ...(passage ? { passage } : {}),
     };
     this.store.putReviewComment(comment);
     return comment;
@@ -301,6 +305,18 @@ export class GitReviewFeature extends Feature {
   /** A comment's range: a Git Review range, or `file` (the viewer's 文件 mode, S14-A). */
   private commentRange(v: unknown): GitCommentRange {
     return v === "file" ? "file" : this.range(v);
+  }
+
+  /** 渲染批注 (2026-10-28): a passage of the file as shown rendered, only in the viewer's 文件 mode. */
+  private passage(v: unknown, range: GitCommentRange): GitCommentPassage | undefined {
+    if (v === undefined || v === null) return undefined;
+    if (range !== "file" || typeof v !== "object") throw new HostError("bad_request", "a passage is on a file in the viewer");
+    const p = v as Record<string, unknown>;
+    const text = (x: unknown, max: number) => (typeof x === "string" ? x.slice(0, max) : "");
+    const quote = text(p.quote, LINE_TEXT_MAX).trim();
+    if (!quote) throw new HostError("bad_request", "a passage needs its words");
+    const source = text(p.source, 1000).trim();
+    return { quote, prefix: text(p.prefix, PASSAGE_CONTEXT * 2), suffix: text(p.suffix, PASSAGE_CONTEXT * 2), ...(source ? { source } : {}) };
   }
 
   private note(v: unknown): string {

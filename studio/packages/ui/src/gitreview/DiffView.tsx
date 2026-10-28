@@ -324,7 +324,7 @@ function Cell({ cell, side, commentable, props }: { cell: SideCell | null; side:
   );
 }
 
-function CommentDraft({
+export function CommentDraft({
   busy,
   onSave,
   onCancel,
@@ -332,6 +332,7 @@ function CommentDraft({
   anchor,
   initial = "",
   label = "批注内容",
+  placeholder = "对这一行的意见或问题（Ctrl+Enter 保存）",
 }: {
   busy: boolean;
   onSave(note: string): void;
@@ -342,6 +343,7 @@ function CommentDraft({
   anchor: string;
   initial?: string;
   label?: string;
+  placeholder?: string;
 }) {
   const [note, setNoteState] = useState(() => draftText(store) ?? initial);
   const setNote = (text: string) => {
@@ -372,7 +374,7 @@ function CommentDraft({
           } else if (e.key === "Escape") onCancel();
         }}
         rows={3}
-        placeholder="对这一行的意见或问题（Ctrl+Enter 保存）"
+        placeholder={placeholder}
         aria-label={label}
       />
       <div className="add-ws-actions">

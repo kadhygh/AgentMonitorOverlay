@@ -78,6 +78,8 @@ export function useTextFile(link: HostLink, file: FileRef, enabled: boolean, rel
 
 /** Whether the loaded file is Markdown text, which can show rendered or as source. */
 export const isMarkdownText = (path: string, loaded: Loaded) => languageForPath(path) === "markdown" && loaded.state === "ok" && loaded.file.text !== undefined;
+/** Whether the loaded file is HTML text, which the viewer can show rendered (渲染批注, 2026-10-28). */
+export const isHtmlText = (path: string, loaded: Loaded) => languageForPath(path) === "html" && loaded.state === "ok" && loaded.file.text !== undefined && !loaded.file.tooLarge;
 
 /**
  * A file as it is now: an image, Markdown rendered (or its source), or code with line numbers and colours, scrolled to
@@ -273,10 +275,10 @@ export function FilePreview({ link, file, line, endLine, column, diff, onClose, 
   );
 }
 
-/** 渲染 / 源码 for a Markdown file. */
-export function RenderedToggle({ rendered, onChange }: { rendered: boolean; onChange(rendered: boolean): void }) {
+/** 渲染 / 源码 for a Markdown (or, in the viewer, an HTML) file. */
+export function RenderedToggle({ rendered, onChange, label = "Markdown" }: { rendered: boolean; onChange(rendered: boolean): void; label?: string }) {
   return (
-    <div className="fp-seg" role="group" aria-label="Markdown">
+    <div className="fp-seg" role="group" aria-label={label}>
       <button type="button" aria-pressed={rendered} onClick={() => onChange(true)}>
         渲染
       </button>

@@ -168,6 +168,15 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     expect(copied.text).toBe(composeGitReviewMessage([again], "game"));
     expect(copied.sent.map((c) => [c.id, c.state, c.sessionId])).toEqual([[again.id, "sent", null]]);
     expect((await items()).length).toBe(before);
+
+    // 渲染批注 (2026-10-28): a passage of the file shown rendered, kept with the comment; only in the viewer's 文件 mode.
+    const passage = { quote: "掉率 0.15 比较合适", prefix: "结论：", suffix: "，见下表。", source: "plans/drop.md" };
+    expect((await api("POST", base, { range: "working", path: "drop.html", side: "new", line: 3, lineText: "x", note: "x", passage })).status).toBe(400);
+    expect((await api("POST", base, { range: "file", path: "drop.html", side: "new", line: 3, lineText: "x", note: "x", passage: { quote: "  " } })).status).toBe(400);
+    const onPassage = await ok<GitReviewComment>("POST", base, { range: "file", path: "drop.html", side: "new", line: 3, lineText: passage.quote, note: "再低一点", passage });
+    expect(onPassage.passage).toEqual(passage);
+    expect((await ok<GitReviewComment[]>("GET", base)).find((c) => c.id === onPassage.id)?.passage).toEqual(passage);
+    expect((await ok<{ text: string }>("POST", `${base}/copy`, {})).text).toContain("这份 HTML 由 `plans/drop.md` 生成");
   });
 });
 

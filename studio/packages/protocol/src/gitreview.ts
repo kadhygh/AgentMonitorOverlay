@@ -169,7 +169,24 @@ export interface GitReviewComment {
   createdAt: string;
   updatedAt: string;
   sentAt: string | null;
+  /** Written on the file as shown rendered (Markdown, HTML) rather than on a line; `line` is where it starts in the source, best guess. */
+  passage?: GitCommentPassage;
 }
+
+/**
+ * 渲染批注 (2026-10-28): a passage of a file shown rendered in the viewer — Markdown, or HTML in its frame. Its words and
+ * up to PASSAGE_CONTEXT characters on each side, as read on screen with whitespace runs as one space; found again by
+ * those, so it survives the file being regenerated as long as the words are still there.
+ */
+export interface GitCommentPassage {
+  quote: string;
+  prefix: string;
+  suffix: string;
+  /** An HTML file's Markdown source (relative to the project), when it has one: the changes go there. */
+  source?: string;
+}
+
+export const PASSAGE_CONTEXT = 24;
 
 export interface NewGitReviewComment {
   range: GitCommentRange;
@@ -178,6 +195,7 @@ export interface NewGitReviewComment {
   line: number;
   lineText: string;
   note: string;
+  passage?: GitCommentPassage;
 }
 
 /** Longest line kept in the summary message; the rest is elided. */
@@ -199,18 +217,22 @@ export function sortComments<T extends Pick<GitReviewComment, "path" | "side" | 
  * (preview). `project` names the reviewed project.
  */
 export function composeGitReviewMessage(
-  comments: ReadonlyArray<Pick<GitReviewComment, "path" | "side" | "line" | "lineText" | "note" | "createdAt"> & { range?: GitCommentRange }>,
+  comments: ReadonlyArray<Pick<GitReviewComment, "path" | "side" | "line" | "lineText" | "note" | "createdAt"> & { range?: GitCommentRange; passage?: GitCommentPassage | undefined }>,
   project?: string,
 ): string {
   const files = new Map<string, typeof comments[number][]>();
   for (const c of sortComments(comments)) files.set(c.path, [...(files.get(c.path) ?? []), c]);
   const parts = [...files].map(([path, list]) => {
     const body = list.map((c) => {
-      const raw = c.lineText.replace(/\s+$/, "");
+      const raw = (c.passage?.quote ?? c.lineText).replace(/\s+$/, "");
       const text = raw.length > GIT_REVIEW_LINE_LIMIT ? `${raw.slice(0, GIT_REVIEW_LINE_LIMIT)}…` : raw;
-      return `${commentWhere(c)}\n> ${text || "（空行）"}\n${c.note.trim()}`;
+      const where = c.passage ? `${c.path}（渲染后的段落，源码约第 ${c.line} 行）` : commentWhere(c);
+      return `${where}\n> ${text || "（空行）"}\n${c.note.trim()}`;
     });
-    return `### ${path}\n\n${body.join("\n\n")}`;
+    // HTML made from Markdown (2026-10-28): the Markdown is what to change.
+    const source = list.find((c) => c.passage?.source)?.passage?.source;
+    const from = source ? `这份 HTML 由 \`${source}\` 生成：请改 \`${source}\`，再重新生成这份 HTML。\n\n` : "";
+    return `### ${path}\n\n${from}${body.join("\n\n")}`;
   });
   // Only comments written in the viewer's 文件 mode (S14-A): they are on files, not on changes.
   if (comments.length && comments.every((c) => c.range === "file")) {
