@@ -46,6 +46,19 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 早 · 远程第 3、4 步和收尾，测试通道 Studio 0.9.6、Reviewer 0.9.6（用户回来先看这条）**
+
+做了什么：第 3 步（`a2d58e3`）B 在远程任务里点开 HTML / Markdown / 图片：新命令 `rt.file`，A 只放行任务文件夹里（先解析 junction / 软链接）、对话里发过的附件图片，类型 HTML / Markdown / 图片、≤20 MB、512 KB 分片带 sha256；B 缓存在数据目录 `remote-files/<taskId>/`，没变就不重传，A 离线显示上次的版本，归档时清掉；查看器读条「正在从 <A> 取文件…」；HTML 同目录图片走 B 的 `GET /api/remote/files/<随机 key>/…`（不要令牌，只给图片）；A 推给 B 的命令卡片 cwd 改写成「任务文件夹\…」（对话正文里的绝对路径没改）。第 4 步（`e680461`）B 在 设置 → 远程 → 已配对设备「请它跑一个任务…」→ A 的 Focus 出现「任务请求」→ A 在 设置 → 远程 选项目 / 专题 / 允许的模型同意 → A 建任务、授权给 B、开会话发出第一句话 → B 看板出现并在跑；A 可以拒绝写原因；A 离线时 B 发不出（服务器不存请求）。收尾（`15a4e81`）托盘「完全退出」时有任务正被在线设备远程使用会提醒；被远程使用时 A 不睡眠（`powerSaveBlocker`）；B 的 AMO MCP 不列远程副本、碰到副本一律拒绝；B 归档副本会告诉 A 结束授权（`rt.drop`）。另外查看器里的 Markdown 会显示文件旁边的图片（本地文件也是）。
+
+验证：全量 vitest 989 过、typecheck 和 build 过；子 agent 跑了 remote-files、remote-requests、remote、remote-tasks、tray、viewer-rendered、chat-files、markdown、focus、viewer-review、settings、mcp 的 e2e。主会话用测试账号连团队服务器：任务请求整条通过；文件查看整条通过，只有最后「归档后本地文件夹 20 秒内删掉」没等到（Windows 刚写完的大文件被占用，代码会重试、Host 下次启动也会清），不影响使用。
+
+待用户验收（在上面「待用户验收」清单之外）：
+- 远程文件：B 上打开远程任务对话里的 .md / .html / 图片链接，看读条和显示；点 .exe 之类会说明不支持。
+- 任务请求：B 的 设置 → 远程 →「请它跑一个任务…」；A 的 Focus →「去处理」→ 选模型同意（先在 A 的 设置 → 远程 勾「远端允许的模型」）。
+- 完全退出提醒：A 有任务授权给在线的 B 时，托盘「完全退出」会多问一句。
+
+没做 / 以后：会话级授权（只有任务级）；远端允许的模型只到渠道一级；HTML 只取同目录图片，CSS / JS 不取；对话正文里的 A 绝对路径还会带用户名；Focus 里不能直接同意请求（要选项目和模型，只能「去处理」）。下一件：`plans/relay-in-sessions.md`（会话里直接用中转，用户 10-29 定在远程之后）。
+
 **2026-10-29 凌晨 · 远程第 2 步（测试通道 Studio 0.9.5、Reviewer 0.9.5）**：A 把任务授权给配对的设备（`942e099`…`c84173d`）。「远程」是 B 的 Host 里一种会话运行方式（`RemoteAwareRuntime`，runtime `remote`）：B 的副本放公共目录、`tasks.remote` 列（migration 23，0.9.5 打开过数据后不能回 0.9.4）；A 的远程命令 `rt.list / rt.task / rt.items（since 补齐）/ rt.send / rt.approve（先到先得）/ rt.answer / rt.interrupt / rt.start`，推送 `rt.push`；授权表 kv `remote.grants`、远端允许的模型 kv `remote.allowed`（只到渠道一级）；B 在线时 A 的 Focus 不提醒；被授权任务里禁止跨项目委派。主会话补了一处（`8c88d9a`）：B 上的远程副本不算「正在跑的会话」，不挡完全退出 / 重启。验证：合并后全量 vitest 975 过；remote-tasks / remote / canvas-resize / board / focus e2e 过；tray 的一条在 20 条之后跑时超时一次，单独重跑 2/2 过（偶发）。用测试账号连团队服务器走通：配对 → 授权 → B 看板出现 → B 发消息 A 回复 → 审批 B 点批准两边同步 → B 新开会话 → 收回授权 B 显示「授权已收回」（断线那段在真服务器上没法测，本地 e2e 覆盖）。在做：第 3 步（B 看 HTML / Markdown / 图片，读条）、第 4 步（B 请求、A 同意后自动建任务）、收尾（A 完全退出前提醒远程使用、被远程用时阻止睡眠、B 的 MCP 不把副本当本地任务）。
 
 **2026-10-29 凌晨 · 待用户验收（测试通道：Studio 0.9.4、Reviewer 0.9.4、平台 0.9.6、便签 0.9.2、中转 0.9.0；之后 Studio / Reviewer 又发了 0.9.5）**
