@@ -158,7 +158,22 @@ platform/
 
 - 新版本：先用硬链接把上一版里 sha256 相同的文件带过来，再下载缺的，校验 sha256，最后把 `current` 指过去。保留最近 2 个版本。
 - 拉起 Studio：环境变量 `AMO_STUDIO_DATA_DIR` = 平台设置里的 Studio 数据目录，没设时不让拉起，先去「目录」设。
-- Studio 有没有会话在跑：读数据目录里的 `host.json` 和 `host-token`，问 Host（只读）。
+- Studio 有没有会话在跑：读数据目录里的 `host.json`，问 `GET /api/health`（不要令牌，返回 `{ ok, pid, running }`，`running` 按看板「进行中」算），只读。
+
+**做的时候补定的（10-28 晚，第一版已按这些实现）**
+
+- `GET /api/platform/channels` 直接返回 `channels.json`，没发布过时是 `{"stable":{},"test":{}}`；清单的 `builtAt` 是毫秒数；错误 401 没登录、400 参数不对、404 没有平台目录或还没发布。
+- `publish` 不写 `--channel` 时发到测试通道。**稳定通道不会比测试通道旧**：发到稳定或 `promote` 时，测试通道更旧或没有就一起指过去。同一版本号再发布、文件相同时只改通道，文件不同时拒绝（先升版本号）。
+- 工具 id 服务端按通用格式校验，不写死名字；能不能发布由 `scripts/amo-tools.mjs` 的 `platform: true` 决定（中转是 false）。平台自己也是一行（`AMO Platform`）。
+- `programs.json` 的 `exe` 是相对 `dir` 的路径，读的人用 `join(dir, exe)`。
+- 测试和开发用的变量：`AMO_HOME`（代替 `%APPDATA%\AMO`）、`AMO_LOCAL_HOME`（代替 `%LOCALAPPDATA%\AMO`）、`AMO_PLATFORM_UI_DIR`、`AMO_PLATFORM_TEST=1`（e2e 的测试模式）。以后中转、Studio 读 `account.json`、`programs.json` 也认 `AMO_HOME`。
+- 平台的 Chromium 配置在 `%LOCALAPPDATA%\AMO\platform-profile`；每个已装版本的记录在 `apps\<tool>\<version>.json`（在程序文件夹外面）。
+- 平台第一次下载用的 zip：服务先找 `<平台目录>/downloads/AMO-Platform-win.zip`（deploy 不碰），再找客户端的 `downloads/`。还没有命令负责放这个 zip，第一次发布平台时定。
+
+## 进度
+
+- **10-28 晚 · 第一版（第 1、2 步）合进 master**：每个工具单独的版本号和 `CHANGELOG.md`；中转服务的平台接口和 `publish` / `promote` / `platform-status`（含 `--target-dir` 本地模式）；共用登录模块 `packages/account`；平台 `packages/platform` + 界面 `packages/ui/src/platform`（登录、工具、目录、设置）；`start-platform.cmd`（`-Test` 用测试通道）。另有 Host 的数据库版本保护、`/api/health` 带 `running`、维护终端加 Codex。验证见 `HANDOFF.md` 10-28 那条。
+- 还没做：部署到 Mac（会重启一次中转）和第一次真实发布；平台 zip 怎么放上服务器；第 3 步（更新页、`updates.json`、各工具的设置旁的点、目录页的便签工作文件夹、托盘上的新版提示）；第 4 步；平台自己的图标（家族方案在 `design/icon/platform/`，等用户定）；打包后的开机启动应指向 `current` 而不是某个版本文件夹（现在注册的是 `process.execPath`）。
 
 ## 分几步
 
