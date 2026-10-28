@@ -196,3 +196,71 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   // Nothing landed in the real shared folders.
   expect([realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null))).toEqual(before);
 });
+
+test("注册 on the login page: the passphrase only when the server wants one, errors in the form, then 工具; log out and back in", async () => {
+  const realHome = join(process.env.APPDATA ?? "", "AMO");
+  const before = existsSync(realHome) ? statSync(realHome).mtimeMs : null;
+  // A second team server, with an invite passphrase and a name of its own.
+  const invited = await startFakePlatformServer({ users: { 小王: "secret" }, passphrase: "芝麻开门", name: "策划组" });
+  try {
+    invited.publish("reviewer", "1.0.0", tool("reviewer", "1.0.0"), { name: "AMO Reviewer", exe: "run.cmd", notes: "- 第一版" });
+    const { app, page } = await launch();
+    await page.getByRole("form", { name: "登录" }).getByRole("button", { name: "没有账号？注册一个" }).click();
+    const form = page.getByRole("form", { name: "注册" });
+    await expect(form.getByRole("heading", { name: "注册账号" })).toBeVisible();
+
+    // A server without a passphrase: no field for one.
+    await form.getByLabel("服务器地址").fill(server.url.replace("http://", ""));
+    await expect(form.getByTestId("pf-server-check")).toHaveText("✓ 服务器在线 · AMO 中转");
+    await expect(form.getByLabel("邀请口令")).toHaveCount(0);
+    // One with: the field shows up.
+    await form.getByLabel("服务器地址").fill(invited.url.replace("http://", ""));
+    await expect(form.getByTestId("pf-server-check")).toHaveText("✓ 服务器在线 · 策划组 · 注册要邀请口令");
+    await expect(form.getByLabel("邀请口令")).toBeVisible();
+    await form.getByLabel("名字").fill("小李");
+    await form.getByLabel("密码", { exact: true }).fill("pass1");
+    await form.getByLabel("再输一次密码").fill("pass2");
+    await form.getByLabel("负责什么").fill("策划 · 关卡");
+    await screenshot(app, "platform", "P14-register", page);
+
+    // Mistakes, each said in the form: the passwords differ, the passphrase is wrong, the name is taken.
+    await form.getByRole("button", { name: "注册并登录" }).click();
+    await expect(form.getByRole("alert")).toHaveText("两次输入的密码不一样");
+    await form.getByLabel("再输一次密码").fill("pass1");
+    await form.getByLabel("邀请口令").fill("芝麻");
+    await form.getByRole("button", { name: "注册并登录" }).click();
+    await expect(form.getByRole("alert")).toHaveText("邀请口令不对");
+    await form.getByLabel("邀请口令").fill("芝麻开门");
+    await form.getByLabel("名字").fill("小王");
+    await form.getByRole("button", { name: "注册并登录" }).click();
+    await expect(form.getByRole("alert")).toHaveText("名字「小王」已经有人用了");
+    await screenshot(app, "platform", "P15-register-taken", page);
+    expect(existsSync(join(root, "roaming", "account.json"))).toBe(false);
+
+    // Registered: straight to 工具, logged in as the new account.
+    await form.getByLabel("名字").fill("小李");
+    await form.getByRole("button", { name: "注册并登录" }).click();
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线");
+    await expect(status(page, "reviewer")).toHaveText("○ 没装 · 服务器上是 1.0.0");
+    expect(invited.members()["小李"]).toEqual({ password: "pass1", role: "策划 · 关卡" });
+    expect(JSON.parse(readFileSync(join(root, "roaming", "account.json"), "utf8"))).toMatchObject({ server: invited.url, name: "小李" });
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
+    await expect(page.getByText("已登录：小李")).toBeVisible();
+    await screenshot(app, "platform", "P16-registered", page);
+
+    // 退出登录, then in again with the new account (its name and server filled in).
+    await page.getByRole("button", { name: "退出登录…" }).click();
+    await page.getByRole("button", { name: "退出登录", exact: true }).click();
+    const login = page.getByRole("form", { name: "登录" });
+    await expect(login.getByLabel("服务器地址")).toHaveValue(invited.url.replace("http://", ""));
+    await expect(login.getByLabel("名字")).toHaveValue("小李");
+    await login.getByLabel("密码").fill("pass1");
+    await login.getByRole("button", { name: "登录", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+    expect(JSON.parse(readFileSync(join(root, "roaming", "account.json"), "utf8"))).toMatchObject({ server: invited.url, name: "小李" });
+  } finally {
+    await invited.close();
+  }
+  expect(existsSync(realHome) ? statSync(realHome).mtimeMs : null).toBe(before);
+});

@@ -1,12 +1,12 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { amoHome, amoLocalHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, type Account, type Env, type Protector } from "@amo-studio/account";
+import { amoHome, amoLocalHome, AccountError, clearAccount, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, type Account, type Env, type Protector } from "@amo-studio/account";
 import { PlatformClient } from "./client.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
 import { planLaunch, startDetached, type LaunchSpec } from "./launch.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, studioHealth } from "./system.js";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, StudioHealthView, TaskView, ToolView } from "./view.js";
+import type { Channel, OpenResult, PlatformCalls, PlatformView, RegisterForm, RegisterResult, ServerCheck, StudioHealthView, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -171,17 +171,27 @@ export class Platform implements PlatformCalls {
     await this.refresh();
   }
 
+  private accountOptions() {
+    return { env: this.options.env, ...(this.options.protector ? { protector: this.options.protector } : {}), ...(this.options.fetch ? { fetch: this.options.fetch } : {}) };
+  }
+
+  /** Logged in (by a login or a registration): the account's client, and the channels asked again for it. */
+  private signedIn(account: Account): void {
+    this.account = account;
+    this.loginError = null;
+    updateSettings({ lastName: account.name }, this.options.env);
+    this.client = new PlatformClient(account.server, account.key, this.options.fetch);
+    this.channels = null;
+    this.manifests.clear();
+  }
+
   async login(server: string, name: string, password: string): Promise<void> {
     if (this.loggingIn) return;
     this.loggingIn = true;
     this.loginError = null;
     this.changed();
     try {
-      this.account = await login({ server, name, password }, { env: this.options.env, ...(this.options.protector ? { protector: this.options.protector } : {}), ...(this.options.fetch ? { fetch: this.options.fetch } : {}) });
-      updateSettings({ lastName: this.account.name }, this.options.env);
-      this.client = new PlatformClient(this.account.server, this.account.key, this.options.fetch);
-      this.channels = null;
-      this.manifests.clear();
+      this.signedIn(await login({ server, name, password }, this.accountOptions()));
     } catch (err) {
       this.loginError = err instanceof AccountError ? err.message : `登录没成功：${message(err)}`;
     } finally {
@@ -191,8 +201,38 @@ export class Platform implements PlatformCalls {
     if (this.account) await this.refresh();
   }
 
+  /**
+   * The login page's 注册 (10-28: the platform is the only place to log in, so people without an account register here):
+   * an account on the team server, then logged in with it as after a login. Errors go back to the form.
+   */
+  async register(form: RegisterForm): Promise<RegisterResult> {
+    if (this.loggingIn) return { ok: false, code: "busy", message: "正在登录，稍等一下。" };
+    this.loggingIn = true;
+    this.changed();
+    let result: RegisterResult;
+    try {
+      this.signedIn(await register({ server: form.server, name: form.name, password: form.password, role: form.role, ...(form.passphrase ? { passphrase: form.passphrase } : {}) }, this.accountOptions()));
+      result = { ok: true };
+    } catch (err) {
+      result = err instanceof AccountError ? { ok: false, code: err.code, message: err.message } : { ok: false, code: "error", message: `注册没成功：${message(err)}` };
+    } finally {
+      this.loggingIn = false;
+      this.changed();
+    }
+    if (result.ok) await this.refresh();
+    return result;
+  }
+
+  async serverInfo(server: string): Promise<ServerCheck> {
+    try {
+      return { ok: true, ...(await serverInfo(server, this.accountOptions())) };
+    } catch (err) {
+      return { ok: false, message: message(err) };
+    }
+  }
+
   async logout(): Promise<void> {
-    await logout({ env: this.options.env, ...(this.options.protector ? { protector: this.options.protector } : {}), ...(this.options.fetch ? { fetch: this.options.fetch } : {}) });
+    await logout(this.accountOptions());
     this.forget(null);
   }
 

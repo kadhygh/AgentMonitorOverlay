@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type PlatformView, type TaskView, type ToolView } from "./bridge.js";
+import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
-// page until there is an account, then 工具 / 目录 / 设置. Everything it shows comes from the main process
+// page (with 注册 for people without an account) until there is an account, then 工具 / 目录 / 设置. Everything it shows comes from the main process
 // (platform:view) and every button is a call back to it; the page keeps only which page is open.
 // The prototype's 更新 page (per-tool update modes, updates.json) is step 3 and not here yet.
 
@@ -36,6 +36,12 @@ export function PlatformApp() {
       offNotice();
     };
   }, []);
+
+  // Logged out (退出登录 is on 设置): the next login or registration starts on 工具.
+  const loggedIn = !!view?.account;
+  useEffect(() => {
+    if (!loggedIn) setPage("tools");
+  }, [loggedIn]);
 
   if (!bridge()) return <div className="pf-empty">这个页面要在 AMO 平台里打开。</div>;
   if (!view) return <div className="pf-empty">正在读取…</div>;
@@ -114,21 +120,84 @@ function TitleBar({ view }: { view: PlatformView }) {
 
 // ---- 登录
 
+/**
+ * The register form asks the server (a moment after the address stops changing) whether it is there and wants the
+ * invite passphrase; null while asking. `recheck` asks again (a passphrase refused that the form did not ask for).
+ */
+function useServerCheck(server: string): { check: ServerCheck | null; recheck: () => void } {
+  const [check, setCheck] = useState<ServerCheck | null>(null);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    const s = server.trim();
+    setCheck(null);
+    if (!s) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void call("serverInfo", s)
+        .catch((err: unknown): ServerCheck => ({ ok: false, message: err instanceof Error ? err.message : String(err) }))
+        .then((r) => live && setCheck(r));
+    }, 350);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [server, round]);
+  return { check, recheck: () => setRound((n) => n + 1) };
+}
+
 function LoginPage({ view }: { view: PlatformView }) {
+  // 注册 (10-28): the platform is the only place to log in, so people without an account (a new 策划) register here,
+  // on the same page; the fields and wording are the relay client's.
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [server, setServer] = useState(view.servers[0] ? serverLabel(view.servers[0]) : "");
   const [name, setName] = useState(view.lastName ?? "");
   const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [role, setRole] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const registerMode = mode === "register";
+  const { check, recheck } = useServerCheck(registerMode ? server : "");
+  const invite = check?.ok === true && check.invite;
+  const busy = view.loggingIn || registering;
+
+  const switchMode = (to: "login" | "register") => {
+    setMode(to);
+    setPassword("");
+    setPassword2("");
+    setRegisterError(null);
+    // The name filled in from the last login is not the new account's; a name typed here goes along either way.
+    if (to === "register" && name === view.lastName) setName("");
+    if (to === "login" && !name.trim()) setName(view.lastName ?? "");
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void call("login", server, name, password).catch(() => undefined);
+    if (!registerMode) return void call("login", server, name, password).catch(() => undefined);
+    if (password !== password2) return setRegisterError("两次输入的密码不一样");
+    setRegisterError(null);
+    setRegistering(true);
+    void call("register", { server, name, password, role, ...(invite ? { passphrase } : {}) })
+      .catch((err: unknown): RegisterResult => ({ ok: false, code: "error", message: err instanceof Error ? err.message : String(err) }))
+      .then((r) => {
+        // Done: the account is there and the page has moved on to 工具.
+        setRegistering(false);
+        if (r.ok) return;
+        setRegisterError(r.message);
+        if (r.code === "unauthorized" && !invite) recheck();
+      });
   };
 
   return (
     <div className="pf-login">
-      <form className="pf-login-card" onSubmit={submit} aria-label="登录">
-        <h1 className="pf-h1">登录 AMO 平台</h1>
-        <p className="pf-hint">用团队服务器（AMO 中转）的账号登录。登录以后才能安装和更新工具；登录只存在这台电脑上，按你的 Windows 用户加密。</p>
+      <form className="pf-login-card" onSubmit={submit} aria-label={registerMode ? "注册" : "登录"}>
+        <h1 className="pf-h1">{registerMode ? "注册账号" : "登录 AMO 平台"}</h1>
+        <p className="pf-hint">
+          {registerMode
+            ? "账号建在团队服务器（AMO 中转）上，和中转里用的是同一个账号。注册好就直接登录平台。"
+            : "用团队服务器（AMO 中转）的账号登录。登录以后才能安装和更新工具；登录只存在这台电脑上，按你的 Windows 用户加密。"}
+        </p>
         <label className="pf-label">
           服务器地址
           <input className="field" value={server} onChange={(e) => setServer(e.target.value)} placeholder="例如 172.16.8.85:47120" autoFocus={!server} spellCheck={false} />
@@ -143,24 +212,101 @@ function LoginPage({ view }: { view: PlatformView }) {
             ))}
           </div>
         )}
-        <label className="pf-label">
-          名字
-          <input className="field" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!!server && !name} spellCheck={false} />
-        </label>
-        <label className="pf-label">
-          密码
-          <input className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!!server && !!name} />
-        </label>
-        {view.loginError && (
-          <p className="form-error" role="alert">
-            {view.loginError}
-          </p>
+        {registerMode && server.trim() && <ServerCheckLine check={check} />}
+        {registerMode ? (
+          <>
+            <label className="pf-label">
+              名字
+              <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="团队里大家认得的名字" maxLength={32} autoComplete="username" spellCheck={false} />
+            </label>
+            <div className="pf-pair">
+              <label className="pf-label">
+                密码
+                <input className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 4 位" autoComplete="new-password" />
+              </label>
+              <label className="pf-label">
+                再输一次密码
+                <input className="field" type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
+              </label>
+            </div>
+            <label className="pf-label">
+              <span>
+                负责什么 <span className="pf-faint">（可不填，AI 会看这个来决定问谁）</span>
+              </span>
+              <input className="field" value={role} onChange={(e) => setRole(e.target.value)} placeholder="比如：程序 · 战斗" maxLength={60} spellCheck={false} />
+            </label>
+            {invite && (
+              <label className="pf-label">
+                <span>
+                  邀请口令 <span className="pf-faint">（这台服务器设了口令，问管服务器的人要）</span>
+                </span>
+                <input className="field" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} spellCheck={false} />
+              </label>
+            )}
+            {registerError && (
+              <p className="form-error" role="alert">
+                {registerError}
+              </p>
+            )}
+            <button type="submit" className="btn-primary pf-login-btn" disabled={busy || !server.trim() || !name.trim() || !password || check === null}>
+              {registering ? "正在注册…" : "注册并登录"}
+            </button>
+          </>
+        ) : (
+          <>
+            <label className="pf-label">
+              名字
+              <input className="field" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!!server && !name} spellCheck={false} />
+            </label>
+            <label className="pf-label">
+              密码
+              <input className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!!server && !!name} />
+            </label>
+            {view.loginError && (
+              <p className="form-error" role="alert">
+                {view.loginError}
+              </p>
+            )}
+            <button type="submit" className="btn-primary pf-login-btn" disabled={busy || !server.trim() || !name.trim()}>
+              {view.loggingIn ? "正在登录…" : "登录"}
+            </button>
+          </>
         )}
-        <button type="submit" className="btn-primary pf-login-btn" disabled={view.loggingIn || !server.trim() || !name.trim()}>
-          {view.loggingIn ? "正在登录…" : "登录"}
-        </button>
+        <div className="pf-login-foot">
+          {registerMode ? (
+            <button type="button" className="pf-link" onClick={() => switchMode("login")} disabled={busy}>
+              已有账号，去登录
+            </button>
+          ) : (
+            <button type="button" className="pf-link" onClick={() => switchMode("register")} disabled={busy}>
+              没有账号？注册一个
+            </button>
+          )}
+        </div>
       </form>
     </div>
+  );
+}
+
+/** Under the address while registering: whether the server is there, its name, whether it wants the passphrase. */
+function ServerCheckLine({ check }: { check: ServerCheck | null }) {
+  if (!check)
+    return (
+      <p className="pf-server-check dim" role="status">
+        ◐ 正在问服务器…
+      </p>
+    );
+  if (!check.ok)
+    return (
+      <p className="pf-server-check warn" role="status">
+        ! {check.message}
+      </p>
+    );
+  return (
+    <p className="pf-server-check ok" role="status" data-testid="pf-server-check">
+      ✓ 服务器在线{check.name ? ` · ${check.name}` : ""}
+      {check.invite ? " · 注册要邀请口令" : ""}
+    </p>
   );
 }
 

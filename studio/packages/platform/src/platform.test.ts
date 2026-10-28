@@ -102,6 +102,21 @@ describe("Platform", () => {
     server.setChannel("stable", "reviewer", "0.9.0");
   });
 
+  it("registers: the server check, errors back to the form (not loginError), then logged in with the tools listed", async () => {
+    const { platform, env } = make();
+    await platform.init();
+    expect(await platform.serverInfo(server.url.replace("http://", ""))).toEqual({ ok: true, name: "AMO 中转", invite: false });
+    expect(await platform.serverInfo("127.0.0.1:1")).toMatchObject({ ok: false, message: expect.stringContaining("连不上 127.0.0.1:1") });
+    expect(await platform.register({ server: server.url, name: "小王", password: "abcd", role: "" })).toEqual({ ok: false, code: "conflict", message: "名字「小王」已经有人用了" });
+    expect(platform.view()).toMatchObject({ account: null, loginError: null, loggingIn: false });
+    expect(await platform.register({ server: server.url, name: "小周", password: "abcd", role: "策划" })).toEqual({ ok: true });
+    const v = platform.view();
+    expect(v).toMatchObject({ account: { server: server.url, name: "小周" }, loginError: null, loggingIn: false, connection: { state: "online" } });
+    expect(v.tools.map((t) => t.id)).toEqual(["studio", "reviewer"]);
+    expect(JSON.parse(readFileSync(join(env.AMO_HOME, "platform.json"), "utf8"))).toMatchObject({ server: server.url, recentServers: [server.url], lastName: "小周" });
+    expect(server.members()["小周"]).toEqual({ password: "abcd", role: "策划" });
+  });
+
   it("--channel test wins over the setting; a key the server no longer takes goes back to the login page", async () => {
     server.publish("studio", "0.9.5", { "AMO Studio.exe": "studio 0.9.5" }, { exe: "AMO Studio.exe", channel: "test" });
     const { platform } = make({ argv: ["electron", ".", "--channel", "test"] });

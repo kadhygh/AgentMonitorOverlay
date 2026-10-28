@@ -105,9 +105,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .pf-check input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }
 
-/* 登录 */
-.pf-login { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 24px; background: var(--bg); }
-.pf-login-card { width: 400px; max-width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 26px 28px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); box-sizing: border-box; }
+/* 登录 / 注册: the card is centred by its margins, not align-items, so a card taller than the window (注册) scrolls from
+   its top instead of being cut off above. */
+.pf-login { flex: 1 1 auto; display: flex; overflow: auto; padding: 24px; background: var(--bg); min-height: 0; }
+.pf-login-card { width: 400px; max-width: 100%; margin: auto; flex: none; display: flex; flex-direction: column; gap: 12px; padding: 26px 28px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); box-sizing: border-box; }
+.pf-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.pf-pair .pf-label { min-width: 0; }
+.pf-pair .field { width: 100%; min-width: 0; box-sizing: border-box; }
+.pf-faint { color: var(--text-faint); font-size: var(--fs-cap); }
+.pf-server-check { margin: -4px 0 0; font-size: var(--fs-cap); }
+.pf-server-check.ok { color: var(--running-text); }
+.pf-server-check.dim { color: var(--text-faint); }
+.pf-server-check.warn { color: var(--attention); overflow-wrap: anywhere; }
+.pf-login-foot { display: flex; justify-content: center; margin-top: -4px; }
 .pf-label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-dim); }
 .pf-label .field { height: var(--ctl-l); font-size: var(--fs-body); }
 .pf-recent { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: -4px; }

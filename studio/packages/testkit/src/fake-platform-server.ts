@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { listenInStudioRange } from "./ports.js";
 
 // A stand-in for the team server's side of AMO 平台 (plans/amo-lan-platform.md, 「第一版的接口约定」), for the platform's
-// tests: the relay's /api/login and /api/logout, and the three platform routes —
+// tests: the relay's /api/health, /api/register (its checks and messages, the invite passphrase when one is given),
+// /api/login and /api/logout, and the three platform routes —
 //   GET /api/platform/channels                → { stable: { <tool>: <version> }, test: { … } }
 //   GET /api/platform/tools/<tool>/<version>  → { tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }
 //   GET /platform/objects/<sha256>            → the bytes (Authorization: Bearer <key>, or ?key=)
@@ -36,13 +37,16 @@ export interface FakePlatformServer {
   revokeKeys(): void;
   /** Every request, as "METHOD /path". */
   requests: string[];
+  /** The accounts, those registered included: name → { password, role }. */
+  members(): Record<string, { password: string; role: string }>;
   close(): Promise<void>;
 }
 
 export const sha256Of = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 
-export async function startFakePlatformServer(options: { users?: Record<string, string> } = {}): Promise<FakePlatformServer> {
-  const users = options.users ?? { 小王: "secret" };
+export async function startFakePlatformServer(options: { users?: Record<string, string>; passphrase?: string; name?: string } = {}): Promise<FakePlatformServer> {
+  // The users given log in as 程序 (what the tests have always seen); people who register keep the role they gave.
+  const members = new Map<string, { password: string; role: string }>(Object.entries(options.users ?? { 小王: "secret" }).map(([n, password]) => [n, { password, role: "程序" }]));
   const keys = new Map<string, string>();
   const objects = new Map<string, Buffer>();
   const manifests = new Map<string, FakePlatformManifest>();
@@ -93,14 +97,31 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
       const url = new URL(req.url ?? "/", "http://localhost");
       const path = url.pathname;
       requests.push(`${req.method} ${path}`);
-      if (req.method === "GET" && path === "/api/health") return send(res, 200, { ok: true, app: "amo-relay", version: "fake" });
+      if (req.method === "GET" && path === "/api/health") return send(res, 200, { app: "amo-relay", version: "fake", name: options.name ?? "AMO 中转", invite: !!options.passphrase, client: null, shell: null });
+      const signIn = (name: string) => {
+        const key = randomBytes(12).toString("base64url");
+        keys.set(key, name);
+        return { name, role: members.get(name)!.role, key };
+      };
+      if (req.method === "POST" && path === "/api/register") {
+        // The relay's order and wording (server.ts, store.register): passphrase, name, password, role, taken.
+        const body = await readBody(req);
+        if (options.passphrase && body.passphrase !== options.passphrase) return fail(res, 401, "unauthorized", "邀请口令不对");
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        if (!name) return fail(res, 400, "bad_request", "名字 不能为空");
+        if (name.length > 32) return fail(res, 400, "bad_request", "名字 太长（最多 32 字）");
+        if (typeof body.password !== "string" || body.password.length < 4) return fail(res, 400, "bad_request", "密码至少 4 位");
+        const role = typeof body.role === "string" ? body.role.trim() : "";
+        if (role.length > 60) return fail(res, 400, "bad_request", "角色 太长（最多 60 字）");
+        if (members.has(name)) return fail(res, 409, "conflict", `名字「${name}」已经有人用了`);
+        members.set(name, { password: body.password, role });
+        return send(res, 200, signIn(name));
+      }
       if (req.method === "POST" && path === "/api/login") {
         const body = await readBody(req);
         const name = typeof body.name === "string" ? body.name.trim() : "";
-        if (!name || users[name] === undefined || users[name] !== body.password) return fail(res, 401, "unauthorized", "名字或密码不对");
-        const key = randomBytes(12).toString("base64url");
-        keys.set(key, name);
-        return send(res, 200, { name, role: "程序", key });
+        if (!name || members.get(name)?.password !== body.password) return fail(res, 401, "unauthorized", "名字或密码不对");
+        return send(res, 200, signIn(name));
       }
       const key = keyOf(req, url);
       if (!key || !keys.has(key)) return fail(res, 401, "unauthorized", "登录已失效，请重新登录");
@@ -145,6 +166,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    members: () => Object.fromEntries([...members].map(([n, m]) => [n, { ...m }])),
     publish(toolId, version, files, o = {}) {
       const list = Object.entries(files).map(([path, content]) => {
         const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");

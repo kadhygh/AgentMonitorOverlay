@@ -4,7 +4,8 @@ import { readJsonFile, updateJsonFile, writeJsonFile } from "./json.js";
 import { accountFile, platformFile, type Env } from "./paths.js";
 
 // The team account, shared by the AMO tools (plans/amo-lan-platform.md, 10-28): the platform logs in to the team
-// server (the relay service's /api/login) and keeps the key in %APPDATA%\AMO\account.json, encrypted for this Windows
+// server (the relay service's /api/login; /api/register for people without an account, since the platform is the only
+// place to log in) and keeps the key in %APPDATA%\AMO\account.json, encrypted for this Windows
 // user. Other tools only read it (readAccount / readAccountInfo) — Studio for later remote features, the relay client
 // once it moves to the platform's login. It is never handed over in environment variables: Studio passes its
 // environment on to the agents' commands.
@@ -31,7 +32,8 @@ export interface AccountOptions {
   fetch?: typeof fetch;
 }
 
-export type AccountErrorCode = "unreachable" | "unauthorized" | "bad_request" | "server" | "not_amo";
+/** `conflict`: registering a name someone already has. */
+export type AccountErrorCode = "unreachable" | "unauthorized" | "bad_request" | "conflict" | "server" | "not_amo";
 
 export class AccountError extends Error {
   constructor(
@@ -100,7 +102,7 @@ async function call<T>(f: typeof fetch, url: string, init: RequestInit): Promise
   const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
   if (!res.ok) {
     const message = typeof body?.message === "string" && body.message ? body.message : `服务器回了 ${res.status}`;
-    throw new AccountError(res.status === 401 || res.status === 403 ? "unauthorized" : res.status === 404 ? "not_amo" : res.status < 500 ? "bad_request" : "server", message);
+    throw new AccountError(res.status === 401 || res.status === 403 ? "unauthorized" : res.status === 404 ? "not_amo" : res.status === 409 ? "conflict" : res.status < 500 ? "bad_request" : "server", message);
   }
   if (!body) throw new AccountError("not_amo", "这个地址上不是 AMO 的团队服务器");
   return body as T;
@@ -119,11 +121,59 @@ export async function login(input: { server: string; name: string; password: str
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: input.name.trim(), password: input.password }),
   });
+  return signedIn(server, r, options);
+}
+
+/** What a login or a registration hands back → the account saved, the server first in the recent list. */
+async function signedIn(server: string, r: { name?: unknown; role?: unknown; key?: unknown }, options: AccountOptions): Promise<Account & { role: string }> {
   if (typeof r.key !== "string" || typeof r.name !== "string") throw new AccountError("not_amo", "这个地址上不是 AMO 的团队服务器");
   const account = { server, name: r.name, key: r.key };
   await saveAccount(account, options);
   rememberServer(server, options);
   return { ...account, role: typeof r.role === "string" ? r.role : "" };
+}
+
+export interface ServerInfo {
+  /** The service's own name (e.g. 「策划组」), when it has one. */
+  name: string | null;
+  /** Registering there takes the invite passphrase. */
+  invite: boolean;
+}
+
+/** Asks a team server about itself (`GET /api/health`, no key): its name and whether registering takes the passphrase. */
+export async function serverInfo(server: string, options: AccountOptions = {}): Promise<ServerInfo> {
+  if (!server.trim()) throw new AccountError("bad_request", "先填服务器地址");
+  const h = await call<{ app?: unknown; name?: unknown; invite?: unknown }>(options.fetch ?? fetch, `${normalizeServer(server)}/api/health`, { method: "GET" });
+  if (h.app !== "amo-relay") throw new AccountError("not_amo", "这个地址上不是 AMO 的团队服务器");
+  return { name: typeof h.name === "string" && h.name ? h.name : null, invite: h.invite === true };
+}
+
+export interface RegisterInput {
+  server: string;
+  name: string;
+  password: string;
+  /** 负责什么 (may be empty): the relay's AI reads it to decide whom to ask. */
+  role?: string;
+  /** The invite passphrase, when the server has one (serverInfo → invite). */
+  passphrase?: string;
+}
+
+/**
+ * Registers on a team server (`POST /api/register {name, password, role, passphrase?}` → `{name, role, key}`, the relay
+ * service's rules: name 1–32 characters, password at least 4) and, as a login does, saves the account and remembers the
+ * server. Throws AccountError with the server's message (名字「…」已经有人用了 → conflict, 邀请口令不对 → unauthorized).
+ */
+export async function register(input: RegisterInput, options: AccountOptions = {}): Promise<Account & { role: string }> {
+  const server = normalizeServer(input.server);
+  if (!input.server.trim()) throw new AccountError("bad_request", "先填服务器地址");
+  if (!input.name.trim()) throw new AccountError("bad_request", "先填名字");
+  const passphrase = input.passphrase ?? "";
+  const r = await call<{ name?: unknown; role?: unknown; key?: unknown }>(options.fetch ?? fetch, `${server}/api/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: input.name.trim(), password: input.password, role: (input.role ?? "").trim(), ...(passphrase ? { passphrase } : {}) }),
+  });
+  return signedIn(server, r, options);
 }
 
 /** Logs out: tells the server to drop the key (best effort, offline is fine) and forgets the account here. */

@@ -72,6 +72,10 @@ export interface PlatformView {
 /** What the page can ask the main process to do (platform:call). */
 export interface PlatformCalls {
   login(server: string, name: string, password: string): Promise<void>;
+  /** Makes an account on the team server and logs in with it; the error comes back to the form (not loginError). */
+  register(input: RegisterForm): Promise<RegisterResult>;
+  /** For the register form: whether the server is there and wants the invite passphrase. */
+  serverInfo(server: string): Promise<ServerCheck>;
   logout(): Promise<void>;
   refresh(): Promise<void>;
   install(tool: string): Promise<void>;
@@ -85,4 +89,19 @@ export interface PlatformCalls {
   dismiss(tool: string): Promise<void>;
 }
 
-export type OpenResult = { ok: true } | { ok: false; reason: "need-studio-dir" | "not-installed" | "failed"; message: string };
+export interface RegisterForm {
+  server: string;
+  name: string;
+  password: string;
+  /** 负责什么, may be empty. */
+  role: string;
+  /** Only when the server wants one. */
+  passphrase?: string;
+}
+
+/** `code` as @amo-studio/account's AccountError: conflict = the name is taken, unauthorized = the passphrase is wrong. */
+export type RegisterResult = { ok: true } | { ok: false; code: string; message: string };
+
+export type ServerCheck = { ok: true; name: string | null; invite: boolean } | { ok: false; message: string };
+
+export type OpenResult ={ ok: true } | { ok: false; reason: "need-studio-dir" | "not-installed" | "failed"; message: string };

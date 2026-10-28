@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
-import { amoHome, amoLocalHome, accountFile, AccountError, clearAccount, dpapi, login, logout, normalizeServer, platformFile, pushRecent, readAccount, readAccountInfo, recentServers, rememberServer, type Protector } from "./index.js";
+import { amoHome, amoLocalHome, accountFile, AccountError, clearAccount, dpapi, login, logout, normalizeServer, platformFile, pushRecent, readAccount, readAccountInfo, recentServers, register, rememberServer, serverInfo, type Protector } from "./index.js";
 
 // A reversible stand-in for DPAPI, so most tests do not start PowerShell.
 const fake: Protector = {
@@ -79,6 +79,50 @@ describe("login and the stored account", () => {
     // Nothing stored: nothing to do.
     await logout({ env: env(), protector: fake });
     clearAccount({ env: env() });
+  });
+});
+
+describe("register", () => {
+  let invited: FakePlatformServer;
+  beforeAll(async () => {
+    invited = await startFakePlatformServer({ users: {}, passphrase: "芝麻开门", name: "策划组" });
+  });
+  afterAll(() => invited.close());
+
+  it("asks the server about itself: its name and whether registering takes the passphrase", async () => {
+    expect(await serverInfo(server.url)).toEqual({ name: "AMO 中转", invite: false });
+    expect(await serverInfo(invited.url.replace("http://", "") + "/")).toEqual({ name: "策划组", invite: true });
+    await expect(serverInfo("127.0.0.1:1")).rejects.toMatchObject({ code: "unreachable" });
+    await expect(serverInfo(" ")).rejects.toMatchObject({ code: "bad_request", message: "先填服务器地址" });
+  });
+
+  it("registers, saves the account as a login does, and the new account logs in", async () => {
+    fresh();
+    const a = await register({ server: server.url.replace("http://", ""), name: " 小李 ", password: "pass1", role: " 策划 · 关卡 " }, { env: env(), protector: fake });
+    expect(a).toMatchObject({ server: server.url, name: "小李", role: "策划 · 关卡" });
+    expect(server.members()["小李"]).toEqual({ password: "pass1", role: "策划 · 关卡" });
+    expect(readAccountInfo({ env: env() })).toEqual({ server: server.url, name: "小李" });
+    expect(await readAccount({ env: env(), protector: fake })).toEqual({ server: server.url, name: "小李", key: a.key });
+    expect(recentServers({ env: env() })).toEqual([server.url]);
+    const res = await fetch(`${server.url}/api/platform/channels`, { headers: { authorization: `Bearer ${a.key}` } });
+    expect(res.status).toBe(200);
+    await logout({ env: env(), protector: fake });
+    expect((await login({ server: server.url, name: "小李", password: "pass1" }, { env: env(), protector: fake })).role).toBe("策划 · 关卡");
+  });
+
+  it("says why it failed in the server's words: name taken, short password, passphrase missing or wrong", async () => {
+    fresh();
+    const o = { env: env(), protector: fake };
+    await expect(register({ server: server.url, name: "小王", password: "whatever" }, o)).rejects.toMatchObject({ code: "conflict", message: "名字「小王」已经有人用了" });
+    await expect(register({ server: server.url, name: "小赵", password: "abc" }, o)).rejects.toMatchObject({ code: "bad_request", message: "密码至少 4 位" });
+    await expect(register({ server: server.url, name: " ", password: "abcd" }, o)).rejects.toMatchObject({ code: "bad_request", message: "先填名字" });
+    await expect(register({ server: invited.url, name: "小赵", password: "abcd" }, o)).rejects.toMatchObject({ code: "unauthorized", message: "邀请口令不对" });
+    await expect(register({ server: invited.url, name: "小赵", password: "abcd", passphrase: "芝麻" }, o)).rejects.toMatchObject({ code: "unauthorized", message: "邀请口令不对" });
+    expect(readAccountInfo({ env: env() })).toBeNull();
+    expect(invited.members()).toEqual({});
+    const a = await register({ server: invited.url, name: "小赵", password: "abcd", passphrase: "芝麻开门" }, o);
+    expect(a).toMatchObject({ server: invited.url, name: "小赵", role: "" });
+    expect(readAccountInfo({ env: env() })).toEqual({ server: invited.url, name: "小赵" });
   });
 });
 
