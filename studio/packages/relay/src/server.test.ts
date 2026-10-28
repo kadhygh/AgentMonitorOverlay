@@ -86,8 +86,9 @@ describe("relay service", () => {
     const get = (p: string) => fetch(`${url}${p}`);
     expect((await (await get("/api/health")).json()).client).toBe("0.1.0+1");
     const landing = await (await get("/")).text();
-    expect(landing).toContain("/downloads/AMO-Relay.zip");
-    expect(landing).toContain("/app/");
+    // 2026-10-28: the page links only AMO 平台; the client's zip and /app/ still answer, unlinked.
+    expect(landing).not.toContain("/downloads/AMO-Relay.zip");
+    expect(landing).not.toContain('href="/app/"');
     expect(await (await get("/app/")).text()).toBe("<p>client</p>");
     expect(await (await get("/client/assets/a.js")).text()).toBe("1");
     expect((await get("/downloads/AMO-Relay.zip")).headers.get("content-disposition")).toContain("attachment");
@@ -146,7 +147,7 @@ describe("relay service", () => {
     const res = await fetch(`${url}/api/platform/channels`, { headers: { authorization: `Bearer ${plannerSettings.key}` } });
     expect(res.status).toBe(404);
     expect((await res.json()).message).toContain("AMO_RELAY_PLATFORM_DIR");
-    expect(await (await fetch(`${url}/`)).text()).not.toContain("AMO 平台");
+    expect(await (await fetch(`${url}/`)).text()).toContain("还没有放 AMO 平台的安装包");
   });
 
   it("pushes a newly published client build and ticks", async () => {

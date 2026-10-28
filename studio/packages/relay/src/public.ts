@@ -91,14 +91,13 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", 
 
 /** The page to send people: download the desktop client, or use it in the browser; and the AMO platform, when it is here. */
 export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null): string {
-  const zips = files.filter((f) => f.name.endsWith(".zip"));
+  // 2026-10-28, the user: everything goes through AMO 平台 — the page offers only its download. The relay client's zip and
+  // the browser client (/app/) are no longer linked; their routes stay (installed clients load /client/ from here).
+  void client;
+  void files;
   const platformLink = platform
     ? `<a class="btn" href="/downloads/AMO-Platform-win.zip">下载 AMO 平台<small>安装和更新团队的 AMO 工具 · ${(platform.size / 1024 / 1024).toFixed(0)} MB</small></a>`
-    : "";
-  const list = zips.length
-    ? zips.map((f) => `<a class="btn" href="/downloads/${encodeURIComponent(f.name)}">下载 Windows 客户端<small>${escapeHtml(f.name)} · ${(f.size / 1024 / 1024).toFixed(0)} MB</small></a>`).join("")
-    : `<p class="muted">还没有放桌面客户端的安装包。</p>`;
-  const web = client ? `<a class="btn alt" href="/app/">直接在浏览器里用<small>不用安装</small></a>` : "";
+    : `<p class="muted">还没有放 AMO 平台的安装包。</p>`;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(service)} · AMO 中转</title>
 <style>
 :root{--bg:#efede8;--panel:#fbfaf7;--ink:#22201c;--muted:#8d877c;--line:#2a2723;--accent:#23436f;--on:#fbfaf7}
@@ -111,15 +110,13 @@ h1{font-size:22px;margin:0 0 4px;font-family:"Noto Serif SC","Songti SC",SimSun,
 .btn.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 small{font-weight:400;opacity:.85}ol{padding-left:20px}code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}
 </style></head><body><main><div class="card">
-<h1>${escapeHtml(service)}</h1><p class="muted">AMO 中转：和团队里的人直接沟通，AI 也能把要确认的问题发给对方。${client ? `当前客户端版本 ${escapeHtml(client.version)}。` : ""}</p>
-${list}
-${web}
+<h1>${escapeHtml(service)}</h1><p class="muted">团队的 AMO 工具（AMO Studio、AMO Reviewer、AMO 便签等）都从 AMO 平台安装和更新。</p>
 ${platformLink}
 <ol class="muted">
-<li>下载后解压到任意文件夹，双击 <code>AMO Relay.exe</code>。</li>
-<li>第一次打开时，服务器地址填 <code id="addr"></code>。</li>
-<li>注册一个名字和密码（团队里名字不能重复），以后直接登录。</li>
-<li>桌面客户端会记住账号密码、在托盘里提醒新消息、一键接入 AI；客户端更新由服务器下发，不用重新下载。</li>
+<li>下载后解压到任意文件夹，双击 <code>AMO Platform.exe</code>。</li>
+<li>登录时服务器地址填 <code id="addr"></code>，用团队服务器的账号登录。</li>
+<li>在「工具」里安装要用的工具；第一次打开 AMO Studio 前，先在「目录」里设好 Studio 数据目录。</li>
+<li>平台会待在托盘里，有新版时在这里更新，正在用的工具不会被打断。</li>
 </ol>
 </div></main><script>document.getElementById("addr").textContent=location.origin</script></body></html>`;
 }
