@@ -96,7 +96,7 @@
 
 新架构开工前，先做一轮只动文档和打包脚本的整理，不改功能代码：
 
-进度（10-28）：第 0、1、2 步已完成；第 5 步已完成（`relay-service.ps1` 在 `packages/relay/README.md` 注明是退路，三个 html 用户让删了）；第 3 步放进「服务器发布」；第 4 步还没做。
+进度（10-28）：第 0、1、2 步已完成；第 5 步已完成（`relay-service.ps1` 在 `packages/relay/README.md` 注明是退路，三个 html 用户让删了）；第 3 步放进「服务器发布」；第 4 步已完成（结果写在第 4 条下面）。
 
 0. **项目说明**（已完成）：根目录新增 `AGENTS.md`（Codex 读）和 `CLAUDE.md`（只有一行 `@AGENTS.md`，Claude 读）。内容是工具和包的对应关系、上面这些架构约束、怎么干活。新会话打开就会自动读到。
 1. **`HANDOFF.md` 瘦身**：现在 319 行，大部分是 10-17 以来按日期堆的改动记录，新会话读起来很重。改成只留「当前状态 + 最近一两周」，更早的记录挪到 `docs/history/handoff-2026-10.md`（git 里本来也有）。
@@ -107,6 +107,7 @@
    把这两部分挪到 `docs/archive/` 和 `plans/done/`，`studio/README.md` 的「开发者文件导航」也跟着改。`design/` 里 10-13 的架构文档标上「已过时的部分」，或者合进一份新的 `design/architecture.md`，把中转、便签、Reviewer、平台都写进去。
 3. **每个工具单独的版本号**：现在所有包都是 0.9.0，`package-portable.mjs` 也只用一个版本号。平台要按工具发布、按工具显示改动说明，所以给每个工具一个版本号和 `CHANGELOG`（或发布时写的 notes）。这一条是第 1 步「服务器发布」的前提，放在那一步里一起做。
 4. **数据位置检查**：确认 Studio、Reviewer、便签在设了对应变量（`AMO_STUDIO_DATA_DIR`、`AMO_REVIEWER_HOME`、`AMO_NOTES_HOME`）时，不往程序文件夹里写任何东西。Studio 的 `amo-studio.json` 现在写在 exe 旁边，平台装的版本要避开它。
+   - **结果（10-28）**：用 `release/` 里 10-24 的三个 portable 包实测（解压到 `%TEMP%mo-studio-sandbox`，设好变量、测试模式、端口 0，各跑一次再关掉，比对程序文件夹前后的文件清单）：三个程序文件夹都**没有任何新增或改动**，`%APPDATA%` 下的 Electron、AMO Studio / Reviewer / Notes、AMO 也没被碰；数据都进了变量指的目录（Studio：studio.db、host.log、codex、common、electron 等；Reviewer：data、electron；便签：electron）。10-24 之后这几处路径代码没改过。代码上也对得上：Studio 设了 `AMO_STUDIO_DATA_DIR` 就不走首次设置，不写 `amo-studio.json`（`app/src/paths.ts`）；Host 的东西全在数据目录下（`host/src/host-process.ts`）；Reviewer、便签不设变量时也默认在 `%APPDATA%`，只有 Studio 不设变量时会用 exe 旁的 `data/` 和 `amo-studio.json`。所以平台装 Studio 时**必须**设 `AMO_STUDIO_DATA_DIR`，另两个设不设都不会写进程序文件夹。没覆盖到的：没开真实会话、没走 DSH、没用附件，但这些都按 Host 的数据目录走。
 5. **顺手清掉**：仓库里没跟踪的 `plans/relay-tasks.html`、`relay-ui-prototype.html`、`token-stats-prototype.html` 由用户决定删还是留；`scripts/relay-service.ps1`（本机跑中转）已经不用了，保留作为退路，在 README 里注明。
 
 暂时不建议动的：

@@ -31,7 +31,8 @@
 
 | 事项 | 状态 |
 |---|---|
-| AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。「开工前先整理」第 0–2 步已做（见下面 10-28 第一条）；第 3 步（每个工具单独的版本号）放进平台第 1 步一起做；第 5 步做完（三个没跟踪的原型 html 按用户的意思删了）；第 4 步（数据位置检查）还没做 |
+| AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。「开工前先整理」第 0–2 步已做（见下面 10-28 第一条）；第 3 步（每个工具单独的版本号）放进平台第 1 步一起做；第 4、5 步也做完了，整理清单只剩第 3 步。下一步是平台第 1 步「服务器发布」 |
+| 远程会话（在我另一台设备上接着用本机会话） | 10-28 只讨论了方案，`plans/remote-session.md`，未开工；开工前要用户定配对方式、B 上卡片放哪、开放多久 |
 | 便签进 Portable 包 | 到发布时再做 |
 | 位置批注的截图 | 用户 10-28 决定先不做，用一段时间再定 |
 | 扩展包 `.amo/packs/` 的实际用法 | 用户暂缓，做到时再说（`plans/maintenance.md`） |
@@ -43,6 +44,8 @@
 - Studio 里 agent 的命令 PATH 去掉了 WindowsApps，用不到应用商店版的 `pwsh`、`python3`、`winget`（本机 `python`、`node`、`git` 不受影响）。
 
 ## 最近的改动（新的在上面）
+
+**2026-10-28 · 数据位置检查**（平台方案「开工前先整理」第 4 步，只查不改代码）：用 `release/` 里 10-24 的三个 portable 包实测（解压到 `%TEMP%mo-studio-sandbox`，设好变量、测试模式、端口 0，各跑一次再关掉，比对程序文件夹前后的文件清单）：三个程序文件夹都**没有任何新增或改动**，`%APPDATA%` 下的 Electron、AMO Studio / Reviewer / Notes、AMO 也没被碰；数据都进了变量指的目录（Studio：studio.db、host.log、codex、common、electron 等；Reviewer：data、electron；便签：electron）。10-24 之后这几处路径代码没改过。代码上也对得上：Studio 设了 `AMO_STUDIO_DATA_DIR` 就不走首次设置，不写 `amo-studio.json`（`app/src/paths.ts`）；Host 的东西全在数据目录下（`host/src/host-process.ts`）；Reviewer、便签不设变量时也默认在 `%APPDATA%`，只有 Studio 不设变量时会用 exe 旁的 `data/` 和 `amo-studio.json`。所以平台装 Studio 时**必须**设 `AMO_STUDIO_DATA_DIR`，另两个设不设都不会写进程序文件夹。没覆盖到的：没开真实会话、没走 DSH、没用附件，但这些都按 Host 的数据目录走。 详细见 `plans/amo-lan-platform.md` 第 4 条。
 
 **2026-10-28 · 整理：HANDOFF 瘦身、旧文档归档**（平台方案「开工前先整理」第 1、2 步，只动文档）：这份文件只留当前状态和 10-26 以来的记录，更早的原样挪到 `docs/history/handoff-2026-10.md`；`docs/` 里 /loop 时期的五份文档挪到 `docs/archive/`，`plans/stage-1…17` 挪到 `plans/done/`；`README.md` 的「开发者文件导航」、代码注释里指向 `plans/stage-*.md` 的路径跟着改；`design/architecture.md` 开头标了哪些部分已过时；`packages/relay/README.md` 注明本机跑中转的脚本只是退路；`plans/` 里三个没跟踪的原型 html（relay-tasks、relay-ui-prototype、token-stats-prototype）用户让删了。全部用 `git mv`，历史还在。
 
