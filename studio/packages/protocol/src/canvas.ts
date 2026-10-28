@@ -22,6 +22,9 @@ export function pruneLinks(doc: CanvasDoc): CanvasDoc {
 
 const finite = (...n: number[]) => n.every((x) => typeof x === "number" && Number.isFinite(x));
 
+/** The largest side a card may be dragged to (2026-10-29): a typo'd document must not make one cover the canvas. */
+export const CANVAS_CARD_MAX = 4000;
+
 /**
  * Returns problems with a canvas document; empty when it may be saved. `taskIds`: the topic's own tasks (archived ones
  * included). A reference card may point at any other task, even one that is gone (it shows as such); a reference to a
@@ -51,6 +54,7 @@ export function validateCanvas(doc: CanvasDoc, taskIds: ReadonlySet<Id>): string
     if (!n.pos || !finite(n.pos.x, n.pos.y)) errors.push(`node ${n.id} has an invalid position`);
     if (n.groupId !== null && !groups.has(n.groupId)) errors.push(`node ${n.id} points at a missing group ${n.groupId}`);
     if (n.color !== undefined && !isCanvasColor(n.color)) errors.push(`node ${n.id} has an unknown colour ${String(n.color)}`);
+    if (n.size !== undefined && (!n.size || !finite(n.size.w, n.size.h) || n.size.w <= 0 || n.size.h <= 0 || n.size.w > CANVAS_CARD_MAX || n.size.h > CANVAS_CARD_MAX)) errors.push(`node ${n.id} has an invalid size`);
     if (n.kind === "task") {
       if (!taskIds.has(n.taskId)) errors.push(`node ${n.id} points at a missing task ${n.taskId}`);
       if (placed.has(n.taskId)) errors.push(`task ${n.taskId} is placed twice`);

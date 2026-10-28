@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode
 import { CALLOUT_DETAIL_MAX, ITEM_CARD, REVIEW_STATUSES, type CanvasCallout, type CanvasItem, type Id, type ReviewStatus, type Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { Markdown } from "../lib/markdown.js";
+import { DeleteButton } from "./DeleteButton.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 
 // 画布审阅 (2026-10-27, plans/review-canvas.md): a review's items as cards, the agents' remarks and questions pinned to
@@ -69,10 +70,13 @@ export function ItemCard({
   onContextMenu(e: ReactMouseEvent): void;
 }) {
   const summary = node.conclusion ? `结论：${plain(node.conclusion)}` : node.body ? plain(node.body) : "";
+  const size = node.size ?? ITEM_CARD;
+  // Dragged to a size (2026-10-29): as many summary lines as fit under the head, the title and the activity line.
+  const lines = node.size ? Math.floor((size.h - ITEM_FIXED - (activity ? ITEM_ACTIVITY : 0)) / ITEM_LINE) : null;
   return (
     <div
       className={`canvas-card canvas-item${selected ? " selected" : ""}`}
-      style={{ left: node.pos.x, top: node.pos.y, width: ITEM_CARD.w, height: ITEM_CARD.h }}
+      style={{ left: node.pos.x, top: node.pos.y, width: size.w, height: size.h }}
       role="button"
       tabIndex={0}
       aria-label={`审阅条目 #${node.num} ${node.title}`}
@@ -96,8 +100,8 @@ export function ItemCard({
       <span className="canvas-card-title" title={node.title}>
         {node.title}
       </span>
-      {summary && (
-        <span className={node.conclusion ? "item-summary is-conclusion" : "item-summary"} title={summary}>
+      {summary && (lines === null || lines > 0) && (
+        <span className={node.conclusion ? "item-summary is-conclusion" : "item-summary"} title={summary} style={lines ? { WebkitLineClamp: lines } : undefined}>
           {summary}
         </span>
       )}
@@ -111,6 +115,13 @@ export function ItemCard({
     </div>
   );
 }
+
+/** A review item's card around its summary: padding, the head and the title with their gaps; the activity line; a summary line. */
+const ITEM_FIXED = 66;
+const ITEM_ACTIVITY = 21;
+const ITEM_LINE = 17.4;
+/** The smallest a review item's card may be dragged to: its head, title and activity still fit. */
+export const ITEM_MIN = { w: 160, h: 88 };
 
 /** Bubbles shown on one card before the rest fold into "+N". */
 const SHOWN_PER_CARD = 2;
@@ -438,9 +449,7 @@ export function ItemDetail({
         就这条展开聊（新会话）
       </button>
       <span className="side-note">新会话开在铺这份审阅的任务里，先读这一条；聊出结论后它会写回这张卡片，主会话的上下文不会被撑大。</span>
-      <button type="button" className="btn-ghost small dim" onClick={onDelete}>
-        删除这条
-      </button>
+      <DeleteButton onClick={onDelete}>删除这条</DeleteButton>
     </div>
   );
 }

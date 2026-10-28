@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type CanvasItem, type Id, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
-import { deleteGroup, updateGroup } from "./geometry.js";
+import { updateGroup } from "./geometry.js";
+import { DeleteButton } from "./DeleteButton.js";
 
 export type CanvasSelection = { kind: "node"; id: Id } | { kind: "group"; id: Id } | null;
 export type SidebarTab = "todo" | "detail" | "talk" | "docs" | "marks" | "agent";
@@ -21,6 +22,8 @@ interface CanvasSidebarProps {
   /** A change made on the canvas as it is when it lands (typed text saved late must not undo a move made meanwhile). */
   onEdit(apply: (doc: CanvasDoc) => CanvasDoc): void;
   onClearSelection(): void;
+  /** 删除分组…: asks first whether its cards go too (an empty group goes at once). */
+  onDeleteGroup(groupId: Id): void;
   onOpenTask(taskId: Id): void;
   /** Write a task's description (the dialog). */
   onDescribe?(taskId: Id): void;
@@ -70,7 +73,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   );
 }
 
-function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, onDescribe, newId, renderItem }: CanvasSidebarProps) {
+function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onDeleteGroup, onOpenTask, onDescribe, newId, renderItem }: CanvasSidebarProps) {
   if (!selection) return <span className="anno-empty">在画布上点一个任务、便签，或点分组的标题栏。</span>;
 
   if (selection.kind === "group") {
@@ -103,16 +106,9 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
           </select>
         </label>
         <span className="side-note">{doc.nodes.filter((n) => n.groupId === group.id).length} 张卡片在组内</span>
-        <button
-          type="button"
-          className="btn-ghost small dim"
-          onClick={() => {
-            onChange(deleteGroup(doc, group.id));
-            onClearSelection();
-          }}
-        >
-          删除分组（保留卡片）
-        </button>
+        <DeleteButton title="删除分组：可以选卡片留下还是一起删" onClick={() => onDeleteGroup(group.id)} testId="side-delete-group">
+          删除分组…
+        </DeleteButton>
       </div>
     );
   }
@@ -133,16 +129,14 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
             onEdit((d) => (d.nodes.some((n) => n.id === node.id && n.kind === "note" && n.text !== text) ? { ...d, nodes: d.nodes.map((n) => (n.id === node.id ? { ...n, text } : n)) } : d))
           }
         />
-        <button
-          type="button"
-          className="btn-ghost small dim"
+        <DeleteButton
           onClick={() => {
             onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
             onClearSelection();
           }}
         >
           删除便签
-        </button>
+        </DeleteButton>
       </div>
     );
   }
@@ -169,16 +163,14 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
             打开任务
           </button>
         )}
-        <button
-          type="button"
-          className="btn-ghost small dim"
+        <DeleteButton
           onClick={() => {
             onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
             onClearSelection();
           }}
         >
           删除引用卡片（任务不变）
-        </button>
+        </DeleteButton>
       </div>
     );
   }
@@ -196,9 +188,8 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
         <button type="button" className="btn-ghost small" onClick={() => onOpenTask(archived.id)}>
           打开任务（只读）
         </button>
-        <button
-          type="button"
-          className="btn-ghost small dim"
+        <DeleteButton
+          icon="off"
           title="只拿掉卡片：任务仍是归档状态"
           onClick={() => {
             onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
@@ -206,7 +197,7 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
           }}
         >
           从画布上拿掉
-        </button>
+        </DeleteButton>
       </div>
     );
   }
@@ -228,9 +219,8 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
       <button type="button" className="btn-ghost small" onClick={() => onOpenTask(task.id)}>
         打开任务
       </button>
-      <button
-        type="button"
-        className="btn-ghost small dim"
+      <DeleteButton
+        icon="off"
         title="只拿掉卡片：任务仍在专题里，依赖也保留；在任务页可以再放回来"
         onClick={() => {
           onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
@@ -238,7 +228,7 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
         }}
       >
         从画布上拿掉（任务不变）
-      </button>
+      </DeleteButton>
       <span className="side-subheading">前置任务</span>
       {before.length === 0 && <span className="side-note">没有前置任务。</span>}
       {before.map((e) => (

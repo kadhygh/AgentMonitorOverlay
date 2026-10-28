@@ -400,6 +400,11 @@ export interface Annotation {
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Point { x: number; y: number }
+/**
+ * A card's size when the person dragged it to one (2026-10-29); absent, the card has its kind's own size (a note grows
+ * with its text).
+ */
+export interface Size { w: number; h: number }
 
 /** A topic's infinite canvas. Coordinates are presentation only; structure lives in groups, nodes and edges. */
 export interface CanvasDoc {
@@ -518,9 +523,9 @@ export const isCanvasColor = (v: unknown): v is CanvasColor => CANVAS_COLORS.som
  * topic or of none; the task keeps its own project and topic, and deleting the card never changes it.
  */
 export type CanvasNode =
-  | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor }
-  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point; color?: CanvasColor }
-  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor }
+  | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point; size?: Size; color?: CanvasColor }
+  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point; size?: Size; color?: CanvasColor }
+  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point; size?: Size; color?: CanvasColor }
   | CanvasItem;
 
 /** 审阅条目的状态 (画布审阅, 2026-10-27). */
@@ -558,6 +563,7 @@ export interface CanvasItem {
   threads?: Id[];
   groupId: Id | null;
   pos: Point;
+  size?: Size;
   color?: CanvasColor;
 }
 

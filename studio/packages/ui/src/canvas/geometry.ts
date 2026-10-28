@@ -1,4 +1,4 @@
-import type { CanvasColor, CanvasDoc, CanvasGroup, CanvasLink, CanvasNode, CanvasSide, Id, Point, Rect } from "@amo-studio/protocol";
+import { pruneLinks, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasLink, type CanvasNode, type CanvasSide, type Id, type Point, type Rect } from "@amo-studio/protocol";
 
 // Pure canvas edits used by the canvas page. Membership is structural (node.groupId); positions follow it.
 
@@ -97,10 +97,32 @@ export function outOfGroup(doc: CanvasDoc, nodeId: Id, size: { w: number; h: num
   return { ...doc, nodes: doc.nodes.map((n) => (n.id === nodeId ? { ...n, pos, groupId: null } : n)) };
 }
 
-/** Removes a group with its notes and reference cards; its tasks' cards stay, ungrouped (a task is not the canvas's to delete). */
-export function deleteGroupWithContents(doc: CanvasDoc, groupId: Id): CanvasDoc {
-  const gone = (n: CanvasNode) => n.groupId === groupId && n.kind !== "task";
-  return deleteGroup({ ...doc, nodes: doc.nodes.filter((n) => !gone(n)) }, groupId);
+/** What a group holds, by kind: what deleting it with its cards would take (the confirm says it in words). */
+export function groupContents(doc: CanvasDoc, groupId: Id): { tasks: number; notes: number; refs: number; items: number; total: number } {
+  const inside = doc.nodes.filter((n) => n.groupId === groupId);
+  const count = (kind: CanvasNode["kind"]) => inside.filter((n) => n.kind === kind).length;
+  return { tasks: count("task"), notes: count("note"), refs: count("ref"), items: count("item"), total: inside.length };
+}
+
+/**
+ * Removes a group with every card in it (2026-10-29, 「同时删除组里的卡片」): notes, reference cards and review items
+ * go; a task's card only leaves the canvas, as 「从画布上拿掉」 does — the task, and its dependencies, stay (a task is
+ * not the canvas's to delete). Lines to the cards that went go with them.
+ */
+export function deleteGroupAndCards(doc: CanvasDoc, groupId: Id): CanvasDoc {
+  return pruneLinks(deleteGroup({ ...doc, nodes: doc.nodes.filter((n) => n.groupId !== groupId) }, groupId));
+}
+
+/** A card dragged to a size (its corner handle); `null` gives it back its kind's own size. */
+export function resizeNode(doc: CanvasDoc, nodeId: Id, size: { w: number; h: number } | null): CanvasDoc {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+      const { size: _old, ...rest } = n;
+      return (size ? { ...rest, size: { w: Math.round(size.w), h: Math.round(size.h) } } : rest) as CanvasNode;
+    }),
+  };
 }
 
 /** A copy of a note beside it (in the same group when it fits there). */

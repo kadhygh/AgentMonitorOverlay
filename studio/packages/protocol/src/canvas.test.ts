@@ -50,6 +50,12 @@ describe("validateCanvas", () => {
     const cyclic = doc({ edges: [...doc().edges, { id: "e2", kind: "depends", from: "task-1", to: "task-2" }] });
     expect(validateCanvas(cyclic, TASKS).join()).toMatch(/cycle/);
   });
+
+  it("keeps the size a card was dragged to, and refuses a broken one (2026-10-29)", () => {
+    const sized = (size: unknown) => doc({ nodes: doc().nodes.map((n) => (n.id === "n2" ? ({ ...n, size } as typeof n) : n)) });
+    expect(validateCanvas(sized({ w: 260, h: 140 }), TASKS)).toEqual([]);
+    for (const bad of [{ w: 0, h: 50 }, { w: 100, h: Number.NaN }, { w: 100 }, null, { w: 100, h: 99999 }]) expect(validateCanvas(sized(bad), TASKS).join()).toMatch(/n2 has an invalid size/);
+  });
 });
 
 describe("reference cards", () => {

@@ -75,7 +75,8 @@ test("a canvas group is removed from its title bar or with Delete; its cards sta
   });
   await expect(page.getByTestId("canvas-group")).toHaveCount(2);
 
-  await page.getByRole("button", { name: "删除分组 一组（保留卡片）" }).click();
+  await page.getByRole("button", { name: "删除分组 一组" }).click();
+  await page.getByTestId("delete-group-confirm").getByTestId("confirm-action").click(); // unticked: the card stays
   await expect(page.getByTestId("canvas-group")).toHaveCount(1);
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);
   await expect.poll(async () => (await canvas()).nodes.every((n) => n.groupId === null)).toBe(true);

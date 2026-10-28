@@ -2,16 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 import { CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, ITEM_CARD, REVIEW_STATUSES, workspacesActivity, wouldCycle, type CanvasCallout, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasItem, type CanvasLink, type CanvasNode, type CanvasSide, type Id, type Point, type ModelProfile, type ReviewStatus, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError } from "../host/client.js";
 import { useCallouts } from "./useCallouts.js";
-import { CalloutDialog, CalloutLayer, calloutFlags, ItemCard, ItemDetail, itemActivity, TalkTab } from "./review.js";
+import { CalloutDialog, CalloutLayer, calloutFlags, ItemCard, ItemDetail, itemActivity, ITEM_MIN, TalkTab } from "./review.js";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "../planning/TodoTab.js";
 import { useFeature } from "../lib/features.js";
 import type { HostLink } from "../host/client.js";
-import { addGroup, addLink, arrowBetween, contentBounds, deleteGroup, deleteGroupWithContents, duplicateNote, gridStyle, GROUP_HEADER, linkCurve, moveGroup, moveNode, nearestSide, outOfGroup, removeEdge, removeLink, resizeGroup, reverseEdge, reverseLink, setColor, setLinkLabel, sidePoint, updateGroup } from "./geometry.js";
+import { addGroup, addLink, arrowBetween, contentBounds, deleteGroup, deleteGroupAndCards, duplicateNote, gridStyle, GROUP_HEADER, groupContents, linkCurve, moveGroup, moveNode, nearestSide, outOfGroup, removeEdge, removeLink, resizeGroup, resizeNode, reverseEdge, reverseLink, setColor, setLinkLabel, sidePoint, updateGroup } from "./geometry.js";
 import { useCanvas } from "./useCanvas.js";
 import { RefPicker, type RefChoice } from "./RefPicker.js";
-import { CARD_H, CARD_W, cardHeight, NOTE_H, NOTE_W, NoteCard, RefCard, TaskCard } from "./cards.js";
+import { CARD_H, CARD_MIN, CARD_W, cardHeight, NOTE_H, NOTE_MIN, NOTE_W, NoteCard, RefCard, TaskCard } from "./cards.js";
+import { DeleteGroupDialog } from "./DeleteGroupDialog.js";
 import { CanvasMenu, item, SEP, type MenuEntry } from "./CanvasMenu.js";
 import { DescriptionDialog } from "../task/DescriptionDialog.js";
 import { DocsTab } from "./DocsTab.js";
@@ -37,6 +38,8 @@ type Drag =
   | { kind: "node"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
   | { kind: "group-move"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
   | { kind: "group-resize"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
+  /** A card's bottom-right corner (2026-10-29), from the size it had when the drag began. */
+  | { kind: "node-resize"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean; w: number; h: number }
   /** 连线 being drawn from a card's side handle (2026-10-19). */
   | { kind: "connect"; from: Id; side: CanvasSide };
 
@@ -157,23 +160,37 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   // The topic's archived tasks keep their cards, greyed (2026-10-22); a task that left the topic does not.
   const cardTaskById = new Map([...allTasks.filter((t) => t.archivedAt && t.topicId === topic.id), ...tasks].map((t) => [t.id, t]));
   const anyTaskById = new Map(allTasks.map((t) => [t.id, t]));
-  const nodeSize = (n: CanvasNode) => (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : n.kind === "item" ? ITEM_CARD : { w: CARD_W, h: cardHeight(anyTaskById.get(n.taskId)) });
+  const nodeSize = (n: CanvasNode) => n.size ?? (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : n.kind === "item" ? ITEM_CARD : { w: CARD_W, h: cardHeight(anyTaskById.get(n.taskId)) });
+  const minSize = (n: CanvasNode) => (n.kind === "note" ? NOTE_MIN : n.kind === "item" ? ITEM_MIN : CARD_MIN);
 
-  // Delete / Backspace removes the selected group (its cards stay), note or reference card (never the task itself),
-  // unless typing somewhere. Escape leaves 连依赖.
+  // 删除分组 (2026-10-29): a group with cards asks first whether they go too; an empty one goes at once.
+  const [deletingGroup, setDeletingGroup] = useState<Id | null>(null);
+  const askDeleteGroup = (groupId: Id) => {
+    const cur = latestDoc.current;
+    if (!cur) return;
+    if (groupContents(cur, groupId).total > 0) return setDeletingGroup(groupId);
+    persist(deleteGroup(cur, groupId));
+    setSelectionState((s) => (s?.kind === "group" && s.id === groupId ? null : s));
+  };
+  // The group went meanwhile (deleted elsewhere): nothing left to ask about.
+  useEffect(() => {
+    if (deletingGroup && doc && !doc.groups.some((g) => g.id === deletingGroup)) setDeletingGroup(null);
+  }, [deletingGroup, doc]);
+
+  // Delete / Backspace removes the selected group (asking about its cards), note or reference card (never the task
+  // itself), unless typing somewhere. Escape leaves 连依赖.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && linkFrom) {
         setLinkFrom(null);
         return;
       }
-      if ((e.key !== "Delete" && e.key !== "Backspace") || !doc || !selection) return;
+      if ((e.key !== "Delete" && e.key !== "Backspace") || !doc || !selection || deletingGroup) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
       if (selection.kind === "group") {
         e.preventDefault();
-        persist(deleteGroup(doc, selection.id));
-        setSelectionState(null);
+        askDeleteGroup(selection.id);
       } else if (doc.nodes.some((n) => n.id === selection.id && (n.kind === "note" || n.kind === "ref" || n.kind === "item"))) {
         e.preventDefault();
         persist({ ...doc, nodes: doc.nodes.filter((n) => n.id !== selection.id) });
@@ -182,7 +199,8 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [doc, selection, persist, linkFrom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- askDeleteGroup reads the latest document itself
+  }, [doc, selection, persist, linkFrom, deletingGroup]);
 
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     setView((v) => {
@@ -264,6 +282,10 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         setPreview(moveNode(drag.base, drag.id, { x: node.pos.x + dx, y: node.pos.y + dy }, nodeSize(node)));
       } else if (drag.kind === "group-move") {
         setPreview(moveGroup(drag.base, drag.id, dx, dy));
+      } else if (drag.kind === "node-resize") {
+        // The card stays where it is (and in its group); only its size follows the corner, down to its kind's least.
+        const min = minSize(drag.base.nodes.find((n) => n.id === drag.id)!);
+        setPreview(resizeNode(drag.base, drag.id, { w: Math.max(min.w, drag.w + dx), h: Math.max(min.h, drag.h + dy) }));
       } else {
         const g = drag.base.groups.find((x) => x.id === drag.id)!;
         setPreview(resizeGroup(drag.base, drag.id, g.rect.w + dx, g.rect.h + dy));
@@ -311,11 +333,38 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     setDrag({ kind: "connect", from: nodeId, side });
     setDrawing({ from: nodeId, side, at: worldAt(e.clientX, e.clientY) });
   };
+  /**
+   * A card's size (2026-10-29): dragged from its bottom-right corner (the four side handles draw lines, so the corner is
+   * free), kept once let go; a double-click there gives the card back its own size.
+   */
+  const startResize = (e: ReactMouseEvent, nodeId: Id) => {
+    if (e.button !== 0 || !doc) return;
+    const node = doc.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    setLinkFrom(null);
+    setSelection({ kind: "node", id: nodeId });
+    const { w, h } = rectOf(node);
+    setDrag({ kind: "node-resize", id: nodeId, sx: e.clientX, sy: e.clientY, base: doc, moved: false, w, h });
+  };
   const handlesOf = (nodeId: Id) => (
     <>
       {CANVAS_SIDES.map((side) => (
         <span key={side} className="canvas-handle" data-side={side} title="拖到另一张卡片上，连一条线" onMouseDown={(e) => startConnect(e, nodeId, side)} onDoubleClick={(e) => e.stopPropagation()} data-testid="canvas-handle" />
       ))}
+      <span
+        className="canvas-card-resize"
+        aria-label="调整卡片大小"
+        title="拖动调整卡片大小；双击恢复原来的大小"
+        onMouseDown={(e) => startResize(e, nodeId)}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          edit((d) => (d.nodes.find((n) => n.id === nodeId)?.size ? resizeNode(d, nodeId, null) : d));
+        }}
+        data-testid="canvas-card-resize"
+      />
     </>
   );
   const saveLabel = (linkId: Id, text: string) => {
@@ -567,8 +616,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
       item("改名", () => setRenaming(g.id)),
       item("居中显示", () => centreOf(g.rect)),
       SEP,
-      item("解散分组（保留卡片）", () => edit((d) => deleteGroup(d, g.id))),
-      item("删除分组和里面的便签、引用", () => edit((d) => deleteGroupWithContents(d, g.id)), { danger: true, hint: "任务卡片留在画布上，任务不受影响" }),
+      item("删除分组…", () => askDeleteGroup(g.id), { danger: true, hint: "可以选卡片留在原处，还是一起删（任务卡片只从画布上拿掉，任务不删）", testId: "menu-delete-group" }),
     ]);
   };
 
@@ -593,7 +641,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   // Whether each bound project is free (design/scheduler.md): the scheduler only proposes work for free ones.
   const activity = workspacesActivity(workspaces, sessions);
   const cardOf = new Map(
-    (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, w: CARD_W, h: cardHeight(cardTaskById.get((n as { taskId: Id }).taskId)) }]),
+    (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, ...(n.size ?? { w: CARD_W, h: cardHeight(cardTaskById.get((n as { taskId: Id }).taskId)) }) }]),
   );
   const describedTask = describing ? anyTaskById.get(describing) : undefined;
 
@@ -679,15 +727,11 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 )}
                 <button
                   type="button"
-                  className="group-remove"
-                  aria-label={`删除分组 ${g.title}（保留卡片）`}
-                  title="删除分组（卡片留在画布上）"
+                  className="group-remove soft-danger"
+                  aria-label={`删除分组 ${g.title}`}
+                  title="删除分组（会问卡片留下还是一起删）"
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    if (!doc) return;
-                    persist(deleteGroup(doc, g.id));
-                    if (selection?.kind === "group" && selection.id === g.id) setSelection(null);
-                  }}
+                  onClick={() => askDeleteGroup(g.id)}
                   data-testid="group-remove"
                 >
                   ×
@@ -950,6 +994,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           onChange={persist}
           onEdit={edit}
           onClearSelection={() => setSelectionState(null)}
+          onDeleteGroup={askDeleteGroup}
           onOpenTask={onOpenTask}
           onDescribe={(taskId) => setDescribing(taskId)}
           newId={newCanvasId}
@@ -978,6 +1023,23 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
       </div>
       {menu && <CanvasMenu x={menu.x} y={menu.y} label={menu.label} entries={menu.entries} onClose={closeMenu} />}
       {describedTask && <DescriptionDialog link={link} task={describedTask} onClose={() => setDescribing(null)} />}
+      {deletingGroup && doc?.groups.some((g) => g.id === deletingGroup) && (
+        <DeleteGroupDialog
+          key={deletingGroup}
+          doc={doc}
+          group={doc.groups.find((g) => g.id === deletingGroup)!}
+          onCancel={() => setDeletingGroup(null)}
+          onConfirm={(withCards) => {
+            const id = deletingGroup;
+            setDeletingGroup(null);
+            // Review items that go take the bubbles still out on them, as 删除条目 does.
+            const goneItems = withCards ? new Set(doc.nodes.filter((n) => n.groupId === id && n.kind === "item").map((n) => n.id)) : new Set<Id>();
+            edit((d) => (withCards ? deleteGroupAndCards(d, id) : deleteGroup(d, id)));
+            for (const c of callouts) if (goneItems.has(c.target) && c.state !== "closed") closeCallout(c);
+            setSelectionState((s) => (s && (s.kind === "group" ? s.id === id : withCards && doc.nodes.some((n) => n.id === s.id && n.groupId === id)) ? null : s));
+          }}
+        />
+      )}
       {shownCallout && (
         <CalloutDialog
           key={shownCallout.id}

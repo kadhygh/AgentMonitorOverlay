@@ -15,6 +15,20 @@ export const NOTE_H = 90;
 /** How tall a task's card is (edges and placement go by it). */
 export const cardHeight = (task: Task | undefined) => (task?.description ? CARD_H_DESC : CARD_H);
 
+/**
+ * The smallest a card may be dragged to (2026-10-29): a task or reference card keeps its title and status line (the
+ * description gives way first), a note at least two lines.
+ */
+export const CARD_MIN = { w: 140, h: CARD_H };
+export const NOTE_MIN = { w: 120, h: 56 };
+/** A description line on a task or reference card; the card's first CARD_H are its title and status line. */
+const DESC_LINE = 17;
+/** A note's line when it has a size (its text is cut to the lines that fit, with an ellipsis). */
+const NOTE_LINE = 18;
+
+/** How many description lines fit a card dragged to `h` (2 at the card's own size); 0 hides the description. */
+export const descLines = (h: number) => Math.max(0, Math.floor((h - CARD_H) / DESC_LINE));
+
 interface CardEvents {
   selected: boolean;
   /** 画布审阅: the card has an open question or remark on it (highlighted). */
@@ -33,10 +47,12 @@ export function TaskCard({ node, task, sessions, workspaces, selected, flag, lin
   const where = taskWhere(task, workspaces);
   // An archived task keeps its card (2026-10-22): greyed, marked 已归档, so its links and dependencies still make sense.
   const archived = !!task.archivedAt;
+  const size = node.size ?? { w: CARD_W, h: cardHeight(task) };
+  const lines = node.size ? descLines(size.h) : 2;
   return (
     <div
       className={`canvas-card${archived ? " is-archived" : ""}${selected ? " selected" : ""}${linking ? " link-target" : ""}`}
-      style={{ left: node.pos.x, top: node.pos.y, width: CARD_W, height: cardHeight(task) }}
+      style={{ left: node.pos.x, top: node.pos.y, width: size.w, height: size.h }}
       role="button"
       tabIndex={0}
       aria-label={task.title || "未命名任务"}
@@ -74,8 +90,8 @@ export function TaskCard({ node, task, sessions, workspaces, selected, flag, lin
           </>
         )}
       </span>
-      {task.description && (
-        <span className="canvas-card-desc" title={task.description} data-testid="canvas-card-desc">
+      {task.description && lines > 0 && (
+        <span className="canvas-card-desc" title={task.description} style={lines !== 2 ? { WebkitLineClamp: lines } : undefined} data-testid="canvas-card-desc">
           {task.description}
         </span>
       )}
@@ -90,10 +106,12 @@ export function RefCard({ node, target, topics, sessions, workspaces, selected, 
   const refLook = refStatus ? SESSION_LOOK[refStatus] : null;
   const home = target ? `${topics.find((t) => t.id === target.topicId)?.title ?? "不在专题里"} / ${taskWhere(target, workspaces)}` : "";
   const described = !gone && target?.description;
+  const size = node.size ?? { w: CARD_W, h: described ? CARD_H_DESC : CARD_H };
+  const lines = node.size ? descLines(size.h) : 2;
   return (
     <div
       className={`canvas-card canvas-ref${gone ? " gone" : ""}${selected ? " selected" : ""}`}
-      style={{ left: node.pos.x, top: node.pos.y, width: CARD_W, height: described ? CARD_H_DESC : CARD_H }}
+      style={{ left: node.pos.x, top: node.pos.y, width: size.w, height: size.h }}
       role="button"
       tabIndex={0}
       aria-label={`引用 ${target?.title || "未命名任务"}`}
@@ -117,8 +135,8 @@ export function RefCard({ node, target, topics, sessions, workspaces, selected, 
         {!gone && <span style={{ color: refLook?.text ?? "var(--text-dim)" }}>{refLook?.label ?? "未开始"}</span>}
         <span className="ref-home">{gone ? "可以删掉这张卡片" : `· ${home}`}</span>
       </span>
-      {described && (
-        <span className="canvas-card-desc" title={target.description}>
+      {described && lines > 0 && (
+        <span className="canvas-card-desc" title={target.description} style={lines !== 2 ? { WebkitLineClamp: lines } : undefined}>
           {target.description}
         </span>
       )}
@@ -128,10 +146,13 @@ export function RefCard({ node, target, topics, sessions, workspaces, selected, 
 }
 
 export function NoteCard({ node, selected, flag, handles, onMouseDown, onContextMenu, onEdit }: CardEvents & { node: Extract<CanvasNode, { kind: "note" }>; onEdit(): void }) {
+  // Its own size grows with the text; dragged to a size (2026-10-29), the text is cut to the lines that fit.
+  const size = node.size;
+  const lines = size ? Math.max(1, Math.floor((size.h - 20) / NOTE_LINE)) : null;
   return (
     <div
-      className={selected ? "canvas-note selected" : "canvas-note"}
-      style={{ left: node.pos.x, top: node.pos.y, width: NOTE_W, minHeight: NOTE_H }}
+      className={`canvas-note${size ? " is-sized" : ""}${selected ? " selected" : ""}`}
+      style={size ? { left: node.pos.x, top: node.pos.y, width: size.w, height: size.h } : { left: node.pos.x, top: node.pos.y, width: NOTE_W, minHeight: NOTE_H }}
       data-testid="canvas-note"
       data-node-id={node.id}
       data-group-id={node.groupId ?? ""}
@@ -141,7 +162,13 @@ export function NoteCard({ node, selected, flag, handles, onMouseDown, onContext
       onContextMenu={onContextMenu}
       onDoubleClick={onEdit}
     >
-      {node.text || <span className="dim">空便签，双击或在侧栏编辑</span>}
+      {lines ? (
+        <span className="canvas-note-text" style={{ WebkitLineClamp: lines }} title={node.text || undefined}>
+          {node.text || <span className="dim">空便签，双击或在侧栏编辑</span>}
+        </span>
+      ) : (
+        node.text || <span className="dim">空便签，双击或在侧栏编辑</span>
+      )}
       {handles}
     </div>
   );

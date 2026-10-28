@@ -597,10 +597,20 @@ describe("Host API", () => {
     const cleared = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, { ...saved, groups: [], nodes: [{ ...saved.nodes[0]!, groupId: null }] });
     expect(cleared.nodes.map((n) => n.id)).toEqual(["n1"]);
     await ok("POST", `/api/tasks/${task.id}/unarchive`);
+    // Sizes the person dragged a group and a card to (2026-10-29) are kept, across a restart too; a broken one is refused.
+    const sized = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, {
+      ...cleared,
+      groups: [{ id: "g2", title: "大一点", workspaceId: null, rect: { x: 0, y: 0, w: 640, h: 420 } }],
+      nodes: [{ ...cleared.nodes[0]!, groupId: "g2", size: { w: 300, h: 140 } }],
+    });
+    expect((await api("PUT", `/api/topics/${topic.id}/canvas`, { ...sized, nodes: [{ ...sized.nodes[0]!, size: { w: -1, h: 10 } }] })).status).toBe(400);
 
     await shutdown();
     await boot();
-    expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(2);
+    const reopened = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+    expect(reopened.version).toBe(3);
+    expect(reopened.groups[0]!.rect).toEqual({ x: 0, y: 0, w: 640, h: 420 });
+    expect(reopened.nodes[0]).toMatchObject({ id: "n1", size: { w: 300, h: 140 } });
   });
 
   it("shows or hides a task on its topic's canvas; hidden tasks are listed as not placed", async () => {

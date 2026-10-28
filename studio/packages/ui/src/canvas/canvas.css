@@ -224,3 +224,27 @@
 .canvas-mini-bar .is-on { border-color: var(--primary); color: var(--text); }
 .canvas-mini .canvas-page { flex: 1; min-height: 0; }
 .canvas-mini .canvas-row .canvas-viewport { margin: 6px; }
+
+/* 卡片大小 (2026-10-29): every card's bottom-right corner drags its size (shown on hover and on the selected card, like
+   the 连线 handles); a card made small cuts its text to what fits — the title and status line with an ellipsis, the
+   description and a note's text to the lines that fit. */
+.canvas-card-resize {
+  position: absolute; z-index: 3; right: 1px; bottom: 1px; width: 12px; height: 12px; box-sizing: border-box; cursor: nwse-resize; opacity: 0;
+  border-right: 2px solid var(--resize); border-bottom: 2px solid var(--resize); border-radius: 0 0 6px 0; transition: opacity 0.12s;
+}
+.canvas-card:hover .canvas-card-resize, .canvas-note:hover .canvas-card-resize, .canvas-card.selected .canvas-card-resize, .canvas-note.selected .canvas-card-resize { opacity: 1; }
+.canvas-card-resize:hover { border-color: var(--primary); }
+.canvas-card-title, .canvas-card-meta, .canvas-card-desc, .item-head { flex: none; min-width: 0; }
+.canvas-card-meta > span { flex: none; }
+.canvas-card-meta > span:last-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.canvas-card-desc { overflow-wrap: anywhere; }
+.canvas-note.is-sized { display: flex; flex-direction: column; }
+.canvas-note-text { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; line-height: 18px; overflow-wrap: anywhere; }
+
+/* 删除 (2026-10-29, the user: coloured like 归档): the group's × has its glyph in deep red and goes red-tinted under the
+   pointer, with the tokens of 归档任务 (soft-danger); the sidebar's 删除 buttons are soft-danger buttons with a glyph. */
+.canvas-group-bar .group-remove.soft-danger { color: var(--danger-text); }
+.canvas-group-bar .group-remove.soft-danger:hover { background: var(--danger-soft-bg); color: var(--danger-soft-text); box-shadow: inset 0 0 0 1px var(--danger-soft-border); }
+.canvas-side .canvas-delete { justify-content: center; }
+.canvas-delete-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
+.canvas-delete-check input { margin: 0; }

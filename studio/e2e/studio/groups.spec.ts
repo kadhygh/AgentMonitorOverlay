@@ -78,7 +78,10 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   await expect.poll(async () => (await canvas()).nodes[0]!.groupId).toBe(group.id);
   const kept = (await canvas()).nodes[0]!.pos;
   await page.getByTestId("canvas-group").locator(".canvas-group-bar").click();
-  await page.getByRole("group", { name: "分组设置" }).getByRole("button", { name: "删除分组（保留卡片）" }).click();
+  await page.getByRole("group", { name: "分组设置" }).getByRole("button", { name: "删除分组…" }).click();
+  // Asked whether its card goes too (2026-10-29); left unticked, the card stays.
+  await expect(page.getByTestId("delete-group-cards")).not.toBeChecked();
+  await page.getByTestId("delete-group-confirm").getByTestId("confirm-action").click();
   await expect.poll(async () => (await canvas()).groups.length).toBe(0);
   expect((await canvas()).nodes[0]).toMatchObject({ groupId: null, pos: kept });
   await screenshot(studio.app, "stage-3", "S3-03-groups", page);

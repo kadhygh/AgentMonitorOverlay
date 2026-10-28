@@ -101,7 +101,7 @@ test("canvas right-click: descriptions, colour marks, 连依赖, notes and group
   await menu.getByRole("menuitem", { name: "删除便签" }).click();
   await expect(notes).toHaveCount(1);
 
-  // A group from the empty canvas; marked blue; deleted with what is inside it (its notes), tasks untouched.
+  // A group from the empty canvas; marked blue; deleted from its menu — empty, it goes at once (no question), tasks untouched.
   await page.mouse.click(vbox.x + vbox.width / 2, vbox.y + 160, { button: "right" });
   await menu.getByTestId("menu-new-group").click();
   const group = page.getByTestId("canvas-group");
@@ -111,7 +111,8 @@ test("canvas right-click: descriptions, colour marks, 连依赖, notes and group
   await menu.getByRole("menuitemradio", { name: "标蓝色" }).click();
   await expect(group).toHaveAttribute("data-color", "blue");
   await group.locator(".canvas-group-bar").click({ button: "right" });
-  await menu.getByRole("menuitem", { name: "删除分组和里面的便签、引用" }).click();
+  await menu.getByTestId("menu-delete-group").click();
+  await expect(page.getByTestId("delete-group-confirm")).toHaveCount(0);
   await expect(group).toHaveCount(0);
   await expect(page.getByTestId("canvas-card")).toHaveCount(2);
 
