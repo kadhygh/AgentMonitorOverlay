@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 24 464 464" width="512" height="512">
+  <!-- AMO 便签 (2026-10-28, the user's pick 方向一「取景框」): the family's ink corners, the tool's colour and glyph in the
+       middle. Used at 32 px and up; notes-small.svg below that. Made by scripts/make-icons.mjs into the program's files. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#fbfaf7" stroke-width="44" opacity="0.9"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g>
+    <g stroke="#22201c" stroke-width="28"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g>
+  </g>
+  <rect x="140" y="140" width="232" height="232" rx="62" fill="#e3a82b"/>
+  <g transform="translate(256 256) scale(0.78)"><path d="M-74 -96 H74 Q96 -96 96 -74 V36 L36 96 H-74 Q-96 96 -96 74 V-74 Q-96 -96 -74 -96 Z" fill="none" stroke="#22201c" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/><path d="M96 36 H52 Q36 36 36 52 V96" fill="none" stroke="#22201c" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/><path d="M-50 -38 H50 M-50 10 H14" fill="none" stroke="#22201c" stroke-width="27.200000000000003" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

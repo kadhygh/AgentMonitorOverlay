@@ -56,7 +56,7 @@ const BUILDS = {
     programs: ["reviewer"],
     // Its Host runs no models; the SDK's JavaScript is still loaded.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
-    icon: () => join(studio, "packages", "app", "assets", "icon.ico"),
+    icon: () => join(studio, "packages", "reviewer", "assets", "icon.ico"),
     readme: [
       "AMO Reviewer（独立版：Git Review 和查看器，不需要 AMO Studio）",
       "",
@@ -90,8 +90,7 @@ const BUILDS = {
   platform: {
     packages: ["platform", "account", "ui"],
     programs: ["platform"],
-    // Its own icon is still being designed (design/icon/platform/): Studio's until then.
-    icon: () => join(studio, "packages", "app", "assets", "icon.ico"),
+    icon: () => join(studio, "packages", "platform", "assets", "icon.ico"),
     readme: [
       "AMO 平台",
       "",
@@ -175,19 +174,13 @@ function build(id) {
     if (!existsSync(join(from, "dist"))) throw new Error(`${dir}/dist is missing: run npm run build first`);
     cpSync(join(from, "dist"), join(app, dir, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
     if (name !== "ui") cpSync(join(from, "package.json"), join(app, dir, "package.json"));
-    // Window and tray icons (app, notes); the Codex model catalogue (host).
+    // Window, tray and exe icons (each tool's own since 2026-10-28, scripts/make-icons.mjs); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
     // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
     if (["protocol", "host", "reviewer", "relay", "account"].includes(name)) {
       cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
       cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
     }
-  }
-  // The Reviewer's and the platform's windows take Studio's mark when they have none of their own.
-  for (const name of ["reviewer", "platform"]) {
-    if (!spec.packages.includes(name) || existsSync(join(app, "packages", name, "assets", "icon.png"))) continue;
-    mkdirSync(join(app, "packages", name, "assets"), { recursive: true });
-    cpSync(join(studio, "packages", "app", "assets", "icon.png"), join(app, "packages", name, "assets", "icon.png"));
   }
 
   // 3. The launcher: this exe's own program, or the one --amo-app= names (only programs that are in this download).

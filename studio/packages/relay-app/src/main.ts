@@ -548,10 +548,25 @@ async function removeOldFiles(): Promise<void> {
 
 // ---- tray
 
+/** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs; 16–24 px are the
+ *  simplified cut, 2026-10-28), else the window icon shrunk. */
+function trayImage(): Electron.NativeImage {
+  const image = nativeImage.createEmpty();
+  for (const [size, scaleFactor] of [
+    [16, 1],
+    [20, 1.25],
+    [24, 1.5],
+    [32, 2],
+  ] as const) {
+    const file = join(here, "..", "assets", `icon-${size}.png`);
+    if (existsSync(file)) image.addRepresentation({ scaleFactor, buffer: readFileSync(file) });
+  }
+  return image.isEmpty() ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : image;
+}
+
 function createTray(): void {
   if (!ICON) return;
-  const image = nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 });
-  tray = new Tray(image);
+  tray = new Tray(trayImage());
   tray.setToolTip("AMO 中转");
   tray.setContextMenu(
     Menu.buildFromTemplate([

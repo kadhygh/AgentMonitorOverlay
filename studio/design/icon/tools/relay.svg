@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 24 464 464" width="512" height="512">
+  <!-- AMO 中转 (2026-10-28, the user's pick 方向一「取景框」): the family's ink corners, the tool's colour and glyph in the
+       middle. Used at 32 px and up; relay-small.svg below that. Made by scripts/make-icons.mjs into the program's files. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#fbfaf7" stroke-width="44" opacity="0.9"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g>
+    <g stroke="#22201c" stroke-width="28"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g>
+  </g>
+  <rect x="140" y="140" width="232" height="232" rx="62" fill="#6a58a8"/>
+  <g transform="translate(256 256) scale(0.78)"><path d="M-92 -44 H82 M46 -82 L86 -44 L46 -6" fill="none" stroke="#fbfaf7" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/><path d="M92 50 H-82 M-46 12 L-86 50 L-46 88" fill="none" stroke="#fbfaf7" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

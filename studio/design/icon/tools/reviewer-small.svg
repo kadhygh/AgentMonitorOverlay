@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO Reviewer, 16–24 px cut of reviewer.svg: corners at the edge, shorter and heavier, with a wide paper halo so they still
+       show on a dark taskbar; the tile and glyph larger, small details dropped. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="#fbfaf7" stroke-width="96"><path d="M48 124 V82 Q48 48 82 48 H124"/><path d="M388 48 H430 Q464 48 464 82 V124"/><path d="M464 388 V430 Q464 464 430 464 H388"/><path d="M124 464 H82 Q48 464 48 430 V388"/></g><g stroke="#22201c" stroke-width="56"><path d="M48 124 V82 Q48 48 82 48 H124"/><path d="M388 48 H430 Q464 48 464 82 V124"/><path d="M464 388 V430 Q464 464 430 464 H388"/><path d="M124 464 H82 Q48 464 48 430 V388"/></g></g>
+  <rect x="100" y="100" width="312" height="312" rx="72" fill="#2e7d5b"/>
+  <g transform="translate(256 256) scale(1.1227272727272728)"><circle cx="-22" cy="-22" r="66" fill="none" stroke="#fbfaf7" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 30 L92 92" fill="none" stroke="#fbfaf7" stroke-width="55" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

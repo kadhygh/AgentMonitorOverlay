@@ -1,34 +1,49 @@
-// The icons the app ships. Uses the installed Edge through Playwright; run after changing a source:
-//   node scripts/make-icons.mjs
-// - The app's own: design/icon/viewfinder.svg rendered into the UI's icon.svg, the window icon (PNG) and the exe icon
-//   (ICO with PNG images, 16–256 px).
+// The icons the programs ship. Uses the installed Edge through Playwright; run after changing a source:
+//   node scripts/make-icons.mjs          every program's icon, and 「AMO 娘」's
+//   node scripts/make-icons.mjs --relay  only AMO 中转's (its shell is released on its own)
+// - Each tool's own icon (2026-10-28, the user's pick 方向一「取景框」): design/icon/tools/<tool>.svg is the full drawing,
+//   used from 32 px up; <tool>-small.svg is the 16–24 px cut (heavier corners at the edge, a bigger tile). Per tool:
+//   - Studio: the UI's icon.svg (ui/public: favicon, Focus, the running mark in the conversation), the window icon
+//     (app/assets/icon.png) and the exe icon (app/assets/icon.ico); design/icon/viewfinder-512.png (an e2e test picture).
+//   - Reviewer: reviewer/assets/icon.png (its windows when it runs on its own) and icon.ico (its exe).
+//   - 便签: notes/assets/icon.png and icon-16…64.png (window, tray, and package-portable.mjs builds its exe icon from them).
+//   - 平台: platform/assets/icon.png, icon-16…32.png (tray) and icon.ico.
+//   - 中转: relay-app/assets (window PNG, tray icon-16…32.png, exe ICO, the loader's SVG) and relay-ui/src/icon.svg.
+//   ICO files carry 16–256 px, the small cut up to 24 px.
 // - 「AMO 娘」 (2026-10-26, used while she is the 桌宠): the blue mascot's ready-made icon (design/icon/mascot-blue/icon)
 //   and her six faces (design/icon/mascot-blue/0N-*.png) cropped square to what is drawn, for the UI (ui/public/mascot)
-//   and the window icon (app/assets/mascot).
-// - AMO 中转's (2026-10-27): design/icon/relay.svg (the viewfinder with an R badge) into relay-app/assets (window and
-//   tray PNG, exe ICO, the loader's SVG) and relay-ui/src/icon.svg (the top bar). `--relay` makes only these.
+//   and the window icon (app/assets/mascot). Not touched by the tool icons above.
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const studio = join(dirname(fileURLToPath(import.meta.url)), "..");
-const svgPath = join(studio, "design", "icon", "viewfinder.svg");
 const relayOnly = process.argv.includes("--relay");
 const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+const SMALL_UP_TO = 24;
+const TRAY_SIZES = [16, 20, 24, 32];
 
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage();
-async function png(size, svg = readFileSync(svgPath, "utf8")) {
+async function render(size, svg) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(`<html><body style="margin:0;background:transparent">${svg.replace(/width="512" height="512"/, `width="${size}" height="${size}"`)}</body></html>`);
   return page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
 }
 
+/** A tool's two drawings; png(size) picks the small cut up to 24 px. */
+function tool(name) {
+  const src = (f) => join(studio, "design", "icon", "tools", f);
+  const full = readFileSync(src(`${name}.svg`), "utf8");
+  const small = readFileSync(src(`${name}-small.svg`), "utf8");
+  return { svgPath: src(`${name}.svg`), png: (size) => render(size, size <= SMALL_UP_TO ? small : full) };
+}
+
 // ICO: a header, one directory entry per image, then the PNG data (Windows Vista and later read PNG entries).
-async function ico(svg) {
+async function ico(t) {
   const images = [];
-  for (const size of ICO_SIZES) images.push({ size, data: await png(size, svg) });
+  for (const size of ICO_SIZES) images.push({ size, data: await t.png(size) });
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
@@ -50,25 +65,51 @@ async function ico(svg) {
   return Buffer.concat([header, ...entries, ...images.map((i) => i.data)]);
 }
 
+const assets = (pkg) => {
+  const dir = join(studio, "packages", pkg, "assets");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+async function trayPngs(t, dir) {
+  for (const size of TRAY_SIZES) writeFileSync(join(dir, `icon-${size}.png`), await t.png(size));
+}
+
 // AMO 中转.
-const relaySvgPath = join(studio, "design", "icon", "relay.svg");
-const relaySvg = readFileSync(relaySvgPath, "utf8");
-writeFileSync(join(studio, "packages", "relay-app", "assets", "icon.png"), await png(256, relaySvg));
-writeFileSync(join(studio, "packages", "relay-app", "assets", "icon.ico"), await ico(relaySvg));
-copyFileSync(relaySvgPath, join(studio, "packages", "relay-ui", "src", "icon.svg"));
-copyFileSync(relaySvgPath, join(studio, "packages", "relay-app", "assets", "icon.svg"));
+const relay = tool("relay");
+const relayAssets = assets("relay-app");
+writeFileSync(join(relayAssets, "icon.png"), await relay.png(256));
+writeFileSync(join(relayAssets, "icon.ico"), await ico(relay));
+await trayPngs(relay, relayAssets);
+copyFileSync(relay.svgPath, join(studio, "packages", "relay-ui", "src", "icon.svg"));
+copyFileSync(relay.svgPath, join(relayAssets, "icon.svg"));
 if (relayOnly) {
   await browser.close();
   console.log(`AMO 中转 icons written: ${ICO_SIZES.join(", ")} px`);
   process.exit(0);
 }
 
-const big = await png(512);
-writeFileSync(join(studio, "design", "icon", "viewfinder-512.png"), big);
-writeFileSync(join(studio, "packages", "app", "assets", "icon.png"), await png(256));
+// AMO Studio.
+const studioIcon = tool("studio");
+writeFileSync(join(studio, "design", "icon", "viewfinder-512.png"), await studioIcon.png(512));
+writeFileSync(join(assets("app"), "icon.png"), await studioIcon.png(256));
+writeFileSync(join(assets("app"), "icon.ico"), await ico(studioIcon));
+copyFileSync(studioIcon.svgPath, join(studio, "packages", "ui", "public", "icon.svg"));
 
-writeFileSync(join(studio, "packages", "app", "assets", "icon.ico"), await ico(readFileSync(svgPath, "utf8")));
-copyFileSync(svgPath, join(studio, "packages", "ui", "public", "icon.svg"));
+// AMO Reviewer.
+const reviewer = tool("reviewer");
+writeFileSync(join(assets("reviewer"), "icon.png"), await reviewer.png(256));
+writeFileSync(join(assets("reviewer"), "icon.ico"), await ico(reviewer));
+
+// AMO 便签: the window icon and one PNG per size (tray; package-portable.mjs makes its exe icon from them).
+const notes = tool("notes");
+writeFileSync(join(assets("notes"), "icon.png"), await notes.png(256));
+for (const size of [16, 20, 24, 32, 48, 64]) writeFileSync(join(assets("notes"), `icon-${size}.png`), await notes.png(size));
+
+// AMO 平台.
+const platform = tool("platform");
+writeFileSync(join(assets("platform"), "icon.png"), await platform.png(256));
+writeFileSync(join(assets("platform"), "icon.ico"), await ico(platform));
+await trayPngs(platform, assets("platform"));
 
 // 「AMO 娘」.
 const mascot = join(studio, "design", "icon", "mascot-blue");
@@ -123,4 +164,4 @@ for (const file of faces) {
   for (const dir of [uiMascot, appMascot]) writeFileSync(join(dir, file), Buffer.from(b64, "base64"));
 }
 await browser.close();
-console.log(`icons written: ${ICO_SIZES.join(", ")} px; 「AMO 娘」 icon and ${faces.length} faces`);
+console.log(`icons written for Studio, Reviewer, 便签, 平台, 中转 (${ICO_SIZES.join(", ")} px; 16–24 px from the small cut); 「AMO 娘」 icon and ${faces.length} faces`);
