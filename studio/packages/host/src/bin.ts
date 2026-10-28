@@ -113,6 +113,8 @@ try {
     ...testModelOptions(),
     // Test runs never open terminal windows (LOOP_RULES red line 7); launches are only recorded.
     ...(process.env.AMO_STUDIO_TEST === "1" ? { launcher: new RecordingTerminalLauncher() } : {}),
+    // 远程 (2026-10-29): the AMO platform's login and device in %APPDATA%\AMO (AMO_HOME moves it; e2e runs set it).
+    remote: {},
   });
   console.log(`AMO Studio Host listening on ${host.info.url} (data: ${dataDir})`);
   reportTo = (err) => host.service.reportError(err);

@@ -58,6 +58,10 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .focus-approve { height: 30px; padding: 0 14px; border-radius: 7px; border: none; background: var(--attention); color: var(--on-attention); font-weight: 600; cursor: pointer; }
 .focus-approve:disabled { opacity: 0.6; cursor: default; }
+/* A row that only says what it is (a pairing request, 2026-10-29): its buttons are below. */
+.focus-row.static { cursor: default; }
+.focus-row.static:hover { background: transparent; }
+.focus-sub.focus-wrap { white-space: normal; color: var(--text-dim); }
 .focus-btn { height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
 
 /* S3-08: drag the Focus window by its title row */

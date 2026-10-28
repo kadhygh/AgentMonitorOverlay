@@ -219,3 +219,26 @@
 .fa-actions { flex: none; display: flex; gap: 6px; }
 .sandbox-hint { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); padding: 6px 2px 0; }
 .sandbox-hint-text { flex: 1; min-width: 200px; }
+
+/* 设置 → 远程 (2026-10-29): this computer, the paired devices, pairing requests. */
+.remote-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }
+.remote-card.attention { border-color: var(--attention-border); background: var(--attention-bg); }
+.remote-card-title { font-size: var(--fs-sm); font-weight: 600; }
+.remote-conn { font-size: 12.5px; font-weight: 600; }
+.remote-conn-online { color: var(--running-text); }
+.remote-conn-offline, .remote-conn-unauthorized, .remote-conn-server-old, .remote-conn-replaced { color: var(--attention); }
+.remote-presence { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); }
+.remote-presence .dot { background: var(--text-faint); }
+.remote-presence-online { color: var(--running-text); }
+.remote-presence-online .dot { background: var(--running); }
+.remote-presence-lost { color: var(--attention); }
+.remote-presence-lost .dot { background: var(--attention); }
+.remote-ping { font-size: 12.5px; }
+.remote-ping.ok { color: var(--running-text); }
+.remote-ping.error { color: var(--error); }
+.remote-warning { color: var(--attention); }
+.remote-outgoing { flex-wrap: nowrap; }
+/* A pairing request waits: the dot beside 设置 and on the 远程 tab. */
+.settings-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--attention); margin-left: 6px; vertical-align: middle; flex: none; }
+.nav-settings-folded { position: relative; }
+.settings-dot.corner { position: absolute; top: 3px; right: 3px; margin: 0; }

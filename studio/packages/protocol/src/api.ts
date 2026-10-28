@@ -663,6 +663,8 @@ export type HostEvent = { seq: number } & (
   | { type: "viewpack.open"; packId: Id; at: Timestamp; /** The item this open added (or joined): shown first. */ itemId?: Id }
   /** Deleted for good from 设置 → 数据管理: drop them from every list. */
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
+  /** 远程 (2026-10-29): the connection, the paired devices or the pairing requests changed. Not kept in the log. */
+  | { type: "remote.updated"; remote: import("./remote.js").RemoteState }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -897,4 +899,23 @@ export interface HostRoutes {
   "GET /api/maintenance": { req: void; res: import("./maintenance.js").MaintenanceInfo };
   /** Opens a terminal in the Studio repo running the person's own CLI (Claude Code or Codex); 400 when not run from source or the CLI is not found. */
   "POST /api/maintenance/terminal": { req: import("./maintenance.js").MaintenanceTerminalRequest; res: import("./maintenance.js").MaintenanceTerminalResult };
+}
+
+// ---- 设置 → 远程 (2026-10-29, plans/remote-session.md step 1): this computer as a device, pairing (remote.ts) ---------
+export interface HostRoutes {
+  "GET /api/remote": { req: void; res: import("./remote.js").RemoteState };
+  /** Renames this computer (device.json, shared with the AMO platform). */
+  "PUT /api/remote/device": { req: { name: string }; res: import("./remote.js").RemoteState };
+  /** Asks account `account` to pair with this computer; a device of it allows or refuses. */
+  "POST /api/remote/pair": { req: { account: string }; res: import("./remote.js").RemoteState };
+  /** Allows or refuses a request to pair with this computer. */
+  "POST /api/remote/requests/:id/answer": { req: { allow: boolean }; res: import("./remote.js").RemoteState };
+  /** Withdraws a request this computer sent, or puts a refusal away. */
+  "DELETE /api/remote/requests/:id": { req: void; res: import("./remote.js").RemoteState };
+  /** Ends the pairing with a device (both sides forget it). */
+  "POST /api/remote/unpair": { req: { account: string; device: string }; res: import("./remote.js").RemoteState };
+  /** 测试连接: a round trip to a paired device through the server. */
+  "POST /api/remote/ping": { req: { account: string; device: string }; res: import("./remote.js").RemotePingResult };
+  /** Tries to connect now (after a failure, without waiting for the next attempt). */
+  "POST /api/remote/reconnect": { req: void; res: import("./remote.js").RemoteState };
 }

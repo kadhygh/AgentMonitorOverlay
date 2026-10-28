@@ -30,6 +30,7 @@ function readNavFolded(): boolean {
 import { showToast } from "../lib/toast.js";
 import { useWaitingQuestions } from "../canvas/useCallouts.js";
 import { pickFolder } from "../lib/profiles.js";
+import { remoteWaiting, useRemote } from "../settings/remote.js";
 
 /** A project or topic about to be archived from its right-click menu. */
 type Archiving = { kind: "workspace" | "topic"; id: string; name: string };
@@ -88,6 +89,9 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
   const [editing, setEditing] = useState<string | null>(null);
   const [editingTopicId, setEditingTopic] = useState<string | null>(null);
   const [collapsed, setCollapsedState] = useState(readNavFolded);
+  // 远程 (2026-10-29): a pairing request waits → a dot beside 设置 (not a place of its own on the main window).
+  const remoteWaits = remoteWaiting(useRemote(link)) > 0;
+  const settingsTitle = remoteWaits ? "设置：有配对请求等你处理（设置 → 远程）" : "设置：界面主题、公共目录、模型、便签、功能、数据管理";
   // The column's width, dragged at its right edge (2026-10-15); it also lines up the brand in the title bar.
   const navW = useDragWidth("amo.navWidth", 224, 180, 420);
   useNavWidthVar(navW.width, !collapsed);
@@ -409,11 +413,12 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
       <nav className="scope-nav collapsed" aria-label="范围">
         <span className="spacer" />
         {onSettings && (
-          <button type="button" className="fold-btn" onClick={onSettings} aria-label="设置" title="设置">
+          <button type="button" className="fold-btn nav-settings-folded" onClick={onSettings} aria-label="设置" title={remoteWaits ? settingsTitle : "设置"}>
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" />
               <circle cx="8" cy="8" r="2.2" />
             </svg>
+            {remoteWaits && <span className="settings-dot corner" aria-hidden="true" data-testid="settings-dot" />}
           </button>
         )}
         <button type="button" className="fold-btn" aria-label="展开左栏" title="展开左栏" onClick={() => setCollapsed(false)} data-testid="nav-expand">
@@ -567,12 +572,13 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
           lists' right edge); folded, the same corner unfolds it. */}
       <div className="nav-bottom">
       {onSettings && (
-        <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型、便签、功能、数据管理">
+        <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title={settingsTitle}>
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" />
             <circle cx="8" cy="8" r="2.2" />
           </svg>
           设置
+          {remoteWaits && <span className="settings-dot" aria-hidden="true" data-testid="settings-dot" />}
         </button>
       )}
         <button type="button" className="fold-btn" aria-label="收起左栏" title="收起左栏" onClick={() => setCollapsed(true)} data-testid="nav-collapse">

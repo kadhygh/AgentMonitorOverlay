@@ -274,11 +274,13 @@ if (!app.requestSingleInstanceLock()) {
   });
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
-    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown; topicId?: unknown; calloutId?: unknown } | null;
+    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown; topicId?: unknown; calloutId?: unknown; settings?: unknown } | null;
     // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus. `show`: only bring
     // the window forward, where it is (Focus's icon, 2026-10-15).
     if (!mainWindow) return;
-    if (t?.show !== true) {
+    // 远程 (2026-10-29): a pairing request from Focus → 设置 → 远程.
+    if (t?.settings === "remote") mainWindow.webContents.send("amo:navigate", { taskId: "", settings: "remote" });
+    else if (t?.show !== true) {
       const taskId = typeof t?.taskId === "string" ? t.taskId : "";
       const passage = taskId && typeof t?.sessionId === "string" ? passageOf(t.passage) : null;
       // 画布审阅 (2026-10-27): a topic's canvas, with a question there to open.

@@ -24,3 +24,4 @@ export * from "./datamgmt.js";
 export * from "./channels.js";
 export * from "./maintenance.js";
 export * from "./viewpacks.js";
+export * from "./remote.js";

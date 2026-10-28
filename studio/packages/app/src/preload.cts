@@ -132,10 +132,10 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** 画布小窗 (2026-10-27): a topic's canvas in the small window on top; and, there, whether it stays on top. */
   openCanvasMini: (target: { topicId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-canvas-mini", target),
   canvasMiniTop: (on?: boolean): Promise<boolean> => electron.ipcRenderer.invoke("amo:canvas-mini-top", on),
-  openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string }): Promise<void> =>
+  openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-in-workbench", target),
-  onNavigate: (cb: (target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string }) => void): (() => void) => {
-    const listener = (_event: unknown, target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string }) => cb(target);
+  onNavigate: (cb: (target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }) => void): (() => void) => {
+    const listener = (_event: unknown, target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }) => cb(target);
     electron.ipcRenderer.on("amo:navigate", listener);
     return () => electron.ipcRenderer.removeListener("amo:navigate", listener);
   },

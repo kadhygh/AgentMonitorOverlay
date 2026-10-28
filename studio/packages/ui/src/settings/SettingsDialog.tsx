@@ -12,6 +12,8 @@ import { QuotaPage } from "./QuotaPage.js";
 import { StatsPage } from "./StatsPage.js";
 import { useDialogSize } from "./dialogSize.js";
 import { MaintenancePage } from "./MaintenancePage.js";
+import { RemotePage } from "./RemotePage.js";
+import { remoteWaiting, useRemote } from "./remote.js";
 import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
@@ -50,9 +52,10 @@ const PAGES = [
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
   { id: "data", label: "数据管理" },
+  { id: "remote", label: "远程" },
   { id: "maintenance", label: "维护" },
 ] as const;
-type SettingsPage = (typeof PAGES)[number]["id"];
+export type SettingsPage = (typeof PAGES)[number]["id"];
 
 // The page last open, for the next time 设置 opens in this window.
 let lastPage: SettingsPage = "ui";
@@ -62,8 +65,9 @@ let lastPage: SettingsPage = "ui";
  * new tasks, and the common folder for sessions that belong to no single project: the scheduler's rounds, and the default
  * for cross-workspace sessions), 功能 and 便签.
  */
-export function SettingsDialog({ link, settings, workspaces = [], onClose }: { link: HostLink; settings: StudioSettings | null; workspaces?: readonly Workspace[]; onClose(): void }) {
-  const [page, setPage] = useState<SettingsPage>(lastPage);
+export function SettingsDialog({ link, settings, workspaces = [], page: startPage, onClose }: { link: HostLink; settings: StudioSettings | null; workspaces?: readonly Workspace[]; /** Opens on this page (Focus's 「在设置里看」). */ page?: SettingsPage; onClose(): void }) {
+  const [page, setPage] = useState<SettingsPage>(startPage ?? lastPage);
+  const remoteWaits = remoteWaiting(useRemote(link)) > 0;
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const view = useTranscriptView();
   const jumpOnSend = useScrollOnSend();
@@ -136,6 +140,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
                 }}
               >
                 {p.label}
+                {p.id === "remote" && remoteWaits && <span className="settings-dot" aria-label="有配对请求" title="有配对请求等你处理" data-testid="settings-remote-dot" />}
               </button>
             ))}
           </div>
@@ -268,6 +273,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
+            {page === "remote" && <RemotePage link={link} />}
             {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>

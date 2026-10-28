@@ -20,6 +20,7 @@ import { WindowsCredentialReader, type CredentialReader } from "./runtime/creden
 import { BUILTIN_BALANCES, BUILTIN_PROFILES, CODEX_PROVIDERS, type CodexProviderDef } from "./runtime/profiles.js";
 import { ChannelRegistry } from "./runtime/channels.js";
 import { HostService } from "./service.js";
+import type { RemoteOptions } from "./features/remote/service.js";
 import { Store } from "./store/store.js";
 import { WindowsTerminalLauncher, type TerminalLauncher } from "./terminal/launcher.js";
 
@@ -60,6 +61,11 @@ export interface StartHostOptions {
   dshFolderAccess?: FolderAccess | null;
   /** Tests: the wait between a set-up folder's scans after write turns. */
   dshFolderScanMs?: number;
+  /**
+   * 远程 (2026-10-29): connect to the team server as this computer's device with the AMO platform's login. Studio's
+   * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
+   */
+  remote?: RemoteOptions;
 }
 
 export interface RunningHost {
@@ -276,6 +282,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
     });
     mcp = { url: `${http.url}/mcp`, token: mcpToken };
+    if (options.remote) service.remote.start(options.remote);
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 
@@ -305,6 +312,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         if (stopped) return;
         stopped = true;
         clearInterval(pruning);
+        service.remote.stop();
         await finalHttp.close();
         await finalClaude.closeAll();
         await finalDsh.closeAll();

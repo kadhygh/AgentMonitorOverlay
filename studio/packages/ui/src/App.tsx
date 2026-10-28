@@ -9,7 +9,7 @@ import { useOpenDecisions } from "./collab/DecisionPanel.js";
 import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
-import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
+import { SettingsDialog, useSettings, type SettingsPage } from "./settings/SettingsDialog.js";
 import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, usePinToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
@@ -90,7 +90,8 @@ export function App() {
   const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
   const { todos } = useTodos(host.kind === "ready" ? host.link : NO_LINK);
   const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Open, and on which page when something asked for one (Focus: a pairing request → 远程); `at` remounts it there.
+  const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
   const [quickOpen, setQuickOpen] = useState(false);
 
   // Ctrl N: the quick bar from anywhere; Ctrl Shift N: the draft task page.
@@ -147,7 +148,12 @@ export function App() {
     () =>
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
-      window.amo?.onNavigate?.(({ taskId, sessionId, passage, topicId, calloutId }) => {
+      window.amo?.onNavigate?.(({ taskId, sessionId, passage, topicId, calloutId, settings: settingsPage }) => {
+        // 远程 (2026-10-29): Focus's 「在设置里看」 on a pairing request.
+        if (settingsPage === "remote") {
+          setSettingsOpen({ page: "remote", at: Date.now() });
+          return;
+        }
         const was = viewNow.current;
         const modal = document.querySelector<HTMLElement>("[aria-modal='true'], .modal-backdrop");
         window.amo?.trace?.({
@@ -260,7 +266,7 @@ export function App() {
             setScope(s);
             setView({ kind: "board" });
           }}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => setSettingsOpen({ at: Date.now() })}
         />
         <div className="main-col">
           <ViewBar
@@ -278,7 +284,7 @@ export function App() {
         </div>
       </div>
       <HostErrorToast />
-      {settingsOpen && <SettingsDialog link={link} settings={settings} workspaces={state.workspaces} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog key={settingsOpen.at} link={link} settings={settings} workspaces={state.workspaces} {...(settingsOpen.page ? { page: settingsOpen.page } : {})} onClose={() => setSettingsOpen(false)} />}
       {quickOpen && (
         <QuickStart
           link={link}

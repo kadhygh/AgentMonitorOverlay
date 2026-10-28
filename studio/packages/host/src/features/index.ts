@@ -45,6 +45,7 @@ import { channelsRoutes } from "./channels/routes.js";
 import { dshRoutes } from "./dsh/routes.js";
 import { maintenanceRoutes } from "./maintenance/routes.js";
 import { statsRoutes } from "./stats/routes.js";
+import { remoteRoutes } from "./remote/routes.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -88,4 +89,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "datamgmt", routes: dataRoutes },
   { name: "maintenance", routes: maintenanceRoutes },
   { name: "stats", routes: statsRoutes },
+  { name: "remote", routes: remoteRoutes },
 ];
