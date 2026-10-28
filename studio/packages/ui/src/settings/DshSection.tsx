@@ -5,7 +5,7 @@ import { pickFolder } from "../lib/profiles.js";
 
 // 设置 → 模型 → DSH · DeepSeek (stage 17): what its sessions run on. The DeepSeek Harness desktop app when it is
 // installed (2026-10-26: it updates itself), or a source clone the person builds and pulls. 「检查」 tells whether Studio
-// works with it (it starts DSH and opens a session, no model call). plans/stage-17-dsh.md lists what Studio relies on.
+// works with it (it starts DSH and opens a session, no model call). plans/done/stage-17-dsh.md lists what Studio relies on.
 
 export function DshSection({ link }: { link: HostLink }) {
   const [status, setStatus] = useState<DshStatus | null>(null);

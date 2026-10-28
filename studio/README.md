@@ -102,12 +102,12 @@ studio\amo-review.cmd G:\PROJECT\game --mode file --file src\Drop.cs --line 24 -
 
 | 文件 | 用途 |
 |---|---|
-| [STATUS.md](docs/STATUS.md) | 当前进度。两分钟读完 |
-| [NEEDS_YOU.md](docs/NEEDS_YOU.md) | 需要用户处理的事项，用户直接在文件里回复 |
-| [ROADMAP.md](docs/ROADMAP.md) | 全部阶段的目标、验收标准与关卡 |
-| [LOOP_RULES.md](docs/LOOP_RULES.md) | 自动迭代（`/loop`）的规则与红线 |
-| [plans/](plans/) | 每个阶段的详细任务清单 |
-| [LOOP_LOG.md](docs/LOOP_LOG.md) | 每轮迭代的记录 |
+| [../AGENTS.md](../AGENTS.md) | 项目说明：有哪些工具和包、架构约束、怎么干活 |
+| [HANDOFF.md](HANDOFF.md) | 当前状态和最近的改动，新会话先读 |
+| [plans/](plans/) | 各个主题的方案和进度；做完的阶段计划在 [plans/done/](plans/done/) |
+| [design/](design/) | 早期架构文档（2026-10-13，部分已过时，文件开头有标注） |
+| [docs/history/](docs/history/) | 瘦身前的 HANDOFF 原文（10-13 到 10-28） |
+| [docs/archive/](docs/archive/) | /loop 自动迭代时期的 STATUS、NEEDS_YOU、ROADMAP、LOOP_RULES、LOOP_LOG（停在 10-23） |
 | [spikes/RESULTS.md](spikes/RESULTS.md) | 预研结论（协议行为、打包等） |
 | [budget.json](budget.json) | 真实模型调用预算与已用量 |
 

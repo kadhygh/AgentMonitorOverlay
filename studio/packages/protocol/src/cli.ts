@@ -1,5 +1,5 @@
 // CLI features in the conversation (stage 12, S12-E): `/` commands, context compaction, background commands and the
-// chat settings that go with them. See plans/stage-12.md, S12-E.
+// chat settings that go with them. See plans/done/stage-12.md, S12-E.
 
 /**
  * Where a command comes from, as the composer's menu groups them: Studio's own, the runtime's built-in commands, its

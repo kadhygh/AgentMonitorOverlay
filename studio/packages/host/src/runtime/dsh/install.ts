@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import type { DshCheck, DshStatus } from "@amo-studio/protocol";
 
-// Everything Studio relies on in DeepSeek Harness (stage 17, plans/stage-17-dsh.md; spikes s17-00/01): the desktop app
+// Everything Studio relies on in DeepSeek Harness (stage 17, plans/done/stage-17-dsh.md; spikes s17-00/01): the desktop app
 // (2026-10-26: the default when it is installed; it updates itself) or a source clone the person builds and pulls.
 // When a new DSH stops working with Studio, these are the places to look.
 // 设置 → 模型 →「检查」 runs `checkDsh` (dsh-runtime.ts): start, initialize, open a session — no model call.

@@ -30,6 +30,8 @@ npm run relay:release -- --shell   # 再加上桌面客户端的 zip（外壳有
 
 ## 在这台 Windows 上跑服务
 
+10-28 起团队用的服务在 Mac 上（下一节），本机这份 10-28 已经停了。脚本留着当退路：Mac 出问题时可以临时在本机起服务。
+
 ```
 powershell -File scripts/relay-service.ps1 start|stop|restart|status [-Passphrase <邀请口令>] [-Name <服务名>]
 ```

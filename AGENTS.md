@@ -40,15 +40,16 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
   - `npm run relay:release` 之后 `npm run relay:mac -- deploy`：发布中转。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
-- 计划和方案写在 `studio/plans/<主题>.md`。做完一段，在 `studio/HANDOFF.md` 最上面加一条（做了什么、怎么验证的、还剩什么）。
+- 计划和方案写在 `studio/plans/<主题>.md`。做完一段，在 `studio/HANDOFF.md`「最近的改动」最上面加一条（做了什么、怎么验证的、还剩什么），「当前状态」里过时的也顺手改掉；超过一两周的记录挪进 `studio/docs/history/`。
 - 在 Windows 上用 shell 改含中文的文件容易出乱码，用编辑工具改。
 
 ## 文档在哪
 
 | 位置 | 内容 |
 |---|---|
-| `studio/HANDOFF.md` | 当前状态和最近的改动，新会话先读最上面几条 |
-| `studio/plans/` | 各个主题的方案和进度；`amo-lan-platform.md` 是平台方案 |
+| `studio/HANDOFF.md` | 当前状态和最近的改动，新会话先读 |
+| `studio/plans/` | 各个主题的方案和进度；`amo-lan-platform.md` 是平台方案；做完的阶段计划在 `plans/done/` |
+| `studio/docs/history/`、`studio/docs/archive/` | 瘦身前的 HANDOFF 原文；/loop 时期的 STATUS、ROADMAP 等（只查历史时看） |
 | `studio/packages/relay/README.md` | 中转的部署、发布、命令 |
 | `studio/README.md`、根目录 `README.md` | 给用户看的介绍 |
 | `studio/design/` | 早期架构文档（2026-10-13，部分已过时） |

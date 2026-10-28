@@ -28,7 +28,7 @@ import {
 import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 
-// DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/stage-17-dsh.md). Each session runs its own
+// DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/done/stage-17-dsh.md). Each session runs its own
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
 // directory and its permission mode is the process's environment. Studio's DSH home (`<data>/dsh/home`) keeps DSH's
 // own sessions; Studio keeps the conversation (DSH does not replay it on resume). What ACP lacks (spikes s17-00):

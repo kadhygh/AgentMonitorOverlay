@@ -1,5 +1,13 @@
 # Studio 的实际实现（截至阶段 8）
 
+> **2026-10-28 标注：这份写于阶段 8，下面这些已经过时**，以代码和根目录 `AGENTS.md` 为准：
+> - 包不止这五个：还有 `notes`（AMO 便签）、`reviewer`（AMO Reviewer）、`relay` / `relay-ui` / `relay-app`（AMO 中转），各自的说明见 `AGENTS.md` 的工具表；
+> - 运行时多了 `runtime/dsh`（DeepSeek 走 DSH，`plans/done/stage-17-dsh.md`），模型接入改成「渠道」（`runtime/channels.ts`）；Claude 只走本机 Claude Code 登录，令牌方式 10-27 去掉了；
+> - 数据库迁移早已超过 v7；
+> - Portable 版数据默认放 exe 旁 `data/` 的做法，平台装的版本会用 `AMO_STUDIO_DATA_DIR` 改掉（`plans/amo-lan-platform.md`）。
+>
+> 进程结构、Host 的 API / MCP 分工、安全边界这几节大体还对。以后要重写时，把中转、便签、Reviewer、平台一起写进来。
+
 愿景文档（`docs/next-gen-vision-architecture-2026-10.md`）写的是目标；这里写现在代码里是怎么做的，方便以后改动时找到位置。
 
 ## 进程

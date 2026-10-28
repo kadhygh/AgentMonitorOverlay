@@ -70,7 +70,7 @@ export interface Topic {
   archivedAt: Timestamp | null;
 }
 
-/** `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/stage-17-dsh.md). */
+/** `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/done/stage-17-dsh.md). */
 export type SessionRuntime = "codex" | "claude" | "dsh";
 /** How the runtime is named next to a profile ("Codex · DeepSeek", "DSH · DeepSeek"). */
 export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH" };
