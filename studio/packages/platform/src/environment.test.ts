@@ -39,7 +39,8 @@ function runner(answers: Record<string, RunResult>) {
   return { run, calls };
 }
 
-describe("where it looks (@amo-studio/locate, shared with the Host)", () => {
+// Writing fresh .exe files gets them scanned by the antivirus: on a busy machine that alone passed 5 s (2026-10-28).
+describe("where it looks (@amo-studio/locate, shared with the Host)", { timeout: 30_000 }, () => {
   it("Claude Code: claude on PATH, then ~/.local/bin, then npm's shim as the native exe it wraps; only what exists", () => {
     const { dirs, env, file } = machine();
     expect(claudeCodeCandidates(env)).toEqual([]);
@@ -171,7 +172,7 @@ describe("starting a program for its version", () => {
     expect(await runProgram(say, ["--version"], { env: { ...process.env, ...env }, timeoutMs: 10_000 })).toEqual({ ok: true, out: expect.stringContaining("tool 1.2.3") });
     const fails = file(join(dirs.bin, "fails.cmd"), "@echo off\r\nexit /b 3\r\n");
     expect(await runProgram(fails, ["--version"], { env: { ...process.env, ...env }, timeoutMs: 10_000 })).toEqual({ ok: false, reason: "error" });
-    const hangs = file(join(dirs.bin, "hangs.cmd"), "@echo off\r\nping -n 30 127.0.0.1 >nul\r\n");
+    const hangs = file(join(dirs.bin, "hangs.cmd"), "@echo off\r\n\"%SystemRoot%\\System32\\ping.exe\" -n 30 127.0.0.1 >nul\r\n"); // by full path: the test's PATH may hold only its own bin
     const started = Date.now();
     expect(await runProgram(hangs, ["--version"], { env: { ...process.env, ...env }, timeoutMs: 600 })).toEqual({ ok: false, reason: "timeout" });
     expect(Date.now() - started).toBeLessThan(5000);
