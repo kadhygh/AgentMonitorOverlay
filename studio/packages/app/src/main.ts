@@ -7,7 +7,7 @@ import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolveDataDir } from "./paths.js";
+import { platformDataDir, resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
 import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
@@ -33,7 +33,7 @@ const testMode = process.env.AMO_STUDIO_TEST === "1";
 const APP_ICON = join(here, "..", "assets", "icon.png");
 // The portable build is Electron itself with Studio in resources/app; the exe's folder is the portable root.
 const portableDir = process.env.AMO_STUDIO_PORTABLE_DIR ?? (app.isPackaged ? dirname(process.execPath) : null);
-const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot });
+const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot, platformDataDir: app.isPackaged ? platformDataDir(app.getAppPath(), process.env) : null });
 const dataDir = dataChoice.dataDir;
 
 // Experiments for the resize flicker (2026-10-15; off unless set when starting the app): use the GPU even when

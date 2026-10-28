@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
-// Where Studio keeps its data. Order: AMO_STUDIO_DATA_DIR; in the portable build, the choice saved next to the exe
+// Where Studio keeps its data. Order: AMO_STUDIO_DATA_DIR; in a build installed by AMO 平台, the data dir set there; in the portable build, the choice saved next to the exe
 // (amo-studio.json), else `data/` next to the exe; in development, studio/.data. A portable copy carries its data with
 // it when the whole folder is moved.
 
@@ -14,6 +14,8 @@ export interface PortableConfig {
 
 export interface DataDirInput {
   env: Record<string, string | undefined>;
+  /** Installed by AMO 平台: the Studio data dir set in the platform (platformDataDir), else null. */
+  platformDataDir?: string | null;
   /** The portable build's folder (the exe's); null in development. */
   portableDir: string | null;
   studioRoot: string;
@@ -21,7 +23,7 @@ export interface DataDirInput {
 
 export interface DataDirChoice {
   dataDir: string;
-  source: "env" | "config" | "portable-default" | "dev";
+  source: "env" | "platform" | "config" | "portable-default" | "dev";
   /** Portable build only: where the choice is (or would be) saved. */
   configPath: string | null;
   /** Portable build without a saved choice: the first-run setup should ask. */
@@ -46,10 +48,31 @@ export function resolveDataDir(input: DataDirInput): DataDirChoice {
   const configPath = input.portableDir ? join(input.portableDir, PORTABLE_CONFIG) : null;
   const fromEnv = input.env.AMO_STUDIO_DATA_DIR;
   if (fromEnv) return { dataDir: resolve(fromEnv), source: "env", configPath, firstRun: false };
+  if (input.platformDataDir) return { dataDir: resolve(input.platformDataDir), source: "platform", configPath, firstRun: false };
   if (!input.portableDir) return { dataDir: join(input.studioRoot, ".data"), source: "dev", configPath: null, firstRun: false };
   const saved = readPortableConfig(configPath!);
   if (saved) return { dataDir: isAbsolute(saved.dataDir) ? saved.dataDir : resolve(input.portableDir, saved.dataDir), source: "config", configPath, firstRun: false };
   return { dataDir: join(input.portableDir, "data"), source: "portable-default", configPath, firstRun: true };
+}
+
+/**
+ * The data dir AMO 平台 set for Studio, for a build the platform installed (2026-10-28, the user's call): the platform
+ * passes AMO_STUDIO_DATA_DIR when it opens Studio, but a Studio opened another way — pinned to the taskbar, say — has no
+ * variable and would otherwise ask for a data dir and write amo-studio.json into its version folder. Only a platform-mode
+ * build reads it (resources/app/package.json `amoBuild.mode`, set by package-portable.mjs --platform); the portable zip
+ * keeps its own choice. The platform's settings are %APPDATA%\AMO\platform.json (AMO_HOME in tests), a file the tools
+ * only read (AGENTS.md rule 1).
+ */
+export function platformDataDir(appDir: string, env: Record<string, string | undefined>): string | null {
+  try {
+    const build = JSON.parse(readFileSync(join(appDir, "package.json"), "utf8")) as { amoBuild?: { mode?: string } };
+    if (build.amoBuild?.mode !== "platform") return null;
+    const home = env.AMO_HOME ? resolve(env.AMO_HOME) : join(env.APPDATA ?? "", "AMO");
+    const settings = JSON.parse(readFileSync(join(home, "platform.json"), "utf8").replace(/^﻿/, "")) as { studioDataDir?: unknown };
+    return typeof settings.studioDataDir === "string" && settings.studioDataDir.trim() ? settings.studioDataDir.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A data dir the person picked: absolute, writable (created if missing). Saved relative when inside the portable folder. */
