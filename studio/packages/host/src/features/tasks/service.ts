@@ -61,7 +61,8 @@ export class TasksFeature extends Feature {
   /** Whether the task is live, in `column`, and not the scheduler's own task (which always stays 进行中). */
   private followsSessions(taskId: Id, column: TaskColumn): boolean {
     const task = this.store.getTask(taskId);
-    return !!task && !task.archivedAt && task.column === column && this.store.getKv(SCHEDULER_TASK_KEY)?.value !== taskId;
+    // A copy of a remote task (远程 step 2) has the column its own computer gives it.
+    return !!task && !task.archivedAt && !task.remote && task.column === column && this.store.getKv(SCHEDULER_TASK_KEY)?.value !== taskId;
   }
 
   /**
@@ -174,6 +175,7 @@ export class TasksFeature extends Feature {
    */
   updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
+    if (current.remote) throw new HostError("read_only", `这是 ${current.remote.name} 上的远程任务：名字、状态、说明和专题跟着那台电脑走，这里不能改`);
     const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead" | "relayAuto">> = {};
     if (patch.lead !== undefined) {
       if (typeof patch.lead !== "boolean") throw new HostError("bad_request", "lead must be true or false");
@@ -218,6 +220,11 @@ export class TasksFeature extends Feature {
   async archiveTask(id: Id): Promise<Task> {
     const task = this.requireTask(id);
     if (task.archivedAt) return task;
+    // A copy of a remote task (远程 step 2): it goes from this computer, the task stays where it runs.
+    if (task.remote) {
+      this.f.remote.dropCopy(task);
+      return { ...task, archivedAt: new Date().toISOString() };
+    }
     const archived = this.store.updateTask(id, { archivedAt: new Date().toISOString() });
     this.publish({ type: "task.upserted", task: archived });
     await this.archiveSessions(this.store.listSessions({ taskId: id }));
@@ -239,6 +246,8 @@ export class TasksFeature extends Feature {
   async addSession(taskId: Id, input: NewSessionInput): Promise<Session> {
     const task = this.requireTask(taskId);
     if (task.archivedAt) throw new HostError("read_only", "archived tasks cannot get new sessions");
+    // A copy of a remote task (远程 step 2): the session starts where the task runs, on a model allowed there.
+    if (task.remote) return this.f.remote.startCopySession(task, input);
     if (input.workspaceId && input.workspaceId !== task.workspaceId) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
     this.requireProfile(input.profileId);
     this.firstImages(input);

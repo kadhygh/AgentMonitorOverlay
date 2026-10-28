@@ -29,7 +29,7 @@ export class ChannelsFeature extends Feature {
   }
 
   private changed(): void {
-    this.publish({ type: "profiles.updated", profiles: [...this.profiles] as ModelProfile[] });
+    this.publish({ type: "profiles.updated", profiles: this.f.allProfiles() });
   }
 
   list(): ModelChannel[] {

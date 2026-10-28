@@ -20,12 +20,13 @@ export interface RouteOptions {
   open?: boolean;
 }
 
-export type Route = { method: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown } & RouteOptions;
+/** `path`: the pattern as declared ("/api/tasks/:id"), for checks that go by route (远程 copies, 2026-10-29). */
+export type Route = { method: string; path: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown } & RouteOptions;
 
 export function route(method: string, path: string, handle: (ctx: RouteContext) => unknown, options: RouteOptions = {}): Route {
   const keys: string[] = [];
   const pattern = new RegExp(`^${path.replace(/:([A-Za-z]+)/g, (_, k: string) => (keys.push(k), "([^/]+)"))}$`);
-  return { method, pattern, keys, handle, ...options };
+  return { method, path, pattern, keys, handle, ...options };
 }
 
 /** A handler's answer that is a file on disk rather than JSON. */

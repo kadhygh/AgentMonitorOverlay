@@ -48,6 +48,11 @@ export interface Task {
   lead?: boolean;
   /** 主控传话不用确认 (stage 16): a 主控's relays go into this task's session without asking the person. */
   relayAuto?: boolean;
+  /**
+   * 远程 (step 2, 2026-10-29): this computer's copy of a task a paired device granted it — the task and its sessions run
+   * there; here they are kept in sync and worked through it. Absent: an ordinary task of this computer.
+   */
+  remote?: import("./remote.js").TaskRemote;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   /** Archived with its topic (or on its own); read-only while set. */
@@ -70,10 +75,14 @@ export interface Topic {
   archivedAt: Timestamp | null;
 }
 
-/** `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/done/stage-17-dsh.md). */
-export type SessionRuntime = "codex" | "claude" | "dsh";
+/**
+ * `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/done/stage-17-dsh.md). `remote`
+ * (远程, step 2, 2026-10-29): this computer's copy of a session that runs on a paired device; what is sent to it goes
+ * there through the team server (features/remote/).
+ */
+export type SessionRuntime = "codex" | "claude" | "dsh" | "remote";
 /** How the runtime is named next to a profile ("Codex · DeepSeek", "DSH · DeepSeek"). */
-export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH" };
+export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH", remote: "远程" };
 export type SessionKind = "main" | "fork" | "sub";
 
 /**

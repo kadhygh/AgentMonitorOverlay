@@ -1,5 +1,5 @@
 import type { SQLInputValue } from "node:sqlite";
-import type { Id, Session, SessionItem, SessionOptions, SessionWake, Task, TaskColumn, Topic, Workspace } from "@amo-studio/protocol";
+import type { Id, Session, SessionItem, SessionOptions, SessionWake, Task, TaskColumn, TaskRemote, Topic, Workspace } from "@amo-studio/protocol";
 
 // Rows of the store's tables as entities (stage 16 split out of store.ts).
 
@@ -32,10 +32,22 @@ export function toTask(r: Row): Task {
     ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
     ...(Number(r.lead) === 1 ? { lead: true } : {}),
     ...(Number(r.relay_auto) === 1 ? { relayAuto: true } : {}),
+    ...parseRemote(r.remote),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
   };
+}
+
+/** 远程 step 2: only a copy of a paired device's task carries the field; a damaged value reads as none. */
+function parseRemote(v: unknown): { remote?: TaskRemote } {
+  if (typeof v !== "string" || !v) return {};
+  try {
+    const r = JSON.parse(v) as TaskRemote;
+    return r && typeof r === "object" && typeof r.device === "string" ? { remote: r } : {};
+  } catch {
+    return {};
+  }
 }
 
 export function toTopic(r: Row): Topic {

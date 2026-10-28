@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
@@ -258,6 +258,8 @@ export class ConfigFeature extends Feature {
 
   /** The profile's models, efforts and permissions as its CLI offers them, in the person's order and with their defaults. */
   async choices(profileId: Id): Promise<ProfileChoices> {
+    // A model of a remote task's device (远程 step 2): its list is that device's; here it has none to offer.
+    if (parseRemoteProfileId(profileId)) return { profileId, models: [], permissions: [], defaultPermission: "", source: "builtin" };
     if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("not_found", `profile ${profileId} not found`);
     const choices = await this.wrap(() => this.runtime.choices(profileId));
     return applyModelPrefs(choices, readModelPrefs(this.store)[profileId]);

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { collectSubtreeIds, type CanvasDoc, type HostEvent, type Id, type Session, type SessionItem, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { collectSubtreeIds, type CanvasDoc, type HostEvent, type Id, type Session, type SessionItem, type SessionOptions, type Task, type TaskColumn, type TaskRemote, type Topic, type Workspace } from "@amo-studio/protocol";
 import { DocumentStore } from "./documents.js";
 import { ATTACHMENT_ID, str, strOrNull, toItem, toSession, toTask, toTopic, toWorkspace, type Row } from "./rows.js";
 import { MIGRATIONS } from "./migrations.js";
@@ -166,12 +166,13 @@ export class Store extends DocumentStore {
 
   // Tasks
 
-  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn; lead?: boolean }): Task {
+  /** `id` and `remote`: 远程 step 2, this computer's copy of a paired device's task, under that task's own id. */
+  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn; lead?: boolean; id?: Id; remote?: TaskRemote }): Task {
     const at = this.timestamp();
-    const task: Task = { id: newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", ...(input.lead ? { lead: true } : {}), createdAt: at, updatedAt: at, archivedAt: null };
+    const task: Task = { id: input.id ?? newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", ...(input.lead ? { lead: true } : {}), ...(input.remote ? { remote: input.remote } : {}), createdAt: at, updatedAt: at, archivedAt: null };
     this.db
-      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, lead, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)")
-      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, input.lead ? 1 : 0, at, at);
+      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, lead, remote, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")
+      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, input.lead ? 1 : 0, input.remote ? JSON.stringify(input.remote) : null, at, at);
     return task;
   }
 
@@ -190,18 +191,19 @@ export class Store extends DocumentStore {
   }
 
   /** `description`: empty removes it. */
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead" | "relayAuto">>): Task {
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead" | "relayAuto" | "remote">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const { description: _old, lead: _wasLead, relayAuto: _wasAuto, ...rest } = task;
+    const { description: _old, lead: _wasLead, relayAuto: _wasAuto, remote: _wasRemote, ...rest } = task;
     const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
     const lead = patch.lead !== undefined ? patch.lead : !!task.lead;
     const relayAuto = patch.relayAuto !== undefined ? patch.relayAuto : !!task.relayAuto;
-    const { description: _d, lead: _l, relayAuto: _r, ...plain } = patch;
-    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), updatedAt: this.timestamp() };
+    const remote = patch.remote !== undefined ? patch.remote : task.remote;
+    const { description: _d, lead: _l, relayAuto: _r, remote: _m, ...plain } = patch;
+    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), ...(remote ? { remote } : {}), updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, relay_auto = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, relayAuto ? 1 : 0, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, relay_auto = ?, remote = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, relayAuto ? 1 : 0, remote ? JSON.stringify(remote) : null, next.updatedAt, id);
     return next;
   }
 
@@ -314,6 +316,37 @@ export class Store extends DocumentStore {
     const s = this.getSession(id);
     if (!s) throw new Error(`session ${id} not found`);
     return s;
+  }
+
+  /**
+   * 远程 step 2: this computer's copy of a session of a paired device, written as it came (new or replacing the copy);
+   * its parent must be here already.
+   */
+  putRemoteSession(s: Session): Session {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, wake, started_by, report_to, created_at, updated_at, archived_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = excluded.status, writer = excluded.writer, runtime_ref = excluded.runtime_ref, profile_id = excluded.profile_id,
+           options = excluded.options, wake = excluded.wake, started_by = excluded.started_by, report_to = excluded.report_to, updated_at = excluded.updated_at, archived_at = excluded.archived_at`,
+      )
+      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options ?? {}), s.wake ? JSON.stringify(s.wake) : null, s.startedBy ?? null, s.reportTo ?? null, s.createdAt, s.updatedAt, s.archivedAt);
+    return this.getSession(s.id)!;
+  }
+
+  /** 远程 step 2: an item of a copied session as it came, under its own seq (new, or replacing the copy of it). */
+  putRemoteItem(item: SessionItem): { item: SessionItem; added: boolean } {
+    const had = !!this.db.prepare("SELECT 1 FROM items WHERE id = ?").get(item.id);
+    const { seq, ...body } = item;
+    if (had) this.db.prepare("UPDATE items SET body = ? WHERE id = ?").run(JSON.stringify(body), item.id);
+    else this.db.prepare("INSERT INTO items (session_id, seq, id, type, created_at, body) VALUES (?, ?, ?, ?, ?, ?)").run(item.sessionId, seq, item.id, item.type, item.createdAt, JSON.stringify(body));
+    return { item: this.getItem(item.id)!, added: !had };
+  }
+
+  /** The highest seq of a session's items (0 when it has none). */
+  lastItemSeq(sessionId: Id): number {
+    const row = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM items WHERE session_id = ?").get(sessionId) as Row;
+    return Number(row.m);
   }
 
   /** Archives the session with all its forks and subagents. Returns the sessions that changed. */

@@ -226,6 +226,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       const body =
         req.method === "GET" || req.method === "DELETE" ? undefined : matched?.route.rawBody ? await readRaw(req, matched.route.rawBody) : await readBody(req);
       if (matched) {
+        // A copy of a paired device's task (远程, step 2) takes only some of the API.
+        service.remote.guardRoute(req.method!, matched.route.path, matched.params);
         const out = await matched.route.handle({ method: req.method!, path: url.pathname, params: matched.params, query: url.searchParams, body });
         return out instanceof FileReply ? sendFile(res, out) : out instanceof JsonReply ? send(res, out.status, out.body) : send(res, 200, out);
       }

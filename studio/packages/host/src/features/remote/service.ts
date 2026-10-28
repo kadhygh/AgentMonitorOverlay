@@ -1,10 +1,12 @@
 import { statSync } from "node:fs";
-import type { RemoteConnection, RemoteIncomingRequest, RemoteOutgoingRequest, RemotePeer, RemotePingResult, RemoteState } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemotePingResult, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
+import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
+import { RemoteCopies } from "./copies.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login (account.json, Studio has none of its own) and device.json — and the devices paired with it. The Host connects
@@ -12,7 +14,8 @@ import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from
 // The pairs' record is here, in the Host's data (kv `remote.pairs`, by account + device id): for pairs this computer
 // allowed ("owner") it is the one that counts — after a reconnect the server's copy is brought in line with it; pairs
 // another device allowed ("guest") come from the server, which is how an approval made while this one was away
-// arrives. Remote tasks and sessions (step 2) are not here yet: the channel only carries ping / pong.
+// arrives. Step 2 (2026-10-29): tasks granted to paired devices (grants.ts, this computer as A) and the copies of tasks
+// granted to this one (copies.ts, as B) go over the same channel.
 
 const PAIRS_KEY = "remote.pairs";
 /** Unpairings the server has not heard of yet (it was not reachable): sent first thing after the next connect. */
@@ -55,7 +58,32 @@ export class RemoteFeature extends Feature {
   /** What the server last said about each peer: online, and when it was last seen. */
   private presence = new Map<string, { online: boolean; lastSeen: number | null }>();
   private readonly answered = new CommandLog<{ kind: string; body: unknown }>();
+  /** Commands being answered: the same id again waits for that answer instead of running twice. */
+  private readonly inflight = new Map<string, Promise<Answer>>();
   private reading: Promise<void> | null = null;
+  private readonly context: RemoteContext = {
+    host: this.host,
+    link: () => this.link,
+    deviceName: () => this.device?.name ?? "授权的电脑",
+    peer: (ref, role) => {
+      const p = this.pairs().find((x) => same(x, ref) && (!role || x.role === role));
+      if (!p) return null;
+      const pr = this.presence.get(`${ref.account}\n${ref.device}`);
+      return { name: p.name, online: this.link?.state === "online" && !!pr?.online };
+    },
+    changed: () => this.changed(),
+  };
+  /** Step 2 as A: the tasks this computer granted. */
+  readonly grants = new RemoteGrants(this.context);
+  /** Step 2 as B: the copies of tasks granted to this computer. */
+  readonly copies = new RemoteCopies(this.context);
+  private readonly onHostEvent = (e: HostEvent) => {
+    try {
+      this.grants.onHostEvent(e);
+    } catch (err) {
+      console.log(`remote: ${String(err)}`);
+    }
+  };
 
   /** Starts remote (host-process.ts with the Host's own environment); without it the page says remote is off. */
   start(options: RemoteOptions = {}): void {
@@ -70,9 +98,11 @@ export class RemoteFeature extends Feature {
     void this.loadAccount();
     this.watch = setInterval(() => this.checkFiles(), options.watchMs ?? 5000);
     this.watch.unref();
+    this.host.on("event", this.onHostEvent);
   }
 
   stop(): void {
+    this.host.off("event", this.onHostEvent);
     if (this.watch) clearInterval(this.watch);
     this.watch = null;
     this.link?.stop();
@@ -176,6 +206,8 @@ export class RemoteFeature extends Feature {
       case "hello":
         // Everything again after a (re)connect: pairs, requests, who is online (what changed meanwhile left no event).
         await this.sync();
+        // And the copies of what paired devices granted this computer (step 2): checked again from A, each of them.
+        for (const p of this.pairs()) if (p.role === "guest" && this.presence.get(`${p.account}\n${p.device}`)?.online) void this.copies.syncPeer(p);
         return;
       case "pair-request":
         this.incoming = [...this.incoming.filter((r) => r.id !== e.request.id), e.request];
@@ -190,9 +222,17 @@ export class RemoteFeature extends Feature {
         this.savePairs(this.pairs().filter((p) => !same(p, e.peer)));
         break;
       case "presence": {
-        this.presence.set(`${e.peer.account}\n${e.peer.device}`, { online: e.online, lastSeen: e.online ? Date.now() : e.ago === null ? null : Date.now() - e.ago });
+        const key = `${e.peer.account}\n${e.peer.device}`;
+        const wasOnline = !!this.presence.get(key)?.online;
+        this.presence.set(key, { online: e.online, lastSeen: e.online ? Date.now() : e.ago === null ? null : Date.now() - e.ago });
         const pairs = this.pairs();
-        if (pairs.some((p) => same(p, e.peer) && p.name !== e.peer.name)) this.savePairs(pairs.map((p) => (same(p, e.peer) ? { ...p, name: e.peer.name } : p)));
+        if (pairs.some((p) => same(p, e.peer) && p.name !== e.peer.name)) {
+          this.savePairs(pairs.map((p) => (same(p, e.peer) ? { ...p, name: e.peer.name } : p)));
+          this.grants.rename(e.peer, e.peer.name);
+          this.copies.rename(e.peer, e.peer.name);
+        }
+        // A device that granted this computer tasks is back: what it did meanwhile comes over (step 2).
+        if (e.online && !wasOnline && pairs.some((p) => same(p, e.peer) && p.role === "guest")) void this.copies.syncPeer(e.peer);
         break;
       }
       case "relay":
@@ -204,20 +244,39 @@ export class RemoteFeature extends Feature {
     this.changed();
   }
 
-  /** A command from a paired device. Only 测试连接's ping in step 1; a repeated id gets the answer it got before. */
+  /**
+   * A frame from a paired device: 测试连接's ping, a command about a task granted to it (step 2, answered once per id:
+   * the same id again gets the same answer, also while the first is still being worked out), or what a device that
+   * granted this computer a task pushes (no answer).
+   */
   private onFrame(f: RelayFrameIn): void {
-    const link = this.link;
-    if (!link) return;
-    const reply = (answer: { kind: string; body: unknown }) => link.send({ type: "relay", to: f.from, id: `r_${f.id}`.slice(0, 64), kind: answer.kind, re: f.id, body: answer.body });
+    // An answer that came after its wait ended: nothing waits for it, and answering it would start an endless echo.
+    if (f.re) return;
+    if (f.kind === REMOTE_KINDS.push) {
+      if (this.pairs().some((p) => same(p, f.from) && p.role === "guest")) this.copies.apply(f.from, f.body);
+      return;
+    }
+    const reply = (answer: Answer) => this.link?.send({ type: "relay", to: f.from, id: `r_${f.id}`.slice(0, 64), kind: answer.kind, re: f.id, body: answer.body });
     const before = this.answered.get(f.from, f.id);
     if (before) return void reply(before);
-    let answer: { kind: string; body: unknown };
+    const key = `${f.from.account}\n${f.from.device}\n${f.id}`;
+    const running = this.inflight.get(key);
+    if (running) return void running.then(reply);
+    const work = this.answerFrame(f).then((answer) => {
+      this.answered.remember(f.from, f.id, answer);
+      this.inflight.delete(key);
+      return answer;
+    });
+    this.inflight.set(key, work);
+    void work.then(reply);
+  }
+
+  private async answerFrame(f: RelayFrameIn): Promise<Answer> {
     // The server forwards between devices it has as paired; this computer's own list has the last word.
-    if (!this.pairs().some((p) => same(p, f.from))) answer = { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
-    else if (f.kind === "ping") answer = { kind: "pong", body: { at: Date.now() } };
-    else answer = { kind: "error", body: { code: "unknown_kind", message: `对方的 Studio 不认识「${f.kind}」，可能版本不同` } };
-    this.answered.remember(f.from, f.id, answer);
-    reply(answer);
+    if (!this.pairs().some((p) => same(p, f.from))) return { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
+    if (f.kind === "ping") return { kind: "pong", body: { at: Date.now() } };
+    if (f.kind.startsWith("rt.")) return this.grants.serve(f.from, f.kind, f.body);
+    return { kind: "error", body: { code: "unknown_kind", message: `对方的 Studio 不认识「${f.kind}」，可能版本不同` } };
   }
 
   /** Pairs and requests from the server, brought in line with this computer's record. */
@@ -304,8 +363,15 @@ export class RemoteFeature extends Feature {
     }
   }
 
+  /** A pairing that ends takes its grants with it (this computer as A) and revokes its copies (as B). */
   private savePairs(list: StoredPair[]): void {
+    const before = this.pairs();
     this.store.setKv(PAIRS_KEY, JSON.stringify(list));
+    for (const p of before) {
+      if (list.some((x) => same(x, p) && x.role === p.role)) continue;
+      if (p.role === "owner") this.grants.dropPeer(p);
+      else this.copies.revokePeer(p, "配对已解除");
+    }
   }
 
   private pendingUnpairs(): DeviceRef[] {
@@ -347,6 +413,8 @@ export class RemoteFeature extends Feature {
       peers,
       incoming,
       outgoing,
+      grants: this.grants.list(),
+      allowed: this.grants.allowed(),
     };
   }
 
@@ -454,4 +522,66 @@ export class RemoteFeature extends Feature {
     }
     return this.state();
   }
+
+  // ---- step 2: granting tasks (this computer as A)
+
+  grant(taskId: Id, peer: DeviceRef): RemoteState {
+    this.requireStarted();
+    this.grants.grant(taskId, peer);
+    return this.state();
+  }
+
+  revoke(taskId: Id, peer: DeviceRef): RemoteState {
+    if (!this.grants.revoke(taskId, peer, "授权已收回")) throw new HostError("not_found", "这个任务没有授权给这台设备");
+    return this.state();
+  }
+
+  setAllowed(body: unknown): RemoteState {
+    this.grants.setAllowed(body);
+    return this.state();
+  }
+
+  // ---- step 2: copies of granted tasks (this computer as B)
+
+  /** The models copies run on, as hidden profiles of this Host (only their names are used). */
+  copyProfiles(): ModelProfile[] {
+    return this.copies.profiles();
+  }
+
+  startCopySession(task: Task, input: NewSessionInput): Promise<Session> {
+    return this.copies.start(task, input);
+  }
+
+  dropCopy(task: Task): void {
+    this.copies.drop(task);
+  }
+
+  /**
+   * What a copy takes from this computer's own API (B's Host refuses the rest, 「B 能看到什么」): reading it, a message,
+   * an answer to an approval or question, 打断, a new session, and archiving it (which deletes the copy). Changing the
+   * task (its name, column, topic, 说明), a session's model or name, a branch, a terminal, comments sent into it… are
+   * A's to do.
+   */
+  guardRoute(method: string, path: string, params: Record<string, string>): void {
+    const id = params.id;
+    if (!id || method === "GET") return;
+    const task = path.startsWith("/api/tasks/:id") ? this.store.getTask(id) : path.startsWith("/api/sessions/:id") ? this.sessionTask(id) : undefined;
+    if (!task?.remote) return;
+    if (COPY_ROUTES.has(`${method} ${path}`)) return;
+    throw new HostError("read_only", `这是 ${task.remote.name} 上的远程任务：这一项要在那台电脑上操作`);
+  }
+
+  private sessionTask(sessionId: Id): Task | undefined {
+    const s = this.store.getSession(sessionId);
+    return s?.taskId ? this.store.getTask(s.taskId) : undefined;
+  }
 }
+
+/** The writes a copy takes (RemoteFeature.guardRoute); every GET reads the copy. */
+const COPY_ROUTES = new Set([
+  "POST /api/sessions/:id/messages",
+  "POST /api/sessions/:id/interrupt",
+  "POST /api/sessions/:id/questions/:itemId/answer",
+  "POST /api/tasks/:id/sessions",
+  "POST /api/tasks/:id/archive",
+]);

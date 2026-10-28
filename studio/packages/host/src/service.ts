@@ -36,6 +36,7 @@ import { StatsFeature } from "./features/stats/service.js";
 import { ChannelsFeature } from "./features/channels/service.js";
 import { MaintenanceFeature } from "./features/maintenance/service.js";
 import { RemoteFeature } from "./features/remote/service.js";
+import { RemoteAwareRuntime } from "./features/remote/runtime.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -75,10 +76,12 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly dsh = new DshFeature(this);
   readonly maintenance = new MaintenanceFeature(this);
   readonly remote = new RemoteFeature(this);
+  /** The runtimes of this computer, plus "remote" for copies of tasks paired devices granted it (远程 step 2). */
+  readonly runtime: SessionRuntimeApi;
 
   constructor(
     readonly store: Store,
-    readonly runtime: SessionRuntimeApi,
+    runtime: SessionRuntimeApi,
     readonly profiles: readonly ModelProfile[],
     readonly options: {
       launcher?: TerminalLauncher;
@@ -96,6 +99,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     } = {},
   ) {
     super();
+    this.runtime = new RemoteAwareRuntime(store, runtime, () => this.remote.copies);
     runtime.on("event", (e) => this.emit("event", e));
     this.tasks.ensureStructure();
     this.sessions.watchReports();
@@ -115,9 +119,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       topics: this.store.listTopics(),
       tasks: this.store.listTasks(),
       sessions: this.store.listSessions(),
-      profiles: [...this.profiles],
+      profiles: this.allProfiles(),
       eventSeq: this.store.lastEventSeq(),
     };
+  }
+
+  /** Every profile the windows know: this computer's, and (hidden) the models of copies of remote tasks, for their names. */
+  allProfiles(): ModelProfile[] {
+    return [...this.profiles, ...this.remote.copyProfiles()];
   }
 
   optionalWorkspace(value: unknown): Id | null {

@@ -95,7 +95,8 @@ export class SessionsFeature extends Feature {
   private roleUpdate(sessionId: Id): { lines: string[]; told: () => void } {
     const none = { lines: [], told: () => undefined };
     const s = this.store.getSession(sessionId);
-    if (!s || s.kind === "sub" || s.archivedAt) return none;
+    // A copy of a remote session (远程 step 2): its own computer tells it what changed there.
+    if (!s || s.kind === "sub" || s.archivedAt || s.runtime === "remote") return none;
     try {
       return roleUpdate(this.host, sessionId);
     } catch {
@@ -267,21 +268,26 @@ export class SessionsFeature extends Feature {
     if (task.archivedAt) throw new HostError("read_only", "这个任务已归档，不能再开会话");
     const text = boundedText(input.text, "text", 20_000);
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
-    const picked = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
-    const profileId = picked.profileId;
+    let picked: { profileId: Id; model?: string } = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
     // For the person (2026-10-26: 「本 task 里另起一个 session，我来处理」 came out as one hung under its starter, which
     // Focus leaves to the starter): a session of the task like one they opened, not reporting back.
     const forPerson = input.forPerson === true;
     if (forPerson && input.report === true) throw new HostError("bad_request", "forPerson 的会话是给人自己推进的，结果不回到你这里：去掉 report");
     const report = input.report === true;
     const workspace = input.workspace === undefined || input.workspace === null || input.workspace === "" ? this.requireLiveWorkspace(task.workspaceId) : this.workspaceByRef(input.workspace);
+    // 远程 (step 2, 「授权范围」): a task granted to a paired device keeps its sessions in its own project and on the
+    // models allowed for remote use (another one is swapped for the default allowed one, and the new session told).
+    const remote = this.f.remote.grants.limitDelegation(task.id, { profileId: picked.profileId, elsewhere: workspace.id !== task.workspaceId });
+    if (remote?.note) picked = { profileId: remote.profileId };
+    const profileId = picked.profileId;
     let options: SessionOptions | undefined = picked.model ? { model: picked.model } : undefined;
-    if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
+    if (remote?.permission) options = { ...options, permission: remote.permission };
+    else if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
       const level = PERMISSION_LEVELS.find((l) => l === input.permission);
       if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
-      options = { ...options, permission: PERMISSIONS[this.f.requireProfile(profileId).runtime][level] };
+      options = { ...options, permission: PERMISSIONS[this.f.requireProfile(profileId).runtime as Exclude<Session["runtime"], "remote">][level] };
     }
-    if (input.effort !== undefined && input.effort !== null && input.effort !== "") {
+    if (input.effort !== undefined && input.effort !== null && input.effort !== "" && !remote?.note) {
       if (typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
       options = { ...options, effort: await this.effortFor(profileId, picked.model, input.effort.trim()) };
     }
@@ -289,6 +295,7 @@ export class SessionsFeature extends Feature {
     const message = [
       forPerson ? `【本任务的会话「${from.title || "未命名会话"}」应人的要求开启：人会在这里和你一起推进】` : `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
       ...(elsewhere ? [`（你在项目「${isCommon(workspace) ? "公共目录" : workspace.name}」的文件夹 ${workspace.path} 里工作，和任务本身的项目不同。）`] : []),
+      ...(remote?.note ? [remote.note] : []),
       text,
       "",
       forPerson
@@ -373,6 +380,8 @@ export class SessionsFeature extends Feature {
   }
 
   private checkReport(s: Session): void {
+    // A copy of a remote session (远程 step 2) is reported where it runs, never again from here.
+    if (s.runtime === "remote") return;
     if (!s.reportTo || s.archivedAt || !(s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error")) return;
     const [turn] = this.store.findItems(s.id, "turn", {}, { newest: true, limit: 1 });
     if (!turn || turn.type !== "turn" || turn.state === "running") return;
@@ -404,7 +413,7 @@ export class SessionsFeature extends Feature {
 
 /** session_start's permission levels, as each runtime's own permission option. */
 const PERMISSION_LEVELS = ["read-only", "write", "full"] as const;
-const PERMISSIONS: Record<Session["runtime"], Record<(typeof PERMISSION_LEVELS)[number], string>> = {
+const PERMISSIONS: Record<Exclude<Session["runtime"], "remote">, Record<(typeof PERMISSION_LEVELS)[number], string>> = {
   codex: { "read-only": "read-only", write: "workspace-write", full: "full-auto" },
   claude: { "read-only": "plan", write: "acceptEdits", full: "bypassPermissions" },
   dsh: { "read-only": "read-only", write: "workspace-write", full: "full-access" },

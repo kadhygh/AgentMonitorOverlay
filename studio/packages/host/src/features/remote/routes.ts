@@ -21,5 +21,8 @@ export function remoteRoutes(service: HostService): Route[] {
     route("POST", "/api/remote/unpair", ({ body }) => service.remote.unpair(peer(body))),
     route("POST", "/api/remote/ping", ({ body }) => service.remote.ping(peer(body))),
     route("POST", "/api/remote/reconnect", () => service.remote.reconnect()),
+    route("POST", "/api/remote/grants", ({ body }) => service.remote.grant(str(obj(body).taskId, "taskId"), peer(body))),
+    route("POST", "/api/remote/grants/revoke", ({ body }) => service.remote.revoke(str(obj(body).taskId, "taskId"), peer(body))),
+    route("PUT", "/api/remote/allowed", ({ body }) => service.remote.setAllowed(body)),
   ];
 }

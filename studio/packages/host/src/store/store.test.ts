@@ -43,9 +43,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(22);
+    expect(makeStore(path).schemaVersion()).toBe(23);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(22);
+    expect(makeStore(path).schemaVersion()).toBe(23);
   });
 
   it("refuses data a newer Studio migrated, says so for the person, and leaves the file alone (2026-10-28)", () => {

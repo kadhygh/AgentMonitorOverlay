@@ -345,4 +345,9 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX canvas_callouts_topic ON canvas_callouts(topic_id, state, created_at);
   `,
+  // 23: 远程 step 2 (2026-10-29): this computer's copy of a task a paired device granted it (JSON: where it runs, whether
+  // it is still granted, what new sessions may run on); NULL for every task of its own.
+  `
+  ALTER TABLE tasks ADD COLUMN remote TEXT;
+  `,
 ];
