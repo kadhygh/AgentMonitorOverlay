@@ -170,6 +170,19 @@ platform/
 - 平台的 Chromium 配置在 `%LOCALAPPDATA%\AMO\platform-profile`；每个已装版本的记录在 `apps\<tool>\<version>.json`（在程序文件夹外面）。
 - 平台第一次下载用的 zip：服务先找 `<平台目录>/downloads/AMO-Platform-win.zip`（deploy 不碰），再找客户端的 `downloads/`。还没有命令负责放这个 zip，第一次发布平台时定。
 
+## 共用 Electron（10-28 晚用户要做，排在下载压缩之后）
+
+起因：每个工具解压后 340–400 MB，其中 321 MB 是 Electron（exe 本体 235 MB），我们自己的代码只有 17–74 MB。平台加 Studio 约 730 MB。
+
+做法（主会话建议，不改工具本身）：**同一个 Electron 版本的文件在本机只存一份，各工具的程序文件夹用硬链接指向它**。
+- 现在各工具的 exe 不一样，只因为打包时用 rcedit 给每个 exe 写了自己的图标和版本信息（`package-portable.mjs` 第 4 步），其余 Electron 文件逐字节相同。给平台发布的包不再改 exe（或者统一写成「AMO」的图标和版本），这样所有工具的 Electron 文件 sha256 全部相同。
+- 平台的安装引擎：现在只从「同一个工具的上一版」硬链接相同的文件，改成从**本机所有已装工具和版本**里按 sha256 找（建一个 sha256 → 路径的索引，存在 `%LOCALAPPDATA%\AMO` 下），找到就硬链接，找不到才下载。第二个工具只需要下载它自己的 17–74 MB。
+- 程序文件夹的样子和 portable 版完全一样（exe 名字照旧是 `AMO Studio.exe`，只是硬链接；`resources/app` 是各自的），所以工具代码一行不改，任务管理器里的进程名也照旧各是各的。
+- 代价：资源管理器里这些 exe 文件的图标都一样。平台给每个工具建开始菜单快捷方式，快捷方式用工具自己的 `.ico`；窗口和托盘的图标是程序自己设的，不受影响。任务栏固定靠 AppUserModelID 和快捷方式，要实测一下固定后的图标对不对。
+- portable zip（不装平台单独用）照旧给每个 exe 写自己的图标，约束第 1 条不变。
+- 清单里写上 Electron 版本（`runtime: "44.7.0"`），以后要不要做成真正独立的「运行时」包，看这一步的效果再说。
+- 预计：平台 + Studio + 便签 + Reviewer 从约 1.4 GB 降到约 0.5 GB，下载同理。
+
 ## 进度
 
 - **10-28 晚 · 第一版（第 1、2 步）合进 master**：每个工具单独的版本号和 `CHANGELOG.md`；中转服务的平台接口和 `publish` / `promote` / `platform-status`（含 `--target-dir` 本地模式）；共用登录模块 `packages/account`；平台 `packages/platform` + 界面 `packages/ui/src/platform`（登录、工具、目录、设置）；`start-platform.cmd`（`-Test` 用测试通道）。另有 Host 的数据库版本保护、`/api/health` 带 `running`、维护终端加 Codex。验证见 `HANDOFF.md` 10-28 那条。
