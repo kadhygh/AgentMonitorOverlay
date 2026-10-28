@@ -46,7 +46,9 @@
 
 ## 最近的改动（新的在上面）
 
-**2026-10-29 凌晨 · 待用户验收（测试通道：Studio 0.9.4、Reviewer 0.9.4、平台 0.9.6、便签 0.9.2、中转 0.9.0）**
+**2026-10-29 凌晨 · 远程第 2 步（测试通道 Studio 0.9.5、Reviewer 0.9.5）**：A 把任务授权给配对的设备（`942e099`…`c84173d`）。「远程」是 B 的 Host 里一种会话运行方式（`RemoteAwareRuntime`，runtime `remote`）：B 的副本放公共目录、`tasks.remote` 列（migration 23，0.9.5 打开过数据后不能回 0.9.4）；A 的远程命令 `rt.list / rt.task / rt.items（since 补齐）/ rt.send / rt.approve（先到先得）/ rt.answer / rt.interrupt / rt.start`，推送 `rt.push`；授权表 kv `remote.grants`、远端允许的模型 kv `remote.allowed`（只到渠道一级）；B 在线时 A 的 Focus 不提醒；被授权任务里禁止跨项目委派。主会话补了一处（`8c88d9a`）：B 上的远程副本不算「正在跑的会话」，不挡完全退出 / 重启。验证：合并后全量 vitest 975 过；remote-tasks / remote / canvas-resize / board / focus e2e 过；tray 的一条在 20 条之后跑时超时一次，单独重跑 2/2 过（偶发）。用测试账号连团队服务器走通：配对 → 授权 → B 看板出现 → B 发消息 A 回复 → 审批 B 点批准两边同步 → B 新开会话 → 收回授权 B 显示「授权已收回」（断线那段在真服务器上没法测，本地 e2e 覆盖）。在做：第 3 步（B 看 HTML / Markdown / 图片，读条）、第 4 步（B 请求、A 同意后自动建任务）、收尾（A 完全退出前提醒远程使用、被远程用时阻止睡眠、B 的 MCP 不把副本当本地任务）。
+
+**2026-10-29 凌晨 · 待用户验收（测试通道：Studio 0.9.4、Reviewer 0.9.4、平台 0.9.6、便签 0.9.2、中转 0.9.0；之后 Studio / Reviewer 又发了 0.9.5）**
 
 Studio 托盘（`04869d9`）：× 只隐藏窗口，Studio 和 Host 留在托盘；托盘「完全退出」连 Host 一起关（有会话在跑先问）；`/api/health` 带 `version`；`POST /api/shutdown`（要令牌，有会话在跑时 409，带 `interrupt` 才放行，退出前写 `host-exit.json` 让外壳跟着退）；外壳写 `shell.json`；平台 Studio 卡片显示后台状态和版本，后台比已装旧且空闲时给「重启 Studio」（平台从不带 interrupt）。验证：合并后全量 vitest 963 过；e2e tray / remote / canvas-resize 6 条、platform 8 条过。
 
@@ -56,7 +58,8 @@ Studio 托盘（`04869d9`）：× 只隐藏窗口，Studio 和 Host 留在托盘
 3. Studio 托盘：点 × 窗口消失但托盘还在、会话照跑；点托盘图标回来；托盘右键「完全退出」。
 4. 画布：拖卡片和分组的右下角改大小、双击恢复；删分组时的勾选框。
 5. 设置 → 远程：本机设备名、连接状态应是在线（已部署到团队服务器）；配对要另一台电脑（或另一个账号的 Studio），没有也可以先看界面。
-6. 留意杀毒软件有没有再拦。
+6. 远程授权（Studio 0.9.5 起）：需要两台电脑（或另一个账号的 Studio）先配对；A 的任务页 ⋯ →「授权给…」，B 的看板会出现「远程在 … 上」的任务卡，能发消息、审批、新开会话；A 在任务页或 设置 → 远程 里收回。设置 → 远程里的「远端允许的模型」先看一眼。
+7. 留意杀毒软件有没有再拦。
 
 **2026-10-29 凌晨 · 远程第 1 步上线、画布调整（用户不在，主会话接着推进）**：远程会话第 1 步（`528f446` 中转服务端的设备登记 / 配对 / 只在配对设备间转发，`c2bb7be` Studio 的 Host 连出、设置 → 远程、配对请求进 Focus、设置旁亮点；设备编号 `%APPDATA%\AMO\device.json`，配对存 Host kv `remote.pairs`）已部署到 Mac（health 里 `devices: 1`）。主会话在团队服务器注册了测试账号「测试-A」「测试-B」（负责一栏写明是测试账号，密码在主会话 scratchpad 的 test-accounts.json），用两个 Studio 测试实例连真服务器走通：配对请求 48 ms 到达、测试连接往返 2–4 ms、解除配对两边同步。画布（`88f9648`）：删分组有确认框和「同时删除组里的 N 张卡片」（任务卡只从画布拿掉，任务不删），删除配色同「归档」，四种卡片拖右下角改大小（存在画布 JSON 的 `size`，无新迁移）。修了一条早就红的 e2e（`c622cc6`，naming）。`studio` e2e 里还有两条在 master 上就红的：`cli.spec.ts:35`、`turn-start.spec.ts:74`（第 1 步的 agent 切到旧提交复现过，和这轮改动无关，没修）。测试预算：gpt 300、claude 300、dsh-dxx-ds 1000（`bf96f93`）。在做：Studio 托盘、远程第 2 步。
 
