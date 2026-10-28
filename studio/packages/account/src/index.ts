@@ -6,3 +6,5 @@ export * from "./paths.js";
 export * from "./json.js";
 export * from "./dpapi.js";
 export * from "./account.js";
+// This computer (device.json): readDevice(), ensureDevice(), setDeviceName(), for pairing devices (remote sessions)
+export * from "./device.js";

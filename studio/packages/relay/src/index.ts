@@ -1,6 +1,8 @@
 export * from "./protocol.js";
+export * from "./devices-protocol.js";
 export * from "./store.js";
 export * from "./server.js";
+export { DeviceHub } from "./devices.js";
 export * from "./client.js";
 export * from "./usage.js";
 export * from "./shell-api.js";

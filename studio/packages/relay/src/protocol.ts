@@ -332,6 +332,8 @@ export interface Health {
   /** The desktop program the service hands out (downloads/AMO-Relay-win.zip): a client running another build can
    * update itself to it (更新桌面程序). Null = none. */
   shell?: ShellBuild | null;
+  /** The devices channel (devices-protocol.ts, remote sessions): its version; missing on a service from before it. */
+  devices?: number;
 }
 
 export interface ShellBuild {

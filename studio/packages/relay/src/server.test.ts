@@ -14,6 +14,8 @@ import type { RelayEvent } from "./protocol.js";
 import { acceptsGzip, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 import { usagePrompt } from "./usage.js";
+import { DeviceHub } from "./devices.js";
+import { CLOSE_REPLACED, DEVICE_CHANNEL_VERSION, PAIR_REQUEST_DAYS, type DeviceEvent, type PairRequest, type PeerView } from "./devices-protocol.js";
 
 let server: RelayServer | null = null;
 let store: RelayStore | null = null;
@@ -363,6 +365,184 @@ describe("relay service", () => {
     expect(text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }))).toContain(`- designdoc.md v2 · fileId ${again2.id}`);
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
+  });
+});
+
+// ---- Devices (remote sessions, step 1): pairing requests, pairs, frames between paired devices only.
+
+type DevEvent = DeviceEvent;
+
+/** A device's socket on the service, its events in a queue. */
+function device(url: string, key: string, id: string, name: string): Promise<{ ws: WebSocket; next: (type?: DevEvent["type"]) => Promise<DevEvent>; send: (f: unknown) => void; closed: Promise<number> }> {
+  const ws = new WebSocket(`${url.replace("http", "ws")}/api/devices/ws?device=${id}&name=${encodeURIComponent(name)}`, { headers: { authorization: `Bearer ${key}` } });
+  const queue: DevEvent[] = [];
+  const waiting: Array<() => void> = [];
+  ws.on("message", (d) => {
+    queue.push(JSON.parse(String(d)) as DevEvent);
+    for (const w of waiting.splice(0)) w();
+  });
+  const closed = new Promise<number>((r) => ws.on("close", (code) => r(code)));
+  closers.push(() => ws.terminate());
+  /** The next event (of this type: others before it are dropped). */
+  const next = async (type?: DevEvent["type"]): Promise<DevEvent> => {
+    for (;;) {
+      const i = queue.findIndex((e) => !type || e.type === type);
+      if (i >= 0) return queue.splice(0, i + 1).at(-1)!;
+      await new Promise<void>((r) => waiting.push(r));
+    }
+  };
+  return new Promise((ok, fail) => {
+    ws.once("open", () => ok({ ws, next, send: (f) => ws.send(JSON.stringify(f)), closed }));
+    ws.once("error", fail);
+  });
+}
+
+async function devicesCall<T = Record<string, unknown>>(url: string, key: string | null, method: string, path: string, body?: unknown): Promise<{ status: number; body: T }> {
+  const res = await fetch(`${url}${path}`, { method, headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  return { status: res.status, body: (await res.json()) as T };
+}
+
+describe("devices", () => {
+  async function two(timing: { deviceHeartbeatMs?: number; deviceDeadMs?: number } = {}) {
+    store = new RelayStore(":memory:");
+    server = await startRelayServer({ store, host: "127.0.0.1", port: 0, ...timing });
+    const a = store.register("台式机的我", "pw-aaaa").key;
+    const b = store.register("笔记本的我", "pw-bbbb").key;
+    return { url: server.url, a, b };
+  }
+  const A = { account: "台式机的我", device: "d_aaaaaaaaaaaa" };
+  const B = { account: "笔记本的我", device: "d_bbbbbbbbbbbb" };
+
+  it("says it has the devices channel, and every call needs the key and a device id", async () => {
+    const { url, a } = await two();
+    expect(await (await fetch(`${url}/api/health`)).json()).toMatchObject({ devices: DEVICE_CHANNEL_VERSION });
+    expect((await devicesCall(url, null, "GET", `/api/devices/pairs?device=${A.device}`)).status).toBe(401);
+    expect((await devicesCall(url, a, "GET", "/api/devices/pairs?device=x")).status).toBe(400);
+    expect((await devicesCall(url, a, "POST", "/api/devices/pair", { device: A.device, deviceName: "", to: "笔记本的我" })).body).toMatchObject({ message: "设备名 不能为空" });
+    expect((await devicesCall(url, a, "POST", "/api/devices/pair", { device: A.device, deviceName: "台式机", to: "没这人" })).status).toBe(404);
+    // A socket without the key, or without a device id, is turned away.
+    await expect(device(url, "bad", A.device, "台式机")).rejects.toThrow(/401/);
+    await expect(device(url, a, "no", "台式机")).rejects.toThrow(/400/);
+  });
+
+  it("pairs B with A on A's say-so, passes frames between them only, and unpairs both ways", async () => {
+    const { url, a, b } = await two();
+    const da = await device(url, a, A.device, "台式机");
+    expect(await da.next()).toMatchObject({ type: "hello", me: { ...A, name: "台式机" } });
+    const db = await device(url, b, B.device, "笔记本");
+    await db.next("hello");
+
+    // Not paired: nothing goes through.
+    db.send({ type: "relay", to: A, id: "c1", kind: "ping", body: { at: 1 } });
+    expect(await db.next("relay-error")).toMatchObject({ id: "c1", code: "not_paired" });
+
+    // B asks A's account; A's device sees it at once and in its list.
+    const asked = await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account });
+    expect(asked.status).toBe(200);
+    const request = asked.body.request;
+    expect(request).toMatchObject({ from: { ...B, name: "笔记本" }, to: A.account, state: "pending", answeredBy: null });
+    expect(await da.next("pair-request")).toMatchObject({ request: { id: request.id } });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A.device}`)).body).toMatchObject({ incoming: [{ id: request.id }], outgoing: [] });
+    expect((await devicesCall(url, b, "GET", `/api/devices/pair?device=${B.device}`)).body).toMatchObject({ incoming: [], outgoing: [{ id: request.id, state: "pending" }] });
+    // Asking again renews the same request; only A's account may answer, and not from B's side.
+    expect((await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account })).body.request.id).toBe(request.id);
+    expect((await devicesCall(url, b, "POST", `/api/devices/pair/${request.id}/answer`, { device: B.device, deviceName: "笔记本", allow: true })).status).toBe(403);
+    expect((await devicesCall(url, a, "POST", `/api/devices/pair/${request.id}/answer`, { device: A.device, deviceName: "台式机", allow: "yes" })).status).toBe(400);
+
+    const answered = await devicesCall<{ request: PairRequest; pair: PeerView }>(url, a, "POST", `/api/devices/pair/${request.id}/answer`, { device: A.device, deviceName: "台式机", allow: true });
+    expect(answered.body.request).toMatchObject({ state: "allowed", answeredBy: { ...A, name: "台式机" } });
+    expect(answered.body.pair).toMatchObject({ peer: { ...B, name: "笔记本" }, role: "owner", online: true, ago: 0 });
+    expect(await db.next("pair-answered")).toMatchObject({ request: { id: request.id, state: "allowed" } });
+    expect((await devicesCall(url, a, "POST", `/api/devices/pair/${request.id}/answer`, { device: A.device, deviceName: "台式机", allow: false })).status).toBe(409);
+    expect((await devicesCall(url, b, "GET", `/api/devices/pairs?device=${B.device}`)).body).toMatchObject({ pairs: [{ peer: { ...A, name: "台式机" }, role: "guest", online: true }] });
+    // B puts the answer away once it has seen it.
+    expect((await devicesCall(url, b, "DELETE", `/api/devices/pair/${request.id}?device=${B.device}`)).status).toBe(200);
+    expect((await devicesCall(url, b, "GET", `/api/devices/pair?device=${B.device}`)).body).toMatchObject({ outgoing: [] });
+
+    // Frames now pass, envelope added, body untouched; an answer carries `re`.
+    db.send({ type: "relay", to: A, id: "c2", kind: "ping", body: { at: 5, deep: [1, { x: "中" }] } });
+    expect(await da.next("relay")).toEqual({ type: "relay", from: B, to: A, id: "c2", kind: "ping", body: { at: 5, deep: [1, { x: "中" }] } });
+    da.send({ type: "relay", to: B, id: "c3", kind: "pong", re: "c2" });
+    expect(await db.next("relay")).toMatchObject({ from: A, id: "c3", kind: "pong", re: "c2" });
+    // Bad frames are said to be bad, not passed on.
+    db.send({ type: "relay", to: A, id: "c4", kind: "Ping!" });
+    expect(await db.next("relay-error")).toMatchObject({ id: "c4", code: "bad_frame" });
+    db.ws.send("not json");
+    expect(await db.next("relay-error")).toMatchObject({ code: "bad_frame" });
+
+    // A renames itself: its peer hears of it and the pair list follows.
+    da.send({ type: "name", name: "书房台式机" });
+    expect(await db.next("presence")).toMatchObject({ peer: { ...A, name: "书房台式机" }, online: true });
+
+    // A goes away: B hears so, and frames to A say offline.
+    da.ws.close();
+    expect(await db.next("presence")).toMatchObject({ peer: A, online: false });
+    db.send({ type: "relay", to: A, id: "c5", kind: "ping" });
+    expect(await db.next("relay-error")).toMatchObject({ id: "c5", code: "offline" });
+    const offline = await devicesCall<{ pairs: PeerView[] }>(url, b, "GET", `/api/devices/pairs?device=${B.device}`);
+    expect(offline.body.pairs[0]).toMatchObject({ peer: { name: "书房台式机" }, online: false });
+    expect(offline.body.pairs[0]!.ago).toBeGreaterThanOrEqual(0);
+
+    // A back, then B ends the pairing: A is told, nothing passes any more.
+    const da2 = await device(url, a, A.device, "书房台式机");
+    await da2.next("hello");
+    expect((await devicesCall(url, b, "POST", "/api/devices/unpair", { device: B.device, peerAccount: A.account, peerDevice: A.device })).body).toEqual({ ok: true, removed: 1 });
+    expect(await da2.next("unpaired")).toEqual({ type: "unpaired", peer: B });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pairs?device=${A.device}`)).body).toEqual({ pairs: [] });
+    db.send({ type: "relay", to: A, id: "c6", kind: "ping" });
+    expect(await db.next("relay-error")).toMatchObject({ id: "c6", code: "not_paired" });
+  });
+
+  it("keeps a request for an account that is away; a refusal reaches B; B may withdraw", async () => {
+    const { url, a, b } = await two();
+    const r1 = (await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account })).body.request;
+    expect(r1.expiresAt - r1.createdAt).toBe(PAIR_REQUEST_DAYS * 24 * 60 * 60_000);
+    // A comes online later and finds it waiting.
+    const da = await device(url, a, A.device, "台式机");
+    await da.next("hello");
+    expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A.device}`)).body).toMatchObject({ incoming: [{ id: r1.id }] });
+    // Refused while B is away: B finds the answer when it asks.
+    await devicesCall(url, a, "POST", `/api/devices/pair/${r1.id}/answer`, { device: A.device, deviceName: "台式机", allow: false });
+    expect((await devicesCall(url, b, "GET", `/api/devices/pair?device=${B.device}`)).body).toMatchObject({ outgoing: [{ id: r1.id, state: "refused", answeredBy: { name: "台式机" } }] });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pairs?device=${A.device}`)).body).toEqual({ pairs: [] });
+    // A new request replaces the old answer; withdrawing it tells A's devices.
+    const r2 = (await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account })).body.request;
+    expect(r2.id).not.toBe(r1.id);
+    await da.next("pair-request");
+    expect((await devicesCall(url, a, "DELETE", `/api/devices/pair/${r2.id}?device=${A.device}`)).status).toBe(403);
+    await devicesCall(url, b, "DELETE", `/api/devices/pair/${r2.id}?device=${B.device}`);
+    expect(await da.next("pair-request-closed")).toEqual({ type: "pair-request-closed", requestId: r2.id });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A.device}`)).body).toMatchObject({ incoming: [] });
+  });
+
+  it("drops a device that stops answering pings, and a second socket of a device replaces the first", async () => {
+    const { url, a, b } = await two({ deviceHeartbeatMs: 40, deviceDeadMs: 200 });
+    const r = (await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account })).body.request;
+    await devicesCall(url, a, "POST", `/api/devices/pair/${r.id}/answer`, { device: A.device, deviceName: "台式机", allow: true });
+    const db = await device(url, b, B.device, "笔记本");
+    await db.next("hello");
+    const da = await device(url, a, A.device, "台式机");
+    expect(await db.next("presence")).toMatchObject({ peer: A, online: true });
+    // A stops reading (no pongs): the service gives up on it and B hears A went.
+    da.ws.pause();
+    expect(await db.next("presence")).toMatchObject({ peer: A, online: false });
+    // B connects again from a second socket: the first is closed with the 「replaced」 code.
+    const db2 = await device(url, b, B.device, "笔记本");
+    await db2.next("hello");
+    expect(await db.closed).toBe(CLOSE_REPLACED);
+  });
+
+  it("forgets requests after 7 days", () => {
+    let now = 1_000_000;
+    const db = new RelayStore(":memory:");
+    closers.push(() => db.close());
+    const hub = new DeviceHub({ db: db.db, isMember: () => true, now: () => now });
+    closers.push(() => hub.close());
+    const r = hub.requestPair({ ...B, name: "笔记本" }, A.account);
+    expect(hub.requests(A).incoming.map((x) => x.id)).toEqual([r.id]);
+    now += PAIR_REQUEST_DAYS * 24 * 60 * 60_000;
+    expect(hub.requests(A).incoming).toEqual([]);
+    expect(() => hub.answer({ ...A, name: "台式机" }, r.id, true)).toThrow(/不在了/);
   });
 });
 

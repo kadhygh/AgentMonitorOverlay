@@ -10,6 +10,8 @@ import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platfor
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
+import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
+import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js";
 
 // The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
@@ -36,6 +38,9 @@ export interface RelayServerOptions {
   /** How often to look for a newer client build (default 5 s) and to send a tick (default TICK_MS). Tests shorten them. */
   clientWatchMs?: number;
   tickMs?: number;
+  /** Devices (devices.ts): how often each is pinged (default 15 s) and how long unanswered means gone (default 60 s). */
+  deviceHeartbeatMs?: number;
+  deviceDeadMs?: number;
 }
 
 export interface RelayServer {
@@ -138,6 +143,13 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
   let closing = false;
+  // Devices and their pairing (remote sessions, step 1): tables in the same database, who is online in memory.
+  const devices = new DeviceHub({
+    db: store.db,
+    isMember: (n) => store.members().some((m) => m.name === n),
+    ...(opts.deviceHeartbeatMs ? { heartbeatMs: opts.deviceHeartbeatMs } : {}),
+    ...(opts.deviceDeadMs ? { deadMs: opts.deviceDeadMs } : {}),
+  });
 
   const members = (): Member[] =>
     store.members().map((m) => ({ ...m, online: (sockets.get(m.name)?.size ?? 0) > 0, lastSeen: lastSeen.get(m.name) ?? 0 }));
@@ -216,7 +228,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     const method = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
     const path = url.pathname;
     if (method === "GET" && path === "/api/health") {
-      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null, shell: files.shell() };
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null, shell: files.shell(), devices: DEVICE_CHANNEL_VERSION };
       return send(res, 200, health);
     }
     if (method === "POST" && path === "/api/register") {
@@ -309,6 +321,25 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return send(res, 200, { ok: true });
     }
     if (method === "GET" && path === "/api/members") return send(res, 200, { members: members() });
+
+    // Devices (devices-protocol.ts): pairing requests and pairs, each call naming the calling device of this account.
+    if (path === "/api/devices/pair" || path === "/api/devices/pairs" || path === "/api/devices/unpair" || path.startsWith("/api/devices/pair/")) {
+      const body = method === "GET" || method === "DELETE" ? {} : await readJson(req);
+      const device = checkDeviceId(method === "GET" || method === "DELETE" ? url.searchParams.get("device") : body.device);
+      const self = { account: me, device };
+      const named = () => ({ ...self, name: checkDeviceName(body.deviceName) });
+      if (method === "POST" && path === "/api/devices/pair") return send(res, 200, { request: devices.requestPair(named(), body.to) });
+      if (method === "GET" && path === "/api/devices/pair") return send(res, 200, devices.requests(self));
+      if (method === "GET" && path === "/api/devices/pairs") return send(res, 200, { pairs: devices.pairs(self) });
+      if (method === "POST" && path === "/api/devices/unpair") return send(res, 200, { ok: true, removed: devices.unpair(self, body.peerAccount, body.peerDevice) });
+      const pm = /^\/api\/devices\/pair\/([^/]+)(\/answer)?$/.exec(path);
+      if (pm && method === "POST" && pm[2]) return send(res, 200, devices.answer(named(), decodeURIComponent(pm[1]!), body.allow));
+      if (pm && method === "DELETE" && !pm[2]) {
+        devices.dismiss(self, decodeURIComponent(pm[1]!));
+        return send(res, 200, { ok: true });
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
     if (method === "GET" && path === "/api/threads") return send(res, 200, { threads: store.threadsFor(me) });
     if (method === "POST" && path === "/api/threads/direct") {
       const body = await readJson(req);
@@ -542,8 +573,26 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   });
 
   const wss = new WebSocketServer({ noServer: true });
+  const deviceWss = new WebSocketServer({ noServer: true, maxPayload: MAX_DEVICE_FRAME });
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://relay");
+    // A device (devices.ts): the account's key and the device's id and name.
+    if (url.pathname === "/api/devices/ws") {
+      let me: { account: string; device: string; name: string };
+      try {
+        me = { account: auth(req, url), device: checkDeviceId(url.searchParams.get("device")), name: checkDeviceName(url.searchParams.get("name")) };
+      } catch (err) {
+        const unauthorized = err instanceof RelayError && err.code === "unauthorized";
+        socket.write(unauthorized ? "HTTP/1.1 401 Unauthorized\r\n\r\n" : "HTTP/1.1 400 Bad Request\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      deviceWss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on("message", (data) => devices.frame(me, String(data)));
+        devices.connect(me, ws);
+      });
+      return;
+    }
     let name: string;
     try {
       if (url.pathname !== "/ws") throw new RelayError("not_found", "");
@@ -586,7 +635,9 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       clearInterval(tick);
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();
+      devices.close();
       wss.close();
+      deviceWss.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },

@@ -200,6 +200,20 @@ amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | a
 | `GET /api/wait?thread=&after=&timeout=` | 等对方的新消息，最多 10 分钟 |
 | `WS /ws?key=` | 推送 `hello` / `message` / `thread` / `archived` / `members` / `read` / `client` / `tick` |
 
+### 设备和配对（远程会话第 1 步，2026-10-29）
+
+Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPDATA%\AMO\device.json`）连上来。服务只存：谁在线（内存）、没处理的配对请求（7 天作废）、配对关系的副本（只在配对过的两台设备之间转发）。不存任务内容，转发的帧只看信封（发给谁、编号、类型），不看内容。格式见 `src/devices-protocol.ts`，`/api/health` 里的 `devices` 是这套接口的版本（旧服务没有这个字段，Studio 据此提示「中转服务要更新」）。
+
+| | |
+|---|---|
+| `POST /api/devices/pair` `{device, deviceName, to}` | B 向账号 `to` 发配对请求（同一台设备重复发只续期） |
+| `GET /api/devices/pair?device=` | `{incoming, outgoing}`：发给我这个账号的、这台设备发出去的 |
+| `POST /api/devices/pair/:id/answer` `{device, deviceName, allow}` | `to` 账号的某台设备允许 / 拒绝；允许就建立配对（这台是 owner） |
+| `DELETE /api/devices/pair/:id?device=` | B 撤回请求，或收起已看过的回复 |
+| `GET /api/devices/pairs?device=` | 这台设备的配对，带对方是否在线、离线多久 |
+| `POST /api/devices/unpair` `{device, peerAccount, peerDevice}` | 解除配对（两个方向都删），告诉对方 |
+| `WS /api/devices/ws?device=&name=` | key 放 `Authorization` 头或 `?key=`。推送 `hello` / `pair-request` / `pair-request-closed` / `pair-answered` / `unpaired` / `presence` / `relay` / `relay-error`；收 `relay {to, id, kind, re?, body}`（只转给配对过、在线的设备）和 `name`。服务每 15 秒 ping 一次，60 秒没回应就断开；同一台设备再连上来，旧连接以 4001 关掉 |
+
 ## 测试
 
 - 单测：`npx vitest run packages/relay packages/relay-app scripts`（`scripts` 是平台的发布）
