@@ -14,11 +14,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron } from "@playwright/test";
 import { MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel } from "../packages/testkit/dist/index.js";
+import { TOOLS, toolVersion } from "./amo-tools.mjs";
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const releaseDir = resolve(studio, process.argv[2] ?? "release");
-const version = JSON.parse(readFileSync(join(studio, "package.json"), "utf8")).version;
-const archives = Object.fromEntries(["Studio", "Reviewer", "Notes"].map((n) => [n, join(releaseDir, `AMO-${n}-${version}-portable.zip`)]));
+// Each tool's zip carries its own version (scripts/amo-tools.mjs).
+const archives = Object.fromEntries(["studio", "reviewer", "notes"].map((id) => [TOOLS[id].zip.slice(4), join(releaseDir, `${TOOLS[id].zip}-${toolVersion(id)}-portable.zip`)]));
 for (const a of Object.values(archives)) if (!existsSync(a)) throw new Error(`${a} not found: run npm run package:portable first`);
 
 const sandbox = join(tmpdir(), "amo-studio-sandbox");

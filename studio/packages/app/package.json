@@ -1,7 +1,7 @@
 {
   "name": "@amo-studio/app",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.9.0",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "dependencies": {
     "@amo-studio/host": "0.0.0",
     "@amo-studio/protocol": "0.0.0",
-    "@amo-studio/reviewer": "0.0.0"
+    "@amo-studio/reviewer": "*"
   },
   "devDependencies": {
     "electron": "44.7.0"

@@ -4,6 +4,10 @@
 //   AMO Reviewer  Git Review and the viewer on their own, for any tool or model
 //   AMO Notes     the 便签 on its own
 //   npm run build && node scripts/package-portable.mjs [outDir] [--zip] [--only studio,reviewer,notes]   (npm run package:portable)
+//   npm run package:portable -- --only notes      one tool only
+// Each tool has its own version (2026-10-28): its package's package.json (scripts/amo-tools.mjs says which package), in
+// the zip's name, the exe's version info, resources/app/package.json and 使用说明.txt. Studio's download still carries
+// the 便签 and the Reviewer, at whatever they are in this checkout.
 // Layout (the dev layout is kept inside resources/app, so the programs' relative paths still hold):
 //   <out>/<Name>/<Name>.exe                          Electron, renamed, with the program's icon and version info
 //   <out>/<Name>/resources/app/package.json          main: launch.js
@@ -15,25 +19,21 @@
 // No network: Electron comes from node_modules/electron/dist and dependencies from the installed tree.
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+import { TOOLS, studio, toolVersion } from "./amo-tools.mjs";
 
-const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const outRoot = resolve(studio, args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--only") ?? "release");
 const zip = args.includes("--zip");
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",") : null;
-const version = JSON.parse(readFileSync(join(studio, "package.json"), "utf8")).version;
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 /** The program each package runs as (launch.js), when it is one. */
 const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js", relay: "packages/relay-app/dist/main.js" };
 
-const PROGRAMS = {
+/** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
+const BUILDS = {
   studio: {
-    name: "AMO Studio",
-    zip: "AMO-Studio",
-    description: "AMO Studio",
     packages: ["app", "host", "protocol", "ui", "reviewer", "notes"],
     programs: ["studio", "notes", "reviewer"],
     // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
@@ -52,9 +52,6 @@ const PROGRAMS = {
     ],
   },
   reviewer: {
-    name: "AMO Reviewer",
-    zip: "AMO-Reviewer",
-    description: "AMO Reviewer",
     packages: ["reviewer", "host", "protocol", "ui"],
     programs: ["reviewer"],
     // Its Host runs no models; the SDK's JavaScript is still loaded.
@@ -74,9 +71,6 @@ const PROGRAMS = {
     ],
   },
   notes: {
-    name: "AMO Notes",
-    zip: "AMO-Notes",
-    description: "AMO 便签",
     packages: ["notes", "protocol", "ui"],
     programs: ["notes"],
     icon: (target) => {
@@ -95,9 +89,6 @@ const PROGRAMS = {
   // AMO 中转's desktop client (2026-10-26): a fixed shell; its content comes from the service (scripts/relay-release.mjs
   // builds this into the service's downloads/).
   relay: {
-    name: "AMO Relay",
-    zip: "AMO-Relay",
-    description: "AMO 中转",
     packages: ["relay-app", "relay"],
     programs: ["relay"],
     icon: () => join(studio, "packages", "relay-app", "assets", "icon.ico"),
@@ -145,7 +136,8 @@ function size(p) {
 const mb = (n) => `${(n / 1024 / 1024).toFixed(0)} MB`;
 
 function build(id) {
-  const spec = PROGRAMS[id];
+  const spec = { ...TOOLS[id], ...BUILDS[id] };
+  const version = toolVersion(id);
   const started = Date.now();
   const target = join(outRoot, spec.name);
   const resources = join(target, "resources");
@@ -253,7 +245,6 @@ function build(id) {
 }
 
 // The relay client ships from its service (scripts/relay-release.mjs), not with the other three.
-for (const id of only ?? Object.keys(PROGRAMS).filter((p) => p !== "relay")) {
-  if (!PROGRAMS[id]) throw new Error(`unknown program ${id}: studio, reviewer, notes or relay`);
-  build(id);
-}
+const ids = only ?? Object.keys(BUILDS).filter((p) => p !== "relay");
+for (const id of ids) if (!TOOLS[id] || !BUILDS[id]) throw new Error(`unknown program ${id}: ${Object.keys(BUILDS).join(", ")}`);
+for (const id of ids) build(id);
