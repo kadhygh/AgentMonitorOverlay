@@ -45,6 +45,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-28 深夜 · 杀毒误报、中转走平台**：用户的杀毒软件（像火绒）在平台下载 Studio 时把 `host/dist/runtime/priority.js` 报成 Trojan/Veil.a（`-EncodedCommand -ExecutionPolicy Bypass` + `Add-Type DllImport ntdll` 改别的进程）。本机用 curl 和平台 exe 下载都复现不出。修法（`322cb20`）：6 处 PowerShell 调用改成脚本走 stdin，不再有 `-EncodedCommand`/`Bypass`/`ntdll`；agent 进程去掉磁盘优先级（用户同意），内存优先级改用 `SetProcessInformation`，CPU 照旧。中转桌面客户端改由平台安装和更新（`11d0cf7`，`AGENTS.md` 第 3 条已改）：平台模式的中转不再自己更新外壳，界面照旧热更新；MCP 配置和 `amo-relay.cmd` 指向 `appselay\current`；平台打开中转时带 `--server`。发布：中转界面 deploy（服务没变、没重启），测试通道 Studio 0.9.3、Reviewer 0.9.3、中转 0.9.0、平台 0.9.4（便签仍 0.9.2），每个新上传都不到 0.3 MB；下载页 zip 0.9.4。验证：全量 vitest 917 过、typecheck 过；平台 e2e 6 条、中转 e2e 4 条（子 agent 跑）。没验证：杀毒软件还拦不拦（等用户在平台里重装 Studio）；中转登录还是自己的登录页（改读平台的 `account.json` 是下一件事）。
+
 **2026-10-28 夜 · 平台自更新，测试通道发平台 0.9.3**：平台自更新（`da59bf7`，`self-update.ts`：发现通道里 `platform` 的新版 → 「设置 → 平台更新」装进 `apps\platform\<版本>` → 人点「重启平台」；从 zip 解压的第一次更新后搬进 `apps\platform`，开机启动改指 `current`；开发版不自更新）。工具照旧从版本文件夹启动、不走 `current`（查过原因，见方案）。平台 0.9.3 发到测试通道（新上传 16 个文件，0.1 MB），下载页 zip 换成 0.9.3。验证：子 agent 用真打包的平台在本机走过「发现新版 → 更新 → 重启 → 登录还在」；合并后 typecheck、平台和 app 的单测 47 条过。注意：稳定通道还是空的，从下载页装的平台默认看稳定通道，要切到「测试」才看得到工具；给同事用之前要 `promote`。
 
 **2026-10-28 夜 · 共用 Electron、环境页，测试通道发 0.9.2**：共用 Electron（`1d2f264`：`npm run package:platform` 打平台包到 `release/platform/`，exe 不写图标，安装引擎按 sha256 跨工具硬链接，`file-index.json`）；平台「环境」页（`7bb3e78`：Claude Code、DSH 桌面版、Codex、git，去下载官方页，新包 `@amo-studio/locate` 放 host 和平台共用的查找函数）；平台装的 Studio 不经平台打开时读 `%APPDATA%\AMO\platform.json` 的数据目录（`8be9e9e`，只认平台模式的包）。四个工具 0.9.2 发到测试通道：Studio 新上传 24 个文件（共用的 exe 压缩后 104 MB，只传这一次），Reviewer、便签各 2 个、平台 16 个，都不到 0.1 MB；下载页的平台 zip 换成 0.9.2（portable 模式）。验证：合并后 typecheck、相关单测、平台 e2e 4 条过；环境页两条测试在忙机器上不稳，改了（`ed8327d`）。平台自更新在做（子 agent）。
