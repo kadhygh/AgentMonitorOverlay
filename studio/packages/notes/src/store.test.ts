@@ -32,6 +32,11 @@ describe("NotesStore (the 便签 program's own files, 2026-10-23)", () => {
     store.updateSettings({ shortcut: "ctrl+alt+n", safeNewlines: true });
     expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8"))).toMatchObject({ shortcut: "Ctrl+Alt+N", safeNewlines: true, workFolder: null });
     expect(() => store.updateSettings({ shortcut: "N" })).toThrow(/快捷键/);
+    // 主题 (2026-10-29): 浅色 unless chosen, kept in settings.json.
+    expect(store.settings().theme).toBe("light");
+    store.updateSettings({ theme: "dark" });
+    expect(new NotesStore(home).settings().theme).toBe("dark");
+    expect(() => store.updateSettings({ theme: "blue" })).toThrow(/theme/);
   });
 
   it("counts what the folder takes, and clearing the cache drops only images no page holds", () => {

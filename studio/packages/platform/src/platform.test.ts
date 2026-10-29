@@ -161,7 +161,7 @@ describe("Platform", () => {
   // Last in this group: the published relay stays on the fake server.
   it("AMO 中转 is a tool like the others (2026-10-28): listed after Studio, installed, opened with the team server's address", async () => {
     server.publish("relay", "0.9.0", { "AMO Relay.exe": "relay 0.9.0", "resources/app/package.json": "{}" }, { name: "AMO Relay", exe: "AMO Relay.exe", notes: "- 从平台发布" });
-    const { platform, launched } = make();
+    const { platform, launched, running } = make();
     await platform.init();
     await platform.login(server.url, "小王", "secret");
     expect(platform.view().tools.map((t) => [t.id, t.name])).toEqual([
@@ -182,6 +182,11 @@ describe("Platform", () => {
     // 关闭 (2026-10-29): the same exe, asked to quit; the tray has its part.
     expect(await platform.close("relay")).toEqual({ ok: true });
     expect(launched[1]!.args).toEqual(["--server", server.url, "--amo-tray=platform", "--amo-quit"]);
+    // A running relay older than 0.9.2 does not know --amo-quit (it would only come to the front): said, not started.
+    running.push(launched[0]!.file);
+    expect(await platform.close("relay")).toMatchObject({ ok: false, message: expect.stringContaining("是 0.9.0 打开的，这个版本还不认识平台的「关闭」") });
+    expect(launched).toHaveLength(2);
+    running.length = 0;
     expect(trayMenu(platform.trayState()).map((i) => (i.kind === "separator" ? "—" : i.label))).toEqual(["AMO 中转", "打开中转", "退出中转", "—", "AMO 平台", "打开 AMO 平台", "退出平台"]);
     // 便签 with neither its own install nor Studio: nothing to start it with.
     expect(platform.notesAvailable()).toBe(false);

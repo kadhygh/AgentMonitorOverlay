@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { compareVersions } from "./manifest.js";
+import { compareVersions, isVersion } from "./manifest.js";
 
 // What the platform asks of Windows and of a running Studio — only reading, never changing anything.
 
@@ -35,6 +35,21 @@ export function foldersInUse(paths: readonly string[], folders: readonly string[
     return lower.some((p) => p.startsWith(prefix));
   });
 }
+
+/** The version folders of `toolDir` that running exes are in (the tools run from their real version folder, launch.ts). */
+export function runningVersions(paths: readonly string[], toolDir: string): string[] {
+  const prefix = (resolve(toolDir) + sep).toLowerCase();
+  const out = new Set<string>();
+  for (const p of paths) {
+    if (!p.toLowerCase().startsWith(prefix)) continue;
+    const v = p.slice(prefix.length).split(/[\\/]/)[0] ?? "";
+    if (isVersion(v)) out.add(v);
+  }
+  return [...out];
+}
+
+/** The first version of each tool whose running instance quits on --amo-quit (2026-10-29); an older one only comes to the front. */
+export const QUIT_SINCE: Record<string, string> = { studio: "0.9.8", notes: "0.9.3", relay: "0.9.2" };
 
 /** What a running Studio says of itself (/api/health), read only. */
 export interface StudioHealth {

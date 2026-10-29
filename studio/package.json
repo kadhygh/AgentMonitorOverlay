@@ -8,6 +8,7 @@
     "packages/testkit",
     "packages/account",
     "packages/locate",
+    "packages/traymenu",
     "packages/host",
     "packages/reviewer",
     "packages/app",

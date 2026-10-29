@@ -10,7 +10,7 @@ import { QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js"
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
-import { foldersInUse, runningExePaths, stopStudio, studioHealth, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
+import { foldersInUse, QUIT_SINCE, runningExePaths, runningVersions, stopStudio, studioHealth, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
 import type { EnvironmentView, EnvUpdateResult } from "./environment-view.js";
 import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
@@ -197,6 +197,7 @@ export class Platform implements PlatformCalls {
       root: { ...this.rootView },
       dirs: { root: this.place.root, apps: this.installer.appsDir, studioData: settings.studioDataDir, settings: amoHome(this.options.env) },
       openAtLogin: settings.openAtLogin,
+      theme: settings.theme,
     };
   }
 
@@ -546,6 +547,19 @@ export class Platform implements PlatformCalls {
    * is not running quits at once.
    */
   async close(tool: string): Promise<OpenResult> {
+    // An older tool, started before it knew --amo-quit, only comes to the front (2026-10-29, the user: 关闭 opened Studio
+    // 0.9.7): said instead, with where it quits on its own. 便签 started through Studio is Studio's exe.
+    const exeOf = tool === "notes" && !this.programs().notes && this.programs().studio ? "studio" : tool;
+    const since = QUIT_SINCE[exeOf];
+    if (since) {
+      const paths = await (this.options.runningPaths ?? runningExePaths)().catch(() => [] as string[]);
+      const old = runningVersions(paths, this.installer.toolDir(exeOf)).filter((v) => compareVersions(v, since) < 0);
+      if (old.length) {
+        const name = this.toolName(tool).replace(/（独立版）$/, "");
+        const where = exeOf === "studio" && tool === "studio" ? "Studio 托盘图标的右键「完全退出」" : `它自己托盘图标的右键「退出」`;
+        return { ok: false, reason: "failed", message: `正在运行的 ${name} 是 ${old[0]} 打开的，这个版本还不认识平台的「关闭」，这次请用${where}。更新到 ${since} 以后再从平台打开的，就能在这里关了。` };
+      }
+    }
     return tool === "notes" ? this.startNotes([QUIT_ARG]) : this.start(tool, [QUIT_ARG]);
   }
 
@@ -659,6 +673,12 @@ export class Platform implements PlatformCalls {
   async setOpenAtLogin(on: boolean): Promise<void> {
     this.options.shell.setOpenAtLogin(on, this.loginExe());
     updateSettings({ openAtLogin: on }, this.options.env);
+    this.changed();
+  }
+
+  async setTheme(theme: "light" | "dark" | "system"): Promise<void> {
+    if (theme !== "light" && theme !== "dark" && theme !== "system") return;
+    updateSettings({ theme }, this.options.env);
     this.changed();
   }
 

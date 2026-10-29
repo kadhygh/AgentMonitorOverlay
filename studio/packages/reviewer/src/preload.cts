@@ -14,4 +14,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
     electron.ipcRenderer.invoke("amo:open-viewer", target),
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
   viewerState: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:viewer-state"),
+  /** 主题 (2026-10-29): the program's own; its main process sets it for all its windows. */
+  theme: (): Promise<"light" | "dark" | "system"> => electron.ipcRenderer.invoke("amo:theme"),
+  setTheme: (theme: "light" | "dark" | "system"): Promise<void> => electron.ipcRenderer.invoke("amo:set-theme", theme),
 });

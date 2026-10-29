@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -20,6 +20,7 @@ import {
   type UpdateInfo,
 } from "@amo-studio/relay";
 import { readAccount } from "@amo-studio/account";
+import { TrayMenu } from "@amo-studio/traymenu";
 import { Accounts } from "./accounts.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
@@ -590,15 +591,19 @@ function trayImage(): Electron.NativeImage {
  *  this one makes no icon. Started on its own it keeps its tray (constraint 1). */
 const trayByPlatform = process.argv.includes("--amo-tray=platform");
 
+const trayWindow = new TrayMenu({ label: "AMO 中转菜单" });
+
 function createTray(): void {
   if (!ICON || trayByPlatform) return;
   tray = new Tray(trayImage());
   tray.setToolTip("AMO 中转");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "显示 AMO 中转", click: showWindow },
-      { type: "separator" },
-      { label: "退出", click: () => ((quitting = true), app.quit()) },
+  // Like 便签's menu, not Windows' own (2026-10-29, the user; @amo-studio/traymenu).
+  tray.on("right-click", () =>
+    trayWindow.open([
+      { kind: "title", label: "AMO 中转" },
+      { kind: "item", label: "显示 AMO 中转", strong: true, run: showWindow },
+      { kind: "rule" },
+      { kind: "item", label: "退出中转", run: () => ((quitting = true), app.quit()) },
     ]),
   );
   tray.on("click", showWindow);

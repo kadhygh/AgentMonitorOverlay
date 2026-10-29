@@ -12,6 +12,7 @@ import { platformDataDir, resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
 import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
+import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
 import { installCanvasWindow } from "./canvas-window.js";
 import { ResizeTrace } from "./resize-trace.js";
@@ -261,6 +262,14 @@ function trayItems(): Array<{ label: string; click: () => void } | { type: "sepa
   return [{ label: "打开 Studio", click: showMain }, { type: "separator" }, { label: "完全退出", click: () => void quitCompletely() }];
 }
 
+/** The menu on a right-click (2026-10-29, the user: like 便签's, not Windows' own; @amo-studio/traymenu). */
+const trayWindow = new TrayMenu({ label: "AMO Studio 菜单" });
+function openTrayMenu(): void {
+  const entries: MenuEntry[] = [{ kind: "title", label: "AMO Studio" }];
+  for (const i of trayItems()) entries.push("label" in i ? { kind: "item", label: i.label, strong: i.click === showMain, run: i.click } : { kind: "rule" });
+  trayWindow.open(entries);
+}
+
 /** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs), else the window icon shrunk. */
 function trayImage(): Electron.NativeImage {
   const image = nativeImage.createEmpty();
@@ -280,7 +289,7 @@ function createTray(): void {
   tray = new Tray(trayImage());
   tray.setToolTip("AMO Studio");
   tray.on("click", showMain);
-  tray.setContextMenu(Menu.buildFromTemplate(trayItems()));
+  tray.on("right-click", openTrayMenu);
 }
 
 /**

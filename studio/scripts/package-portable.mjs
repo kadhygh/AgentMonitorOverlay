@@ -48,7 +48,7 @@ const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewe
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
   studio: {
-    packages: ["app", "host", "protocol", "locate", "account", "ui", "reviewer", "notes"],
+    packages: ["app", "host", "protocol", "locate", "account", "traymenu", "ui", "reviewer", "notes"],
     programs: ["studio", "notes", "reviewer"],
     // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -102,7 +102,7 @@ const BUILDS = {
   },
   // AMO 平台 (2026-10-28, plans/amo-lan-platform.md): the tray app that installs and updates the others from the team server.
   platform: {
-    packages: ["platform", "account", "locate", "ui"],
+    packages: ["platform", "account", "locate", "traymenu", "ui"],
     programs: ["platform"],
     icon: () => join(studio, "packages", "platform", "assets", "icon.ico"),
     readme: [
@@ -118,7 +118,7 @@ const BUILDS = {
   // the user: it installs and updates through the platform like the others) is what the platform installs; the portable
   // zip is scripts/relay-release.mjs --shell's, for clients unpacked by hand (they still update themselves from it).
   relay: {
-    packages: ["relay-app", "relay", "account"],
+    packages: ["relay-app", "relay", "account", "traymenu"],
     programs: ["relay"],
     icon: () => join(studio, "packages", "relay-app", "assets", "icon.ico"),
     readme: [
@@ -202,7 +202,7 @@ function build(id) {
     // Window, tray and exe icons (each tool's own since 2026-10-28, scripts/make-icons.mjs); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
     // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
-    if (["protocol", "host", "reviewer", "relay", "account", "locate"].includes(name)) {
+    if (["protocol", "host", "reviewer", "relay", "account", "locate", "traymenu"].includes(name)) {
       cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
       cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
     }

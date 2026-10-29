@@ -22,14 +22,19 @@ import "./files/files.css";
 import "./viewer/viewer.css";
 import "./viewpacks/viewpacks.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
+import { inAmo } from "./lib/where.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
 
 // The review pages' own entry (reviewer.html, 2026-10-23): Git Review (#review) and the viewer with its 查看包
 // (#viewer), for the AMO Reviewer program — not Studio's whole workbench.
 
-applyTheme();
-followThemeChanges();
+// In Studio the windows follow Studio's 主题; the AMO Reviewer program alone has its own (2026-10-29), which its main
+// process sets as the system colours of its windows — base.css follows those when no theme is forced here.
+if (inAmo()) {
+  applyTheme();
+  followThemeChanges();
+} else applyTheme("system");
 const viewer = location.hash.startsWith("#viewer");
 
 const root = document.getElementById("root");

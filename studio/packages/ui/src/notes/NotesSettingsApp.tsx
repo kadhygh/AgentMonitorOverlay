@@ -24,6 +24,11 @@ const SCALES: Array<[number, string]> = [
   [1.25, "较大"],
   [1.4, "特大"],
 ];
+const THEMES: Array<["light" | "dark" | "system", string]> = [
+  ["light", "浅色"],
+  ["dark", "深色"],
+  ["system", "跟随系统"],
+];
 
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
@@ -99,6 +104,18 @@ function Settings({ link }: { link: HostLink }) {
           ))}
         </div>
         <p className="ns-hint">便签自己的文字和按钮大小，和 AMO Studio 的界面大小分开设。</p>
+      </section>
+
+      <section className="ns-section" aria-label="主题">
+        <h2 className="ns-heading">主题</h2>
+        <div role="radiogroup" aria-label="主题" className="ns-seg">
+          {THEMES.map(([theme, label]) => (
+            <button key={theme} type="button" role="radio" aria-checked={s.theme === theme} disabled={busy} onClick={() => s.theme !== theme && void patch({ theme })} data-testid={`ns-theme-${theme}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="ns-hint">便签、它的设置和托盘菜单都跟着变，和 AMO Studio 的主题分开设。</p>
       </section>
 
       <section className="ns-section" aria-label="复制时的换行">

@@ -1,7 +1,7 @@
 {
   "name": "@amo-studio/platform",
   "private": true,
-  "version": "0.9.7",
+  "version": "0.9.8",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@amo-studio/account": "0.0.0",
-    "@amo-studio/locate": "0.0.0"
+    "@amo-studio/locate": "0.0.0",
+    "@amo-studio/traymenu": "0.0.0"
   },
   "devDependencies": {
     "electron": "44.7.0"

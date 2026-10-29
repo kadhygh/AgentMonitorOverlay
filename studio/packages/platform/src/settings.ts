@@ -17,7 +17,11 @@ export interface PlatformSettings {
   root: string | null;
   /** A click on the tray icon opens 便签 or Studio (2026-10-29, the user: the two used most); 便签 unless chosen. */
   trayClick: "notes" | "studio";
+  /** 浅色 / 深色 / 跟随系统 (2026-10-29, the user: every tool both); 浅色 unless chosen, as Studio. */
+  theme: Theme;
 }
+
+export type Theme = "light" | "dark" | "system";
 
 export function readSettings(env: Env = process.env): PlatformSettings {
   const p = readJsonFile<Record<string, unknown>>(platformFile(env)) ?? {};
@@ -31,6 +35,7 @@ export function readSettings(env: Env = process.env): PlatformSettings {
     lastName: str(p.lastName),
     root: str(p.root),
     trayClick: p.trayClick === "studio" ? "studio" : "notes",
+    theme: p.theme === "dark" || p.theme === "system" ? p.theme : "light",
   };
 }
 

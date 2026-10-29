@@ -3,5 +3,5 @@
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../protocol" }, { "path": "../host" }, { "path": "../reviewer" }]
+  "references": [{ "path": "../traymenu" }, { "path": "../protocol" }, { "path": "../host" }, { "path": "../reviewer" }]
 }

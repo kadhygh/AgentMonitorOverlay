@@ -31,6 +31,9 @@ declare global {
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
       setMinWidth?(px: number): void;
+      /** The AMO Reviewer program alone (2026-10-29): its 主题, which its main process sets for all its windows. */
+      theme?(): Promise<"light" | "dark" | "system">;
+      setTheme?(theme: "light" | "dark" | "system"): Promise<void>;
       /** The Focus window (Electron). */
       focus?: {
         get(): Promise<boolean>;

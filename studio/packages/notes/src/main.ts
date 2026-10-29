@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,8 @@ function rememberBounds(): void {
 
 /** The zoom in the settings (Studio's 界面大小), on every window of the program. */
 function applyLook(): void {
+  // 主题 (2026-10-29): the pages leave it to the system's colours (base.css), which this sets for every window here.
+  nativeTheme.themeSource = store.settings().theme;
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.setZoomFactor(store.settings().uiScale);
 }
 
@@ -121,7 +123,7 @@ function createPad(): BrowserWindow {
     title: "AMO 便签",
     ...(ICON ? { icon: ICON } : {}),
     frame: false,
-    backgroundColor: "#fbfaf7",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#181b1f" : "#fbfaf7",
     alwaysOnTop: true,
     skipTaskbar: true,
     minimizable: false,
@@ -181,7 +183,7 @@ function openSplash(): void {
     skipTaskbar: true,
     focusable: false,
     show: false,
-    backgroundColor: "#fbfaf7",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#181b1f" : "#fbfaf7",
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   });
   w.setAlwaysOnTop(true, "floating");
@@ -247,7 +249,7 @@ function openSettings(): void {
     title: "便签设置",
     ...(ICON ? { icon: ICON } : {}),
     frame: false,
-    backgroundColor: "#fbfaf7",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#181b1f" : "#fbfaf7",
     minimizable: true,
     maximizable: false,
     fullscreenable: false,
@@ -338,7 +340,7 @@ function createTrayMenu(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
-    backgroundColor: "#fbfaf7",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#181b1f" : "#fbfaf7",
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   w.setAlwaysOnTop(true, "pop-up-menu");
@@ -385,6 +387,7 @@ async function start(): Promise<void> {
   // Started to be shown (not in the tray only): the bar right away, before anything else loads.
   if (!startHidden) openSplash();
   store = new NotesStore(home);
+  nativeTheme.themeSource = store.settings().theme;
   const notesShell: NotesShell = {
     show: showPad,
     openSettings,

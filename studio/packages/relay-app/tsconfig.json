@@ -3,5 +3,5 @@
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../relay" }, { "path": "../account" }]
+  "references": [{ "path": "../traymenu" }, { "path": "../relay" }, { "path": "../account" }]
 }

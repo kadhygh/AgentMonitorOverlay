@@ -1,5 +1,5 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, shell } from "electron";
-import { existsSync, mkdirSync } from "node:fs";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell } from "electron";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startHost, type RunningHost } from "@amo-studio/host";
@@ -78,9 +78,36 @@ function onHostEvent(e: HostEvent): void {
   }
 }
 
+/**
+ * 主题 (2026-10-29, the user: every tool both): the program's own (Studio's Reviewer windows follow Studio's), in
+ * theme.json beside its data; set as the system colours of all its windows, which the pages follow. 浅色 unless chosen.
+ */
+type Theme = "light" | "dark" | "system";
+const themeFile = join(home, "theme.json");
+const isTheme = (t: unknown): t is Theme => t === "light" || t === "dark" || t === "system";
+function readTheme(): Theme {
+  try {
+    const t = (JSON.parse(readFileSync(themeFile, "utf8")) as { theme?: unknown }).theme;
+    return isTheme(t) ? t : "light";
+  } catch {
+    return "light";
+  }
+}
+
 async function start(): Promise<void> {
   Menu.setApplicationMenu(null);
   mkdirSync(dataDir, { recursive: true });
+  nativeTheme.themeSource = readTheme();
+  ipcMain.handle("amo:theme", () => nativeTheme.themeSource);
+  ipcMain.handle("amo:set-theme", (_event, t: unknown) => {
+    if (!isTheme(t)) return;
+    nativeTheme.themeSource = t;
+    try {
+      writeFileSync(themeFile, JSON.stringify({ theme: t }, null, 2));
+    } catch {
+      // still applies until it ends
+    }
+  });
   host = await startHost({ dataDir, port: 0, uiDir, profiles: [] });
   // The Host opens Review only for a listening window; here the program itself listens (onHostEvent).
   host.service.liveWindows = 1;

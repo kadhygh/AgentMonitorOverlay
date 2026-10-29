@@ -10,6 +10,7 @@ export default defineConfig({
       "@amo-studio/testkit": src("testkit"),
       "@amo-studio/account": src("account"),
       "@amo-studio/locate": src("locate"),
+      "@amo-studio/traymenu": src("traymenu"),
       "@amo-studio/host": src("host"),
       "@amo-studio/reviewer": src("reviewer"),
       "@amo-studio/relay": src("relay"),

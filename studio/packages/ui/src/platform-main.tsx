@@ -8,13 +8,14 @@ import "@fontsource-variable/jetbrains-mono";
 import "./styles/base.css";
 import "./shell/shell.css";
 import "./platform/platform.css";
-import { applyTheme, followThemeChanges } from "./lib/theme.js";
+import { applyTheme } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 
 // AMO 平台's page (platform.html, 2026-10-28), served by packages/platform on amo-platform://app/.
 
-applyTheme();
-followThemeChanges();
+// 主题 is the platform's setting (设置 → 主题, 2026-10-29): its main process sets the system colours for its windows,
+// which base.css follows when no theme is forced here.
+applyTheme("system");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");

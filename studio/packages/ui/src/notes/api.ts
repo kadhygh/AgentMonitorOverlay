@@ -11,6 +11,8 @@ export interface NotesSettings {
   importNoticeSeen: boolean;
   /** 界面大小 of its windows (its own, not Studio's). */
   uiScale: number;
+  /** 主题 (2026-10-29): the program sets it for all its windows. */
+  theme: "light" | "dark" | "system";
 }
 
 export interface NotesInfo {

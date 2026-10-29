@@ -153,11 +153,12 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
         ...(body.openAtLogin !== undefined ? { openAtLogin: body.openAtLogin } : {}),
         ...(body.importNoticeSeen !== undefined ? { importNoticeSeen: body.importNoticeSeen } : {}),
         ...(body.uiScale !== undefined ? { uiScale: body.uiScale } : {}),
+        ...(body.theme !== undefined ? { theme: body.theme } : {}),
       });
       const after = store.settings();
       if (after.shortcut !== before.shortcut) shell.applyShortcut();
       if (after.openAtLogin !== before.openAtLogin) shell.setOpenAtLogin(after.openAtLogin);
-      if (after.uiScale !== before.uiScale) shell.applyLook();
+      if (after.uiScale !== before.uiScale || after.theme !== before.theme) shell.applyLook();
       announce();
       return send(res, 200, notesInfo());
     }

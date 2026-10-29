@@ -3,8 +3,10 @@ import type { HostLink } from "../host/client.js";
 import { formatWhen } from "../attach/refs.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { openViewer } from "../viewer/open.js";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFitWidth } from "../lib/fitWidth.js";
+import { THEME_LABELS, type ThemePref } from "../lib/theme.js";
+import { inAmo } from "../lib/where.js";
 import { countLabel, STATUS_NAME, type DiffMode } from "./logic.js";
 
 // The Review window's bars (stage 16 split out of ReviewApp.tsx): the head (what is compared, and how it shows) and
@@ -21,6 +23,26 @@ const LAYOUTS: { split: boolean; label: string; hint: string }[] = [
 ];
 
 const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "");
+
+const NEXT_THEME: Record<ThemePref, ThemePref> = { light: "dark", dark: "system", system: "light" };
+
+/**
+ * 主题 of the AMO Reviewer program alone (2026-10-29, the user: every tool both; it has no settings page): one button
+ * going 浅色 → 深色 → 跟随系统; the program sets it for all its windows. In Studio the windows follow Studio's 设置.
+ */
+function ThemeButton() {
+  const [theme, setTheme] = useState<ThemePref | null>(null);
+  useEffect(() => {
+    void window.amo?.theme?.().then(setTheme);
+  }, []);
+  if (inAmo() || !theme || !window.amo?.setTheme) return null;
+  const next = NEXT_THEME[theme];
+  return (
+    <button type="button" className="btn-ghost small" title={`主题：${THEME_LABELS[theme]}，点一下换成${THEME_LABELS[next]}（所有 Reviewer 窗口一起变）`} onClick={() => void window.amo?.setTheme?.(next).then(() => setTheme(next))} data-testid="review-theme">
+      {THEME_LABELS[theme]}
+    </button>
+  );
+}
 
 /** The window's head: the commit or the branch, 历史, the range, 只看改动 / 完整文件, 单栏 / 左右对照, 刷新. */
 export function ReviewHead({
@@ -122,6 +144,7 @@ export function ReviewHead({
           <kbd className="gr-key">R</kbd>
         </button>
       )}
+      <ThemeButton />
     </header>
   );
 }

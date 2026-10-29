@@ -5,6 +5,7 @@
     { "path": "packages/testkit" },
     { "path": "packages/account" },
     { "path": "packages/locate" },
+    { "path": "packages/traymenu" },
     { "path": "packages/host" },
     { "path": "packages/reviewer" },
     { "path": "packages/app" },

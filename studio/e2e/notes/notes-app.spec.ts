@@ -178,6 +178,20 @@ test("the settings window: shortcut, start with Windows, the work folder, its si
   await settings.getByTestId("ns-scale-1").click();
   await expect(settings.getByTestId("ns-scale-1")).toHaveAttribute("aria-checked", "true");
 
+  // 主题 (2026-10-29): its own, 浅色 unless chosen; 深色 turns the system colours of its windows dark (Playwright's
+  // pretend-light system switched off, so the pages see the one 便签 sets).
+  await expect(settings.getByTestId("ns-theme-light")).toHaveAttribute("aria-checked", "true");
+  await settings.emulateMedia({ colorScheme: null });
+  const settingsBg = () => settings.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const lightBg = await settingsBg();
+  await settings.getByTestId("ns-theme-dark").click();
+  await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
+  await expect.poll(settingsBg).not.toBe(lightBg);
+  expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8"))).toMatchObject({ theme: "dark" });
+  await screenshot(app, "notes", "N3-settings-dark", settings, "main");
+  await settings.getByTestId("ns-theme-light").click();
+  await expect.poll(settingsBg).toBe(lightBg);
+
   await settings.getByTestId("ns-login").check();
   await expect.poll(() => app.evaluate(() => (globalThis as { __notesOpenAtLogin?: boolean }).__notesOpenAtLogin)).toBe(true);
   expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8"))).toMatchObject({ openAtLogin: true, shortcut: "Ctrl+Alt+N" });

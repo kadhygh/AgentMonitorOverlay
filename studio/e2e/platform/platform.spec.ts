@@ -136,6 +136,8 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   server.delayObjects(1500);
   await row(page, "reviewer").getByRole("button", { name: "更新到 1.1.0" }).click();
   await expect(row(page, "reviewer").getByRole("status", { name: "AMO Reviewer 进度" })).toContainText("正在下载");
+  // The bar only moves forward (2026-10-29): a width from the start, never the sliding block around the download.
+  await expect(row(page, "reviewer").locator(".pf-bar-fill")).not.toHaveClass(/busy/);
   await screenshot(app, "platform", "P6-updating", page);
   await expect(status(page, "reviewer")).toHaveText("✓ 1.1.0 · 已是最新", { timeout: 20_000 });
   server.delayObjects(0);
@@ -206,6 +208,19 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await expect(page.getByTestId("pf-self-hint")).toHaveCount(0);
   await screenshot(app, "platform", "P12-settings", page);
   expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8"))).toMatchObject({ server: server.url, recentServers: [server.url], studioDataDir: dataDir, openAtLogin: true });
+  // 主题 (2026-10-29): 浅色 unless chosen; 深色 turns the system colours of its windows (and the tray menu) dark.
+  const pageBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  // Playwright pretends a light system unless told not to: the page is to see the one the platform sets.
+  await page.emulateMedia({ colorScheme: null });
+  await expect(page.getByRole("radiogroup", { name: "主题" }).getByRole("radio", { name: "浅色" })).toHaveAttribute("aria-checked", "true");
+  const lightBg = await pageBg();
+  await page.getByRole("radiogroup", { name: "主题" }).getByRole("radio", { name: "深色" }).click();
+  await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
+  await expect.poll(pageBg).not.toBe(lightBg);
+  expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8"))).toMatchObject({ theme: "dark" });
+  await screenshot(app, "platform", "P12-settings-dark", page);
+  await page.getByRole("radiogroup", { name: "主题" }).getByRole("radio", { name: "浅色" }).click();
+  await expect.poll(pageBg).toBe(lightBg);
 
   // ---- the tray (2026-10-29): one part per installed tool, not folded (便签 through Studio, which carries it); a click
   // opens 便签 or Studio as chosen; closing the window leaves the program running

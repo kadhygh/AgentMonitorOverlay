@@ -1,8 +1,9 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { amoLocalHome } from "@amo-studio/account";
+import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
 import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
@@ -149,7 +150,7 @@ function createWindow(): BrowserWindow {
     ...(ICON ? { icon: ICON } : {}),
     // The page's top bar is the title bar and draws the window buttons (as AMO Studio and 中转).
     frame: false,
-    backgroundColor: "#fbfaf7",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#fbfaf7",
     show: false,
     ...(testMode ? { focusable: false, skipTaskbar: true } : {}),
     webPreferences: { preload: join(here, "preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: !testMode },
@@ -231,7 +232,7 @@ function runTray(action: TrayAction): void {
       showWindow();
       return;
     case "set-click":
-      void platform.setTrayClick(action.to).then(updateTray);
+      void platform.setTrayClick(action.to);
       return;
     case "quit-platform":
       quit();
@@ -239,12 +240,14 @@ function runTray(action: TrayAction): void {
   }
 }
 
-function updateTray(): void {
-  if (!tray) return;
-  const template: Electron.MenuItemConstructorOptions[] = trayItems().map((i) =>
-    i.kind === "separator" ? { type: "separator" } : i.kind === "heading" ? { label: i.label, enabled: false } : i.kind === "radio" ? { label: i.label, type: "radio", checked: i.checked, click: () => runTray(i.action) } : { label: i.label, click: () => runTray(i.action) },
+/** The menu on a right-click (2026-10-29, the user: like 便签's, not Windows' own), made from the state as it is then;
+ *  what a click on the icon does is in bold. */
+const trayWindow = new TrayMenu({ label: "AMO 平台菜单", width: 236 });
+function openTrayMenu(): void {
+  const click = JSON.stringify(trayClickAction(platform.trayState()));
+  trayWindow.open(
+    trayItems().map((i): MenuEntry => (i.kind === "separator" ? { kind: "rule" } : i.kind === "heading" ? { kind: "title", label: i.label } : { kind: "item", label: i.label, strong: JSON.stringify(i.action) === click, ...(i.kind === "radio" ? { checked: i.checked } : {}), run: () => runTray(i.action) })),
   );
-  tray.setContextMenu(Menu.buildFromTemplate(template));
 }
 
 /** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs; 16–24 px are the
@@ -269,7 +272,7 @@ function createTray(): void {
   tray.setToolTip("AMO 平台");
   // A click opens 便签 or Studio, as chosen in the menu (2026-10-29, the user); the platform's window is in the menu.
   tray.on("click", () => runTray(trayClickAction(platform.trayState())));
-  updateTray();
+  tray.on("right-click", openTrayMenu);
 }
 
 function quit(): void {
@@ -279,7 +282,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "close", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "updateEnvironment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "close", "setChannel", "setOpenAtLogin", "setTheme", "pickStudioDataDir", "openPath", "dismiss", "environment", "updateEnvironment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());
@@ -294,15 +297,10 @@ function wire(): void {
     if (action === "minimize") w.minimize();
     else if (action === "close") w.close();
   });
-  let lastTools = "";
   platform.onChange((view: PlatformView) => {
     if (win && !win.isDestroyed()) win.webContents.send("platform:view", view);
-    // The tray follows what is installed, 重启 Studio being offered, and the click choice.
-    const tools = JSON.stringify(platform.trayState());
-    if (tools !== lastTools) {
-      lastTools = tools;
-      updateTray();
-    }
+    // 主题 (2026-10-29): the page leaves it to the system's colours (base.css), which this sets for every window here.
+    if (nativeTheme.themeSource !== view.theme) nativeTheme.themeSource = view.theme;
   });
 }
 
@@ -310,6 +308,7 @@ async function start(): Promise<void> {
   Menu.setApplicationMenu(null);
   serveUi();
   wire();
+  nativeTheme.themeSource = platform.view().theme;
   if (!testMode) createTray();
   if (testMode)
     Object.assign(g, {

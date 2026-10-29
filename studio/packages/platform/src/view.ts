@@ -128,6 +128,8 @@ export interface PlatformView {
   root: RootView;
   dirs: { root: string; apps: string; studioData: string | null; settings: string };
   openAtLogin: boolean;
+  /** 设置 → 主题 (2026-10-29): the main process makes every window (and the tray menu) follow it. */
+  theme: "light" | "dark" | "system";
 }
 
 /** What the page can ask the main process to do (platform:call). */
@@ -158,6 +160,7 @@ export interface PlatformCalls {
   refreshStudio(): Promise<void>;
   setChannel(channel: Channel): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
+  setTheme(theme: "light" | "dark" | "system"): Promise<void>;
   pickStudioDataDir(): Promise<void>;
   openPath(which: "root" | "apps" | "studioData" | "settings"): Promise<void>;
   dismiss(tool: string): Promise<void>;

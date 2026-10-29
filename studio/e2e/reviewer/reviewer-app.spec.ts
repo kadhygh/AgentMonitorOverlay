@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,4 +82,22 @@ test("started with a folder it reviews its changes; comments are copied; amo-rev
   await expect(viewer.getByTestId("viewer-code").locator('[data-line="new:2"]')).toContainText("return rate");
   await expect(viewer.getByRole("button", { name: /书签/ })).toHaveCount(0);
   await screenshot(app, "reviewer", "R2-viewer", viewer, "viewer");
+
+  // 主题 (2026-10-29): the program's own, one button in Git Review's head (浅色 → 深色 → 跟随系统); every window follows
+  // (Playwright's pretend-light system switched off, so the pages see the one the program sets).
+  const theme = review.getByTestId("review-theme");
+  await expect(theme).toHaveText("浅色");
+  await viewer.emulateMedia({ colorScheme: null });
+  const viewerBg = () => viewer.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const lightBg = await viewerBg();
+  await theme.click();
+  await expect(theme).toHaveText("深色");
+  await expect.poll(() => app!.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
+  await expect.poll(viewerBg).not.toBe(lightBg);
+  expect(JSON.parse(readFileSync(join(home, "theme.json"), "utf8"))).toEqual({ theme: "dark" });
+  await screenshot(app, "reviewer", "R3-viewer-dark", viewer, "viewer");
+  await theme.click();
+  await expect(theme).toHaveText("跟随系统");
+  await theme.click();
+  await expect(theme).toHaveText("浅色");
 });

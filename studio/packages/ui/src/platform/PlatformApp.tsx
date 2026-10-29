@@ -451,6 +451,15 @@ function studioRestartLine(t: ToolView): string | null {
   }
 }
 
+// One bar that only moves forward (用户 2026-10-29: it rose, fell back and rose again — the sliding busy block before and
+// after the download, then the real width from 0): empty until the download, its bytes while it runs, full while
+// switching. The sliding block only for what has no amount at all (uninstalling, going back to a kept version).
+function BarFill({ task }: { task: TaskView }) {
+  const fraction = task.phase === "manifest" || task.phase === "linking" ? 0 : task.phase === "downloading" ? (task.totalBytes > 0 ? Math.min(1, task.doneBytes / task.totalBytes) : 1) : task.kind === "install" || task.kind === "update" ? 1 : null;
+  if (fraction === null) return <div className="pf-bar-fill busy" />;
+  return <div className="pf-bar-fill" style={{ width: `${(100 * fraction).toFixed(1)}%` }} />;
+}
+
 function taskLine(task: TaskView): string {
   switch (task.phase) {
     case "manifest":
@@ -557,7 +566,7 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
       {t.task && (
         <div className="pf-progress" role="status" aria-label={`${short} 进度`}>
           <div className="pf-bar" aria-hidden="true">
-            <div className={`pf-bar-fill${t.task.phase === "downloading" && t.task.totalBytes > 0 ? "" : " busy"}`} style={t.task.phase === "downloading" && t.task.totalBytes > 0 ? { width: `${Math.min(100, (100 * t.task.doneBytes) / t.task.totalBytes).toFixed(1)}%` } : undefined} />
+            <BarFill task={t.task} />
           </div>
           <span className="pf-hint">{taskLine(t.task)}</span>
         </div>
@@ -823,7 +832,7 @@ function SelfSection({ view }: { view: PlatformView }) {
       {s.task && (
         <div className="pf-progress" role="status" aria-label="平台更新进度">
           <div className="pf-bar" aria-hidden="true">
-            <div className={`pf-bar-fill${s.task.phase === "downloading" && s.task.totalBytes > 0 ? "" : " busy"}`} style={s.task.phase === "downloading" && s.task.totalBytes > 0 ? { width: `${Math.min(100, (100 * s.task.doneBytes) / s.task.totalBytes).toFixed(1)}%` } : undefined} />
+            <BarFill task={s.task} />
           </div>
           <span className="pf-hint">{taskLine(s.task)}</span>
         </div>
@@ -859,6 +868,12 @@ const CHANNELS: Array<[Channel, string, string]> = [
   ["test", "测试", "刚发布的版本，先拿到，可能有问题。"],
 ];
 
+const THEMES: Array<[PlatformView["theme"], string]> = [
+  ["light", "浅色"],
+  ["dark", "深色"],
+  ["system", "跟随系统"],
+];
+
 function SettingsPage({ view }: { view: PlatformView }) {
   // The team server and 退出登录 are on 账号 (2026-10-28).
   return (
@@ -880,6 +895,20 @@ function SettingsPage({ view }: { view: PlatformView }) {
           <span className="pf-hint">{CHANNELS.find(([id]) => id === view.channel)![2]}</span>
         </div>
         {view.channelFromArgs && <p className="pf-hint">这次是用启动参数 --channel {view.channel} 打开的，以它为准；不带参数打开时才按这里的选择。</p>}
+      </section>
+
+      <section className="pf-section" aria-label="主题">
+        <h2 className="pf-h2">主题</h2>
+        <div className="pf-row">
+          <div role="radiogroup" aria-label="主题" className="pf-seg">
+            {THEMES.map(([id, label]) => (
+              <button key={id} type="button" role="radio" aria-checked={view.theme === id} onClick={() => view.theme !== id && void call("setTheme", id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="pf-hint">平台的窗口和托盘菜单都跟着变。</span>
+        </div>
       </section>
 
       <section className="pf-section" aria-label="启动">
