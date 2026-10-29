@@ -124,7 +124,7 @@ export class RemoteGrants {
   }
 
   /**
-   * A's profiles a session started from a paired device may run in this task: those of 设置 → 远程, or (none chosen)
+   * A's profiles a session started from a paired device may run in this task: those of 远程设置 (the remote page), or (none chosen)
    * those the task's own sessions use. The default first.
    */
   allowedFor(taskId: Id): Id[] {
@@ -166,7 +166,7 @@ export class RemoteGrants {
     return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed };
   }
 
-  // ---- granting (设置 → 远程, the task page)
+  // ---- granting (the remote page, the task page)
 
   grant(taskId: Id, peer: DeviceRef): RemoteGrant {
     const task = this.store.getTask(taskId);
@@ -175,7 +175,7 @@ export class RemoteGrants {
     if (task.archivedAt) throw new HostError("read_only", "任务已归档，不能授权");
     const p = this.ctx.peer(peer, "owner");
     // Only a device this computer allowed to pair may reach it (the owner side, plans/remote-session.md「B 是谁」).
-    if (!p) throw new HostError("bad_request", "只能授权给这台电脑允许配对的设备（在 设置 → 远程 里配对）");
+    if (!p) throw new HostError("bad_request", "只能授权给这台电脑允许配对的设备（在顶栏的「远程」里配对）");
     const list = this.list();
     const had = list.find((g) => g.taskId === taskId && same(g, peer));
     if (had) return had;
@@ -420,7 +420,7 @@ export class RemoteGrants {
     let note: string | null = null;
     if (!allowed.includes(profileId)) {
       const fallback = allowed[0];
-      if (!fallback) throw new HostError("bad_request", `这个任务正授权给 ${who} 远程使用，${this.label(profileId)} 不在允许远程使用的模型里，也没有可以换的：请人在 设置 → 远程 里允许一个模型。`);
+      if (!fallback) throw new HostError("bad_request", `这个任务正授权给 ${who} 远程使用，${this.label(profileId)} 不在允许远程使用的模型里，也没有可以换的：请人在那台电脑顶栏的「远程」→「远程设置」里允许一个模型。`);
       note = `（这个任务正被 ${who} 远程使用，要的模型 ${this.label(profileId)} 不在允许远程使用的模型里，换成了 ${this.label(fallback)}。）`;
       profileId = fallback;
     }

@@ -5,7 +5,7 @@ import { HostError } from "../../core/shared.js";
 import type { RemoteContext, RemoteGrants } from "./grants.js";
 
 // 远程, step 4 (plans/remote-session.md, 2026-10-29): B asks A to run a task. B writes a title and what to do; A's
-// person sees it on Focus and in 设置 → 远程, picks the project, the topic (or none) and a model from 远端允许的模型,
+// person sees it on Focus and on the remote page (顶栏「远程」), picks the project, the topic (or none) and a model from 远端允许的模型,
 // and allows it: A makes the task (its 说明 the request), grants it to B, and starts its session with the request as
 // the first message — B's board shows the task and it running. Or A refuses it, saying why. A request goes only while A
 // is online: the team server keeps no task contents, and nothing is sent again later on its own.
@@ -53,7 +53,7 @@ export class TaskRequests {
     this.ctx.host.store.setKv(REQUESTS_KEY, JSON.stringify(list));
   }
 
-  /** Waiting for this computer's person (Focus, 设置 → 远程). */
+  /** Waiting for this computer's person (Focus, the remote page). */
   pending(): RemoteTaskRequest[] {
     return this.all().filter((r) => r.state === "pending");
   }
@@ -115,7 +115,7 @@ export class TaskRequests {
     if (typeof input?.workspaceId !== "string" || !input.workspaceId) throw new HostError("bad_request", "先选一个项目（或公共目录）");
     if (typeof input.profileId !== "string" || !input.profileId) throw new HostError("bad_request", "先选一个模型");
     const allowed = this.grants.allowed();
-    if (!allowed.profiles.length) throw new HostError("bad_request", "还没有选远端允许的模型：先在 设置 → 远程「远端允许的模型」里勾上可以给远程任务用的模型");
+    if (!allowed.profiles.length) throw new HostError("bad_request", "还没有选远端允许的模型：先在顶栏的「远程」→「远程设置」→「远端允许的模型」里勾上可以给远程任务用的模型");
     const profile = host.profiles.find((p) => p.id === input.profileId);
     if (!allowed.profiles.includes(input.profileId) || !profile || profile.unavailable) throw new HostError("bad_request", "这个模型不在远端允许的模型里（或现在用不了）");
     const topicId = typeof input.topicId === "string" && input.topicId ? input.topicId : null;

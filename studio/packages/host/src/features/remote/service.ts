@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteFetchedFile, type RemoteListAnswer, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
-import type { DeviceEvent, DeviceRef, PairRequest, PeerView } from "@amo-studio/relay";
+import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
@@ -379,7 +379,7 @@ export class RemoteFeature extends Feature {
     return { device: d.id, deviceName: d.name };
   }
 
-  // ---- what 设置 → 远程 and Focus do
+  // ---- what the remote page (顶栏「远程」) and Focus do
 
   pairs(): StoredPair[] {
     const raw = this.store.getKv(PAIRS_KEY)?.value;
@@ -438,7 +438,7 @@ export class RemoteFeature extends Feature {
       return { ...p, online: online ? (pr?.online ?? false) : null, lastSeen: pr?.lastSeen ? iso(pr.lastSeen) : null };
     });
     const incoming: RemoteIncomingRequest[] = this.incoming.map((r) => ({ id: r.id, account: r.from.account, device: r.from.device, name: r.from.name, createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt) }));
-    const outgoing: RemoteOutgoingRequest[] = this.outgoing.map((r) => ({ id: r.id, to: r.to, state: r.state === "refused" ? "refused" : "pending", answeredBy: r.answeredBy?.name ?? null, createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt) }));
+    const outgoing: RemoteOutgoingRequest[] = this.outgoing.map((r) => ({ id: r.id, to: r.to, ...(r.toDevice ? { toDevice: { device: r.toDevice.device, name: r.toDevice.name } } : {}), state: r.state === "refused" ? "refused" : "pending", answeredBy: r.answeredBy?.name ?? null, createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt) }));
     return {
       device: this.device,
       account: info ? { server: info.server, name: info.name } : null,
@@ -476,14 +476,34 @@ export class RemoteFeature extends Feature {
     return this.state();
   }
 
-  async requestPair(accountValue: string): Promise<RemoteState> {
+  /** Asks an account to pair — or (`device`, the pair dialog) only that device of it, picked from its online devices. */
+  async requestPair(accountValue: string, device?: string): Promise<RemoteState> {
     this.requireStarted();
     const to = accountValue.trim();
     if (!to) throw new HostError("bad_request", "先填对方的账号名");
-    const { request } = await this.call<{ request: PairRequest }>("POST", "/api/devices/pair", { ...this.named(), to });
-    this.outgoing = [...this.outgoing.filter((r) => r.id !== request.id && r.to !== request.to), request];
+    const { request } = await this.call<{ request: PairRequest }>("POST", "/api/devices/pair", { ...this.named(), to, ...(device ? { toDevice: device } : {}) });
+    // One request per account and device asked (an older team server leaves toDevice out: per account).
+    const target = (r: PairRequest) => `${r.to}\n${r.toDevice?.device ?? ""}`;
+    this.outgoing = [...this.outgoing.filter((r) => r.id !== request.id && target(r) !== target(request)), request];
     this.changed();
     return this.state();
+  }
+
+  /**
+   * The pair dialog (2026-10-29): this account's other devices connected to the team server now. An older relay service
+   * has no such list: `supported: false`, and the dialog offers pairing by account name only.
+   */
+  async onlineDevices(): Promise<RemoteOnlineDevices> {
+    this.requireStarted();
+    if (this.link?.state !== "online") throw new HostError("runtime_error", "这台电脑没有连上团队服务器，列不出在线的设备");
+    const d = this.named();
+    try {
+      const { devices } = await this.call<{ devices: OnlineDevice[] }>("GET", `/api/devices/online?device=${encodeURIComponent(d.device)}`);
+      return { devices: devices.map((x) => ({ device: x.device, name: x.name, since: iso(x.since) })), supported: true };
+    } catch (err) {
+      if (err instanceof HostError && err.code === "not_found") return { devices: [], supported: false };
+      throw err;
+    }
   }
 
   async answer(id: string, allow: boolean): Promise<RemoteState> {
