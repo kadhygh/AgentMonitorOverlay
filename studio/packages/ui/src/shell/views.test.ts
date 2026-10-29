@@ -16,6 +16,16 @@ describe("where a task page returns", () => {
     expect(withOrigin({ kind: "task", taskId: "t3", nav: 5 }, task)).toMatchObject({ taskId: "t3", back: { kind: "canvas" } });
   });
 
+  it("远程 remembers where it was opened from, and a task opened from it returns to it", () => {
+    const remote = withOrigin({ kind: "remote" }, { kind: "task", taskId: "t1", back: { kind: "canvas" } });
+    expect(remote).toEqual({ kind: "remote", back: { kind: "canvas" } });
+    expect(withOrigin({ kind: "remote", nav: 2 }, remote)).toEqual({ kind: "remote", nav: 2, back: { kind: "canvas" } });
+    const task = withOrigin({ kind: "task", taskId: "t2" }, remote);
+    expect(task).toEqual({ kind: "task", taskId: "t2", back: remote });
+    expect(backTo(task.kind === "task" ? task.back : undefined)).toEqual({ view: remote, label: "远程" });
+    expect(withOrigin({ kind: "remote" }, task)).toEqual({ kind: "remote", back: { kind: "canvas" } });
+  });
+
   it("keeps a page's own origin, and leaves other pages alone", () => {
     expect(withOrigin({ kind: "task", taskId: "t1", back: { kind: "board" } }, { kind: "canvas" })).toEqual({ kind: "task", taskId: "t1", back: { kind: "board" } });
     expect(withOrigin({ kind: "canvas" }, { kind: "task", taskId: "t1", back: { kind: "board" } })).toEqual({ kind: "canvas" });

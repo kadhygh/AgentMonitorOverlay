@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type RemoteState, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
-import { copyStatus, grantsOf, useRemote, type CopyStatus } from "../settings/remote.js";
+import { copyStatus, grantsOf, useRemote, type CopyStatus } from "../remote/remote.js";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
@@ -292,7 +292,7 @@ function TaskCard({
         </span>
       )}
       {granted.length > 0 && (
-        <span className="card-granted" data-testid="card-granted" title="这个任务授权给了你的其他设备远程使用（任务页的 ⋯ 或 设置 → 远程 里可以收回）">
+        <span className="card-granted" data-testid="card-granted" title="这个任务授权给了你的其他设备远程使用（任务页的 ⋯ 或顶栏的「远程」里可以收回）">
           已授权给 {granted.map((g) => g.name).join("、")}
         </span>
       )}

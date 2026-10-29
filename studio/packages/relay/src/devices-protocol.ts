@@ -6,8 +6,10 @@
 // against. The pairs' own record is on the allowing side (A's Host): it decides who may reach it.
 //
 // HTTP, all with the account's key (Authorization: Bearer), the device's id in the body or `?device=`:
-//   POST   /api/devices/pair                    {device, deviceName, to}         → {request}      B asks account `to`
+//   POST   /api/devices/pair                    {device, deviceName, to, toDevice?} → {request}   B asks account `to`
+//                                                (toDevice: only that device of it sees and answers the request)
 //   GET    /api/devices/pair?device=…                                            → {incoming, outgoing}
+//   GET    /api/devices/online?device=…                                          → {devices}   the account's other online devices
 //   POST   /api/devices/pair/<id>/answer        {device, deviceName, allow}      → {request, pair?}
 //   DELETE /api/devices/pair/<id>?device=…      B withdraws its request, or puts away an answer it has seen
 //   GET    /api/devices/pairs?device=…                                           → {pairs}
@@ -44,14 +46,27 @@ export interface PairRequest {
   id: string;
   /** Who asks (B). */
   from: NamedDevice;
-  /** The account asked (A); any of its devices may answer. */
+  /** The account asked (A); any of its devices may answer, unless `toDevice` names one. */
   to: string;
+  /**
+   * 2026-10-29 (远程页的配对弹窗): the one device of `to` asked, picked from its online devices (GET /api/devices/online);
+   * only it sees the request and may answer. null: any device of the account (asked by account name).
+   */
+  toDevice: { device: string; name: string } | null;
   state: PairRequestState;
   /** The device that answered, once answered. */
   answeredBy: NamedDevice | null;
   createdAt: number;
   /** After this it is gone (pending: unanswered; answered: B did not come to see it). */
   expiresAt: number;
+}
+
+/** Another device of the asking device's own account that is connected now (GET /api/devices/online). */
+export interface OnlineDevice {
+  device: string;
+  name: string;
+  /** When its socket opened (ms). */
+  since: number;
 }
 
 /** A pair as one of its devices sees it. */
@@ -79,7 +94,7 @@ export type DeviceEvent =
   | { type: "relay"; from: DeviceRef; to: DeviceRef; id: string; kind: string; re?: string; body?: unknown }
   /** A frame of this device's could not be passed on: `id` is its id. */
   | { type: "relay-error"; id: string; to: DeviceRef | null; code: "not_paired" | "offline" | "bad_frame"; message: string }
-  /** Someone asks this device's account to pair (to every device of it but the asking one). */
+  /** Someone asks this device's account to pair (to every device of it but the asking one, or only to `toDevice`). */
   | { type: "pair-request"; request: PairRequest }
   /** A request to this account was answered by another of its devices, withdrawn, or expired. */
   | { type: "pair-request-closed"; requestId: string }

@@ -11,7 +11,11 @@ export function remoteRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/remote", () => service.remote.state()),
     route("PUT", "/api/remote/device", ({ body }) => service.remote.rename(str(obj(body).name, "name"))),
-    route("POST", "/api/remote/pair", ({ body }) => service.remote.requestPair(str(obj(body).account, "account"))),
+    route("POST", "/api/remote/pair", ({ body }) => {
+      const b = obj(body);
+      return service.remote.requestPair(str(b.account, "account"), b.device === undefined || b.device === null || b.device === "" ? undefined : str(b.device, "device"));
+    }),
+    route("GET", "/api/remote/devices/online", () => service.remote.onlineDevices()),
     route("POST", "/api/remote/requests/:id/answer", ({ params, body }) => {
       const allow = obj(body).allow;
       if (typeof allow !== "boolean") throw new HostError("bad_request", "allow must be true or false");

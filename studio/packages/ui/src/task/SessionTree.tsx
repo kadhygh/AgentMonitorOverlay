@@ -64,7 +64,7 @@ function RemoteNewSession({ name, allowed, blocked, profiles, busy, onStart }: {
   return (
     <div className="new-session" aria-label="新会话" data-testid="remote-new-session">
       {allowed.length === 0 ? (
-        <span className="settings-hint">{name} 没有允许远程新开会话的模型：在那台电脑的 设置 → 远程 里勾选。</span>
+        <span className="settings-hint">{name} 没有允许远程新开会话的模型：在那台电脑顶栏的「远程」→「远程设置」里勾选。</span>
       ) : (
         <>
           <label className="stack-field">

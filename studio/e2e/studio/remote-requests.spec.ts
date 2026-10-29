@@ -9,7 +9,7 @@ import { launchStudio, screenshot, studioRoot, type Studio } from "../support/st
 
 // 远程, step 4 (plans/remote-session.md 方式 2, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data,
 // the mock model), paired through a relay service started here — never the team server. B asks A to run a task from
-// 设置 → 远程; A's Focus shows the request; A picks the project and an allowed model and allows it; B's board shows the
+// the remote page (the top bar's 「远程」, 设置 → 远程 until 2026-10-29); A's Focus shows the request; A picks the project and an allowed model and allows it; B's board shows the
 // task, running. A refuses a second request with a reason, and B reads it.
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
@@ -46,11 +46,12 @@ async function turnOnFocus(page: Page, app: ElectronApplication): Promise<Page> 
   return opened;
 }
 
-async function openRemoteSettings(page: Page) {
-  await page.getByRole("button", { name: "设置" }).first().click();
-  const settings = page.getByRole("dialog", { name: "设置" });
-  await settings.getByRole("tab", { name: /远程/ }).click();
-  return settings;
+/** The top bar's 「远程」 → the remote page. */
+async function openRemote(page: Page) {
+  await page.getByTestId("topbar-remote").click();
+  const remote = page.getByRole("region", { name: "远程", exact: true });
+  await expect(remote).toBeVisible();
+  return remote;
 }
 
 test("B asks A to run a task; A's Focus shows it, A picks the project and an allowed model and allows it, B's board shows it running; A refuses another, B reads why", async () => {
@@ -77,14 +78,15 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await until(() => b.api<RemoteState>("GET", "/api/remote"), (s) => s.peers[0]?.online === true, "B sees A online");
   const sleepBlocked = () => a.app.evaluate(() => (globalThis as { __amoSleepBlocked?: boolean }).__amoSleepBlocked ?? null);
   await expect.poll(sleepBlocked).toBe(false);
-  // A: a project to put the task in, and the model remote work may use (设置 → 远程 → 远端允许的模型).
+  // A: a project to put the task in, and the model remote work may use (远程 → 远程设置 → 远端允许的模型).
   const proj = await a.api<Workspace>("POST", "/api/workspaces", { path: a.workspace("请求的项目") });
   await a.api("PUT", "/api/remote/allowed", { profiles: ["codex-mock"], defaultProfile: "codex-mock", permission: null });
   const aFocus = await turnOnFocus(a.page, a.app);
 
-  // B: 设置 → 远程 → the paired device → 请它跑一个任务….
-  const bSettings = await openRemoteSettings(b.page);
+  // B: 远程 → the paired device → 在它上面新建任务 (the request dialog, until the new-task page has a remote mode).
+  const bSettings = await openRemote(b.page);
   const peer = bSettings.getByTestId("remote-peer").filter({ hasText: "A 台式机" });
+  await expect(peer.getByTestId("remote-ask-open")).toHaveText("在它上面新建任务");
   await peer.getByTestId("remote-ask-open").click();
   const ask = b.page.getByTestId("remote-ask-dialog");
   await ask.getByTestId("remote-ask-title").fill("远程请求的任务");
@@ -94,17 +96,21 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await ask.getByTestId("remote-ask-send").click();
   await expect(ask).toHaveCount(0);
   await expect(bSettings.getByTestId("remote-message")).toHaveText("已发给 A 台式机，等它同意");
-  await expect(peer.getByTestId("remote-ask")).toHaveAttribute("data-state", "pending");
-  await expect(peer.getByTestId("remote-ask")).toContainText("等 A 台式机 同意 ·「远程请求的任务」");
+  // The request waits under 「在别的设备上跑的」.
+  const sent = bSettings.getByTestId("remote-copies").getByTestId("remote-ask");
+  await expect(sent).toHaveAttribute("data-state", "pending");
+  await expect(sent).toContainText("等 A 台式机 同意 ·「远程请求的任务」");
   await screenshot(b.app, "studio", "remote-ask-pending", b.page);
 
-  // A: Focus shows it as something to deal with; 设置 → 远程 has it with 同意… / 拒绝….
+  // A: Focus shows it as something to deal with; 「去处理」 opens the remote page, where it waits under 「等你处理」 with 同意… / 拒绝….
   const entry = aFocus.getByTestId("focus-task-request");
   await expect(entry).toContainText("任务请求 · B 笔记本", { timeout: 30_000 });
   await expect(entry).toContainText("请这台电脑跑「远程请求的任务」");
   await screenshot(a.app, "studio", "remote-request-focus", aFocus, "focus");
-  const aSettings = await openRemoteSettings(a.page);
-  const request = aSettings.getByTestId("remote-task-request");
+  await entry.getByTestId("focus-task-request-open").click();
+  const aSettings = a.page.getByRole("region", { name: "远程", exact: true });
+  await expect(a.page.getByTestId("topbar-remote-dot")).toBeVisible();
+  const request = aSettings.getByTestId("remote-waiting").getByTestId("remote-task-request");
   await expect(request).toContainText("B 笔记本（笔记本的我）请这台电脑跑：「远程请求的任务」");
   await request.getByTestId("remote-task-accept").click();
   const accept = a.page.getByTestId("remote-accept-dialog");
@@ -118,11 +124,15 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await expect(aFocus.getByTestId("focus-task-request")).toHaveCount(0);
   // The task on A: in the project, granted to B, its session started with the request.
   await expect(aSettings.getByTestId("remote-grant")).toContainText("远程请求的任务");
-  await a.page.keyboard.press("Escape");
+  await expect(aSettings.getByTestId("remote-waiting")).toHaveCount(0);
+  await expect(a.page.getByTestId("topbar-remote-dot")).toHaveCount(0);
 
-  // B: told it was allowed; the task is on its board and running.
-  await expect(peer.getByTestId("remote-ask")).toHaveAttribute("data-state", "accepted", { timeout: 30_000 });
-  await b.page.keyboard.press("Escape");
+  // B: told it was allowed; the remote page lists the copy; the task is on its board and running.
+  await expect(sent).toHaveAttribute("data-state", "accepted", { timeout: 30_000 });
+  await expect(bSettings.getByTestId("remote-copy")).toContainText("远程请求的任务");
+  await expect(bSettings.getByTestId("remote-copy")).toContainText("在 A 台式机");
+  await screenshot(b.app, "studio", "remote-page-copy", b.page);
+  await b.page.getByTestId("back").click();
   const card = b.page.getByTestId("task-card").filter({ hasText: "远程请求的任务" });
   await expect(card).toHaveAttribute("data-remote", "online", { timeout: 30_000 });
   await card.click();
@@ -130,14 +140,14 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await screenshot(b.app, "studio", "remote-request-running", b.page);
   await b.page.getByTestId("back").click();
 
-  // A second request, refused with a reason: B reads it (and the dot beside 设置 says there is something to see).
-  const again = await openRemoteSettings(b.page);
+  // A second request, refused with a reason: B reads it (and the dot on the top bar's 「远程」 says there is something to see).
+  const again = await openRemote(b.page);
   await again.getByTestId("remote-peer").filter({ hasText: "A 台式机" }).getByTestId("remote-ask-open").click();
   await b.page.getByTestId("remote-ask-title").fill("第二个请求");
   await b.page.getByTestId("remote-ask-text").fill("这个也跑一下");
   await b.page.getByTestId("remote-ask-send").click();
   await until(() => a.api<RemoteState>("GET", "/api/remote"), (s) => s.taskRequests.length === 1, "A has the second request");
-  const aAgain = await openRemoteSettings(a.page);
+  const aAgain = await openRemote(a.page);
   await aAgain.getByTestId("remote-task-request").getByTestId("remote-task-refuse").click();
   await a.page.getByTestId("remote-refuse-reason").fill("今天不跑这个");
   await a.page.getByTestId("remote-refuse-confirm").click();
@@ -145,10 +155,11 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   const refused = again.getByTestId("remote-ask").filter({ hasText: "第二个请求" });
   await expect(refused).toHaveAttribute("data-state", "refused", { timeout: 30_000 });
   await expect(refused).toContainText("A 台式机 拒绝了「第二个请求」：今天不跑这个");
-  await expect(b.page.getByTestId("settings-remote-dot")).toBeVisible();
+  await expect(b.page.getByTestId("topbar-remote-dot")).toBeVisible();
   await screenshot(b.app, "studio", "remote-ask-refused", b.page);
   await refused.getByTestId("remote-ask-withdraw").click();
   await expect(again.getByTestId("remote-ask").filter({ hasText: "第二个请求" })).toHaveCount(0);
+  await expect(b.page.getByTestId("topbar-remote-dot")).toHaveCount(0);
 
   // A while its task is used from B (online): kept awake, and 完全退出 asks first, even with no session at work.
   await expect.poll(sleepBlocked, { timeout: 10_000 }).toBe(true);

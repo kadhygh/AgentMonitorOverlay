@@ -46,10 +46,10 @@ export function GrantDialog({ link, task, remote, onClose, onDone }: { link: Hos
           把「{task.title || "未命名任务"}」授权给…
         </span>
         {!remote || remote.connection.state === "off" || !remote.account ? (
-          <span className="settings-hint">远程功能要先在 AMO 平台里登录，再在 设置 → 远程 里和你的另一台电脑配对。</span>
+          <span className="settings-hint">远程功能要先在 AMO 平台里登录，再在顶栏的「远程」里和你的另一台电脑配对。</span>
         ) : peers.length === 0 ? (
           <span className="settings-hint" data-testid="grant-none">
-            {granted.size ? "已经授权给所有可以授权的设备了。" : "还没有可以授权的设备：在你的另一台电脑上向这台发起配对，这台允许后它就会出现在这里（设置 → 远程）。"}
+            {granted.size ? "已经授权给所有可以授权的设备了。" : "还没有可以授权的设备：在你的另一台电脑上向这台发起配对，这台允许后它就会出现在这里（顶栏的「远程」）。"}
           </span>
         ) : (
           <div className="grant-peers" role="radiogroup" aria-label="设备">
@@ -71,9 +71,9 @@ export function GrantDialog({ link, task, remote, onClose, onDone }: { link: Hos
           </div>
         )}
         <ul className="confirm-risks">
-          <li>那台设备能看到这个任务的标题、说明和它的全部会话（委派的会话、子 agent 也算），能发消息、审批、打断，能在任务里开新会话（只能用 设置 → 远程 里允许的模型）。</li>
+          <li>那台设备能看到这个任务的标题、说明和它的全部会话（委派的会话、子 agent 也算），能发消息、审批、打断，能在任务里开新会话（只能用顶栏「远程」→「远程设置」里允许的模型）。</li>
           <li>会话还在这台电脑上跑：命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。只授权给你自己的其他设备。</li>
-          <li>它在线时，这个任务的提醒只在它那边出现；它离开 5 分钟后交回这台电脑。随时可以在任务的 ⋯ 或 设置 → 远程 里收回。</li>
+          <li>它在线时，这个任务的提醒只在它那边出现；它离开 5 分钟后交回这台电脑。随时可以在任务的 ⋯ 或顶栏的「远程」里收回。</li>
         </ul>
         {!connected && peers.length > 0 && <span className="settings-hint">这台电脑现在没连上团队服务器：授权会先记下，那台设备要等两边都连上后才看得到。</span>}
         {error && (

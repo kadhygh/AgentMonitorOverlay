@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { REMOTE_LOST_MS, type RemotePeer, type RemoteState, type Task } from "@amo-studio/protocol";
-import { copyStatus, grantsOf, remoteWaiting } from "./remote.js";
+import { copyStatus, grantsOf, remoteButton, remoteWaiting } from "./remote.js";
 
 // 远程 step 2 (2026-10-29): how a copy of a remote task stands on B — usable, its computer away (or this one not
 // connected), or revoked — and what the composer says while nothing can be sent.
@@ -31,12 +31,26 @@ const state = (peers: RemotePeer[], connected = true): RemoteState => ({
   asks: [],
 });
 
-describe("remoteWaiting (the dot beside 设置)", () => {
+describe("remoteWaiting (the dot on the top bar's 远程)", () => {
   const req = (state: "pending" | "accepted" | "refused") => ({ id: `rq_${state}`, title: "t", text: "x", account: "a", device: "d", name: "A", state, createdAt: "" });
   it("counts pairing requests, requests for tasks to answer here, and refusals not put away", () => {
     expect(remoteWaiting(null)).toBe(0);
     expect(remoteWaiting(state([]))).toBe(0);
     expect(remoteWaiting({ ...state([]), taskRequests: [req("pending")], asks: [req("pending"), req("accepted"), req("refused")] })).toBe(2);
+  });
+});
+
+describe("remoteButton (the top bar's 远程)", () => {
+  it("is hidden without remote, plain when nothing is paired or nobody is logged in, and counts online devices once each", () => {
+    expect(remoteButton(null, now).shown).toBe(false);
+    expect(remoteButton({ ...state([]), connection: { state: "off", message: null, retryAt: null, since: null } }, now).shown).toBe(false);
+    expect(remoteButton(state([]), now)).toEqual({ shown: true, label: "远程", waiting: false });
+    expect(remoteButton({ ...state([]), account: null, connection: { state: "no-account", message: null, retryAt: null, since: null } }, now)).toEqual({ shown: true, label: "远程", waiting: false });
+    // Paired both ways with one device (two entries), another device away.
+    const other: RemotePeer = { ...peer(false), device: "d_c", name: "C" };
+    expect(remoteButton(state([peer(true), { ...peer(true), role: "owner" }, other]), now).label).toBe("远程 · 1 在线");
+    expect(remoteButton(state([other]), now).label).toBe("远程 · 0 在线");
+    expect(remoteButton({ ...state([]), incoming: [{ id: "pr_1", account: "a", device: "d", name: "A", createdAt: "", expiresAt: "" }] }, now).waiting).toBe(true);
   });
 });
 

@@ -208,9 +208,10 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 
 | | |
 |---|---|
-| `POST /api/devices/pair` `{device, deviceName, to}` | B 向账号 `to` 发配对请求（同一台设备重复发只续期） |
-| `GET /api/devices/pair?device=` | `{incoming, outgoing}`：发给我这个账号的、这台设备发出去的 |
-| `POST /api/devices/pair/:id/answer` `{device, deviceName, allow}` | `to` 账号的某台设备允许 / 拒绝；允许就建立配对（这台是 owner） |
+| `POST /api/devices/pair` `{device, deviceName, to, toDevice?}` | B 向账号 `to` 发配对请求（同一台设备重复发只续期）；带 `toDevice` 时只发给那个账号的这一台设备 |
+| `GET /api/devices/online?device=` | `{devices: [{device, name, since}]}`：同一个账号下现在在线的其他设备（不含自己），给 Studio 远程页的「配对设备」弹窗选 |
+| `GET /api/devices/pair?device=` | `{incoming, outgoing}`：发给我这个账号的（指定了别的设备的不算）、这台设备发出去的 |
+| `POST /api/devices/pair/:id/answer` `{device, deviceName, allow}` | `to` 账号的某台设备（指定了设备时只能是那台）允许 / 拒绝；允许就建立配对（这台是 owner） |
 | `DELETE /api/devices/pair/:id?device=` | B 撤回请求，或收起已看过的回复 |
 | `GET /api/devices/pairs?device=` | 这台设备的配对，带对方是否在线、离线多久 |
 | `POST /api/devices/unpair` `{device, peerAccount, peerDevice}` | 解除配对（两个方向都删），告诉对方 |

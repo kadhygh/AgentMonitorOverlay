@@ -4,7 +4,8 @@ import { call, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
 
 // 远程 (2026-10-29): the Host's remote state, kept live (remote.updated is not in the event log, so a reconnect reads
-// it again). 设置 → 远程, the dot beside 设置, and Focus's pairing requests all read it.
+// it again). The remote page and the top bar's 「远程」 (its own page since 2026-10-29, 设置 → 远程 before), the board and
+// task page for remote tasks, and Focus's pairing and task requests all read it.
 
 export function useRemote(link: HostLink | null): RemoteState | null {
   const [remote, setRemote] = useState<RemoteState | null>(null);
@@ -30,10 +31,28 @@ export function useRemote(link: HostLink | null): RemoteState | null {
 }
 
 /**
- * What waits for the person in 设置 → 远程: the dot beside 设置 and on the 远程 tab — pairing requests and requests for
- * tasks to answer here (step 4), and refusals of this computer's requests not yet put away.
+ * What waits for the person on the remote page: the dot on the top bar's 「远程」 (beside 设置 until 2026-10-29) —
+ * pairing requests and requests for tasks to answer here (step 4), and refusals of this computer's requests not yet put
+ * away.
  */
 export const remoteWaiting = (remote: RemoteState | null): number => (remote ? remote.incoming.length + (remote.taskRequests?.length ?? 0) + (remote.asks?.filter((r) => r.state === "refused").length ?? 0) : 0);
+
+/**
+ * The top bar's 「远程」 (2026-10-29): hidden when this Host has no remote at all (the Reviewer's, tests), plain 「远程」
+ * when nothing is paired or nobody is logged in (the page then says to log in in the AMO platform), 「远程 · N 在线」
+ * with paired devices (a device paired both ways counts once), and a dot while something waits (remoteWaiting).
+ */
+export function remoteButton(remote: RemoteState | null, now: number = Date.now()): { shown: boolean; label: string; waiting: boolean } {
+  if (!remote || remote.connection.state === "off") return { shown: false, label: "远程", waiting: false };
+  const devices = new Map<string, boolean>();
+  for (const p of remote.peers) {
+    const k = `${p.account}\n${p.device}`;
+    devices.set(k, devices.get(k) === true || peerPresence(p, now) === "online");
+  }
+  const loggedIn = !!remote.account;
+  const online = [...devices.values()].filter(Boolean).length;
+  return { shown: true, label: loggedIn && devices.size ? `远程 · ${online} 在线` : "远程", waiting: loggedIn && remoteWaiting(remote) > 0 };
+}
 
 /**
  * Step 2 (2026-10-29), on B: how a copy of a remote task stands — `online`: its computer is reachable; `offline`: it is

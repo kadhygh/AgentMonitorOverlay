@@ -382,12 +382,14 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (method === "GET" && path === "/api/members") return send(res, 200, { members: members() });
 
     // Devices (devices-protocol.ts): pairing requests and pairs, each call naming the calling device of this account.
-    if (path === "/api/devices/pair" || path === "/api/devices/pairs" || path === "/api/devices/unpair" || path.startsWith("/api/devices/pair/")) {
+    if (path === "/api/devices/pair" || path === "/api/devices/pairs" || path === "/api/devices/unpair" || path === "/api/devices/online" || path.startsWith("/api/devices/pair/")) {
       const body = method === "GET" || method === "DELETE" ? {} : await readJson(req);
       const device = checkDeviceId(method === "GET" || method === "DELETE" ? url.searchParams.get("device") : body.device);
       const self = { account: me, device };
       const named = () => ({ ...self, name: checkDeviceName(body.deviceName) });
-      if (method === "POST" && path === "/api/devices/pair") return send(res, 200, { request: devices.requestPair(named(), body.to) });
+      if (method === "POST" && path === "/api/devices/pair") return send(res, 200, { request: devices.requestPair(named(), body.to, body.toDevice) });
+      // 远程页的配对弹窗 (2026-10-29): the account's other devices online now, to pick one to pair with.
+      if (method === "GET" && path === "/api/devices/online") return send(res, 200, { devices: devices.onlineDevices(self) });
       if (method === "GET" && path === "/api/devices/pair") return send(res, 200, devices.requests(self));
       if (method === "GET" && path === "/api/devices/pairs") return send(res, 200, { pairs: devices.pairs(self) });
       if (method === "POST" && path === "/api/devices/unpair") return send(res, 200, { ok: true, removed: devices.unpair(self, body.peerAccount, body.peerDevice) });

@@ -5,10 +5,11 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
 
 // 远程 step 4 (2026-10-29, plans/remote-session.md 方式 2): B asks one of the person's other computers (A) to run a task;
-// A's person picks where it goes and the model, and allows or refuses it. On B: 「请它跑一个任务…」 on a paired device
-// that allowed this computer, and the requests sent to it (等它同意 / 拒绝了 / 同意了). On A: the requests to answer.
+// A's person picks where it goes and the model, and allows or refuses it. On B: 「在它上面新建任务」 on a paired device
+// that allowed this computer (「请它跑一个任务…」 until the remote page, 2026-10-29), and the requests sent (等它同意 /
+// 拒绝了 / 同意了) under the remote page's 「在别的设备上跑的」. On A: the requests to answer, under 「等你处理」.
 
-function Dialog({ title, testId, busy, onClose, children }: { title: string; testId: string; busy: boolean; onClose(): void; children: ReactNode }) {
+export function Dialog({ title, testId, busy, onClose, children, head, className = "" }: { title: string; testId: string; busy: boolean; onClose(): void; children: ReactNode; /** Beside the title, on the right. */ head?: ReactNode; className?: string }) {
   return createPortal(
     <div
       className="modal-backdrop confirm-backdrop"
@@ -20,8 +21,16 @@ function Dialog({ title, testId, busy, onClose, children }: { title: string; tes
         }
       }}
     >
-      <div className="modal confirm-modal remote-request-modal" role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
-        <span className="modal-title">{title}</span>
+      <div className={`modal confirm-modal remote-request-modal ${className}`} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+        {head ? (
+          <div className="remote-dialog-head">
+            <span className="modal-title">{title}</span>
+            <span className="spacer" />
+            {head}
+          </div>
+        ) : (
+          <span className="modal-title">{title}</span>
+        )}
         {children}
       </div>
     </div>,
@@ -81,33 +90,29 @@ export function AskDialog({ link, peer, onClose, onDone }: { link: HostLink; pee
   );
 }
 
-/** On B: the requests sent to one device, under its card. */
-export function PeerAsks({ peer, asks, busy, onAsk, onWithdraw }: { peer: RemotePeer; asks: readonly RemoteTaskRequest[]; busy: boolean; onAsk(): void; onWithdraw(r: RemoteTaskRequest): void }) {
-  const online = peerPresence(peer) === "online";
-  const mine = asks.filter((r) => r.account === peer.account && r.device === peer.device);
+/** On B: the requests this computer sent (the remote page's 「在别的设备上跑的」), with 撤回 / 知道了. */
+export function AskRows({ asks, peers, busy, onWithdraw }: { asks: readonly RemoteTaskRequest[]; peers: readonly RemotePeer[]; busy: boolean; onWithdraw(r: RemoteTaskRequest): void }) {
   return (
     <>
-      {mine.map((r) => (
-        <div key={r.id} className="settings-row remote-outgoing" data-testid="remote-ask" data-state={r.state}>
-          <span className={r.state === "refused" ? "settings-hint remote-ask-refused" : "settings-hint"}>
-            {r.state === "pending"
-              ? `等 ${peer.name} 同意 ·「${r.title}」· ${relativeTime(r.createdAt)}发出`
-              : r.state === "refused"
-                ? `${peer.name} 拒绝了「${r.title}」${r.reason ? `：${r.reason}` : "（没写原因）"}`
-                : `${peer.name} 同意了「${r.title}」，任务已经在看板上`}
-          </span>
-          <span className="spacer" />
-          <button type="button" className="btn-ghost small" disabled={busy} title={r.state === "pending" ? (online ? "撤回这个请求" : `${peer.name} 不在线，撤回要等它在线`) : undefined} onClick={() => onWithdraw(r)} data-testid="remote-ask-withdraw">
-            {r.state === "pending" ? "撤回" : "知道了"}
-          </button>
-        </div>
-      ))}
-      <div className="settings-row">
-        <span className="spacer" />
-        <button type="button" className="btn-ghost small" disabled={busy || !online} title={online ? `写清要做什么，${peer.name} 同意后在那边建任务开跑，这台电脑的看板上能看到` : `${peer.name} 不在线：请求要它在线时才能发（团队服务器不替你存请求）`} onClick={onAsk} data-testid="remote-ask-open">
-          请它跑一个任务…
-        </button>
-      </div>
+      {asks.map((r) => {
+        const peer = peers.find((p) => p.account === r.account && p.device === r.device && p.role === "guest");
+        const name = peer?.name ?? r.name;
+        const online = !!peer && peerPresence(peer) === "online";
+        return (
+          <div key={r.id} className="remote-row" data-testid="remote-ask" data-state={r.state} data-device={name}>
+            <span className={r.state === "refused" ? "remote-row-main remote-ask-refused" : "remote-row-main"}>
+              {r.state === "pending"
+                ? `等 ${name} 同意 ·「${r.title}」· ${relativeTime(r.createdAt)}发出`
+                : r.state === "refused"
+                  ? `${name} 拒绝了「${r.title}」${r.reason ? `：${r.reason}` : "（没写原因）"}`
+                  : `${name} 同意了「${r.title}」，任务已经在看板上`}
+            </span>
+            <button type="button" className="btn-ghost small" disabled={busy} title={r.state === "pending" ? (online ? "撤回这个请求" : `${name} 不在线，撤回要等它在线`) : undefined} onClick={() => onWithdraw(r)} data-testid="remote-ask-withdraw">
+              {r.state === "pending" ? "撤回" : "知道了"}
+            </button>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -135,8 +140,7 @@ export function IncomingTaskRequests({
   const [reason, setReason] = useState("");
   if (!remote.taskRequests.length) return null;
   return (
-    <section className="settings-section" aria-label="请这台电脑跑的任务" data-testid="remote-task-requests">
-      <span className="settings-heading">请这台电脑跑的任务</span>
+    <div className="remote-cards" aria-label="请这台电脑跑的任务" data-testid="remote-task-requests">
       {remote.taskRequests.map((r) => (
         <div key={r.id} className="remote-card attention" data-testid="remote-task-request">
           <span className="remote-card-title">
@@ -203,7 +207,7 @@ export function IncomingTaskRequests({
           </div>
         </Dialog>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -290,12 +294,12 @@ function AcceptDialog({
       </label>
       {!models.length && (
         <span className="form-error" data-testid="remote-accept-no-model">
-          还没有选远端允许的模型：先关掉这个对话框，在下面「远端允许的模型」里勾上可以给远程任务用的模型并保存。
+          还没有选远端允许的模型：先关掉这个对话框，在这一页下面的「远程设置」→「远端允许的模型」里勾上可以给远程任务用的模型并保存。
         </span>
       )}
       <ul className="confirm-risks">
         <li>建任务「{request.title}」（说明就是请求的内容），授权给 {request.name}，用选的模型开会话，把请求的内容作为第一句话发出。</li>
-        <li>会话的权限：{permission}（在下面「远端允许的模型」里改）。命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</li>
+        <li>会话的权限：{permission}（在这一页下面的「远程设置」里改）。命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</li>
       </ul>
       {error && (
         <span className="form-error" role="alert" data-testid="remote-accept-error">

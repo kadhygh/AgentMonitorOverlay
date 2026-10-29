@@ -910,13 +910,18 @@ export interface HostRoutes {
   "POST /api/maintenance/terminal": { req: import("./maintenance.js").MaintenanceTerminalRequest; res: import("./maintenance.js").MaintenanceTerminalResult };
 }
 
-// ---- 设置 → 远程 (2026-10-29, plans/remote-session.md step 1): this computer as a device, pairing (remote.ts) ---------
+// ---- 远程 (2026-10-29, its own page since 10-29 evening; plans/remote-session.md step 1): this computer as a device, pairing (remote.ts) ---------
 export interface HostRoutes {
   "GET /api/remote": { req: void; res: import("./remote.js").RemoteState };
   /** Renames this computer (device.json, shared with the AMO platform). */
   "PUT /api/remote/device": { req: { name: string }; res: import("./remote.js").RemoteState };
-  /** Asks account `account` to pair with this computer; a device of it allows or refuses. */
-  "POST /api/remote/pair": { req: { account: string }; res: import("./remote.js").RemoteState };
+  /**
+   * Asks account `account` to pair with this computer; a device of it allows or refuses. `device` (远程页的配对弹窗,
+   * 2026-10-29): only that device of the account, picked from GET /api/remote/devices/online.
+   */
+  "POST /api/remote/pair": { req: { account: string; device?: string }; res: import("./remote.js").RemoteState };
+  /** The other devices of this computer's account connected to the team server now (the pair dialog lists them). */
+  "GET /api/remote/devices/online": { req: void; res: import("./remote.js").RemoteOnlineDevices };
   /** Allows or refuses a request to pair with this computer. */
   "POST /api/remote/requests/:id/answer": { req: { allow: boolean }; res: import("./remote.js").RemoteState };
   /** Withdraws a request this computer sent, or puts a refusal away. */

@@ -29,6 +29,7 @@ import "./packs/packs.css";
 import "./planning/planning.css";
 import "./settings/settings.css";
 import "./settings/stats.css";
+import "./remote/remote.css";
 import "./scratchpad/scratchpad.css";
 import "./gitreview/gitreview.css";
 import "./attach/attach.css";

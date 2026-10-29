@@ -1,5 +1,5 @@
 // 远程 (plans/remote-session.md, step 1, 2026-10-29): this computer as a device on the team server, the devices paired
-// with it, and pairing requests. The Host keeps the connection (features/remote/); 设置 → 远程 and Focus show this.
+// with it, and pairing requests. The Host keeps the connection (features/remote/); the remote page (顶栏「远程」, 设置 → 远程 until 2026-10-29) and Focus show this.
 // Needs the AMO platform's login (%APPDATA%\AMO\account.json): Studio has no login of its own.
 
 import type { ApprovalDecision } from "./api.js";
@@ -55,7 +55,13 @@ export interface RemoteIncomingRequest {
 /** A request this computer sent. Allowed ones become a peer and leave this list. */
 export interface RemoteOutgoingRequest {
   id: string;
+  /** The account asked. */
   to: string;
+  /**
+   * 2026-10-29 (远程页的配对弹窗): the one device of that account asked, picked from its online devices — only it may
+   * answer. Absent: any device of the account (asked by account name, or an older team server).
+   */
+  toDevice?: { device: string; name: string };
   state: "pending" | "refused";
   /** The device that refused it. */
   answeredBy: string | null;
@@ -80,6 +86,20 @@ export interface RemoteState {
   taskRequests: RemoteTaskRequest[];
   /** Step 4, as B: what this computer asked paired devices to run, and their answers (until put away). */
   asks: RemoteTaskRequest[];
+}
+
+/** Another device of this computer's own account, connected to the team server now (远程页的配对弹窗, 2026-10-29). */
+export interface RemoteOnlineDevice {
+  device: string;
+  name: string;
+  /** Since when it is connected. */
+  since: Timestamp;
+}
+
+export interface RemoteOnlineDevices {
+  devices: RemoteOnlineDevice[];
+  /** false: the team server cannot list them yet (its relay service is older); pairing by account name still works. */
+  supported: boolean;
 }
 
 export interface RemotePingResult {
@@ -141,7 +161,7 @@ export const REMOTE_PERMISSIONS = ["read-only", "write", "full"] as const;
 export type RemotePermission = (typeof REMOTE_PERMISSIONS)[number];
 export const REMOTE_PERMISSION_LABEL: Record<RemotePermission, string> = { "read-only": "只读", write: "可以改文件", full: "完全放开" };
 
-/** On A: 远端允许的默认配置 (设置 → 远程). */
+/** On A: 远端允许的默认配置 (远程页 → 远程设置). */
 export interface RemoteAllowed {
   /**
    * A's model profiles sessions started from a paired device may use. Empty: only those the task's own sessions already
@@ -383,7 +403,7 @@ export interface RemoteFetchedFile {
 }
 
 // ---- Step 4 (2026-10-29): B asks A to run a task ------------------------------------------------------------------
-// B writes a title and what to do (the first message); A's person sees it on Focus and in 设置 → 远程, picks the
+// B writes a title and what to do (the first message); A's person sees it on Focus and on the remote page, picks the
 // project, topic and model (from 远端允许的模型) and allows it — A makes the task, starts its session with that message
 // and grants it to B — or refuses it, saying why. Only while A is online: the team server keeps no requests.
 

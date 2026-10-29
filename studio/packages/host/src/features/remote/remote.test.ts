@@ -197,6 +197,35 @@ describe("remote between two Hosts", () => {
     await expect(b.remote.ping(peerOfB)).rejects.toThrow("没有和这台设备配对");
   });
 
+  it("lists the account's other online devices, and pairs with the one picked (only it is asked)", async () => {
+    const { url, keys } = await relayService();
+    const key = keys["台式机的我"]!;
+    const a = await host("A-PC", url, "台式机的我", key);
+    const b = await host("B-PC", url, "台式机的我", key);
+    const c = await host("C-PC", url, "台式机的我", key);
+    await until(a.state, online, "A online");
+    await until(b.state, online, "B online");
+    await until(c.state, online, "C online");
+    const listed = await b.remote.onlineDevices();
+    expect(listed.supported).toBe(true);
+    expect(listed.devices.map((d) => d.name).sort()).toEqual(["A-PC", "C-PC"]);
+    expect(Date.parse(listed.devices[0]!.since)).toBeGreaterThan(0);
+
+    const sent = await b.remote.requestPair("台式机的我", a.state().device!.id);
+    expect(sent.outgoing).toMatchObject([{ to: "台式机的我", toDevice: { device: a.state().device!.id, name: "A-PC" }, state: "pending" }]);
+    const asked = await until(a.state, (s) => s.incoming.length === 1, "A sees the request");
+    expect(asked.incoming[0]).toMatchObject({ name: "B-PC" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(c.state().incoming).toEqual([]);
+    await a.remote.answer(asked.incoming[0]!.id, true);
+    await until(b.state, (s) => s.peers.length === 1 && s.outgoing.length === 0, "B gets the pair");
+
+    // Not connected: nothing to list.
+    b.remote.stop();
+    b.remote.start({ env: b.env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }) });
+    await expect(b.remote.onlineDevices()).rejects.toThrow(/没有连上团队服务器|在 AMO 平台里登录/);
+  });
+
   it("an approval made while B was away reaches B when it is back; a refusal stays until B puts it away", async () => {
     const { url, keys } = await relayService();
     const a = await host("A-PC", url, "台式机的我", keys["台式机的我"]);

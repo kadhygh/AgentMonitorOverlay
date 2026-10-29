@@ -11,6 +11,7 @@ import {
   type DeviceEvent,
   type DeviceRef,
   type NamedDevice,
+  type OnlineDevice,
   type PairRequest,
   type PairRequestState,
   type PeerView,
@@ -49,6 +50,8 @@ interface Live {
   ws: WebSocket;
   name: string;
   lastPong: number;
+  /** When this socket opened. */
+  since: number;
 }
 
 export interface DeviceHubOptions {
@@ -87,6 +90,9 @@ export class DeviceHub {
       );
       CREATE INDEX IF NOT EXISTS device_pairs_guest ON device_pairs(guest_account, guest_device);
     `);
+    // 2026-10-29 (远程页的配对弹窗): a request may name the one device of the account it is for.
+    const cols = (this.db.prepare("PRAGMA table_info(device_pair_requests)").all() as Row[]).map((c) => String(c.name));
+    if (!cols.includes("to_device")) this.db.exec("ALTER TABLE device_pair_requests ADD COLUMN to_device TEXT; ALTER TABLE device_pair_requests ADD COLUMN to_name TEXT;");
     this.heartbeat = setInterval(() => this.beat(), opts.heartbeatMs ?? 15_000);
     this.heartbeat.unref();
   }
@@ -120,7 +126,7 @@ export class DeviceHub {
     const k = keyOf(me);
     const old = this.live.get(k);
     if (old && old.ws !== ws) old.ws.close(CLOSE_REPLACED, "replaced");
-    const entry: Live = { ws, name: me.name, lastPong: this.now() };
+    const entry: Live = { ws, name: me.name, lastPong: this.now(), since: this.now() };
     this.live.set(k, entry);
     ws.on("pong", () => (entry.lastPong = this.now()));
     ws.on("close", () => {
@@ -132,6 +138,19 @@ export class DeviceHub {
     this.rename(me, me.name, false);
     this.send(me, { type: "hello", me, version: DEVICE_CHANNEL_VERSION });
     this.presence(me, true);
+  }
+
+  /**
+   * The other devices of this device's own account connected now (远程页的配对弹窗, 2026-10-29): what it may ask to pair
+   * with by picking one. Only the account's own devices — pairing is for a person's own computers.
+   */
+  onlineDevices(me: DeviceRef): OnlineDevice[] {
+    const out: OnlineDevice[] = [];
+    for (const [k, l] of this.live) {
+      const [a, d] = k.split("\n");
+      if (a === me.account && d && d !== me.device) out.push({ device: d, name: l.name, since: l.since });
+    }
+    return out.sort((x, y) => y.since - x.since);
   }
 
   private beat(): void {
@@ -184,6 +203,7 @@ export class DeviceHub {
       id: String(r.id),
       from: { account: String(r.from_account), device: String(r.from_device), name: String(r.from_name) },
       to: String(r.to_account),
+      toDevice: r.to_device ? { device: String(r.to_device), name: String(r.to_name ?? "") } : null,
       state: String(r.state) as PairRequestState,
       answeredBy: r.answer_device ? { account: String(r.to_account), device: String(r.answer_device), name: String(r.answer_name ?? "") } : null,
       createdAt: Number(r.created_at),
@@ -199,38 +219,45 @@ export class DeviceHub {
     return r;
   }
 
-  /** B asks account `to` to pair with this device. Asking again while one waits renews it. */
-  requestPair(me: NamedDevice, toValue: unknown): PairRequest {
+  /**
+   * B asks account `to` to pair with this device — or, with `toDeviceValue`, only that device of it (picked from its
+   * online devices; the name is the one it is connected with, else the id). Asking again while one waits renews it.
+   */
+  requestPair(me: NamedDevice, toValue: unknown, toDeviceValue?: unknown): PairRequest {
     if (typeof toValue !== "string" || !toValue.trim()) throw new RelayError("bad_request", "先填对方的账号名");
     const to = toValue.trim();
     if (!this.opts.isMember(to)) throw new RelayError("not_found", `服务器上没有账号「${to}」`);
+    const toDevice = toDeviceValue === undefined || toDeviceValue === null || toDeviceValue === "" ? null : checkDeviceId(toDeviceValue, "对方的设备编号");
+    if (toDevice && to === me.account && toDevice === me.device) throw new RelayError("bad_request", "不能和自己配对");
+    const toName = toDevice ? (this.live.get(keyOf({ account: to, device: toDevice }))?.name ?? toDevice) : null;
     this.prune();
     const now = this.now();
     const expires = now + PAIR_REQUEST_DAYS * DAY;
-    const same = this.db.prepare("SELECT * FROM device_pair_requests WHERE from_account = ? AND from_device = ? AND to_account = ? AND state = 'pending'").get(me.account, me.device, to) as Row | undefined;
+    const same = this.db.prepare("SELECT * FROM device_pair_requests WHERE from_account = ? AND from_device = ? AND to_account = ? AND COALESCE(to_device, '') = ? AND state = 'pending'").get(me.account, me.device, to, toDevice ?? "") as Row | undefined;
     let id: string;
     if (same) {
       id = String(same.id);
-      this.db.prepare("UPDATE device_pair_requests SET from_name = ?, expires_at = ? WHERE id = ?").run(me.name, expires, id);
+      this.db.prepare("UPDATE device_pair_requests SET from_name = ?, expires_at = ?, to_name = ? WHERE id = ?").run(me.name, expires, toName, id);
     } else {
       const waiting = Number((this.db.prepare("SELECT COUNT(*) AS n FROM device_pair_requests WHERE from_account = ? AND from_device = ? AND state = 'pending'").get(me.account, me.device) as Row).n);
       if (waiting >= MAX_PENDING_PER_DEVICE) throw new RelayError("conflict", `这台电脑已经有 ${waiting} 个配对请求在等回复，先撤回一些`);
-      // Answers already seen or not, to the same account: the new request supersedes them.
-      this.db.prepare("DELETE FROM device_pair_requests WHERE from_account = ? AND from_device = ? AND to_account = ?").run(me.account, me.device, to);
+      // Answers already seen or not, to the same account (and device): the new request supersedes them.
+      this.db.prepare("DELETE FROM device_pair_requests WHERE from_account = ? AND from_device = ? AND to_account = ? AND COALESCE(to_device, '') = ?").run(me.account, me.device, to, toDevice ?? "");
       id = `pr_${randomBytes(8).toString("hex")}`;
-      this.db.prepare("INSERT INTO device_pair_requests (id, from_account, from_device, from_name, to_account, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, me.account, me.device, me.name, to, now, expires);
+      this.db.prepare("INSERT INTO device_pair_requests (id, from_account, from_device, from_name, to_account, to_device, to_name, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, me.account, me.device, me.name, to, toDevice, toName, now, expires);
     }
     const request = this.toRequest(this.requestRow(id));
-    this.sendAccount(to, { type: "pair-request", request }, to === me.account ? me.device : undefined);
+    if (toDevice) this.send({ account: to, device: toDevice }, { type: "pair-request", request });
+    else this.sendAccount(to, { type: "pair-request", request }, to === me.account ? me.device : undefined);
     return request;
   }
 
-  /** Requests to this device's account (pending, not its own), and this device's own (pending or answered). */
+  /** Requests to this device's account (pending, not its own, not for another of its devices), and this device's own (pending or answered). */
   requests(me: DeviceRef): { incoming: PairRequest[]; outgoing: PairRequest[] } {
     this.prune();
     const incoming = (this.db.prepare("SELECT * FROM device_pair_requests WHERE to_account = ? AND state = 'pending' ORDER BY created_at").all(me.account) as Row[])
       .map((r) => this.toRequest(r))
-      .filter((r) => !(r.from.account === me.account && r.from.device === me.device));
+      .filter((r) => !(r.from.account === me.account && r.from.device === me.device) && (!r.toDevice || r.toDevice.device === me.device));
     const outgoing = (this.db.prepare("SELECT * FROM device_pair_requests WHERE from_account = ? AND from_device = ? ORDER BY created_at").all(me.account, me.device) as Row[]).map((r) => this.toRequest(r));
     return { incoming, outgoing };
   }
@@ -242,6 +269,7 @@ export class DeviceHub {
     const r = this.toRequest(row);
     if (r.to !== me.account) throw new RelayError("forbidden", "这个配对请求不是发给你的账号的");
     if (r.from.account === me.account && r.from.device === me.device) throw new RelayError("bad_request", "不能自己允许自己发出的请求");
+    if (r.toDevice && r.toDevice.device !== me.device) throw new RelayError("forbidden", `这个配对请求是发给「${r.toDevice.name}」的`);
     if (r.state !== "pending") throw new RelayError("conflict", r.state === "allowed" ? "这个请求已经被允许了" : "这个请求已经被拒绝了");
     const now = this.now();
     this.db.prepare("UPDATE device_pair_requests SET state = ?, answer_device = ?, answer_name = ?, expires_at = ? WHERE id = ?").run(allow ? "allowed" : "refused", me.device, me.name, now + PAIR_REQUEST_DAYS * DAY, r.id);
