@@ -459,7 +459,7 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
     // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus. `show`: only bring
     // the window forward, where it is (Focus's icon, 2026-10-15).
     if (!mainWindow) return;
-    // 远程 (2026-10-29): a pairing request from Focus → 设置 → 远程.
+    // 远程 (2026-10-29): a pairing or task request from Focus → the workbench opens its 远程 page (the field still says settings: "remote").
     if (t?.settings === "remote") mainWindow.webContents.send("amo:navigate", { taskId: "", settings: "remote" });
     else if (t?.show !== true) {
       const taskId = typeof t?.taskId === "string" ? t.taskId : "";
