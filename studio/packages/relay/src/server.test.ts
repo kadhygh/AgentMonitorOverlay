@@ -515,6 +515,43 @@ describe("devices", () => {
     expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A.device}`)).body).toMatchObject({ incoming: [] });
   });
 
+  it("lists the account's other online devices; a request to one of them is that device's alone", async () => {
+    const { url, a, b } = await two();
+    const A2 = { account: A.account, device: "d_aaaa22222222" };
+    const A3 = { account: A.account, device: "d_aaaa33333333" };
+    expect((await devicesCall(url, a, "GET", "/api/devices/online?device=x")).status).toBe(400);
+    expect((await devicesCall(url, a, "GET", `/api/devices/online?device=${A.device}`)).body).toEqual({ devices: [] });
+    const d2 = await device(url, a, A2.device, "笔记本");
+    await d2.next("hello");
+    const d3 = await device(url, a, A3.device, "家里的电脑");
+    await d3.next("hello");
+    // Another account's device is never listed.
+    await (await device(url, b, B.device, "别人的")).next("hello");
+    const listed = await devicesCall<{ devices: Array<{ device: string; name: string; since: number }> }>(url, a, "GET", `/api/devices/online?device=${A.device}`);
+    expect(listed.body.devices.map((d) => [d.device, d.name]).sort()).toEqual([
+      [A2.device, "笔记本"],
+      [A3.device, "家里的电脑"],
+    ]);
+    expect(listed.body.devices[0]!.since).toBeGreaterThan(0);
+    // The asking device is left out even when it is connected itself.
+    expect((await devicesCall<{ devices: Array<{ device: string }> }>(url, a, "GET", `/api/devices/online?device=${A2.device}`)).body.devices.map((d) => d.device)).toEqual([A3.device]);
+
+    // A (not connected) asks 笔记本 only: 笔记本 hears of it and may answer; 家里的电脑 neither.
+    expect((await devicesCall(url, a, "POST", "/api/devices/pair", { device: A.device, deviceName: "台式机", to: A.account, toDevice: A.device })).status).toBe(400);
+    const asked = await devicesCall<{ request: PairRequest }>(url, a, "POST", "/api/devices/pair", { device: A.device, deviceName: "台式机", to: A.account, toDevice: A2.device });
+    expect(asked.body.request).toMatchObject({ to: A.account, toDevice: { device: A2.device, name: "笔记本" } });
+    expect(await d2.next("pair-request")).toMatchObject({ request: { id: asked.body.request.id } });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A2.device}`)).body).toMatchObject({ incoming: [{ id: asked.body.request.id }] });
+    expect((await devicesCall(url, a, "GET", `/api/devices/pair?device=${A3.device}`)).body).toMatchObject({ incoming: [] });
+    expect((await devicesCall(url, a, "POST", `/api/devices/pair/${asked.body.request.id}/answer`, { device: A3.device, deviceName: "家里的电脑", allow: true })).body).toMatchObject({ message: "这个配对请求是发给「笔记本」的" });
+    // Asking the account as a whole is another request beside it.
+    const whole = await devicesCall<{ request: PairRequest }>(url, a, "POST", "/api/devices/pair", { device: A.device, deviceName: "台式机", to: A.account });
+    expect(whole.body.request).toMatchObject({ toDevice: null });
+    expect(whole.body.request.id).not.toBe(asked.body.request.id);
+    const answered = await devicesCall<{ pair: PeerView }>(url, a, "POST", `/api/devices/pair/${asked.body.request.id}/answer`, { device: A2.device, deviceName: "笔记本", allow: true });
+    expect(answered.body.pair).toMatchObject({ peer: { ...A, name: "台式机" }, role: "owner" });
+  });
+
   it("drops a device that stops answering pings, and a second socket of a device replaces the first", async () => {
     const { url, a, b } = await two({ deviceHeartbeatMs: 40, deviceDeadMs: 200 });
     const r = (await devicesCall<{ request: PairRequest }>(url, b, "POST", "/api/devices/pair", { device: B.device, deviceName: "笔记本", to: A.account })).body.request;
