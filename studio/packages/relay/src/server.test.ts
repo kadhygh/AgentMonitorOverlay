@@ -111,6 +111,12 @@ describe("relay service", () => {
     await expect(new RelayClient(url).login("lee", String(reset.body.password))).rejects.toMatchObject({ status: 403 });
     await admin("POST", "/api/admin/disable", { name: "lee", disabled: false });
     expect((await new RelayClient(url).login("lee", String(reset.body.password))).name).toBe("lee");
+
+    // The admin password itself, changed from the page: too short is refused; then the old one stops working.
+    expect((await admin("POST", "/api/admin/admin-password", { password: "ab" })).status).toBe(400);
+    expect(await admin("POST", "/api/admin/admin-password", { password: "new-admin-pw" })).toMatchObject({ status: 200, body: { ok: true } });
+    expect((await admin("GET", "/api/admin/members")).status).toBe(401);
+    expect((await admin("GET", "/api/admin/members", undefined, "new-admin-pw")).status).toBe(200);
   });
 
   it("hands out the client: landing page, content, downloads, never outside its folder", async () => {

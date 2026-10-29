@@ -23,7 +23,7 @@ input{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:3p
 .on{color:var(--ok)}.off{color:var(--danger)}.msg{margin:10px 0 0;padding:8px 12px;border-radius:4px;background:var(--bg)}.msg.err{color:var(--danger)}
 code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}[hidden]{display:none!important}
 </style></head><body><main>
-<div class="card"><h1>${escapeHtml(service)} · 管理</h1><p class="muted" id="sub">团队服务器的账号管理。只在局域网里用。</p>
+<div class="card"><div class="row" style="justify-content:space-between"><h1>${escapeHtml(service)} · 管理</h1><button type="button" id="adminpw" hidden>改管理密码</button></div><p class="muted" id="sub">团队服务器的账号管理。只在局域网里用。</p>
 <form id="login" class="row" hidden><input id="pw" type="password" placeholder="管理密码" autocomplete="current-password"><button class="primary">进入</button></form>
 <div id="msg"></div></div>
 <div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
@@ -43,7 +43,7 @@ function cell(text, cls) { var td = document.createElement("td"); td.textContent
 function btn(text, cls, run) { var b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.onclick = run; return b; }
 function load() {
   return call("GET", "/api/admin/members").then(function (data) {
-    $("login").hidden = true; $("list").hidden = false;
+    $("login").hidden = true; $("list").hidden = false; $("adminpw").hidden = false;
     $("sub").textContent = data.members.length + " 个账号 · 注册" + (data.invite ? "要邀请口令" : "不要邀请口令（能连上服务器的人都能注册）");
     var rows = $("rows"); rows.innerHTML = "";
     data.members.forEach(function (m) {
@@ -70,11 +70,17 @@ function load() {
       acts.appendChild(box); tr.appendChild(acts); rows.appendChild(tr);
     });
   }, function (e) {
-    $("list").hidden = true; $("login").hidden = false;
+    $("list").hidden = true; $("login").hidden = false; $("adminpw").hidden = true;
     if (e.status === 401) { setPw(""); if (pw() !== "") say(e.message, true); }
     say(e.status === 401 && !$("pw").value ? "" : e.message, e.status !== 401 || !!$("pw").value);
   });
 }
+$("adminpw").onclick = function () {
+  var a = prompt("新的管理密码：", ""); if (!a) return;
+  var b = prompt("再输一遍新的管理密码：", ""); if (b === null) return;
+  if (a !== b) { say("两次输的不一样，管理密码没有改。", true); return; }
+  call("POST", "/api/admin/admin-password", { password: a }).then(function () { setPw(a); say("管理密码已改好，下次用新密码进入。"); }, function (e) { say(e.message, true); });
+};
 $("login").onsubmit = function (ev) { ev.preventDefault(); setPw($("pw").value); load(); };
 if (pw()) load(); else { $("login").hidden = false; call("GET", "/api/admin/members").catch(function (e) { if (e.status === 403) say(e.message, true); }); }
 </script></body></html>`;

@@ -280,6 +280,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         pushMembers();
         return send(res, 200, { ok: true });
       }
+      // The admin password itself, from the page (2026-10-29, the user asked): the current one already checked above.
+      if (method === "POST" && path === "/api/admin/admin-password") {
+        store.setAdminPassword(body.password);
+        return send(res, 200, { ok: true });
+      }
       throw new RelayError("not_found", "没有这个管理操作");
     }
     // The AMO platform's files (platform.ts, plans/amo-lan-platform.md): for people signed in; objects also take ?key=,
