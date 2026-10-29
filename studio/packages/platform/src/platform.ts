@@ -11,8 +11,8 @@ import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, runningExePaths, stopStudio, studioHealth, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
-import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, studioSdkClaudeCodeVersion } from "./environment.js";
-import type { EnvironmentView } from "./environment-view.js";
+import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
+import type { EnvironmentView, EnvUpdateResult } from "./environment-view.js";
 import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
@@ -52,6 +52,8 @@ export interface PlatformOptions {
   /** Exe paths of running processes (tests hand in their own). */
   runningPaths?: () => Promise<string[]>;
   launch?: (spec: LaunchSpec) => Promise<void>;
+  /** 环境's 更新 (tests stand in for npm and claude update). */
+  runUpdate?: (plan: UpdatePlan, env: Record<string, string>) => Promise<UpdateRun>;
   /** The running platform's program; null or absent when it runs from the sources (development: no self-updates). */
   selfExe?: string | null;
   /** 重启平台: starts `spec` and ends this process (main.ts; tests record it). */
@@ -802,8 +804,43 @@ export class Platform implements PlatformCalls {
   /** The last check of what the tools run on, or a new one (重新检测: `fresh`). */
   async environment(fresh = false): Promise<EnvironmentView> {
     // Studio's own SDK, when it is installed, tells an outdated Claude Code as Studio's 设置 → 模型 does.
-    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir) }));
+    // AMO_PLATFORM_NPM_REGISTRY: another registry for the newest versions (tests point it nowhere).
+    const registry = this.options.env.AMO_PLATFORM_NPM_REGISTRY;
+    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir), ...(registry ? { latest: (pkg: string) => latestVersion(pkg, fetch, 8000, registry) } : {}) }));
     return this.envChecker.check(fresh);
+  }
+
+  private envUpdating: string | null = null;
+
+  /**
+   * 更新 on the 环境 page (2026-10-29, the user: like cc-switch; only when clicked): Claude Code or Codex to npm's latest,
+   * the way it was installed (npm, or Claude Code's own `claude update`); then checked again. Codex is not replaced while
+   * a codex.exe from its folder runs (Studio's Codex runs one in the background): Windows would refuse halfway.
+   */
+  async updateEnvironment(id: string): Promise<EnvUpdateResult> {
+    if (this.envUpdating) return { ok: false, message: "正在更新另一项，等它做完。", view: null };
+    const view = await this.environment();
+    const it = view.items.find((i) => i.id === id);
+    const plan = it ? updatePlan(it.id, it.path, this.options.env) : null;
+    if (!it || !plan) return { ok: false, message: "这一项不能在这里更新。", view };
+    if (plan.packageDir) {
+      const dir = plan.packageDir.toLowerCase() + "\\";
+      const paths = await (this.options.runningPaths ?? runningExePaths)().catch(() => [] as string[]);
+      if (paths.some((p) => p.toLowerCase().startsWith(dir))) return { ok: false, message: `${it.name} 正在运行（Studio 的 Codex 会话在后台开着它，或者终端里开着 codex），这时 Windows 不让替换它：先在托盘里「完全退出 Studio」、关掉终端里的 codex，再更新。`, view };
+    }
+    this.envUpdating = id;
+    try {
+      const run = await (this.options.runUpdate ?? runUpdate)(plan, startEnv(this.options.env));
+      const fresh = await this.environment(true);
+      const now = fresh.items.find((i) => i.id === id);
+      if (!run.ok) {
+        const tail = run.out.trim().split(/\r?\n/).slice(-4).join("\n");
+        return { ok: false, message: `没更新成功（${run.reason === "timeout" ? "等了 5 分钟还没做完" : plan.how + " 出错"}）${tail ? "：\n" + tail : ""}`, view: fresh };
+      }
+      return { ok: true, message: now?.version ? `已更新，现在是 ${now.version}` : "已运行更新，重新检测看看", view: fresh };
+    } finally {
+      this.envUpdating = null;
+    }
   }
 
   /** 去下载: the item's official page (the platform's own list, https only) in the system browser. */

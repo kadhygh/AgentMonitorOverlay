@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { claudeCodeCandidates, codexOnPath, dshDesktopDir, gitOnPath } from "@amo-studio/locate";
 import { removeTempDir } from "@amo-studio/testkit";
-import { checkClaude, checkCodex, checkDsh, checkEnvironment, checkGit, CLAUDE_INSTALL_COMMAND, DOWNLOADS, downloadUrl, EnvironmentChecker, runProgram, studioSdkClaudeCodeVersion, type RunResult, type Runner } from "./environment.js";
+import { checkClaude, checkCodex, checkDsh, checkEnvironment, checkGit, CLAUDE_INSTALL_COMMAND, DOWNLOADS, downloadUrl, EnvironmentChecker, latestVersion, runProgram, studioSdkClaudeCodeVersion, updatePlan, type RunResult, type Runner } from "./environment.js";
 import { Platform } from "./platform.js";
 
 // The 环境 page's checks against made-up machines: folders standing in for PATH, %USERPROFILE%, %APPDATA% and
@@ -148,6 +148,39 @@ describe("the checks", () => {
       ["codex", "missing", "Studio 里的 Codex / GPT 订阅"],
       ["git", "missing", "Review、项目"],
     ]);
+  });
+
+  it("已安装 / 最新 (2026-10-29): npm's newest for Claude Code and Codex, asked only for what is installed, and how 更新 would run", async () => {
+    const { dirs, env, file } = machine();
+    const claude = file(join(dirs.home, ".local", "bin", "claude.exe"));
+    const codexShim = file(join(dirs.appdata, "npm", "codex.cmd"));
+    const npm = file(join(dirs.bin, "npm.cmd"));
+    const pathEnv = { ...env, PATH: [join(dirs.appdata, "npm"), dirs.bin].join(delimiter) };
+    const asked: string[] = [];
+    const latest = async (pkg: string) => (asked.push(pkg), pkg === "@openai/codex" ? "0.130.0" : "2.2.0");
+    const v = await checkEnvironment({ env: pathEnv, run: runner({ [claude]: { ok: true, out: "2.1.9 (Claude Code)" }, [codexShim]: { ok: true, out: "codex-cli 0.98.0" } }).run, latest });
+    const byId = Object.fromEntries(v.items.map((i) => [i.id, i]));
+    expect(byId.claude).toMatchObject({ version: "2.1.9", latest: "2.2.0", updater: "claude update" });
+    expect(byId.codex).toMatchObject({ version: "0.98.0", latest: "0.130.0", updater: "npm install -g @openai/codex@latest" });
+    expect(byId.git).toMatchObject({ latest: null, updater: null });
+    expect(asked.sort()).toEqual(["@anthropic-ai/claude-code", "@openai/codex"]);
+    // The plans: npm through npm.cmd on PATH (Codex's folder told, to see whether it runs), Claude Code's own installer.
+    expect(updatePlan("codex", codexShim, pathEnv)).toEqual({ file: npm, args: ["install", "-g", "@openai/codex@latest"], how: "npm install -g @openai/codex@latest", packageDir: join(dirs.appdata, "npm", "node_modules", "@openai", "codex") });
+    expect(updatePlan("claude", join(dirs.appdata, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"), pathEnv)).toMatchObject({ how: "npm install -g @anthropic-ai/claude-code@latest" });
+    expect(updatePlan("claude", claude, pathEnv)).toMatchObject({ file: claude, args: ["update"] });
+    // Installed some other way, or no npm: not from here.
+    expect(updatePlan("codex", join(dirs.local, "Programs", "codex", "codex.exe"), pathEnv)).toBeNull();
+    expect(updatePlan("codex", codexShim, { ...pathEnv, PATH: join(dirs.appdata, "npm") })).toBeNull();
+    expect(updatePlan("git", "C:\\Git\\git.exe", pathEnv)).toBeNull();
+    // npm's registry: its answer, or null when it is away or says something else.
+    const res = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status }));
+    let url = "";
+    expect(await latestVersion("@openai/codex", ((u: string) => ((url = u), res(200, { version: "0.130.0" }))) as typeof fetch)).toBe("0.130.0");
+    expect(url).toBe("https://registry.npmjs.org/@openai%2Fcodex/latest");
+    expect(await latestVersion("@openai/codex", (() => res(404, {})) as typeof fetch)).toBeNull();
+    expect(await latestVersion("@openai/codex", (() => Promise.reject(new Error("offline"))) as typeof fetch)).toBeNull();
+    expect(await latestVersion("x", ((u: string) => ((url = u), res(200, { version: "1.0.0" }))) as typeof fetch, 1000, "http://mirror.local/")).toBe("1.0.0");
+    expect(url).toBe("http://mirror.local/x/latest");
   });
 
   it("keeps the last check until asked again; two asks at once share one", async () => {

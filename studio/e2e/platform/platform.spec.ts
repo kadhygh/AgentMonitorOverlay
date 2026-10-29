@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -45,7 +47,7 @@ test.afterEach(async () => {
 function cleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLAUDE|ANTHROPIC_|AMO_)/.test(k)) env[k] = v;
-  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_FAKE_TOOL_MARK: join(root, "launched") };
+  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9" };
 }
 
 /**
@@ -615,12 +617,17 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   // and git here are not what is found. Claude Code: a file named claude.exe that is no program (found, does not answer);
   // no DSH app, no Codex, no git (Codex turns up later: a .cmd that says its version).
   const bin = () => join(root, "bin");
+  // npm's registry, standing in: Codex's newest is 0.200.0 (2026-10-29: 已安装 / 最新 and 更新).
+  const registry = createServer((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0" })));
+  await new Promise<void>((ok) => registry.listen(0, "127.0.0.1", ok));
+  const registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
   const { app, page } = await launch([], (r) => {
     const dirs = { bin: join(r, "bin"), home: join(r, "home"), appdata: join(r, "appdata"), local: join(r, "localappdata") };
     for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
     mkdirSync(join(dirs.home, ".local", "bin"), { recursive: true });
     writeFileSync(join(dirs.home, ".local", "bin", "claude.exe"), "not a program");
-    return { PATH: [dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local };
+    mkdirSync(join(dirs.appdata, "npm"), { recursive: true });
+    return { PATH: [join(dirs.appdata, "npm"), dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_PLATFORM_NPM_REGISTRY: registryUrl };
   });
   const form = page.getByRole("form", { name: "登录" });
   await form.getByLabel("服务器地址").fill(server.url.replace("http://", ""));
@@ -656,17 +663,28 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   await expect(item("claude").getByRole("button", { name: "已复制" })).toBeVisible();
   expect(await app.evaluate(() => (globalThis as { __platformCopied?: string }).__platformCopied)).toBe("irm https://claude.ai/install.ps1 | iex");
 
-  // Codex installed since: 重新检测 finds it (the page keeps the last check until then).
-  writeFileSync(join(bin(), "codex.cmd"), "@echo off\r\necho codex-cli 0.161.0\r\n");
+  // Codex installed since, with npm: 重新检测 finds it (the page keeps the last check until then).
+  const codexCmd = join(root, "appdata", "npm", "codex.cmd");
+  writeFileSync(codexCmd, "@echo off\r\necho codex-cli 0.161.0\r\n");
+  // npm, standing in: its install -g rewrites codex.cmd to say the newer version.
+  writeFileSync(join(bin(), "npm.cmd"), `@echo off\r\necho added 1 package\r\necho @echo off>"${codexCmd}"\r\necho echo codex-cli 0.200.0>>"${codexCmd}"\r\n`);
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "工具" }).click();
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
   await expect(envStatus("codex")).toHaveText("○ 没装");
   await page.getByRole("button", { name: "重新检测" }).click();
-  await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.161.0", { timeout: 30_000 });
-  await expect(item("codex")).toContainText(join(root, "bin", "codex.cmd"));
+  await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.161.0 · 最新 0.200.0", { timeout: 30_000 });
+  await expect(item("codex")).toContainText(codexCmd);
   await expect(item("codex").getByRole("button", { name: "去下载" })).toHaveCount(0);
+  await expect(page.getByTestId("env-codex-update")).toHaveAttribute("title", "运行 npm install -g @openai/codex@latest");
   await item("git").scrollIntoViewIfNeeded();
   await screenshot(app, "platform", "P18-environment-rechecked", page);
+  // 更新: npm runs, the page checks again.
+  await page.getByTestId("env-codex-update").click();
+  await expect(page.getByTestId("env-codex-result")).toHaveText("✓ 已更新，现在是 0.200.0", { timeout: 60_000 });
+  await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.200.0 · 已是最新");
+  await expect(page.getByTestId("env-codex-update")).toHaveCount(0);
+  await screenshot(app, "platform", "P36-environment-updated", page);
+  registry.close();
 });
 
 test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO 中转」, installed, opened with the team server's address, updated", async () => {

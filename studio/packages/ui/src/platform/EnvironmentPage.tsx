@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import { call, type EnvironmentView, type EnvItemView } from "./bridge.js";
+import { call, type EnvironmentView, type EnvItemView, type EnvUpdateResult } from "./bridge.js";
 import "./environment.css";
 
 // AMO 平台's 环境 page (the user, 2026-10-28; packages/platform/src/environment.ts): whether Claude Code, the DeepSeek
 // Harness desktop app, Codex and git are installed, what needs them, and for what is missing a link to its official
-// page. Only looking: nothing is downloaded or installed from here, and the tools still check for themselves.
+// page. Claude Code and Codex also show npm's newest version, with 更新 when there is a newer one (2026-10-29, the user:
+// like cc-switch, only here and only when clicked — nothing suggests it elsewhere). The tools still check for themselves.
+
+/** Newer than what is installed: npm's latest beats the version here. */
+export function newer(latest: string | null, installed: string | null): boolean {
+  if (!latest || !installed) return false;
+  const a = latest.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const b = installed.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return false;
+}
 
 function statusText(it: EnvItemView): string {
   const version = it.version ? ` · ${it.version}` : "";
-  if (it.state === "ok") return `✓ 已安装${version}`;
-  if (it.state === "attention") return `! 需要注意${version}`;
+  const latest = it.latest && it.version ? (newer(it.latest, it.version) ? ` · 最新 ${it.latest}` : " · 已是最新") : "";
+  if (it.state === "ok") return `✓ 已安装${version}${latest}`;
+  if (it.state === "attention") return `! 需要注意${version}${latest}`;
   return it.id === "dsh" ? "○ 没装 · 推荐装桌面版" : "○ 没装";
 }
 
@@ -33,7 +44,7 @@ export function EnvironmentPage() {
     <div className="pf-page">
       <div>
         <h1 className="pf-h1">环境</h1>
-        <p className="pf-hint">AMO 的工具要用到的程序。这里只检测、给官方下载页，不替你下载安装；不装平台，各工具也会自己检测和提示。</p>
+        <p className="pf-hint">AMO 的工具要用到的程序。没装的给官方下载页；Claude Code 和 Codex 会显示最新版本，有新版时可以点「更新」（只在你点的时候才更新）。不装平台，各工具也会自己检测和提示。</p>
       </div>
       <div className="pf-row">
         <button type="button" className="btn-ghost pf-small" disabled={checking} onClick={() => check(true)}>
@@ -48,14 +59,30 @@ export function EnvironmentPage() {
           ! 检测没成功：{error}
         </p>
       )}
-      {env?.items.map((it) => <EnvItem key={it.id} item={it} />)}
+      {env?.items.map((it) => <EnvItem key={it.id} item={it} onView={setEnv} />)}
       {env && <p className="pf-hint">刚装好的程序还显示没装：先点「重新检测」；还是没有的话，退出平台（托盘右键 → 退出平台）再打开。平台和从这里打开的工具，用的是平台启动时的 PATH。</p>}
     </div>
   );
 }
 
-function EnvItem({ item: it }: { item: EnvItemView }) {
+function EnvItem({ item: it, onView }: { item: EnvItemView; onView: (v: EnvironmentView) => void }) {
   const [copied, setCopied] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const canUpdate = !!it.updater && newer(it.latest, it.version);
+  const update = () => {
+    setUpdating(true);
+    setResult(null);
+    void (call("updateEnvironment", it.id) as Promise<EnvUpdateResult>)
+      .then(
+        (r) => {
+          setResult({ ok: r.ok, message: r.message });
+          if (r.view) onView(r.view);
+        },
+        (err: unknown) => setResult({ ok: false, message: err instanceof Error ? err.message : String(err) }),
+      )
+      .finally(() => setUpdating(false));
+  };
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 2000);
@@ -75,6 +102,13 @@ function EnvItem({ item: it }: { item: EnvItemView }) {
           </div>
           <div className="pf-hint">用在：{it.uses}</div>
         </div>
+        {(canUpdate || updating) && (
+          <div className="pf-actions">
+            <button type="button" className="btn-primary" disabled={updating} title={`运行 ${it.updater}`} onClick={update} data-testid={`env-${it.id}-update`}>
+              {updating ? "正在更新…" : `更新到 ${it.latest}`}
+            </button>
+          </div>
+        )}
         {offerDownload && (
           <div className="pf-actions">
             <button type="button" className="btn-ghost" title={it.download!} onClick={() => void call("openDownload", it.id)}>
@@ -87,6 +121,12 @@ function EnvItem({ item: it }: { item: EnvItemView }) {
         <code className="pf-path" title={it.path}>
           {it.path}
         </code>
+      )}
+      {result && (
+        <p className={`pf-env-note${result.ok ? "" : " warn"}`} role="status" data-testid={`env-${it.id}-result`} style={{ whiteSpace: "pre-wrap" }}>
+          {result.ok ? "✓ " : "! "}
+          {result.message}
+        </p>
       )}
       {it.note && (
         <p className={`pf-env-note${it.state === "attention" ? " warn" : ""}`} data-testid={`env-${it.id}-note`}>

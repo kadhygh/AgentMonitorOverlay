@@ -19,7 +19,15 @@ export interface EnvItemView {
   download: string | null;
   /** A command to paste into PowerShell instead (Claude Code), with a 复制 button. */
   installCommand: string | null;
+  /** The newest version published (npm's latest; Claude Code and Codex, 2026-10-29), or null when not asked or not reached. */
+  latest: string | null;
+  /** How 更新 runs here (the command, for the button's title); null when it cannot (not installed, or installed in a way the
+   *  platform does not update). */
+  updater: string | null;
 }
+
+/** 更新 (2026-10-29, the user: like cc-switch, only on this page, only when clicked). */
+export type EnvUpdateResult = { ok: true; message: string; view: EnvironmentView } | { ok: false; message: string; view: EnvironmentView | null };
 
 export interface EnvironmentView {
   /** When this check ran (ISO time). */

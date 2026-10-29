@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshDesktopIn, gitOnPath, olderVersion, versionIn } from "@amo-studio/locate";
+import { homedir } from "node:os";
+import { join, sep } from "node:path";
+import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshDesktopIn, firstOnPath, gitOnPath, olderVersion, versionIn } from "@amo-studio/locate";
 import type { EnvironmentView, EnvItemId, EnvItemView } from "./environment-view.js";
 
 // AMO 平台's 环境 page (the user, 2026-10-28): whether what the AMO tools run on is installed here — Claude Code, the
@@ -92,6 +93,8 @@ export const runProgram: Runner = (file, args, { env, timeoutMs }) =>
 export interface CheckOptions {
   env: Env;
   run?: Runner;
+  /** npm's latest version of a package (tests stand in for the registry); default: asked over the network. */
+  latest?: (pkg: string) => Promise<string | null>;
   /** The Claude Code version the installed Studio's SDK was built with, to tell an outdated one; null: not judged. */
   sdkClaudeCodeVersion?: string | null;
   /** Per `--version`; the DSH app gets twice this (it starts Electron as Node). */
@@ -102,7 +105,91 @@ const TIMEOUT_MS = 10_000;
 const why = (r: { reason: "timeout" | "error" }) => (r.reason === "timeout" ? "等了太久没有回应" : "运行出错");
 
 function item(id: EnvItemId, fields: Pick<EnvItemView, "state" | "path" | "version" | "note">): EnvItemView {
-  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, ...fields };
+  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, latest: null, updater: null, ...fields };
+}
+
+// ---- 已安装 / 最新 and 更新 (2026-10-29, the user: like cc-switch — the version here, the newest one, 更新 when there is a
+// newer one; only on this page and only when clicked, nothing suggested elsewhere)
+
+/** The npm packages whose latest version is shown. */
+export const NPM_PACKAGES: Partial<Record<EnvItemId, string>> = { claude: "@anthropic-ai/claude-code", codex: "@openai/codex" };
+
+/** npm's latest version of a package, or null (no network, a slow registry: 8 s). */
+export async function latestVersion(pkg: string, fetchFn: typeof fetch = fetch, timeoutMs = 8000, registry = "https://registry.npmjs.org"): Promise<string | null> {
+  try {
+    const res = await fetchFn(`${registry.replace(/\/+$/, "")}/${pkg.replace("/", "%2F")}/latest`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    const v = ((await res.json()) as { version?: unknown }).version;
+    return typeof v === "string" && /^\d+\.\d+/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface UpdatePlan {
+  file: string;
+  args: string[];
+  /** The command in words, for the button's title. */
+  how: string;
+  /** For Codex: its package folder, to tell whether a running codex.exe holds it. */
+  packageDir: string | null;
+}
+
+const lower = (p: string) => p.toLowerCase().replace(/\//g, "\\");
+
+/**
+ * How an installed program updates here: npm's global install → `npm install -g <pkg>@latest`; Claude Code's own
+ * installer (%USERPROFILE%\.local\bin) → `claude update`. Anything else (another installer) is not updated from here.
+ */
+export function updatePlan(id: EnvItemId, path: string | null, env: Env): UpdatePlan | null {
+  const pkg = NPM_PACKAGES[id];
+  if (!pkg || !path) return null;
+  const p = lower(path);
+  const npmPkgDir = `${sep}node_modules${sep}${pkg.replace("/", sep)}${sep}`.toLowerCase();
+  const npmShim = env.APPDATA ? lower(join(env.APPDATA, "npm")) + "\\" : null;
+  const viaNpm = p.includes(npmPkgDir) || (!!npmShim && p.startsWith(npmShim));
+  if (viaNpm) {
+    const npm = firstOnPath(["npm.cmd"], env);
+    if (!npm) return null;
+    const packageDir = env.APPDATA ? join(env.APPDATA, "npm", "node_modules", ...pkg.split("/")) : null;
+    return { file: npm, args: ["install", "-g", `${pkg}@latest`], how: `npm install -g ${pkg}@latest`, packageDir };
+  }
+  if (id === "claude" && p.startsWith(lower(join(env.USERPROFILE ?? homedir(), ".local", "bin")) + "\\")) return { file: path, args: ["update"], how: "claude update", packageDir: null };
+  return null;
+}
+
+export type UpdateRun = { ok: true; out: string } | { ok: false; out: string; reason: "timeout" | "error" };
+
+/** Runs an update, its output (stdout and stderr, the last 4 KB) kept to say what happened; 5 minutes at most. */
+export function runUpdate(plan: UpdatePlan, env: Env, timeoutMs = 300_000): Promise<UpdateRun> {
+  return new Promise((done) => {
+    let out = "";
+    const keep = (d: string) => (out = (out + d).slice(-4096));
+    const childEnv = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined));
+    const script = /\.(cmd|bat)$/i.test(plan.file);
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = script
+        ? spawn(env.ComSpec || process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${plan.file}" ${plan.args.join(" ")}"`], { env: childEnv, windowsHide: true, windowsVerbatimArguments: true })
+        : spawn(plan.file, plan.args, { env: childEnv, windowsHide: true });
+    } catch (err) {
+      return done({ ok: false, out: String(err), reason: "error" });
+    }
+    const timer = setTimeout(() => {
+      child.kill();
+      done({ ok: false, out, reason: "timeout" });
+    }, timeoutMs);
+    child.stdout?.setEncoding("utf8").on("data", keep);
+    child.stderr?.setEncoding("utf8").on("data", keep);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      done({ ok: false, out: out || String(err), reason: "error" });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      done(code === 0 ? { ok: true, out } : { ok: false, out, reason: "error" });
+    });
+  });
 }
 
 /** The person's own Claude Code: the first candidate that answers `--version`, as Studio picks it. */
@@ -116,7 +203,7 @@ export async function checkClaude(o: CheckOptions): Promise<EnvItemView> {
     const version = r.ok ? versionIn(r.out) : null;
     if (version) {
       const sdk = o.sdkClaudeCodeVersion ?? null;
-      if (sdk && olderVersion(version, sdk)) return item("claude", { state: "attention", path: exe, version, note: `版本比 Studio 用的 SDK（Claude Code ${sdk}）旧，有些功能可能不正常：在终端运行 claude update。` });
+      if (sdk && olderVersion(version, sdk)) return item("claude", { state: "attention", path: exe, version, note: `版本比 Studio 用的 SDK（Claude Code ${sdk}）旧，有些功能可能不正常：点「更新」，或在终端运行 claude update。` });
       return item("claude", { state: "ok", path: exe, version, note: null });
     }
     if (!r.ok) failure = r;
@@ -152,7 +239,16 @@ export const checkGit = (o: CheckOptions) => checkOnPath("git", gitOnPath(o.env)
 /** All four at once (each `--version` has its own timeout, so the slowest one bounds the wait). */
 export async function checkEnvironment(o: CheckOptions, now: () => Date = () => new Date()): Promise<EnvironmentView> {
   const checks: Record<EnvItemId, (o: CheckOptions) => Promise<EnvItemView>> = { claude: checkClaude, dsh: checkDsh, codex: checkCodex, git: checkGit };
-  const items = await Promise.all(ORDER.map((id) => checks[id](o)));
+  const latest = o.latest ?? ((pkg: string) => latestVersion(pkg));
+  const items = await Promise.all(
+    ORDER.map(async (id) => {
+      const pkg = NPM_PACKAGES[id];
+      const it = await checks[id](o);
+      // Asked only for what is installed (nothing to compare otherwise).
+      const newest = pkg && it.version ? await latest(pkg) : null;
+      return { ...it, latest: it.version ? newest : null, updater: it.version ? (updatePlan(id, it.path, o.env)?.how ?? null) : null };
+    }),
+  );
   return { checkedAt: now().toISOString(), items };
 }
 

@@ -1,6 +1,6 @@
 // What the platform's window shows, as the main process hands it over (platform:view). Types only: the page
 // (packages/ui/src/platform) imports them too, so nothing here may need Node.
-import type { EnvironmentView } from "./environment-view.js";
+import type { EnvironmentView, EnvUpdateResult } from "./environment-view.js";
 
 export type Channel = "stable" | "test";
 
@@ -163,6 +163,8 @@ export interface PlatformCalls {
   dismiss(tool: string): Promise<void>;
   /** 环境 (environment-view.ts): the last check, or a new one. */
   environment(fresh?: boolean): Promise<EnvironmentView>;
+  /** 环境 → 更新 (2026-10-29): Claude Code or Codex to the newest version, the way it was installed; checked again after. */
+  updateEnvironment(id: string): Promise<EnvUpdateResult>;
   openDownload(id: string): Promise<void>;
   copyInstallCommand(): Promise<void>;
   /** 更新平台: the channel's platform into <root>\apps\platform, made current; the running one stays until 重启平台. */
