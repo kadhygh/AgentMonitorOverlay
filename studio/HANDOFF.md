@@ -46,6 +46,13 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 晚 · 开会话（session_start）的权限：沿用开它的会话、不能更宽，Claude 的 write 改成帮我审批（只提交，没发布）**
+
+- 起因：一个「帮我审批」的 Claude 会话用 `permission: "write"` 开了子会话，Claude 的 write 映射成 `acceptEdits`，子会话的每条只读命令（sed、rg、node -e）都去问用户。全局 auto mode 配置没坏（10-28 重置后的默认）。
+- 改动（`features/sessions/service.ts` 的 `peerPermission`）：不填 permission 时，同一种 CLI 沿用父会话的权限，换了 CLI 用它的默认；不管填没填，都不能比父会话宽：同一种 CLI 按 `PERMISSION_ORDER` 比，跨 CLI 按 只读 / 可写 / 完全 三档比。填了更宽的就报错，列出能用的档；默认值更宽就降到父会话那一档。Claude 的 write 改成 `auto`，第三方端点（GLM 等）没有分类器时退回 `acceptEdits`。MCP 工具说明和 guide 里的权限描述一起改了。
+- 验证：`peer.test.ts` 7 条过（新加一条覆盖 Claude、GLM、跨 CLI 和远程会话没有父会话可比的情况），sessions、mcp、guide 的测试 32 条过，host 类型检查过；没跑完整的 verify，Host 没重启（Host 重启后才生效）。
+- 还剩：用户决定等工作区里那批没提交的「远程」改动做完，一起升 Studio 版本发测试通道；`packages/app/CHANGELOG.md` 顶上的「下一版」一节发布时要改成版本号和日期。
+
 **2026-10-29 晚 · 托盘菜单统一成便签的样子、各工具都有主题、平台进度条和「关闭」修正；测试通道发平台 0.9.8、Studio 0.9.9、便签 0.9.4、中转 0.9.3、Reviewer 0.9.7（`3373957`，正式通道没动）**
 
 - 托盘菜单：新包 `packages/traymenu`（`@amo-studio/traymenu`），照便签的托盘菜单画的无边框小窗（一页自带样式的 data: 页面，点击当作导航截下来）；平台、单独打开的 Studio 和中转都用它，不再用 Windows 自己的菜单。便签保留自己的那份（它是样板）。新包已加进 `package-portable.mjs` 三个程序的包列表。

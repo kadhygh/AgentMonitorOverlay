@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -282,10 +282,14 @@ export class SessionsFeature extends Feature {
     const profileId = picked.profileId;
     let options: SessionOptions | undefined = picked.model ? { model: picked.model } : undefined;
     if (remote?.permission) options = { ...options, permission: remote.permission };
-    else if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
-      const level = PERMISSION_LEVELS.find((l) => l === input.permission);
-      if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
-      options = { ...options, permission: PERMISSIONS[this.f.requireProfile(profileId).runtime as Exclude<Session["runtime"], "remote">][level] };
+    else {
+      let level: PermissionLevel | null = null;
+      if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
+        level = PERMISSION_LEVELS.find((l) => l === input.permission) ?? null;
+        if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
+      }
+      const permission = await this.peerPermission(from, profileId, level);
+      if (permission) options = { ...options, permission };
     }
     if (input.effort !== undefined && input.effort !== null && input.effort !== "" && !remote?.note) {
       if (typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
@@ -321,6 +325,21 @@ export class SessionsFeature extends Feature {
    * run (`chosen`, else the person's default in 设置 → 模型, else the CLI's), as its CLI names them; unchecked when the
    * list cannot be had.
    */
+  /**
+   * 开会话's permission (2026-10-29, the person's decision after a session started with `write` asked them about every
+   * read-only command): left out, the new session keeps the caller's own (on the same CLI; on another, that CLI's
+   * default); and it is never wider than the caller's — a level that would be is refused, a default that would be is
+   * brought down to the caller's level.
+   */
+  private async peerPermission(from: Session, profileId: Id, level: PermissionLevel | null): Promise<string | undefined> {
+    const runtime = this.f.requireProfile(profileId).runtime;
+    if (!isPeerRuntime(runtime)) return undefined;
+    const choices = await this.f.config.choices(profileId).catch(() => null);
+    const callerPermission = isPeerRuntime(from.runtime) ? from.options.permission || (await this.f.config.choices(from.profileId).catch(() => null))?.defaultPermission || "" : "";
+    const caller = isPeerRuntime(from.runtime) && callerPermission ? { runtime: from.runtime, permission: callerPermission } : null;
+    return peerPermission(caller, runtime, level, choices);
+  }
+
   async effortFor(profileId: Id, chosen: string | undefined, want: string): Promise<string> {
     const choices = await this.f.config.choices(profileId).catch(() => null);
     if (!choices?.models.length) return want;
@@ -413,11 +432,63 @@ export class SessionsFeature extends Feature {
 
 /** session_start's permission levels, as each runtime's own permission option. */
 const PERMISSION_LEVELS = ["read-only", "write", "full"] as const;
-const PERMISSIONS: Record<Exclude<Session["runtime"], "remote">, Record<(typeof PERMISSION_LEVELS)[number], string>> = {
+type PermissionLevel = (typeof PERMISSION_LEVELS)[number];
+type PeerRuntime = Exclude<Session["runtime"], "remote">;
+const PERMISSIONS: Record<PeerRuntime, Record<PermissionLevel, string>> = {
   codex: { "read-only": "read-only", write: "workspace-write", full: "full-auto" },
-  claude: { "read-only": "plan", write: "acceptEdits", full: "bypassPermissions" },
+  // write = 帮我审批 (10-29): 自动接受编辑 asked about every command, read-only ones too — narrower than the caller's
+  // 帮我审批 and than Codex's and DSH's write, which run commands in their folder without asking.
+  claude: { "read-only": "plan", write: "auto", full: "bypassPermissions" },
   dsh: { "read-only": "read-only", write: "workspace-write", full: "full-access" },
 };
+/** Each runtime's permission options, narrowest first (for 「不比开它的会话宽」 on the same CLI). */
+const PERMISSION_ORDER: Record<PeerRuntime, string[]> = {
+  codex: ["read-only", "ask", "workspace-write", "auto-review", "on-request", "full-auto"],
+  claude: ["plan", "default", "acceptEdits", "auto", "bypassPermissions"],
+  dsh: ["read-only", "workspace-write", "full-access"],
+};
+
+function isPeerRuntime(runtime: string): runtime is PeerRuntime {
+  return runtime in PERMISSIONS;
+}
+
+/** The level a permission amounts to across CLIs: 0 read-only, 1 write (anything between), 2 full. */
+function permissionLevel(runtime: PeerRuntime, permission: string): number {
+  return permission === PERMISSIONS[runtime]["read-only"] ? 0 : permission === PERMISSIONS[runtime].full ? 2 : 1;
+}
+
+/** Whether `permission` (of `runtime`) lets a session do more than the caller's: by order on the same CLI, by level across. */
+function widerPermission(runtime: PeerRuntime, permission: string, callerRuntime: PeerRuntime, callerPermission: string): boolean {
+  if (runtime === callerRuntime) {
+    const order = PERMISSION_ORDER[runtime];
+    const [a, b] = [order.indexOf(permission), order.indexOf(callerPermission)];
+    if (a >= 0 && b >= 0) return a > b;
+  }
+  return permissionLevel(runtime, permission) > permissionLevel(callerRuntime, callerPermission);
+}
+
+/** 开会话's permission for a session of `runtime` (see SessionService.peerPermission); undefined = the model's default. */
+export function peerPermission(caller: { runtime: PeerRuntime; permission: string } | null, runtime: PeerRuntime, level: PermissionLevel | null, choices: Pick<ProfileChoices, "permissions" | "defaultPermission"> | null): string | undefined {
+  const usable = (id: string) => !choices || choices.permissions.some((p) => p.id === id && !p.unavailable);
+  const forLevel = (l: PermissionLevel) => {
+    const id = PERMISSIONS[runtime][l];
+    // 帮我审批 needs Anthropic's classifier: a Claude Code session on another endpoint (GLM…) gets 自动接受编辑.
+    return usable(id) ? id : runtime === "claude" && l === "write" ? "acceptEdits" : id;
+  };
+  if (level) {
+    const permission = forLevel(level);
+    if (caller && widerPermission(runtime, permission, caller.runtime, caller.permission)) {
+      const allowed = PERMISSION_LEVELS.filter((l) => !widerPermission(runtime, forLevel(l), caller.runtime, caller.permission));
+      throw new HostError("bad_request", `你自己的权限是 ${caller.permission}，开的会话不能比你宽：permission ${allowed.length ? `用 ${allowed.join(" 或 ")}，或者` : ""}不填（沿用你的）`);
+    }
+    return permission;
+  }
+  if (!caller) return undefined;
+  if (caller.runtime === runtime) return caller.permission;
+  const fallback = choices?.defaultPermission;
+  if (!fallback || !widerPermission(runtime, fallback, caller.runtime, caller.permission)) return undefined;
+  return forLevel(PERMISSION_LEVELS[permissionLevel(caller.runtime, caller.permission)]!);
+}
 
 /** How much of the new session's reply a report carries. */
 const REPORT_MAX = 4000;

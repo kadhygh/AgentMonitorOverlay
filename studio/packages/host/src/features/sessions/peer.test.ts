@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProfile, Session, Task, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
+import { CLAUDE_PERMISSIONS } from "../../runtime/choices.js";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
+import { peerPermission } from "./service.js";
 
 // 开会话 (session_start, 2026-10-22): a session starts another main session in its own task, at once; with report, the
 // new session's first finished turn comes back into the caller's conversation.
@@ -60,10 +62,14 @@ describe("session_start (开会话)", () => {
     expect(first).toContain("只改数值表，别动界面");
     expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
     expect((await service.sessions.startPeer(caller.id, { text: "看看界面", model: "gpt" })).profileId).toBe("p-gpt");
-    // permission: the runtime's own option for the level (Codex: full-auto, read-only); otherwise the model's default.
-    expect((await service.sessions.startPeer(caller.id, { text: "跑一串命令", permission: "full" })).options.permission).toBe("full-auto");
+    // permission: the runtime's own option for the level (Codex: read-only, full-auto), never wider than the caller's
+    // (10-29); left out, the caller's own (here none was picked: the default it runs on, Codex's 逐条询问).
+    expect(s.options.permission).toBe("ask");
     expect((await service.sessions.startPeer(caller.id, { text: "只读看看", permission: "read-only" })).options.permission).toBe("read-only");
-    expect(s.options.permission).not.toBe("full-auto");
+    await expect(service.sessions.startPeer(caller.id, { text: "跑一串命令", permission: "full" })).rejects.toThrow(/不能比你宽：permission 用 read-only/);
+    store.updateSession(caller.id, { options: { ...store.getSession(caller.id)!.options, permission: "full-auto" } });
+    expect((await service.sessions.startPeer(caller.id, { text: "跑一串命令", permission: "full" })).options.permission).toBe("full-auto");
+    expect((await service.sessions.startPeer(caller.id, { text: "接着跑" })).options.permission).toBe("full-auto");
     // effort (10-26): one the model the session runs takes, as its CLI names it; any other is refused with the list.
     expect((await service.sessions.startPeer(caller.id, { text: "想深一点", model: "Plain", effort: "HIGH" })).options.effort).toBe("high");
     await expect(service.sessions.startPeer(caller.id, { text: "x", model: "Plain", effort: "max" })).rejects.toThrow(/effort 只能是：low, high/);
@@ -146,6 +152,30 @@ describe("session_start (开会话)", () => {
     await service.sessions.renameSession(s.id, "改个名");
     await new Promise((r) => setTimeout(r, 300));
     expect(reports(s)).toHaveLength(3);
+  });
+
+  it("permission across CLIs (10-29): Claude's write is 帮我审批, the caller's own when left out, never wider than it", () => {
+    const claude = { permissions: CLAUDE_PERMISSIONS, defaultPermission: "default" };
+    const auto = { runtime: "claude" as const, permission: "auto" };
+    // A Claude session started with write by one on 帮我审批 asked about every command (自动接受编辑): now 帮我审批.
+    expect(peerPermission(auto, "claude", "write", claude)).toBe("auto");
+    expect(peerPermission(auto, "claude", null, claude)).toBe("auto");
+    expect(peerPermission(auto, "claude", "read-only", claude)).toBe("plan");
+    expect(() => peerPermission(auto, "claude", "full", claude)).toThrow(/不能比你宽：permission 用 read-only 或 write/);
+    // No classifier on another endpoint (GLM…): write is 自动接受编辑.
+    const glm = { permissions: CLAUDE_PERMISSIONS.map((p) => (p.id === "auto" ? { ...p, unavailable: "x" } : p)), defaultPermission: "default" };
+    expect(peerPermission({ runtime: "claude", permission: "acceptEdits" }, "claude", "write", glm)).toBe("acceptEdits");
+    // The same CLI goes by order: a caller on 自动接受编辑 cannot start one on 帮我审批.
+    expect(() => peerPermission({ runtime: "claude", permission: "acceptEdits" }, "claude", "write", claude)).toThrow(/不能比你宽/);
+    // Another CLI: its default, unless wider than the caller's level (a read-only caller starts read-only ones).
+    const codex = { permissions: [], defaultPermission: "ask" };
+    expect(peerPermission(auto, "codex", null, codex)).toBeUndefined();
+    expect(peerPermission({ runtime: "claude", permission: "plan" }, "codex", null, codex)).toBe("read-only");
+    expect(peerPermission({ runtime: "claude", permission: "bypassPermissions" }, "dsh", "full", null)).toBe("full-access");
+    expect(() => peerPermission(auto, "dsh", "full", null)).toThrow(/不能比你宽/);
+    // No caller to go by (a remote one): the level as asked, or the model's default.
+    expect(peerPermission(null, "claude", "full", claude)).toBe("bypassPermissions");
+    expect(peerPermission(null, "claude", null, claude)).toBeUndefined();
   });
 
   it("refuses subagents, topic sessions, archived tasks, an unknown model and an empty message", async () => {
