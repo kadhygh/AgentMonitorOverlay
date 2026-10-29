@@ -6,6 +6,8 @@ import { menuHeight, menuHtml, type MenuEntry } from "./html.js";
 // one). Opened above the pointer on a right-click of the icon, gone on a click elsewhere or Esc, like a menu.
 
 export { menuHeight, menuHtml, MENU_SIZES, type MenuEntry } from "./html.js";
+export { badgeText } from "./badge.js";
+export { badgedImage, overlayImage } from "./badge-image.js";
 
 export class TrayMenu {
   private win: BrowserWindow | null = null;

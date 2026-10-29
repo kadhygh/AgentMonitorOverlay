@@ -20,8 +20,9 @@ import {
   type UpdateInfo,
 } from "@amo-studio/relay";
 import { readAccount } from "@amo-studio/account";
-import { TrayMenu } from "@amo-studio/traymenu";
+import { badgedImage, overlayImage, TrayMenu } from "@amo-studio/traymenu";
 import { Accounts } from "./accounts.js";
+import { Attention, writeAttention } from "./attention.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
@@ -65,7 +66,6 @@ let quitting = false;
 let server: string | null = null;
 let content: InstalledContent | null = null;
 let latest: ClientManifest | null = null;
-let unread = 0;
 
 /** This desktop program's build (written by relay-release --shell next to main.js); undefined in a dev build. A platform
  * install has none: its version is the platform's (resources/app/package.json), and a stamp left in dist by an earlier
@@ -147,7 +147,12 @@ function createWindow(): BrowserWindow {
     e.preventDefault();
     w.hide();
   });
-  w.on("focus", () => w.flashFrame(false));
+  // Whether someone is looking at it: the taskbar stops flashing, the tray stops blinking (attention.ts).
+  for (const event of ["focus", "blur", "show", "hide", "minimize", "restore"] as const) w.on(event as "focus", () => attention.setInUse(inUse()));
+  // A page loaded anew (the loader, the content after an update) counts again from nothing; the content sends its count.
+  w.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) attention.setCount(0);
+  });
   w.on("maximize", () => w.webContents.send("relay:maximized", true));
   w.on("unmaximize", () => w.webContents.send("relay:maximized", false));
   // Links open in the browser, never in this window.
@@ -367,7 +372,7 @@ function wire(): void {
   ipcMain.handle("relay:mcp", () => hookup());
   ipcMain.handle("relay:copy", (_e, text: string) => clipboard.writeText(text));
   ipcMain.on("relay:notify", (_e, n: { title: string; body: string; threadId: string }) => {
-    if (win && !win.isFocused()) win.flashFrame(true);
+    if (win && !inUse()) win.flashFrame(true);
     if (testMode || !Notification.isSupported()) return;
     const note = new Notification({ title: n.title, body: n.body, icon: ICON || undefined, silent: false });
     note.on("click", () => {
@@ -376,10 +381,8 @@ function wire(): void {
     });
     note.show();
   });
-  ipcMain.on("relay:unread", (_e, count: number) => {
-    unread = count;
-    tray?.setToolTip(unread ? `AMO 中转 · ${unread} 条未读` : "AMO 中转");
-  });
+  // What waits for this person (relay-ui Home: sessions waiting for me + unread chats): taskbar and tray (attention.ts).
+  ipcMain.on("relay:unread", (_e, count: unknown) => attention.setCount(typeof count === "number" ? count : 0));
   // The page's window buttons (the window has no system title bar). 关闭 hides it to the tray, as before.
   ipcMain.on("relay:window", (_e, action: unknown) => {
     if (!win) return;
@@ -388,7 +391,7 @@ function wire(): void {
     else if (action === "close") win.close();
   });
   ipcMain.handle("relay:window-maximized", () => !!win?.isMaximized());
-  ipcMain.handle("relay:in-use", () => !!win && win.isVisible() && !win.isMinimized() && win.isFocused());
+  ipcMain.handle("relay:in-use", () => inUse());
   // The usage text as a file next to the command line: agents are pointed at it instead of being pasted the whole text.
   ipcMain.handle("relay:write-usage", (_e, text: string) => {
     const file = join(home, "AMO中转用法.md");
@@ -480,6 +483,7 @@ async function updateShell(): Promise<void> {
     app.relaunch({ args: process.argv.slice(1).filter((a) => !a.startsWith("--remote-debugging") && !a.startsWith("--inspect")) });
     quitting = true;
     tray?.destroy();
+    attention.dispose();
     setTimeout(() => app.quit(), 300);
   } finally {
     shellUpdating = false;
@@ -571,21 +575,57 @@ async function removeOldFiles(): Promise<void> {
 
 // ---- tray
 
-/** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs; 16–24 px are the
- *  simplified cut, 2026-10-28), else the window icon shrunk. */
+/** assets/icon-16…32.png (scripts/make-icons.mjs; 16–24 px are the simplified cut, 2026-10-28), by size. */
+const trayPngs = (() => {
+  const out = new Map<number, Buffer>();
+  for (const size of [16, 20, 24, 32]) {
+    const file = join(here, "..", "assets", `icon-${size}.png`);
+    if (existsSync(file)) out.set(size, readFileSync(file));
+  }
+  return out;
+})();
+const TRAY_SCALES: Record<number, number> = { 16: 1, 20: 1.25, 24: 1.5, 32: 2 };
+
+/** The tray icon at each scale Windows may ask for, else the window icon shrunk. */
 function trayImage(): Electron.NativeImage {
   const image = nativeImage.createEmpty();
-  for (const [size, scaleFactor] of [
-    [16, 1],
-    [20, 1.25],
-    [24, 1.5],
-    [32, 2],
-  ] as const) {
-    const file = join(here, "..", "assets", `icon-${size}.png`);
-    if (existsSync(file)) image.addRepresentation({ scaleFactor, buffer: readFileSync(file) });
-  }
+  for (const [size, buffer] of trayPngs) image.addRepresentation({ scaleFactor: TRAY_SCALES[size]!, buffer });
   return image.isEmpty() ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : image;
 }
+
+/** The window is on screen and focused: someone is looking at it. */
+const inUse = () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused();
+
+/** The tray icon with a count on it, made once per count (it blinks between this and the plain one). */
+let badged: { count: number; image: Electron.NativeImage } | null = null;
+let plainTray: Electron.NativeImage | null = null;
+
+/** What waits, outside the window (2026-10-29): see attention.ts. Tests read what was last done (__relayAttention). */
+const shown = { flashing: false, overlay: 0, trayBadge: false, tooltip: "AMO 中转" };
+const attention = new Attention({
+  flash(on) {
+    shown.flashing = on;
+    if (win && !win.isDestroyed()) win.flashFrame(on);
+  },
+  overlay(count) {
+    shown.overlay = count;
+    if (process.platform === "win32" && win && !win.isDestroyed()) win.setOverlayIcon(overlayImage(count), count > 0 ? `${count} 条待处理 / 未读` : "");
+  },
+  tray(badge, count) {
+    shown.trayBadge = badge && count > 0;
+    if (!tray) return;
+    if (!shown.trayBadge) return tray.setImage((plainTray ??= trayImage()));
+    if (badged?.count !== count) badged = { count, image: badgedImage(trayPngs, count) };
+    tray.setImage(badged.image);
+  },
+  tooltip(text) {
+    shown.tooltip = text;
+    tray?.setToolTip(text);
+  },
+  // Started by AMO 平台: it has the tray, and blinks its icon as this one's (it reads <home>ttention.json).
+  ...(process.argv.includes("--amo-tray=platform") ? { write: (state) => writeAttention(home, state) } : {}),
+});
+if (testMode) Object.assign(globalThis, { __relayAttention: () => ({ ...shown, ...attention.state }) });
 
 /** Started by AMO 平台 (2026-10-29, the user: too many tray icons): the platform's tray menu has 打开中转 / 退出中转, so
  *  this one makes no icon. Started on its own it keeps its tray (constraint 1). */
@@ -626,11 +666,13 @@ function start(): void {
       app.quit();
     } else showWindow();
   });
-  app.on("before-quit", () => (quitting = true));
+  app.on("before-quit", () => ((quitting = true), attention.dispose()));
   app.on("window-all-closed", () => undefined);
   void app.whenReady().then(async () => {
     serveScheme();
     wire();
+    // Left by a client started by the platform that did not get to remove it; started on its own, this one writes none.
+    if (!trayByPlatform) writeAttention(home, null);
     createTray();
     win = createWindow();
     setTimeout(() => void removeOldFiles(), 5000);

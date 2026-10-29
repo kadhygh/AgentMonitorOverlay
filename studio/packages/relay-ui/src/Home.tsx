@@ -95,7 +95,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     if (view === "chat") setOpenId(groups.chats[0]?.id ?? null);
   }, [view, threads.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The shell shows it on the taskbar and the tray (and AMO 平台's tray); signed out, nothing waits.
   useEffect(() => shell?.setUnread(queueCount + chatUnread), [queueCount, chatUnread]);
+  useEffect(() => () => shell?.setUnread(0), []);
 
   // Notifications when the window is not looking at it.
   useEffect(

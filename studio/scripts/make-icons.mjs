@@ -9,7 +9,8 @@
 //   - Reviewer: reviewer/assets/icon.png (its windows when it runs on its own) and icon.ico (its exe).
 //   - 便签: notes/assets/icon.png and icon-16…64.png (window, tray, and package-portable.mjs builds its exe icon from them).
 //   - 平台: platform/assets/icon.png, icon-16…32.png (tray) and icon.ico.
-//   - 中转: relay-app/assets (window PNG, tray icon-16…32.png, exe ICO, the loader's SVG) and relay-ui/src/icon.svg.
+//   - 中转: relay-app/assets (window PNG, tray icon-16…32.png, exe ICO, the loader's SVG) and relay-ui/src/icon.svg;
+//     its tray PNGs also as platform/assets/relay-16…32.png (the platform's tray shows 中转's icon while something waits).
 //   ICO files carry 16–256 px, the small cut up to 24 px.
 // - 「AMO 娘」 (2026-10-26, used while she is the 桌宠): the blue mascot's ready-made icon (design/icon/mascot-blue/icon)
 //   and her six faces (design/icon/mascot-blue/0N-*.png) cropped square to what is drawn, for the UI (ui/public/mascot)
@@ -81,6 +82,8 @@ const relayAssets = assets("relay-app");
 writeFileSync(join(relayAssets, "icon.png"), await relay.png(256));
 writeFileSync(join(relayAssets, "icon.ico"), await ico(relay));
 await trayPngs(relay, relayAssets);
+// The platform's tray turns into 中转's icon while something waits there (2026-10-29, relay-attention.ts): its own copy.
+for (const size of TRAY_SIZES) copyFileSync(join(relayAssets, `icon-${size}.png`), join(assets("platform"), `relay-${size}.png`));
 copyFileSync(relay.svgPath, join(studio, "packages", "relay-ui", "src", "icon.svg"));
 copyFileSync(relay.svgPath, join(relayAssets, "icon.svg"));
 if (relayOnly) {

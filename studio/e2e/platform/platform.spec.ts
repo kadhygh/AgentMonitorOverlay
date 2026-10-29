@@ -3,7 +3,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -710,7 +710,7 @@ test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO �
     own.publish("studio", "0.9.0", tool("studio", "0.9.0"), { name: "AMO Studio", exe: "run.cmd", notes: "- 看板、任务、会话" });
     own.publish("notes", "1.0.0", tool("notes", "1.0.0"), { name: "AMO Notes", exe: "run.cmd" });
     own.publish("relay", "0.9.0", relayTool("0.9.0"), { name: "AMO Relay", exe: "run.cmd", notes: "- 第一个从 AMO 平台发布的版本" });
-    const { app, page } = await launch();
+    const { app, page } = await launch([], (r) => ({ AMO_RELAY_HOME: join(r, "relay-home") }));
     const form = page.getByRole("form", { name: "登录" });
     await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
     await form.getByLabel("名字").fill("小王");
@@ -728,7 +728,34 @@ test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO �
     expect(programs().tools.relay).toEqual({ version: "0.9.0", dir: join(root, "local", "apps", "relay", "current"), exe: "run.cmd" });
     await screenshot(app, "platform", "P24-relay-installed", page);
     await row(page, "relay").getByRole("button", { name: "打开" }).click();
-    await expect.poll(() => (existsSync(join(root, "launched.relay")) ? readFileSync(join(root, "launched.relay"), "utf8").trim() : "")).toBe(`relay 0.9.0 --server ${own.url} --amo-tray=platform`);
+    const relayMark = () => (existsSync(join(root, "launched.relay")) ? readFileSync(join(root, "launched.relay"), "utf8").trim() : "");
+    await expect.poll(relayMark).toBe(`relay 0.9.0 --server ${own.url} --amo-tray=platform`);
+
+    // Something waits in 中转 (2026-10-29): it has no tray of its own here, so the platform's icon turns into 中转's
+    // with the count, blinking while 中转's window is not looked at (from <AMO_RELAY_HOME>\attention.json, which 中转
+    // writes; this test's process stands in for the running 中转); a click opens 中转; nothing waiting, its own again.
+    type Look = { icon: string; count: number; blink: boolean; blinking: boolean; tooltip: string };
+    const look = () => app.evaluate(() => (globalThis as unknown as { __platformTrayLook: () => Look }).__platformTrayLook());
+    const trayNow = () => app.evaluate(() => (globalThis as { __platformTray?: () => string[] }).__platformTray!());
+    const relayHome = join(root, "relay-home");
+    mkdirSync(relayHome, { recursive: true });
+    const waiting = (count: number, blink: boolean, pid = process.pid) => writeFileSync(join(relayHome, "attention.json"), JSON.stringify({ count, blink, pid, at: new Date().toISOString() }));
+    expect(await look()).toEqual({ icon: "platform", count: 0, blink: false, blinking: false, tooltip: "AMO 平台" });
+    waiting(3, true);
+    await expect.poll(look).toEqual({ icon: "relay", count: 3, blink: true, blinking: true, tooltip: "AMO 平台 · 中转有 3 条待处理 / 未读" });
+    expect(await trayNow()).toContain("打开中转（3 条待处理 / 未读）");
+    rmSync(join(root, "launched.relay"));
+    await app.evaluate(() => (globalThis as { __platformTrayIconClick?: () => void }).__platformTrayIconClick!());
+    await expect.poll(relayMark).toBe(`relay 0.9.0 --server ${own.url} --amo-tray=platform`);
+    waiting(3, false);
+    await expect.poll(look).toMatchObject({ icon: "relay", count: 3, blinking: false });
+    waiting(0, false);
+    await expect.poll(look).toMatchObject({ icon: "platform", count: 0, blinking: false });
+    expect(await trayNow()).toContain("打开中转");
+    // Left by a 中转 that is gone: not shown.
+    waiting(5, true, 0x7ffffff0);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(await look()).toMatchObject({ icon: "platform" });
 
     // A new shell published: updated here like the others (a relay from the platform never replaces its own files).
     own.publish("relay", "0.9.1", relayTool("0.9.1"), { name: "AMO Relay", exe: "run.cmd", notes: "- 外壳的一处修正" });

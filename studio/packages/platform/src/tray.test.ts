@@ -51,4 +51,12 @@ describe("the platform's tray menu (2026-10-29)", () => {
     // Nothing installed: only the platform's part.
     expect(labels(trayMenu({ ...all, tools: [], notes: false }))).toEqual(["# AMO 平台", "打开 AMO 平台", "退出平台"]);
   });
+
+  it("something waiting in 中转: its item says how much, and a click opens it (the icon is 中转's then)", () => {
+    expect(labels(trayMenu({ ...all, relayCount: 3 }))).toContain("打开中转（3 条待处理 / 未读）");
+    expect(trayClickAction({ ...all, relayCount: 3 })).toEqual({ kind: "open", tool: "relay" });
+    expect(trayClickAction({ ...all, relayCount: 0 })).toEqual({ kind: "toggle-notes" });
+    // 中转 not installed through the platform: the click stays as chosen.
+    expect(trayClickAction({ ...all, tools: all.tools.filter((t) => t.id !== "relay"), relayCount: 3 })).toEqual({ kind: "toggle-notes" });
+  });
 });
