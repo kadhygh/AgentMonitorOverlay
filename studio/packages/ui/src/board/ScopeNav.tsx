@@ -611,7 +611,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
           }}
         />
       )}
-      {editingTopic && <EditTopicDialog link={link} topic={editingTopic} onClose={() => setEditingTopic(null)} />}
+      {editingTopic && <EditTopicDialog link={link} topic={editingTopic} workspaces={workspaces} tasks={tasks} onClose={() => setEditingTopic(null)} />}
       {groupMenu && (
         <GroupMenu
           at={groupMenu}
