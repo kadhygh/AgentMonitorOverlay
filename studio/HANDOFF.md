@@ -46,6 +46,16 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 夜 · 中转有待处理 / 未读时任务栏和托盘闪、带数量（分支上，没发布）**
+
+用户：「有待处理的 relay 信息时和未读聊天时，relay 的任务栏图标应该闪烁，托盘也闪，托盘最好还带上信息数量。如果是收起来的托盘则切成 relay 图标来闪，也显示信息数量。」
+- 数量：界面原来就算好交给外壳（`relay-ui` Home：等我处理的会话 + 交来的任务 + 聊天未读，`relayShell.setUnread`），外壳以前只拿来改 tooltip。界面只加了一处：退出登录（Home 卸载）时报 0。
+- 外壳（`relay-app/src/attention.ts`）：数量**变多**且窗口没人在看（不在前台 / 隐藏 / 最小化）时任务栏 `flashFrame`，一看就停；数量在就有任务栏角标（`setOverlayIcon`，超过 99 写 99+），清零就去掉。自己的托盘：有数量时「带数字的图标」和普通图标每 500ms 交替，窗口在前台时停在带数字的那张；tooltip「AMO 中转 · N 条待处理 / 未读」。
+- 平台托盘（约束第 1 条）：平台启动的中转（`--amo-tray=platform`）把 `{count, blink, pid}` 写进它自己文件夹的 `attention.json`（`AMO_RELAY_HOME` 或 `%APPDATA%\AMO Relay`），退出时删掉；平台每秒看一次（`platform/src/relay-attention.ts`，只在文件变了时读，pid 不在了就不算）。有数量时平台托盘换成中转图标 + 数字，按 `blink` 闪，tooltip「AMO 平台 · 中转有 N 条待处理 / 未读」，菜单项「打开中转（N 条待处理 / 未读）」，单击图标打开中转；清零换回平台自己的图标。中转图标在 `platform/assets/relay-16…32.png`（`make-icons.mjs` 顺带复制）。
+- 画数字：`traymenu/src/badge.ts` 自己画像素（主进程没有 canvas）：红色圆 / 胶囊带深一点的边、白色像素字（5×7 和 3×5 两套，整数倍放大），叠在图标上时周围挖一圈透明；`badge-image.ts` 转成 16/20/24/32 四个尺寸的 nativeImage。
+- 验证：typecheck 过；vitest 新加 badge / attention / relay-attention / 托盘菜单；relay e2e 新加一条（AI 发会话 → 计数 1、闪、`attention.json`；看着 → 不闪；回复后 0；退出文件删掉）；平台 e2e「AMO 中转 from the platform」加托盘切换 / 点击打开中转 / 清零换回 / pid 不在不算。徽标深浅底预览用临时 Electron 脚本画过。真实任务栏和托盘没在桌面上实际看过。
+- 发布要升：中转外壳（relay-app）、平台；`relay-ui` 那一处要 `relay:release` + deploy。
+
 **2026-10-29 晚 · 托盘菜单统一成便签的样子、各工具都有主题、平台进度条和「关闭」修正；测试通道发平台 0.9.8、Studio 0.9.9、便签 0.9.4、中转 0.9.3、Reviewer 0.9.7（`3373957`，正式通道没动）**
 
 - 托盘菜单：新包 `packages/traymenu`（`@amo-studio/traymenu`），照便签的托盘菜单画的无边框小窗（一页自带样式的 data: 页面，点击当作导航截下来）；平台、单独打开的 Studio 和中转都用它，不再用 Windows 自己的菜单。便签保留自己的那份（它是样板）。新包已加进 `package-portable.mjs` 三个程序的包列表。

@@ -27,6 +27,8 @@ export interface TrayState {
   /** The installed Studio's version, for 重启 Studio's label. */
   studioVersion: string | null;
   click: TrayClick;
+  /** What waits in AMO 中转 (relay-attention.ts; 0 or absent: nothing): the icon is 中转's then, and a click opens it. */
+  relayCount?: number;
 }
 
 /** The menu, top to bottom. */
@@ -50,7 +52,7 @@ export function trayMenu(s: TrayState): TrayItem[] {
     ]);
   if (has("relay"))
     part("AMO 中转", [
-      { kind: "item", label: "打开中转", action: { kind: "open", tool: "relay" } },
+      { kind: "item", label: s.relayCount ? `打开中转（${s.relayCount} 条待处理 / 未读）` : "打开中转", action: { kind: "open", tool: "relay" } },
       { kind: "item", label: "退出中转", action: { kind: "quit", tool: "relay" } },
     ]);
   for (const t of s.tools.filter((t) => !["studio", "notes", "relay", "platform"].includes(t.id))) part(t.name, [{ kind: "item", label: `打开 ${t.name.replace(/^AMO /, "")}`, action: { kind: "open", tool: t.id } }]);
@@ -61,8 +63,10 @@ export function trayMenu(s: TrayState): TrayItem[] {
   return out;
 }
 
-/** What a click on the icon does: the chosen tool when it can be had, else the platform's window. */
+/** What a click on the icon does: 中转 while the icon is its (something waits there), else the chosen tool when it can
+ *  be had, else the platform's window. */
 export function trayClickAction(s: TrayState): TrayAction {
+  if (s.relayCount && s.tools.some((t) => t.id === "relay")) return { kind: "open", tool: "relay" };
   if (s.click === "notes" && s.notes) return { kind: "toggle-notes" };
   if (s.tools.some((t) => t.id === "studio") && (s.click === "studio" || !s.notes)) return { kind: "open", tool: "studio" };
   if (s.notes) return { kind: "toggle-notes" };

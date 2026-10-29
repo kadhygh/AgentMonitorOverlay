@@ -55,11 +55,11 @@ test.afterAll(async () => {
 
 const startServer = (port: number) => relay.startRelayServer({ store, publicDir, filesDir: join(root, "files"), host: "127.0.0.1", port, name: "测试组", clientWatchMs: 300 });
 
-async function launch(who: string): Promise<{ app: ElectronApplication; page: Page; home: string }> {
+async function launch(who: string, extraArgs: string[] = []): Promise<{ app: ElectronApplication; page: Page; home: string }> {
   const home = join(root, who);
   const app = await _electron.launch({
     executablePath: electronPath,
-    args: [join(studio, "packages", "relay-app", "dist", "main.js"), "--server", server.url],
+    args: [join(studio, "packages", "relay-app", "dist", "main.js"), "--server", server.url, ...extraArgs],
     // AMO_HOME: the platform's folder (account.json), empty unless the test logs in there — never this machine's own.
     env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1" },
   });
@@ -533,6 +533,55 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await expect(b.page.getByRole("button", { name: "私聊" })).toBeVisible();
   await expect(b.page.getByRole("button", { name: "发起会话" })).toHaveCount(0);
   await shot(b.app, "32-tight-member");
+  expect(pageErrors).toEqual([]);
+});
+
+test("what waits shows outside the window: the taskbar flashes with the count, the tray blinks with it; started by the platform, in attention.json", async () => {
+  type Shown = { flashing: boolean; overlay: number; trayBadge: boolean; tooltip: string; count: number; inUse: boolean; blinking: boolean };
+  const shown = (app: ElectronApplication) => app.evaluate(() => (globalThis as unknown as { __relayAttention: () => Shown }).__relayAttention());
+  // The planner runs on its own (its own tray); the coder as AMO 平台 starts it (no tray, the count in a file).
+  const a = await launch("planner3");
+  await register(a.page, "策划小周", "策划", false);
+  const b = await launch("coder3", ["--amo-tray=platform"]);
+  await register(b.page, "程序老吴", "程序", false);
+  const file = join(b.home, "attention.json");
+  const attention = () => (existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { count: number; blink: boolean; pid: number }) : null);
+  expect(await shown(b.app)).toMatchObject({ count: 0, overlay: 0, blinking: false });
+
+  // An AI's session waiting on the coder: 1, flashing and blinking (a test window is never focused: nobody looks).
+  const req = join(root, "req3.json");
+  writeFileSync(req, JSON.stringify({ to: "程序老吴", title: "掉落表要不要分服", body: "想分服配，可以吗？" }));
+  const threadId = /threadId: (\S+)/.exec(await exec("cmd.exe", ["/c", join(a.home, "amo-relay.cmd"), "ask", "--json", req]))![1]!;
+  await expect(b.page.locator(".strip.attn")).toContainText("1 件等你处理");
+  await expect.poll(() => shown(b.app)).toMatchObject({ count: 1, overlay: 1, flashing: true, blinking: true, tooltip: "AMO 中转 · 1 条待处理 / 未读" });
+  const pid = await b.app.evaluate(() => process.pid);
+  await expect.poll(attention).toEqual({ count: 1, blink: true, pid, at: expect.any(String) as unknown as string });
+  // Looked at: no more flashing or blinking, the count stays (the platform's icon stops blinking, keeps the count).
+  await b.app.evaluate(({ BrowserWindow }) => {
+    // A test window cannot take focus: told so, as if it had.
+    const w = BrowserWindow.getAllWindows()[0]!;
+    (w as unknown as { isFocused: () => boolean }).isFocused = () => true;
+    w.emit("focus");
+  });
+  await expect.poll(() => shown(b.app)).toMatchObject({ count: 1, inUse: true, flashing: false, blinking: false, overlay: 1 });
+  await expect.poll(attention).toMatchObject({ count: 1, blink: false });
+
+  // Answered: nothing waits on the coder; the planner (its own tray) has the reply waiting, blinking there.
+  const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+  await row(b.page, "掉落表要不要分服").click();
+  await b.page.getByPlaceholder("补充说明（支持 Markdown）").fill("可以，按服读配置。");
+  await b.page.getByRole("button", { name: "回复并返回给 策划小周 的 AI" }).click();
+  await expect.poll(() => shown(b.app)).toMatchObject({ count: 0, overlay: 0, blinking: false });
+  await expect.poll(attention).toMatchObject({ count: 0, blink: false });
+  await expect(a.page.locator(".strip.attn")).toContainText("1 件等你处理");
+  await expect.poll(() => shown(a.app)).toMatchObject({ count: 1, overlay: 1, trayBadge: expect.any(Boolean) as unknown as boolean, blinking: true });
+  // Started on its own it writes no file for the platform.
+  expect(existsSync(join(a.home, "attention.json"))).toBe(false);
+  expect(threadId).toBeTruthy();
+
+  // The coder's client quits: the file goes with it.
+  await b.app.close();
+  expect(existsSync(file)).toBe(false);
   expect(pageErrors).toEqual([]);
 });
 

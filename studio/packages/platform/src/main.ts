@@ -3,12 +3,13 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { amoLocalHome } from "@amo-studio/account";
-import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
+import { badgedImage, TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
+import { RelayAttentionReader, trayLook, type RelayAttention, type TrayLook } from "./relay-attention.js";
 import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
 import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
 import type { OpenResult, PlatformCalls, PlatformView } from "./view.js";
-import { trayClickAction, trayMenu, type TrayAction, type TrayItem } from "./tray.js";
+import { trayClickAction, trayMenu, type TrayAction, type TrayItem, type TrayState } from "./tray.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2): a tray program that installs, updates and starts the AMO tools from the
 // team server. One instance; the window is made when shown and destroyed when closed — the program stays in the tray
@@ -49,7 +50,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void };
+type TestGlobals = { __platformTrayLook?: () => TrayLook & { blinking: boolean }; __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -201,9 +202,18 @@ function showWindow(): void {
 
 // ---- the tray
 
+/** What waits in AMO 中转 started by the platform (relay-attention.ts: the file it writes), looked at every second. */
+const relayReader = RelayAttentionReader.forEnv(process.env);
+let relayNow: RelayAttention | null = null;
+
+/** The tray's state: the platform's, and what waits in 中转. */
+function trayState(): TrayState {
+  return { ...platform.trayState(), relayCount: relayNow?.count ?? 0 };
+}
+
 /** The tray menu (tray.ts, 2026-10-29): every tool's items, one part each, not folded. */
 function trayItems(): TrayItem[] {
-  return trayMenu(platform.trayState());
+  return trayMenu(trayState());
 }
 
 /** Runs what a tray item (or a click on the icon) stands for. */
@@ -244,7 +254,7 @@ function runTray(action: TrayAction): void {
  *  what a click on the icon does is in bold. */
 const trayWindow = new TrayMenu({ label: "AMO 平台菜单", width: 236 });
 function openTrayMenu(): void {
-  const click = JSON.stringify(trayClickAction(platform.trayState()));
+  const click = JSON.stringify(trayClickAction(trayState()));
   trayWindow.open(
     trayItems().map((i): MenuEntry => (i.kind === "separator" ? { kind: "rule" } : i.kind === "heading" ? { kind: "title", label: i.label } : { kind: "item", label: i.label, strong: JSON.stringify(i.action) === click, ...(i.kind === "radio" ? { checked: i.checked } : {}), run: () => runTray(i.action) })),
   );
@@ -267,11 +277,61 @@ function trayImage(): Electron.NativeImage {
   return ICON ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : nativeImage.createEmpty();
 }
 
+// 中转's icon while something waits there (2026-10-29, the user: 「收起来的托盘则切成 relay 图标来闪，也显示信息数量」):
+// with the count, blinking with the plain one while 中转's window is not looked at; the platform's own once nothing
+// waits. assets/relay-16…32.png are 中转's tray PNGs (scripts/make-icons.mjs copies them here).
+const relayPngs = (() => {
+  const out = new Map<number, Buffer>();
+  for (const size of [16, 20, 24, 32]) {
+    const file = join(here, "..", "assets", `relay-${size}.png`);
+    if (existsSync(file)) out.set(size, readFileSync(file));
+  }
+  return out;
+})();
+const images: { platform?: Electron.NativeImage; relay?: Electron.NativeImage; badged?: { count: number; image: Electron.NativeImage } } = {};
+function relayImage(badge: boolean, count: number): Electron.NativeImage {
+  if (!badge) {
+    if (!images.relay) {
+      const image = nativeImage.createEmpty();
+      for (const [size, buffer] of relayPngs) image.addRepresentation({ scaleFactor: size / 16, buffer });
+      images.relay = image.isEmpty() ? trayImage() : image;
+    }
+    return images.relay;
+  }
+  if (images.badged?.count !== count) images.badged = { count, image: badgedImage(relayPngs, count) };
+  return images.badged.image;
+}
+
+let look: TrayLook = trayLook(null);
+let blink: ReturnType<typeof setInterval> | null = null;
+function showLook(next: TrayLook): void {
+  if (JSON.stringify(next) === JSON.stringify(look)) return;
+  look = next;
+  if (blink) clearInterval(blink);
+  blink = null;
+  tray?.setToolTip(look.tooltip);
+  if (look.icon === "platform") {
+    tray?.setImage((images.platform ??= trayImage()));
+    return;
+  }
+  let on = true;
+  tray?.setImage(relayImage(true, look.count));
+  if (look.blink) blink = setInterval(() => tray?.setImage(relayImage((on = !on), look.count)), 500);
+}
+
+function watchRelay(): void {
+  setInterval(() => {
+    relayNow = relayReader.read();
+    showLook(trayLook(relayNow));
+  }, 1000);
+}
+
 function createTray(): void {
-  tray = new Tray(trayImage());
+  tray = new Tray((images.platform ??= trayImage()));
   tray.setToolTip("AMO 平台");
-  // A click opens 便签 or Studio, as chosen in the menu (2026-10-29, the user); the platform's window is in the menu.
-  tray.on("click", () => runTray(trayClickAction(platform.trayState())));
+  // A click opens 便签 or Studio, as chosen in the menu (2026-10-29, the user), or 中转 while its icon shows; the
+  // platform's window is in the menu.
+  tray.on("click", () => runTray(trayClickAction(trayState())));
   tray.on("right-click", openTrayMenu);
 }
 
@@ -310,14 +370,16 @@ async function start(): Promise<void> {
   wire();
   nativeTheme.themeSource = platform.view().theme;
   if (!testMode) createTray();
+  watchRelay();
   if (testMode)
     Object.assign(g, {
+      __platformTrayLook: () => ({ ...look, blinking: blink !== null }),
       __platformTray: () => trayItems().map((i) => (i.kind === "separator" ? "—" : i.kind === "heading" ? `# ${i.label}` : i.kind === "radio" ? `${i.checked ? "●" : "○"} ${i.label}` : i.label)),
       __platformTrayClick: (label: string) => {
         const item = trayItems().find((i) => (i.kind === "item" || i.kind === "radio") && i.label === label);
         if (item && (item.kind === "item" || item.kind === "radio")) runTray(item.action);
       },
-      __platformTrayIconClick: () => runTray(trayClickAction(platform.trayState())),
+      __platformTrayIconClick: () => runTray(trayClickAction(trayState())),
       __platformShow: showWindow,
     });
   if (!startHidden) showWindow();
