@@ -351,4 +351,56 @@ describe("RelayStore", () => {
     expect(store.threadsFor("美术小张")).toEqual([]);
     expect(() => store.createRequest("策划小王", { to: "没这人", title: "t", body: "b" })).toThrow(/没有这个人/);
   });
+
+  it("the admin page renames an account everywhere its name is kept, turns accounts off and on, and has its own password", () => {
+    const { a, b } = team();
+    const direct = store.direct("策划小王", "程序老李");
+    store.addMessage(direct.id, "策划小王", { body: "@程序老李 看下", mentions: ["程序老李"] });
+    const { thread: req } = store.createRequest("程序老李", { to: "策划小王", title: "射速", body: "b" });
+    const task = store.createTask("程序老李", { title: "掉落表", holder: "程序老李" });
+    store.transferTask("程序老李", task.id, { to: "策划小王", reason: "该你了" });
+    store.addFile("程序老李", { taskId: task.id, name: "a.md", size: 1, sha256: "0".repeat(64), id: "f1" });
+    store.addNote("程序老李", "f1", { quote: "q", body: "改一下" });
+    store.db.exec("CREATE TABLE IF NOT EXISTS device_pairs (owner_account TEXT, owner_device TEXT, owner_name TEXT, guest_account TEXT, guest_device TEXT, guest_name TEXT, created_at INTEGER)");
+    store.db.prepare("INSERT INTO device_pairs VALUES ('程序老李', 'd1', '台式机', '程序老李', 'd2', '笔记本', 0)").run();
+
+    expect(() => store.renameMember("程序老李", "策划小王")).toThrow(/已经有人用了/);
+    expect(() => store.renameMember("没这人", "x")).toThrow(/没有这个人/);
+    expect(store.renameMember("程序老李", "lee")).toEqual({ from: "程序老李", to: "lee" });
+
+    // Logins keep working under the new name; the old name logs in no more, the new one with the same password.
+    expect(store.memberByKey(b.key)).toBe("lee");
+    expect(() => store.login("程序老李", "pw-li")).toThrow(/名字或密码不对/);
+    expect(store.login("lee", "pw-li").name).toBe("lee");
+    expect(store.members().map((m) => m.name)).toEqual(["策划小王", "lee"]);
+    // The direct chat is found again by its new pair, with its messages and mentions.
+    expect(store.direct("策划小王", "lee").id).toBe(direct.id);
+    expect(store.direct("lee", "策划小王").members).toEqual(["策划小王", "lee"]);
+    expect(store.messages(direct.id, "lee").at(-1)?.mentions).toEqual(["lee"]);
+    expect(store.threadsFor("lee").map((t) => t.id).sort()).toEqual([direct.id, req.id].sort());
+    expect(store.thread(req.id, "lee").createdBy).toBe("lee");
+    expect(store.task(task.id).creator).toBe("lee");
+    expect(store.taskEvents(task.id).some((e) => e.actor === "lee" && e.data?.from === "lee")).toBe(true);
+    expect(store.filesOf({ taskId: task.id }, "lee")[0]?.by).toBe("lee");
+    expect(store.notesOf("f1", "lee")[0]?.author).toBe("lee");
+    expect(store.db.prepare("SELECT owner_account, guest_account FROM device_pairs").get()).toEqual({ owner_account: "lee", guest_account: "lee" });
+    expect(store.db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+
+    // Off: logins end, cannot log in; on again: can.
+    store.setDisabled("lee", true);
+    expect(store.memberByKey(b.key)).toBeNull();
+    expect(() => store.login("lee", "pw-li")).toThrow(/停用/);
+    expect(store.adminMembers().find((m) => m.name === "lee")).toMatchObject({ disabled: true, logins: 0 });
+    store.setDisabled("lee", false);
+    expect(store.login("lee", "pw-li").name).toBe("lee");
+    expect(store.adminMembers().find((m) => m.name === "策划小王")).toMatchObject({ disabled: false, logins: 1, nick: "", role: "策划" });
+
+    expect(store.hasAdminPassword()).toBe(false);
+    expect(store.adminPasswordMatches("whatever")).toBe(false);
+    store.setAdminPassword("admin-pw");
+    expect(store.hasAdminPassword()).toBe(true);
+    expect(store.adminPasswordMatches("admin-pw")).toBe(true);
+    expect(store.adminPasswordMatches("nope")).toBe(false);
+    expect(store.memberByKey(a.key)).toBe("策划小王");
+  });
 });

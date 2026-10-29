@@ -7,6 +7,8 @@
 //   node scripts/relay-mac.mjs deploy            send release/relay (npm run relay:release first); a changed service restarts
 //                              status | start | stop | restart | logs [lines]
 //                              passwd <名字> [新密码]       reset someone's password (a random one when left out) and print it
+//                              admin-password [密码]        the admin page's (/admin) password (a random one when left out)
+//                              rename <旧名字> <新名字>      an account's login name, everywhere; restarts the service (the page does it live)
 //                              backup                        a copy of the database in data/backup-<time>.db
 //                              migrate --from <data dir> [--force]   one-off: a running service's data copied over
 //   The AMO platform (2026-10-28, plans/amo-lan-platform.md):
@@ -174,6 +176,19 @@ echo "app: $APP"; echo "data: $DATA"; health`);
     console.log(`新密码：${password}`);
     break;
   }
+  case "admin-password": {
+    const password = rest[0] ?? Array.from({ length: 12 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[randomInt(31)]).join("");
+    remote(`"$NODE" "$APP/amo-relay.mjs" admin-password --data "$DATA" "$(echo ${b64(password)} | base64 -D)"`);
+    console.log(`管理页：http://<服务器>:${PORT}/admin（团队服务器是 http://172.16.8.85:${PORT}/admin）\n管理密码：${password}`);
+    break;
+  }
+  case "rename": {
+    const [from, to] = rest;
+    if (!from || !to) throw new Error("usage: relay-mac.mjs rename <旧名字> <新名字>");
+    remote(`"$NODE" "$APP/amo-relay.mjs" rename --data "$DATA" "$(echo ${b64(from)} | base64 -D)" "$(echo ${b64(to)} | base64 -D)"`);
+    remote(START);
+    break;
+  }
   case "migrate": {
     const from = flag("--from");
     if (!from || !existsSync(join(from, "relay.db"))) throw new Error("usage: relay-mac.mjs migrate --from <folder with relay.db> [--force]");
@@ -250,5 +265,5 @@ ${START}`);
     break;
   }
   default:
-    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | backup | migrate | publish | promote | platform-status | platform-compress | platform-prune`);
+    throw new Error(`unknown command ${cmd}: deploy | status | start | stop | restart | logs | passwd | admin-password | rename | backup | migrate | publish | promote | platform-status | platform-compress | platform-prune`);
 }

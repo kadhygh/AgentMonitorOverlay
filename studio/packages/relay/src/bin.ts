@@ -25,6 +25,8 @@ import { typeOf } from "./types.js";
 const USAGE = `amo-relay <command>
   serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name <服务名>] [--passphrase <邀请口令>]
   passwd   [--data <dir>] <名字> <新密码>          （在服务那台机器上重设某人的密码）
+  admin-password [--data <dir>] <密码>            （管理页 /admin 的密码）
+  rename   [--data <dir>] <旧名字> <新名字>        （改登录名；服务在跑时改完要重启它）
   register --server <地址:端口> --name <名字> --password <密码> [--role <负责什么>] [--passphrase <邀请口令>]
   login    --server <地址:端口> --name <名字> --password <密码>
   whoami | people | prompt | mcp
@@ -111,6 +113,22 @@ async function main(): Promise<void> {
       store.setPassword(pos[0], pos[1]);
       store.close();
       out(`已重设「${pos[0]}」的密码；他之前的登录都失效了。`);
+      return;
+    }
+    case "admin-password": {
+      if (pos.length < 1) throw new Error("用法：amo-relay admin-password [--data <dir>] <密码>");
+      const store = new RelayStore(join(resolve(flags.data ?? join(relayHome(), "server")), "relay.db"));
+      store.setAdminPassword(pos[0]);
+      store.close();
+      out("已设好管理页的密码：打开 http://<服务器>:<端口>/admin");
+      return;
+    }
+    case "rename": {
+      if (pos.length < 2) throw new Error("用法：amo-relay rename [--data <dir>] <旧名字> <新名字>");
+      const store = new RelayStore(join(resolve(flags.data ?? join(relayHome(), "server")), "relay.db"));
+      const done = store.renameMember(pos[0], pos[1]);
+      store.close();
+      out(`已把「${done.from}」改成「${done.to}」。服务在跑的话重启一下它；请他在 AMO 平台里用新名字重新登录。`);
       return;
     }
     case "register":

@@ -65,6 +65,8 @@ npm run relay:release                 # 先在本机生成 release/relay
 npm run relay:mac -- deploy           # 传到 Mac；只改了界面不重启，服务本身变了会先备份数据库再重启
 npm run relay:mac -- status | start | stop | restart | logs [行数] | backup
 npm run relay:mac -- passwd <名字> [新密码]          # 忘了密码：重设并打印新密码（不填就随机生成 8 位）
+npm run relay:mac -- admin-password [密码]           # 管理页 http://172.16.8.85:47120/admin 的密码（不填就随机生成）
+npm run relay:mac -- rename <旧名字> <新名字>       # 改登录名（会重启服务；管理页上改不用重启）
 npm run relay:mac -- migrate --from <数据目录> [--force]   # 一次性把另一台的数据搬过来（先备份 Mac 上的）
 ```
 
@@ -161,7 +163,7 @@ MCP 提供这几个工具：
 ## 命令行
 
 ```
-amo-relay serve | passwd | register | login | whoami | people | prompt | mcp | ask --json <file|-> | replies [id] | wait <id>
+amo-relay serve | passwd | admin-password | rename | register | login | whoami | people | prompt | mcp | ask --json <file|-> | replies [id] | wait <id>
           | send <id> --body … [--then ask|done] | queue | handoff <id> --note …
 ```
 

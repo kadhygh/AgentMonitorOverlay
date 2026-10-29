@@ -99,6 +99,11 @@ export class DeviceHub {
 
   // ---- connections
 
+  /** Closes every device of an account (renamed or turned off on the admin page): they connect again as who they are now. */
+  dropAccount(account: string): void {
+    for (const [k, l] of [...this.live]) if (k.startsWith(`${account}\n`)) l.ws.close(1012, "account changed");
+  }
+
   online(ref: DeviceRef): boolean {
     return this.live.has(keyOf(ref));
   }

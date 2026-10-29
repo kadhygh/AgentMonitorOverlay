@@ -8,6 +8,7 @@ import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
+import { adminPage } from "./admin-page.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
@@ -241,6 +242,45 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (method === "POST" && path === "/api/login") {
       const body = await readJson(req);
       return send(res, 200, store.login(body.name, body.password));
+    }
+    // The admin page (2026-10-29, the user: a plain page for the LAN, no AMO login): its own password, set on the service
+    // machine (`amo-relay admin-password`), sent with every call as x-amo-admin.
+    if (method === "GET" && path === "/admin") return sendHtml(res, adminPage(serviceName));
+    if (path.startsWith("/api/admin/")) {
+      if (!store.hasAdminPassword()) throw new RelayError("forbidden", "还没有设管理密码：在服务器上运行 amo-relay admin-password（或在开发机上 npm run relay:mac -- admin-password）");
+      if (!store.adminPasswordMatches(req.headers["x-amo-admin"])) {
+        // A guess costs a moment.
+        await new Promise((r) => setTimeout(r, 600));
+        throw new RelayError("unauthorized", "管理密码不对");
+      }
+      const kick = (name: string) => {
+        for (const ws of sockets.get(name) ?? []) ws.close(1012, "account changed");
+        devices.dropAccount(name);
+      };
+      if (method === "GET" && path === "/api/admin/members") {
+        const online = new Map(members().map((m) => [m.name, m]));
+        return send(res, 200, { service: serviceName, invite: !!opts.passphrase, members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
+      }
+      const body = await readJson(req);
+      if (method === "POST" && path === "/api/admin/rename") {
+        const done = store.renameMember(body.from, body.to);
+        kick(done.from);
+        pushMembers();
+        return send(res, 200, done);
+      }
+      if (method === "POST" && path === "/api/admin/password") {
+        const password = typeof body.password === "string" && body.password ? body.password : Array.from({ length: 8 }, () => "abcdefghjkmnpqrstuvwxyz23456789"[randomBytes(1)[0]! % 31]).join("");
+        store.setPassword(body.name, password);
+        kick(String(body.name));
+        return send(res, 200, { name: body.name, password });
+      }
+      if (method === "POST" && path === "/api/admin/disable") {
+        store.setDisabled(body.name, body.disabled !== false);
+        if (body.disabled !== false) kick(String(body.name));
+        pushMembers();
+        return send(res, 200, { ok: true });
+      }
+      throw new RelayError("not_found", "没有这个管理操作");
     }
     // The AMO platform's files (platform.ts, plans/amo-lan-platform.md): for people signed in; objects also take ?key=,
     // so a download can be a plain URL.

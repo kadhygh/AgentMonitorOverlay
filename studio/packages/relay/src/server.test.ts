@@ -76,6 +76,43 @@ describe("relay service", () => {
     await expect(again.me()).rejects.toMatchObject({ status: 401 });
   });
 
+  it("the admin page: its own password; renames an account live (its sockets reconnect as the new name), resets a password, turns an account off", async () => {
+    const { url, coder } = await service();
+    const admin = (method: string, path: string, body?: unknown, pw = "admin-pw") =>
+      fetch(`${url}${path}`, { method, headers: { "content-type": "application/json", "x-amo-admin": pw }, ...(body ? { body: JSON.stringify(body) } : {}) }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, unknown> }));
+    const page = await fetch(`${url}/admin`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("测试组 · 管理");
+    // No password set yet: says how to set one; then a wrong one is refused.
+    expect(await admin("GET", "/api/admin/members")).toMatchObject({ status: 403, body: { message: expect.stringContaining("admin-password") } });
+    store!.setAdminPassword("admin-pw");
+    expect((await admin("GET", "/api/admin/members", undefined, "wrong")).status).toBe(401);
+    const list = await admin("GET", "/api/admin/members");
+    expect(list.body).toMatchObject({ service: "测试组", invite: true });
+    expect((list.body.members as Array<{ name: string }>).map((m) => m.name)).toEqual(["策划小王", "程序老李"]);
+
+    const live = await events(url, coder.key!);
+    expect((await live.next()).type).toBe("hello");
+    const closed = new Promise<number>((ok) => live.ws.once("close", (code) => ok(code)));
+    expect(await admin("POST", "/api/admin/rename", { from: "程序老李", to: "lee" })).toMatchObject({ status: 200, body: { from: "程序老李", to: "lee" } });
+    expect(await closed).toBe(1012);
+    // The same key, now as lee.
+    expect((await coder.me()).name).toBe("lee");
+    const again = await events(url, coder.key!);
+    expect(await again.next()).toMatchObject({ type: "hello", me: "lee" });
+    expect((await admin("POST", "/api/admin/rename", { from: "lee", to: "策划小王" })).status).toBe(409);
+
+    const reset = await admin("POST", "/api/admin/password", { name: "lee" });
+    expect(reset.body.password).toMatch(/^[a-z2-9]{8}$/);
+    await expect(coder.me()).rejects.toMatchObject({ status: 401 });
+    const lee = new RelayClient(url, (await new RelayClient(url).login("lee", String(reset.body.password))).key);
+    expect((await admin("POST", "/api/admin/disable", { name: "lee", disabled: true })).status).toBe(200);
+    await expect(lee.me()).rejects.toMatchObject({ status: 401 });
+    await expect(new RelayClient(url).login("lee", String(reset.body.password))).rejects.toMatchObject({ status: 403 });
+    await admin("POST", "/api/admin/disable", { name: "lee", disabled: false });
+    expect((await new RelayClient(url).login("lee", String(reset.body.password))).name).toBe("lee");
+  });
+
   it("hands out the client: landing page, content, downloads, never outside its folder", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-public-"));
     closers.push(() => rmSync(dir, { recursive: true, force: true }));

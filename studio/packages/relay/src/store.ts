@@ -190,6 +190,9 @@ export class RelayStore {
     // 编辑资料 (2026-10-27): nickname and picture.
     const mcols = (this.db.prepare("PRAGMA table_info(members)").all() as Row[]).map((r) => String(r.name));
     if (!mcols.includes("nick")) this.db.exec("ALTER TABLE members ADD COLUMN nick TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN avatar TEXT;");
+    // The admin page (2026-10-29): an account can be turned off; the page's own password lives apart from team settings.
+    if (!mcols.includes("disabled")) this.db.exec("ALTER TABLE members ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;");
+    this.db.exec("CREATE TABLE IF NOT EXISTS admin (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
   }
 
   /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
@@ -247,8 +250,9 @@ export class RelayStore {
   /** A new key for this device when the password matches. */
   login(nameValue: unknown, passwordValue: unknown): { name: string; role: string; key: string } {
     const name = typeof nameValue === "string" ? nameValue.trim() : "";
-    const row = this.db.prepare("SELECT role, password FROM members WHERE name = ?").get(name) as Row | undefined;
+    const row = this.db.prepare("SELECT role, password, disabled FROM members WHERE name = ?").get(name) as Row | undefined;
     if (!row || typeof passwordValue !== "string" || !passwordMatches(passwordValue, String(row.password))) throw new RelayError("unauthorized", "名字或密码不对");
+    if (Number(row.disabled)) throw new RelayError("forbidden", "这个账号已经停用了，找管理员");
     return { name, role: String(row.role), key: this.newKey(name) };
   }
 
@@ -301,6 +305,94 @@ export class RelayStore {
       avatar: r.avatar == null ? null : String(r.avatar),
       role: String(r.role),
     }));
+  }
+
+  // ---- the admin page (2026-10-29, the user: a plain page on the LAN, its own password, no AMO login)
+
+  /**
+   * A member's name changes everywhere it is kept: logins (they keep working), conversations, sessions, tasks and their
+   * history, files, notes, mentions, device pairs. The person logs in again with the new name in AMO 平台 when they like.
+   */
+  renameMember(fromValue: unknown, toValue: unknown): { from: string; to: string } {
+    const from = typeof fromValue === "string" ? fromValue.trim() : "";
+    this.requireMember(from);
+    const to = checkName(toValue);
+    if (to === from) return { from, to };
+    if (this.db.prepare("SELECT 1 FROM members WHERE name = ?").get(to)) throw new RelayError("conflict", `名字「${to}」已经有人用了`);
+    const has = (table: string) => !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+    this.tx(() => {
+      // members.name is what keys and thread_members point at: checked at COMMIT, when all of them say the new name.
+      this.db.exec("PRAGMA defer_foreign_keys = ON");
+      const columns: Array<[string, string]> = [
+        ["members", "name"],
+        ["keys", "name"],
+        ["threads", "created_by"],
+        ["threads", "req_from"],
+        ["threads", "req_to"],
+        ["threads", "s_waiting"],
+        ["thread_members", "name"],
+        ["messages", "author"],
+        ["tasks", "holder"],
+        ["tasks", "creator"],
+        ["task_events", "actor"],
+        ["task_seen", "name"],
+        ["files", "by_name"],
+        ["notes", "author"],
+        ["device_pair_requests", "from_account"],
+        ["device_pair_requests", "to_account"],
+        ["device_pairs", "owner_account"],
+        ["device_pairs", "guest_account"],
+      ];
+      for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
+      // A direct chat is found by its two names.
+      for (const r of this.db.prepare("SELECT id, direct_key FROM threads WHERE direct_key IS NOT NULL").all() as Row[]) {
+        const names = String(r.direct_key).split("\n");
+        if (!names.includes(from)) continue;
+        const [a, b] = names.map((n) => (n === from ? to : n));
+        this.db.prepare("UPDATE threads SET direct_key = ? WHERE id = ?").run(directKey(a!, b ?? a!), String(r.id));
+      }
+      for (const r of this.db.prepare("SELECT seq, extra FROM messages WHERE extra LIKE '%mentions%'").all() as Row[]) {
+        const extra = JSON.parse(String(r.extra)) as { mentions?: string[] };
+        if (!extra.mentions?.includes(from)) continue;
+        extra.mentions = extra.mentions.map((n) => (n === from ? to : n));
+        this.db.prepare("UPDATE messages SET extra = ? WHERE seq = ?").run(JSON.stringify(extra), Number(r.seq));
+      }
+      for (const field of ["to", "from"]) this.db.prepare(`UPDATE task_events SET data = json_set(data, '$.${field}', ?) WHERE data IS NOT NULL AND json_extract(data, '$.${field}') = ?`).run(to, from);
+    });
+    return { from, to };
+  }
+
+  /** Turns an account off (its logins end, it cannot log in) or on again. */
+  setDisabled(nameValue: unknown, disabled: boolean): void {
+    const name = typeof nameValue === "string" ? nameValue.trim() : "";
+    this.requireMember(name);
+    this.db.prepare("UPDATE members SET disabled = ? WHERE name = ?").run(disabled ? 1 : 0, name);
+    if (disabled) this.db.prepare("DELETE FROM keys WHERE name = ?").run(name);
+  }
+
+  /** Everyone as the admin page lists them. */
+  adminMembers(): Array<{ name: string; nick: string; role: string; createdAt: number; disabled: boolean; logins: number; lastMessageAt: number | null }> {
+    return (
+      this.db
+        .prepare(
+          "SELECT m.name, m.nick, m.role, m.created_at, m.disabled, (SELECT COUNT(*) FROM keys k WHERE k.name = m.name) AS logins, (SELECT MAX(created_at) FROM messages x WHERE x.author = m.name) AS last FROM members m ORDER BY m.rowid",
+        )
+        .all() as Row[]
+    ).map((r) => ({ name: String(r.name), nick: String(r.nick ?? ""), role: String(r.role), createdAt: Number(r.created_at), disabled: !!Number(r.disabled), logins: Number(r.logins), lastMessageAt: r.last == null ? null : Number(r.last) }));
+  }
+
+  /** The admin page's password (hashed like members'); set on the service machine with `amo-relay admin-password`. */
+  setAdminPassword(passwordValue: unknown): void {
+    this.db.prepare("INSERT INTO admin (key, value) VALUES ('password', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(hashPassword(checkPassword(passwordValue)));
+  }
+
+  hasAdminPassword(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM admin WHERE key = 'password'").get();
+  }
+
+  adminPasswordMatches(password: unknown): boolean {
+    const row = this.db.prepare("SELECT value FROM admin WHERE key = 'password'").get() as Row | undefined;
+    return !!row && typeof password === "string" && passwordMatches(password, String(row.value));
   }
 
   private requireMember(name: string): void {
