@@ -18,6 +18,7 @@ const state = (peers: RemotePeer[], patch: Partial<RemoteState> = {}): RemoteSta
   taskRequests: [],
   asks: [],
   allowedProjects: { workspaceIds: [], common: false },
+  security: { sameAccount: "run", otherAccount: "confirm" },
   ...patch,
 });
 const catalog = (patch: Partial<RemoteCatalog> = {}): RemoteCatalog => ({

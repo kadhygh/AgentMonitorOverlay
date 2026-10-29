@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -506,6 +506,9 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     const topic = a.service.topics.createTopic({ title: "掉落表" });
     a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
     a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: "read-only" });
+    // B is another account here: 安全 lets it start at once (the default waits, see the next test).
+    a.remote.setSecurity({ sameAccount: "run", otherAccount: "run" });
+    expect((await b.remote.catalog(A)).confirm).toBe(false);
 
     await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: no.id, profileId: "p" })).rejects.toThrow("这个项目不在 A-PC 远端允许的项目里");
     await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: null, profileId: "p" })).rejects.toThrow("A-PC 不允许远程任务不选项目（公共文件夹）");
@@ -517,6 +520,8 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     const made = await b.remote.create(A, { title: "", text: "在 A 上跑这个", topicId: topic.id, workspaceId: yes.id, profileId: "p" });
     expect(made).toMatchObject({ copied: true });
     expect(made.sessionId).toBeTruthy();
+    expect(made.taskId).toBeTruthy();
+    if (!made.taskId) return;
     expect(a.store.getTask(made.taskId)).toMatchObject({ title: "在 A 上跑这个", workspaceId: yes.id, topicId: topic.id, column: "doing" });
     expect(a.state().grants).toMatchObject([{ taskId: made.taskId, account: "笔记本的我" }]);
     expect(a.store.getSession(made.sessionId!)).toMatchObject({ profileId: "p", options: { permission: "read-only" } });
@@ -526,7 +531,7 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     // The common folder once A allows it.
     a.remote.setAllowedProjects({ workspaceIds: [], common: true });
     const common = await b.remote.create(A, { title: "公共的", text: "公共文件夹里跑", topicId: null, workspaceId: null, profileId: "p" });
-    expect(a.store.getTask(common.taskId)).toMatchObject({ title: "公共的", workspaceId: a.service.commonWorkspace().id, topicId: null });
+    expect(a.store.getTask(common.taskId ?? "")).toMatchObject({ title: "公共的", workspaceId: a.service.commonWorkspace().id, topicId: null });
     await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: yes.id, profileId: "p" })).rejects.toThrow("这个项目不在 A-PC 远端允许的项目里");
 
     // A away: said at once.
@@ -534,6 +539,135 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
     await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: null, profileId: "p" })).rejects.toThrow("A-PC 不在线");
   }, 90_000);
+
+  it("安全: another account's task waits for a yes on A with what B picked; allowed, it runs there; refused, B hears why", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    const yes = a.service.projects.addWorkspace({ path: tempDir("allowed-proj") });
+    const topic = a.service.topics.createTopic({ title: "掉落表" });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: null });
+    // The default: the own account's devices start at once, other accounts' wait — and B knows before it sends.
+    expect(a.state().security).toEqual({ sameAccount: "run", otherAccount: "confirm" });
+    expect((await b.remote.catalog(A)).confirm).toBe(true);
+
+    const made = await b.remote.create(A, { title: "等确认", text: "先别跑", topicId: topic.id, workspaceId: yes.id, profileId: "p" });
+    expect(made).toMatchObject({ taskId: null, sessionId: null, copied: false, waiting: { title: "等确认", state: "pending" } });
+    expect(a.store.listTasks()).toEqual([]);
+    const held = (await until(a.state, (s) => s.taskRequests.length === 1, "A has it to answer")).taskRequests[0]!;
+    expect(held).toMatchObject({ title: "等确认", text: "先别跑", account: "笔记本的我", preset: { workspaceId: yes.id, topicId: topic.id, profileId: "p" } });
+    expect(b.state().asks).toMatchObject([{ id: held.id, state: "pending", name: "A-PC" }]);
+
+    // Allowed where B picked: made in that project and topic, granted, running; no 说明 (B wrote only a first sentence).
+    await a.remote.acceptRequest(held.id, { workspaceId: yes.id, topicId: topic.id, profileId: "p" });
+    const task = a.store.listTasks().find((t) => t.title === "等确认")!;
+    expect(task).toMatchObject({ workspaceId: yes.id, topicId: topic.id, column: "doing" });
+    expect(task.description ?? "").toBe("");
+    expect(a.state().grants).toMatchObject([{ taskId: task.id, account: "笔记本的我" }]);
+    await until(b.state, (s) => s.asks.some((r) => r.id === held.id && r.state === "accepted"), "B hears it was allowed");
+    await until(() => b.store.getTask(task.id)?.remote?.state, (st) => st === "active", "B's copy");
+
+    // Refused: nothing made, B sees why.
+    const second = await b.remote.create(A, { title: "不要", text: "这个不行", topicId: null, workspaceId: yes.id, profileId: "p" });
+    a.remote.refuseRequest(second.waiting!.id, "今天不跑");
+    await until(b.state, (s) => s.asks.some((r) => r.id === second.waiting!.id && r.state === "refused" && r.reason === "今天不跑"), "B hears the refusal");
+    expect(a.store.listTasks().some((t) => t.title === "不要")).toBe(false);
+
+    // Turned off for other accounts: it starts at once again.
+    a.remote.setSecurity({ sameAccount: "run", otherAccount: "run" });
+    expect((await b.remote.catalog(A)).confirm).toBe(false);
+    const direct = await b.remote.create(A, { title: "直接跑", text: "现在跑", topicId: null, workspaceId: yes.id, profileId: "p" });
+    expect(direct.taskId).toBeTruthy();
+    expect(() => a.remote.setSecurity({ sameAccount: "run", otherAccount: "maybe" })).toThrow("otherAccount 只能是 run 或 confirm");
+  }, 90_000);
+
+  it("安全 tells the own account's devices from other accounts'", () => {
+    const s = { sameAccount: "run", otherAccount: "confirm" } as const;
+    expect(remoteStartFor(s, "dhy", "dhy")).toBe("run");
+    expect(remoteStartFor(s, "dhy", "测试-B")).toBe("confirm");
+    expect(remoteStartFor(s, null, "dhy")).toBe("confirm");
+    expect(remoteStartFor({ sameAccount: "confirm", otherAccount: "run" }, "dhy", "dhy")).toBe("confirm");
+  });
+});
+
+describe("pictures and files B sends A (2026-10-29 evening)", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const userOn = (h: Pair["a"], sessionId: string, has: string) =>
+    until(() => items(h, sessionId).filter((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user").find((i) => i.text.includes(has)), Boolean, `the message «${has}»`);
+
+  it("a message in a granted task carries B's picture and files: A's session sees the picture and A's own paths; folders and missing files are refused on B", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    // A picture in two pieces, a file with a marked range and note, an empty file.
+    const png = Buffer.concat([PNG, Buffer.alloc(REMOTE_FILE_CHUNK + 100, 7)]);
+    const pic = b.service.attachments.save(png, { name: "截图.png", mime: "image/png" });
+    const dir = tempDir("b-files");
+    writeFileSync(join(dir, "说明.txt"), "B 的说明");
+    writeFileSync(join(dir, "empty.log"), "");
+    await b.service.sessions.sendMessage(session.id, withFileRefs("看一下", [{ path: join(dir, "说明.txt"), startLine: 2, endLine: 3, note: "第二段" }, join(dir, "empty.log")]), [pic.id]);
+    const u = (await userOn(a, session.id, "看一下"))!;
+    expect(u.text).not.toContain(dir);
+    const { text, refs } = splitFileRefItems(u.text);
+    expect(text).toBe("看一下");
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toMatchObject({ startLine: 2, endLine: 3, note: "第二段" });
+    expect(refs[0]!.path.startsWith(a.service.attachments.dir())).toBe(true);
+    expect(refs[0]!.path.endsWith("-说明.txt")).toBe(true);
+    expect(readFileSync(refs[0]!.path, "utf8")).toBe("B 的说明");
+    expect(readFileSync(refs[1]!.path, "utf8")).toBe("");
+    expect(u.images).toHaveLength(1);
+    expect(readFileSync(u.images![0]!.path).equals(png)).toBe(true);
+    await until(() => agentTexts(a, session.id), (t) => t.some((x) => x.includes("看一下")), "A replies");
+    // Nothing left waiting on A.
+    expect(readdirSync(join(a.service.attachments.dir(), "..", "remote-uploads"))).toEqual([]);
+
+    // Refused on B before anything goes: a folder, a file that is not there.
+    await expect(b.service.sessions.sendMessage(session.id, withFileRefs("文件夹", [dir]))).rejects.toThrow("是文件夹");
+    await expect(b.service.sessions.sendMessage(session.id, withFileRefs("没了", [join(dir, "nope.txt")]))).rejects.toThrow("找不到");
+    // On A: an upload nobody sent.
+    await expect(b.remote.copies.ask(toA(a), REMOTE_KINDS.send, { sessionId: session.id, text: "x", uploads: [{ uploadId: "up_nothing1", name: "x" }] })).rejects.toThrow("没有传完整");
+    // A new session from B takes them too.
+    const started = await b.service.tasks.addSession(task.id, { profileId: b.store.getTask(task.id)!.remote!.allowed[0]!, text: withFileRefs("新会话", [join(dir, "说明.txt")]) });
+    const first = (await userOn(a, started.id, "新会话"))!;
+    expect(splitFileRefItems(first.text).refs[0]!.path.startsWith(a.service.attachments.dir())).toBe(true);
+  }, 60_000);
+
+  it("a task B creates that waits for a yes keeps what B sent until then: refused, it is gone; allowed, the first message carries it", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    const yes = a.service.projects.addWorkspace({ path: tempDir("allowed-proj") });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: null });
+    const pic = b.service.attachments.save(Buffer.concat([PNG, Buffer.alloc(50, 1)]), { name: "图.png", mime: "image/png" });
+    const dir = tempDir("b-files");
+    writeFileSync(join(dir, "表.csv"), "a,b\n1,2");
+
+    // Refused: nothing made, the files go.
+    const first = await b.remote.create(A, { title: "带附件", text: withFileRefs("看表", [join(dir, "表.csv")]), topicId: null, workspaceId: yes.id, profileId: "p", attachments: [pic.id] });
+    const held = (await until(a.state, (s) => s.taskRequests.length === 1, "held")).taskRequests[0]!;
+    expect(held.id).toBe(first.waiting!.id);
+    expect(held.text).toBe("看表");
+    expect(held.attached!.images.map((i) => i.name)).toEqual(["图.png"]);
+    expect(held.attached!.files).toMatchObject([{ name: "表.csv" }]);
+    const kept = held.attached!.files[0]!.path;
+    expect(readFileSync(kept, "utf8")).toBe("a,b\n1,2");
+    // B does not get A's paths.
+    expect(b.state().asks.find((r) => r.id === held.id)?.attached?.files[0]?.path).toBe("");
+    a.remote.refuseRequest(held.id, "不要");
+    expect(existsSync(kept)).toBe(false);
+
+    // Allowed: the first message has the picture and the file at A's path.
+    const second = await b.remote.create(A, { title: "带附件二", text: withFileRefs("再看表", [join(dir, "表.csv")]), topicId: null, workspaceId: yes.id, profileId: "p", attachments: [pic.id] });
+    await until(a.state, (s) => s.taskRequests.some((r) => r.id === second.waiting!.id), "held again");
+    await a.remote.acceptRequest(second.waiting!.id, { workspaceId: yes.id, profileId: "p" });
+    const task = a.store.listTasks().find((t) => t.title === "带附件二")!;
+    const s = a.store.listSessions({ taskId: task.id })[0]!;
+    const u = (await userOn(a, s.id, "再看表"))!;
+    expect(u.images).toHaveLength(1);
+    expect(readFileSync(splitFileRefItems(u.text).refs[0]!.path, "utf8")).toBe("a,b\n1,2");
+  }, 60_000);
 });
 
 describe("remote files between two Hosts (step 3)", () => {

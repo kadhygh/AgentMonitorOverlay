@@ -421,8 +421,9 @@ ${d}` : back));
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly, askCommit, isRemote]);
 
-  // Files dragged in from Explorer (or anywhere) over the conversation or the composer (not into a remote session yet).
-  const dropTarget = readOnly || isRemote
+  // Files dragged in from Explorer (or anywhere) over the conversation or the composer. Into a remote session too since
+  // 2026-10-29 evening: this computer's Host sends them to the computer it runs on before the message.
+  const dropTarget = readOnly
     ? {}
     : {
         onDragOver: (e: DragEvent) => {
@@ -643,7 +644,7 @@ ${d}` : back));
                   mentions.track(e.currentTarget);
                   slash.track(e.currentTarget);
                 }}
-                onPaste={readOnly || isRemote ? undefined : attach.onPaste}
+                onPaste={readOnly ? undefined : attach.onPaste}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
@@ -669,8 +670,8 @@ ${d}` : back));
                 type="button"
                 className="round-btn attach"
                 aria-label="添加图片或文件"
-                title={isRemote ? "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字" : "添加图片或文件（也可以粘贴或拖进来）"}
-                disabled={readOnly || isRemote}
+                title={isRemote ? "添加图片或文件（也可以粘贴截图或拖进来）：发送时一起传到那台电脑，每个最多 20 MB" : "添加图片或文件（也可以粘贴或拖进来）"}
+                disabled={readOnly}
                 onClick={() => picker.current?.click()}
               >
                 <IconPaperclip />

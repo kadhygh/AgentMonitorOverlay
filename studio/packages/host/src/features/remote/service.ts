@@ -9,6 +9,7 @@ import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
 import { RemoteCopies } from "./copies.js";
 import { TaskAsks, TaskRequests } from "./requests.js";
 import { RemoteCreates } from "./create.js";
+import { sendAlong, UploadInbox } from "./uploads.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login (account.json, Studio has none of its own) and device.json — and the devices paired with it. The Host connects
@@ -67,6 +68,8 @@ export class RemoteFeature extends Feature {
     host: this.host,
     link: () => this.link,
     deviceName: () => this.device?.name ?? "授权的电脑",
+    ownAccount: () => this.account?.name ?? null,
+    inbox: () => this.inbox,
     peer: (ref, role) => {
       const p = this.pairs().find((x) => same(x, ref) && (!role || x.role === role));
       if (!p) return null;
@@ -75,6 +78,8 @@ export class RemoteFeature extends Feature {
     },
     changed: () => this.changed(),
   };
+  /** As A (2026-10-29 evening): pictures and files paired devices send along. */
+  readonly inbox = new UploadInbox(this.context);
   /** Step 2 as A: the tasks this computer granted. */
   readonly grants = new RemoteGrants(this.context);
   /** Step 2 as B: the copies of tasks granted to this computer. */
@@ -83,7 +88,7 @@ export class RemoteFeature extends Feature {
   readonly taskRequests = new TaskRequests(this.context, this.grants);
   /** Step 4 as B: tasks this computer asked paired devices to run. */
   /** 远程创建 as A (2026-10-29): what paired devices may pick creating a task here, and creating it. */
-  readonly creates = new RemoteCreates(this.context, this.grants);
+  readonly creates = new RemoteCreates(this.context, this.grants, this.taskRequests);
   readonly asks = new TaskAsks(this.context, (peer, kind, body, timeoutMs, offline) => this.copies.ask(peer, kind, body, timeoutMs, offline));
   private readonly onHostEvent = (e: HostEvent) => {
     try {
@@ -301,6 +306,7 @@ export class RemoteFeature extends Feature {
     };
     // 远程创建 (2026-10-29): what the device may pick, and the task made here now.
     if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.catalog(f.from));
+    if (f.kind === REMOTE_KINDS.upload) return said(() => this.inbox.receive(f.from, body));
     if (f.kind === REMOTE_KINDS.create) return this.creates.create(f.from, body).then((made): Answer => ({ kind: REMOTE_KINDS.ok, body: made }), failed);
     // Step 4: a request for a task, or taking one back.
     if (f.kind === REMOTE_KINDS.request) return said(() => ({ request: this.taskRequests.receive(f.from, body) }));
@@ -458,6 +464,7 @@ export class RemoteFeature extends Feature {
       taskRequests: this.taskRequests.pending(),
       asks: this.asks.list(),
       allowedProjects: this.creates.allowedProjects(),
+      security: this.creates.security(),
     };
   }
 
@@ -609,6 +616,11 @@ export class RemoteFeature extends Feature {
     return this.state();
   }
 
+  setSecurity(body: unknown): RemoteState {
+    this.creates.setSecurity(body);
+    return this.state();
+  }
+
   // ---- 远程创建 as B (plans/remote-page-and-new-task.md 4.1, 2026-10-29): the new-task page's 「在别的设备上」
 
   /** A device that allowed this computer, online now: who it is (for what is said). */
@@ -633,13 +645,22 @@ export class RemoteFeature extends Feature {
    */
   async create(peer: DeviceRef, body: Record<string, unknown>): Promise<RemoteCreateResult> {
     const p = this.creatable(peer);
-    const ask = { title: typeof body.title === "string" ? body.title : "", text: body.text, topicId: body.topicId ?? null, workspaceId: body.workspaceId ?? null, profileId: body.profileId };
+    // Pictures and files go first (2026-10-29 evening); A writes the 引用文件 block again with its own paths.
+    const images = Array.isArray(body.attachments) && body.attachments.length ? this.host.sessions.images(body.attachments as Id[]) : [];
+    const along = await sendAlong((pr, kind, b, ms, off) => this.copies.ask(pr, kind, b, ms, off), peer, p.name, typeof body.text === "string" ? body.text : "", images);
+    const ask = { title: typeof body.title === "string" ? body.title : "", text: along.text, topicId: body.topicId ?? null, workspaceId: body.workspaceId ?? null, profileId: body.profileId, ...(along.uploads.length ? { uploads: along.uploads } : {}) };
     // Starting the session takes longest (as rt.start).
     const made = await this.copies.ask<RemoteCreateAnswer>(peer, REMOTE_KINDS.create, ask, 90_000, `${p.name} 不在线，任务没建`);
-    const here = () => !!this.store.getTask(made.taskId)?.remote;
+    // 安全 (2026-10-29): it waits for a yes there — kept with this computer's requests (撤回 there too).
+    if (made.waiting || !made.taskId) {
+      if (made.waiting) this.asks.apply(peer, made.waiting);
+      return { ...made, taskId: null, copied: false };
+    }
+    const taskId = made.taskId;
+    const here = () => !!this.store.getTask(taskId)?.remote;
     const end = Date.now() + 5000;
     while (!here() && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
-    if (!here()) await this.copies.syncTask(peer, made.taskId).catch(() => undefined);
+    if (!here()) await this.copies.syncTask(peer, taskId).catch(() => undefined);
     return { ...made, copied: here() };
   }
 

@@ -25,3 +25,4 @@ export * from "./channels.js";
 export * from "./maintenance.js";
 export * from "./viewpacks.js";
 export * from "./remote.js";
+export * from "./fileRefs.js";

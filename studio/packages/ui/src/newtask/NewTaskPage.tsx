@@ -207,7 +207,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
             )}
           </div>
           <p className="draft-lede">
-            {remoteMode ? "任务建在你的另一台电脑上，会话在那边跑、用那边的模型账号；那边不用点同意，能选什么由它的「远程设置」定。" : "写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。"}
+            {remoteMode ? "任务建在你的另一台电脑上，会话在那边跑、用那边的模型账号；能选什么、要不要那边点同意，由它的「远程设置」定。" : "写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。"}
           </p>
 
           {remoteMode ? (

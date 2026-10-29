@@ -95,30 +95,37 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await dialog.getByTestId("grant-confirm").click();
   await expect(dialog).toHaveCount(0);
   await expect(a.page.getByTestId("granted-banner")).toContainText("B 笔记本 可以远程使用这个任务");
-  // The remote page (the top bar's 「远程」) lists it under 「授权给别的设备的」, opens it again, offers 远端允许的模型 under
-  // 远程设置, and 解除配对 says which grants go with it.
+  // 远程 (the top bar's, a dialog) lists it under 「授权给别的设备的」, opens it again, offers 远端允许的模型 under
+  // 远程设置 (a second dialog), and 解除配对 says which grants go with it.
   await a.page.getByTestId("topbar-remote").click();
-  const settings = a.page.getByRole("region", { name: "远程", exact: true });
-  const grant = settings.getByTestId("remote-grants").getByTestId("remote-grant");
+  const remote = a.page.getByRole("dialog", { name: "远程", exact: true });
+  const grant = remote.getByTestId("remote-grants").getByTestId("remote-grant");
   await expect(grant).toContainText("远程一起做的任务");
   await expect(grant).toContainText("B 笔记本");
   await expect(grant).toContainText("在线");
-  // 打开: the task page, whose ← returns to 远程.
+  // 打开: the task page; the dialog closes.
   await grant.getByTestId("remote-grant-open").click();
+  await expect(remote).toHaveCount(0);
   await expect(a.page.getByTestId("task-title")).toHaveText("远程一起做的任务");
-  await expect(a.page.getByTestId("back")).toHaveText("远程");
-  await a.page.getByTestId("back").click();
-  await settings.getByTestId("remote-settings-open").click();
-  await expect(settings.getByTestId("remote-allowed-item").filter({ hasText: "Mock" }).first()).toBeVisible();
-  await settings.getByTestId("remote-peer").getByTestId("remote-unpair").click();
+  await a.page.getByTestId("topbar-remote").click();
+  await remote.getByTestId("remote-peer").getByTestId("remote-unpair").click();
   await expect(a.page.getByTestId("remote-unpair-grants")).toContainText("同时收回授权给它的 1 个任务：「远程一起做的任务」");
   await screenshot(a.app, "studio", "remote-unpair-grants", a.page);
   await a.page.getByTestId("remote-unpair-confirm").getByRole("button", { name: "取消" }).click();
+  await remote.getByTestId("remote-settings-open").click();
+  const settings = a.page.getByRole("dialog", { name: "远程设置", exact: true });
+  await expect(settings.getByTestId("remote-allowed-item").filter({ hasText: "Mock" }).first()).toBeVisible();
+  await expect(settings.getByTestId("remote-security")).toContainText("别的账号的设备");
   await settings.getByTestId("remote-allowed").scrollIntoViewIfNeeded();
   await screenshot(a.app, "studio", "remote-a-settings", a.page);
-  // The board card on A says it is granted (← from 远程 goes back to the board it came from).
-  await a.page.getByTestId("back").click();
+  // Escape closes 远程设置 first, then 远程.
+  await a.page.keyboard.press("Escape");
   await expect(settings).toHaveCount(0);
+  await expect(remote).toBeVisible();
+  await a.page.keyboard.press("Escape");
+  await expect(remote).toHaveCount(0);
+  // The board card on A says it is granted.
+  await a.page.getByTestId("back").click();
   await expect(a.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" }).getByTestId("card-granted")).toHaveText("已授权给 B 笔记本");
   await a.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" }).click();
 

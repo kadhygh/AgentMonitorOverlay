@@ -3,6 +3,9 @@ import type { RemoteCatalog, RemoteState, Task } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { StartingCover } from "../lib/StartingCover.js";
 import { IconPaperclip } from "../attach/icons.js";
+import { useAttachments } from "../attach/useAttachments.js";
+import { AttachTray } from "../attach/AttachTray.js";
+import { withFileRefs } from "../attach/refs.js";
 import { topicProject } from "./choices.js";
 import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
@@ -83,8 +86,13 @@ export function RemoteDraft({
   const pickedByHand = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [opening, setOpening] = useState<{ taskId: string; sessionId: string | null; name: string } | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // Pictures and files go along (2026-10-29 evening): this computer's Host sends them to the device before the task.
+  const attach = useAttachments(link);
+  const picker = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
 
   // The device's catalog, each time it is picked (or comes online).
   useEffect(() => {
@@ -156,12 +164,24 @@ export function RemoteDraft({
     if (!draft.text.trim()) return setError("写一句话再开始。");
     if (projectId === null && noCommon) return setError(`先选一个项目：${noCommon}。`);
     if (!profileId) return setError("先选一个模型。");
+    if (attach.uploading) return setError("图片还在准备，稍等一下。");
+    if (attach.failed) return setError("有图片没能加上，移除后再开始。");
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text: draft.text.trim(), topicId, workspaceId: projectId, profileId });
+      const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
+      const text = withFileRefs(draft.text.trim(), attach.files.map(attach.refOf));
+      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text, topicId, workspaceId: projectId, profileId, ...(images.length ? { attachments: images } : {}) });
       rememberDevice(target.key);
+      attach.reset();
       onDone();
+      // 安全 (2026-10-29): that computer wants a yes there first — nothing is made yet; 远程 shows it waiting.
+      if (made.waiting || !made.taskId) {
+        setBusy(false);
+        setNotice(`已发给 ${catalog.name}：要那边同意后才建任务、开跑（${catalog.name} 的 Focus 和「远程」里会提示）。同意后它出现在这台电脑的看板上；等的时候可以在顶栏「远程」里看到和撤回。`);
+        return;
+      }
       if (made.error) {
         // The task is there and granted (its card comes to the board): its session can be started from its page.
         setBusy(false);
@@ -251,7 +271,20 @@ export function RemoteDraft({
         )}
       </div>
 
-      <div className="draft-composer">
+      <div
+        className={dragging ? "draft-composer dropping" : "draft-composer"}
+        onDragOver={(e) => {
+          if (attach.onDragOver(e)) setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          setDragging(false);
+          attach.onDrop(e);
+        }}
+      >
+        <AttachTray attach={attach} />
         <textarea
           ref={input}
           value={draft.text}
@@ -259,6 +292,7 @@ export function RemoteDraft({
           aria-label="第一句话"
           placeholder={target ? `比如：把掉落表的说明整理一遍。会作为第一句话发给 ${target.name} 上新开的会话。` : "第一句话"}
           onChange={(e) => update({ text: e.target.value })}
+          onPaste={attach.onPaste}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -268,9 +302,20 @@ export function RemoteDraft({
           data-testid="remote-draft-text"
         />
         <div className="cbar">
-          <button type="button" className="round-btn attach" aria-label="添加图片或文件" title="远程任务暂时不能发图片和文件" disabled>
+          <button type="button" className="round-btn attach" aria-label="添加图片或文件" title="添加图片或文件（也可以粘贴截图或拖进来）：开始时一起传到那台电脑" onClick={() => picker.current?.click()} data-testid="remote-draft-attach">
             <IconPaperclip />
           </button>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            data-testid="remote-draft-attach-input"
+            onChange={(e) => {
+              attach.addDropped([...(e.currentTarget.files ?? [])]);
+              e.currentTarget.value = "";
+            }}
+          />
           <div className="model-row" role="group" aria-label="模型">
             {(catalog && !problem ? catalog.models : []).map((m) => (
               <button key={m.id} type="button" className="chip" aria-pressed={m.id === profileId} onClick={() => setProfileId(m.id)} data-testid="remote-draft-model">
@@ -282,27 +327,32 @@ export function RemoteDraft({
         </div>
         <div className="cbar">
           <span className="drawer-note" data-testid="remote-draft-attach-note">
-            远程任务暂时不能发图片和文件；权限照那台电脑「远端允许的模型」里定的。
+            图片和文件开始时一起传到那台电脑（每个最多 20 MB，文件夹先打包）；权限照那台电脑「远端允许的模型」里定的。
           </span>
           <span className="spacer" />
           <button type="button" className="btn-primary" onClick={() => void submit()} disabled={busy || !online || !catalog || !!problem} data-testid="remote-draft-start">
-            {busy ? "正在开始…" : "开始"} <kbd>↵</kbd>
+            {busy ? (catalog?.confirm ? "正在发送…" : "正在开始…") : catalog?.confirm ? "发给那边确认" : "开始"} <kbd>↵</kbd>
           </button>
         </div>
       </div>
 
       <div className="foot-hints">
-        <span>任务建在那台电脑上，会话在那边跑；这台电脑的看板上出现远程任务卡</span>
+        <span data-testid="remote-draft-how">{catalog?.confirm ? `要 ${catalog.name} 那边同意后才建任务、开跑（它的远程设置 → 安全）；同意后这台电脑的看板上出现远程任务卡` : "任务建在那台电脑上，会话在那边跑；这台电脑的看板上出现远程任务卡"}</span>
         <span className="foot-where" data-testid="scope-hint">
           {where}
         </span>
       </div>
+      {notice && (
+        <span className="settings-hint remote-draft-notice" role="status" data-testid="remote-draft-waiting">
+          ✓ {notice}
+        </span>
+      )}
       {error && (
         <span className="form-error" role="alert" data-testid="remote-draft-error">
           {error}
         </span>
       )}
-      {busy && <StartingCover label={opening ? `正在把 ${opening.name} 上的任务同步过来…` : `正在 ${target?.name ?? "那台电脑"} 上建任务、启动会话…`} />}
+      {busy && <StartingCover label={opening ? `正在把 ${opening.name} 上的任务同步过来…` : catalog?.confirm ? `正在发给 ${target?.name ?? "那台电脑"}${attach.empty ? "" : "（连同图片和文件）"}…` : `正在 ${target?.name ?? "那台电脑"} 上建任务、启动会话${attach.empty ? "" : "（先传图片和文件）"}…`} />}
     </>
   );
 }

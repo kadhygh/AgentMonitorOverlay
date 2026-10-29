@@ -1,4 +1,4 @@
-import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Id, type ModelProfile, type NewSessionInput, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -7,6 +7,7 @@ import type { HostEventInput } from "../../store/store.js";
 import { CommandError } from "./link.js";
 import type { RemoteContext } from "./grants.js";
 import { RemoteFiles } from "./files.js";
+import { sendAlong } from "./uploads.js";
 
 // 远程, step 2 on B (plans/remote-session.md, 2026-10-29): this computer's copies of the tasks paired devices granted
 // it. A copy is an ordinary task of this Host (in the common space, Task.remote saying where it runs) with sessions whose
@@ -332,10 +333,11 @@ export class RemoteCopies {
     return { task, peer: peerOf(task) };
   }
 
-  async send(sessionId: Id, text: string, images: readonly unknown[]): Promise<{ mode: SendMode }> {
-    if (images.length) throw new HostError("bad_request", "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字");
+  /** A message, its pictures and files sent first (2026-10-29 evening: they were refused before). */
+  async send(sessionId: Id, text: string, images: readonly Attachment[]): Promise<{ mode: SendMode }> {
     const { peer } = this.target(sessionId);
-    return this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text });
+    const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, this.ctx.peer(peer)?.name ?? peer.account, text, images);
+    return this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text: along.text, ...(along.uploads.length ? { uploads: along.uploads } : {}) });
   }
 
   async approve(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {
@@ -357,11 +359,12 @@ export class RemoteCopies {
   async start(task: Task, input: NewSessionInput): Promise<Session> {
     const r = task.remote!;
     if (r.state !== "active") throw new HostError("read_only", "授权已收回，不能再开会话");
-    if (input.attachments?.length) throw new HostError("bad_request", "远程任务暂时不能从这台电脑发图片和文件过去，只能发文字");
     const ref = parseRemoteProfileId(input.profileId);
     if (!ref || ref.device !== r.device || !r.allowed.includes(input.profileId)) throw new HostError("bad_request", `这个模型不在 ${r.name} 允许远程使用的模型里`);
     const peer = peerOf(task);
-    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(input.text?.trim() ? { text: input.text } : {}) }, START_MS);
+    const images = input.attachments?.length ? this.ctx.host.sessions.images(input.attachments) : [];
+    const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, r.name, input.text ?? "", images);
+    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(along.text.trim() ? { text: along.text } : {}), ...(along.uploads.length ? { uploads: along.uploads } : {}) }, START_MS);
     const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;

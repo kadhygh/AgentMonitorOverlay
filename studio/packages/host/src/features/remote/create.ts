@@ -1,15 +1,21 @@
-import { isCommon, NO_REMOTE_PROJECTS, remoteCreateOpen, topicWorkspaceIds, type Id, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type Id, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext, RemoteGrants } from "./grants.js";
+import type { TaskRequests } from "./requests.js";
+import { claimedText, heldOf, type Claimed } from "./uploads.js";
 
 // 远程创建 on A (plans/remote-page-and-new-task.md 4.1, 2026-10-29): a paired device creates a task on this computer from
 // its new-task page. The user (10-29): nobody here says yes — 远程设置 limits it instead: 远端允许的项目 (kv
 // `remote.allowedProjects`, the whole computer, as 远端允许的模型 is) and 远端允许的模型. Nothing ticked: not available.
 // rt.catalog says what the device may pick; rt.create makes the task, grants it and starts its session — the same
 // path an allowed request takes (step 4, requests.ts).
+// 安全 (2026-10-29, the user): that is for the person's own devices (same account). A device of another account gets a
+// request here instead, its project and model already picked, unless 远程设置 → 安全 says otherwise (kv `remote.security`).
 
 const PROJECTS_KEY = "remote.allowedProjects";
+const SECURITY_KEY = "remote.security";
+const START: readonly RemoteStart[] = ["run", "confirm"];
 const TITLE_MAX = 200;
 const TEXT_MAX = 100_000;
 
@@ -24,6 +30,8 @@ export interface GrantedTaskInput {
   topicId: Id | null;
   /** One of 远端允许的模型. */
   profileId: Id;
+  /** Pictures B sent along (this computer's attachment ids; 2026-10-29 evening). */
+  attachments?: Id[];
 }
 
 /**
@@ -41,7 +49,7 @@ export async function startGrantedTask(ctx: RemoteContext, grants: RemoteGrants,
   const permission = grants.permissionFor(input.profileId);
   const options: SessionOptions | undefined = permission ? { permission } : undefined;
   try {
-    const session = await host.tasks.addSession(task.id, { profileId: input.profileId, text: input.text, ...(options ? { options } : {}) });
+    const session = await host.tasks.addSession(task.id, { profileId: input.profileId, text: input.text, ...(input.attachments?.length ? { attachments: input.attachments } : {}), ...(options ? { options } : {}) });
     return { task, session };
   } catch (err) {
     return { task, session: null, error: err instanceof Error ? err.message : String(err) };
@@ -59,6 +67,7 @@ export class RemoteCreates {
   constructor(
     private readonly ctx: RemoteContext,
     private readonly grants: RemoteGrants,
+    private readonly requests: TaskRequests,
   ) {}
 
   private get store() {
@@ -88,6 +97,30 @@ export class RemoteCreates {
     this.store.setKv(PROJECTS_KEY, JSON.stringify(next));
     this.ctx.changed();
     return next;
+  }
+
+  security(): RemoteSecurity {
+    try {
+      const v = JSON.parse(this.store.getKv(SECURITY_KEY)?.value ?? "null") as Partial<RemoteSecurity> | null;
+      const pick = (x: unknown, d: RemoteStart) => (START.includes(x as RemoteStart) ? (x as RemoteStart) : d);
+      return { sameAccount: pick(v?.sameAccount, DEFAULT_REMOTE_SECURITY.sameAccount), otherAccount: pick(v?.otherAccount, DEFAULT_REMOTE_SECURITY.otherAccount) };
+    } catch {
+      return DEFAULT_REMOTE_SECURITY;
+    }
+  }
+
+  setSecurity(input: unknown): RemoteSecurity {
+    const b = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    for (const k of ["sameAccount", "otherAccount"] as const) if (!START.includes(b[k] as RemoteStart)) throw new HostError("bad_request", `${k} 只能是 run 或 confirm`);
+    const next: RemoteSecurity = { sameAccount: b.sameAccount as RemoteStart, otherAccount: b.otherAccount as RemoteStart };
+    this.store.setKv(SECURITY_KEY, JSON.stringify(next));
+    this.ctx.changed();
+    return next;
+  }
+
+  /** 安全: what `from` creates waits for a yes here. */
+  private confirms(from: DeviceRef): boolean {
+    return remoteStartFor(this.security(), this.ctx.ownAccount(), from.account) === "confirm";
   }
 
   /** The allowed projects that are still there (an archived one is skipped until it comes back). */
@@ -137,7 +170,7 @@ export class RemoteCreates {
         .filter((t) => !t.archivedAt)
         .map((t) => ({ id: t.id, title: t.title, workspaceIds: topicWorkspaceIds(t, tasks, workspaces).filter((id) => allowed.has(id)), lastUsed: last.get(t.id) ?? null })),
     );
-    return { name: this.ctx.deviceName(), topics, projects, allowCommon: this.allowedProjects().common, models: this.models().map((id) => ({ id, label: this.grants.labelOf(id) })) };
+    return { name: this.ctx.deviceName(), topics, projects, allowCommon: this.allowedProjects().common, models: this.models().map((id) => ({ id, label: this.grants.labelOf(id) })), confirm: this.confirms(from) };
   }
 
   /** rt.create: checked against 远端允许的项目 and 远端允许的模型, then made, granted and started. */
@@ -163,7 +196,21 @@ export class RemoteCreates {
     if (!this.grants.allowed().profiles.length) throw new HostError("bad_request", `${name} 还没勾远端允许的模型：在那台电脑的 远程 → 远程设置 里勾`);
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     if (!this.models().includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${name} 远端允许的模型里（或现在用不了）`);
-    const made = await startGrantedTask(this.ctx, this.grants, from, { title, text, workspaceId, topicId, profileId });
+    // Pictures and files B sent first (rt.upload) become this computer's attachments (a DSH session takes no pictures).
+    const inbox = this.ctx.inbox();
+    const claimed: Claimed = inbox.claim(from, body.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });
+    // 安全: waits for a yes here (Focus, 远程) with what was picked and sent; nothing is made until then.
+    if (this.confirms(from)) {
+      const attached = claimed.images.length || claimed.files.length ? { attached: heldOf(claimed) } : {};
+      return { taskId: null, sessionId: null, waiting: this.requests.hold(from, { title, text, preset: { workspaceId, topicId, profileId }, ...attached }) };
+    }
+    let made;
+    try {
+      made = await startGrantedTask(this.ctx, this.grants, from, { title, text: claimedText(text, claimed), workspaceId, topicId, profileId, ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}) });
+    } catch (err) {
+      inbox.drop(claimed);
+      throw err;
+    }
     return { taskId: made.task.id, sessionId: made.session?.id ?? null, ...(made.error ? { error: made.error } : {}) };
   }
 }

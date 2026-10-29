@@ -1,12 +1,20 @@
-/* 远程 (2026-10-29): its own page (from the top bar), the pair dialog, and the bits the task page's 授权给… box shares. */
+/* 远程 (2026-10-29): a dialog from the top bar (its own page until the evening of 10-29), 远程设置 a second dialog on top,
+   the pair dialog, and the bits the task page's 授权给… box shares. */
 
-/* The top bar's 「远程」: like the other buttons there; while its page is in front it looks pressed. */
+/* The top bar's 「远程」: like the other buttons there; while its dialog is open it looks pressed. */
 .tb-btn.remote-toggle[aria-current="page"] { border-color: var(--border-strong); background: var(--panel); color: var(--text); font-weight: 600; }
 .tb-btn.remote-toggle .settings-dot { margin-left: 0; }
 
-.remote-page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.remote-wrap { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 20px 24px 40px; }
-.remote-body { width: min(860px, 100%); display: flex; flex-direction: column; gap: 22px; }
+.remote-modal { gap: 14px; overflow: hidden; padding-bottom: 16px; }
+.remote-modal:focus { outline: none; }
+.remote-modal-head { gap: 10px; flex: none; }
+.remote-modal > .remote-body, .remote-modal > .placeholder { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.remote-main-modal { width: min(900px, calc(100vw - 40px)); height: min(720px, calc(100vh - 120px)); }
+/* 远程设置 sits a little lower and narrower, over 远程. */
+.remote-backdrop:has(.remote-settings-modal) { padding-top: 104px; background: rgba(0, 0, 0, 0.2); }
+.remote-settings-modal { width: min(640px, calc(100vw - 60px)); max-height: calc(100vh - 150px); }
+.remote-body { display: flex; flex-direction: column; gap: 22px; }
+.remote-settings-modal > .remote-body { gap: 12px; }
 
 /* The quiet line at the top: account · server · connection · this computer, and 远程设置. */
 .remote-self { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
@@ -63,6 +71,11 @@
 .remote-allowed-list { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .remote-allowed-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
 .remote-allowed-closed { color: var(--attention); }
+/* 安全: who, and how their tasks start. */
+.remote-security-row { justify-content: space-between; flex-wrap: nowrap; padding: 4px 0; border-top: 1px solid var(--border); }
+.remote-security-row + .remote-security-row { border-top: 1px dashed var(--border); }
+.remote-security-who { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
+.remote-security-who .settings-hint { font-weight: 400; }
 
 /* The dialogs: asking a device to run a task, answering a request, pairing a device. */
 .remote-request-modal { width: 500px; max-width: calc(100vw - 32px); }

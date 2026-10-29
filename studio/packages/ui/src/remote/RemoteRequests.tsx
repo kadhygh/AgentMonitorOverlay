@@ -95,10 +95,18 @@ export function IncomingTaskRequests({
       {remote.taskRequests.map((r) => (
         <div key={r.id} className="remote-card attention" data-testid="remote-task-request">
           <span className="remote-card-title">
-            {r.name}（{r.account}）请这台电脑跑：「{r.title}」
+            {r.preset ? `${r.name}（${r.account}）想在这台电脑上建任务：「${r.title}」` : `${r.name}（${r.account}）请这台电脑跑：「${r.title}」`}
           </span>
           <span className="settings-hint remote-request-text">{r.text}</span>
-          <span className="settings-hint">{relativeTime(r.createdAt)}发来 · 同意后在这台电脑上建任务、开会话，并授权给 {r.name}。</span>
+          {r.preset && (
+            <span className="settings-hint" data-testid="remote-task-request-preset">
+              {presetText(r.preset, workspaces, topics, profiles)}
+            </span>
+          )}
+          {r.attached && <AttachedLine attached={r.attached} />}
+          <span className="settings-hint">
+            {relativeTime(r.createdAt)}发来 · {r.preset ? "远程设置 → 安全 要你先确认（别的账号的设备）。" : ""}同意后在这台电脑上建任务、开会话，并授权给 {r.name}。
+          </span>
           <div className="settings-row end">
             <button
               type="button"
@@ -164,6 +172,26 @@ export function IncomingTaskRequests({
 
 const profileLabel = (p: ModelProfile) => `${RUNTIME_LABELS[p.runtime]} · ${p.label}`;
 
+/** What a task waiting for a yes brought along (2026-10-29 evening): kept here until it is allowed or refused. */
+function AttachedLine({ attached }: { attached: NonNullable<RemoteTaskRequest["attached"]> }) {
+  const names = [...attached.images.map((i) => i.name), ...attached.files.map((f) => f.name)];
+  if (!names.length) return null;
+  const what = [attached.images.length ? `${attached.images.length} 张图片` : "", attached.files.length ? `${attached.files.length} 个文件` : ""].filter(Boolean).join("、");
+  return (
+    <span className="settings-hint remote-attached" title={names.join("\n")} data-testid="remote-task-request-attached">
+      带了 {what}：{names.join("、")}（同意后随第一句话发给会话，拒绝就删掉）
+    </span>
+  );
+}
+
+/** 安全 (2026-10-29): where a task created from another device would go and its model, as that device picked them. */
+function presetText(preset: NonNullable<RemoteTaskRequest["preset"]>, workspaces: readonly Workspace[], topics: readonly Topic[], profiles: readonly ModelProfile[]): string {
+  const ws = preset.workspaceId ? workspaces.find((w) => w.id === preset.workspaceId) : null;
+  const topic = preset.topicId ? topics.find((t) => t.id === preset.topicId) : null;
+  const model = profiles.find((p) => p.id === preset.profileId);
+  return `那边选的：${ws ? `项目 ${ws.name}` : "公共目录"}${topic ? ` · 专题「${topic.title}」` : ""} · ${model ? profileLabel(model) : "（这个模型已经没有了）"}`;
+}
+
 /** On A: where an allowed request's task goes and the model its session runs on (only 远端允许的模型). */
 function AcceptDialog({
   link,
@@ -190,9 +218,14 @@ function AcceptDialog({
     const p = profiles.find((x) => x.id === id);
     return p && !p.unavailable ? [p] : [];
   });
-  const [workspaceId, setWorkspaceId] = useState(common?.id ?? places[0]?.id ?? "");
-  const [topicId, setTopicId] = useState("");
-  const [profileId, setProfileId] = useState(remote.allowed.defaultProfile && models.some((m) => m.id === remote.allowed.defaultProfile) ? remote.allowed.defaultProfile : (models[0]?.id ?? ""));
+  // A task created from another device (安全): where it picked; a request: the common folder and the default model.
+  const preset = request.preset;
+  const presetPlace = preset?.workspaceId && places.some((w) => w.id === preset.workspaceId) ? preset.workspaceId : null;
+  const [workspaceId, setWorkspaceId] = useState(presetPlace ?? common?.id ?? places[0]?.id ?? "");
+  const [topicId, setTopicId] = useState(preset?.topicId && topics.some((t) => t.id === preset.topicId && !t.archivedAt) ? preset.topicId : "");
+  const [profileId, setProfileId] = useState(
+    preset && models.some((m) => m.id === preset.profileId) ? preset.profileId : remote.allowed.defaultProfile && models.some((m) => m.id === remote.allowed.defaultProfile) ? remote.allowed.defaultProfile : (models[0]?.id ?? ""),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function accept() {
@@ -210,6 +243,7 @@ function AcceptDialog({
   return (
     <Dialog title={`同意 ${request.name} 的请求「${request.title}」`} testId="remote-accept-dialog" busy={busy} onClose={onClose}>
       <span className="settings-hint remote-request-text">{request.text}</span>
+      {request.attached && <AttachedLine attached={request.attached} />}
       <label className="remote-request-field">
         <span className="settings-label">项目</span>
         <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} data-testid="remote-accept-workspace">
@@ -245,12 +279,12 @@ function AcceptDialog({
       </label>
       {!models.length && (
         <span className="form-error" data-testid="remote-accept-no-model">
-          还没有选远端允许的模型：先关掉这个对话框，在这一页下面的「远程设置」→「远端允许的模型」里勾上可以给远程任务用的模型并保存。
+          还没有选远端允许的模型：先关掉这个对话框，在「远程」→「远程设置」→「远端允许的模型」里勾上可以给远程任务用的模型并保存。
         </span>
       )}
       <ul className="confirm-risks">
-        <li>建任务「{request.title}」（说明就是请求的内容），授权给 {request.name}，用选的模型开会话，把请求的内容作为第一句话发出。</li>
-        <li>会话的权限：{permission}（在这一页下面的「远程设置」里改）。命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</li>
+        <li>{preset ? `建任务「${request.title}」，授权给 ${request.name}，用选的模型开会话，把上面这句话作为第一句话发出。` : `建任务「${request.title}」（说明就是请求的内容），授权给 ${request.name}，用选的模型开会话，把请求的内容作为第一句话发出。`}</li>
+        <li>会话的权限：{permission}（在「远程」→「远程设置」里改）。命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</li>
       </ul>
       {error && (
         <span className="form-error" role="alert" data-testid="remote-accept-error">

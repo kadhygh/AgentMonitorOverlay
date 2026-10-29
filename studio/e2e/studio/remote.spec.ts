@@ -38,10 +38,10 @@ async function home(name: string, key: string, device: string, dirName = name): 
   return dir;
 }
 
-/** The top bar's 「远程」 → the remote page. */
+/** The top bar's 「远程」 → the 远程 dialog. */
 async function openRemote(page: Page) {
   await page.getByTestId("topbar-remote").click();
-  const remote = page.getByRole("region", { name: "远程", exact: true });
+  const remote = page.getByRole("dialog", { name: "远程", exact: true });
   await expect(remote).toBeVisible();
   return remote;
 }
@@ -104,10 +104,10 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   await expect(aFocus.getByTestId("focus-needs")).toHaveText("需要你 1");
   await screenshot(a.app, "studio", "remote-focus-request", aFocus, "focus");
 
-  // 「在远程页里看」 opens the remote page in the workbench, where the request waits under 「等你处理」.
-  await expect(request.getByTestId("focus-pair-settings")).toHaveText("在远程页里看");
+  // 「在「远程」里看」 opens 远程 in the workbench, where the request waits under 「等你处理」.
+  await expect(request.getByTestId("focus-pair-settings")).toHaveText("在「远程」里看");
   await request.getByTestId("focus-pair-settings").click();
-  const aRemote = a.page.getByRole("region", { name: "远程", exact: true });
+  const aRemote = a.page.getByRole("dialog", { name: "远程", exact: true });
   await expect(aRemote.getByTestId("remote-waiting").getByTestId("remote-request")).toContainText("笔记本的我（B 笔记本）想和这台电脑配对");
   await screenshot(a.app, "studio", "remote-a-request", a.page);
 
@@ -145,19 +145,21 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   await screenshot(b.app, "studio", "remote-b-paired", b.page);
   await screenshot(a.app, "studio", "remote-a-paired", a.page);
 
-  // 远程设置: folded; the top line's button opens it. The device name is text until 改名.
-  await expect(bRemote.getByTestId("remote-allowed")).toHaveCount(0);
+  // 远程设置: a second dialog, from the button beside 关闭. The device name is text until 改名.
+  await expect(b.page.getByTestId("remote-allowed")).toHaveCount(0);
   await bRemote.getByTestId("remote-settings-open").click();
-  await expect(bRemote.getByTestId("remote-allowed")).toBeVisible();
-  await expect(bRemote.getByTestId("remote-device-current")).toHaveText("B 笔记本");
-  await expect(bRemote.getByTestId("remote-device-name")).toHaveCount(0);
-  await bRemote.getByTestId("remote-device-rename").click();
-  await bRemote.getByTestId("remote-device-name").fill("我的笔记本");
-  await bRemote.getByTestId("remote-device-save").click();
-  await expect(bRemote.getByTestId("remote-device-current")).toHaveText("我的笔记本");
+  const bSettings = b.page.getByRole("dialog", { name: "远程设置", exact: true });
+  await expect(bSettings.getByTestId("remote-allowed")).toBeVisible();
+  await expect(bSettings.getByTestId("remote-device-current")).toHaveText("B 笔记本");
+  await expect(bSettings.getByTestId("remote-device-name")).toHaveCount(0);
+  await bSettings.getByTestId("remote-device-rename").click();
+  await bSettings.getByTestId("remote-device-name").fill("我的笔记本");
+  await bSettings.getByTestId("remote-device-save").click();
+  await expect(bSettings.getByTestId("remote-device-current")).toHaveText("我的笔记本");
   await expect(bRemote.getByTestId("remote-device-label")).toHaveText("我的笔记本");
   await expect(aPeer).toContainText("我的笔记本", { timeout: 20_000 });
   await screenshot(b.app, "studio", "remote-b-settings", b.page);
+  await bSettings.getByTestId("remote-settings-close").click();
 
   // A ends it, after reading what that means; B's list empties by itself.
   await aPeer.getByTestId("remote-unpair").click();
@@ -171,9 +173,9 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   await expect(bRemote.getByTestId("remote-peer")).toHaveCount(0, { timeout: 20_000 });
   await expect(bRemote.getByTestId("remote-no-peers")).toBeVisible();
   await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程");
-  // ← returns to the board it was opened from.
-  await b.page.getByTestId("back").click();
-  await expect(b.page.getByRole("region", { name: "远程", exact: true })).toHaveCount(0);
+  // 关闭: the board it was opened over.
+  await bRemote.getByTestId("remote-dialog-close").click();
+  await expect(b.page.getByRole("dialog", { name: "远程", exact: true })).toHaveCount(0);
   await expect(b.page.getByTestId("topbar-remote")).not.toHaveAttribute("aria-current", "page");
 });
 
@@ -239,6 +241,8 @@ test("without the AMO platform's login, 远程 says where to log in and the rest
   await expect(remote.getByTestId("remote-peers")).toHaveCount(0);
   await expect(remote.getByTestId("remote-pair-open")).toHaveCount(0);
   await screenshot(s.app, "studio", "remote-no-login", s.page);
+  await remote.getByTestId("remote-dialog-close").click();
+  await expect(remote).toHaveCount(0);
 
   // 设置 has no 远程 page any more, only the line saying where it went.
   await s.page.getByRole("button", { name: "设置" }).first().click();

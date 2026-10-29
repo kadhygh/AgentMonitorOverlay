@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import { NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { DEFAULT_REMOTE_SECURITY, NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteSecurity, type RemoteStart, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { relativeTime } from "../lib/status.js";
-import { BackButton } from "../shell/BackButton.js";
 import { copyStatus, useRemote } from "./remote.js";
 import { AskRows, IncomingTaskRequests } from "./RemoteRequests.js";
 import { PairDialog } from "./PairDialog.js";
 
-// 远程 (2026-10-29, plans/remote-page-and-new-task.md §1–3): a page of its own, opened from the top bar (设置 → 远程
-// before). Top to bottom, in the order it is used: who and where this computer is on the team server (one quiet line,
-// or why it is not connected); 任务 — what waits here, the tasks this computer granted, the remote tasks on it and the
-// requests it sent; the paired devices (+ 配对设备); 远程设置, folded. Pairing is for the person's own other computers
-// only: a remote session runs on this computer's model accounts, and a personal subscription is not for anyone else.
+// 远程 (2026-10-29, plans/remote-page-and-new-task.md §1–3): opened from the top bar (设置 → 远程 before). A dialog since
+// the evening of 10-29 (the user: 「远程包成一个弹窗」; a page of its own before), and 远程设置 a second dialog on top of
+// it. Top to bottom, in the order it is used: who and where this computer is on the team server (one quiet line, or why
+// it is not connected); 任务 — what waits here, the tasks this computer granted, the remote tasks on it and the
+// requests it sent; the paired devices (+ 配对设备). Pairing is for the person's own other computers only: a remote
+// session runs on this computer's model accounts, and a personal subscription is not for anyone else.
 
 const CONNECTION_LABEL: Record<RemoteConnection["state"], string> = {
   off: "没有开远程功能",
@@ -66,14 +67,53 @@ function Presence({ peer, testId }: { peer: RemotePeer | undefined; testId?: str
   );
 }
 
-export function RemotePage({
+/**
+ * A dialog of 远程's (the dialog itself and 远程设置 on top of it): Escape and a click beside it close it, but not an
+ * Escape meant for a dialog opened from it (配对, 解除配对, 同意…: portals of their own, outside this one's box).
+ */
+function RemoteModal({ label, testId, className, onClose, head, children }: { label: string; testId: string; className: string; onClose(): void; head: ReactNode; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Focus comes in when it opens (so Escape closes this one, not the one under it) and goes back when it closes.
+  useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    box.current?.focus();
+    return () => {
+      if (before?.isConnected) before.focus();
+    };
+  }, []);
+  return createPortal(
+    <div
+      className="modal-backdrop remote-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || e.defaultPrevented || !box.current?.contains(e.target as Node)) return;
+        e.stopPropagation();
+        onClose();
+      }}
+    >
+      <div ref={box} className={`modal remote-modal ${className}`} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} data-testid={testId}>
+        <div className="modal-head remote-modal-head">
+          <span className="modal-title">{label}</span>
+          <span className="spacer" />
+          {head}
+          <button type="button" className="link-btn" onClick={onClose} aria-label={`关闭${label}`} data-testid={`${testId}-close`}>
+            关闭
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function RemoteDialog({
   link,
   tasks = [],
   profiles = [],
   workspaces = [],
   topics = [],
-  backLabel,
-  onBack,
+  onClose,
   onOpenTask,
   onNewTaskOn,
 }: {
@@ -82,9 +122,8 @@ export function RemotePage({
   profiles?: readonly ModelProfile[];
   workspaces?: readonly Workspace[];
   topics?: readonly Topic[];
-  backLabel: string;
-  onBack(): void;
-  /** A granted task or a remote copy opened from here (its 「←」 returns here). */
+  onClose(): void;
+  /** A granted task or a remote copy opened from here (the dialog closes). */
   onOpenTask(taskId: string): void;
   /** 「在它上面新建任务」: the new-task page in 「在别的设备上」 with that device picked (远程创建, 2026-10-29). */
   onNewTaskOn(peer: { account: string; device: string }): void;
@@ -97,7 +136,6 @@ export function RemotePage({
   const [unpairing, setUnpairing] = useState<RemotePeer | null>(null);
   const [pairing, setPairing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsRef = useRef<HTMLElement>(null);
   // 刚失联 turns into 离线 by the clock alone; the next retry counts down while offline.
   const offline = !!remote && ["offline", "unauthorized", "server-old", "replaced"].includes(remote.connection.state);
   const [, setTick] = useState(0);
@@ -131,46 +169,29 @@ export function RemotePage({
     }
   }
 
-  const openSettings = () => {
-    setSettingsOpen(true);
-    requestAnimationFrame(() => settingsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  };
-
-  const head = (
-    <div className="page-head">
-      <BackButton label={backLabel} onClick={onBack} />
-      <span className="page-crumb">/ 远程</span>
-    </div>
+  const shell = (children: ReactNode, head?: ReactNode) => (
+    <RemoteModal label="远程" testId="remote-dialog" className="remote-main-modal" onClose={onClose} head={head}>
+      {children}
+    </RemoteModal>
   );
 
-  if (!remote)
-    return (
-      <section className="remote-page" aria-label="远程">
-        {head}
-        <div className="placeholder">读取中…</div>
-      </section>
-    );
+  if (!remote) return shell(<div className="placeholder">读取中…</div>);
 
   const { connection } = remote;
   if (!remote.account || connection.state === "off")
-    return (
-      <section className="remote-page" aria-label="远程">
-        {head}
-        <div className="remote-wrap">
-          <div className="remote-body">
-            <div className="remote-login" data-testid="remote-login">
-              <span className="remote-login-title" data-testid="remote-account">
-                {connection.state === "off" ? "这个 Studio 没有开远程功能" : "在 AMO 平台里登录"}
-              </span>
-              {connection.state !== "off" && (
-                <span className="settings-hint" data-testid="remote-login-hint">
-                  远程功能用的是团队服务器的账号，登录只在 AMO 平台里做（Studio 不另做登录）。登录后这一页会自动连上，不用重启 Studio。Studio 的其他功能不受影响。
-                </span>
-              )}
-            </div>
-          </div>
+    return shell(
+      <div className="remote-body">
+        <div className="remote-login" data-testid="remote-login">
+          <span className="remote-login-title" data-testid="remote-account">
+            {connection.state === "off" ? "这个 Studio 没有开远程功能" : "在 AMO 平台里登录"}
+          </span>
+          {connection.state !== "off" && (
+            <span className="settings-hint" data-testid="remote-login-hint">
+              远程功能用的是团队服务器的账号，登录只在 AMO 平台里做（Studio 不另做登录）。登录后这里会自动连上，不用重启 Studio。Studio 的其他功能不受影响。
+            </span>
+          )}
         </div>
-      </section>
+      </div>,
     );
 
   const devices = devicesOf(remote.peers);
@@ -180,9 +201,8 @@ export function RemotePage({
   const retryIn = connection.retryAt ? Math.max(0, Math.ceil((Date.parse(connection.retryAt) - Date.now()) / 1000)) : null;
 
   return (
-    <section className="remote-page" aria-label="远程">
-      {head}
-      <div className="remote-wrap">
+    <>
+      {shell(
         <div className="remote-body">
           <div className="remote-self" data-testid="remote-self">
             <span className="remote-self-line">
@@ -199,10 +219,6 @@ export function RemotePage({
                 本机「<span data-testid="remote-device-label">{remote.device?.name ?? "（还没有设备名）"}</span>」
               </span>
             </span>
-            <span className="spacer" />
-            <button type="button" className="btn-ghost small" aria-expanded={settingsOpen} onClick={() => (settingsOpen ? setSettingsOpen(false) : openSettings())} data-testid="remote-settings-open">
-              远程设置
-            </button>
           </div>
 
           {offline && (
@@ -218,7 +234,8 @@ export function RemotePage({
             </div>
           )}
 
-          {message && (
+          {/* While 远程设置 is open, what it says shows there. */}
+          {message && !settingsOpen && (
             <span className={message.error ? "form-error" : "settings-hint remote-message"} role={message.error ? "alert" : "status"} data-testid="remote-message">
               {message.text}
             </span>
@@ -391,38 +408,40 @@ export function RemotePage({
               );
             })}
           </section>
+        </div>,
+        <button type="button" className="btn-ghost small" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)} data-testid="remote-settings-open">
+          远程设置
+        </button>,
+      )}
 
-          <section ref={settingsRef} className="remote-section remote-settings" aria-label="远程设置" data-testid="remote-settings">
-            <button type="button" className="remote-fold-btn remote-heading" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((v) => !v)} data-testid="remote-settings-toggle">
-              <span className="remote-fold-mark" aria-hidden="true">
-                {settingsOpen ? "▾" : "▸"}
+      {settingsOpen && (
+        <RemoteModal label="远程设置" testId="remote-settings" className="remote-settings-modal" onClose={() => setSettingsOpen(false)} head={null}>
+          <div className="remote-body">
+            {message && (
+              <span className={message.error ? "form-error" : "settings-hint remote-message"} role={message.error ? "alert" : "status"} data-testid="remote-settings-message">
+                {message.text}
               </span>
-              远程设置
-            </button>
-            {!settingsOpen && <span className="settings-hint">本机设备名、远端允许的模型和项目、被远程使用时不睡眠。</span>}
-            {settingsOpen && (
-              <>
-                <DeviceName link={link} remote={remote} busy={busy} run={run} />
-                <AllowedModels key={JSON.stringify(remote.allowed)} allowed={remote.allowed} profiles={profiles} busy={busy} onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed", {}, next), "已保存远端允许的模型")} />
-                <AllowedProjects
-                  key={JSON.stringify(remote.allowedProjects)}
-                  allowed={remote.allowedProjects ?? NO_REMOTE_PROJECTS}
-                  workspaces={workspaces}
-                  busy={busy}
-                  onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed-projects", {}, next), "已保存远端允许的项目")}
-                />
-                <div className="remote-subsection">
-                  <span className="remote-subheading">被远程使用时</span>
-                  <span className="settings-hint" data-testid="remote-awake-note">
-                    有任务授权给在线的设备时，这台电脑不会自动睡眠（屏幕照常会关），免得那边用到一半断掉；设备都断开或授权都收回后恢复。托盘「完全退出」前也会先提醒。
-                  </span>
-                  <span className="settings-hint">这台电脑主动连出到团队服务器，不对局域网开端口。</span>
-                </div>
-              </>
             )}
-          </section>
-        </div>
-      </div>
+            <DeviceName link={link} remote={remote} busy={busy} run={run} />
+            <Security key={JSON.stringify(remote.security)} security={remote.security ?? DEFAULT_REMOTE_SECURITY} account={remote.account.name} busy={busy} onSave={(next) => void run(() => call(link, "PUT /api/remote/security", {}, next), "已保存安全设置")} />
+            <AllowedModels key={JSON.stringify(remote.allowed)} allowed={remote.allowed} profiles={profiles} busy={busy} onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed", {}, next), "已保存远端允许的模型")} />
+            <AllowedProjects
+              key={JSON.stringify(remote.allowedProjects)}
+              allowed={remote.allowedProjects ?? NO_REMOTE_PROJECTS}
+              workspaces={workspaces}
+              busy={busy}
+              onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed-projects", {}, next), "已保存远端允许的项目")}
+            />
+            <div className="remote-subsection">
+              <span className="remote-subheading">被远程使用时</span>
+              <span className="settings-hint" data-testid="remote-awake-note">
+                有任务授权给在线的设备时，这台电脑不会自动睡眠（屏幕照常会关），免得那边用到一半断掉；设备都断开或授权都收回后恢复。托盘「完全退出」前也会先提醒。
+              </span>
+              <span className="settings-hint">这台电脑主动连出到团队服务器，不对局域网开端口。</span>
+            </div>
+          </div>
+        </RemoteModal>
+      )}
 
       {pairing && <PairDialog link={link} remote={remote} onClose={() => setPairing(false)} />}
       {unpairing && (
@@ -454,7 +473,7 @@ export function RemotePage({
           </ul>
         </ConfirmDialog>
       )}
-    </section>
+    </>
   );
 }
 
@@ -503,6 +522,53 @@ function DeviceName({ link, remote, busy, run }: { link: HostLink; remote: Remot
         </div>
       )}
       <span className="settings-hint">对方看到的就是这个名字。和 AMO 平台共用（存在 %APPDATA%\AMO\device.json）。</span>
+    </div>
+  );
+}
+
+const START_LABEL: Record<RemoteStart, string> = { run: "直接开跑", confirm: "先等我确认" };
+
+/**
+ * 安全 (2026-10-29, the user): a paired device of this computer's own account is the person's other computer — what it
+ * creates here starts at once by default; a device of another account waits for a yes here by default. Requests always
+ * wait, and what this computer grants is its own choice, so neither is set here.
+ */
+function Security({ security, account, busy, onSave }: { security: RemoteSecurity; account: string; busy: boolean; onSave(next: RemoteSecurity): void }) {
+  const [next, setNext] = useState<RemoteSecurity>(security);
+  const changed = next.sameAccount !== security.sameAccount || next.otherAccount !== security.otherAccount;
+  const row = (key: keyof RemoteSecurity, label: string, hint: string) => (
+    <div className="settings-row remote-security-row">
+      <span className="remote-security-who">
+        <span>{label}</span>
+        <span className="settings-hint">{hint}</span>
+      </span>
+      <select value={next[key]} onChange={(e) => setNext((n) => ({ ...n, [key]: e.target.value as RemoteStart }))} aria-label={label} data-testid={`remote-security-${key}`}>
+        {(["run", "confirm"] as const).map((v) => (
+          <option key={v} value={v}>
+            {START_LABEL[v]}
+            {v === DEFAULT_REMOTE_SECURITY[key] ? "（默认）" : ""}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+  return (
+    <div className="remote-subsection" aria-label="安全" data-testid="remote-security">
+      <span className="remote-subheading">安全：别的设备在这台电脑上建的任务</span>
+      <span className="settings-hint">配对的设备在它的新任务页选「在别的设备上」建任务时，是在这台电脑上直接开跑，还是先等你确认。</span>
+      {row("sameAccount", "同账号的设备", `也用 ${account} 登录的，你自己的其他电脑`)}
+      {row("otherAccount", "别的账号的设备", "用其他账号登录的")}
+      <span className="settings-hint">「先等我确认」：任务先不建、不跑，这台电脑的 Focus 和「远程」里出现一条请求，看过项目、模型和第一句话后点「同意并开始」才开跑。那边发来的请求总要你同意；你授权出去的任务不受这里影响。</span>
+      {next.otherAccount === "run" && (
+        <span className="remote-warning" role="note" data-testid="remote-security-warning">
+          ! 别的账号的设备建的任务会直接用这台电脑的模型账号跑，命令以你的用户身份运行。Claude、ChatGPT 的个人订阅不能给别人用。
+        </span>
+      )}
+      <div className="settings-row end">
+        <button type="button" className="btn-primary small" disabled={busy || !changed} onClick={() => onSave(next)} data-testid="remote-security-save">
+          保存
+        </button>
+      </div>
     </div>
   );
 }
@@ -579,7 +645,7 @@ function AllowedProjects({ allowed, workspaces, busy, onSave }: { allowed: Remot
   return (
     <div className="remote-subsection" aria-label="远端允许的项目" data-testid="remote-allowed-projects">
       <span className="remote-subheading">远端允许的项目</span>
-      <span className="settings-hint">配对的设备在它的新任务页选「在别的设备上」时，能把任务建在这台电脑的哪些项目里（建好就开跑，不用这边点同意；模型照上面的「远端允许的模型」）。</span>
+      <span className="settings-hint">配对的设备在它的新任务页选「在别的设备上」时，能把任务建在这台电脑的哪些项目里（直接开跑还是先等你确认，见上面的「安全」；模型照上面的「远端允许的模型」）。</span>
       <div className="remote-allowed-list">
         <label className="remote-allowed-item" data-testid="remote-allowed-common">
           <input type="checkbox" checked={common} onChange={(e) => setCommon(e.target.checked)} />

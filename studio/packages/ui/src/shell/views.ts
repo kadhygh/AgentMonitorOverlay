@@ -20,16 +20,11 @@ export type View =
    * `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage
    * of `sessionId` to scroll to and flash (书签). `scroll`: where its conversation was read (后退 back to it).
    */
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: ReadPlace }
-  /**
-   * 远程 (2026-10-29, plans/remote-page-and-new-task.md: out of 设置 into a page of its own, opened from the top bar).
-   * `nav` changes with each ask from Focus.
-   */
-  | { kind: "remote"; back?: View; nav?: number };
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: ReadPlace };
 
-const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布", remote: "远程" };
+const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
 
-/** Where a page's "←" goes and what it says: the page it came from when that is the board, a canvas or 远程, else the board. */
+/** Where a page's "←" goes and what it says: the page it came from when that is the board or a canvas, else the board. */
 export function backTo(back: View | undefined): { view: View; label: string } {
   return back && BACK_LABEL[back.kind] ? { view: back, label: BACK_LABEL[back.kind]! } : { view: { kind: "board" }, label: "看板" };
 }
@@ -39,10 +34,8 @@ export function backTo(back: View | undefined): { view: View; label: string } {
  * front was itself opened from. A page that says where it returns keeps that.
  */
 export function withOrigin(next: View, current: View): View {
-  if ((next.kind !== "task" && next.kind !== "new" && next.kind !== "remote") || next.back) return next;
-  let origin = current.kind === "board" || current.kind === "canvas" || current.kind === "remote" ? current : current.kind === "task" || current.kind === "new" ? current.back : undefined;
-  // 远程 opened again from itself (or from a page it opened) keeps where it was opened from.
-  if (next.kind === "remote" && origin?.kind === "remote") origin = origin.back;
+  if ((next.kind !== "task" && next.kind !== "new") || next.back) return next;
+  const origin = current.kind === "board" || current.kind === "canvas" ? current : current.kind === "task" || current.kind === "new" ? current.back : undefined;
   return origin ? { ...next, back: origin } : next;
 }
 

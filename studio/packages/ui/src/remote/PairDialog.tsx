@@ -116,7 +116,7 @@ export function PairDialog({ link, remote, onClose }: { link: HostLink; remote: 
           })}
         </div>
       )}
-      {supported && devices && devices.some((d) => waitingFor(d)?.state === "pending") && <span className="settings-hint">那台电脑会在 Focus 和它的远程页里看到请求。不在线的话请求保留 7 天。</span>}
+      {supported && devices && devices.some((d) => waitingFor(d)?.state === "pending") && <span className="settings-hint">那台电脑会在 Focus 和它的「远程」里看到请求。不在线的话请求保留 7 天。</span>}
       {!supported && (
         <span className="settings-hint" data-testid="remote-online-unsupported">
           团队服务器上的中转服务还不能列出在线的设备（要更新），先用下面的账号名配对。

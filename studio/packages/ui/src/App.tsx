@@ -28,6 +28,7 @@ import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 import { useMascotIcon } from "./focus/mascot.js";
 import { useSessionSeen } from "./lib/sessionSeen.js";
 import { remoteButton, useRemote } from "./remote/remote.js";
+import { RemoteDialog } from "./remote/RemoteDialog.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
 // the features (features.ts); the data several of them share is loaded here once.
@@ -95,6 +96,8 @@ export function App() {
   const remoteState = useRemote(host.kind === "ready" ? host.link : null);
   // Open, and on which page when something asked for one; `at` remounts it there.
   const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
+  // 远程 (2026-10-29 evening, the user): a dialog over whatever is in front, opened from the top bar or by Focus.
+  const [remoteOpen, setRemoteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
 
   // Ctrl N: the quick bar from anywhere; Ctrl Shift N: the draft task page.
@@ -152,11 +155,11 @@ export function App() {
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
       window.amo?.onNavigate?.(({ taskId, sessionId, passage, topicId, calloutId, settings: settingsPage }) => {
-        // 远程 (2026-10-29): Focus's 「在远程页里看」 / 「去处理」 on a pairing or task request → the remote page (设置 →
-        // 远程 before it became a page; the shell still asks with `settings: "remote"`).
+        // 远程 (2026-10-29): Focus's 「去处理」 on a pairing or task request → the 远程 dialog (设置 → 远程 before it was its
+        // own; the shell still asks with `settings: "remote"`).
         if (settingsPage === "remote") {
           setSettingsOpen(false);
-          setView({ kind: "remote", nav: Date.now() });
+          setRemoteOpen(true);
           return;
         }
         const was = viewNow.current;
@@ -257,7 +260,7 @@ export function App() {
         pin={pin}
         onMarks={() => openMarks(marksTarget())}
         nav={{ ...nav, go }}
-        remote={{ ...remoteButton(remoteState), current: shown.kind === "remote", open: () => setView({ kind: "remote" }) }}
+        remote={{ ...remoteButton(remoteState), current: remoteOpen, open: () => setRemoteOpen(true) }}
       />
       <div className="body">
         <ScopeNav
@@ -299,7 +302,26 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
           onOpenRemote={() => {
             setSettingsOpen(false);
-            setView({ kind: "remote" });
+            setRemoteOpen(true);
+          }}
+        />
+      )}
+      {remoteOpen && (
+        <RemoteDialog
+          link={link}
+          tasks={state.tasks}
+          profiles={state.profiles}
+          workspaces={state.workspaces}
+          topics={state.topics}
+          onClose={() => setRemoteOpen(false)}
+          onOpenTask={(taskId) => {
+            setRemoteOpen(false);
+            setView({ kind: "task", taskId, nav: Date.now() });
+          }}
+          // 远程创建 (2026-10-29): the new-task page in 「在别的设备上」.
+          onNewTaskOn={(peer) => {
+            setRemoteOpen(false);
+            setView({ kind: "new", remote: peer });
           }}
         />
       )}

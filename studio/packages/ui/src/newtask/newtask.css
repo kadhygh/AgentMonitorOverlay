@@ -41,6 +41,7 @@
 .draft-side { margin-left: auto; }
 .remote-draft-note { padding-left: 50px; }
 .remote-draft-problem { color: var(--attention); font-size: var(--fs-sm); }
+.remote-draft-notice { color: var(--running-text); }
 .draft-where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pick-lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.06em; }

@@ -29,6 +29,7 @@ const state = (peers: RemotePeer[], connected = true): RemoteState => ({
   allowed: { profiles: [], defaultProfile: null, permission: null },
   taskRequests: [],
   allowedProjects: { workspaceIds: [], common: false },
+  security: { sameAccount: "run", otherAccount: "confirm" },
   asks: [],
 });
 

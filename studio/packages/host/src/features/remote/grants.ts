@@ -5,6 +5,7 @@ import type { HostService } from "../../service.js";
 import { HostError, boundedText } from "../../core/shared.js";
 import type { DeviceLink } from "./link.js";
 import { attachedPaths, itemForPeer, readRemoteFile, type FileRoots } from "./files.js";
+import { claimedText, type UploadInbox } from "./uploads.js";
 
 // 远程, step 2 on A (plans/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
 // a device may ask of them, and what A tells it unasked as they change. The grant is the whole task: every session in
@@ -20,6 +21,10 @@ export interface RemoteContext {
   link(): DeviceLink | null;
   /** This computer's name, for what the other side reads. */
   deviceName(): string;
+  /** The account this computer is logged in with (the platform's), null when none. */
+  ownAccount(): string | null;
+  /** Files paired devices send along (2026-10-29 evening). */
+  inbox(): UploadInbox;
   /** A paired device's name and whether the server says it is online. */
   peer(ref: DeviceRef, role?: "owner" | "guest"): { name: string; online: boolean } | null;
   changed(): void;
@@ -288,7 +293,15 @@ export class RemoteGrants {
         }
         case REMOTE_KINDS.send: {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
-          return ok(await sessions.sendMessage(s.id, boundedText(b.text, "text", 100_000)));
+          // Pictures and files B sent first (rt.upload): this computer's attachments now; a DSH session takes no pictures.
+          const claimed = this.ctx.inbox().claim(from, b.uploads, { noImages: s.runtime === "dsh" });
+          const plain = claimed.images.length || claimed.files.length ? (typeof b.text === "string" ? b.text.slice(0, 100_000) : "") : boundedText(b.text, "text", 100_000);
+          try {
+            return ok(await sessions.sendMessage(s.id, claimedText(plain, claimed), claimed.images.map((a) => a.id)));
+          } catch (err) {
+            this.ctx.inbox().drop(claimed);
+            throw err;
+          }
         }
         case REMOTE_KINDS.approve: {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
@@ -318,11 +331,18 @@ export class RemoteGrants {
           if (!task || task.archivedAt) throw new HostError("read_only", "这个任务已经归档了");
           const profileId = id(b.profileId, "profileId");
           if (!this.allowedFor(taskId).includes(profileId)) throw new HostError("bad_request", `${this.labelOf(profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里`);
-          const text = typeof b.text === "string" && b.text.trim() ? boundedText(b.text, "text", 100_000) : undefined;
+          const plain = typeof b.text === "string" && b.text.trim() ? boundedText(b.text, "text", 100_000) : "";
           const permission = this.permissionFor(profileId);
           const options: SessionOptions | undefined = permission ? { permission } : undefined;
-          const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(options ? { options } : {}) });
-          return ok({ session: this.store.getSession(session.id) ?? session });
+          const claimed = this.ctx.inbox().claim(from, b.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });
+          const text = claimedText(plain, claimed);
+          try {
+            const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}), ...(options ? { options } : {}) });
+            return ok({ session: this.store.getSession(session.id) ?? session });
+          } catch (err) {
+            this.ctx.inbox().drop(claimed);
+            throw err;
+          }
         }
         case REMOTE_KINDS.drop: {
           // B archived its copy (2026-10-29): the grant ends without a word back — B has put the task away.

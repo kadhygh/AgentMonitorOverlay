@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { ATTACHMENT_MIMES, MAX_ATTACHMENT_BYTES, type Attachment } from "@amo-studio/protocol";
@@ -34,6 +34,34 @@ export class AttachmentsFeature extends Feature {
     const attachment: Attachment = { id, name, mime, size: data.length, path, createdAt: new Date().toISOString() };
     writeFileSync(join(this.dir(), `${id}.json`), JSON.stringify(attachment));
     return attachment;
+  }
+
+  /**
+   * A file of any kind (2026-10-29 evening: what a paired device sends along with a remote message or task). Kept as
+   * `<id>-<name>` so an agent reading the path sees the file's own name; agents get it in the 引用文件 block.
+   */
+  saveFile(data: Buffer, name: string): Attachment {
+    if (data.length > MAX_ATTACHMENT_BYTES) throw new HostError("bad_request", "file too large");
+    const id = newId("att");
+    const safe = (basename(name).trim().replace(/[\\/:*?"<>|\x00-\x1f]/g, "_") || "file").slice(0, 120);
+    mkdirSync(this.dir(), { recursive: true });
+    const path = join(this.dir(), `${id}-${safe}`);
+    writeFileSync(path, data);
+    const attachment: Attachment = { id, name: safe, mime: "application/octet-stream", size: data.length, path, createdAt: new Date().toISOString() };
+    writeFileSync(join(this.dir(), `${id}.json`), JSON.stringify(attachment));
+    return attachment;
+  }
+
+  /** Gone with what it was for (a remote request refused or taken back); an unknown id is already gone. */
+  remove(id: string): void {
+    let a: Attachment;
+    try {
+      a = this.get(id);
+    } catch {
+      return;
+    }
+    rmSync(a.path, { force: true });
+    rmSync(join(this.dir(), `${id}.json`), { force: true });
   }
 
   get(id: string): Attachment {

@@ -88,6 +88,8 @@ export interface RemoteState {
   asks: RemoteTaskRequest[];
   /** 远端允许的项目 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): where paired devices may create tasks here. */
   allowedProjects: RemoteAllowedProjects;
+  /** 安全 (2026-10-29): whether a task a paired device creates here starts at once or waits for a yes here. */
+  security: RemoteSecurity;
 }
 
 /** Another device of this computer's own account, connected to the team server now (远程页的配对弹窗, 2026-10-29). */
@@ -242,6 +244,12 @@ export const REMOTE_KINDS = {
    * its session started with `text`. RemoteCreateAsk → RemoteCreateAnswer
    */
   create: "rt.create",
+  /**
+   * B → A (2026-10-29 evening): one piece of a file B sends along with a message, a new session or a task it creates
+   * there — a picture or any file. The command that carries the message then names it (RemoteUpload). RemoteUploadAsk →
+   * {received}
+   */
+  upload: "rt.upload",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -286,17 +294,18 @@ export interface RemoteCommandBodies {
   "rt.list": Record<string, never>;
   "rt.task": { taskId: Id };
   "rt.items": { sessionId: Id; since: number };
-  "rt.send": { sessionId: Id; text: string };
+  "rt.send": { sessionId: Id; text: string; uploads?: RemoteUpload[] };
   "rt.approve": { sessionId: Id; approvalId: string; decision: ApprovalDecision };
   "rt.answer": { sessionId: Id; itemId: Id; reply: QuestionReply };
   "rt.interrupt": { sessionId: Id };
-  "rt.start": { taskId: Id; profileId: Id; text?: string };
+  "rt.start": { taskId: Id; profileId: Id; text?: string; uploads?: RemoteUpload[] };
   "rt.file": RemoteFileAsk;
   "rt.request": RemoteTaskRequestAsk;
   "rt.withdraw": { requestId: string };
   "rt.drop": { taskId: Id };
   "rt.catalog": Record<string, never>;
   "rt.create": RemoteCreateAsk;
+  "rt.upload": RemoteUploadAsk;
 }
 
 /** A → B, unasked. B checks seq: a gap (or anything it cannot place) makes it ask for what it missed. */
@@ -324,6 +333,39 @@ export type RemotePush =
 export const REMOTE_FILE_MAX_BYTES = 20 * 1024 * 1024;
 /** One piece of a file (base64 in a frame of at most 1 MB). */
 export const REMOTE_FILE_CHUNK = 512 * 1024;
+// ---- 2026-10-29 evening (the user): B sends pictures and files to A ----------------------------------------------
+// With a message in a remote task, a new session there, or a task B creates on A. B's Host sends each file in pieces
+// (rt.upload) before the command; A keeps them as attachments of its own (pictures as pictures the model sees, other
+// files in its attachments folder, named in the message's 引用文件 block with A's path). Pieces nobody claims go after
+// an hour. An older A does not know rt.upload: B says to update it.
+
+/** Biggest file B may send A (as a picture attached here). */
+export const REMOTE_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+/** Biggest total one message, session or task may carry. */
+export const REMOTE_UPLOAD_TOTAL_BYTES = 60 * 1024 * 1024;
+
+/** B → A: a piece of a file, at `offset` of `size` bytes (base64). The first piece starts it, the last ends it. */
+export interface RemoteUploadAsk {
+  /** B's id for it (up_…). */
+  uploadId: string;
+  name: string;
+  size: number;
+  offset: number;
+  data: string;
+}
+
+/** A file B sent, named in the command that carries it. */
+export interface RemoteUpload {
+  uploadId: string;
+  name: string;
+  /** A picture the model sees (its type); absent: a file A lists in the message's 引用文件 block. */
+  mime?: string;
+  /** A marked range and note of the file, kept in the block. */
+  startLine?: number | null;
+  endLine?: number | null;
+  note?: string;
+}
+
 /** How paths name A's task folder for B (instead of A's own path, which has the user's name in it). */
 export const REMOTE_TASK_FOLDER = "任务文件夹";
 /** How paths name the task's attachments (pictures sent in its conversation) for B. */
@@ -444,6 +486,13 @@ export interface RemoteTaskRequest {
   taskId?: Id;
   createdAt: Timestamp;
   answeredAt?: Timestamp;
+  /**
+   * 安全 (2026-10-29): a task the device created from its new-task page that waits for a yes here — where it goes and the
+   * model, as picked there (the accept dialog starts from them). Absent: a request (the device only wrote what to do).
+   */
+  preset?: { workspaceId: Id | null; topicId: Id | null; profileId: Id };
+  /** What B sent along with it (kept on A until it is allowed or refused): pictures by A's attachment id, files by A's path. */
+  attached?: { images: Array<{ id: Id; name: string }>; files: Array<{ id: Id; path: string; name: string; startLine?: number | null; endLine?: number | null; note?: string }> };
 }
 
 /** On A: what allowing a request needs — where the task goes and the model its session runs on. */
@@ -484,6 +533,8 @@ export interface RemoteCatalog {
   allowCommon: boolean;
   /** 远端允许的模型 (A's ids, with A's names for them), the default first; usable ones only. */
   models: Array<{ id: Id; label: string }>;
+  /** 安全 (2026-10-29): what B creates waits for a yes on A (absent from an older A: it starts at once). */
+  confirm?: boolean;
 }
 
 /** B → A: the task to create (rt.create). */
@@ -497,14 +548,41 @@ export interface RemoteCreateAsk {
   workspaceId: Id | null;
   /** One of A's 远端允许的模型 (A's id). */
   profileId: Id;
+  /** Pictures and files sent before it (rt.upload). */
+  uploads?: RemoteUpload[];
 }
 
-/** A → B: the task made (B's copy has the same id). `error`: the task is there and granted, but its session did not start. */
+/**
+ * A → B: the task made (B's copy has the same id). `error`: the task is there and granted, but its session did not start.
+ * `waiting` (安全, 2026-10-29): nothing made yet — A's 远程设置 → 安全 wants a yes there first; the request A keeps
+ * (`taskId` is then null; an older B, which does not know `waiting`, finds the request in its list after a reconnect).
+ */
 export interface RemoteCreateAnswer {
-  taskId: Id;
+  taskId: Id | null;
   sessionId: Id | null;
   error?: string;
+  waiting?: RemoteTaskRequest;
 }
+
+// ---- 安全 (2026-10-29, the user): who may start tasks here without a yes ------------------------------------------
+// A paired device logged in with this computer's own account is the person's other computer: what it creates starts at
+// once (as 远程创建 did from the start). A device of another account: what it creates waits for a yes here (Focus, 远程),
+// like a request — unless the person turns that off. Requests and tasks granted from here are not affected.
+
+/** `run`: starts at once. `confirm`: waits for a yes on this computer. */
+export type RemoteStart = "run" | "confirm";
+
+export interface RemoteSecurity {
+  /** Devices logged in with this computer's account. */
+  sameAccount: RemoteStart;
+  /** Devices of other accounts. */
+  otherAccount: RemoteStart;
+}
+
+export const DEFAULT_REMOTE_SECURITY: RemoteSecurity = { sameAccount: "run", otherAccount: "confirm" };
+
+/** How a task created from `account`'s device starts here. */
+export const remoteStartFor = (security: RemoteSecurity, own: string | null | undefined, account: string): RemoteStart => (own && own === account ? security.sameAccount : security.otherAccount);
 
 /** On B: POST /api/remote/create's answer. `copied`: the copy is on this computer already (else it follows shortly). */
 export interface RemoteCreateResult extends RemoteCreateAnswer {
