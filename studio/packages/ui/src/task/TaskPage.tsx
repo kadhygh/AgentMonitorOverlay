@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -689,6 +689,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               subsessionNotes={settings?.subsessionNotes ?? []}
               tasks={tasks}
               sessions={sessions}
+              // A remote task runs on the other computer: this one's projects mean nothing there.
+              {...(copy ? {} : { projects: projectWorkspaces(workspaces) })}
               items={items}
               model={modelText ?? shortModel(session ? profile(session.profileId) : undefined)}
               busy={busy}

@@ -1,18 +1,20 @@
-import { lineSuffix, type FileMark, type ProjectFile, type Session, type Task } from "@amo-studio/protocol";
+import { lineSuffix, RUNTIME_LABELS, type FileMark, type ProjectFile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
 // changed files and the file selector — and last「AMO 扩展功能」(10-26): sub-session setups and 快速提交. Pure logic;
 // the hook and the list live beside it.
 
-export type MentionKind = "task" | "session" | "mark" | "file" | "find" | "subsession" | "commit";
+export type MentionKind = "task" | "session" | "project" | "mark" | "file" | "find" | "subsession" | "commit";
 
 export interface MentionOption {
   kind: MentionKind;
-  /** Task, session or mark id, the file's relative path, or "find". */
+  /** Task, session, project or mark id, the file's relative path, or "find". */
   id: string;
   name: string;
   hint: string;
+  /** A session listed under its task (the new-task page, 2026-10-29). */
+  sub?: boolean;
 }
 
 export interface MentionGroup {
@@ -38,7 +40,12 @@ export interface SubSessionSpec {
 }
 
 /** A task, session, sub-session setup or 快速提交 picked with @: the text keeps "@name", the message says what it is. */
-export type MentionPick = { kind: "task"; id: string } | { kind: "session"; id: string; taskId: string | null } | { kind: "subsession"; spec: SubSessionSpec } | { kind: "commit"; push: boolean };
+export type MentionPick =
+  | { kind: "task"; id: string }
+  | { kind: "session"; id: string; taskId: string | null }
+  | { kind: "project"; id: string; path: string }
+  | { kind: "subsession"; spec: SubSessionSpec }
+  | { kind: "commit"; push: boolean };
 
 /** 快速提交 (10-26): the one name in the text; whether it pushes too was confirmed in its dialog. */
 export const QUICK_COMMIT = "快速提交";
@@ -63,6 +70,7 @@ export function quickCommitBrief(push: boolean): string {
 }
 
 const PER_GROUP = 5;
+const SESSIONS_PER_TASK = 3;
 const contains = (name: string, q: string) => name.toLowerCase().includes(q);
 
 /** Sessions the person may want to point at: the same project, or the same topic, not this one and not subagents. */
@@ -70,6 +78,16 @@ export function nearbySessions(sessions: readonly Session[], current: Session): 
   return sessions
     .filter((s) => s.id !== current.id && !s.archivedAt && s.kind !== "sub" && (s.workspaceId === current.workspaceId || (!!current.topicId && s.topicId === current.topicId)))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Each task's sessions a person may point at (not subagents, not archived), newest first. */
+function taskSessions(sessions: readonly Session[]): Map<string, Session[]> {
+  const out = new Map<string, Session[]>();
+  for (const s of [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))) {
+    if (!s.taskId || s.archivedAt || s.kind === "sub") continue;
+    out.set(s.taskId, [...(out.get(s.taskId) ?? []), s]);
+  }
+  return out;
 }
 
 export function mentionGroups(input: {
@@ -87,16 +105,37 @@ export function mentionGroups(input: {
   subsession?: boolean;
   /** 快速提交 is offered (a live session). */
   commit?: boolean;
+  /** Projects to offer (2026-10-29: the new-task page, and the composer once something is typed). */
+  projects?: readonly Workspace[];
+  /**
+   * The new-task page (2026-10-29): no session of its own, so each task lists its sessions under it (those matching the
+   * query, or the newest ones when the task's own name matches) instead of the sessions near the current one.
+   */
+  sessionsUnderTasks?: boolean;
+  /** "找文件…" is offered (default: yes; the new-task page only once a project is picked). */
+  find?: boolean;
 }): MentionGroup[] {
   const q = input.query.toLowerCase();
   const pinned = input.pinnedTask ?? (() => false);
+  const under = input.sessionsUnderTasks ? taskSessions(input.sessions) : null;
+  const titleOf = (t: Task) => t.title || "未命名任务";
+  const matchingSessions = (t: Task) => (under?.get(t.id) ?? []).filter((s) => contains(s.title || "未命名会话", q));
   const tasks = [...input.tasks]
     .sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
-    .filter((t) => !t.archivedAt && contains(t.title || "未命名任务", q))
+    .filter((t) => !t.archivedAt && (contains(titleOf(t), q) || (!!q && matchingSessions(t).length > 0)))
     .slice(0, PER_GROUP)
-    .map((t): MentionOption => ({ kind: "task", id: t.id, name: t.title || "未命名任务", hint: t.column === "done" ? "完成" : "" }));
-  const taskTitle = new Map(input.tasks.map((t) => [t.id, t.title || "未命名任务"]));
-  const sessions = (input.current ? nearbySessions(input.sessions, input.current) : [])
+    .flatMap((t): MentionOption[] => {
+      const own: MentionOption = { kind: "task", id: t.id, name: titleOf(t), hint: t.column === "done" ? "完成" : "" };
+      if (!under) return [own];
+      const shown = (contains(titleOf(t), q) ? (under.get(t.id) ?? []) : matchingSessions(t)).slice(0, SESSIONS_PER_TASK);
+      return [own, ...shown.map((s): MentionOption => ({ kind: "session", id: s.id, name: s.title || "未命名会话", hint: RUNTIME_LABELS[s.runtime] ?? "", sub: true }))];
+    });
+  const projects = (input.projects ?? [])
+    .filter((w) => contains(w.name, q))
+    .slice(0, PER_GROUP)
+    .map((w): MentionOption => ({ kind: "project", id: w.id, name: w.name, hint: w.path }));
+  const taskTitle = new Map(input.tasks.map((t) => [t.id, titleOf(t)]));
+  const sessions = (input.current && !under ? nearbySessions(input.sessions, input.current) : [])
     .filter((s) => contains(s.title || "未命名会话", q))
     .slice(0, PER_GROUP)
     .map((s): MentionOption => ({ kind: "session", id: s.id, name: s.title || "未命名会话", hint: s.taskId ? (taskTitle.get(s.taskId) ?? "") : "专题会话" }));
@@ -111,6 +150,7 @@ export function mentionGroups(input: {
   const groups: MentionGroup[] = [
     { kind: "task", heading: "任务", options: tasks },
     { kind: "session", heading: "会话", options: sessions },
+    { kind: "project", heading: "项目", options: projects },
     { kind: "mark", heading: "书签里的文件", options: marks },
     { kind: "file", heading: input.query ? "文件" : "最近改动的文件", options: files },
   ];
@@ -120,22 +160,24 @@ export function mentionGroups(input: {
   ].filter((o) => !q || contains(o.name, q));
   return [
     ...groups.filter((g) => g.options.length),
-    { kind: "find", heading: "", options: [{ kind: "find", id: "find", name: "找文件…", hint: "Ctrl+P" }] },
+    ...(input.find === false ? [] : [{ kind: "find" as const, heading: "", options: [{ kind: "find" as const, id: "find", name: "找文件…", hint: "Ctrl+P" }] }]),
     ...(ext.length ? [{ kind: "ext" as const, heading: "AMO 扩展功能", options: ext }] : []),
   ];
 }
 
-/** The message as sent: the text, then which AMO tasks and sessions its @ names are (only those still in the text). */
+/** The message as sent: the text, then which AMO projects, tasks and sessions its @ names are (only those still in the text). */
 export function withMentionRefs(message: string, picked: ReadonlyMap<string, MentionPick>): string {
   // Named in full: 「@快速提交吧」 does not also name 「快速提交」.
   const named = new Set(mentionSpans(message, [...picked.keys()]).flatMap((part) => (part.mention ? [part.text.slice(1)] : [])));
   const refs = [...picked.entries()].filter(([name]) => named.has(name));
+  const projects = refs.flatMap(([name, p]) => (p.kind === "project" ? [`- @${name}：AMO 项目 ${p.id}，文件夹 ${p.path}（可以用 AMO 的 project_context 查看）`] : []));
   const tasks = refs.flatMap(([name, p]) => (p.kind === "task" ? [`- @${name}：AMO 任务 ${p.id}（可以用 AMO 的 task_get 查看）`] : []));
   const sessions = refs.flatMap(([name, p]) =>
     p.kind === "session" ? [`- @${name}：AMO 会话 ${p.id}${p.taskId ? `，属于任务 ${p.taskId}（可以用 AMO 的 session_tree 查看）` : ""}`] : [],
   );
   const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(p.spec)}${p.spec.note ? `。人对这个模型的说明：${p.spec.note.replace(/\s+/g, " ")}` : ""}`] : []));
   const blocks = [
+    projects.length ? `提到的项目：\n${projects.join("\n")}` : "",
     tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "",
     sessions.length ? `提到的会话：\n${sessions.join("\n")}` : "",
     subs.length ? `子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent；第一句话写够让它能独立开工）：\n${subs.join("\n")}` : "",
@@ -145,7 +187,7 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
 }
 
 /** Where withMentionRefs' blocks start, each after a blank line. */
-const REF_HEADS = ["提到的任务：\n", "提到的会话：\n", "子会话的开法（", `「@${QUICK_COMMIT}」是人要你现在做的事`];
+const REF_HEADS = ["提到的任务：\n", "提到的会话：\n", "子会话的开法（", `「@${QUICK_COMMIT}」是人要你现在做的事`, "提到的项目：\n"];
 
 /**
  * A sent message read back (2026-10-28): the person's text, the @ names it picked (each with what the message said of

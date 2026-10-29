@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
-import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, Task } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, Task, Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
@@ -62,6 +62,8 @@ interface ThreadProps {
   tasks?: readonly Task[];
   /** Sessions the composer can @ (those of the same project or topic are offered). */
   sessions?: readonly Session[];
+  /** Projects the composer can @ once something is typed (2026-10-29; the message then says which folder). */
+  projects?: readonly Workspace[];
   /** 常用预设, shown as chips for sessions on the same profile. */
   presets: readonly SessionPreset[];
   items: readonly SessionItem[];
@@ -99,7 +101,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -151,6 +153,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     onFile: (path) => attach.addFiles([path]),
     onFind: (query) => setFinding({ query }),
     onMark: (ref) => attach.addRefs([ref]),
+    ...(projects ? { projects } : {}),
   });
   // `/` at the start: the command menu (stage 12, S12-E).
   const slash = useSlashCommands({ link, session, text: draft, setText: setDraft, onRun: (command, args) => void runCommand(command, args) });

@@ -85,6 +85,9 @@ button.file-chip:hover { border-color: var(--border-strong); }
 .mention-list { max-height: 360px; overflow-y: auto; min-width: 320px; }
 .mention-list .suggest-h:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--divider); padding-top: 8px; }
 .mention-list button[data-kind="file"] .suggest-name, .mention-list button[data-kind="mark"] .suggest-name { font-family: var(--font-code); font-size: 12px; }
+/* 2026-10-29: on the new-task page a task's sessions are listed under it. */
+.mention-list button.sub { padding-left: 20px; color: var(--text-dim); }
+.mention-list button[data-kind="project"] .suggest-hint { font-family: var(--font-code); }
 .mention-list button[data-kind="find"] { margin-top: 4px; border-top: 1px solid var(--divider); border-radius: 0; color: var(--text-dim); }
 .mention-list button[data-kind="find"].hl, .mention-list button[data-kind="find"]:hover { color: var(--text); }
 

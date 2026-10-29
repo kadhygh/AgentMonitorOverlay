@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FileMark, Session, Task } from "@amo-studio/protocol";
+import type { FileMark, Session, Task, Workspace } from "@amo-studio/protocol";
 import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, splitMentionRefs, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
@@ -155,5 +155,48 @@ describe("开子会话… (2026-10-26)", () => {
     expect(splitMentionRefs(withMentionRefs("@快速提交", new Map([["快速提交", { kind: "commit" as const, push: false }]]))).commit).toEqual({ push: false });
     // A message without them is left as it is.
     expect(splitMentionRefs("提到的任务：随便写写")).toEqual({ text: "提到的任务：随便写写", names: new Map(), commit: null, blocks: "" });
+  });
+});
+
+describe("projects, and sessions under their tasks (the new-task page, 2026-10-29)", () => {
+  const ws = (id: string, name: string) => ({ id, name, path: `G:\\${name}`, createdAt: "" }) as unknown as Workspace;
+  const projects = [ws("w1", "BattleConfig"), ws("w2", "IceTools")];
+  const sessions = [
+    session("s1", "数值对比", { taskId: "t1", runtime: "codex", updatedAt: "2026-10-13T09:00:00Z" }),
+    session("s2", "写结论", { taskId: "t1", runtime: "claude", updatedAt: "2026-10-13T11:00:00Z" }),
+    session("s3", "子 agent", { taskId: "t1", kind: "sub" }),
+    session("s4", "冰的会话", { taskId: "t2", runtime: "codex" }),
+  ];
+  const tasks = [task("t1", "冰冻炮迭代复核"), task("t2", "掉落表")];
+
+  it("lists each task's sessions under it, then the projects; no 找文件… without a project", () => {
+    const groups = mentionGroups({ query: "", tasks, sessions, current: null, files: [], projects, sessionsUnderTasks: true, find: false });
+    expect(groups.map((g) => g.heading)).toEqual(["任务", "项目"]);
+    expect(groups[0]!.options.map((o) => `${o.kind}:${o.name}${o.sub ? "↳" : ""}`)).toEqual(["task:冰冻炮迭代复核", "session:写结论↳", "session:数值对比↳", "task:掉落表", "session:冰的会话↳"]);
+    expect(groups[0]!.options[1]).toMatchObject({ hint: "Claude" });
+    expect(groups[1]!.options[0]).toMatchObject({ kind: "project", id: "w1", name: "BattleConfig", hint: "G:\\BattleConfig" });
+  });
+
+  it("a task shows when one of its sessions matches, with only those", () => {
+    const groups = mentionGroups({ query: "冰", tasks, sessions, current: null, files: [], projects, sessionsUnderTasks: true, find: false });
+    expect(groups[0]!.options.map((o) => o.name)).toEqual(["冰冻炮迭代复核", "写结论", "数值对比", "掉落表", "冰的会话"]);
+    const narrow = mentionGroups({ query: "结论", tasks, sessions, current: null, files: [], projects, sessionsUnderTasks: true, find: false });
+    expect(narrow.map((g) => g.kind)).toEqual(["task"]);
+    expect(narrow[0]!.options.map((o) => o.name)).toEqual(["冰冻炮迭代复核", "写结论"]);
+  });
+
+  it("the composer keeps its groups and puts projects after sessions", () => {
+    const current = session("s0", "这里");
+    const groups = mentionGroups({ query: "i", tasks: [], sessions: [current], current, files: [], projects });
+    expect(groups.map((g) => g.kind)).toEqual(["project", "find"]);
+    expect(groups[0]!.options.map((o) => o.name)).toEqual(["BattleConfig", "IceTools"]);
+  });
+
+  it("a picked project is named with its folder, and read back", () => {
+    const message = withMentionRefs("看看 @IceTools 里的导出", new Map([["IceTools", { kind: "project" as const, id: "w2", path: "G:\\IceTools" }]]));
+    expect(message).toBe("看看 @IceTools 里的导出\n\n提到的项目：\n- @IceTools：AMO 项目 w2，文件夹 G:\\IceTools（可以用 AMO 的 project_context 查看）");
+    const back = splitMentionRefs(message);
+    expect(back.text).toBe("看看 @IceTools 里的导出");
+    expect([...back.names.keys()]).toEqual(["IceTools"]);
   });
 });
