@@ -235,20 +235,6 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   expect((await windowState(app)).anyFocused).toBe(false);
 });
 
-test("Focus shows the 额度 that 设置 → 额度 marks for it", async () => {
-  studio = await launchStudio();
-  const { page, app } = studio;
-  const channel = await studio.api<{ id: string }>("POST", "/api/channels", { kind: "codex", label: "中转 GPT", baseUrl: studio.mock!.baseUrl, key: "mock-channel-key", balance: { template: "general" } });
-  const opened = app.waitForEvent("window");
-  await page.getByRole("button", { name: /^Focus/ }).click();
-  const focus = await opened;
-  await expect(focus.getByTestId("focus-needs")).toBeVisible();
-  await expect(focus.getByTestId("focus-quota")).toHaveCount(0);
-  await studio.api("PUT", "/api/settings", { quotaDisplay: { [channel.id]: { footer: true, focus: true } } });
-  await expect(focus.getByTestId("focus-quota")).toHaveText("中转 GPT $12.50");
-  await screenshot(app, "stage-14", "S14-H-focus-quota", focus, "focus");
-});
-
 test("Focus: a click Chromium dropped (it came with WM_MOUSEACTIVATE, the page never saw it) is given back (2026-10-15)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;

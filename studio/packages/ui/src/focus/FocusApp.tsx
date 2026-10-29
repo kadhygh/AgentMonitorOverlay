@@ -12,10 +12,10 @@ import { useWaitingQuestionList } from "../canvas/useCallouts.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
-import { FocusQuota } from "./FocusQuota.js";
 import { usePetSkin } from "./petSkin.js";
 import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
 import { PinButton, PinnedEntry, WAITING_SUBS, WorkingEntry } from "./FocusWorking.js";
+import { StatusWord } from "./StatusWord.js";
 import { PINNED_KEY, pinnedSession, SUBS_OPEN_KEY } from "./pins.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { historyRows, readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
@@ -359,7 +359,6 @@ export function FocusApp() {
             {compact ? ICON.expand : ICON.collapse}
           </button>
         </div>
-        <FocusQuota link={link} settings={settings} profiles={state.profiles} />
         {!compact && (needs > 0 || working.length > 0 || pinned.length > 0) && (
           <div className="focus-list" onClickCapture={acknowledge}>
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
@@ -414,9 +413,9 @@ export function FocusApp() {
             )}
             {proposals.length > 0 && (
               // A proposal needs its prompt read (and maybe edited): only the count here, handled on the board.
-              <div className="focus-entry" data-testid="focus-proposals">
+              <div className="focus-entry" data-tone="att" data-testid="focus-proposals">
                 <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ taskId: "" })}>
-                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <StatusWord tone="att" word="提案" />
                   <span className="focus-row-text">
                     <span className="focus-title">{proposals.length} 条调度提案</span>
                     <span className="focus-sub">在工作台处理</span>
@@ -426,9 +425,9 @@ export function FocusApp() {
             )}
             {canvasAsks.map((q) => (
               // A question an agent pinned on a canvas card: the workbench opens that canvas with the oldest one open.
-              <div key={q.topicId} className="focus-entry" data-testid="focus-canvas-ask">
+              <div key={q.topicId} className="focus-entry" data-tone="att" data-testid="focus-canvas-ask">
                 <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ topicId: q.topicId, calloutId: q.first.id })} title="在工作台打开这个专题的画布，并打开最早的那个问题">
-                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <StatusWord tone="att" word="提问" />
                   <span className="focus-row-text">
                     <span className="focus-title">
                       画布问题 · {state.topics.find((t) => t.id === q.topicId)?.title ?? "专题"}
@@ -446,15 +445,15 @@ export function FocusApp() {
               <FocusTaskRequest key={r.id} link={link} request={r} />
             ))}
             {relays.map((r) => (
-              <div key={r.id} className="focus-entry open" data-testid="focus-relay">
+              <div key={r.id} className="focus-entry open" data-tone="att" data-testid="focus-relay">
                 <RelayCard link={link} relay={r} tasks={state.tasks} className="focus-detail focus-relay" />
               </div>
             ))}
             {plans.map((p) => (
               // Read and changed on the 主控's task page (or its topic's canvas): here only that it waits.
-              <div key={p.id} className="focus-entry" data-testid="focus-plan">
+              <div key={p.id} className="focus-entry" data-tone="att" data-testid="focus-plan">
                 <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ ...(p.fromTaskId ? { taskId: p.fromTaskId } : {}), sessionId: p.fromSessionId })}>
-                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <StatusWord tone="att" word="拆分" />
                   <span className="focus-row-text">
                     <span className="focus-title">拆任务提案 · {p.tasks.length} 个任务</span>
                     <span className="focus-sub">{state.tasks.find((t) => t.id === p.fromTaskId)?.title || "主控"} · {p.summary.split("\n")[0]}</span>
@@ -465,7 +464,7 @@ export function FocusApp() {
             {asks.map((d) => {
               const s = state.sessions.find((x) => x.id === d.sessionId)!;
               return (
-                <div key={d.id} className="focus-entry open" data-testid="focus-decision">
+                <div key={d.id} className="focus-entry open" data-tone="att" data-testid="focus-decision">
                   <DecisionCard
                     link={link}
                     decision={d}
@@ -513,10 +512,10 @@ export function FocusApp() {
                 // 置顶 from here too (10-22), while the task is there.
                 const task = s?.taskId ? state.tasks.find((t) => t.id === s.taskId && !t.archivedAt) : undefined;
                 return (
-                  <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={handled ? "" : undefined}>
+                  <div key={`${r.key}@${r.at}`} className="focus-entry" data-tone={handled ? "wait" : "att"} data-testid="focus-history-entry" data-handled={handled ? "" : undefined}>
                     <div className="focus-row-line">
                       <button type="button" className="focus-row" disabled={!s} onClick={() => goToDeal(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
-                        <span className="dot" style={{ background: handled ? "var(--text-faint)" : "var(--attention)" }} />
+                        <StatusWord tone={handled ? "done" : "att"} word={handled ? "已办" : "未办"} />
                         <span className="focus-row-text">
                           <span className="focus-title">{name}</span>
                           <span className="focus-sub">

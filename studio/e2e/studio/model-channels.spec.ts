@@ -105,7 +105,7 @@ test("a third-party Claude channel runs Claude Code against its address; the las
   await expect(studio.api("PUT", `/api/profiles/${channel.id}/hidden`, { hidden: true })).rejects.toThrow(/至少要留一个/);
 });
 
-test("设置 → 额度: which accounts show at the bottom of the left column and in Focus", async () => {
+test("设置 → 额度: which accounts show at the bottom of the left column (Focus shows none since 2026-10-29)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const channel = await studio.api<ModelChannel>("POST", "/api/channels", { kind: "codex", label: "中转 GPT", baseUrl: studio.mock!.baseUrl, key: "mock-channel-key", balance: { template: "general" } });
@@ -118,14 +118,12 @@ test("设置 → 额度: which accounts show at the bottom of the left column an
   const row = dialog.locator(`[data-testid="quota-row"][data-id="${channel.id}"]`);
   await expect(row).toContainText("余额 · 余额 $12.50");
   await expect(row.getByTestId("quota-footer")).toBeChecked();
-  await expect(row.getByTestId("quota-focus")).not.toBeChecked();
-  await row.getByTestId("quota-focus").click();
-  await expect(row.getByTestId("quota-focus")).toBeChecked();
+  await expect(row.getByTestId("quota-focus")).toHaveCount(0);
   await row.getByTestId("quota-footer").click();
   await expect(row.getByTestId("quota-footer")).not.toBeChecked();
   await screenshot(app, "stage-14", "S14-H-quota", page);
   const settings = await studio.api<StudioSettings>("GET", "/api/settings");
-  expect(settings.quotaDisplay[channel.id]).toEqual({ footer: false, focus: true });
+  expect(settings.quotaDisplay[channel.id]).toMatchObject({ footer: false });
   await page.keyboard.press("Escape");
   await expect(footer).not.toContainText("中转 GPT");
 });

@@ -2,11 +2,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { relativeTime, SESSION_LOOK, type StatusLook } from "../lib/status.js";
-import { FocusDetail } from "./FocusEntry.js";
+import { FocusDetail, TO_REVIEW } from "./FocusEntry.js";
+import { sessionWord, StatusWord } from "./StatusWord.js";
 import { ranFor } from "./pins.js";
 
 // 进行中 with subagents (方案 D, 2026-10-21) and 置顶 (the same day). A session counts as working while it runs or
-// while subagents of its own still do; a hollow dot says it waits for them. Its running subagents fold to「▸ N」 next
+// while subagents of its own still do; 「◐ 等待」 says it waits for them (a hollow dot until 2026-10-29). Its running subagents fold to「▸ N」 next
 // to it and open to a row each (a click opens that subagent). A pinned task's session stays at the top with its
 // detail always open.
 
@@ -15,9 +16,9 @@ export const WAITING_SUBS: StatusLook = { label: "等子 agent", dot: "var(--run
 
 type GoTo = (sessionId: string, taskId: string | null | undefined) => void;
 
-/** The status dot: filled, or a ring while the session waits for its subagents. */
-export function StatusDot({ look, ring = false }: { look: StatusLook; ring?: boolean }) {
-  return <span className={ring ? "dot ring" : "dot"} style={ring ? { borderColor: look.dot } : { background: look.dot }} data-ring={ring || undefined} />;
+/** A row's status word: 完成待审核, waiting for its subagents (`ring`), or the session's own status. */
+function rowWord(session: Session, look: StatusLook, ring: boolean) {
+  return sessionWord(session.status, { toReview: look === TO_REVIEW, waitsSubs: ring });
 }
 
 export function PinButton({ pinned, onToggle }: { pinned: boolean; onToggle(): void }) {
@@ -72,7 +73,7 @@ function SubRows({ subs, goTo }: { subs: readonly Session[]; goTo: GoTo }) {
     <div className="focus-subs" data-testid="focus-subs">
       {subs.map((sub) => (
         <button key={sub.id} type="button" className="focus-sub-row" onClick={() => goTo(sub.id, sub.taskId)} title={sub.kind === "sub" ? "在工作台打开这个子 agent" : "在工作台打开这个委派会话（它开的会话）"} data-testid="focus-sub-row" data-delegated={sub.kind !== "sub" || undefined}>
-          <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
+          <StatusWord tone="run" />
           {sub.kind !== "sub" && (
             <svg className="focus-sub-kind" width="11" height="11" viewBox="0 0 16 16" aria-label="委派会话">
               <path d="M3.5 3v3.5A2.5 2.5 0 0 0 6 9h7" />
@@ -114,11 +115,12 @@ function Row({
   onPin?: (() => void) | undefined;
   goTo: GoTo;
 }) {
+  const { tone, word } = rowWord(session, look, ring);
   return (
     <>
       <div className="focus-row-line">
         <button type="button" className="focus-row" onClick={() => goTo(session.id, session.taskId)} title="在工作台打开">
-          <StatusDot look={look} ring={ring} />
+          <StatusWord tone={tone} word={word} />
           <span className="focus-row-text">
             <span className="focus-title">{title}</span>
             <span className="focus-sub" style={{ color: look.text }}>
@@ -159,7 +161,7 @@ export function WorkingEntry({
   const look = own ? SESSION_LOOK.running : WAITING_SUBS;
   const line = subs.length ? `${look.label} · ${brief}` : brief;
   return (
-    <div className="focus-entry" data-testid="focus-working-entry" data-waiting-subs={!own || undefined}>
+    <div className="focus-entry" data-tone="run" data-testid="focus-working-entry" data-waiting-subs={!own || undefined}>
       <Row session={session} title={title} line={line} look={{ ...look, text: "var(--text-dim)" }} ring={!own} subs={subs} subsOpen={subsOpen} onToggleSubs={onToggleSubs} pinned={false} onPin={onPin} goTo={goTo} />
     </div>
   );
@@ -195,7 +197,7 @@ export function PinnedEntry({
   goTo: GoTo;
 }) {
   return (
-    <div className={detail ? "focus-entry open pinned" : "focus-entry pinned"} data-testid="focus-pinned">
+    <div className={detail ? "focus-entry open pinned" : "focus-entry pinned"} data-tone={rowWord(session, look, ring).tone} data-testid="focus-pinned">
       <Row session={session} title={title} line={`${look.label} · ${brief}`} look={look} ring={ring} subs={subs} subsOpen={subsOpen} onToggleSubs={onToggleSubs} pinned onPin={onUnpin} goTo={goTo} />
       {detail && <FocusDetail link={link} session={session} />}
     </div>

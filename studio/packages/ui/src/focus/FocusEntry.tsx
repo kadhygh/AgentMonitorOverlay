@@ -3,6 +3,7 @@ import type { Session, SessionItem } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { relativeTime, SESSION_LOOK, type StatusLook } from "../lib/status.js";
+import { sessionWord, StatusWord } from "./StatusWord.js";
 import { planTitle } from "../chat/questions/flow.js";
 import { noteFocusJump } from "../lib/focusJump.js";
 
@@ -75,11 +76,12 @@ export function FocusEntry({
   cut?: number;
 }) {
   const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
+  const word = sessionWord(session.status, { toReview });
   return (
-    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined} data-interrupted={session.status === "interrupted" || cut > 0 || undefined}>
+    <div className={open ? "focus-entry open" : "focus-entry"} data-tone={word.tone} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined} data-interrupted={session.status === "interrupted" || cut > 0 || undefined}>
       <div className="focus-row-line">
         <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
-          <span className="dot" style={{ background: look.dot }} />
+          <StatusWord tone={word.tone} word={word.word} />
           <span className="focus-row-text">
             <span className="focus-title">{title}</span>
             <span className="focus-sub" style={{ color: look.text }}>

@@ -2,10 +2,11 @@ import { useState } from "react";
 import type { RemoteIncomingRequest } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
+import { StatusWord } from "./StatusWord.js";
 
 /**
  * 远程 (2026-10-29, the person): a pairing request is something to deal with on Focus, like an approval — 允许 / 拒绝
- * in place, or 「在远程页里看」 to open the remote page (设置 → 远程 until 10-29). It leaves the list once answered (here, there, or on another of this
+ * in place, or 「在「远程」里看」 to open 远程 (设置 → 远程 until 10-29, a page until that evening, a dialog since). It leaves the list once answered (here, there, or on another of this
  * account's computers).
  */
 export function FocusPairRequest({ link, request }: { link: HostLink; request: RemoteIncomingRequest }) {
@@ -22,9 +23,9 @@ export function FocusPairRequest({ link, request }: { link: HostLink; request: R
     }
   }
   return (
-    <div className="focus-entry open" data-testid="focus-pair-request">
+    <div className="focus-entry open" data-tone="att" data-testid="focus-pair-request">
       <div className="focus-row static">
-        <span className="dot" style={{ background: "var(--attention)" }} />
+        <StatusWord tone="att" word="配对" />
         <span className="focus-row-text">
           <span className="focus-title">配对请求 · {request.account}（{request.name}）</span>
           <span className="focus-sub">想和这台电脑配对 · {relativeTime(request.createdAt)}</span>
@@ -41,7 +42,7 @@ export function FocusPairRequest({ link, request }: { link: HostLink; request: R
             拒绝
           </button>
           <button type="button" className="focus-btn" onClick={() => void window.amo?.openInWorkbench?.({ settings: "remote" })} data-testid="focus-pair-settings">
-            在远程页里看
+            在「远程」里看
           </button>
         </div>
       </div>

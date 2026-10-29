@@ -1,68 +1,81 @@
-/* Focus window (S3-07), after design/prototype/Focus.dc.html. The window itself is transparent; only the panel paints. */
+/* Focus window (S3-07), after design/prototype/Focus.dc.html. The window itself is transparent; only the panel paints.
+   2026-10-29 evening (the user, out/html/focus-design.html): in the main window's look (version A — square corners, the
+   head over a 2px rule, the serif name, 需要你 as a block), each row starting with a status word (C: StatusWord.tsx) and
+   each entry a card with a coloured left bar (B). No 额度 line any more. */
 html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { background: transparent; overflow: hidden; }
 .focus-root { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px; }
 .focus-root > .focus-panel { min-height: 0; flex: 0 1 auto; }
 .focus-panel {
-  border-radius: 14px; background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
+  border-radius: 4px; background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
   overflow: hidden; display: flex; flex-direction: column; max-height: 100%; font-size: 13.5px; line-height: 1.5;
 }
-.focus-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--border); }
-.focus-name { font-weight: 600; }
-.focus-needs { font-size: 12px; color: var(--attention); }
-.focus-dim { font-size: 12px; color: var(--text-dim); }
-.focus-icon { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
-.focus-icon:hover { color: var(--text); background: var(--selected); }
+.focus-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; box-sizing: border-box; padding: 6px 6px; background: var(--bg-header); border-bottom: 2px solid var(--border-strong); }
+.focus-name { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+.focus-needs { height: 24px; padding: 0 8px; display: inline-flex; align-items: center; border: 1px solid var(--attention-border); border-radius: 3px; background: var(--attention-bg); color: var(--attention); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.focus-dim { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+.focus-icon { width: 28px; height: 28px; border-radius: 3px; border: 1px solid transparent; background: transparent; color: var(--text-dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.focus-icon:hover { color: var(--text); background: var(--chip); }
+.focus-icon[aria-expanded="true"] { border-color: var(--border-strong); background: var(--panel); color: var(--text); }
 .focus-lock { display: inline-flex; color: var(--text-dim); }
-.focus-list { padding: 6px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-.focus-entry { border-radius: 10px; }
-.focus-entry.open { background: var(--panel-raised); }
-.focus-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: none; border-radius: 10px; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
-.focus-row:hover { background: var(--selected); }
-.focus-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-/* Waiting for its subagents (2026-10-21): a ring rather than a filled dot. */
-.focus-row .dot.ring { box-sizing: border-box; background: transparent; border: 2px solid var(--running); }
+.focus-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+/* An entry is a card (B): its left bar in the colour of its status word. */
+.focus-entry { --tone: var(--border-strong); background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--tone); border-radius: 3px; }
+.focus-entry[data-tone="att"] { --tone: var(--attention); }
+.focus-entry[data-tone="run"], .focus-entry[data-tone="done"] { --tone: var(--running); }
+.focus-entry[data-tone="wait"] { --tone: var(--muted-dot); }
+.focus-entry[data-tone="bad"] { --tone: var(--error); }
+.focus-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 8px; border: none; border-radius: 0; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+.focus-row:hover { background: var(--panel-raised); }
+/* The status word (C): a mark and a word in a column of its own, so the titles line up. */
+.focus-st { flex: none; min-width: 3.4em; display: inline-flex; align-items: baseline; gap: 3px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
+.focus-st-mark { font-family: var(--font-code); font-size: 11.5px; }
+.focus-st.att { color: var(--attention); }
+.focus-st.run, .focus-st.done { color: var(--running-text, var(--running)); }
+.focus-st.bad { color: var(--error-text); }
 /* A row with its buttons beside it: the subagent toggle and the pin (shown on hover, or always when pinned). */
 .focus-row-line { display: flex; align-items: center; gap: 2px; }
 .focus-row-line > .focus-row { flex: 1; min-width: 0; }
-.focus-subs-toggle { flex: none; height: 22px; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text); font-size: 11.5px; cursor: pointer; }
+.focus-subs-toggle { flex: none; height: 22px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 3px; background: transparent; color: var(--text); font-size: 11.5px; cursor: pointer; }
 .focus-subs-toggle:hover { background: var(--selected); }
-.focus-pin { flex: none; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; opacity: 0; }
+.focus-pin { flex: none; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: none; border-radius: 3px; background: transparent; color: var(--text-dim); cursor: pointer; opacity: 0; }
 .focus-entry:hover .focus-pin, .focus-pin:focus-visible, .focus-pin.on { opacity: 1; }
 .focus-pin:hover { background: var(--selected); color: var(--text); }
 .focus-pin.on { color: var(--running); }
-.focus-subs { display: flex; flex-direction: column; padding: 0 6px 4px 30px; }
+.focus-subs { display: flex; flex-direction: column; padding: 0 6px 6px 22px; }
 /* Subagents cut off since the person last looked (2026-10-28). */
 .focus-cut { color: var(--error-text); font-weight: 600; }
-.focus-entry[data-interrupted] { box-shadow: inset 3px 0 0 var(--error); }
-.focus-sub-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: none; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; background: transparent; color: var(--text); font-size: 12px; text-align: left; cursor: pointer; }
+.focus-entry[data-interrupted] { --tone: var(--error); }
+.focus-sub-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: none; border-left: 1px solid var(--border); border-radius: 0 3px 3px 0; background: transparent; color: var(--text); font-size: 12px; text-align: left; cursor: pointer; }
 .focus-sub-row:hover { background: var(--selected); }
-.focus-sub-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.focus-sub-row .focus-st { min-width: 0; }
 .focus-sub-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .focus-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .focus-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .focus-sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .focus-time { font-size: 11px; color: var(--text-dim); flex: none; }
 /* 进行中 and 历史 (2026-10-20): what works now, and what needed the person lately. */
-.focus-group { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.focus-list > .focus-group:last-child { padding-bottom: 0; border-bottom: none; }
-.focus-group-head { padding: 0 10px; font-size: 12px; color: var(--text-dim); }
+.focus-group { display: flex; flex-direction: column; gap: 6px; }
+/* A group's name as the main window's section labels: serif, spaced, a rule to the right. */
+.focus-group-head { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--text-dim); }
+.focus-group-head::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .focus-group .focus-sub, .focus-history .focus-sub { color: var(--text-dim); }
-.focus-history { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px 6px; border-top: 1px solid var(--border); }
-.focus-history-toggle { align-self: flex-start; padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.focus-history { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px 8px 8px; border-top: 1px solid var(--border); }
+.focus-history-toggle { align-self: flex-start; padding: 2px 6px; border: none; border-radius: 3px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .focus-history-toggle:hover { color: var(--text); background: var(--selected); }
 .focus-history .focus-row:disabled { cursor: default; opacity: 0.6; }
 .focus-history .focus-row:disabled:hover { background: transparent; }
-.focus-detail { padding: 0 12px 12px 28px; display: flex; flex-direction: column; gap: 10px; }
-.focus-snippet { font-size: 12.5px; color: var(--code-text-dim); white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto; }
+.focus-detail { padding: 0 10px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.focus-snippet { font-family: var(--font-code); font-size: 12px; line-height: 1.55; color: var(--code-text-dim); background: var(--code-bg); border: 1px solid var(--border); border-radius: 2px; padding: 6px 8px; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto; }
 .focus-error { font-size: 12px; color: var(--error-text); }
 .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.focus-approve { height: 30px; padding: 0 14px; border-radius: 7px; border: none; background: var(--attention); color: var(--on-attention); font-weight: 600; cursor: pointer; }
+.focus-approve { height: 28px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--attention); background: var(--attention); color: var(--on-attention); font-weight: 600; cursor: pointer; }
 .focus-approve:disabled { opacity: 0.6; cursor: default; }
 /* A row that only says what it is (a pairing request, 2026-10-29): its buttons are below. */
 .focus-row.static { cursor: default; }
 .focus-row.static:hover { background: transparent; }
 .focus-sub.focus-wrap { white-space: normal; color: var(--text-dim); }
-.focus-btn { height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+.focus-btn { height: 28px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; }
+.focus-btn:hover { background: var(--chip); }
 
 /* S3-08: drag the Focus window by its title row */
 .focus-head { -webkit-app-region: drag; user-select: none; }
@@ -85,22 +98,20 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
   border: 2px dashed var(--primary); background: color-mix(in srgb, var(--overlay-strong) 70%, transparent);
   display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 8px;
 }
-.focus-move-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 12.5px; font-weight: 600; }
-.focus-move-done { -webkit-app-region: no-drag; height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; }
+.focus-move-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 3px; background: var(--primary); color: var(--on-primary); font-size: 12.5px; font-weight: 600; }
+.focus-move-done { -webkit-app-region: no-drag; height: 28px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; }
 
 /* 2026-10-15: the alert colour; green (calm) when all that is new is finished work to look at. */
 .focus-root { --focus-alert: var(--attention); }
 .focus-root.calm { --focus-alert: var(--running); }
-/* S14-J: something new needs the person — the panel glows (gently) and the robot dances above it. */
-.focus-panel.alerting { border-color: var(--focus-alert); animation: focus-glow 1.6s ease-in-out infinite; }
-@keyframes focus-glow {
-  0%, 100% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 0 color-mix(in srgb, var(--focus-alert) 0%, transparent); }
-  50% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 4px color-mix(in srgb, var(--focus-alert) 45%, transparent); }
-}
+/* S14-J: something new needs the person — the robot dances above the panel; the panel itself has a still frame in the
+   alert colour (a soft pulsing glow until 2026-10-29) and its head's rule turns that colour. */
+.focus-panel.alerting { border-color: var(--focus-alert); box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--focus-alert) 32%, transparent); }
+.focus-panel.alerting .focus-head { border-bottom-color: var(--focus-alert); }
 .focus-bot-slot { flex: none; display: flex; justify-content: flex-end; padding: 0 6px 6px; }
 .pixel-bot { display: inline-flex; align-items: flex-end; gap: 6px; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--text); animation: bot-pop 0.25s ease-out; }
 .pixel-bot-say {
-  position: relative; margin-bottom: 34px; padding: 5px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  position: relative; margin-bottom: 34px; padding: 4px 9px; border-radius: 3px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
   background: var(--overlay-strong); border: 1px solid var(--focus-alert); color: var(--focus-alert); box-shadow: 0 2px 6px var(--shadow);
 }
 .pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--focus-alert); border-right: 0; }
@@ -124,9 +135,10 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .pixel-bot.skin-reader .pixel-bot-say { margin-bottom: 64px; }
 .bot-root .pixel-bot.skin-reader .pixel-bot-say { margin-bottom: 58px; }
 .pixel-bot.skin-reader.alert .reader-art { animation: bot-hop 0.6s steps(2) infinite; }
-.mascot-art { width: 72px; height: 72px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
-.pixel-bot.skin-mascot .pixel-bot-say { margin-bottom: 40px; }
-.bot-root .pixel-bot.skin-mascot .pixel-bot-say { margin-bottom: 36px; }
+/* 「AMO 娘」: 92 px since 2026-10-29 evening (72 before; the user: bigger). */
+.mascot-art { width: 92px; height: 92px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
+.pixel-bot.skin-mascot .pixel-bot-say { margin-bottom: 52px; }
+.bot-root .pixel-bot.skin-mascot .pixel-bot-say { margin-bottom: 48px; }
 .pixel-bot.skin-mascot.alert .mascot-art { animation: bot-hop 0.6s steps(2) infinite; }
 @keyframes bot-hop { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes bot-shake { 0% { transform: translate(-1.5px, 0) rotate(-4deg); } 50% { transform: translate(1.5px, 0) rotate(4deg); } }
@@ -142,29 +154,23 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 @keyframes bot-leg { 0% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @keyframes bot-blink { 0% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
-  .focus-panel.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--focus-alert) 45%, transparent); }
   .pixel-bot, .bot-bulb, .bot-bob, .leg-l, .leg-r, .pixel-bot.angry .pixel-bot-art { animation: none; }
   .pose-a { animation: none; opacity: 1; }
   .pose-b { animation: none; opacity: 0; }
 }
 
-/* 额度 (设置 → 额度 → Focus): one quiet line under the head. */
-.focus-quota { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 14px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.focus-quota-item.hot { color: var(--attention-text, var(--attention)); font-weight: 600; }
-.focus-quota-item.bad { color: var(--error); }
-
 /* 2026-10-15: the window is only as big as what Focus draws (its shape follows the panel, robot and this box), so the
    shadows stay within a few pixels. 「Focus 设置」 sits above the panel. */
 .focus-pop {
-  flex: none; align-self: flex-end; width: 260px; margin-bottom: 8px; padding: 6px; border-radius: 12px;
+  flex: none; align-self: flex-end; width: 260px; margin-bottom: 8px; padding: 6px; border-radius: 4px;
   background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
   display: flex; flex-direction: column; gap: 2px; font-size: 13px;
 }
 .focus-pop-head { display: flex; align-items: center; padding: 2px 2px 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .focus-pop-title { flex: 1; font-weight: 600; }
-.focus-pop-x { width: 26px; height: 26px; border-radius: 7px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.focus-pop-x { width: 26px; height: 26px; border-radius: 3px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .focus-pop-x:hover { background: var(--selected); color: var(--text); }
-.focus-pop-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; border-radius: 8px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.focus-pop-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; border-radius: 3px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .focus-pop-row:hover:not(:disabled) { background: var(--selected); }
 .focus-pop-row:disabled { color: var(--text-faint); cursor: default; }
 .focus-pop-row .focus-menu-label { display: flex; flex-direction: column; }
@@ -176,20 +182,19 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 /* 点击穿透: nothing drags (clicks fall through anyway); the panel reads a little lighter. */
 .focus-panel.passthrough .focus-head { -webkit-app-region: no-drag; }
 .focus-panel.passthrough { background: color-mix(in srgb, var(--overlay-strong) 82%, transparent); }
-.focus-quota-item + .focus-quota-item { padding-left: 12px; border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 
 /* The app's icon and "Focus" at the front of the head: one see-through button that opens the main window (2026-10-19:
    the name joined the icon); hovering lights it and nudges the icon. */
 .focus-head { padding-left: 6px; }
 .focus-home {
   -webkit-app-region: no-drag; flex: none; height: 28px; padding: 0 9px 0 4px; gap: 6px;
-  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font: inherit; cursor: pointer;
+  border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--text); font: inherit; cursor: pointer;
   display: inline-flex; align-items: center;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 .focus-home img { width: 20px; height: 20px; display: block; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .focus-home .focus-name { transition: color 0.15s ease; }
-.focus-home:hover { background: var(--selected); border-color: var(--border); box-shadow: 0 1px 6px color-mix(in srgb, var(--primary) 18%, transparent); }
+.focus-home:hover { background: var(--chip); }
 .focus-home:hover img { transform: scale(1.12) rotate(-8deg); }
 .focus-home:hover .focus-name { color: var(--primary); }
 .focus-home:active { transform: scale(0.96); }

@@ -39,7 +39,7 @@ test("Focus: waiting for its subagents is 进行中 with ▸ N, finished once th
   await expect(working).toHaveAttribute("data-waiting-subs", "true", { timeout: 60_000 });
   await expect(working).toContainText("调查方案");
   await expect(working).toContainText("等子 agent");
-  await expect(working.locator(".dot.ring")).toHaveCount(1);
+  await expect(working.getByTestId("focus-status-word").first()).toHaveText("◐等待");
   // Not finished, nothing for the person yet.
   await expect(focus.getByTestId("focus-entry")).toHaveCount(0);
   await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");

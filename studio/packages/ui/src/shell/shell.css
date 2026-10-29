@@ -9,6 +9,8 @@
 .brand { display: flex; align-items: center; gap: 10px; min-width: calc(var(--nav-w) - 32px); }
 /* The viewfinder mark (design/icon/viewfinder.svg). */
 .brand-mark { width: 34px; height: 34px; display: block; flex: none; }
+/* 「AMO 娘」 (2026-10-29 evening, the user: bigger): she is wide, so drawn larger and let into the bar's padding. */
+.brand-mark.mascot { width: 48px; height: 48px; margin: -7px -3px -7px -7px; }
 .brand-name { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); }
 .brand-sep { color: var(--text-dim); }
 .view-tabs { display: flex; gap: 2px; padding: 2px; border-radius: calc(var(--r-btn) + 2px); background: var(--chip); }
