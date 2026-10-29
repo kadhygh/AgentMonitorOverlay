@@ -74,6 +74,7 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   await expect(note).toHaveCount(0);
   await expect.poll(async () => (await canvas()).nodes.find((n) => n.kind === "note")).toMatchObject({ text: "先问策划掉落率，再定" });
   await expect(page.getByTestId("canvas-note")).toHaveText("先问策划掉落率，再定");
+  await page.keyboard.press("Escape"); // 跑校验's 详情框 floats over the note
 
   await page.getByTestId("canvas-note").click();
   await note.getByRole("button", { name: "删除便签" }).click();

@@ -46,7 +46,10 @@ test("canvas: tasks appear, cards move and persist, pan and zoom", async () => {
     .poll(async () => (await studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).nodes.find((n) => n.id === nodeId)!.pos)
     .toEqual({ x: before.x + 120, y: before.y + 160 });
 
-  // Pan by dragging empty space; zoom with the wheel and the buttons; reset.
+  // Pan by dragging empty space; zoom with the wheel and the buttons; reset (the dragged card's 详情框 put away first:
+  // the wheel over it scrolls the box, not the canvas).
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("canvas-detail")).toHaveCount(0);
   const world = page.getByTestId("canvas-world");
   const viewport = page.getByTestId("canvas-viewport");
   const vbox = (await viewport.boundingBox())!;

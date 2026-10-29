@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { emptyCanvas, type CanvasDoc } from "@amo-studio/protocol";
-import { contentBounds, deleteGroup, deleteGroupAndCards, duplicateNote, groupContents, groupAt, moveGroup, moveNode, outOfGroup, removeEdge, resizeGroup, resizeNode, reverseEdge, setColor, updateGroup } from "./geometry.js";
+import { contentBounds, deleteGroup, deleteGroupAndCards, duplicateNote, groupContents, groupAt, moveGroup, moveNode, outOfGroup, placeBeside, removeEdge, resizeGroup, resizeNode, reverseEdge, setColor, updateGroup } from "./geometry.js";
+
+describe("placeBeside (详情框)", () => {
+  const box = { w: 300, h: 200 };
+  const area = { w: 1000, h: 600 };
+  it("goes right of the card, its top lined up and kept in the area", () => {
+    expect(placeBeside({ x: 100, y: 100, w: 220, h: 66 }, box, area)).toEqual({ x: 332, y: 100, side: "right" });
+    expect(placeBeside({ x: 100, y: 550, w: 220, h: 66 }, box, area)).toEqual({ x: 332, y: 392, side: "right" });
+    expect(placeBeside({ x: 100, y: -30, w: 220, h: 66 }, box, area)).toEqual({ x: 332, y: 8, side: "right" });
+  });
+  it("left when the right has no room, then below, then above", () => {
+    expect(placeBeside({ x: 700, y: 100, w: 220, h: 66 }, box, area)).toEqual({ x: 388, y: 100, side: "left" });
+    const wide = { x: 200, y: 50, w: 700, h: 100 };
+    expect(placeBeside(wide, box, area)).toEqual({ x: 200, y: 162, side: "below" });
+    expect(placeBeside({ ...wide, y: 380 }, box, area)).toEqual({ x: 200, y: 168, side: "above" });
+  });
+  it("of the sides with room, the one covering least of the other cards", () => {
+    const anchor = { x: 340, y: 100, w: 220, h: 66 };
+    expect(placeBeside(anchor, box, area)?.side).toBe("right");
+    expect(placeBeside(anchor, box, area, 12, undefined, [{ x: 700, y: 120, w: 220, h: 66 }])?.side).toBe("left");
+    // Every side covered: the least.
+    const others = [{ x: 700, y: 120, w: 220, h: 66 }, { x: 0, y: 100, w: 300, h: 200 }, { x: 340, y: 200, w: 300, h: 100 }];
+    expect(placeBeside(anchor, box, area, 12, undefined, others)?.side).toBe("right");
+  });
+  it("over the anchor when no side has room, and nothing when the anchor is out of view", () => {
+    expect(placeBeside({ x: 50, y: 50, w: 900, h: 500 }, box, area)?.side).toBe("over");
+    expect(placeBeside({ x: 1200, y: 100, w: 220, h: 66 }, box, area)).toBeNull();
+    expect(placeBeside({ x: 100, y: -100, w: 220, h: 66 }, box, area)).toBeNull();
+  });
+});
 
 const SIZE = { w: 220, h: 66 };
 

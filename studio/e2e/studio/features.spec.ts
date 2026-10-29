@@ -34,7 +34,7 @@ test("turn extension packs and planning off and on again", async () => {
   await screenshot(studio.app, "stage-11", "R4-features-off", page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("tab", { name: "整体待办" })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "详情" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "沟通" })).toBeVisible();
   await page.getByTestId(`scope-ws-${ws.name}`).click();
   await expect(page.getByRole("button", { name: "扩展包" })).toHaveCount(0);
   expect((await studio.api<{ disabledFeatures: string[] }>("GET", "/api/settings")).disabledFeatures).toEqual(["packs", "planning"]);
