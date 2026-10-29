@@ -42,7 +42,7 @@ import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import type { ReadPlace } from "./readPlace.js";
-import { copyStatus, grantsOf, useRemote } from "../settings/remote.js";
+import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */

@@ -1,0 +1,76 @@
+/* 远程 (2026-10-29): its own page (from the top bar), the pair dialog, and the bits the task page's 授权给… box shares. */
+
+/* The top bar's 「远程」: like the other buttons there; while its page is in front it looks pressed. */
+.tb-btn.remote-toggle[aria-current="page"] { border-color: var(--border-strong); background: var(--panel); color: var(--text); font-weight: 600; }
+.tb-btn.remote-toggle .settings-dot { margin-left: 0; }
+
+.remote-page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.remote-wrap { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 20px 24px 40px; }
+.remote-body { width: min(860px, 100%); display: flex; flex-direction: column; gap: 22px; }
+
+/* The quiet line at the top: account · server · connection · this computer, and 远程设置. */
+.remote-self { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
+.remote-self-line { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.remote-sep { color: var(--text-faint); }
+.remote-offline { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--attention-border); border-radius: var(--r-m); background: var(--attention-bg); font-size: var(--fs-sm); }
+.remote-offline-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.remote-message { color: var(--running-text); }
+
+.remote-login { margin: 40px auto 0; max-width: 460px; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+.remote-login-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+
+.remote-section { display: flex; flex-direction: column; gap: 10px; }
+.remote-section-head { display: flex; align-items: center; gap: 10px; }
+.remote-heading { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+.remote-group { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }
+.remote-group-title { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+.remote-cards { display: flex; flex-direction: column; gap: 6px; }
+.remote-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.remote-group-title + .remote-row, .remote-group-title + .settings-hint { border-top: none; }
+.remote-row:first-child { border-top: none; }
+.remote-row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; overflow-wrap: anywhere; }
+.remote-section > .remote-row { padding: 6px 2px; }
+
+.remote-peer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.remote-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }
+.remote-card.attention { border-color: var(--attention-border); background: var(--attention-bg); }
+.remote-card-title { font-size: var(--fs-sm); font-weight: 600; }
+.remote-card-actions { margin-top: 2px; }
+
+.remote-conn { font-weight: 600; }
+.remote-conn-online { color: var(--running-text); }
+.remote-conn-offline, .remote-conn-unauthorized, .remote-conn-server-old, .remote-conn-replaced { color: var(--attention); }
+.remote-presence { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.remote-presence .dot { background: var(--text-faint); }
+.remote-presence-online { color: var(--running-text); }
+.remote-presence-online .dot { background: var(--running); }
+.remote-presence-lost { color: var(--attention); }
+.remote-presence-lost .dot { background: var(--attention); }
+.remote-ping { font-size: 12.5px; }
+.remote-ping.ok { color: var(--running-text); }
+.remote-ping.error { color: var(--error); }
+.remote-warning { color: var(--attention); }
+.remote-ask-refused { color: var(--attention); }
+
+/* 远程设置, folded. */
+.remote-fold-btn { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 2px 0; border: none; background: none; color: inherit; font: inherit; cursor: pointer; }
+.remote-fold-btn:not(.remote-heading) { font-size: 12.5px; color: var(--text-dim); }
+.remote-fold-btn:hover { color: var(--text); }
+.remote-fold-mark { width: 12px; color: var(--text-faint); font-size: 11px; }
+.remote-subsection { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }
+.remote-subheading { font-size: 13px; font-weight: 600; }
+.remote-device-name { font-size: var(--fs-sm); font-weight: 600; }
+.remote-allowed-list { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.remote-allowed-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+
+/* The dialogs: asking a device to run a task, answering a request, pairing a device. */
+.remote-request-modal { width: 500px; max-width: calc(100vw - 32px); }
+.remote-dialog-head { display: flex; align-items: center; gap: 8px; }
+.remote-request-field { display: flex; flex-direction: column; gap: 4px; }
+.remote-request-field > .field, .remote-request-field > select { width: 100%; box-sizing: border-box; }
+.remote-request-field > textarea { resize: vertical; min-height: 64px; font: inherit; }
+.remote-request-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.remote-pair-modal { width: 540px; }
+.remote-pair-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-m); padding: 2px 10px; max-height: 280px; overflow-y: auto; }
+.remote-pair-list > .settings-hint { padding: 8px 0; }
+.remote-pair-account { display: flex; flex-direction: column; gap: 6px; }

@@ -22,7 +22,7 @@ import { historyRows, readHistory, updateHistory, writeHistory, type Attention, 
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
 import { useWindowShape } from "./windowShape.js";
-import { useRemote } from "../settings/remote.js";
+import { useRemote } from "../remote/remote.js";
 import { FocusPairRequest } from "./FocusPairRequest.js";
 import { FocusTaskRequest } from "./FocusTaskRequest.js";
 import "./focus.css";

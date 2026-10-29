@@ -27,6 +27,7 @@ import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 import { useMascotIcon } from "./focus/mascot.js";
 import { useSessionSeen } from "./lib/sessionSeen.js";
+import { remoteButton, useRemote } from "./remote/remote.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
 // the features (features.ts); the data several of them share is loaded here once.
@@ -90,7 +91,9 @@ export function App() {
   const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
   const { todos } = useTodos(host.kind === "ready" ? host.link : NO_LINK);
   const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
-  // Open, and on which page when something asked for one (Focus: a pairing request → 远程); `at` remounts it there.
+  // 远程 (2026-10-29): the top bar's button — 「远程 · N 在线」, a dot while something waits.
+  const remoteState = useRemote(host.kind === "ready" ? host.link : null);
+  // Open, and on which page when something asked for one; `at` remounts it there.
   const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
   const [quickOpen, setQuickOpen] = useState(false);
 
@@ -149,9 +152,11 @@ export function App() {
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
       window.amo?.onNavigate?.(({ taskId, sessionId, passage, topicId, calloutId, settings: settingsPage }) => {
-        // 远程 (2026-10-29): Focus's 「在设置里看」 on a pairing request.
+        // 远程 (2026-10-29): Focus's 「在远程页里看」 / 「去处理」 on a pairing or task request → the remote page (设置 →
+        // 远程 before it became a page; the shell still asks with `settings: "remote"`).
         if (settingsPage === "remote") {
-          setSettingsOpen({ page: "remote", at: Date.now() });
+          setSettingsOpen(false);
+          setView({ kind: "remote", nav: Date.now() });
           return;
         }
         const was = viewNow.current;
@@ -252,6 +257,7 @@ export function App() {
         pin={pin}
         onMarks={() => openMarks(marksTarget())}
         nav={{ ...nav, go }}
+        remote={{ ...remoteButton(remoteState), current: shown.kind === "remote", open: () => setView({ kind: "remote" }) }}
       />
       <div className="body">
         <ScopeNav
@@ -284,7 +290,19 @@ export function App() {
         </div>
       </div>
       <HostErrorToast />
-      {settingsOpen && <SettingsDialog key={settingsOpen.at} link={link} settings={settings} workspaces={state.workspaces} tasks={state.tasks} topics={state.topics} profiles={state.profiles} {...(settingsOpen.page ? { page: settingsOpen.page } : {})} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsDialog
+          key={settingsOpen.at}
+          link={link}
+          settings={settings}
+          {...(settingsOpen.page ? { page: settingsOpen.page } : {})}
+          onClose={() => setSettingsOpen(false)}
+          onOpenRemote={() => {
+            setSettingsOpen(false);
+            setView({ kind: "remote" });
+          }}
+        />
+      )}
       {quickOpen && (
         <QuickStart
           link={link}

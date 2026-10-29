@@ -1,3 +1,14 @@
+/** 远程's icon (2026-10-29): two computers, linked — on the top bar's button and on 「← 远程」. */
+export function RemoteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="6" height="4.5" rx="0.8" />
+      <rect x="8.5" y="9" width="6" height="4.5" rx="0.8" />
+      <path d="M3.5 9v1.5a1 1 0 0 0 1 1h2M12.5 7V5.5a1 1 0 0 0-1-1h-2" />
+    </svg>
+  );
+}
+
 /**
  * The way back from a task or new-task page (2026-10-15): a chevron, the icon of where it returns (看板: columns,
  * 画布: linked cards) and its name. Named 「返回看板」 / 「返回画布」 for screen readers.
@@ -8,7 +19,9 @@ export function BackButton({ label, onClick }: { label: string; onClick(): void 
       <svg className="back-chevron" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M10 3 5 8l5 5" />
       </svg>
-      {label === "画布" ? (
+      {label === "远程" ? (
+        <RemoteIcon />
+      ) : label === "画布" ? (
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
           <rect x="1.8" y="2.5" width="5" height="3.6" rx="0.8" />
           <rect x="9.2" y="9.9" width="5" height="3.6" rx="0.8" />

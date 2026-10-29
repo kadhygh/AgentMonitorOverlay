@@ -3,6 +3,7 @@ import type { Scope } from "../board/Board.js";
 import { scratchpadBridge } from "../scratchpad/bridge.js";
 import { showToast } from "../lib/toast.js";
 import type { AnyViewDef, View } from "./views.js";
+import { RemoteIcon } from "./BackButton.js";
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
 export function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
@@ -29,8 +30,8 @@ export function usePinToggle(): { on: boolean; available: boolean; set(on: boole
 }
 
 /**
- * The top bar, which is also the window's title bar: brand and scope, what needs the person, the marks, scratchpad and
- * Focus windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
+ * The top bar, which is also the window's title bar: brand and scope, what needs the person, the marks, 远程 (its own
+ * page), scratchpad and Focus windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
  */
 export function TopBar({
   onView,
@@ -41,7 +42,10 @@ export function TopBar({
   focus,
   pin,
   mark = "./icon.svg",
+  remote,
 }: {
+  /** 远程 (2026-10-29): the button that opens the remote page (remote/remote.ts remoteButton says what it shows). */
+  remote?: { shown: boolean; label: string; waiting: boolean; current: boolean; open(): void };
   /** The top-left icon: 「AMO 娘」's while she is the 桌宠 (focus/mascot.ts), else the app's viewfinder. */
   mark?: string | undefined;
   /** 后退 / 前进 (2026-10-19). */
@@ -95,6 +99,20 @@ export function TopBar({
             <path d="M4.5 2.5h7a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11.2l-3.52 2.64A.3.3 0 0 1 4 13.6V3a.5.5 0 0 1 .5-.5Z" />
           </svg>
           书签
+        </button>
+      )}
+      {remote?.shown && (
+        <button
+          type="button"
+          className="tb-btn remote-toggle"
+          aria-current={remote.current ? "page" : undefined}
+          title={remote.waiting ? "远程：有配对请求、任务请求或对方的回复等你看" : "远程：你的其他设备、授权给它们的任务、在别的设备上跑的任务"}
+          onClick={remote.open}
+          data-testid="topbar-remote"
+        >
+          <RemoteIcon />
+          {remote.label}
+          {remote.waiting && <span className="settings-dot" aria-label="有请求或回复等你看" data-testid="topbar-remote-dot" />}
         </button>
       )}
       {scratchpad && (

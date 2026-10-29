@@ -5,7 +5,7 @@ import { relativeTime } from "../lib/status.js";
 
 /**
  * 远程 (2026-10-29, the person): a pairing request is something to deal with on Focus, like an approval — 允许 / 拒绝
- * in place, or 「在设置里看」 to open 设置 → 远程. It leaves the list once answered (here, in 设置, or on another of this
+ * in place, or 「在远程页里看」 to open the remote page (设置 → 远程 until 10-29). It leaves the list once answered (here, there, or on another of this
  * account's computers).
  */
 export function FocusPairRequest({ link, request }: { link: HostLink; request: RemoteIncomingRequest }) {
@@ -41,7 +41,7 @@ export function FocusPairRequest({ link, request }: { link: HostLink; request: R
             拒绝
           </button>
           <button type="button" className="focus-btn" onClick={() => void window.amo?.openInWorkbench?.({ settings: "remote" })} data-testid="focus-pair-settings">
-            在设置里看
+            在远程页里看
           </button>
         </div>
       </div>

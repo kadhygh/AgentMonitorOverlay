@@ -5,7 +5,7 @@ import { relativeTime } from "../lib/status.js";
 
 /**
  * 远程 step 4 (2026-10-29): another of the person's computers asks this one to run a task — something to deal with, as a
- * pairing request is. Allowing needs a project and a model picked, so 「去处理」 opens 设置 → 远程; 拒绝 is right here.
+ * pairing request is. Allowing needs a project and a model picked, so 「去处理」 opens the remote page; 拒绝 is right here.
  */
 export function FocusTaskRequest({ link, request }: { link: HostLink; request: RemoteTaskRequest }) {
   const [busy, setBusy] = useState(false);
