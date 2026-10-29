@@ -48,6 +48,11 @@ export interface McpHookup {
 
 export interface RelayShell {
   info(): Promise<ShellInfo>;
+  /**
+   * The team login AMO 平台 keeps (2026-10-29, AGENTS.md rule 7: login lives in the platform), read when asked; null when
+   * nobody is logged in there. Absent in shells from before it: the content falls back to its own login.
+   */
+  platformAccount?(): Promise<{ server: string; name: string; key: string } | null>;
   accounts(): Promise<SavedAccount[]>;
   saveAccount(account: { server: string; name: string; password: string | null }): Promise<void>;
   forgetAccount(server: string, name: string): Promise<void>;

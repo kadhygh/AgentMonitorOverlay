@@ -12,6 +12,8 @@ export interface Identity {
   role: string;
   key: string;
   service: string;
+  /** Signed in with AMO 平台's account (2026-10-29): it follows the platform, and logging out is done there. */
+  platform?: boolean;
 }
 
 export type Connection = "connecting" | "online" | "offline";

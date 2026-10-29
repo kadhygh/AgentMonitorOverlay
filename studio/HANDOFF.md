@@ -46,6 +46,10 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 上午 · 中转用平台的账号登录（中转外壳 0.9.1 测试通道；界面 2026.10.29-110254 已部署）**
+
+用户：平台打开的中转还在用以前的登录（本机 `%APPDATA%\AMO Relay\settings.json` 里是老的本机测试服务器 `127.0.0.1:47120`），连不上服务器；图标也是旧的。登录：约束第 7 条之前没在中转落地。外壳加 `relayShell.platformAccount()`（读 `%APPDATA%\AMO\account.json`，`@amo-studio/account` 的 `readAccount`，每次问都重读）；界面有它时用平台账号直接登录（`/api/me` 取角色和团队名），并写 `settings.json` 给本机 MCP / 命令行；每 5 秒和窗口获得焦点时再读，平台换账号就跟着换、退出就回到提示；平台装的中转没有平台登录时只显示「在 AMO 平台里登录」（`PlatformLogin`），手动解压的版本照旧用自己的登录页；用平台账号时设置里没有「退出登录」（服务器上退出会让平台的令牌也失效）。旧外壳没有这个接口，界面照旧。图标：开始菜单里有个 10-27 建的「AMO Relay」快捷方式（AppUserModelID `AMO.Relay`，指向 `release/relay-pack` 里旧的、带 R 角标图标的 exe），任务栏按它显示旧图标；已改成指向 `D:\TOOLS\AMO Platform\apps\relay\current` 和新的 `icon.ico`（原快捷方式备份在会话 scratchpad），中转下次启动生效。平台装的 exe 本身是 Electron 默认图标（共用 Electron，方案里定的代价）。验证：relay e2e 4 条过（新加：平台已登录直接进、没登录显示提示、之后登录自动连上、退出回到提示，截图 `screenshots/relay/43-platform-login-there.png`）；relay / account 单测 50 过；打包后的中转用隔离目录启动正常。
+
 **2026-10-29 上午 · 远程也能看文本文件（Studio 0.9.7，测试和正式通道都发了；正式通道目前只有 Studio）**
 
 用户：A 上查看器里点 HTML 引用的 md / 脚本会接着在查看器打开（没固定就换掉当前窗口，固定了开新窗口），B 上也要这样。之前 B 只放行 HTML / Markdown / 图片，脚本、配置、txt、json 会被拦。改动：远程文件类型加 `text`——除已知的二进制扩展名（exe、dll、zip、pdf、docx、视频、字体等，B 上直接提示）外都当文本问 A，A 看开头 4 KB 有没有 NUL 字节，文本最大 2 MB（和本地查看器一样，`MAX_TEXT_FILE_BYTES`）；B 上用本地查看器的代码视图显示（高亮、跳到行、查找）。提示改成「远程任务不能看程序和二进制文件，只能看文本、HTML、Markdown 和图片」。验证：全量 vitest 990 过；e2e remote-files（远程 HTML 里点 `../tools/gen.py` 打开、点 `../run.exe` 提示且页面不动，截图 `screenshots/studio/remote-viewer-script.png`）、remote-tasks、viewer-rendered、chat-files 过。

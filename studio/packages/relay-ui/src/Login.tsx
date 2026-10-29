@@ -215,6 +215,42 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Identity) => void }) {
   );
 }
 
+/**
+ * A client installed by AMO 平台 with nobody logged in there (2026-10-29, AGENTS.md rule 7: login lives in the platform):
+ * no form here, only where to log in. The app looks again every few seconds and signs in by itself once there is one.
+ */
+export function PlatformLogin({ server, problem, onRetry }: { server: string; problem: string | null; onRetry: () => void }) {
+  const status = useServerStatus(server);
+  return (
+    <div className="login-page">
+      {ownTitleBar && (
+        <div className={`login-titlebar ${macLights ? "mac" : ""}`}>
+          <span className="grow" />
+          <WindowControls />
+        </div>
+      )}
+      <div className="login-card" data-testid="platform-login">
+        <div className="brand">
+          <img className="brand-mark" src={iconUrl} alt="" />
+          <div>
+            <h1>{status.health?.name ?? "AMO 中转"}</h1>
+            <p className="muted">和团队直接沟通，AI 也能把要确认的事发给对方</p>
+          </div>
+        </div>
+        {server && <ServerLine server={server} status={status} />}
+        <div className="notice">
+          <b>在 AMO 平台里登录</b>
+          <span className="tiny">AMO 中转用 AMO 平台的账号。打开 AMO 平台，在「账号」里登录或注册，登录后这里会自动连上。</span>
+        </div>
+        {problem && <div className="notice error">{problem}</div>}
+        <button type="button" className="primary" onClick={onRetry} data-testid="platform-login-retry">
+          已经登录了，再试一次
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Whether the service is there: online with its name, or unreachable with the next try and a way to try now. */
 function ServerLine({ server, status }: { server: string; status: ServerStatus }) {
   const now = useSecondTick(!!status.error);

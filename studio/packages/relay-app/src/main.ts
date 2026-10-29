@@ -19,6 +19,7 @@ import {
   type ShellInfo,
   type UpdateInfo,
 } from "@amo-studio/relay";
+import { readAccount } from "@amo-studio/account";
 import { Accounts } from "./accounts.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
@@ -349,6 +350,12 @@ function wire(): void {
 
   ipcMain.handle("relay:update-shell", () => updateShell());
   ipcMain.handle("relay:info", (): ShellInfo => ({ shellVersion: SHELL_VERSION, shellBuild: BUILD, ...(byPlatform ? { updatedBy: "platform" as const } : {}), contentVersion: content?.version ?? "", server: server ?? "", update: updateInfo(), platform: process.platform }));
+  // The team login AMO 平台 keeps (%APPDATA%\AMO\account.json, the key DPAPI-encrypted; AGENTS.md rule 7, 2026-10-29):
+  // the content signs in with it instead of a login of its own. Read each time asked, so a change in the platform shows.
+  ipcMain.handle("relay:platform-account", async () => {
+    const a = await readAccount().catch(() => null);
+    return a ? { server: a.server, name: a.name, key: a.key } : null;
+  });
   ipcMain.handle("relay:accounts", () => accounts.list());
   ipcMain.handle("relay:save-account", (_e, a: { server: string; name: string; password: string | null }) => accounts.save(a));
   ipcMain.handle("relay:forget-account", (_e, s: string, name: string) => accounts.forget(s, name));

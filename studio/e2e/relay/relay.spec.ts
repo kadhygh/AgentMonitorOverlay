@@ -60,7 +60,8 @@ async function launch(who: string): Promise<{ app: ElectronApplication; page: Pa
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [join(studio, "packages", "relay-app", "dist", "main.js"), "--server", server.url],
-    env: { ...process.env, AMO_RELAY_HOME: home, AMO_RELAY_TEST: "1" },
+    // AMO_HOME: the platform's folder (account.json), empty unless the test logs in there — never this machine's own.
+    env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1" },
   });
   apps.push(app);
   const page = await app.firstWindow();
@@ -597,14 +598,33 @@ test("installed by AMO 平台: no 更新桌面程序 (the platform updates the s
   const manifest = readFileSync(manifestFile, "utf8");
   try {
     const launchFrom = async (main: string, who: string) => {
-      const a = await _electron.launch({ executablePath: electronPath, args: [main, "--server", server.url], env: { ...process.env, AMO_RELAY_HOME: join(root, who), AMO_RELAY_TEST: "1" } });
+      const a = await _electron.launch({ executablePath: electronPath, args: [main, "--server", server.url], env: { ...process.env, AMO_RELAY_HOME: join(root, who), AMO_HOME: join(root, who, "amo-home"), AMO_RELAY_TEST: "1" } });
       apps.push(a);
       const page = await a.firstWindow();
       page.on("pageerror", (e) => pageErrors.push(`${who}: ${e.stack ?? e.message}`));
       return { app: a, page };
     };
+    // Login lives in the platform (2026-10-29, AGENTS.md rule 7): logged in there, the client signs in by itself, no form.
+    const zhao = store.register("平台小赵", "pw-1234", "策划");
+    const zhaoHome = { env: { AMO_HOME: join(root, "platform-user", "amo-home") } };
+    await account.saveAccount({ server: server.url, name: zhao.name, key: zhao.key }, zhaoHome);
     const fromPlatform = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-user");
-    await register(fromPlatform.page, "平台小赵", "策划", false);
+    await expect(fromPlatform.page.locator(".view-tabs")).toBeVisible({ timeout: 30_000 });
+    await expect(fromPlatform.page.getByRole("button", { name: "没有账号？注册一个" })).toHaveCount(0);
+    // Its MCP and command line use that account too.
+    expect(JSON.parse(readFileSync(join(root, "platform-user", "settings.json"), "utf8"))).toMatchObject({ name: "平台小赵", key: zhao.key });
+    // Nobody logged in there: where to log in, no form; logged in later, it signs in by itself; logged out there, so here.
+    const later = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-later");
+    await expect(later.page.getByTestId("platform-login")).toContainText("在 AMO 平台里登录", { timeout: 30_000 });
+    await expect(later.page.getByRole("button", { name: "没有账号？注册一个" })).toHaveCount(0);
+    await shot(later.app, "43-platform-login-there");
+    const sun = store.register("平台小孙", "pw-1234", "程序");
+    const sunHome = { env: { AMO_HOME: join(root, "platform-later", "amo-home") } };
+    await account.saveAccount({ server: server.url, name: sun.name, key: sun.key }, sunHome);
+    await expect(later.page.locator(".view-tabs")).toBeVisible({ timeout: 20_000 });
+    account.clearAccount(sunHome);
+    await expect(later.page.getByTestId("platform-login")).toBeVisible({ timeout: 20_000 });
+    await later.app.close();
     const dev = await launch("dev-user");
     await register(dev.page, "源码小钱", "程序", false);
     type Info = { updatedBy?: string; shellBuild?: string };

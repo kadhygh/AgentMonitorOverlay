@@ -37,7 +37,7 @@ type Dialogs =
   | { kind: "settings"; part?: SettingsPart }
   | { kind: "file"; id: string; scripts: boolean };
 
-export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
+export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings } = useSession(session);
   const me = session.me.name;
   useMinuteTick();

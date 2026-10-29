@@ -24,6 +24,7 @@ electron.contextBridge.exposeInMainWorld("relayLoader", {
 electron.contextBridge.exposeInMainWorld("relayShell", {
   info: () => invoke("info"),
   accounts: () => invoke("accounts"),
+  platformAccount: () => invoke("platform-account"),
   saveAccount: (account: unknown) => invoke("save-account", account),
   forgetAccount: (server: string, name: string) => invoke("forget-account", server, name),
   signedIn: (identity: unknown) => invoke("signed-in", identity),

@@ -19,7 +19,7 @@ const PARTS: Array<[SettingsPart, string]> = [
   ["profile", "我的资料"],
 ];
 
-export function SettingsDialog(props: { session: Session; part?: SettingsPart; onClose: () => void; toast: (t: string) => void; onCopyUsage: () => void; onLogout: () => void; onOpenFile: (id: string) => void }) {
+export function SettingsDialog(props: { session: Session; part?: SettingsPart; onClose: () => void; toast: (t: string) => void; onCopyUsage: () => void; onLogout?: (() => void) | undefined; onOpenFile: (id: string) => void }) {
   const [part, setPart] = useState<SettingsPart>(props.part ?? "general");
   const flow = useFlowForm(props.session, props.onClose, props.toast);
   return (
@@ -303,7 +303,7 @@ function AiPart({ onCopyUsage, toast }: { onCopyUsage: () => void; toast: (t: st
 
 // 我的资料: shown, not edited (2026-10-28, the user: the nickname, picture and 负责什么 are edited in AMO 平台's 账号 page,
 // where the team login lives; a change there reaches here through the service's members push).
-function ProfilePart({ session, onLogout }: { session: Session; onLogout: () => void }) {
+function ProfilePart({ session, onLogout }: { session: Session; onLogout?: (() => void) | undefined }) {
   const me = session.me.name;
   const role = useSession(session).members.find((m) => m.name === me)?.role ?? session.me.role;
   return (
@@ -326,11 +326,18 @@ function ProfilePart({ session, onLogout }: { session: Session; onLogout: () => 
         <div className="dim small">
           服务器 <code>{session.me.server}</code> · 团队「{session.me.service}」
         </div>
-        <div>
-          <button type="button" onClick={onLogout}>
-            退出登录
-          </button>
-        </div>
+        {onLogout ? (
+          <div>
+            <button type="button" onClick={onLogout}>
+              退出登录
+            </button>
+          </div>
+        ) : (
+          // Signed in with AMO 平台's account (2026-10-29): logging out or changing account is done there.
+          <div className="dim small" data-testid="account-in-platform">
+            用的是 AMO 平台的账号：退出登录、换账号都在 AMO 平台的「账号」里做，这里会跟着变。
+          </div>
+        )}
       </Part>
     </>
   );

@@ -118,7 +118,7 @@ const BUILDS = {
   // the user: it installs and updates through the platform like the others) is what the platform installs; the portable
   // zip is scripts/relay-release.mjs --shell's, for clients unpacked by hand (they still update themselves from it).
   relay: {
-    packages: ["relay-app", "relay"],
+    packages: ["relay-app", "relay", "account"],
     programs: ["relay"],
     icon: () => join(studio, "packages", "relay-app", "assets", "icon.ico"),
     readme: [
