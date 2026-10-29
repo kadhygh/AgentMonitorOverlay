@@ -46,6 +46,15 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 晚 · 托盘菜单统一成便签的样子、各工具都有主题、平台进度条和「关闭」修正；测试通道发平台 0.9.8、Studio 0.9.9、便签 0.9.4、中转 0.9.3、Reviewer 0.9.7（`3373957`，正式通道没动）**
+
+- 托盘菜单：新包 `packages/traymenu`（`@amo-studio/traymenu`），照便签的托盘菜单画的无边框小窗（一页自带样式的 data: 页面，点击当作导航截下来）；平台、单独打开的 Studio 和中转都用它，不再用 Windows 自己的菜单。便签保留自己的那份（它是样板）。新包已加进 `package-portable.mjs` 三个程序的包列表。
+- 主题（用户：所有工具都要有深浅色）：Studio、中转原来就有。平台（设置 → 主题，`platform.json` 的 `theme`）、便签（便签设置，`settings.json` 的 `theme`）、独立 Reviewer（Git Review 顶栏最右的按钮，`%APPDATA%\AMO Reviewer\theme.json`）新加。做法：主进程记住并设 `nativeTheme.themeSource`，页面 `applyTheme("system")` 交给 base.css 的 prefers-color-scheme，所以托盘菜单也跟着这个工具的主题；默认浅色。Studio 和中转自己的托盘菜单跟随 Windows（它们的主题存在页面的 localStorage 里，主进程不知道）。
+- 平台进度条：以前读清单 / 准备 / 切换时是来回滑的色块，下载时换成真实宽度，看起来涨了又退。现在下载前空、下载中按字节、切换时满；只有卸载和换回已装版本还用滑块。
+- 「关闭」：从运行中的 exe 所在的版本文件夹认出版本，比 Studio 0.9.8 / 便签 0.9.3 / 中转 0.9.2 旧的不认识 `--amo-quit`（只会把窗口叫到前面），改成提示去它自己的托盘退出（`system.ts` 的 `QUIT_SINCE`、`runningVersions`）。用户当时开着的是 Studio 0.9.7。
+- 验证：vitest 1019 过；平台 e2e 8 条、Reviewer e2e 过，便签 e2e 只剩已知的 Ctrl+Alt+Space 那条（真便签占着热键）；三处深色截图 P12-settings-dark、N3-settings-dark、R3-viewer-dark；托盘菜单深浅两种用临时 Electron 脚本截图看过。打包后的程序没实际打开过。
+- 坑：PowerShell 工具里跑 Electron e2e 连不上 127.0.0.1（沙箱），用 Bash 工具跑就好；机器忙时平台查进程（PowerShell `Get-Process`）要 6 秒，超过 e2e 默认 5 秒的 expect，平台 e2e 会卡在「正在连接」，临时把 expect 超时放宽能过。Playwright 默认把 prefers-color-scheme 模拟成浅色，测主题前要 `page.emulateMedia({ colorScheme: null })`。
+
 **2026-10-29 傍晚 · 远程创建合并，测试通道发 Studio 0.9.8、平台 0.9.7、便签 0.9.3、中转外壳 0.9.2（正式通道没动，等用户试过再 promote）**
 
 第 3 步远程创建（子 agent，快进合并 `e34a79c`…`f209b0e`）：A 的 远程 → 远程设置 加「远端允许的项目」（kv `remote.allowedProjects`，含公共文件夹开关；不勾就不能远程建）；新命令 `rt.catalog`（专题、允许的项目、允许的模型）、`rt.create`（A 检查后建任务、授权、开会话，和第 4 步的同意共用 `create.ts` 的 `startGrantedTask`）；B 的新任务页「在这台电脑上 | 在别的设备上」，设备行 → 专题 / 项目 / 模型来自那台，没有附件和 @；设备卡「在它上面新建任务」直接进远程模式；老 A 收到会提示先更新。验证（子 agent）：vitest 1017 过；remote* / newtask e2e 15 过（新 `remote-create.spec.ts` 整条流程）。之前合并后 studio 全量 e2e 186/188（剩下两条是已知的 cli.spec.ts:35、turn-start.spec.ts:74）。**两台电脑都要升到 Studio 0.9.8** 才能远程创建。
