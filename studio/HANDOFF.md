@@ -46,6 +46,17 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 下午 · 托盘合并、环境页更新、远程单独成页、新任务页改版（都在 master，未发版）**
+
+方案 `plans/remote-page-and-new-task.md`（用户已定，含第 6 节托盘）。
+- 托盘（`ad9b48b`）：平台启动的工具带 `--amo-tray=platform`，不放自己的托盘；平台托盘菜单按工具分区全部列出（Studio：打开 / 重启 / 完全退出；便签：显示隐藏 / 退出，没单独装时经 Studio 的 `--amo-app=notes`；中转：打开 / 退出；平台：打开、单击图标打开便签或 Studio（`platform.json` 的 `trayClick`，默认便签）、退出平台）。做法：再启动工具 exe 带 `--amo-quit` / `--amo-toggle`，单实例转给在跑的那个；Studio 走自己的完全退出（会先问）。工具卡运行时多「关闭」。单独打开的工具照旧有托盘。
+- 环境页（`9ac2cd8`）：Claude Code、Codex 显示 npm 最新版本，有新版给「更新到 x」（npm 装的 `npm install -g …@latest`，官方安装器的 `claude update`）；Codex 被 Studio 后台占着时不更新、说明先完全退出 Studio。`AMO_PLATFORM_NPM_REGISTRY` 换仓库（e2e 指向假的）。
+- 管理页：改管理密码（`2b23255`）、邀请口令（`5c2842f`，页面设的优先于 `--passphrase`；线上还没设，等用户设）。都已部署。
+- 远程单独成页（子 agent，合并自 `worktree-agent-a768b8ffca7afbff7`）：顶栏「远程」按钮（在线数、待处理的点），`ui/src/remote/` 整页（身份行 → 任务 → 已配对设备 → 远程设置），配对弹窗列同账号在线设备（中转新接口 `GET /api/devices/online`，配对请求可点名一台 `toDevice`；已部署 `2026.10.29-125345`），设置里的远程页删掉。
+- 新任务页改版（子 agent，合并自 `worktree-agent-ae9935f3299c142f4`）：专题在项目上面、专题常用项目排前（只有一个时自动选）、每行 6 个 +「更多…」搜索框；第一句话的 @ 引用项目 / 任务（带会话）/ 文件，不再选项目，# 不再选专题；快速启动条加专题、项目两个选择按钮；编辑专题可以加减常用项目。
+- 验证：合并后 typecheck 过、全量 vitest 1009 过（claude-runtime 集成测试那条照旧偶发）；平台 e2e、环境 e2e 过；studio 全量 e2e 在跑。便签 e2e 两条因本机真便签占着 Ctrl+Alt+Space 失败、中转 e2e 两条读剪贴板为空（并行测试抢剪贴板），和改动无关，待空闲时重跑。
+- 在做：第 3 步远程创建（子 agent）：A 的「远端允许的项目」、`rt.catalog` / `rt.create`、新任务页「在别的设备上」。做完一起升版本发布（平台、Studio、便签、中转外壳）。
+
 **2026-10-29 中午 · 团队服务器管理页、改登录名**：用户要把账号 `Daihongyu` 改成 `dhy`，并要一个简单的管理网页（局域网自用，不走 AMO 登录）。中转服务加 `/admin`（`relay/src/admin-page.ts`）：单独的管理密码（`npm run relay:mac -- admin-password`，存在库里 `admin` 表，哈希；每次请求带 `x-amo-admin`，错了等 0.6 秒），能看成员（在线、登录中的设备数、最近发言）、改登录名、重设密码、停用 / 启用（`members.disabled`，停用时删掉他的登录、不能再登录）。改登录名（`store.renameMember`）在一个事务里改 members / keys / 对话 / 会话 / 消息作者和 @ / 任务和流转记录 / 文件 / 批注 / 设备配对，单聊的 `direct_key` 重算，已有登录照样有效；在线的连接和设备通道断开重连成新名字。命令行也有 `amo-relay rename`、`relay:mac -- rename`（会重启服务）。已部署（备份 `data/backup-20261029-120626.db`），管理密码已设（在用户那里），`Daihongyu` → `dhy` 已经改好。验证：relay 单测 39 过（新加改名覆盖所有表 + 外键检查、停用、管理密码，接口测试含改名后 WS 断开以新名字重连）；管理页截图看过。用户本机平台的 `account.json` 里名字还是旧的，要在平台「账号」里退出再用 `dhy` 登录一次。
 
 **2026-10-29 上午 · 正式通道第一批**：用户定全部转正式。现在两个通道一样：Studio 0.9.7、Reviewer 0.9.6、便签 0.9.2、平台 0.9.6、中转 0.9.1（`platform-status`）。下载页的平台 zip 也是 0.9.6；从下载页装的平台默认看正式通道，同事现在能直接装。
