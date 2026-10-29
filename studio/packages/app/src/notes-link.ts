@@ -75,7 +75,8 @@ export function installNotesLink(o: NotesLinkOptions): void {
     env.AMO_NOTES_UI_DIR = join(o.studioRoot, "packages", "ui", "dist");
     if (o.testMode) env.AMO_NOTES_TEST = "1";
     // The portable exe runs the program it is asked for (its launcher); in development Electron runs packages/notes.
-    const args = [app.isPackaged ? "--amo-app=notes" : appDir, ...(hidden ? ["--hidden"] : [])];
+    // Studio started by AMO 平台: its 便签 leaves the tray to the platform's menu too (2026-10-29).
+    const args = [app.isPackaged ? "--amo-app=notes" : appDir, ...(hidden ? ["--hidden"] : []), ...(process.argv.includes("--amo-tray=platform") ? ["--amo-tray=platform"] : [])];
     if (o.testMode) {
       child = spawn(process.execPath, args, { env, stdio: "ignore", windowsHide: true });
     } else {

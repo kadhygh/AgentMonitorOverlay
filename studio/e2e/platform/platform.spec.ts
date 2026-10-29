@@ -20,7 +20,7 @@ const MAIN = join(studioRoot, "packages", "platform", "dist", "main.js");
 
 /** A pretend tool: its "exe" is a .cmd that leaves a mark (with Studio's data dir, for Studio) and ends. */
 const tool = (id: string, version: string, extra: Record<string, string> = {}) => ({
-  "run.cmd": `@echo off\r\necho ${id} ${version} %AMO_STUDIO_DATA_DIR%>"%AMO_FAKE_TOOL_MARK%.${id}"\r\n`,
+  "run.cmd": `@echo off\r\necho ${id} ${version} %AMO_STUDIO_DATA_DIR% %*>"%AMO_FAKE_TOOL_MARK%.${id}"\r\n`,
   "resources/app.txt": `${id} ${version}`,
   "resources/runtime.bin": "R".repeat(256 * 1024),
   "LICENSE.txt": "MIT",
@@ -190,7 +190,7 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await screenshot(app, "platform", "P11-dirs", page);
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "工具" }).click();
   await row(page, "studio").getByRole("button", { name: "打开" }).click();
-  await expect.poll(() => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "")).toBe(`studio 0.9.0 ${dataDir}`);
+  await expect.poll(() => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "")).toBe(`studio 0.9.0 ${dataDir} --amo-tray=platform`);
 
   // ---- 设置: the channel from --channel, starting with Windows recorded (not registered) in tests
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
@@ -205,8 +205,20 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   await screenshot(app, "platform", "P12-settings", page);
   expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8"))).toMatchObject({ server: server.url, recentServers: [server.url], studioDataDir: dataDir, openAtLogin: true });
 
-  // ---- the tray: 打开 for what is installed; closing the window leaves the program running
-  expect(await app.evaluate(() => (globalThis as { __platformTray?: () => string[] }).__platformTray!())).toEqual(["打开 AMO 平台", "—", "打开 AMO Studio", "—", "退出"]);
+  // ---- the tray (2026-10-29): one part per installed tool, not folded (便签 through Studio, which carries it); a click
+  // opens 便签 or Studio as chosen; closing the window leaves the program running
+  const trayNow = () => app.evaluate(() => (globalThis as { __platformTray?: () => string[] }).__platformTray!());
+  expect(await trayNow()).toEqual(["# AMO Studio", "打开 Studio", "完全退出 Studio", "—", "# AMO 便签", "显示 / 隐藏便签", "退出便签", "—", "# AMO 平台", "打开 AMO 平台", "● 单击图标：打开便签", "○ 单击图标：打开 Studio", "退出平台"]);
+  const studioMark = () => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "");
+  await app.evaluate(() => (globalThis as { __platformTrayIconClick?: () => void }).__platformTrayIconClick!());
+  await expect.poll(studioMark).toBe(`studio 0.9.0 ${dataDir} --amo-tray=platform --amo-app=notes --amo-toggle`);
+  await app.evaluate(() => (globalThis as { __platformTrayClick?: (l: string) => void }).__platformTrayClick!("单击图标：打开 Studio"));
+  await expect.poll(trayNow).toContain("● 单击图标：打开 Studio");
+  expect(JSON.parse(readFileSync(join(root, "roaming", "platform.json"), "utf8"))).toMatchObject({ trayClick: "studio" });
+  await app.evaluate(() => (globalThis as { __platformTrayIconClick?: () => void }).__platformTrayIconClick!());
+  await expect.poll(studioMark).toBe(`studio 0.9.0 ${dataDir} --amo-tray=platform`);
+  await app.evaluate(() => (globalThis as { __platformTrayClick?: (l: string) => void }).__platformTrayClick!("完全退出 Studio"));
+  await expect.poll(studioMark).toBe(`studio 0.9.0 ${dataDir} --amo-tray=platform --amo-quit`);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(0);
   const reopened = app.waitForEvent("window");
@@ -683,7 +695,7 @@ test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO �
     expect(programs().tools.relay).toEqual({ version: "0.9.0", dir: join(root, "local", "apps", "relay", "current"), exe: "run.cmd" });
     await screenshot(app, "platform", "P24-relay-installed", page);
     await row(page, "relay").getByRole("button", { name: "打开" }).click();
-    await expect.poll(() => (existsSync(join(root, "launched.relay")) ? readFileSync(join(root, "launched.relay"), "utf8").trim() : "")).toBe(`relay 0.9.0 --server ${own.url}`);
+    await expect.poll(() => (existsSync(join(root, "launched.relay")) ? readFileSync(join(root, "launched.relay"), "utf8").trim() : "")).toBe(`relay 0.9.0 --server ${own.url} --amo-tray=platform`);
 
     // A new shell published: updated here like the others (a relay from the platform never replaces its own files).
     own.publish("relay", "0.9.1", relayTool("0.9.1"), { name: "AMO Relay", exe: "run.cmd", notes: "- 外壳的一处修正" });
@@ -789,7 +801,7 @@ test("Studio's card (2026-10-29): the Host's state and version; 重启 Studio wh
     await button("重启 Studio").click();
     await expect(result(page, "studio")).toContainText("✓ 已重启 Studio，现在是 0.9.1", { timeout: 30_000 });
     expect(readFileSync(join(dataDir, "shutdown-requests.log"), "utf8").trim()).toBe("Bearer tok {}");
-    await expect.poll(() => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "")).toBe(`studio 0.9.1 ${dataDir}`);
+    await expect.poll(() => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "")).toBe(`studio 0.9.1 ${dataDir} --amo-tray=platform`);
     expect(fake.exitCode ?? (await new Promise((r) => fake!.once("exit", r)))).toBe(0);
     let shellAlive = true;
     try {

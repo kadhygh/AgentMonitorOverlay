@@ -6,7 +6,8 @@ import { amoLocalHome } from "@amo-studio/account";
 import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
 import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
-import type { PlatformCalls, PlatformView } from "./view.js";
+import type { OpenResult, PlatformCalls, PlatformView } from "./view.js";
+import { trayClickAction, trayMenu, type TrayAction, type TrayItem } from "./tray.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2): a tray program that installs, updates and starts the AMO tools from the
 // team server. One instance; the window is made when shown and destroyed when closed — the program stays in the tray
@@ -47,7 +48,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformShow?: () => void };
+type TestGlobals = { __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -199,29 +200,51 @@ function showWindow(): void {
 
 // ---- the tray
 
-function trayItems(): Array<{ label: string; click: () => void } | { type: "separator" }> {
-  const tools = platform.installedTools();
-  return [
-    { label: "打开 AMO 平台", click: showWindow },
-    ...(tools.length ? [{ type: "separator" as const }] : []),
-    ...tools.map((t) => ({
-      label: `打开 ${t.name}`,
-      click: () =>
-        void platform.open(t.id).then((r) => {
-          // Studio without its data dir: the window, on the page where it is set.
-          if (!r.ok) {
-            showWindow();
-            win?.webContents.send("platform:notice", { tool: t.id, ...r });
-          }
-        }),
-    })),
-    { type: "separator" },
-    { label: "退出", click: quit },
-  ];
+/** The tray menu (tray.ts, 2026-10-29): every tool's items, one part each, not folded. */
+function trayItems(): TrayItem[] {
+  return trayMenu(platform.trayState());
+}
+
+/** Runs what a tray item (or a click on the icon) stands for. */
+function runTray(action: TrayAction): void {
+  const said = (tool: string) => (r: OpenResult) => {
+    // Studio without its data dir, a tool gone: the window, saying why.
+    if (!r.ok) {
+      showWindow();
+      win?.webContents.send("platform:notice", { tool, ...r });
+    }
+  };
+  switch (action.kind) {
+    case "open":
+      void platform.open(action.tool).then(said(action.tool));
+      return;
+    case "toggle-notes":
+      void platform.toggleNotes().then(said("notes"));
+      return;
+    case "quit":
+      void platform.close(action.tool).then(said(action.tool));
+      return;
+    case "restart-studio":
+      void platform.restartStudio();
+      return;
+    case "show-platform":
+      showWindow();
+      return;
+    case "set-click":
+      void platform.setTrayClick(action.to).then(updateTray);
+      return;
+    case "quit-platform":
+      quit();
+      return;
+  }
 }
 
 function updateTray(): void {
-  if (tray) tray.setContextMenu(Menu.buildFromTemplate(trayItems()));
+  if (!tray) return;
+  const template: Electron.MenuItemConstructorOptions[] = trayItems().map((i) =>
+    i.kind === "separator" ? { type: "separator" } : i.kind === "heading" ? { label: i.label, enabled: false } : i.kind === "radio" ? { label: i.label, type: "radio", checked: i.checked, click: () => runTray(i.action) } : { label: i.label, click: () => runTray(i.action) },
+  );
+  tray.setContextMenu(Menu.buildFromTemplate(template));
 }
 
 /** The tray icon at each scale Windows may ask for: assets/icon-16…32.png (scripts/make-icons.mjs; 16–24 px are the
@@ -244,7 +267,8 @@ function trayImage(): Electron.NativeImage {
 function createTray(): void {
   tray = new Tray(trayImage());
   tray.setToolTip("AMO 平台");
-  tray.on("click", showWindow);
+  // A click opens 便签 or Studio, as chosen in the menu (2026-10-29, the user); the platform's window is in the menu.
+  tray.on("click", () => runTray(trayClickAction(platform.trayState())));
   updateTray();
 }
 
@@ -255,7 +279,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "close", "setChannel", "setOpenAtLogin", "pickStudioDataDir", "openPath", "dismiss", "environment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());
@@ -273,8 +297,8 @@ function wire(): void {
   let lastTools = "";
   platform.onChange((view: PlatformView) => {
     if (win && !win.isDestroyed()) win.webContents.send("platform:view", view);
-    // The tray's 打开 items follow what is installed.
-    const tools = view.tools.filter((t) => t.installed).map((t) => t.id).join(",");
+    // The tray follows what is installed, 重启 Studio being offered, and the click choice.
+    const tools = JSON.stringify(platform.trayState());
     if (tools !== lastTools) {
       lastTools = tools;
       updateTray();
@@ -289,11 +313,12 @@ async function start(): Promise<void> {
   if (!testMode) createTray();
   if (testMode)
     Object.assign(g, {
-      __platformTray: () => trayItems().map((i) => ("label" in i ? i.label : "—")),
+      __platformTray: () => trayItems().map((i) => (i.kind === "separator" ? "—" : i.kind === "heading" ? `# ${i.label}` : i.kind === "radio" ? `${i.checked ? "●" : "○"} ${i.label}` : i.label)),
       __platformTrayClick: (label: string) => {
-        const item = trayItems().find((i) => "label" in i && i.label === label);
-        if (item && "click" in item) item.click();
+        const item = trayItems().find((i) => (i.kind === "item" || i.kind === "radio") && i.label === label);
+        if (item && (item.kind === "item" || item.kind === "radio")) runTray(item.action);
       },
+      __platformTrayIconClick: () => runTray(trayClickAction(platform.trayState())),
       __platformShow: showWindow,
     });
   if (!startHidden) showWindow();

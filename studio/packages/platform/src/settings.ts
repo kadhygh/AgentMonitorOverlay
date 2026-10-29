@@ -15,6 +15,8 @@ export interface PlatformSettings {
   lastName: string | null;
   /** The platform's folder (self-update.ts's root: its entry and apps\), as the platform last ran. Only a record, for other programs. */
   root: string | null;
+  /** A click on the tray icon opens 便签 or Studio (2026-10-29, the user: the two used most); 便签 unless chosen. */
+  trayClick: "notes" | "studio";
 }
 
 export function readSettings(env: Env = process.env): PlatformSettings {
@@ -28,6 +30,7 @@ export function readSettings(env: Env = process.env): PlatformSettings {
     openAtLogin: p.openAtLogin === true,
     lastName: str(p.lastName),
     root: str(p.root),
+    trayClick: p.trayClick === "studio" ? "studio" : "notes",
   };
 }
 

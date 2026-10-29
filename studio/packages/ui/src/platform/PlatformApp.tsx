@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AccountPage, Face } from "./AccountPage.js";
-import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
+import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type OpenResult, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 import { EnvironmentPage } from "./EnvironmentPage.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
@@ -490,6 +490,17 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
   if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
+  // 关闭 (2026-10-29, the user): the tool quits its own way — Studio asks first when sessions are at work, as its 完全退出 does.
+  if (t.installed && t.running)
+    actions.push({
+      label: "关闭",
+      kind: "plain",
+      run: () => {
+        setOpenError(null);
+        void (call("close", t.id) as Promise<OpenResult>).then((r) => !r.ok && setOpenError(r.message));
+      },
+      title: t.id === "studio" ? "完全退出 Studio（连后台一起）；有会话在跑或远程在用时它会先问你" : `退出 ${short}`,
+    });
   // 重启 Studio (2026-10-29): the Host is older than what is installed; never while sessions are at work (AGENTS.md, 6).
   const st = t.studio;
   if (st && (st.restart === "ready" || st.restart === "busy" || st.restarting))
@@ -877,7 +888,7 @@ function SettingsPage({ view }: { view: PlatformView }) {
           <input type="checkbox" checked={view.openAtLogin} onChange={(e) => void call("setOpenAtLogin", e.target.checked)} data-testid="pf-login-start" />
           开机时启动平台（只在托盘里，不弹窗口）
         </label>
-        <p className="pf-hint">关掉窗口后平台留在托盘里；右键托盘图标可以打开工具或退出平台。</p>
+        <p className="pf-hint">关掉窗口后平台留在托盘里。从平台打开的工具不再各放一个托盘图标，都在平台的托盘菜单里（右键）：打开、关闭、显示便签；单击托盘图标打开便签或 Studio，在菜单最下面选。</p>
       </section>
 
       <section className="pf-section last" aria-label="关于">

@@ -7,6 +7,7 @@ import type { Protector } from "@amo-studio/account";
 import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
 import { PlatformClient } from "./client.js";
 import { planLaunch, type LaunchSpec } from "./launch.js";
+import { trayMenu } from "./tray.js";
 import { Platform, type PlatformOptions } from "./platform.js";
 import { channelFromArgs } from "./settings.js";
 import { sessionCount, stopStudio, studioHealth, studioRestart, waitForExit, type StudioStop } from "./system.js";
@@ -176,8 +177,15 @@ describe("Platform", () => {
     expect(platform.installedTools()).toEqual([{ id: "relay", name: "AMO 中转" }]);
     expect(await platform.open("relay")).toEqual({ ok: true });
     expect(launched[0]!.file).toMatch(/\\relay\\0\.9\.0\\AMO Relay\.exe$/);
-    expect(launched[0]!.args).toEqual(["--server", server.url]);
+    expect(launched[0]!.args).toEqual(["--server", server.url, "--amo-tray=platform"]);
     expect(launched[0]!.env.AMO_STUDIO_DATA_DIR).toBeUndefined();
+    // 关闭 (2026-10-29): the same exe, asked to quit; the tray has its part.
+    expect(await platform.close("relay")).toEqual({ ok: true });
+    expect(launched[1]!.args).toEqual(["--server", server.url, "--amo-tray=platform", "--amo-quit"]);
+    expect(trayMenu(platform.trayState()).map((i) => (i.kind === "separator" ? "—" : i.label))).toEqual(["AMO 中转", "打开中转", "退出中转", "—", "AMO 平台", "打开 AMO 平台", "退出平台"]);
+    // 便签 with neither its own install nor Studio: nothing to start it with.
+    expect(platform.notesAvailable()).toBe(false);
+    expect(await platform.toggleNotes()).toMatchObject({ ok: false, reason: "not-installed" });
   });
 });
 
@@ -191,11 +199,13 @@ describe("launch and the machine", () => {
     expect(planLaunch("notes", undefined, { studioDataDir: null, env: {}, name: "AMO 便签" })).toMatchObject({ ok: false, message: "AMO 便签 还没装。" });
     expect(planLaunch("notes", { ...entry, exe: "Gone.exe" }, { studioDataDir: null, env: {} })).toMatchObject({ ok: false, reason: "not-installed" });
     const p = planLaunch("notes", entry, { studioDataDir: "D:\\d", env: { PATH: "x", AMO_PLATFORM_TEST: "1", CLAUDECODE: "1" } });
-    expect(p).toMatchObject({ ok: true, spec: { file: join(root, "1.0.0", "Tool.exe"), cwd: join(root, "1.0.0"), args: [], env: { PATH: "x" } } });
+    // Every tool leaves the tray to the platform (2026-10-29); what the tray or a card asks comes after.
+    expect(p).toMatchObject({ ok: true, spec: { file: join(root, "1.0.0", "Tool.exe"), cwd: join(root, "1.0.0"), args: ["--amo-tray=platform"], env: { PATH: "x" } } });
+    expect(planLaunch("notes", entry, { studioDataDir: null, env: {}, args: ["--amo-quit"] })).toMatchObject({ ok: true, spec: { args: ["--amo-tray=platform", "--amo-quit"] } });
     // Only AMO 中转 is handed the server (it fills in its address the first time); without a login, nothing.
-    expect(planLaunch("notes", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: [] } });
-    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: ["--server", "http://s:1"] } });
-    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: null })).toMatchObject({ ok: true, spec: { args: [] } });
+    expect(planLaunch("notes", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: ["--amo-tray=platform"] } });
+    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: "http://s:1" })).toMatchObject({ ok: true, spec: { args: ["--server", "http://s:1", "--amo-tray=platform"] } });
+    expect(planLaunch("relay", entry, { studioDataDir: null, env: {}, server: null })).toMatchObject({ ok: true, spec: { args: ["--amo-tray=platform"] } });
     expect(channelFromArgs(["--channel=test"])).toBe("test");
     expect(channelFromArgs(["--channel", "beta"])).toBeNull();
   });

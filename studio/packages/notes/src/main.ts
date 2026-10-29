@@ -304,6 +304,10 @@ function quit(): void {
   app.quit();
 }
 
+/** Started by AMO 平台, or by a Studio it started (2026-10-29, the user: too many tray icons): the platform's tray menu
+ *  has 便签's items, so this one makes no icon. Started on its own it keeps its tray (constraint 1). */
+const trayByPlatform = process.argv.includes("--amo-tray=platform");
+
 /** The tray icon at each scale Windows may ask for. */
 function trayImage(): Electron.NativeImage {
   const image = nativeImage.createEmpty();
@@ -429,7 +433,7 @@ async function start(): Promise<void> {
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });
 
-  if (!testMode) {
+  if (!testMode && !trayByPlatform) {
     createTray();
     // Made now, out of sight, so the first right-click shows it at once.
     trayMenu = createTrayMenu();
@@ -443,11 +447,14 @@ async function start(): Promise<void> {
   else pad = createPad();
 }
 
-if (!app.requestSingleInstanceLock()) {
-  // Another one runs: it shows its window (second-instance) and this one ends.
+if (!app.requestSingleInstanceLock() || process.argv.includes("--amo-quit")) {
+  // Another one runs: it shows its window (second-instance) and this one ends. Asked to quit with none running: done.
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
+    // From AMO 平台's tray (2026-10-29): 退出便签, 显示 / 隐藏便签.
+    if (argv.includes("--amo-quit")) return quit();
+    if (argv.includes("--amo-toggle")) return togglePad();
     if (!argv.includes("--hidden")) showPad();
   });
   // Every window closed is not the end: it lives in the tray.

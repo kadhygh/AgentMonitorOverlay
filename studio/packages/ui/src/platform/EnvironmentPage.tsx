@@ -49,7 +49,7 @@ export function EnvironmentPage() {
         </p>
       )}
       {env?.items.map((it) => <EnvItem key={it.id} item={it} />)}
-      {env && <p className="pf-hint">刚装好的程序还显示没装：先点「重新检测」；还是没有的话，退出平台（托盘右键 → 退出）再打开。平台和从这里打开的工具，用的是平台启动时的 PATH。</p>}
+      {env && <p className="pf-hint">刚装好的程序还显示没装：先点「重新检测」；还是没有的话，退出平台（托盘右键 → 退出平台）再打开。平台和从这里打开的工具，用的是平台启动时的 PATH。</p>}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
+import { QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
@@ -534,16 +535,64 @@ export class Platform implements PlatformCalls {
   }
 
   async open(tool: string): Promise<OpenResult> {
-    const plan = planLaunch(tool, this.programs()[tool], { studioDataDir: readSettings(this.options.env).studioDataDir, env: this.options.env, name: this.toolName(tool).replace(/（独立版）$/, ""), server: this.account?.server ?? null });
+    return tool === "notes" ? this.startNotes([]) : this.start(tool, []);
+  }
+
+  /**
+   * 关闭 (a tool's card, the tray, 2026-10-29): the tool's exe again with --amo-quit; its running instance quits its own
+   * way — Studio asks first when sessions are at work or a device uses its tasks, as its own 完全退出 does. A tool that
+   * is not running quits at once.
+   */
+  async close(tool: string): Promise<OpenResult> {
+    return tool === "notes" ? this.startNotes([QUIT_ARG]) : this.start(tool, [QUIT_ARG]);
+  }
+
+  /** 显示 / 隐藏便签 (the tray). */
+  async toggleNotes(): Promise<OpenResult> {
+    return this.startNotes([TOGGLE_ARG]);
+  }
+
+  /** 便签: its own install, else through Studio, which carries it (`AMO Studio.exe --amo-app=notes`). */
+  private startNotes(args: string[]): Promise<OpenResult> {
+    const programs = this.programs();
+    if (programs.notes || !programs.studio) return this.start("notes", args);
+    return this.start("studio", ["--amo-app=notes", ...args]);
+  }
+
+  /** Whether 便签 can be had at all (installed, or through Studio). */
+  notesAvailable(): boolean {
+    const programs = this.programs();
+    return !!(programs.notes || programs.studio);
+  }
+
+  private async start(tool: string, args: string[]): Promise<OpenResult> {
+    const plan = planLaunch(tool, this.programs()[tool], { studioDataDir: readSettings(this.options.env).studioDataDir, env: this.options.env, name: this.toolName(tool).replace(/（独立版）$/, ""), server: this.account?.server ?? null, args });
     if (!plan.ok) return plan;
     try {
       await (this.options.launch ?? startDetached)(plan.spec);
     } catch (err) {
-      return { ok: false, reason: "failed", message: `没能打开：${message(err)}` };
+      return { ok: false, reason: "failed", message: `没能${args.includes(QUIT_ARG) ? "关闭" : "打开"}：${message(err)}` };
     }
-    // It takes a moment to show up among the processes.
-    setTimeout(() => void this.checkRunning(this.toolIds()).then((r) => ((this.running = r), this.changed())).catch(() => undefined), 2000);
+    // It takes a moment to show up among (or leave) the processes.
+    setTimeout(() => void this.checkRunning(this.toolIds()).then((r) => ((this.running = r), this.changed())).catch(() => undefined), args.includes(QUIT_ARG) ? 4000 : 2000);
     return { ok: true };
+  }
+
+  /** What the tray menu shows (tray.ts). */
+  trayState(): TrayState {
+    const studio = this.view().tools.find((t) => t.id === "studio");
+    return {
+      tools: this.installedTools(),
+      notes: this.notesAvailable(),
+      studioRestart: studio?.studio?.restart === "ready",
+      studioVersion: studio?.installed ?? null,
+      click: readSettings(this.options.env).trayClick,
+    };
+  }
+
+  async setTrayClick(to: TrayClick): Promise<void> {
+    updateSettings({ trayClick: to }, this.options.env);
+    this.changed();
   }
 
   /** Studio's card: its Host asked again (cheap: two small files and a local request), without the server or Windows. */

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { safeParts } from "./manifest.js";
+import { TRAY_ARG } from "./tray.js";
 
 // Starting a tool the platform installed, the way the tools already support (AGENTS.md, constraint 1): Studio gets
 // AMO_STUDIO_DATA_DIR (its data stays outside the program folder, so an update never touches it); AMO 中转 gets the
@@ -29,7 +30,7 @@ export function startEnv(env: Record<string, string | undefined>): Record<string
 
 /** `server`: the team server the platform is logged in to; AMO 中转 is handed it with `--server`, which it only uses the
  * first time (no address saved yet), so nobody types it twice. Not the login: AMO 中转 still signs in by itself. */
-export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string; server?: string | null }): LaunchPlan {
+export function planLaunch(tool: string, entry: { dir: string; exe: string } | undefined, options: { studioDataDir: string | null; env: Record<string, string | undefined>; name?: string; server?: string | null; args?: readonly string[] }): LaunchPlan {
   const name = options.name ?? tool;
   if (!entry) return { ok: false, reason: "not-installed", message: `${name} 还没装。` };
   if (tool === "studio" && !options.studioDataDir) return { ok: false, reason: "need-studio-dir", message: "先设好 Studio 数据目录，再打开 Studio。" };
@@ -44,7 +45,9 @@ export function planLaunch(tool: string, entry: { dir: string; exe: string } | u
   if (!file || !existsSync(file)) return { ok: false, reason: "not-installed", message: `${name} 的主程序不在了，重新安装一下。` };
   const env = startEnv(options.env);
   if (tool === "studio") env.AMO_STUDIO_DATA_DIR = options.studioDataDir!;
-  const args = tool === "relay" && options.server ? ["--server", options.server] : [];
+  // The tray is the platform's (2026-10-29): a tool it starts puts no icon of its own there. `args`: what the tray or a
+  // card asks of it (--amo-quit, --amo-toggle, Studio's --amo-app=notes), handed by its single instance to the running one.
+  const args = [...(tool === "relay" && options.server ? ["--server", options.server] : []), TRAY_ARG, ...(options.args ?? [])];
   return { ok: true, spec: { file, args, cwd: dir, env } };
 }
 

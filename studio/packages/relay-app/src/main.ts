@@ -586,8 +586,12 @@ function trayImage(): Electron.NativeImage {
   return image.isEmpty() ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : image;
 }
 
+/** Started by AMO 平台 (2026-10-29, the user: too many tray icons): the platform's tray menu has 打开中转 / 退出中转, so
+ *  this one makes no icon. Started on its own it keeps its tray (constraint 1). */
+const trayByPlatform = process.argv.includes("--amo-tray=platform");
+
 function createTray(): void {
-  if (!ICON) return;
+  if (!ICON || trayByPlatform) return;
   tray = new Tray(trayImage());
   tray.setToolTip("AMO 中转");
   tray.setContextMenu(
@@ -608,9 +612,10 @@ function createTray(): void {
 const me = { exe: process.execPath };
 
 function start(): void {
-  app.on("second-instance", (_e, _argv, _cwd, data) => {
+  app.on("second-instance", (_e, argv, _cwd, data) => {
     const other = (data as { exe?: string } | undefined)?.exe;
-    if (other && other.toLowerCase() !== process.execPath.toLowerCase()) {
+    // 退出中转 from AMO 平台's tray or card (2026-10-29), whichever copy asks.
+    if (argv.includes("--amo-quit") || (other && other.toLowerCase() !== process.execPath.toLowerCase())) {
       quitting = true;
       tray?.destroy();
       app.quit();
@@ -628,7 +633,11 @@ function start(): void {
   });
 }
 
-if (app.requestSingleInstanceLock(me)) start();
+if (process.argv.includes("--amo-quit")) {
+  // The platform's 退出中转: the running client hears it through the lock and quits; this one never starts.
+  app.requestSingleInstanceLock(me);
+  app.quit();
+} else if (app.requestSingleInstanceLock(me)) start();
 else {
   // Another copy runs; it quits if it is a different one. Wait for the lock a few seconds, else leave it to it.
   let tries = 0;

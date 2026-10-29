@@ -304,10 +304,19 @@ function removeShellFile(): void {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+/**
+ * Started by AMO 平台 (2026-10-29, the user: too many tray icons): the platform's tray menu has Studio's items, so this
+ * one makes none. `--amo-quit` (the platform's 关闭 / 完全退出 Studio): handed to the running Studio, which quits as its
+ * own 完全退出 does (asking first); with none running there is nothing to quit.
+ */
+const trayByPlatform = process.argv.includes("--amo-tray=platform");
+const quitAsked = (argv: readonly string[]) => argv.includes("--amo-quit");
+
+if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    if (quitAsked(argv)) return void quitCompletely();
     // A user launched Studio again: bring the existing window forward, also out of the tray (never happens in tests).
     if (mainWindow && !testMode) bringForward(mainWindow);
   });
@@ -571,7 +580,7 @@ if (!app.requestSingleInstanceLock()) {
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
       // The tray (2026-10-29). Tests make no icon: they reach its menu through these.
-      if (!testMode) createTray();
+      if (!testMode && !trayByPlatform) createTray();
       else
         Object.assign(globalThis, {
           __studioTray: () => trayItems().map((i) => ("label" in i ? i.label : "—")),

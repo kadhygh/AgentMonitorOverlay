@@ -147,6 +147,8 @@ export interface PlatformCalls {
   rollback(tool: string): Promise<void>;
   uninstall(tool: string): Promise<void>;
   open(tool: string): Promise<OpenResult>;
+  /** 关闭 (2026-10-29): the running tool quits its own way (Studio asks first when sessions are at work, as its 完全退出 does). */
+  close(tool: string): Promise<OpenResult>;
   /**
    * 重启 Studio (2026-10-29): the running Studio and its Host stop (refused by the Host while sessions are at work), then
    * the installed Studio opens. Only when clicked (AGENTS.md, constraint 6).
