@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFitWidth } from "../lib/fitWidth.js";
 import { THEME_LABELS, type ThemePref } from "../lib/theme.js";
 import { inAmo } from "../lib/where.js";
+import { TitleMark, WindowControls } from "../shell/WindowControls.js";
 import { countLabel, STATUS_NAME, type DiffMode } from "./logic.js";
 
 // The Review window's bars (stage 16 split out of ReviewApp.tsx): the head (what is compared, and how it shows) and
@@ -58,7 +59,11 @@ export function ReviewHead({
   onMode,
   onSplit,
   onRefresh,
+  titleBar = false,
 }: {
+  /** The head is the window's title bar (2026-10-29): it drags the window and ends with the window buttons; not
+   * inside the viewer, whose own head is. */
+  titleBar?: boolean;
   workspaceName: string;
   /** A commit's window. */
   commit: string | null;
@@ -77,7 +82,8 @@ export function ReviewHead({
   const bar = useRef<HTMLElement>(null);
   useFitWidth(bar);
   return (
-    <header className="gr-head" ref={bar}>
+    <header className={titleBar ? "gr-head titlebar" : "gr-head"} ref={bar}>
+      {titleBar && <TitleMark />}
       <span className="gr-title">{commit ? "提交" : "Git Review"}</span>
       <span className="gr-project">{workspaceName}</span>
       {commit && (
@@ -145,6 +151,7 @@ export function ReviewHead({
         </button>
       )}
       <ThemeButton />
+      {titleBar && <WindowControls />}
     </header>
   );
 }

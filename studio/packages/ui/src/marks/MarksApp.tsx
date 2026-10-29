@@ -12,6 +12,7 @@ import { useBookmarks } from "./useFileMarks.js";
 import { askBookmarkNote } from "./NotePrompt.js";
 import { openMarks, openPassage } from "./open.js";
 import { openViewer } from "../viewer/open.js";
+import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
 import {
   chatDragText,
   filterGroups,
@@ -49,7 +50,7 @@ export function MarksApp() {
     document.title = "书签";
   }, []);
 
-  if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
+  if (host.kind !== "ready") return <WindowPlaceholder title="书签">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
   return <MarksPage link={host.link} state={host.state} target={target} focus={target.markId ? target : null} />;
 }
 
@@ -219,40 +220,45 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
 
   return (
     <div className="mk-app" data-dropping={dropping || undefined} {...dropTarget}>
-      <header className="mk-head">
-        <span className="mk-title">书签</span>
-        <span className="mk-dim">{total ? `${total} 个` : ""}</span>
-        <input className="mk-search" type="search" value={query} placeholder="搜索路径、原文或说明" aria-label="搜索书签" onChange={(e) => setQuery(e.target.value)} data-testid="marks-search" />
-        <span className="spacer" />
-        <input
-          className="mk-paste"
-          value={pasted}
-          placeholder={`粘贴文件路径，回车加到「${currentName}」`}
-          aria-label="粘贴文件路径"
-          onChange={(e) => setPasted(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-            e.preventDefault();
-            const paths = pastedPaths(pasted);
-            if (!paths.length) {
-              toast({ text: "请填写完整路径，例如 D:\\game\\drop.lua", error: true });
-              return;
-            }
-            setPasted("");
-            void add(paths, current);
-          }}
-          data-testid="marks-paste"
-        />
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={!pickFrom}
-          title={pickFrom ? `从 ${pickFrom.name} 里找文件，加到「${currentName}」` : "还没有项目：可以把文件拖进来，或粘贴路径"}
-          onClick={() => pickFrom && setPicking({ workspace: pickFrom, topicId: current })}
-          data-testid="marks-add"
-        >
-          + 文件
-        </button>
+      {/* The window's title bar (2026-10-29): its row drags the window; the window buttons at its right end. */}
+      <header className="mk-head titlebar">
+        <div className="mk-head-main">
+          <TitleMark />
+          <span className="mk-title">书签</span>
+          <span className="mk-dim">{total ? `${total} 个` : ""}</span>
+          <input className="mk-search" type="search" value={query} placeholder="搜索路径、原文或说明" aria-label="搜索书签" onChange={(e) => setQuery(e.target.value)} data-testid="marks-search" />
+          <span className="spacer" />
+          <input
+            className="mk-paste"
+            value={pasted}
+            placeholder={`粘贴文件路径，回车加到「${currentName}」`}
+            aria-label="粘贴文件路径"
+            onChange={(e) => setPasted(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              const paths = pastedPaths(pasted);
+              if (!paths.length) {
+                toast({ text: "请填写完整路径，例如 D:\\game\\drop.lua", error: true });
+                return;
+              }
+              setPasted("");
+              void add(paths, current);
+            }}
+            data-testid="marks-paste"
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!pickFrom}
+            title={pickFrom ? `从 ${pickFrom.name} 里找文件，加到「${currentName}」` : "还没有项目：可以把文件拖进来，或粘贴路径"}
+            onClick={() => pickFrom && setPicking({ workspace: pickFrom, topicId: current })}
+            data-testid="marks-add"
+          >
+            + 文件
+          </button>
+        </div>
+        <WindowControls />
       </header>
       <div className="mk-filter" role="radiogroup" aria-label="显示范围" data-testid="marks-scope">
         {scopes.map((s) => (

@@ -23,6 +23,14 @@ test("first run of the portable build asks where data goes, then starts with it"
   await expect(page.getByLabel("数据目录")).toHaveValue(join(portable, "data"));
   await expect(page.locator("#checks")).toContainText("测试模式不检查");
   await screenshot(app, "stage-8", "S8-02-setup", page);
+  // No system title bar (2026-10-29): the page's own, with 最小化 and 关闭, in AMO's colours (light and dark).
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getBounds().height - w.getContentBounds().height))).toEqual([0]);
+  expect(await page.locator(".tb").evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region"))).toBe("drag");
+  await expect(page.getByRole("group", { name: "窗口" }).getByRole("button")).toHaveCount(2);
+  await screenshot(app, "studio", "titlebar-setup-light", page);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await screenshot(app, "studio", "titlebar-setup-dark", page);
+  await page.emulateMedia({ colorScheme: "light" });
 
   // A bad choice is explained; a relative one is saved relative to the exe's folder.
   await page.getByLabel("数据目录").fill(" ");

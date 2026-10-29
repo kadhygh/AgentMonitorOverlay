@@ -101,6 +101,8 @@ copyFileSync(studioIcon.svgPath, join(studio, "packages", "ui", "public", "icon.
 const reviewer = tool("reviewer");
 writeFileSync(join(assets("reviewer"), "icon.png"), await reviewer.png(256));
 writeFileSync(join(assets("reviewer"), "icon.ico"), await ico(reviewer));
+// The mark in its windows' title bars when it runs alone (2026-10-29).
+copyFileSync(reviewer.svgPath, join(studio, "packages", "ui", "public", "reviewer.svg"));
 
 // AMO 便签: the window icon and one PNG per size (tray; package-portable.mjs makes its exe icon from them).
 const notes = tool("notes");

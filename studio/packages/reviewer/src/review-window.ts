@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from "electron";
+import { sendMaximized } from "./window-controls.js";
 
 // The Git Review windows (S11-D): one ordinary window per project, loaded with #review?workspace=…&session=…. Opening
 // a project's review again brings its window forward (and points it at the new session) instead of opening another.
@@ -115,12 +116,15 @@ function createReviewWindow(url: string, { preload, icon, testMode }: ReviewWind
     title: "Git Review",
     icon,
     backgroundColor: "#efede8",
+    // No system title bar (2026-10-29): the page's head is the title bar, with its own window buttons.
+    titleBarStyle: "hidden",
     // Tests: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7), as the workbench.
     show: false,
     ...(testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
     paintWhenInitiallyHidden: true,
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !testMode },
   });
+  sendMaximized(win);
   const origin = new URL(url).origin;
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, target) => {

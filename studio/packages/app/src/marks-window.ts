@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from "electron";
+import { sendMaximized } from "@amo-studio/reviewer";
 
 // The file marks window (文件标记, S12-D; 书签 since 2026-10-19): one ordinary window, loaded with #marks?topic=….
 // Opening it again brings it forward and points it at the new project instead of opening another. It closes with the
@@ -68,12 +69,15 @@ function createMarksWindow(url: string, { preload, icon, testMode }: MarksWindow
     title: "书签",
     icon,
     backgroundColor: "#efede8",
+    // No system title bar (2026-10-29, the user: AMO's style): the page's head is the title bar, with its own buttons.
+    titleBarStyle: "hidden",
     // Tests: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7), as the workbench.
     show: false,
     ...(testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
     paintWhenInitiallyHidden: true,
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !testMode },
   });
+  sendMaximized(win);
   const origin = new URL(url).origin;
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, target) => {

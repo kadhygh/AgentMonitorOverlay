@@ -46,6 +46,13 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 夜 · 其余窗口也去掉 Windows 标题栏，换成 AMO 自己画的（分支 `worktree-agent-ab6979def96d4bbaa`，未合并）**
+
+- 用户：「书签的标题还是 Windows 的，改成 AMO 风格」。书签、画布小窗、Git Review、查看器（含查看包）、首次设置都改成 `titleBarStyle: "hidden"`，页面顶部那一行当标题栏（`.titlebar`：可拖动，按钮、输入框、带悬停提示的部分不拖），左边 AMO 标识（独立 Reviewer 里是 Reviewer 的标识 `ui/public/reviewer.svg`，`make-icons.mjs` 会生成），右上角自己画的 最小化 / 最大化(还原) / 关闭。画布小窗和首次设置不可最大化，只有 最小化 和 关闭。
+- 共用：`ui/src/shell/WindowControls.tsx`（`WindowControls`、`TitleMark`、窄标题栏 `TitleBar`、`WindowPlaceholder`），主窗口 `TopBar` 也改用它；主进程 `reviewer/src/window-controls.ts` 的 `installWindowControls()` 让 `amo:window` 作用于发消息的那个窗口，`sendMaximized(win)` 把最大化状态发给各自页面；Studio 和独立 Reviewer 都装，独立 Reviewer 的 preload 加了 `windowControls`。主窗口 × 仍只隐藏到托盘（它自己的 close 处理），其他窗口 × 真关。
+- 页面还没有顶栏时（正在连接 Host、读取中、项目不存在、远程文件取回中、整个窗口出错）显示一条窄标题栏，窗口照样能拖、能关。查看器的「改动」里嵌的 Git Review 不再画一套按钮。书签顶栏的两个输入框窄了一点，760 宽时一行放得下。首次设置换成 AMO 的配色（浅色纸感、深色和 Studio 深色一致），跟随系统深浅。
+- 验证：typecheck、vitest（ui / reviewer / app 57 个文件 325 条）过；e2e 新 `e2e/studio/titlebars.spec.ts`（四个窗口：没有系统标题栏、顶栏可拖、按钮在右上角、× 只关自己、最小化只作用于自己），`portable.spec.ts`、`reviewer-app.spec.ts` 加了标题栏检查；书签、画布小窗、Git Review、查看器、chat-files 相关 studio spec 和 reviewer project 共 29 条全过。截图 `screenshots/studio/titlebar-*`、`screenshots/reviewer/titlebar-*`（深浅各一）。没在真窗口里手动拖过、没试过真的最大化（测试窗口不能上屏）。
+
 **2026-10-29 晚 · 托盘菜单统一成便签的样子、各工具都有主题、平台进度条和「关闭」修正；测试通道发平台 0.9.8、Studio 0.9.9、便签 0.9.4、中转 0.9.3、Reviewer 0.9.7（`3373957`，正式通道没动）**
 
 - 托盘菜单：新包 `packages/traymenu`（`@amo-studio/traymenu`），照便签的托盘菜单画的无边框小窗（一页自带样式的 data: 页面，点击当作导航截下来）；平台、单独打开的 Studio 和中转都用它，不再用 Windows 自己的菜单。便签保留自己的那份（它是样板）。新包已加进 `package-portable.mjs` 三个程序的包列表。

@@ -34,6 +34,7 @@ import { splitRows } from "./splitview.js";
 import { CommitPicker, readHistory } from "./CommitPicker.js";
 import { openReview, switchReview } from "./open.js";
 import { FileHead, ReviewHead } from "./ReviewHead.js";
+import { WindowPlaceholder } from "../shell/WindowControls.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message. With `&commit=…`
@@ -49,9 +50,9 @@ export function ReviewApp() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
-  if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
+  if (host.kind !== "ready") return <WindowPlaceholder title="Git Review">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
   const ws = target && host.state.workspaces.find((w) => w.id === target.workspaceId);
-  if (!target || !ws) return <div className="placeholder">项目不存在或已移除。</div>;
+  if (!target || !ws) return <WindowPlaceholder title="Git Review">项目不存在或已移除。</WindowPlaceholder>;
   return (
     <ReviewPage
       key={`${ws.id}@${target.commit ?? ""}@${target.base ?? ""}`}
@@ -562,6 +563,7 @@ export function ReviewPage({
         onMode={setMode}
         onSplit={setSplit}
         onRefresh={reread}
+        titleBar={!embedded}
       />
 
       {status && !status.repo ? (

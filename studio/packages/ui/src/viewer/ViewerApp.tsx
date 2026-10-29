@@ -18,6 +18,7 @@ import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTar
 import { pinViewer, viewerPinned } from "./open.js";
 import { PackViewer } from "../viewpacks/PackViewer.js";
 import { RemoteViewer, type RemoteShown } from "./RemoteViewer.js";
+import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
 
 // The viewer window (查看器, stage 13; #viewer?path=…): a file opened from a conversation, a mark or a Review, in one
 // of two modes. 文件: the file as it is now (code coloured, the asked line or range marked and scrolled to; Markdown
@@ -35,8 +36,8 @@ export function ViewerApp() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
-  if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
-  if (!target) return <div className="placeholder">没有要查看的文件。</div>;
+  if (host.kind !== "ready") return <WindowPlaceholder title="查看器">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
+  if (!target) return <WindowPlaceholder title="查看器">没有要查看的文件。</WindowPlaceholder>;
   // 查看包 (2026-10-23): the same window, showing a pack.
   if (target.pack) return <PackViewer link={host.link} state={host.state} packId={target.pack} focus={target.item ?? null} nonce={target.nonce ?? ""} />;
   // 远程 step 3 (2026-10-29): a remote task's file is fetched from its computer first, then shown as any other.
@@ -122,7 +123,9 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
-      <header className="vw-head" ref={head}>
+      {/* The window's title bar (2026-10-29): it drags the window and ends with the window buttons. */}
+      <header className="vw-head titlebar" ref={head}>
+        <TitleMark />
         <div className="gr-seg" role="group" aria-label="查看方式">
           {MODES.map((m) => {
             const off = m.id === "changes" && (!workspace || !repo);
@@ -224,6 +227,7 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
           {pinned ? "已固定" : "固定"}
           </button>
         </div>
+        <WindowControls />
       </header>
       {remote?.stale && (
         <div className="vw-stale" role="status" data-testid="viewer-remote-stale">

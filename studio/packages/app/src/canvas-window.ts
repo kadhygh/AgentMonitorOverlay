@@ -63,6 +63,10 @@ function createCanvasWindow(url: string, { preload, icon, testMode }: CanvasWind
     icon,
     backgroundColor: "#efede8",
     alwaysOnTop: true,
+    // No system title bar (2026-10-29, AMO's style): the page's bar drags it and has 最小化 and 关闭; a small window
+    // beside other work is not maximised (no button, nor by double-clicking the bar).
+    titleBarStyle: "hidden",
+    maximizable: false,
     // Tests: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7), as the workbench.
     show: false,
     ...(testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
