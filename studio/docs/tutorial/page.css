@@ -1,0 +1,68 @@
+/* 教程页面专用的样式（接在 page-base.css 后面）。 */
+/* 衬线：装了 Noto Serif SC 就用它；没有时西文用 Georgia、中文回退到系统宋体（SimSun 的西文是等宽的，不让它管西文）。 */
+:root{--serif:"Tiempos Text","Noto Serif SC","Source Han Serif SC",Georgia,"Songti SC","STSong","SimSun",serif;--sans:"Styrene B",Inter,"Noto Sans SC","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{overflow-x:hidden}
+.wrap{max-width:900px}
+nav.top{position:sticky;top:0;z-index:10;margin:-30px -28px 26px;padding:10px 28px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+nav.top .crumb{font:500 14px var(--serif);color:var(--text)}
+h1{margin-top:0}
+.chapter{margin-top:56px}
+.chapter>h1{font-size:28px;padding-top:6px;border-top:2px solid var(--text)}
+.chapter h2{margin-top:40px;font-size:21px}
+.intro p,.chapter p,.chapter li,.chapter td,.chapter blockquote{font-family:var(--serif)}
+.intro p,.chapter p{font-size:15.5px;line-height:1.85;color:var(--text);margin:10px 0}
+.chapter ul,.chapter ol,.intro ul{padding-left:22px;margin:10px 0}
+.chapter li{font-size:15px;line-height:1.8;margin:6px 0;color:var(--text)}
+.chapter li::marker{color:var(--accent-fill)}
+.chapter td{font-size:14px;line-height:1.7}
+.chapter td:first-child{font-family:var(--sans);font-weight:600;white-space:nowrap}
+.table-wrap{overflow-x:auto;margin:14px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+blockquote{margin:18px 0;padding:12px 16px;border-left:3px solid var(--accent-fill);background:var(--surface);border-radius:0 12px 12px 0;color:var(--text-2)}
+blockquote p{margin:0!important;font-size:14.5px!important;color:var(--text-2)!important}
+/* 软件里的按钮名、菜单名 */
+.ui{display:inline;padding:0 5px;margin:0 1px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--surface);font:500 .9em/1.5 var(--sans);color:var(--text);white-space:normal;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.toc{margin:22px 0 0;padding:16px 20px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+.toc b{display:block;font:600 12px var(--sans);letter-spacing:.1em;color:var(--accent);margin-bottom:6px}
+.toc ol{margin:0;padding-left:0;list-style:none;display:grid;gap:6px}
+.toc a{color:var(--text);text-decoration:none;font:500 15px var(--serif)}
+.toc a:hover{color:var(--accent)}
+.toc .sub{display:flex;flex-wrap:wrap;gap:4px 12px;margin:2px 0 0;font:13px var(--sans)}
+.toc .sub a{font:13px var(--sans);color:var(--text-2)}
+.toc .soon{color:var(--text-3);font:14px var(--serif)}
+/* 概念图 */
+.concept{margin:16px 0 20px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:12px}
+.concept svg{display:block;width:100%;height:auto}
+.concept .node-g rect{fill:var(--surface)}
+.concept .node-g.big rect{fill:var(--surface-2);stroke-dasharray:none}
+.concept .node-g.big .t{font:600 15px var(--serif);fill:var(--text)}
+.concept .node-g.dashed rect{stroke-dasharray:5 4}
+.concept .node-g.sel rect{fill:var(--accent-soft)}
+.concept .node-g.big.sel rect{fill:var(--surface-2)}
+.concept .node-g:focus{outline:none}
+.concept .node-g:focus-visible rect{stroke:var(--accent);stroke-width:2.6}
+.concept .elab{font-size:11px;paint-order:stroke;stroke:var(--surface-2);stroke-width:4px;stroke-linejoin:round}
+.concept .arrowhead{fill:var(--text-3)}
+.concept-detail{margin-top:10px;padding:12px 14px;border-top:1px solid var(--line)}
+.concept-detail b{font:600 16px var(--serif);margin-right:10px}
+.concept-sub{font-size:12.5px;color:var(--text-3)}
+.concept-detail p{margin:6px 0 0;font:15px/1.8 var(--serif);color:var(--text)}
+footer code{font-size:.92em}
+footer ul{margin:6px 0 0;padding-left:18px}
+@media (max-width:620px){
+  .wrap{padding:22px 16px 60px}
+  nav.top{margin:-22px -16px 20px;padding:10px 16px}
+  h1{font-size:25px}
+  .chapter>h1{font-size:23px}
+  .chapter h2{font-size:19px}
+  .concept{padding:8px}
+  /* 表格在手机上一行一块：第一格当小标题，其余格前面写上列名。 */
+  .table-wrap table,.table-wrap tbody,.table-wrap tr,.table-wrap td{display:block}
+  .table-wrap thead{display:none}
+  .table-wrap tr{padding:10px 14px;border-bottom:1px solid var(--line)}
+  .table-wrap tr:last-child{border-bottom:0}
+  .table-wrap td{padding:2px 0;border:0}
+  .chapter .table-wrap td:first-child{font-size:15px;white-space:normal;margin-bottom:2px}
+  .table-wrap td:not(:first-child)::before{content:attr(data-label) "：";font:600 12.5px var(--sans);color:var(--text-3)}
+}
