@@ -210,8 +210,6 @@
 .item-refs { display: flex; flex-direction: column; gap: 4px; }
 .item-refs code { font-size: 12px; overflow-wrap: anywhere; }
 .item-callouts { display: flex; flex-direction: column; gap: 6px; }
-/* Six tabs with 沟通: they wrap rather than scroll the sidebar sideways. */
-.canvas-side > .side-tabs { flex-wrap: wrap; }
 .canvas-side { min-width: 0; overflow-x: hidden; }
 .item-detail .btn-ghost, .item-detail .btn-primary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Focusing a card near the edge must not scroll the viewport (it pans by transform only). */
@@ -245,6 +243,43 @@
    pointer, with the tokens of 归档任务 (soft-danger); the sidebar's 删除 buttons are soft-danger buttons with a glyph. */
 .canvas-group-bar .group-remove.soft-danger { color: var(--danger-text); }
 .canvas-group-bar .group-remove.soft-danger:hover { background: var(--danger-soft-bg); color: var(--danger-soft-text); box-shadow: inset 0 0 0 1px var(--danger-soft-border); }
-.canvas-side .canvas-delete { justify-content: center; }
+.canvas-detail .canvas-delete { justify-content: center; }
 .canvas-delete-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
 .canvas-delete-check input { margin: 0; }
+
+/* 侧栏 and 详情框 (2026-10-29, the user: a switch and a width like the task page's; the details in a box beside the card).
+   The sidebar: one row of tabs ruled off from the content, square, the one shown underlined; narrow, the long names
+   shorten (整体待办 → 待办, agent 视角 → agent). Its width comes from the page (dragged at its left edge). */
+.canvas-side { flex: none; padding: 0; gap: 0; overflow: hidden; container: canvas-side / inline-size; }
+.canvas-side-tabs { flex: none; display: flex; align-items: stretch; height: 40px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.canvas-side-tab {
+  flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px; border: none; border-radius: 0;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; box-shadow: inset 0 -2px 0 transparent;
+}
+.canvas-side-tab:hover { color: var(--text); }
+.canvas-side-tab[aria-selected="true"] { color: var(--text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--primary); }
+.canvas-side-tab:focus-visible { outline: 1px solid var(--primary); outline-offset: -3px; }
+.canvas-side-tab .tab-short { display: none; }
+@container canvas-side (max-width: 300px) {
+  .canvas-side-tab:has(.tab-short) .tab-full { display: none; }
+  .canvas-side-tab .tab-short { display: inline; }
+}
+/* 沟通: questions waiting for the person stand out. */
+.side-tab-count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--attention); color: #fff; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.canvas-side-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.canvas-viewport .canvas-side-toggle { position: absolute; right: 12px; top: 12px; z-index: 5; background: var(--chip); }
+.canvas-viewport .canvas-side-toggle[aria-pressed="true"] { background: var(--tint); }
+
+/* The 详情框: floats beside the selected card, not modal (no backdrop; the canvas around it stays live). */
+.canvas-detail {
+  position: absolute; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; padding: 12px 14px 14px; overflow-y: auto; overflow-x: hidden;
+  border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel-float); color: var(--text); box-shadow: 0 10px 28px var(--shadow); cursor: default;
+}
+.canvas-detail-x {
+  position: sticky; top: 0; z-index: 1; align-self: flex-end; flex: none; width: 24px; height: 24px; margin: -4px -6px -20px 0; padding: 0; border: none;
+  border-radius: var(--r-btn); background: transparent; color: var(--text-dim); font-size: 17px; line-height: 1; cursor: pointer;
+}
+.canvas-detail-x:hover { background: var(--chip); color: var(--text); }
+.canvas-detail .side-section { gap: 9px; }
+.canvas-detail .side-heading { padding-right: 26px; font-size: 15px; line-height: 1.4; }
+.canvas-detail .stack-field select { min-width: 0; }

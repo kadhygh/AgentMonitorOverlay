@@ -217,3 +217,69 @@ export function gridStyle(view: { x: number; y: number; k: number }): { backgrou
   while (step < 12) step *= 2;
   return { backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${step}px ${step}px` };
 }
+
+export type BesideSide = "right" | "left" | "below" | "above" | "over";
+
+/**
+ * 详情框 (2026-10-29): where a floating box of size `box` goes beside `anchor` (the selected card or group, in the
+ * viewport's own pixels), inside `area` less its margins: to the right, else the left, else below, else above — of the
+ * sides where it fits whole without covering the anchor, the one covering least of the other cards (`avoid`; the first
+ * in that order on a tie), its top (or left) lined up with the anchor's and kept in the area. Where no side has room it
+ * goes over the anchor, on the side with the most room, still in the area. Null when the anchor is wholly out of the
+ * area (the box would float beside nothing).
+ */
+export function placeBeside(
+  anchor: Rect,
+  box: { w: number; h: number },
+  area: { w: number; h: number },
+  gap = 12,
+  margin: { side: number; top: number; bottom: number } = { side: 8, top: 8, bottom: 8 },
+  avoid: readonly Rect[] = [],
+): { x: number; y: number; side: BesideSide } | null {
+  const fits = besideFits(anchor, box, area, gap, margin);
+  if (fits.length <= 1 || !avoid.length) return fits[0] ?? besideOver(anchor, box, area, gap, margin);
+  const covered = (p: { x: number; y: number }) =>
+    avoid.reduce((sum, r) => sum + Math.max(0, Math.min(p.x + box.w, r.x + r.w) - Math.max(p.x, r.x)) * Math.max(0, Math.min(p.y + box.h, r.y + r.h) - Math.max(p.y, r.y)), 0);
+  let best = fits[0]!;
+  let least = covered(best);
+  for (const p of fits.slice(1)) {
+    const c = covered(p);
+    if (c < least) [best, least] = [p, c];
+  }
+  return best;
+}
+
+/** The sides where the box fits beside the anchor, in order of preference (none when the anchor is out of the area). */
+function besideFits(anchor: Rect, box: { w: number; h: number }, area: { w: number; h: number }, gap: number, margin: { side: number; top: number; bottom: number }): Array<{ x: number; y: number; side: BesideSide }> {
+  if (anchor.x + anchor.w < 0 || anchor.y + anchor.h < 0 || anchor.x > area.w || anchor.y > area.h) return [];
+  const minX = margin.side;
+  const maxX = Math.max(minX, area.w - margin.side - box.w);
+  const minY = margin.top;
+  const maxY = Math.max(minY, area.h - margin.bottom - box.h);
+  const clampX = (x: number) => Math.min(maxX, Math.max(minX, x));
+  const clampY = (y: number) => Math.min(maxY, Math.max(minY, y));
+  const out: Array<{ x: number; y: number; side: BesideSide }> = [];
+  const right = anchor.x + anchor.w + gap;
+  if (right + box.w <= area.w - margin.side) out.push({ x: right, y: clampY(anchor.y), side: "right" });
+  const left = anchor.x - gap - box.w;
+  if (left >= margin.side) out.push({ x: left, y: clampY(anchor.y), side: "left" });
+  const below = anchor.y + anchor.h + gap;
+  if (below + box.h <= area.h - margin.bottom) out.push({ x: clampX(anchor.x), y: below, side: "below" });
+  const above = anchor.y - gap - box.h;
+  if (above >= margin.top) out.push({ x: clampX(anchor.x), y: above, side: "above" });
+  return out;
+}
+
+function besideOver(anchor: Rect, box: { w: number; h: number }, area: { w: number; h: number }, gap: number, margin: { side: number; top: number; bottom: number }): { x: number; y: number; side: BesideSide } | null {
+  if (anchor.x + anchor.w < 0 || anchor.y + anchor.h < 0 || anchor.x > area.w || anchor.y > area.h) return null;
+  const minX = margin.side;
+  const maxX = Math.max(minX, area.w - margin.side - box.w);
+  const minY = margin.top;
+  const maxY = Math.max(minY, area.h - margin.bottom - box.h);
+  const clampX = (x: number) => Math.min(maxX, Math.max(minX, x));
+  const clampY = (y: number) => Math.min(maxY, Math.max(minY, y));
+  const right = anchor.x + anchor.w + gap;
+  const left = anchor.x - gap - box.w;
+  const roomRight = area.w - (anchor.x + anchor.w);
+  return { x: clampX(roomRight >= anchor.x ? right : left), y: clampY(anchor.y), side: "over" };
+}

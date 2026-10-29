@@ -69,7 +69,9 @@ test("canvas right-click: descriptions, colour marks, 连依赖, notes and group
   await expect.poll(async () => (await canvas()).edges.map((e) => [e.from, e.to])).toEqual([[damage.id, tank.id]]);
   await screenshot(studio.app, "stage-16", "S16-B-canvas-marks", page);
 
-  // The line's own menu: reverse it, then delete it.
+  // The line's own menu: reverse it, then delete it (the selected card's 详情框 put away first: it floats over the line).
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("canvas-detail")).toHaveCount(0);
   await page.getByTestId("canvas-edge-hit").click({ button: "right" });
   await expect(menu).toHaveAttribute("aria-label", "依赖");
   await menu.getByRole("menuitem", { name: "反过来" }).click();

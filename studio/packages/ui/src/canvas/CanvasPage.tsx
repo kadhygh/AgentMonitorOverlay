@@ -3,7 +3,9 @@ import { CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, ITEM_CARD, REVIEW_STATUSES, worksp
 import { call, HostApiError } from "../host/client.js";
 import { useCallouts } from "./useCallouts.js";
 import { CalloutDialog, CalloutLayer, calloutFlags, ItemCard, ItemDetail, itemActivity, ITEM_MIN, TalkTab } from "./review.js";
-import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
+import { CanvasSidebar, sidebarTabs, type SidebarTab } from "./CanvasSidebar.js";
+import { CanvasDetail, type CanvasSelection } from "./CanvasDetail.js";
+import { useDragWidth } from "../lib/dragWidth.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "../planning/TodoTab.js";
 import { useFeature } from "../lib/features.js";
@@ -26,6 +28,29 @@ const MAX_K = 2.5;
 const VIEW_KEY = "amo.canvasView";
 /** The 画布小窗 keeps its own zoom and place. */
 const MINI_VIEW_KEY = "amo.canvasMiniView";
+/**
+ * The sidebar (2026-10-29, the user: a switch like the task page's, and a width to drag): shown unless put away with
+ * 侧栏 (it always showed before), its width and last tab, all kept on this machine.
+ */
+const SIDE_KEY = "amo.canvasSidebar";
+const SIDE_W_KEY = "amo.canvasSidebarWidth";
+const SIDE_TAB_KEY = "amo.canvasSideTab";
+export const SIDE_W = { def: 320, min: 260, max: 560 };
+
+function readKey(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeKey(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // per-window convenience only
+  }
+}
 
 interface View {
   x: number;
@@ -102,11 +127,26 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     setPreviewState(next);
   };
   const [selection, setSelectionState] = useState<CanvasSelection>(null);
-  const [tab, setTab] = useState<SidebarTab>("detail");
+  // Selecting opens the 详情框 beside the card; the sidebar keeps its tab (2026-10-29: 详情 left the sidebar).
+  const setSelection = setSelectionState;
   const planning = useFeature("planning");
-  const setSelection = (next: CanvasSelection) => {
-    setSelectionState(next);
-    if (next) setTab("detail");
+  const [sideOpen, setSideOpenState] = useState(() => readKey(SIDE_KEY) !== "0");
+  const setSideOpen = (on: boolean) => {
+    setSideOpenState(on);
+    writeKey(SIDE_KEY, on ? "1" : "0");
+  };
+  const sideW = useDragWidth(SIDE_W_KEY, SIDE_W.def, SIDE_W.min, SIDE_W.max, true);
+  const [tabState, setTabState] = useState(() => readKey(SIDE_TAB_KEY) as SidebarTab | null);
+  const tabIds = sidebarTabs({ todoTab: planning, talkTab: true, docsTab: true, marksTab: true }).map(([id]) => id);
+  const tab: SidebarTab = tabState && tabIds.includes(tabState) ? tabState : tabIds[0]!;
+  const setTab = (next: SidebarTab) => {
+    setTabState(next);
+    writeKey(SIDE_TAB_KEY, next);
+  };
+  /** A tab of the sidebar, brought out if it was put away. */
+  const showTab = (next: SidebarTab) => {
+    setTab(next);
+    if (!sideOpen) setSideOpen(true);
   };
   const [renaming, setRenaming] = useState<Id | null>(null);
   const [picking, setPicking] = useState(false);
@@ -143,6 +183,18 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
 
   useEffect(() => saveView(viewKey, view), [view, viewKey]);
 
+  // The viewport's size, for the 详情框 to stay inside it (the sidebar's width and the window change it).
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = viewport.current;
+    if (!el) return;
+    const measure = () => setArea((a) => (a.w === el.clientWidth && a.h === el.clientHeight ? a : { w: el.clientWidth, h: el.clientHeight }));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const persist = useCallback((next: CanvasDoc) => void save(next).catch(() => undefined), [save]);
   const latestDoc = useRef(doc);
   latestDoc.current = doc;
@@ -178,16 +230,31 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   }, [deletingGroup, doc]);
 
   // Delete / Backspace removes the selected group (asking about its cards), note or reference card (never the task
-  // itself), unless typing somewhere. Escape leaves 连依赖.
+  // itself), unless typing somewhere. Escape leaves 连依赖, else closes the 详情框 (2026-10-29): a field in the box being
+  // typed in is left first (its text kept), and an Esc meant for a dialog, a menu or a field elsewhere is not ours.
+  const overlayOpen = !!(menu || describing || deletingGroup || openedCallout || picking || editingLink || renaming);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
       if (e.key === "Escape" && linkFrom) {
         setLinkFrom(null);
         return;
       }
+      if (e.key === "Escape") {
+        if (!selection || overlayOpen || e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+        if (typing) {
+          if (!t!.closest(".canvas-detail")) return;
+          e.preventDefault();
+          t!.blur();
+          return;
+        }
+        e.preventDefault();
+        setSelectionState(null);
+        return;
+      }
       if ((e.key !== "Delete" && e.key !== "Backspace") || !doc || !selection || deletingGroup) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (typing) return;
       if (selection.kind === "group") {
         e.preventDefault();
         askDeleteGroup(selection.id);
@@ -200,7 +267,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- askDeleteGroup reads the latest document itself
-  }, [doc, selection, persist, linkFrom, deletingGroup]);
+  }, [doc, selection, persist, linkFrom, deletingGroup, overlayOpen]);
 
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     setView((v) => {
@@ -214,7 +281,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     const el = viewport.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.(".ref-picker")) return; // the task list scrolls
+      if ((e.target as HTMLElement | null)?.closest?.(".ref-picker, .canvas-detail")) return; // the task list and the 详情框 scroll
       e.preventDefault();
       const box = el.getBoundingClientRect();
       zoomAt(e.clientX - box.left, e.clientY - box.top, e.deltaY < 0 ? 1.1 : 1 / 1.1);
@@ -306,6 +373,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         setDrag(null);
         return;
       }
+      if (drag.kind === "pan" && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) setSelectionState(null);
       if (drag.kind !== "pan" && drag.moved && previewRef.current) persist(previewRef.current);
       setPreview(null);
       setDrag(null);
@@ -378,10 +446,12 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
 
   // preventDefault on every drag start: a leftover text selection would otherwise turn the gesture into a native
   // drag-and-drop, which swallows the mousemove/mouseup events the canvas listens to.
+  // A click on the empty canvas lets go of the selection (and closes its 详情框); a drag there only pans, the box
+  // following its card (2026-10-29). A field in the box being typed in is left first, so its text is kept.
   const startPan = (e: ReactMouseEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    setSelection(null);
+    (document.activeElement as HTMLElement | null)?.blur?.();
     setPicking(false);
     setLinkFrom(null);
     setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
@@ -423,8 +493,8 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     editNote();
   };
 
-  /** The note's text is written in the sidebar. */
-  const editNote = () => requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.canvas-side textarea[aria-label="便签内容"]')?.focus());
+  /** The note's text is written in its 详情框 (once the box has found its place beside the note). */
+  const editNote = () => requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.canvas-detail textarea[aria-label="便签内容"]')?.focus()));
 
   /**
    * "引用任务": a reference card for another topic's task, or this topic's own task placed as its card, in the middle of
@@ -644,6 +714,17 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, ...(n.size ?? { w: CARD_W, h: cardHeight(cardTaskById.get((n as { taskId: Id }).taskId)) }) }]),
   );
   const describedTask = describing ? anyTaskById.get(describing) : undefined;
+  // The 详情框's card (or group) in the viewport's pixels: the box sits beside it wherever the view has put it.
+  const selectedRect = (() => {
+    if (!selection || !shown) return null;
+    if (selection.kind === "group") return shown.groups.find((g) => g.id === selection.id)?.rect ?? null;
+    const n = nodeById.get(selection.id);
+    return n ? rectOf(n) : null;
+  })();
+  const onScreen = (r: { x: number; y: number; w: number; h: number }) => ({ x: r.x * view.k + view.x, y: r.y * view.k + view.y, w: r.w * view.k, h: r.h * view.k });
+  const detailAnchor = selectedRect && onScreen(selectedRect);
+  // The other cards, which the box tries not to cover (the side covering least of them wins).
+  const detailAvoid = selectedRect && !compact ? (shown?.nodes ?? []).filter((n) => !(selection?.kind === "node" && n.id === selection.id)).map((n) => onScreen(rectOf(n))) : [];
 
   return (
     <section className="canvas-page" aria-label="画布">
@@ -905,7 +986,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
               </div>
             );
           })}
-          <CalloutLayer callouts={callouts} sessions={sessions} anchor={anchorOf} onOpen={focusCallout} onClose={closeCallout} onMore={() => setTab("talk")} />
+          <CalloutLayer callouts={callouts} sessions={sessions} anchor={anchorOf} onOpen={focusCallout} onClose={closeCallout} onMore={() => showTab("talk")} />
         </div>
 
         <div className="canvas-tools" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
@@ -978,33 +1059,48 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
             复位
           </button>
         </div>
-        {!compact && <div className="canvas-hint">拖空白处移动视角 · 滚轮缩放 · 从卡片边上的圆点拖出连线 · 右键看更多操作 · 双击打开任务</div>}
-      </div>
-      {shown && !compact && (
-        <CanvasSidebar
-          doc={shown}
-          selection={selection}
-          tasks={tasks}
-          allTasks={allTasks}
-          topics={topics}
-          sessions={sessions}
-          workspaces={workspaces}
-          tab={tab}
-          onTab={setTab}
-          onChange={persist}
-          onEdit={edit}
-          onClearSelection={() => setSelectionState(null)}
-          onDeleteGroup={askDeleteGroup}
-          onOpenTask={onOpenTask}
-          onDescribe={(taskId) => setDescribing(taskId)}
-          newId={newCanvasId}
-          todoTab={planning ? <TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} /> : undefined}
-          agentTab={<AgentTab link={link} topicId={topic.id} />}
-          docsTab={<DocsTab link={link} topicId={topic.id} readOnly={!!topic.archivedAt} />}
-          marksTab={<TopicBookmarks link={link} state={{ tasks: allTasks, sessions, topics, workspaces }} topicId={topic.id} />}
-          talkTab={<TalkTab items={items} callouts={callouts} nameOf={targetName} onFocus={focusCallout} />}
-          talkCount={openQuestions.length}
-          renderItem={(it) => (
+        {!compact && <div className="canvas-hint">拖空白处移动视角 · 滚轮缩放 · 从卡片边上的圆点拖出连线 · 单击看详情 · 右键看更多操作 · 双击打开任务</div>}
+        {!compact && (
+          <button
+            type="button"
+            className="btn-ghost small sidebar-toggle canvas-side-toggle"
+            aria-pressed={sideOpen}
+            title={sideOpen ? "收起侧栏" : "显示侧栏：整体待办、沟通、文档、书签、agent 视角"}
+            onMouseDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+            onClick={() => setSideOpen(!sideOpen)}
+            data-testid="canvas-sidebar-toggle"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1" />
+              <path d="M10 2.5v11" />
+            </svg>
+            侧栏
+            {!sideOpen && openQuestions.length > 0 && <span className="sidebar-count" title={`${openQuestions.length} 个问题待你确认`}>{openQuestions.length}</span>}
+          </button>
+        )}
+        {shown && selection && !compact && (
+          <CanvasDetail
+            anchor={detailAnchor}
+            avoid={detailAvoid}
+            area={area}
+            hidden={!!preview}
+            onClose={() => setSelectionState(null)}
+            doc={shown}
+            selection={selection}
+            tasks={tasks}
+            allTasks={allTasks}
+            topics={topics}
+            sessions={sessions}
+            workspaces={workspaces}
+            onChange={persist}
+            onEdit={edit}
+            onClearSelection={() => setSelectionState(null)}
+            onDeleteGroup={askDeleteGroup}
+            onOpenTask={onOpenTask}
+            onDescribe={(taskId) => setDescribing(taskId)}
+            newId={newCanvasId}
+            renderItem={(it) => (
             <ItemDetail
               key={it.id}
               item={it}
@@ -1018,7 +1114,24 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
               onDelete={() => deleteItem(it.id)}
             />
           )}
-        />
+          />
+        )}
+      </div>
+      {shown && !compact && sideOpen && (
+        <>
+          {sideW.handle("调整画布侧栏宽度")}
+          <CanvasSidebar
+            width={sideW.width}
+            tab={tab}
+            onTab={setTab}
+            todoTab={planning ? <TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} /> : undefined}
+            agentTab={<AgentTab link={link} topicId={topic.id} />}
+            docsTab={<DocsTab link={link} topicId={topic.id} readOnly={!!topic.archivedAt} />}
+            marksTab={<TopicBookmarks link={link} state={{ tasks: allTasks, sessions, topics, workspaces }} topicId={topic.id} />}
+            talkTab={<TalkTab items={items} callouts={callouts} nameOf={targetName} onFocus={focusCallout} />}
+            talkCount={openQuestions.length}
+          />
+        </>
       )}
       </div>
       {menu && <CanvasMenu x={menu.x} y={menu.y} label={menu.label} entries={menu.entries} onClose={closeMenu} />}

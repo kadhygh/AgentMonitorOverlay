@@ -60,7 +60,8 @@ test("an agent's review on the canvas: items, a question answered in its window,
   await expect(page.getByTestId("callout-question")).toContainText("要不要兼容旧客户端一个版本？");
   await expect(page.getByTestId("callout-note")).toContainText("退避上限");
   await expect(page.getByTestId("canvas-asking")).toHaveText("? 1 个问题待你确认");
-  await expect(page.getByTestId("side-tab-talk")).toHaveText("沟通 1");
+  await expect(page.getByTestId("side-tab-talk")).toHaveAccessibleName("沟通 1");
+  await expect(page.getByTestId("side-talk-count")).toHaveText("1");
   await page.getByRole("button", { name: "全部", exact: true }).click();
   await screenshot(s.app, "review-canvas", "RC-1-canvas", page);
 
@@ -96,6 +97,7 @@ test("an agent's review on the canvas: items, a question answered in its window,
   await expect(page.getByTestId("canvas-item").filter({ hasText: "#2" }).getByTestId("item-status")).toContainText("要讨论");
   await expect.poll(async () => items(await canvas()).find((i) => i.num === 2)?.status).toBe("discuss");
   await page.getByRole("button", { name: "全部", exact: true }).click();
+  await page.keyboard.press("Escape"); // #2's 详情框 (opened by the right-click) can float over its bubble
   await page.getByTestId("callout-note").getByRole("button", { name: "收起说明" }).click();
   await expect(page.getByTestId("callout-note")).toHaveCount(0);
 

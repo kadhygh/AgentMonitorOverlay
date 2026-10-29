@@ -12,7 +12,8 @@ function saved(key: string, def: number, min: number, max: number): number {
   }
 }
 
-export function useDragWidth(key: string, def: number, min: number, max: number): { width: number; handle: (label: string) => ReactElement } {
+/** `fromLeft`: the handle is on the column's left edge (a right-hand column, 2026-10-29 the canvas sidebar): dragging left widens it. */
+export function useDragWidth(key: string, def: number, min: number, max: number, fromLeft = false): { width: number; handle: (label: string) => ReactElement } {
   const [width, setWidth] = useState(() => saved(key, def, min, max));
   const keep = (w: number) => {
     try {
@@ -31,7 +32,7 @@ export function useDragWidth(key: string, def: number, min: number, max: number)
     let frame = 0;
     document.body.classList.add("col-resizing");
     const move = (ev: PointerEvent) => {
-      w = Math.max(min, Math.min(max, startW + ev.clientX - startX));
+      w = Math.max(min, Math.min(max, startW + (fromLeft ? startX - ev.clientX : ev.clientX - startX)));
       frame ||= requestAnimationFrame(() => {
         frame = 0;
         setWidth(w);

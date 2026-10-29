@@ -225,9 +225,8 @@ test("canvas: reference cards point at other topics' tasks, show their live stat
   await refs.filter({ hasText: "乙的任务" }).click();
   await page.keyboard.press("Delete");
   await expect(refs).toHaveCount(1);
-  await page.getByRole("tab", { name: "详情" }).click();
   await refs.first().click();
-  await page.getByRole("button", { name: "删除引用卡片（任务不变）" }).click();
+  await page.getByTestId("canvas-detail").getByRole("button", { name: "删除引用卡片（任务不变）" }).click();
   await expect(refs).toHaveCount(0);
   await expect.poll(async () => (await canvas()).nodes.filter((n) => n.kind === "ref").length).toBe(0);
   const state = await studio.api<{ tasks: Task[] }>("GET", "/api/state");

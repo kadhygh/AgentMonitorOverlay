@@ -107,7 +107,8 @@ test("canvas sizes: a group and each kind of card keep the size they are dragged
   // Its place and its group did not change.
   expect(nodeOf(await canvas(), "n-task")).toMatchObject({ pos: { x: 40, y: 100 }, groupId: "g1" });
 
-  // A note made smaller than its text: cut to the lines that fit.
+  // A note made smaller than its text: cut to the lines that fit (the task card's 详情框, floating over the note, put away).
+  await page.keyboard.press("Escape");
   await card("n-note").hover();
   box = (await handle("n-note").boundingBox())!;
   await drag(page, { x: box.x + 6, y: box.y + 6 }, { x: box.x + 46, y: box.y - 40 });
@@ -115,12 +116,14 @@ test("canvas sizes: a group and each kind of card keep the size they are dragged
   await expect(card("n-note")).toHaveClass(/is-sized/);
   expect(await fitsInside(card("n-note"))).toBe(true);
 
-  // A reference card and a review item, smaller.
+  // A reference card and a review item, smaller (each resized card's 详情框 put away before the next).
+  await page.keyboard.press("Escape");
   await card("n-ref").hover();
   box = (await handle("n-ref").boundingBox())!;
   await drag(page, { x: box.x + 6, y: box.y + 6 }, { x: box.x - 44, y: box.y + 36 });
   await expect.poll(async () => nodeOf(await canvas(), "n-ref").size).toEqual({ w: 170, h: 96 });
   expect(await fitsInside(card("n-ref"))).toBe(true);
+  await page.keyboard.press("Escape");
   await card("n-item").hover();
   box = (await handle("n-item").boundingBox())!;
   await drag(page, { x: box.x + 6, y: box.y + 6 }, { x: box.x - 34, y: box.y - 24 });
@@ -128,6 +131,7 @@ test("canvas sizes: a group and each kind of card keep the size they are dragged
   expect(await fitsInside(card("n-item"))).toBe(true);
 
   // The task card a little larger again for the pictures.
+  await page.keyboard.press("Escape");
   await card("n-task").hover();
   box = (await handle("n-task").boundingBox())!;
   await drag(page, { x: box.x + 6, y: box.y + 6 }, { x: box.x + 46, y: box.y + 26 });
