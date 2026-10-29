@@ -372,7 +372,8 @@ function wire(): void {
   ipcMain.handle("relay:mcp", () => hookup());
   ipcMain.handle("relay:copy", (_e, text: string) => clipboard.writeText(text));
   ipcMain.on("relay:notify", (_e, n: { title: string; body: string; threadId: string }) => {
-    if (win && !inUse()) win.flashFrame(true);
+    // Not in tests: flashing gives even a skipTaskbar window a taskbar button (2026-10-29: a row of them during e2e).
+    if (win && !inUse() && !testMode) win.flashFrame(true);
     if (testMode || !Notification.isSupported()) return;
     const note = new Notification({ title: n.title, body: n.body, icon: ICON || undefined, silent: false });
     note.on("click", () => {
@@ -605,11 +606,12 @@ const shown = { flashing: false, overlay: 0, trayBadge: false, tooltip: "AMO 中
 const attention = new Attention({
   flash(on) {
     shown.flashing = on;
-    if (win && !win.isDestroyed()) win.flashFrame(on);
+    // Tests only record it: flashing (and the overlay) gives even a skipTaskbar window a taskbar button.
+    if (win && !win.isDestroyed() && !testMode) win.flashFrame(on);
   },
   overlay(count) {
     shown.overlay = count;
-    if (process.platform === "win32" && win && !win.isDestroyed()) win.setOverlayIcon(overlayImage(count), count > 0 ? `${count} 条待处理 / 未读` : "");
+    if (process.platform === "win32" && win && !win.isDestroyed() && !testMode) win.setOverlayIcon(overlayImage(count), count > 0 ? `${count} 条待处理 / 未读` : "");
   },
   tray(badge, count) {
     shown.trayBadge = badge && count > 0;
@@ -634,7 +636,8 @@ const trayByPlatform = process.argv.includes("--amo-tray=platform");
 const trayWindow = new TrayMenu({ label: "AMO 中转菜单" });
 
 function createTray(): void {
-  if (!ICON || trayByPlatform) return;
+  // Not in tests either (2026-10-29: each test client put an icon in the person's tray, blinking): as Studio and the platform.
+  if (!ICON || trayByPlatform || testMode) return;
   tray = new Tray(trayImage());
   tray.setToolTip("AMO 中转");
   // Like 便签's menu, not Windows' own (2026-10-29, the user; @amo-studio/traymenu).

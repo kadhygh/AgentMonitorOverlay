@@ -2,6 +2,10 @@
 
 每个版本一节，标题写 `## 版本号（日期）`。发布到团队服务器时（`npm run relay:mac -- publish reviewer`），这一节就是平台上显示的改动说明。
 
+## 0.9.8（2026-10-29）
+
+- Git Review 和查看器的窗口不再用 Windows 自带的标题栏，和 AMO Studio 一样由 AMO 自己画：最上面一行可以拖动窗口，右上角是最小化、最大化、关闭。
+
 ## 0.9.7（2026-10-29）
 
 - 可以选主题了：Git Review 窗口顶栏最右边的按钮，在浅色、深色、跟随系统之间切换，所有 Reviewer 窗口一起变。Studio 里带的 Reviewer 照旧跟着 Studio 的主题。
