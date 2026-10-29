@@ -12,6 +12,7 @@ export const newTaskView: ViewDef<"new"> = {
         workspaces={state.workspaces}
         topics={state.topics}
         tasks={state.tasks}
+        sessions={state.sessions}
         profiles={state.profiles}
         scope={view.topicId ? { kind: "topic", id: view.topicId } : scope}
         {...(view.back?.kind === "canvas" && view.topicId ? { canvasTopicId: view.topicId } : {})}

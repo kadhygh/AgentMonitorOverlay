@@ -290,6 +290,8 @@ export function App() {
           link={link}
           workspaces={state.workspaces}
           topics={state.topics}
+          tasks={state.tasks}
+          sessions={state.sessions}
           profiles={state.profiles}
           onClose={() => setQuickOpen(false)}
           onExpand={() => {

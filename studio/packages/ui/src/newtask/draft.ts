@@ -3,6 +3,7 @@ import type { ModelProfile, Session, SessionOptions, Task, TaskTemplateChoice } 
 import { call, type HostLink } from "../host/client.js";
 import { defaultProfile, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
+import { withMentionRefs, type MentionPick } from "../attach/mentions.js";
 
 // The task being written: one draft, shared by the draft task page and the quick bar (Ctrl N), kept across restarts
 // so leaving the page never loses it.
@@ -19,6 +20,11 @@ export interface TaskDraft {
   options: Omit<SessionOptions, "model">;
   /** 主控 (stage 16): the task coordinates its topic (or project). */
   lead?: boolean;
+  /**
+   * What the「@名字」in the text point at (2026-10-29: projects, tasks, sessions, as in a session's composer); the first
+   * message says so (withMentionRefs). Never the task's own project or topic.
+   */
+  refs?: Record<string, MentionPick>;
 }
 
 const KEY = "amo.taskDraft";
@@ -41,10 +47,29 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
       pick,
       options: d.options && typeof d.options === "object" ? d.options : {},
       ...(d.lead === true ? { lead: true } : {}),
+      ...(d.refs && typeof d.refs === "object" ? { refs: cleanRefs(d.refs) } : {}),
     };
   } catch {
     return fresh;
   }
+}
+
+/** Stored picks that still make sense (a project, task or session with its id). */
+function cleanRefs(refs: object): Record<string, MentionPick> {
+  const out: Record<string, MentionPick> = {};
+  for (const [name, p] of Object.entries(refs) as Array<[string, Partial<MentionPick> | null]>) {
+    if (!p || typeof p !== "object" || !("id" in p) || typeof p.id !== "string") continue;
+    if (p.kind === "task") out[name] = { kind: "task", id: p.id };
+    else if (p.kind === "session") out[name] = { kind: "session", id: p.id, taskId: typeof p.taskId === "string" ? p.taskId : null };
+    else if (p.kind === "project" && typeof p.path === "string") out[name] = { kind: "project", id: p.id, path: p.path };
+  }
+  return out;
+}
+
+/** The first message as sent: the text, then what its「@名字」point at. */
+export function draftText(draft: Pick<TaskDraft, "text" | "refs">): string {
+  const text = draft.text.trim();
+  return draft.refs ? withMentionRefs(text, new Map(Object.entries(draft.refs))) : text;
 }
 
 function save(d: TaskDraft): void {
@@ -92,7 +117,7 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
  * with the first message (not when only filing).
  */
 export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, template?: TaskTemplateChoice, onCanvas = false, attachments: readonly string[] = []): Promise<{ task: Task; session: Session | null }> {
-  const text = draft.text.trim();
+  const text = draftText(draft);
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
     ...(draft.title.trim() ? { title: draft.title.trim() } : file ? { title: text.split("\n")[0]!.slice(0, 60) } : {}),
@@ -113,7 +138,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
   return created;
 }
 
-/** An `@project` or `#topic` being typed right before the caret. */
+/** An `@名字` (or, in older uses, `#名字`) being typed right before the caret. */
 export interface Mention {
   sign: "@" | "#";
   query: string;

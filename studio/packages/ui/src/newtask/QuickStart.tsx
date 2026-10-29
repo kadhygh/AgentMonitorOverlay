@@ -1,21 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { projectWorkspaces, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import type { ModelProfile, Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
 import { EffortBars, FastToggle } from "../chat/pickers.js";
+import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
-import { SuggestList, useMentions } from "./Suggest.js";
+import { ChoicePicker } from "./ChoiceRow.js";
+import { GROUP_HEADINGS } from "./choices.js";
+import { useDraftChoices } from "./useDraftChoices.js";
 
 /**
- * 快速启动条 (Ctrl N, design/ui-directions/new-task.html): one line from anywhere — @ project, # topic, the sentence —
- * with the model and effort below. It writes the same draft as the draft task page (Ctrl+Shift+N opens that page).
+ * 快速启动条 (Ctrl N, design/ui-directions/new-task.html): one line from anywhere — the sentence, the topic and the
+ * project — with the model and effort below. It writes the same draft as the draft task page (Ctrl+Shift+N opens that
+ * page). 2026-10-29: the topic and the project are two small pickers (the topic's preferred project picked with it);
+ * @ refers to projects, tasks and sessions as on the page, and # is plain text.
  */
 export function QuickStart({
   link,
   workspaces,
   topics,
+  tasks = [],
+  sessions = [],
   profiles,
   onClose,
   onExpand,
@@ -24,6 +31,8 @@ export function QuickStart({
   link: HostLink;
   workspaces: readonly Workspace[];
   topics: readonly Topic[];
+  tasks?: readonly Task[];
+  sessions?: readonly Session[];
   profiles: readonly ModelProfile[];
   onClose(): void;
   /** Continue on the draft task page. */
@@ -31,24 +40,32 @@ export function QuickStart({
   onCreated(task: Task, session: Session | null): void;
 }) {
   const { draft, update, reset } = useTaskDraft(profiles);
-  const projects = projectWorkspaces(workspaces);
-  const liveTopics = topics.filter((t) => !t.archivedAt);
+  const rows = useDraftChoices({ draft, update, workspaces, topics, tasks });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [picking, setPicking] = useState<"topic" | "project" | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
-  const mentions = useMentions({
+  // No files here (the bar has no place for them): projects, tasks and their sessions.
+  const mentions = useComposerMentions({
+    link,
     text: draft.text,
     setText: (text) => update({ text }),
-    projects,
-    topics: liveTopics,
-    onPick: (kind, id) => update(kind === "project" ? { projectId: id } : { topicId: id }),
+    tasks,
+    sessions,
+    current: null,
+    projects: rows.projects,
+    projectsAlways: true,
+    workspaceId: null,
+    picks: { value: new Map(Object.entries(draft.refs ?? {})), set: (next) => update({ refs: Object.fromEntries(next) }) },
+    onFile: () => {},
+    onFind: () => {},
   });
   useEffect(() => input.current?.focus(), []);
 
-  const project = projects.find((w) => w.id === draft.projectId);
-  const topic = liveTopics.find((t) => t.id === draft.topicId);
+  const project = rows.projects.find((w) => w.id === draft.projectId);
+  const topic = rows.topic;
 
   async function submit(file: boolean) {
     if (busy) return;
@@ -65,6 +82,11 @@ export function QuickStart({
     }
   }
 
+  const closePicker = () => {
+    setPicking(null);
+    requestAnimationFrame(() => input.current?.focus());
+  };
+
   return (
     <div className="quick-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="quick" role="dialog" aria-label="快速新任务">
@@ -76,7 +98,7 @@ export function QuickStart({
             ref={input}
             value={draft.text}
             aria-label="快速新任务"
-            placeholder="一句话开始新任务，@ 选项目，# 选专题"
+            placeholder="一句话开始新任务，@ 引用项目或任务"
             onChange={(e) => {
               update({ text: e.target.value });
               mentions.track(e.target);
@@ -104,27 +126,20 @@ export function QuickStart({
             }}
           />
         </div>
-        {(project || topic) && (
-          <div className="quick-tokens">
-            {project && (
-              <span className="token">
-                @{project.name}
-                <button type="button" aria-label={`去掉项目 ${project.name}`} onClick={() => update({ projectId: null })}>
-                  ×
-                </button>
-              </span>
-            )}
-            {topic && (
-              <span className="token">
-                #{topic.title}
-                <button type="button" aria-label={`去掉专题 ${topic.title}`} onClick={() => update({ topicId: null })}>
-                  ×
-                </button>
-              </span>
-            )}
-          </div>
-        )}
-        <SuggestList mentions={mentions} inline />
+        <div className="quick-picks">
+          <button type="button" className="quick-pick" aria-label={`专题：${topic?.title ?? "不选"}`} onClick={() => setPicking("topic")} data-testid="quick-topic">
+            <span className="quick-pick-lab">专题</span>
+            <span className={topic ? "quick-pick-value" : "quick-pick-value none"}>{topic?.title ?? "不选"}</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <button type="button" className="quick-pick" aria-label={`项目：${project?.name ?? "不选"}`} onClick={() => setPicking("project")} data-testid="quick-project">
+            <span className="quick-pick-lab">项目</span>
+            <span className={project ? "quick-pick-value" : "quick-pick-value none"}>{project?.name ?? "不选"}</span>
+            {project && rows.preferred.includes(project.id) && <span className="chip-tag">{GROUP_HEADINGS.topic}</span>}
+            <span aria-hidden="true">▾</span>
+          </button>
+        </div>
+        <MentionList mentions={mentions} inline />
         {error && (
           <span className="form-error quick-error" role="alert">
             {error}
@@ -152,6 +167,20 @@ export function QuickStart({
           </span>
         </div>
       </div>
+      {picking && (
+        <ChoicePicker
+          noun={picking === "topic" ? "专题" : "项目"}
+          choices={picking === "topic" ? rows.topicChoices : rows.projectChoices}
+          selected={picking === "topic" ? draft.topicId : draft.projectId}
+          noneLabel="不选"
+          onPick={(id) => {
+            if (picking === "topic") rows.pickTopic(id);
+            else rows.pickProject(id);
+            closePicker();
+          }}
+          onClose={closePicker}
+        />
+      )}
     </div>
   );
 }
