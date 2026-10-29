@@ -65,11 +65,12 @@ export function viewFile(t: PreviewTarget, workspaceId: string | null, sessionId
 
 /**
  * 远程 step 3 (2026-10-29): a file of a remote task opens in the viewer, which fetches it from the computer the task
- * runs on — HTML, Markdown and images only (that computer checks again); anything else says so here.
+ * runs on — text, HTML, Markdown and images (2026-10-29: text too, as A's viewer opens what a page links to); a program or
+ * another binary file says so here (that computer checks again, by the content).
  */
 export function viewRemoteFile(t: PreviewTarget, taskId: string, sessionId: string | null = null): void {
   if (!remoteFileKind(t.file.path)) {
-    showToast({ text: "远程任务暂时只能看 HTML、Markdown 和图片；这个文件要在运行任务的那台电脑上打开。" });
+    showToast({ text: "远程任务不能看程序和二进制文件，只能看文本、HTML、Markdown 和图片；这个文件要在运行任务的那台电脑上打开。" });
     return;
   }
   openViewer({
@@ -165,7 +166,7 @@ export function FileLinks({
             testId="file-menu"
             onClose={() => setMenu(null)}
             groups={[
-              [{ label: "在查看器中打开", key: "O", title: "从运行任务的电脑取过来再打开（只能看 HTML、Markdown 和图片）", run: () => viewRemoteFile(t, remoteTask, sessionId) }],
+              [{ label: "在查看器中打开", key: "O", title: "从运行任务的电脑取过来再打开（文本、HTML、Markdown 和图片）", run: () => viewRemoteFile(t, remoteTask, sessionId) }],
               [{ label: "复制路径", key: "C", title: "那台电脑上的路径", run: () => void copyText(t.file.path) }],
             ]}
           />

@@ -103,7 +103,9 @@ test("B opens a remote task's Markdown, HTML and pictures: fetched from A with a
   const proj = a.workspace("掉落表");
   mkdirSync(join(proj, "docs", "img"), { recursive: true });
   writeFileSync(join(proj, "docs", "a.md"), "# 掉落说明\n\n远程打开的 Markdown，旁边的图：\n\n![色块](img/p.png)\n\n看 [页面](page.html)\n");
-  writeFileSync(join(proj, "docs", "page.html"), '<!doctype html><html><head><meta charset="utf-8"><title>页面</title></head><body><h1>远程页面</h1><p>同目录的图：</p><img id="pic" src="img/p.png" width="160"></body></html>');
+  writeFileSync(join(proj, "docs", "page.html"), '<!doctype html><html><head><meta charset="utf-8"><title>页面</title></head><body><h1>远程页面</h1><p>同目录的图：</p><img id="pic" src="img/p.png" width="160"><p><a id="script" href="../tools/gen.py">生成脚本</a> <a id="tool" href="../run.exe">程序</a></p></body></html>');
+  mkdirSync(join(proj, "tools"), { recursive: true });
+  writeFileSync(join(proj, "tools", "gen.py"), "# 生成这份页面的脚本\nprint('远程脚本')\n");
   writeFileSync(join(proj, "docs", "img", "p.png"), png(160, 80, [217, 119, 87]));
   // About 12 MB stored without compression: it comes over in some 24 pieces, long enough to watch.
   writeFileSync(join(proj, "docs", "img", "big.png"), png(2000, 2000, [80, 120, 200], 0));
@@ -157,13 +159,26 @@ test("B opens a remote task's Markdown, HTML and pictures: fetched from A with a
   await expect.poll(() => frame.locator("#pic").evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 20_000 }).toBe(160);
   await screenshot(b.app, "studio", "remote-viewer-html", viewer, "viewer");
 
+  // A script the page links to (2026-10-29): fetched from A and shown as text, as A's own viewer would; back to the page.
+  await frame.locator("#script").click();
+  await expect(viewer.getByTestId("viewer-name")).toHaveText("gen.py", { timeout: 30_000 });
+  await expect(viewer.getByRole("main")).toContainText("print('远程脚本')");
+  await expect(viewer.getByTestId("viewer-remote-where")).toContainText("任务文件夹/tools");
+  await screenshot(b.app, "studio", "remote-viewer-script", viewer, "viewer");
+  await link("docs/page.html").click();
+  await expect(frame.locator("h1")).toHaveText("远程页面", { timeout: 30_000 });
+  // A program it links to: said, and the page stays.
+  await frame.locator("#tool").click();
+  await expect(viewer.getByTestId("toast")).toContainText("远程任务不能看程序和二进制文件");
+  await expect(frame.locator("h1")).toHaveText("远程页面");
+
   // Opened again unchanged: no transfer, straight from B's copy (the Host says it was cached).
   const again = await b.api<{ cached: boolean; rel: string }>("POST", "/api/remote/files", { taskId: task.id, path: "docs/page.html" });
   expect(again).toMatchObject({ cached: true, rel: "docs/page.html" });
 
   // A program: not offered (said on B); a file outside the task's folder: A refuses, the viewer says why.
   await link("run.exe").click();
-  await expect(b.page.getByTestId("toast")).toContainText("远程任务暂时只能看 HTML、Markdown 和图片");
+  await expect(b.page.getByTestId("toast")).toContainText("远程任务不能看程序和二进制文件");
   await link(join(outside, "secret.md")).click();
   await expect(viewer.getByTestId("viewer-remote-error")).toContainText("不在任务的文件夹里", { timeout: 30_000 });
   await screenshot(b.app, "studio", "remote-viewer-refused", viewer, "viewer");

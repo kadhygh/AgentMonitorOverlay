@@ -504,7 +504,7 @@ describe("remote files between two Hosts (step 3)", () => {
     await expect(b.remote.serveFile("nokeynokeynokey", "docs/img/p.png")).rejects.toThrow();
     await expect(b.remote.serveFile(img.key, "docs/a.md")).rejects.toThrow("only images");
     // Refused on A, said on B.
-    await expect(b.remote.fetchFile(task.id, "run.exe")).rejects.toThrow("只能看 HTML、Markdown 和图片");
+    await expect(b.remote.fetchFile(task.id, "run.exe")).rejects.toThrow("不能看程序和二进制文件");
     await expect(b.remote.fetchFile(task.id, join(proj, "..", "elsewhere.md"))).rejects.toThrow();
     // An ordinary task of B's own is not fetched from anywhere.
     const own = await b.service.tasks.createTask({ title: "B 自己的" });

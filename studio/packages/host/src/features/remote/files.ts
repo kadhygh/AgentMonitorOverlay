@@ -3,14 +3,15 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { open, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
-import { PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_KINDS, REMOTE_TASK_FOLDER, remoteFileKind, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
+import { MAX_TEXT_FILE_BYTES, PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_KINDS, REMOTE_TASK_FOLDER, remoteFileKind, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext } from "./grants.js";
 
 // 远程, step 3 (plans/remote-session.md, 2026-10-29): B looks at a remote task's HTML, Markdown and images. On A
 // (`readRemoteFile`): the asked path is resolved, links and junctions first, and must land under the task's folder — or be
-// one of the pictures sent in its conversation — be one of those kinds by its name and its first bytes, and not too big;
+// one of the pictures sent in its conversation — be one of those kinds by its name and its first bytes (text: no NUL
+// byte; 2026-10-29), and not too big;
 // it goes in pieces (`rt.file`), the whole file's sha256 with the first. On B (`RemoteFiles`): the file is kept in the
 // data folder (remote-files/<task>/<where in the task's folder>), opened by the viewer from there, asked for again with
 // what B has so an unchanged file is not sent twice, and thrown away with the copy. Paths between the two name the
@@ -118,10 +119,11 @@ export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, devic
   else throw new HostError("read_only", "这个文件不在任务的文件夹里，不能远程查看（只能看任务文件夹和对话附件里的文件）");
   const ext = extOf(where);
   const kind = remoteFileKind(where);
-  if (!kind) throw new HostError("bad_request", `远程任务暂时只能看 HTML、Markdown 和图片，这是 ${ext || "没有扩展名的"} 文件`);
+  if (!kind) throw new HostError("bad_request", `远程任务不能看程序和二进制文件（这是 ${ext} 文件），只能看文本、HTML、Markdown 和图片`);
   const info = await stat(where);
   if (info.isDirectory()) throw new HostError("bad_request", "这是一个文件夹，不是文件");
-  if (info.size > REMOTE_FILE_MAX_BYTES) throw new HostError("bad_request", `文件太大（${mb(info.size)}），远程最多取 ${mb(REMOTE_FILE_MAX_BYTES)}`);
+  const max = kind === "text" ? MAX_TEXT_FILE_BYTES : REMOTE_FILE_MAX_BYTES;
+  if (info.size > max) throw new HostError("bad_request", `文件太大（${mb(info.size)}），远程${kind === "text" ? "看文本文件" : ""}最多 ${mb(max)}`);
   const mtime = Math.floor(info.mtimeMs);
   const base = { rel, size: info.size, mtime, kind };
   const offset = Number.isSafeInteger(ask.offset) && ask.offset > 0 ? ask.offset : 0;
@@ -140,7 +142,7 @@ export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, devic
   }
   if (ask.have && ask.have.size === info.size && ask.have.mtime === mtime && typeof ask.have.sha256 === "string") return { ...base, sha256: ask.have.sha256, unchanged: true };
   const data = await readFile(where);
-  if (!looksLike(kind, ext, data.subarray(0, 4096))) throw new HostError("bad_request", kind === "image" ? `这个文件的内容不像 ${ext} 图片，不能远程查看` : "这个文件的内容像二进制文件，不是文本，不能远程查看");
+  if (!looksLike(kind, ext, data.subarray(0, 4096))) throw new HostError("bad_request", kind === "image" ? `这个文件的内容不像 ${ext} 图片，不能远程查看` : "这个文件是二进制文件，不是文本，不能远程查看");
   const sha256 = createHash("sha256").update(data).digest("hex");
   if (ask.have && ask.have.sha256 === sha256 && ask.have.size === data.length) return { ...base, sha256, unchanged: true };
   return { ...base, sha256, offset: 0, data: data.subarray(0, REMOTE_FILE_CHUNK).toString("base64") };

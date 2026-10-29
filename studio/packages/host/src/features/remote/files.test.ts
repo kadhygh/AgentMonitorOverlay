@@ -30,6 +30,8 @@ function layout() {
   writeFileSync(join(root, "docs", "fake.png"), "not a picture at all");
   writeFileSync(join(root, "docs", "bin.md"), Buffer.from([0x61, 0, 0x62]));
   writeFileSync(join(root, "tool.exe"), "MZ");
+  writeFileSync(join(root, "docs", "run.ps1"), "Write-Host 你好");
+  writeFileSync(join(root, "docs", "log.txt"), Buffer.from([0x61, 0, 0x62]));
   writeFileSync(join(outside, "keys.md"), "secret");
   writeFileSync(join(attachments, "att-1.png"), PNG);
   writeFileSync(join(attachments, "att-other.png"), PNG);
@@ -43,7 +45,11 @@ describe("remote files on A (step 3)", () => {
     expect(remoteFileKind("x.markdown")).toBe("markdown");
     expect(remoteFileKind("shot.webp")).toBe("image");
     expect(remoteFileKind("run.exe")).toBeNull();
-    expect(remoteFileKind("README")).toBeNull();
+    expect(remoteFileKind("Assets/x.PDF")).toBeNull();
+    // Anything else is text to A (which looks at the content): scripts, configs, files without an extension.
+    expect(remoteFileKind("README")).toBe("text");
+    expect(remoteFileKind("src/Boxer.cs")).toBe("text");
+    expect(remoteFileKind("tools/run.ts")).toBe("text");
   });
 
   it("resolves the task folder's name, a cwd, absolute paths and attachments", () => {
@@ -62,6 +68,10 @@ describe("remote files on A (step 3)", () => {
     expect(a).toMatchObject({ rel: "docs/a.md", kind: "markdown", size: Buffer.byteLength("# 标题\n\n正文"), offset: 0 });
     expect(Buffer.from(a.data!, "base64").toString()).toBe("# 标题\n\n正文");
     expect(a.sha256).toMatch(/^[0-9a-f]{64}$/);
+    // A script a page links to: text.
+    const ps = await readRemoteFile(roots, { taskId: "t", path: "docs/run.ps1", offset: 0 }, "A 台式机");
+    expect(ps).toMatchObject({ rel: "docs/run.ps1", kind: "text" });
+    expect(Buffer.from(ps.data!, "base64").toString()).toBe("Write-Host 你好");
     // The same file again with what B has: nothing sent.
     const again = await readRemoteFile(roots, { taskId: "t", path: "docs/a.md", offset: 0, have: { size: a.size, mtime: a.mtime, sha256: a.sha256! } }, "A");
     expect(again).toMatchObject({ unchanged: true, rel: "docs/a.md" });
@@ -84,13 +94,17 @@ describe("remote files on A (step 3)", () => {
     // A junction (a directory link Windows makes without rights) inside the folder that points out of it.
     symlinkSync(outside, join(root, "docs", "out"), "junction");
     await expect(ask("docs/out/keys.md")).rejects.toThrow("不在任务的文件夹里");
-    await expect(ask("tool.exe")).rejects.toThrow("只能看 HTML、Markdown 和图片，这是 .exe 文件");
+    await expect(ask("tool.exe")).rejects.toThrow("不能看程序和二进制文件（这是 .exe 文件）");
     await expect(ask("docs/fake.png")).rejects.toThrow("内容不像 .png 图片");
     await expect(ask("docs/bin.md")).rejects.toThrow("不是文本");
+    await expect(ask("docs/log.txt")).rejects.toThrow("是二进制文件，不是文本");
     await expect(ask("docs/nope.md")).rejects.toThrow("A 台式机 上找不到这个文件");
     await expect(ask("docs")).rejects.toThrow();
     writeFileSync(join(root, "big.png"), Buffer.concat([PNG, Buffer.alloc(REMOTE_FILE_MAX_BYTES)]));
-    await expect(ask("big.png")).rejects.toThrow(/文件太大（20\.0 MB），远程最多取 20\.0 MB/);
+    await expect(ask("big.png")).rejects.toThrow(/文件太大（20\.0 MB），远程最多 20\.0 MB/);
+    // Text as the viewer shows it here: at most 2 MB.
+    writeFileSync(join(root, "big.log"), "x".repeat(2 * 1024 * 1024 + 1));
+    await expect(ask("big.log")).rejects.toThrow(/文件太大（2\.0 MB），远程看文本文件最多 2\.0 MB/);
     expect(top).toBeTruthy();
   });
 

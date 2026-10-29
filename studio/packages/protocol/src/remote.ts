@@ -285,8 +285,8 @@ export type RemotePush =
 
 // ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
 // A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under
-// the task's folder (links and junctions resolved first) or one of its attachments, that it is HTML, Markdown or an
-// image, and not too big, and sends it in pieces. B keeps it in its own data folder, by task, and opens it from there; the
+// the task's folder (links and junctions resolved first) or one of its attachments, that it is HTML, Markdown, an
+// image or text, and not too big, and sends it in pieces. B keeps it in its own data folder, by task, and opens it from there; the
 // same file unchanged is not sent again. Paths between the two say where in the task's folder, never A's user folder.
 
 /** Biggest file B may take from A. */
@@ -298,7 +298,11 @@ export const REMOTE_TASK_FOLDER = "任务文件夹";
 /** How paths name the task's attachments (pictures sent in its conversation) for B. */
 export const REMOTE_ATTACHMENTS_FOLDER = "附件";
 
-export type RemoteFileKind = "html" | "markdown" | "image";
+/**
+ * `text` (2026-10-29, the user: B should open what a page links to, as A's viewer does — scripts, configs, logs): any
+ * other file whose start has no NUL byte (A checks), shown as the viewer shows text, at most MAX_TEXT_FILE_BYTES.
+ */
+export type RemoteFileKind = "html" | "markdown" | "image" | "text";
 const REMOTE_FILE_EXT: Record<string, RemoteFileKind> = {
   ".html": "html",
   ".htm": "html",
@@ -314,10 +318,19 @@ const REMOTE_FILE_EXT: Record<string, RemoteFileKind> = {
   ".ico": "image",
 };
 
-/** What kind of file remote viewing takes, by extension; null for every other kind. */
+/** Known not to be text: said on B at once instead of asking A (A refuses any file with a NUL byte anyway). */
+const REMOTE_BINARY_EXT = new Set(
+  ".exe .dll .pdb .lib .obj .o .a .so .dylib .bin .dat .db .sqlite .zip .7z .rar .gz .tgz .tar .xz .zst .iso .msi .apk .ipa .jar .class .pyc .wasm .pdf .doc .docx .xls .xlsx .ppt .pptx .psd .tga .tif .tiff .exr .hdr .dds .ktx .fbx .blend .mp3 .wav .ogg .flac .aac .mp4 .mov .avi .mkv .webm .ttf .otf .woff .woff2 .bundle .unity3d .bytes".split(" "),
+);
+
+/** What kind of file remote viewing takes, by extension (`text` for any other, unless known to be binary); null for those. */
 export function remoteFileKind(path: string): RemoteFileKind | null {
-  const m = /\.[^./\\]+$/.exec(path.trim());
-  return m ? (REMOTE_FILE_EXT[m[0].toLowerCase()] ?? null) : null;
+  const p = path.trim().replace(/[\\/]+$/, "");
+  if (!p) return null;
+  const m = /\.[^./\\]+$/.exec(p);
+  const ext = m ? m[0].toLowerCase() : "";
+  if (REMOTE_BINARY_EXT.has(ext)) return null;
+  return REMOTE_FILE_EXT[ext] ?? "text";
 }
 
 /** B → A: a piece of a file of a granted task. */

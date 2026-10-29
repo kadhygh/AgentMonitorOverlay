@@ -46,6 +46,10 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-29 上午 · 远程也能看文本文件（未发版，跟下一版 Studio 走）**
+
+用户：A 上查看器里点 HTML 引用的 md / 脚本会接着在查看器打开（没固定就换掉当前窗口，固定了开新窗口），B 上也要这样。之前 B 只放行 HTML / Markdown / 图片，脚本、配置、txt、json 会被拦。改动：远程文件类型加 `text`——除已知的二进制扩展名（exe、dll、zip、pdf、docx、视频、字体等，B 上直接提示）外都当文本问 A，A 看开头 4 KB 有没有 NUL 字节，文本最大 2 MB（和本地查看器一样，`MAX_TEXT_FILE_BYTES`）；B 上用本地查看器的代码视图显示（高亮、跳到行、查找）。提示改成「远程任务不能看程序和二进制文件，只能看文本、HTML、Markdown 和图片」。验证：全量 vitest 990 过；e2e remote-files（远程 HTML 里点 `../tools/gen.py` 打开、点 `../run.exe` 提示且页面不动，截图 `screenshots/studio/remote-viewer-script.png`）、remote-tasks、viewer-rendered、chat-files 过。
+
 **2026-10-29 上午 · 远程副本归档即删、几项定下不做（未发版，跟下一版 Studio 走）**
 
 用户 10-29 早：「B 归档 = 同时删除」（会话本体在 A，B 只是看）。查到上次「文件夹 20 秒内没删掉」不是杀毒软件：是 B 的 Host 给查看器送图片用的流，查看器换页后一直没关，句柄占着图片（杀掉 Host 立刻能删）。改动：远程缓存的图片（`/api/remote/files/…`）和 `/api/fs/raw` 里 ≤32 MB 的图片改成整个读进内存再发（`FileReply` 的 `whole`），不再留着文件；归档副本时先把 `remote-files/<taskId>` 改名挪到 `.gone-…` 再删（挪不动才退回原来的重试），Host 启动时清掉剩下的；归档时还在路上的取文件不再写回来（不会把文件夹又建出来）。验证：远程单测 31 过（新加「取到一半归档」）；全量 vitest 989 过（claude-runtime 集成测试那条高负载偶发失败，单独重跑 16/16 过）；e2e remote-files（归档后 5 秒内文件夹没了）、remote-tasks、chat-files、viewer-rendered 7 条过。
