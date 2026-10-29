@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { showToast } from "./toast.js";
 import { onHostEvent } from "../host/events.js";
+import { TitleBar } from "../shell/WindowControls.js";
 
 // Keeps a rendering failure to the part that failed (one conversation row, one turn, one page, one window) instead of
 // a blank window: that part says what went wrong and can try again; the details go to the console.
@@ -84,20 +85,32 @@ export function PaneBoundary({ children, resetKey }: { children: ReactNode; rese
   );
 }
 
-/** The whole window (the last resort): sessions keep running in the Host either way. */
-export function WindowBoundary({ children }: { children: ReactNode }) {
+/**
+ * The whole window (the last resort): sessions keep running in the Host either way. `title`: the window has no system
+ * title bar (2026-10-29), so the message comes under a narrow one of the page's, to move and close the window.
+ */
+export function WindowBoundary({ children, title }: { children: ReactNode; title?: string }) {
   return (
     <ErrorBoundary
-      fallback={(e) => (
-        <div className="render-error window" role="alert" data-testid="render-error">
-          <strong>这个窗口出错了。</strong>
-          <span>{firstLine(e)}</span>
-          <span className="render-error-note">会话在后台照常运行，重新载入窗口即可回来。</span>
-          <button type="button" className="btn-primary" onClick={() => location.reload()}>
-            重新载入窗口
-          </button>
-        </div>
-      )}
+      fallback={(e) => {
+        const message = (
+          <div className="render-error window" role="alert" data-testid="render-error">
+            <strong>这个窗口出错了。</strong>
+            <span>{firstLine(e)}</span>
+            <span className="render-error-note">会话在后台照常运行，重新载入窗口即可回来。</span>
+            <button type="button" className="btn-primary" onClick={() => location.reload()}>
+              重新载入窗口
+            </button>
+          </div>
+        );
+        if (!title) return message;
+        return (
+          <div className="win-placeholder">
+            <TitleBar title={title} />
+            <div>{message}</div>
+          </div>
+        );
+      }}
     >
       {children}
     </ErrorBoundary>

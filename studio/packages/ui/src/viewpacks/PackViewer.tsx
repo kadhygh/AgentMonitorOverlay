@@ -7,6 +7,7 @@ import { pinViewer, viewerPinned } from "../viewer/open.js";
 import { useFitWidth } from "../lib/fitWidth.js";
 import { itemToShow } from "./logic.js";
 import { VIEW_KIND_VIEWS, type ItemViewProps } from "./kinds.js";
+import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
 
 // The 查看包 window (2026-10-23): the viewer window showing a pack — its items in a list on the left, the one picked
 // on the right, drawn by its kind (kinds.tsx). The pack is read from the Host and followed: when the agent adds to
@@ -73,10 +74,10 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
     if (pack) document.title = `${pack.title} · 查看包`;
   }, [pack?.title]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) return <div className="placeholder">打不开这个查看包：{error}</div>;
-  if (!pack) return <div className="placeholder">正在读取…</div>;
+  if (error) return <WindowPlaceholder title="查看包">打不开这个查看包：{error}</WindowPlaceholder>;
+  if (!pack) return <WindowPlaceholder title="查看包">正在读取…</WindowPlaceholder>;
   const workspace = state.workspaces.find((w) => w.id === pack.workspaceId);
-  if (!workspace) return <div className="placeholder">这个查看包的项目已经不在了。</div>;
+  if (!workspace) return <WindowPlaceholder title={pack.title}>这个查看包的项目已经不在了。</WindowPlaceholder>;
   const item = pack.items.find((i) => i.id === selected) ?? pack.items[0]!;
   const from = pack.sessionId ? state.sessions.find((s) => s.id === pack.sessionId) : undefined;
   const view = VIEW_KIND_VIEWS[item.kind] as { View(p: ItemViewProps<ViewItemKind>): JSX.Element };
@@ -89,7 +90,9 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
 
   return (
     <div className="vw-app vp-app" data-testid="viewpack">
-      <header className="vw-head" ref={head}>
+      {/* The window's title bar (2026-10-29): it drags the window and ends with the window buttons. */}
+      <header className="vw-head titlebar" ref={head}>
+        <TitleMark />
         <div className="vw-title">
           <span className="vw-name" data-testid="viewpack-title">
             {pack.title}
@@ -116,6 +119,7 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
             {pinned ? "已固定" : "固定"}
           </button>
         </div>
+        <WindowControls />
       </header>
       <main className="vp-body">
         {many && (

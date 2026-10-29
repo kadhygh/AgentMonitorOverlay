@@ -7,7 +7,13 @@
   border: 2px dashed var(--attention-border); border-radius: var(--r-l);
   background: color-mix(in srgb, var(--attention-bg) 70%, transparent);
 }
-.mk-head { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: wrap; }
+/* The window's title bar (2026-10-29): its tools wrap among themselves (narrow windows); the window buttons stay at the
+   top right corner, one row high. */
+.mk-head { display: flex; align-items: flex-start; border-bottom: 1px solid var(--border); background: var(--bg-header); }
+.mk-head-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 18px; flex-wrap: wrap; }
+.mk-head:has(> .win-controls) .mk-head-main { padding-right: 12px; }
+.mk-head.titlebar:has(> .win-controls) { min-height: 0; }
+.mk-head > .win-controls { height: 46px; margin-left: 0; border-left: none; }
 .mk-head .spacer, .mk-actions .spacer, .mk-group-head .spacer { flex: 1; }
 .mk-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); }
 .mk-dim { color: var(--text-faint); font-size: var(--fs-cap); }
@@ -15,8 +21,9 @@
   height: var(--ctl-s); padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel);
   color: var(--text); font: inherit; font-size: var(--fs-sm); outline: none;
 }
-.mk-search { width: 220px; }
-.mk-paste { width: 260px; font-family: var(--font-code); font-size: 12px; }
+/* 2026-10-29: a little narrower, so with the window buttons the head stays one row at the window's usual width. */
+.mk-search { width: 180px; }
+.mk-paste { width: 230px; font-family: var(--font-code); font-size: 12px; }
 .mk-search:focus, .mk-paste:focus { border-color: var(--border-strong); }
 
 /* 显示范围 (2026-10-22): 当前专题 / 当前项目 / 全部, remembered per task. */

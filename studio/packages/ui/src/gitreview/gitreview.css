@@ -35,7 +35,7 @@
 .gr-app { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
 /* One line (2026-10-23): the buttons never shrink or wrap (lib/fitWidth.ts keeps the window wide enough); the
    project, branch and commit give way, cut short. */
-.gr-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: nowrap; }
+.gr-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: nowrap; --titlebar-h: 48px; }
 .gr-head > button, .gr-head > .gr-seg, .gr-head > .gr-title { flex: none; }
 .gr-head > .spacer { min-width: 0; }
 .gr-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); white-space: nowrap; }

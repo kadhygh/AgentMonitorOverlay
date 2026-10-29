@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { platformDataDir, resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
-import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
+import { installWindowControls, sendMaximized, setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
 import { installCanvasWindow } from "./canvas-window.js";
@@ -331,14 +331,10 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
-  // The page draws the title bar and its window buttons (minimise, maximise / restore, close).
-  ipcMain.on("amo:window", (event, action: unknown) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents) return;
-    if (action === "minimize") mainWindow.minimize();
-    else if (action === "maximize") mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
-    else if (action === "close") mainWindow.close();
-  });
-  ipcMain.handle("amo:window-maximized", (event) => (mainWindow && event.sender === mainWindow.webContents ? mainWindow.isMaximized() : false));
+  // The pages draw the title bar and its window buttons (minimise, maximise / restore, close), each for its own window
+  // (2026-10-29: 书签, the 画布小窗, Git Review, the viewer and the setup too). The workbench's × only hides it: its
+  // close handler (createMainWindow) does that.
+  installWindowControls();
   // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
   // Tests never touch the user's clipboard; they read the recorded text instead.
   // A page's top bar needs this much width (CSS px, lib/fitWidth.ts): the window keeps at least that, never less than
@@ -733,8 +729,7 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   win.on("session-end", () => {
     appQuitting = true;
   });
-  win.on("maximize", () => win.webContents.send("amo:window-maximized", true));
-  win.on("unmaximize", () => win.webContents.send("amo:window-maximized", false));
+  sendMaximized(win);
   // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;

@@ -4,6 +4,7 @@ import { scratchpadBridge } from "../scratchpad/bridge.js";
 import { showToast } from "../lib/toast.js";
 import type { AnyViewDef, View } from "./views.js";
 import { RemoteIcon } from "./BackButton.js";
+import { WindowControls } from "./WindowControls.js";
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
 export function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
@@ -159,7 +160,8 @@ export function TopBar({
           <span className="focus-state" aria-hidden="true" />
         </button>
       )}
-      <WindowControls />
+      {/* 2026-10-29: × only hides the window; Studio and the sessions go on in the tray (完全退出 is in the tray's menu). */}
+      <WindowControls closeTitle="关闭窗口（Studio 留在托盘里，会话继续；完全退出在托盘图标的右键菜单里）" />
     </header>
   );
 }
@@ -203,38 +205,6 @@ export function ViewBar({
       {search}
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled} title="新建任务（Ctrl N 在任何页面打开快速启动条）">
         + 新任务
-      </button>
-    </div>
-  );
-}
-
-/** Minimise, maximise / restore and close, drawn by the page in its own style (the window has no system title bar). */
-function WindowControls() {
-  const api = window.amo?.windowControls;
-  const [maximized, setMaximized] = useState(false);
-  useEffect(() => {
-    if (!api) return;
-    void api.isMaximized().then(setMaximized);
-    return api.onMaximized(setMaximized);
-  }, [api]);
-  if (!api) return null;
-  return (
-    <div className="win-controls" role="group" aria-label="窗口">
-      <button type="button" className="win-btn" aria-label="最小化" title="最小化" onClick={api.minimize}>
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M0.5 5.5 H9.5" />
-        </svg>
-      </button>
-      <button type="button" className="win-btn" aria-label={maximized ? "还原" : "最大化"} title={maximized ? "还原" : "最大化"} onClick={api.toggleMaximize}>
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          {maximized ? <path d="M2.5 2.5 V0.5 H9.5 V7.5 H7.5 M0.5 2.5 H7.5 V9.5 H0.5 Z" /> : <path d="M0.5 0.5 H9.5 V9.5 H0.5 Z" />}
-        </svg>
-      </button>
-      {/* 2026-10-29: × only hides the window; Studio and the sessions go on in the tray (完全退出 is in the tray's menu). */}
-      <button type="button" className="win-btn close" aria-label="关闭" title="关闭窗口（Studio 留在托盘里，会话继续；完全退出在托盘图标的右键菜单里）" onClick={api.close}>
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5" />
-        </svg>
       </button>
     </div>
   );

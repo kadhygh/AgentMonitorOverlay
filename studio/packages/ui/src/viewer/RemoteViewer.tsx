@@ -5,6 +5,7 @@ import { onHostEvent } from "../host/events.js";
 import { formatBytes } from "../attach/refs.js";
 import { fileName } from "../files/paths.js";
 import type { ViewerTarget } from "./logic.js";
+import { TitleBar } from "../shell/WindowControls.js";
 
 // 远程 step 3 (2026-10-29, plans/remote-session.md): a remote task's file in the viewer. It is on the computer the task
 // runs on, so this Host fetches it first (through the team server) and keeps it in this computer's data folder; the
@@ -67,33 +68,36 @@ export function RemoteViewer({ link, state, target, render }: { link: HostLink; 
   if (st.kind === "ok" && shown && local) return <>{render(local, shown)}</>;
   const pct = st.kind === "loading" && st.total > 0 ? Math.min(100, Math.round((st.received / st.total) * 100)) : null;
   return (
-    <div className="vw-app vw-remote" data-testid="viewer" data-remote-state={st.kind}>
-      <div className="vw-remote-box" role={st.kind === "error" ? "alert" : "status"} aria-live="polite" data-testid="viewer-remote">
-        <span className="vw-remote-name">{fileName(target.path)}</span>
-        {st.kind === "loading" ? (
-          <>
-            <span className="starting-spin" aria-hidden="true" />
-            <span className="starting-label" data-testid="viewer-remote-loading">
-              正在从 {device} 取文件…
-            </span>
-            <div className="vw-remote-bar" aria-hidden="true">
-              <span style={{ width: `${pct ?? 0}%` }} className={pct === null ? "unknown" : undefined} />
-            </div>
-            <span className="vw-remote-amount" data-testid="viewer-remote-progress">
-              {st.total > 0 ? `${formatBytes(st.received)} / ${formatBytes(st.total)}` : "等对方回应…"}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="vw-remote-fail">取不到这个文件</span>
-            <span className="vw-remote-why" data-testid="viewer-remote-error">
-              {st.kind === "error" ? st.message : ""}
-            </span>
-            <button type="button" className="btn-ghost small" onClick={() => setAgain((n) => n + 1)} data-testid="viewer-remote-retry">
-              再试一次
-            </button>
-          </>
-        )}
+    <div className="win-placeholder">
+      <TitleBar title={`${fileName(target.path)} · 查看器`} />
+      <div className="vw-app vw-remote" data-testid="viewer" data-remote-state={st.kind}>
+        <div className="vw-remote-box" role={st.kind === "error" ? "alert" : "status"} aria-live="polite" data-testid="viewer-remote">
+          <span className="vw-remote-name">{fileName(target.path)}</span>
+          {st.kind === "loading" ? (
+            <>
+              <span className="starting-spin" aria-hidden="true" />
+              <span className="starting-label" data-testid="viewer-remote-loading">
+                正在从 {device} 取文件…
+              </span>
+              <div className="vw-remote-bar" aria-hidden="true">
+                <span style={{ width: `${pct ?? 0}%` }} className={pct === null ? "unknown" : undefined} />
+              </div>
+              <span className="vw-remote-amount" data-testid="viewer-remote-progress">
+                {st.total > 0 ? `${formatBytes(st.received)} / ${formatBytes(st.total)}` : "等对方回应…"}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="vw-remote-fail">取不到这个文件</span>
+              <span className="vw-remote-why" data-testid="viewer-remote-error">
+                {st.kind === "error" ? st.message : ""}
+              </span>
+              <button type="button" className="btn-ghost small" onClick={() => setAgain((n) => n + 1)} data-testid="viewer-remote-retry">
+                再试一次
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

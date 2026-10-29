@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import { join } from "node:path";
 import { acceptDataDir, writePortableConfig } from "./paths.js";
 
@@ -51,15 +51,31 @@ export async function setupChecks(testMode: boolean): Promise<SetupChecks> {
 
 const PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>AMO Studio · 首次设置</title>
 <style>
-body{margin:0;font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;background:#111316;color:#e6e8eb}
-main{max-width:620px;margin:40px auto;padding:0 24px;display:flex;flex-direction:column;gap:18px}
-h1{font-size:20px;margin:0} .dim{color:#a0a8b2;font-size:13px}
-.row{display:flex;gap:8px} input{flex:1;height:34px;padding:0 10px;border-radius:8px;border:1px solid #2b3036;background:#181b1f;color:#e6e8eb}
-button{height:34px;padding:0 14px;border-radius:8px;border:1px solid #2b3036;background:#1f2328;color:#e6e8eb;cursor:pointer}
-button.primary{background:#7fb2ff;color:#0b1626;border-color:#7fb2ff;font-weight:600}
-ul{margin:0;padding-left:20px} .ok{color:#8fddb0} .bad{color:#f2b544} #error{color:#ff8a8a}
-@media (prefers-color-scheme: light){body{background:#f5f6f8;color:#1b2027}.dim{color:#5a6572}input{background:#fff;color:#1b2027;border-color:#dbe0e6}button{background:#f2f4f7;color:#1b2027;border-color:#dbe0e6}button.primary{background:#2f6fd6;color:#fff;border-color:#2f6fd6}.ok{color:#1d7645}.bad{color:#b06f08}#error{color:#c22f35}}
-</style></head><body><main>
+:root{--bg:#111316;--bg-header:#15181b;--panel:#181b1f;--raised:#1f2328;--chip:#1d2125;--border:#2b3036;--border-strong:#3a414a;--text:#e6e8eb;--dim:#a0a8b2;--primary:#7fb2ff;--on-primary:#0b1626;--ok:#8fddb0;--bad:#f2b544;--error:#e5484d;--error-text:#ff8a8a;color-scheme:dark}
+@media (prefers-color-scheme: light){:root{--bg:#efede8;--bg-header:#f8f7f3;--panel:#fbfaf7;--raised:#f4f2ed;--chip:#e7e3db;--border:#d9d3c7;--border-strong:#2a2723;--text:#22201c;--dim:#5d5850;--primary:#23436f;--on-primary:#fbfaf7;--ok:#3b7a4f;--bad:#93570a;--error:#a3302b;--error-text:#a3302b;color-scheme:light}}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;font:14px/1.6 "Noto Sans SC","Microsoft YaHei UI","Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+.tb{flex:none;height:40px;display:flex;align-items:center;gap:10px;padding-left:14px;border-bottom:1px solid var(--border);background:var(--bg-header);-webkit-app-region:drag;user-select:none}
+.tb svg.mark{width:22px;height:22px;flex:none}
+.tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:"Noto Serif SC","Songti SC","SimSun",serif;font-weight:600;font-size:16px}
+.wc{align-self:stretch;display:flex;border-left:1px solid var(--border)}
+.wc button{-webkit-app-region:no-drag;width:46px;height:100%;display:grid;place-items:center;padding:0;border:none;border-radius:0;background:transparent;color:var(--dim)}
+.wc button:hover{background:var(--chip);color:var(--text)} .wc button.close:hover{background:var(--error);color:#fff}
+.wc svg{fill:none;stroke:currentColor;stroke-width:1;shape-rendering:crispEdges}
+.scroll{flex:1;min-height:0;overflow:auto}
+main{max-width:620px;margin:32px auto 40px;padding:0 24px;display:flex;flex-direction:column;gap:18px}
+h1{font-family:"Noto Serif SC","Songti SC","SimSun",serif;font-size:22px;font-weight:700;margin:0} .dim{color:var(--dim);font-size:13px}
+section b{font-family:"Noto Serif SC","Songti SC","SimSun",serif}
+.row{display:flex;gap:8px} input{flex:1;height:32px;padding:0 10px;border-radius:3px;border:1px solid var(--border-strong);background:var(--panel);color:var(--text);font:inherit}
+button{height:32px;padding:0 14px;border-radius:3px;border:1px solid var(--border-strong);background:var(--panel);color:var(--text);cursor:pointer;font:inherit;font-size:13px}
+button:hover{background:var(--raised)}
+button.primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary);font-weight:600}
+ul{margin:0;padding-left:20px} .ok{color:var(--ok)} .bad{color:var(--bad)} #error{color:var(--error-text)}
+</style></head><body>
+<header class="tb"><svg class="mark" viewBox="24 24 464 464" aria-hidden="true"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="#fbfaf7" stroke-width="44" opacity="0.9"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g><g stroke="#22201c" stroke-width="28"><path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/><path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/></g></g><rect x="140" y="140" width="232" height="232" rx="62" fill="#2f5a92"/><g transform="translate(256 256) scale(0.78)"><circle cx="-52" cy="-22" r="32.3" fill="#fbfaf7"/><circle cx="52" cy="-22" r="32.3" fill="#fbfaf7"/><path d="M-62 46 Q0 92 62 46" fill="none" stroke="#fbfaf7" stroke-width="34" stroke-linecap="round"/></g></svg>
+<span class="tb-name">AMO Studio · 首次设置</span>
+<div class="wc" role="group" aria-label="窗口"><button id="wmin" aria-label="最小化" title="最小化"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 5.5 H9.5"/></svg></button><button id="wclose" class="close" aria-label="关闭" title="关闭（不保存，Studio 不会启动）"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5"/></svg></button></div>
+</header><div class="scroll"><main>
 <h1>欢迎使用 AMO Studio</h1>
 <div class="dim">这是 Portable 版：程序和数据都可以放在同一个文件夹里，拷走即可带走。</div>
 <section><b>数据放在哪里</b><div class="dim">任务、会话记录、设置都存在这里。默认是程序旁边的 data 文件夹。</div>
@@ -68,8 +84,10 @@ ul{margin:0;padding-left:20px} .ok{color:#8fddb0} .bad{color:#f2b544} #error{col
 <div class="dim">缺少的项目不影响打开 Studio，对应的模型暂时不能用。</div></section>
 <div id="error" role="alert"></div>
 <div class="row" style="justify-content:flex-end"><button class="primary" id="done">开始使用</button></div>
-</main><script>
+</main></div><script>
 const $ = (id) => document.getElementById(id);
+$("wmin").onclick = () => window.amo.windowControls.minimize();
+$("wclose").onclick = () => window.amo.windowControls.close();
 window.amo.setup.info().then((info) => {
   $("dir").value = info.defaultDir;
   const items = [];
@@ -101,13 +119,19 @@ export function runSetup(options: { portableDir: string; configPath: string; def
       height: 620,
       title: "AMO Studio · 首次设置",
       icon: options.icon,
-      backgroundColor: "#111316",
+      // The page follows the system's light or dark (no 主题 chosen yet), in AMO's colours.
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#efede8",
+      // No system title bar (2026-10-29, AMO's style): the page draws its own, with 最小化 and 关闭 (a dialog-sized
+      // window, not maximised).
+      titleBarStyle: "hidden",
+      maximizable: false,
       show: false,
       // Like every test window: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7).
       ...(options.testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
       paintWhenInitiallyHidden: true,
       webPreferences: { preload: options.preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
+    win.removeMenu();
     const finish = (value: string | null) => {
       if (settled) return;
       settled = true;

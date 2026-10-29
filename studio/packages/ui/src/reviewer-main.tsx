@@ -41,7 +41,7 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
-    <WindowBoundary>
+    <WindowBoundary title={viewer ? "查看器" : "Git Review"}>
       {viewer ? <ViewerApp /> : <ReviewApp />}
       <Toaster />
     </WindowBoundary>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useHostState } from "../host/useHostState.js";
 import { CanvasPage } from "./CanvasPage.js";
 import { useWaitingQuestions } from "./useCallouts.js";
+import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
 
 // 画布小窗 (2026-10-27, 画布审阅 stage 3): a topic's canvas in a small window that stays on top, so the person sees the
 // questions and how a review goes while working elsewhere. The cards, their bubbles and the question window work as
@@ -24,13 +25,26 @@ export function CanvasMiniApp() {
   const topic = live.find((t) => t.id === asked) ?? live[0];
   useTitle(topic ? `画布小窗 · ${topic.title}` : "画布小窗");
 
-  if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
+  // The small window has no maximise button (2026-10-29: it is not maximisable).
+  if (host.kind !== "ready")
+    return (
+      <WindowPlaceholder title="画布小窗" maximize={false}>
+        {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
+      </WindowPlaceholder>
+    );
   const { link, state } = host;
-  if (!topic) return <div className="placeholder">还没有专题。</div>;
+  if (!topic)
+    return (
+      <WindowPlaceholder title="画布小窗" maximize={false}>
+        还没有专题。
+      </WindowPlaceholder>
+    );
   const open = (target: { taskId?: string; sessionId?: string; topicId?: string }) => void window.amo?.openInWorkbench?.(target);
   return (
     <div className="canvas-mini" data-testid="canvas-mini">
-      <div className="canvas-mini-bar">
+      {/* The window's title bar (2026-10-29): it drags the window; 最小化 and 关闭 at its right end. */}
+      <div className="canvas-mini-bar titlebar">
+        <TitleMark />
         <select aria-label="专题" value={topic.id} onChange={(e) => (location.hash = `#canvas-mini?topic=${e.target.value}`)} data-testid="canvas-mini-topic">
           {live.map((t) => (
             <option key={t.id} value={t.id}>
@@ -53,6 +67,7 @@ export function CanvasMiniApp() {
         >
           {onTop ? "✓ 置顶" : "置顶"}
         </button>
+        <WindowControls maximize={false} />
       </div>
       <CanvasPage
         key={topic.id}

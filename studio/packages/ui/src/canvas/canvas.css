@@ -219,7 +219,11 @@
 
 /* 画布小窗 (2026-10-27) */
 .canvas-mini { height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
-.canvas-mini-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+/* Also the window's title bar (2026-10-29): with 最小化 and 关闭 it keeps its height (shell.css .titlebar). */
+.canvas-mini-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--panel); --titlebar-h: 38px; }
+.canvas-mini-bar .titlebar-mark { width: 18px; height: 18px; margin-right: 2px; }
+.canvas-mini-bar > .win-controls { margin-left: 2px; }
+.canvas-mini-bar .win-btn { width: 40px; }
 .canvas-mini-bar select { min-width: 0; max-width: 60%; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; }
 .canvas-mini-bar .is-on { border-color: var(--primary); color: var(--text); }
 .canvas-mini .canvas-page { flex: 1; min-height: 0; }
