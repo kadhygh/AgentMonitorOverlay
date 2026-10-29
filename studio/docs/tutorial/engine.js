@@ -47,6 +47,23 @@
       this.gen = 0; // 每次跳步、暂停都加一，正在播的动画看到变了就停
       this.playing = false;
       this.auto = true; // 还没被人点过：进出视口时自动播 / 停
+      // 展示页（showcase）的「自动循环、无控件」模式：只有演示区域，进视口循环播，离开就停；减少动态效果时停在
+      // def.poster 那一步（默认最后一步）。每步播完停 step.hold 毫秒（默认 500），一轮播完停 def.loopGap 再从头来。
+      this.loop = fig.dataset.mode === "loop";
+      if (this.loop) {
+        fig.innerHTML = `<div class="stage" role="img" aria-label="${esc(def.title)}（示意动画）" style="--h:${def.height || 340}px;--hn:${def.narrowHeight || def.height || 340}px"></div>`;
+        this.stage = fig.querySelector(".stage");
+        this.reset();
+        if (reduced.matches) void this.goto(def.poster ?? def.steps.length - 1, { instant: true });
+        let lastW = 0;
+        new ResizeObserver(() => {
+          const w = this.stage.clientWidth;
+          if (Math.abs(w - lastW) < 2) return;
+          lastW = w;
+          if (this.i >= 0 && !this.playing) void this.goto(this.i, { instant: true });
+        }).observe(this.stage);
+        return;
+      }
       fig.innerHTML = `
         <figcaption class="demo-title"><span class="demo-kicker">演示</span>${esc(def.title)}</figcaption>
         <div class="stage" role="img" aria-label="${esc(def.title)}（简化的界面示意）" style="--h:${def.height || 340}px;--hn:${def.narrowHeight || def.height || 340}px"></div>
@@ -90,9 +107,14 @@
     reset() {
       this.stage.innerHTML = this.def.html + CURSOR;
       this.cursor = this.stage.querySelector("[data-cursor]");
+      // 光标第一次出现时从右下方滑进来，不从左上角的原点飞出来。
+      this.cursor.style.transition = "none";
+      this.cursor.style.transform = `translate(${Math.round(this.stage.clientWidth * 0.62)}px, ${Math.round(this.stage.clientHeight * 0.92)}px)`;
+      void this.cursor.offsetWidth;
       this.i = -1;
     }
     caption() {
+      if (this.loop) return;
       const n = this.def.steps.length;
       this.num.textContent = this.i < 0 ? `共 ${n} 步` : `${this.i + 1} / ${n}`;
       this.say.innerHTML = this.i < 0 ? T.inline(this.def.intro || "点「播放」看一遍，或者用「下一步」一步步看。") : T.inline(this.def.steps[this.i].say);
@@ -139,9 +161,10 @@
         }
         case "type": {
           if (!el) return;
-          if (instant) return void (el.textContent = x);
+          // ["type", k, 文字, true]：接在原有文字后面打。
+          if (instant) return void (el.textContent = y ? el.textContent + x : x);
           el.classList.add("typing");
-          el.textContent = "";
+          if (!y) el.textContent = "";
           for (const ch of x) {
             if (!alive()) return;
             el.textContent += ch;
@@ -213,6 +236,26 @@
       this.playing = false;
       this.caption();
     }
+    /** 展示页：从头播到尾，停一下，再从头，直到 stop()。 */
+    async cycle() {
+      const gen = ++this.gen;
+      this.playing = true;
+      while (gen === this.gen) {
+        this.reset();
+        await sleep(this.def.startHold ?? 400);
+        for (let n = 0; n < this.def.steps.length; n++) {
+          if (gen !== this.gen) return;
+          this.i = n;
+          if (!(await this.runStep(n, false, gen))) return;
+          await sleep(this.def.steps[n].hold ?? 500);
+        }
+        await sleep(this.def.loopGap ?? 1400);
+      }
+    }
+    stop() {
+      this.gen++;
+      this.playing = false;
+    }
     pause() {
       this.gen++;
       this.playing = false;
@@ -243,12 +286,18 @@
       (entries) => {
         for (const e of entries) {
           const d = T.demos.get(e.target.dataset.scene);
-          if (!d || !d.auto || reduced.matches) continue;
+          if (!d || reduced.matches) continue;
+          if (d.loop) {
+            if (e.isIntersecting && !d.playing) void d.cycle();
+            else if (!e.isIntersecting && d.playing) d.stop();
+            continue;
+          }
+          if (!d.auto) continue;
           if (e.isIntersecting && !d.playing && d.i < d.def.steps.length - 1) void d.play();
           else if (!e.isIntersecting && d.playing) d.pause();
         }
       },
-      { threshold: 0.55 },
+      { threshold: 0.4 },
     );
     T.demos.forEach((d) => io.observe(d.fig));
   }

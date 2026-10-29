@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { build, inline, markdown, stageTokens, studio, tutorialTerms } from "./build-tutorial.mjs";
+import { build, buildShowcase, inline, markdown, showcaseScreens, stageTokens, studio, tutorialDir, tutorialTerms } from "./build-tutorial.mjs";
 
 // The tutorial names Studio's buttons, menus and pages (plans/tutorial-onboarding.md, section 5: the cheap check
 // against drift). Each must still be written in the packages' sources; when one is renamed this fails — change the
@@ -61,6 +61,22 @@ describe("tutorial", () => {
     const css = stageTokens(':root {\n  --fs: 12px;\n  --bg: #111;\n  color-scheme: dark;\n}\n:root[data-theme="light"] {\n  --bg: #eee;\n}');
     expect(css).toContain(".stage{--fs: 12px;--bg: #111;--bg: #eee}");
     expect(css).toContain(':root[data-theme="dark"] .stage{--bg: #111}');
+  });
+
+  it("keeps the showcase short: a title of at most 10, a subtitle of at most 20 (a Latin word counts one)", () => {
+    const { screens } = showcaseScreens(readFileSync(join(tutorialDir, "showcase.md"), "utf8"));
+    const len = (s) => s.replace(/[A-Za-z0-9_.]+/g, "a").replace(/\s/g, "").length;
+    expect(screens.length).toBeGreaterThanOrEqual(7);
+    for (const s of screens) {
+      expect(len(s.title), s.title).toBeLessThanOrEqual(10);
+      expect(len(s.sub), s.sub).toBeLessThanOrEqual(20);
+      expect(!!s.scene || s.cta.length > 0, s.title).toBe(true);
+    }
+    const dir = mkdtempSync(join(tmpdir(), "amo-showcase-"));
+    const html = readFileSync(buildShowcase({ out: join(dir, "showcase.html") }), "utf8");
+    rmSync(dir, { recursive: true, force: true });
+    expect(html).not.toMatch(/<script[^>]+src=|<link[^>]+href=|@import|url\(\s*["']?https?:/i);
+    for (const m of html.matchAll(/data-scene="([\w-]+)"/g)) expect(html).toContain(`id: "${m[1]}"`);
   });
 
   it("builds one file with nothing from outside", () => {

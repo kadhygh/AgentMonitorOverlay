@@ -39,6 +39,19 @@ export function scriptFiles(dir = tutorialDir) {
   return [join(dir, "engine.js"), join(dir, "concept-map.js"), ...scenes];
 }
 
+/** The showcase's scripts: the engine, the shared scene parts, its own scenes (showcase/*.js). */
+export function showcaseScriptFiles(dir = tutorialDir) {
+  const own = readdirSync(join(dir, "showcase"))
+    .filter((f) => f.endsWith(".js"))
+    .sort()
+    .map((f) => join(dir, "showcase", f));
+  const parts = readdirSync(join(dir, "scenes"))
+    .filter((f) => f.startsWith("_") && f.endsWith(".js"))
+    .sort()
+    .map((f) => join(dir, "scenes", f));
+  return [join(dir, "engine.js"), ...parts, ...own];
+}
+
 // ---- Markdown ------------------------------------------------------------------------------------------------------
 
 /** Inline formatting; the same rules as the engine's T.inline for captions (plus links). */
@@ -179,7 +192,9 @@ export function stageTokens(css) {
 /** Runs the engine, the concept map and the scenes without a document: their definitions, not the page. */
 export function loadScenes(dir = tutorialDir) {
   const context = vm.createContext({ console });
-  for (const file of scriptFiles(dir)) vm.runInContext(read(file), context, { filename: file });
+  // The tutorial's scripts, then the showcase's own scenes (the engine and the parts are already loaded).
+  const files = [...scriptFiles(dir), ...showcaseScriptFiles(dir).filter((f) => dirname(f) === join(dir, "showcase"))];
+  for (const file of files) vm.runInContext(read(file), context, { filename: file });
   return context.AMO_TUTORIAL;
 }
 
@@ -197,11 +212,11 @@ export function tutorialTerms(dir = tutorialDir) {
   const brackets = (text, where) => {
     for (const m of text.matchAll(/\[\[([^\]]+)\]\]/g)) add(m[1], where);
   };
-  for (const file of markdownFiles(dir)) brackets(read(file), relative(studio, file));
+  for (const file of [...markdownFiles(dir), join(dir, "showcase.md")]) brackets(read(file), relative(studio, file));
   const T = loadScenes(dir);
   for (const def of T.scenes.values()) {
-    const where = `scenes/${def.id}.js`;
-    for (const step of def.steps) brackets(step.say, where);
+    const where = `${def.id.startsWith("sc-") ? "showcase" : "scenes"}/${def.id}.js`;
+    for (const step of def.steps) if (step.say) brackets(step.say, where);
     if (def.intro) brackets(def.intro, where);
     for (const label of def.ui ?? []) add(label, where);
   }
@@ -261,7 +276,87 @@ ${scripts.replace(/<\/script/gi, "<\\/script")}
   return out;
 }
 
+// ---- the showcase (展示页) ---------------------------------------------------------------------------------------------
+
+/**
+ * showcase.md → screens: `## 标题 {#id}`, the next line the subtitle, `::scene id` (a looping demo), `::more href`
+ * (「怎么用 →」), or `::cta` and a list of `- [按钮](href)`. HTML comments are notes for whoever edits it.
+ */
+export function showcaseScreens(source) {
+  const text = source.replace(/<!--[\s\S]*?-->/g, "");
+  const title = /^#\s+(.+)$/m.exec(text)?.[1].trim() ?? "AMO";
+  const screens = text
+    .split(/^##\s+/m)
+    .slice(1)
+    .map((block) => {
+      const [head, ...rest] = block.split("\n");
+      const m = HEADING.exec(`## ${head}`);
+      const lines = rest.map((l) => l.trim()).filter(Boolean);
+      const screen = { title: m[2], id: m[3] ?? null, sub: "", scene: null, more: null, cta: [] };
+      for (const l of lines) {
+        let d;
+        if ((d = /^::scene\s+([\w-]+)$/.exec(l))) screen.scene = d[1];
+        else if ((d = /^::more\s+(\S+)$/.exec(l))) screen.more = d[1];
+        else if ((d = /^-\s+\[([^\]]+)\]\(([^)\s]+)\)$/.exec(l))) screen.cta.push({ text: d[1], href: d[2] });
+        else if (!l.startsWith("::") && !screen.sub) screen.sub = l;
+      }
+      return screen;
+    });
+  return { title, screens };
+}
+
+export function buildShowcase({ dir = tutorialDir, out = join(studio, "out", "html", "showcase.html") } = {}) {
+  const { title, screens } = showcaseScreens(read(join(dir, "showcase.md")));
+  const base = read(join(studio, "packages", "ui", "src", "styles", "base.css"));
+  const css = [stageTokens(base), read(join(dir, "demo.css")), read(join(dir, "showcase.css"))].join("\n");
+  const files = [...showcaseScriptFiles(dir), join(dir, "showcase-page.js")];
+  const scripts = files.map((f) => `// ${relative(studio, f).replace(/\\/g, "/")}\n${read(f)}`).join("\n");
+  const sources = [join(dir, "showcase.md"), ...files, join(dir, "demo.css"), join(dir, "showcase.css"), join(studio, "packages", "ui", "src", "styles", "base.css")].map((f) => `studio/${relative(studio, f).replace(/\\/g, "/")}`);
+  const body = screens
+    .map((s, n) => {
+      const media = s.scene
+        ? `<div class="shot reveal"><figure class="demo" data-scene="${s.scene}" data-mode="loop"></figure>${s.more ? `<a class="more" href="${esc(s.more)}">怎么用 →</a>` : ""}</div>`
+        : s.cta.length
+          ? `<div class="cta reveal">${s.cta.map((c) => `<a href="${esc(c.href)}">${esc(c.text)}</a>`).join("")}</div>`
+          : "";
+      return `<section class="screen${n === 0 ? " hero" : ""}"${s.id ? ` id="${s.id}"` : ""}>
+<h2 class="reveal">${inline(s.title)}</h2>
+<p class="sub reveal">${inline(s.sub)}</p>
+${media}
+</section>`;
+    })
+    .join("\n");
+  const html = `<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>
+${css}
+</style>
+</head>
+<body>
+<header class="bar"><span class="brand">AMO</span><span class="sp"></span><a class="doc" href="tutorial.html">详细教程</a><button type="button" class="theme">换成浅色</button></header>
+<main>
+${body}
+</main>
+<footer>
+<p>演示内容是示意。这页由 <code>npm run tutorial:build</code>（<code>studio/scripts/build-tutorial.mjs</code>）生成，不是事实源：要改文案，改下面的源文件再重新生成。</p>
+<ul>${sources.map((s) => `<li><code>${esc(s)}</code></li>`).join("")}</ul>
+</footer>
+<script>
+${scripts.replace(/<\/script/gi, "<\\/script")}
+</script>
+</body>
+</html>
+`;
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, html, "utf8");
+  return out;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const file = build();
-  console.log(`教程已生成：${file}`);
+  console.log(`教程已生成：${build()}`);
+  console.log(`展示页已生成：${buildShowcase()}`);
 }

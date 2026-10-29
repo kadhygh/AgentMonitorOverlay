@@ -41,7 +41,7 @@
     "package:platform": "npm run build && node scripts/package-portable.mjs --platform",
     "smoke:portable": "node scripts/smoke-portable.mjs release",
     "tutorial:build": "node scripts/build-tutorial.mjs",
-    "tutorial:shots": "node scripts/build-tutorial.mjs && node scripts/tutorial-shots.mjs"
+    "tutorial:shots": "node scripts/build-tutorial.mjs && node scripts/tutorial-shots.mjs && node scripts/showcase-shots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
