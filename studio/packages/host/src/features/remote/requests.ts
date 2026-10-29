@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { REMOTE_KINDS, TASK_DESCRIPTION_MAX, type Id, type RemoteAcceptInput, type RemotePush, type RemoteTaskRequest, type SessionOptions } from "@amo-studio/protocol";
+import { REMOTE_KINDS, TASK_DESCRIPTION_MAX, type Id, type RemoteAcceptInput, type RemotePush, type RemoteTaskRequest } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext, RemoteGrants } from "./grants.js";
+import { startGrantedTask } from "./create.js";
 
 // 远程, step 4 (plans/remote-session.md, 2026-10-29): B asks A to run a task. B writes a title and what to do; A's
 // person sees it on Focus and on the remote page (顶栏「远程」), picks the project, the topic (or none) and a model from 远端允许的模型,
@@ -119,20 +120,18 @@ export class TaskRequests {
     const profile = host.profiles.find((p) => p.id === input.profileId);
     if (!allowed.profiles.includes(input.profileId) || !profile || profile.unavailable) throw new HostError("bad_request", "这个模型不在远端允许的模型里（或现在用不了）");
     const topicId = typeof input.topicId === "string" && input.topicId ? input.topicId : null;
-    // 进行中 from the start, as a task made with its first session is (the session starts just below, once granted).
-    const { task } = await host.tasks.createTask({ title: r.title, workspaceId: input.workspaceId, topicId, column: "doing" });
-    host.tasks.updateTask(task.id, { description: r.text.length > TASK_DESCRIPTION_MAX ? `${r.text.slice(0, TASK_DESCRIPTION_MAX - 1)}…` : r.text });
-    this.grants.grant(task.id, { account: r.account, device: r.device });
-    const permission = this.grants.permissionFor(input.profileId);
-    const options: SessionOptions | undefined = permission ? { permission } : undefined;
-    const answered = this.answer(r, { state: "accepted", taskId: task.id });
-    try {
-      await host.tasks.addSession(task.id, { profileId: input.profileId, text: r.text, ...(options ? { options } : {}) });
-    } catch (err) {
-      // The task and the grant stay: its session can be started on the task page (here or from the device).
-      host.emit("event", { type: "host.error", message: `远程请求的任务已经建好，但会话没能启动：${err instanceof Error ? err.message : String(err)}`, seq: host.store.lastEventSeq() });
-    }
-    return answered;
+    // The same path as 远程创建 (create.ts): made, granted, answered, its session started.
+    let answered: RemoteTaskRequest | null = null;
+    const made = await startGrantedTask(
+      this.ctx,
+      this.grants,
+      { account: r.account, device: r.device },
+      { title: r.title, description: r.text.length > TASK_DESCRIPTION_MAX ? `${r.text.slice(0, TASK_DESCRIPTION_MAX - 1)}…` : r.text, text: r.text, workspaceId: input.workspaceId, topicId, profileId: input.profileId },
+      (task) => (answered = this.answer(r, { state: "accepted", taskId: task.id })),
+    );
+    // The task and the grant stay: its session can be started on the task page (here or from the device).
+    if (made.error) host.emit("event", { type: "host.error", message: `远程请求的任务已经建好，但会话没能启动：${made.error}`, seq: host.store.lastEventSeq() });
+    return answered ?? this.answer(r, { state: "accepted", taskId: made.task.id });
   }
 
   refuse(id: Id, reason: unknown): RemoteTaskRequest {

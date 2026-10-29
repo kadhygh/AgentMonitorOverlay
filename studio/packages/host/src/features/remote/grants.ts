@@ -147,14 +147,15 @@ export class RemoteGrants {
     return level && p && p.runtime !== "remote" ? PERMISSION_OF[p.runtime][level] : undefined;
   }
 
-  private label(pid: Id): string {
+  /** A profile of this computer as the devices read it ("Codex · P"). */
+  labelOf(pid: Id): string {
     const p = this.ctx.host.profiles.find((x) => x.id === pid);
     return p ? `${RUNTIME_LABELS[p.runtime]} · ${p.label}` : pid;
   }
 
   private profilesOf(taskId: Id, allowed: Id[]): Array<{ id: Id; label: string }> {
     const ids = [...new Set([...this.store.listSessions({ taskId }).map((s) => s.profileId), ...allowed])];
-    return ids.map((pid) => ({ id: pid, label: this.label(pid) }));
+    return ids.map((pid) => ({ id: pid, label: this.labelOf(pid) }));
   }
 
   private view(task: Task): RemoteTaskView {
@@ -316,7 +317,7 @@ export class RemoteGrants {
           const task = this.store.getTask(taskId);
           if (!task || task.archivedAt) throw new HostError("read_only", "这个任务已经归档了");
           const profileId = id(b.profileId, "profileId");
-          if (!this.allowedFor(taskId).includes(profileId)) throw new HostError("bad_request", `${this.label(profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里`);
+          if (!this.allowedFor(taskId).includes(profileId)) throw new HostError("bad_request", `${this.labelOf(profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里`);
           const text = typeof b.text === "string" && b.text.trim() ? boundedText(b.text, "text", 100_000) : undefined;
           const permission = this.permissionFor(profileId);
           const options: SessionOptions | undefined = permission ? { permission } : undefined;
@@ -420,8 +421,8 @@ export class RemoteGrants {
     let note: string | null = null;
     if (!allowed.includes(profileId)) {
       const fallback = allowed[0];
-      if (!fallback) throw new HostError("bad_request", `这个任务正授权给 ${who} 远程使用，${this.label(profileId)} 不在允许远程使用的模型里，也没有可以换的：请人在那台电脑顶栏的「远程」→「远程设置」里允许一个模型。`);
-      note = `（这个任务正被 ${who} 远程使用，要的模型 ${this.label(profileId)} 不在允许远程使用的模型里，换成了 ${this.label(fallback)}。）`;
+      if (!fallback) throw new HostError("bad_request", `这个任务正授权给 ${who} 远程使用，${this.labelOf(profileId)} 不在允许远程使用的模型里，也没有可以换的：请人在那台电脑顶栏的「远程」→「远程设置」里允许一个模型。`);
+      note = `（这个任务正被 ${who} 远程使用，要的模型 ${this.labelOf(profileId)} 不在允许远程使用的模型里，换成了 ${this.labelOf(fallback)}。）`;
       profileId = fallback;
     }
     return { profileId, note, permission: this.permissionFor(profileId) };

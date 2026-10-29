@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -8,6 +8,7 @@ import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from
 import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
 import { RemoteCopies } from "./copies.js";
 import { TaskAsks, TaskRequests } from "./requests.js";
+import { RemoteCreates } from "./create.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login (account.json, Studio has none of its own) and device.json — and the devices paired with it. The Host connects
@@ -81,6 +82,8 @@ export class RemoteFeature extends Feature {
   /** Step 4 as A: tasks paired devices ask this computer to run. */
   readonly taskRequests = new TaskRequests(this.context, this.grants);
   /** Step 4 as B: tasks this computer asked paired devices to run. */
+  /** 远程创建 as A (2026-10-29): what paired devices may pick creating a task here, and creating it. */
+  readonly creates = new RemoteCreates(this.context, this.grants);
   readonly asks = new TaskAsks(this.context, (peer, kind, body, timeoutMs, offline) => this.copies.ask(peer, kind, body, timeoutMs, offline));
   private readonly onHostEvent = (e: HostEvent) => {
     try {
@@ -287,14 +290,18 @@ export class RemoteFeature extends Feature {
     if (!this.pairs().some((p) => same(p, f.from))) return { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
     if (f.kind === "ping") return { kind: "pong", body: { at: Date.now() } };
     const body = f.body && typeof f.body === "object" ? (f.body as Record<string, unknown>) : {};
+    const failed = (err: unknown): Answer =>
+      err instanceof HostError ? { kind: "error", body: { code: err.code, message: err.message } } : { kind: "error", body: { code: "runtime_error", message: err instanceof Error ? err.message : String(err) } };
     const said = (run: () => unknown): Answer => {
       try {
         return { kind: REMOTE_KINDS.ok, body: run() };
       } catch (err) {
-        if (err instanceof HostError) return { kind: "error", body: { code: err.code, message: err.message } };
-        return { kind: "error", body: { code: "runtime_error", message: err instanceof Error ? err.message : String(err) } };
+        return failed(err);
       }
     };
+    // 远程创建 (2026-10-29): what the device may pick, and the task made here now.
+    if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.catalog(f.from));
+    if (f.kind === REMOTE_KINDS.create) return this.creates.create(f.from, body).then((made): Answer => ({ kind: REMOTE_KINDS.ok, body: made }), failed);
     // Step 4: a request for a task, or taking one back.
     if (f.kind === REMOTE_KINDS.request) return said(() => ({ request: this.taskRequests.receive(f.from, body) }));
     if (f.kind === REMOTE_KINDS.withdraw) return said(() => (this.taskRequests.withdraw(f.from, body.requestId), { ok: true }));
@@ -450,6 +457,7 @@ export class RemoteFeature extends Feature {
       allowed: this.grants.allowed(),
       taskRequests: this.taskRequests.pending(),
       asks: this.asks.list(),
+      allowedProjects: this.creates.allowedProjects(),
     };
   }
 
@@ -594,6 +602,45 @@ export class RemoteFeature extends Feature {
   setAllowed(body: unknown): RemoteState {
     this.grants.setAllowed(body);
     return this.state();
+  }
+
+  setAllowedProjects(body: unknown): RemoteState {
+    this.creates.setAllowedProjects(body);
+    return this.state();
+  }
+
+  // ---- 远程创建 as B (plans/remote-page-and-new-task.md 4.1, 2026-10-29): the new-task page's 「在别的设备上」
+
+  /** A device that allowed this computer, online now: who it is (for what is said). */
+  private creatable(peer: DeviceRef): { name: string } {
+    this.requireStarted();
+    if (this.link?.state !== "online") throw new HostError("runtime_error", "这台电脑没有连上团队服务器，回来后再试");
+    const p = this.context.peer(peer, "guest");
+    if (!p) throw new HostError("bad_request", "只能在允许了这台电脑配对的设备上建任务（在顶栏的「远程」里配对）");
+    if (!p.online) throw new HostError("runtime_error", `${p.name} 不在线：要它开着 Studio、连上团队服务器才能在它上面建任务`);
+    return p;
+  }
+
+  /** What the device lets this computer pick (its topics, allowed projects and models). */
+  async catalog(peer: DeviceRef): Promise<RemoteCatalog> {
+    const p = this.creatable(peer);
+    return this.copies.ask<RemoteCatalog>(peer, REMOTE_KINDS.catalog, {}, 30_000, `${p.name} 不在线`);
+  }
+
+  /**
+   * Creates a task on the device (granted to this computer, its session started there) and answers once the copy is
+   * here — it comes with the grant; asked for directly when it has not come after a while — or says it follows.
+   */
+  async create(peer: DeviceRef, body: Record<string, unknown>): Promise<RemoteCreateResult> {
+    const p = this.creatable(peer);
+    const ask = { title: typeof body.title === "string" ? body.title : "", text: body.text, topicId: body.topicId ?? null, workspaceId: body.workspaceId ?? null, profileId: body.profileId };
+    // Starting the session takes longest (as rt.start).
+    const made = await this.copies.ask<RemoteCreateAnswer>(peer, REMOTE_KINDS.create, ask, 90_000, `${p.name} 不在线，任务没建`);
+    const here = () => !!this.store.getTask(made.taskId)?.remote;
+    const end = Date.now() + 5000;
+    while (!here() && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
+    if (!here()) await this.copies.syncTask(peer, made.taskId).catch(() => undefined);
+    return { ...made, copied: here() };
   }
 
   // ---- step 4: requests for tasks

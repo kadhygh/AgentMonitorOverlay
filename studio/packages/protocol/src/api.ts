@@ -951,4 +951,10 @@ export interface HostRoutes {
   "POST /api/remote/task-requests/:id/accept": { req: import("./remote.js").RemoteAcceptInput; res: import("./remote.js").RemoteState };
   /** Step 4, on A: refuses a request, saying why (or not). */
   "POST /api/remote/task-requests/:id/refuse": { req: { reason?: string }; res: import("./remote.js").RemoteState };
+  /** 远程创建 (2026-10-29), on A: 远端允许的项目 — where paired devices may create tasks on this computer. */
+  "PUT /api/remote/allowed-projects": { req: import("./remote.js").RemoteAllowedProjects; res: import("./remote.js").RemoteState };
+  /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
+  "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
+  /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
+  "POST /api/remote/create": { req: import("./remote.js").RemoteCreateAsk & { account: string; device: string }; res: import("./remote.js").RemoteCreateResult };
 }

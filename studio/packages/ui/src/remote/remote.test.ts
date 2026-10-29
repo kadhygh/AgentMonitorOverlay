@@ -28,6 +28,7 @@ const state = (peers: RemotePeer[], connected = true): RemoteState => ({
   grants: [{ taskId: "task_9", account: "x", device: "d_x", name: "X", grantedAt: "" }],
   allowed: { profiles: [], defaultProfile: null, permission: null },
   taskRequests: [],
+  allowedProjects: { workspaceIds: [], common: false },
   asks: [],
 });
 

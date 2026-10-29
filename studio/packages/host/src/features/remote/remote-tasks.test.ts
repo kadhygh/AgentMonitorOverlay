@@ -467,6 +467,75 @@ describe("requests for tasks between two Hosts (step 4)", () => {
   }, 60_000);
 });
 
+describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)", () => {
+  it("nothing allowed: refused, saying where to tick; the catalog lists only allowed projects, the topics with their allowed projects and the allowed models", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    // Nothing ticked on A: B's catalog is empty, creating is refused with where to tick.
+    expect(a.state().allowedProjects).toEqual({ workspaceIds: [], common: false });
+    expect(await b.remote.catalog(A)).toMatchObject({ name: "A-PC", projects: [], allowCommon: false, models: [] });
+    await expect(b.remote.create(A, { text: "跑一下", topicId: null, workspaceId: null, profileId: "p" })).rejects.toThrow("A-PC 还没勾远端允许的项目：在那台电脑的 远程 → 远程设置 里勾");
+
+    const yes = a.service.projects.addWorkspace({ path: tempDir("allowed-proj") });
+    const no = a.service.projects.addWorkspace({ path: tempDir("other-proj") });
+    const topic = a.service.topics.createTopic({ title: "掉落表", workspaceIds: [yes.id, no.id] });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.remote.setAllowed({ profiles: ["q", "p"], defaultProfile: "p", permission: null });
+    expect(a.state().allowedProjects).toEqual({ workspaceIds: [yes.id], common: false });
+    const catalog = await b.remote.catalog(A);
+    expect(catalog.projects.map((p) => p.id)).toEqual([yes.id]);
+    expect(catalog.allowCommon).toBe(false);
+    expect(catalog.topics).toMatchObject([{ id: topic.id, title: "掉落表", workspaceIds: [yes.id] }]);
+    expect(catalog.models).toEqual([
+      { id: "p", label: "Codex · P" },
+      { id: "q", label: "Codex · Q" },
+    ]);
+    // Only a project that is there; not the common folder by id.
+    expect(() => a.remote.setAllowedProjects({ workspaceIds: [a.service.commonWorkspace().id] })).toThrow("没有项目");
+    // B asks only devices that allowed it (A did not allow anything the other way round).
+    await expect(a.remote.catalog({ account: "笔记本的我", device: b.state().device!.id })).rejects.toThrow("只能在允许了这台电脑配对的设备上建任务");
+    // An A that does not know a command yet: B says to update it.
+    await expect(b.remote.copies.ask(A, "rt.nothing-yet", {})).rejects.toThrow("A-PC 上的 Studio 版本太旧，先在那台电脑上更新");
+  }, 60_000);
+
+  it("creates in an allowed project on an allowed model: made in the topic, granted, running, the copy on B; a disallowed project, model or the common folder is refused with the reason", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    const yes = a.service.projects.addWorkspace({ path: tempDir("allowed-proj") });
+    const no = a.service.projects.addWorkspace({ path: tempDir("other-proj") });
+    const topic = a.service.topics.createTopic({ title: "掉落表" });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: "read-only" });
+
+    await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: no.id, profileId: "p" })).rejects.toThrow("这个项目不在 A-PC 远端允许的项目里");
+    await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: null, profileId: "p" })).rejects.toThrow("A-PC 不允许远程任务不选项目（公共文件夹）");
+    await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: yes.id, profileId: "q" })).rejects.toThrow("这个模型不在 A-PC 远端允许的模型里");
+    await expect(b.remote.create(A, { text: "x", topicId: "tp_gone", workspaceId: yes.id, profileId: "p" })).rejects.toThrow("A-PC 上没有这个专题了");
+    await expect(b.remote.create(A, { text: "  ", topicId: null, workspaceId: yes.id, profileId: "p" })).rejects.toThrow("第一句话不能是空的");
+    expect(a.store.listTasks()).toEqual([]);
+
+    const made = await b.remote.create(A, { title: "", text: "在 A 上跑这个", topicId: topic.id, workspaceId: yes.id, profileId: "p" });
+    expect(made).toMatchObject({ copied: true });
+    expect(made.sessionId).toBeTruthy();
+    expect(a.store.getTask(made.taskId)).toMatchObject({ title: "在 A 上跑这个", workspaceId: yes.id, topicId: topic.id, column: "doing" });
+    expect(a.state().grants).toMatchObject([{ taskId: made.taskId, account: "笔记本的我" }]);
+    expect(a.store.getSession(made.sessionId!)).toMatchObject({ profileId: "p", options: { permission: "read-only" } });
+    expect(b.store.getTask(made.taskId)?.remote).toMatchObject({ state: "active", name: "A-PC" });
+    await until(() => agentTexts(b, made.sessionId!), (t) => t.includes("FAKE: 在 A 上跑这个"), "B sees it run");
+
+    // The common folder once A allows it.
+    a.remote.setAllowedProjects({ workspaceIds: [], common: true });
+    const common = await b.remote.create(A, { title: "公共的", text: "公共文件夹里跑", topicId: null, workspaceId: null, profileId: "p" });
+    expect(a.store.getTask(common.taskId)).toMatchObject({ title: "公共的", workspaceId: a.service.commonWorkspace().id, topicId: null });
+    await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: yes.id, profileId: "p" })).rejects.toThrow("这个项目不在 A-PC 远端允许的项目里");
+
+    // A away: said at once.
+    a.remote.stop();
+    await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
+    await expect(b.remote.create(A, { text: "x", topicId: null, workspaceId: null, profileId: "p" })).rejects.toThrow("A-PC 不在线");
+  }, 90_000);
+});
+
 describe("remote files between two Hosts (step 3)", () => {
   it("B fetches a granted task's files from A, keeps them by task, asks again with what it has, and throws them away with the copy", async () => {
     const { a, b, toB } = await paired();

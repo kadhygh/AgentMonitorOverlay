@@ -86,6 +86,8 @@ export interface RemoteState {
   taskRequests: RemoteTaskRequest[];
   /** Step 4, as B: what this computer asked paired devices to run, and their answers (until put away). */
   asks: RemoteTaskRequest[];
+  /** 远端允许的项目 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): where paired devices may create tasks here. */
+  allowedProjects: RemoteAllowedProjects;
 }
 
 /** Another device of this computer's own account, connected to the team server now (远程页的配对弹窗, 2026-10-29). */
@@ -233,6 +235,13 @@ export const REMOTE_KINDS = {
   withdraw: "rt.withdraw",
   /** B → A: B archived its copy of a granted task — the grant ends, A stops telling B about it. {taskId} → {ok} */
   drop: "rt.drop",
+  /** B → A (新任务页的远程模式, 2026-10-29): where B may create a task on A and on which models. {} → RemoteCatalog */
+  catalog: "rt.catalog",
+  /**
+   * B → A: create a task there now (no one on A says yes: 远端允许的项目 and 远端允许的模型 limit it), granted to B,
+   * its session started with `text`. RemoteCreateAsk → RemoteCreateAnswer
+   */
+  create: "rt.create",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -286,6 +295,8 @@ export interface RemoteCommandBodies {
   "rt.request": RemoteTaskRequestAsk;
   "rt.withdraw": { requestId: string };
   "rt.drop": { taskId: Id };
+  "rt.catalog": Record<string, never>;
+  "rt.create": RemoteCreateAsk;
 }
 
 /** A → B, unasked. B checks seq: a gap (or anything it cannot place) makes it ask for what it missed. */
@@ -440,6 +451,64 @@ export interface RemoteAcceptInput {
   workspaceId: Id;
   topicId?: Id | null;
   profileId: Id;
+}
+
+// ---- 远程创建 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): B creates a task on A from its new-task page ----------
+// The user (10-29): nobody on A says yes; A's 远程设置 limits it instead — 远端允许的项目 (and whether 「不选项目（公共
+// 文件夹）」 is allowed) beside 远端允许的模型. Nothing ticked there: remote create is not available. B asks A for what it
+// may pick (rt.catalog), then creates (rt.create): A makes the task, grants it to B and starts its session with the
+// first sentence — the same path an allowed request (step 4) takes.
+
+/** On A: 远端允许的项目. Neither a project nor `common`: paired devices cannot create tasks here. */
+export interface RemoteAllowedProjects {
+  /** A's projects (workspace ids) paired devices may create tasks in. */
+  workspaceIds: Id[];
+  /** Whether 「不选项目（公共文件夹）」 is allowed too. */
+  common: boolean;
+}
+
+export const NO_REMOTE_PROJECTS: RemoteAllowedProjects = { workspaceIds: [], common: false };
+
+/** Whether a paired device may create tasks on this computer at all. */
+export const remoteCreateOpen = (p: RemoteAllowedProjects | null | undefined): boolean => !!p && (p.workspaceIds.length > 0 || p.common);
+
+/** A → B: what B may pick creating a task on A (rt.catalog). Ids are A's own. */
+export interface RemoteCatalog {
+  /** A's device name. */
+  name: string;
+  /** A's live topics, most recently worked in first; `workspaceIds`: its projects (编辑专题's 常用项目 and its tasks'), only allowed ones. */
+  topics: Array<{ id: Id; title: string; workspaceIds: Id[]; lastUsed: Timestamp | null }>;
+  /** Only the allowed projects, most recently worked in first. */
+  projects: Array<{ id: Id; name: string; lastUsed: Timestamp | null }>;
+  /** 「不选项目（公共文件夹）」 allowed. */
+  allowCommon: boolean;
+  /** 远端允许的模型 (A's ids, with A's names for them), the default first; usable ones only. */
+  models: Array<{ id: Id; label: string }>;
+}
+
+/** B → A: the task to create (rt.create). */
+export interface RemoteCreateAsk {
+  /** Empty: from the first sentence, as here. */
+  title?: string;
+  /** The first sentence: the session's first message. */
+  text: string;
+  topicId: Id | null;
+  /** null: no project (the common folder), when A allows it. */
+  workspaceId: Id | null;
+  /** One of A's 远端允许的模型 (A's id). */
+  profileId: Id;
+}
+
+/** A → B: the task made (B's copy has the same id). `error`: the task is there and granted, but its session did not start. */
+export interface RemoteCreateAnswer {
+  taskId: Id;
+  sessionId: Id | null;
+  error?: string;
+}
+
+/** On B: POST /api/remote/create's answer. `copied`: the copy is on this computer already (else it follows shortly). */
+export interface RemoteCreateResult extends RemoteCreateAnswer {
+  copied: boolean;
 }
 
 // ---- Wrapping up step 2 (2026-10-29): A while it is used from another device -------------------------------------

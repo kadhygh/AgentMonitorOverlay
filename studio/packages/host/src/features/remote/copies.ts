@@ -83,6 +83,8 @@ export class RemoteCopies {
     }
     if (f.kind === "error") {
       const e = (f.body ?? {}) as { code?: string; message?: string };
+      // A command A's Studio does not know yet (远程创建's rt.catalog / rt.create, 2026-10-29): say what to do.
+      if (e.code === "unknown_kind") throw new HostError("runtime_error", `${name} 上的 Studio 版本太旧，先在那台电脑上更新`);
       const code: HostErrorCode = e.code === "not_found" || e.code === "bad_request" || e.code === "conflict" || e.code === "read_only" ? e.code : "runtime_error";
       throw new HostError(code, e.message ?? `${name} 回了一个错误`);
     }

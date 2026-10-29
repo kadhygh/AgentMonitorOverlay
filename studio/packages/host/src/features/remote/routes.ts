@@ -28,6 +28,10 @@ export function remoteRoutes(service: HostService): Route[] {
     route("POST", "/api/remote/grants", ({ body }) => service.remote.grant(str(obj(body).taskId, "taskId"), peer(body))),
     route("POST", "/api/remote/grants/revoke", ({ body }) => service.remote.revoke(str(obj(body).taskId, "taskId"), peer(body))),
     route("PUT", "/api/remote/allowed", ({ body }) => service.remote.setAllowed(body)),
+    // 远程创建 (2026-10-29): 远端允许的项目 on A; on B, a paired device's catalog and creating a task on it.
+    route("PUT", "/api/remote/allowed-projects", ({ body }) => service.remote.setAllowedProjects(body)),
+    route("GET", "/api/remote/catalog", ({ query }) => service.remote.catalog({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") })),
+    route("POST", "/api/remote/create", ({ body }) => service.remote.create(peer(body), obj(body))),
     route("POST", "/api/remote/files", ({ body }) => {
       const b = obj(body);
       const opt = (v: unknown, name: string) => (v === undefined || v === null || v === "" ? undefined : str(v, name));
