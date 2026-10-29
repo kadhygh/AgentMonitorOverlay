@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Topic } from "@amo-studio/protocol";
+import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 
 /**
  * 编辑专题 (2026-10-15), like 编辑项目: the topic's name and a note on what it is about, which agents read with the topic
- * (topic_list / topic_get).
+ * (topic_list / topic_get). 2026-10-29: and its 常用项目 (`workspaceIds`), which the new-task page puts first once the
+ * topic is picked; the projects of its tasks count anyway and cannot be taken off here.
  */
-export function EditTopicDialog({ link, topic, onClose }: { link: HostLink; topic: Topic; onClose(): void }) {
+export function EditTopicDialog({ link, topic, workspaces = [], tasks = [], onClose }: { link: HostLink; topic: Topic; workspaces?: readonly Workspace[]; tasks?: readonly Task[]; onClose(): void }) {
   const [title, setTitle] = useState(topic.title);
   const [description, setDescription] = useState(topic.description ?? "");
+  const projects = projectWorkspaces(workspaces);
+  const [added, setAdded] = useState<readonly string[]>(topic.workspaceIds);
+  const fromTasks = new Set(tasks.filter((t) => t.topicId === topic.id && !t.archivedAt).map((t) => t.workspaceId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const first = useRef<HTMLInputElement>(null);
@@ -20,7 +24,7 @@ export function EditTopicDialog({ link, topic, onClose }: { link: HostLink; topi
     setBusy(true);
     setError("");
     try {
-      await call(link, "PATCH /api/topics/:id", { id: topic.id }, { title: title.trim(), description: description.trim() });
+      await call(link, "PATCH /api/topics/:id", { id: topic.id }, { title: title.trim(), description: description.trim(), ...(projects.length ? { workspaceIds: [...added] } : {}) });
       onClose();
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
@@ -76,6 +80,30 @@ export function EditTopicDialog({ link, topic, onClose }: { link: HostLink; topi
             data-testid="edit-topic-description"
           />
         </label>
+        {projects.length > 0 && (
+          <div className="stack-field">
+            常用项目（新建任务选了这个专题时排在最前；只有一个时自动选上）
+            <div className="pick-row" role="group" aria-label="常用项目" data-testid="edit-topic-projects">
+              {projects.map((w) => {
+                const viaTask = fromTasks.has(w.id);
+                const on = viaTask || added.includes(w.id);
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className="chip small"
+                    aria-pressed={on}
+                    disabled={viaTask}
+                    title={viaTask ? "专题里有这个项目的任务，总算常用项目" : w.path}
+                    onClick={() => setAdded((cur) => (cur.includes(w.id) ? cur.filter((x) => x !== w.id) : [...cur, w.id]))}
+                  >
+                    {w.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {error && (
           <span className="form-error" role="alert">
             {error}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BackButton } from "../shell/BackButton.js";
-import { projectWorkspaces, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import type { ModelProfile, Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
@@ -12,10 +12,12 @@ import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { EffortBars, FastToggle, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
-import { submitDraft, useTaskDraft } from "./draft.js";
+import { draftText, submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
-import { SuggestList, useMentions } from "./Suggest.js";
-import { pinnedFirst, usePins } from "../lib/pins.js";
+import { ChoiceRow } from "./ChoiceRow.js";
+import { useDraftChoices } from "./useDraftChoices.js";
+import { MentionList, useComposerMentions } from "../attach/useMentions.js";
+import { FileSelector } from "../attach/FileSelector.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { IconPaperclip } from "../attach/icons.js";
@@ -26,6 +28,8 @@ interface NewTaskPageProps {
   workspaces: readonly Workspace[];
   topics: readonly Topic[];
   tasks: readonly Task[];
+  /** Sessions @ lists under their tasks. */
+  sessions?: readonly Session[];
   profiles: readonly ModelProfile[];
   /** Where the page was opened from: preselects the project or the topic of a fresh draft. */
   scope: Scope;
@@ -43,15 +47,10 @@ interface NewTaskPageProps {
  * rows of chips (both may stay unpicked: no project runs in the common folder), the model is a tile, the effort a set
  * of bars, the permissions a segmented control. Enter starts, Ctrl+Enter files the task in 待办. The draft is kept.
  */
-export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, canvasTopicId, backLabel = "看板", onBack, onCreated }: NewTaskPageProps) {
+export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], profiles, scope, canvasTopicId, backLabel = "看板", onBack, onCreated }: NewTaskPageProps) {
   const { draft, update, reset } = useTaskDraft(profiles);
-  const projects = projectWorkspaces(workspaces);
-  const pins = usePins();
-  const liveTopics = pinnedFirst(
-    topics.filter((t) => !t.archivedAt),
-    pins.topic,
-    (t) => t.id,
-  );
+  const rows = useDraftChoices({ draft, update, workspaces, topics, tasks });
+  const projects = rows.projects;
   const [drawer, setDrawer] = useState(false);
   const [morePerms, setMorePerms] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,20 +69,23 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
 
-  // A fresh draft starts where the page was opened from; a draft with text keeps its own choices.
+  // A fresh draft starts where the page was opened from (in a topic, with its one preferred project); a draft with text
+  // keeps its own choices.
   useEffect(() => {
-    if (!draft.text.trim()) update({ projectId: scope.kind === "workspace" ? scope.id : null, topicId: scope.kind === "topic" ? scope.id : null });
+    if (!draft.text.trim()) {
+      const projectId = scope.kind === "workspace" ? scope.id : null;
+      update({ projectId, ...rows.topicPatch(scope.kind === "topic" ? scope.id : null, projectId) });
+    }
     input.current?.focus();
     // Only when the page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // In a topic, its projects come first.
-  const topic = liveTopics.find((t) => t.id === draft.topicId);
+  const topic = rows.topic;
   const fromCanvas = !!topic && topic.id === canvasTopicId;
   const onCanvas = !!topic && (fromCanvas || showOnCanvas);
-  const inTopic = new Set(topic ? [...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)] : []);
-  const orderedProjects = [...pinnedFirst(projects, pins.project, (w) => w.id)].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
+  // 找文件 from the @ list: the picked project's files.
+  const [finding, setFinding] = useState<{ query: string } | null>(null);
 
   // Task templates from the extension packs of the chosen project.
   const packsOn = useFeature("packs");
@@ -91,12 +93,22 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, title: `${p.manifest!.title} · ${t.title}`, template: t })) : []));
   const chosenTemplate = templates.find((t) => t.key === templateKey) ?? null;
 
-  const mentions = useMentions({
+  // @ refers to a project, a task or one of its sessions, or (once a project is picked) a file, as in a session's
+  // composer (2026-10-29); it never sets the task's own project or topic.
+  const mentions = useComposerMentions({
+    link,
     text: draft.text,
     setText: (text) => update({ text }),
+    tasks,
+    sessions,
+    current: null,
     projects,
-    topics: liveTopics,
-    onPick: (kind, id) => update(kind === "project" ? { projectId: id } : { topicId: id }),
+    projectsAlways: true,
+    workspaceId: draft.projectId,
+    picks: { value: new Map(Object.entries(draft.refs ?? {})), set: (next) => update({ refs: Object.fromEntries(next) }) },
+    onFile: (path) => attach.addFiles([path]),
+    onFind: (query) => setFinding({ query }),
+    onMark: (ref) => attach.addRefs([ref]),
   });
 
   const where = `${draft.projectId ? `在 ${projects.find((w) => w.id === draft.projectId)?.name ?? "?"} 里运行` : "不指定项目：在公共目录里运行"}${topic ? ` · 放进「${topic.title}」` : ""}`;
@@ -113,9 +125,10 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     setError("");
     try {
       const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
-      const text = withFileRefs(draft.text.trim(), attach.files.map(attach.refOf));
+      const text = withFileRefs(draftText(draft), attach.files.map(attach.refOf));
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
-      const created = await submitDraft(link, { ...draft, text }, file, template, onCanvas, images);
+      const { refs: _refs, ...rest } = draft;
+      const created = await submitDraft(link, { ...rest, text }, file, template, onCanvas, images);
       attach.reset();
       reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
@@ -131,7 +144,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     if (!dir) return;
     try {
       const ws = await call(link, "POST /api/workspaces", {}, { path: dir });
-      update({ projectId: ws.id });
+      rows.pickProject(ws.id);
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
     }
@@ -182,33 +195,15 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 maxLength={100}
               />
             </label>
-            <div className="pick-row" role="group" aria-label="项目">
-              <span className="pick-lab">项目</span>
-              <button type="button" className="chip none" aria-pressed={draft.projectId === null} onClick={() => update({ projectId: null })}>
-                不指定
-              </button>
-              {orderedProjects.map((w) => (
-                <button key={w.id} type="button" className="chip" aria-pressed={draft.projectId === w.id} title={w.path} onClick={() => update({ projectId: w.id })}>
-                  {w.name}
-                </button>
-              ))}
+            {/* 2026-10-29: the topic first, then the project, its preferred ones first (plans/remote-page-and-new-task.md 4.2). */}
+            <ChoiceRow label="专题" noun="专题" choices={rows.topicChoices} selected={draft.topicId} onPick={rows.pickTopic} />
+            <ChoiceRow label="项目" noun="项目" choices={rows.projectChoices} selected={draft.projectId} onPick={rows.pickProject}>
               {window.amo?.pickDirectory && (
                 <button type="button" className="chip add" onClick={() => void addProject()}>
                   + 添加项目
                 </button>
               )}
-            </div>
-            <div className="pick-row" role="group" aria-label="专题">
-              <span className="pick-lab">专题</span>
-              <button type="button" className="chip none" aria-pressed={draft.topicId === null} onClick={() => update({ topicId: null })}>
-                不放进专题
-              </button>
-              {liveTopics.map((t) => (
-                <button key={t.id} type="button" className="chip" aria-pressed={draft.topicId === t.id} onClick={() => update({ topicId: t.id })}>
-                  {t.title}
-                </button>
-              ))}
-            </div>
+            </ChoiceRow>
             {topic && (
               <label className="pick-row draft-oncanvas" title="在专题的画布上显示这个任务的卡片；之后在任务页随时可以改">
                 <span className="pick-lab" />
@@ -264,7 +259,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
               value={draft.text}
               rows={3}
               aria-label="第一句话"
-              placeholder="比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 选项目，# 选专题。"
+              placeholder="比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 引用项目、任务或文件。"
               onChange={(e) => {
                 update({ text: e.target.value });
                 mentions.track(e.target);
@@ -279,7 +274,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 }
               }}
             />
-            <SuggestList mentions={mentions} />
+            <MentionList mentions={mentions} />
             <div className="cbar">
               <button type="button" className="round-btn attach" aria-label="添加图片或文件" title="添加图片或文件（也可以粘贴或拖进来）" onClick={() => picker.current?.click()}>
                 <IconPaperclip />
@@ -349,10 +344,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
 
           <div className="foot-hints">
             <span>
-              <kbd>@</kbd>选项目
-            </span>
-            <span>
-              <kbd>#</kbd>选专题
+              <kbd>@</kbd>引用项目、任务、文件
             </span>
             <span>
               <kbd>Alt 1–4</kbd>换常用模型
@@ -371,6 +363,18 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
           )}
         </div>
       </div>
+      {finding && draft.projectId && (
+        <FileSelector
+          link={link}
+          workspaceId={draft.projectId}
+          initialQuery={finding.query}
+          onPick={(path) => attach.addFiles([path])}
+          onClose={() => {
+            setFinding(null);
+            requestAnimationFrame(() => input.current?.focus());
+          }}
+        />
+      )}
       {starting && <StartingCover label={starting} />}
     </section>
   );

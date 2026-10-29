@@ -36,10 +36,16 @@ test("pin, fold and scroll the left column; open the usage footer", async () => 
   await expect(page.getByRole("button", { name: "还有 23 个专题" })).toBeVisible();
   await screenshot(studio.app, "stage-10", "S10-nav-pins", page);
 
-  // The pin carries over to # in the new-task page: pinned first.
+  // The pin carries over to the new-task page's topic row (2026-10-29: no more #): pinned first, the rest behind 更多…,
+  // where it heads 置顶.
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("第一句话").pressSequentially("#专题");
-  await expect(page.getByTestId("suggest").getByRole("option").first()).toContainText("专题 24");
+  const topicRow = page.getByRole("group", { name: "专题" });
+  await expect(topicRow.getByRole("button").nth(1)).toHaveText("专题 24");
+  await topicRow.getByTestId("more-专题").click();
+  const picker = page.getByTestId("choice-picker");
+  await expect(picker.locator(".choice-picker-h").first()).toHaveText("置顶");
+  await expect(picker.getByRole("option").first()).toContainText("专题 24");
+  await picker.getByLabel("搜索专题").press("Escape");
   await page.getByRole("button", { name: "返回看板" }).click();
 
   // Usage: the test Claude subscription runs on a token, which cannot read the account's quota; the panel says so

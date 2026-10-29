@@ -325,7 +325,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
         <MessageFiles files={refs} />
         {blocks && (
           <span className={commit ? "msg-role-update quick-commit" : "msg-role-update"} title={blocks} data-testid="msg-mention-brief">
-            {commit ? `快速提交 · ${commit.push ? "提交、合并并推送" : "提交、合并，不推送"}` : "AMO：已附上提到的任务、会话说明"}
+            {commit ? `快速提交 · ${commit.push ? "提交、合并并推送" : "提交、合并，不推送"}` : `AMO：已附上提到的${["项目", "任务", "会话"].filter((k) => blocks.includes(`提到的${k}：`)).join("、") || "任务、会话"}说明`}
           </span>
         )}
         {update && (
