@@ -34,8 +34,11 @@ export class FileReply {
   constructor(
     readonly path: string,
     readonly mime: string,
-    /** `fresh`: not to be kept by the browser (the same address may stand for a newer file: 远程 step 3). */
-    readonly options: { fresh?: boolean } = {},
+    /**
+     * `fresh`: not to be kept by the browser (the same address may stand for a newer file: 远程 step 3). `whole`: read
+     * into memory and sent, no file left open (a remote task's copy, deleted when archived).
+     */
+    readonly options: { fresh?: boolean; whole?: boolean } = {},
   ) {}
 }
 

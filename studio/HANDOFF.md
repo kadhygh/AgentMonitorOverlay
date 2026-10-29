@@ -32,7 +32,7 @@
 | 事项 | 状态 |
 |---|---|
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
-| 远程会话（在我另一台设备上接着用本机会话） | 10-28 只讨论了方案，`plans/remote-session.md`，未开工；开工前要用户定配对方式、B 上卡片放哪、开放多久 |
+| 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`），等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名，用户 10-29 定先不做 |
 | 便签进 Portable 包 | 到发布时再做 |
 | 位置批注的截图 | 用户 10-28 决定先不做，用一段时间再定 |
 | Studio 托盘 | 用户 10-29 定：× 只关窗口，托盘右键「完全退出」连 Host 一起关（有会话在跑先确认）；平台的 Studio 卡片显示后台状态、给「重启 Studio」（没有会话在跑才能点）。画布调整合并后做，见 `plans/remote-session.md`「前置」 |
@@ -45,6 +45,12 @@
 - Studio 里 agent 的命令 PATH 去掉了 WindowsApps，用不到应用商店版的 `pwsh`、`python3`、`winget`（本机 `python`、`node`、`git` 不受影响）。
 
 ## 最近的改动（新的在上面）
+
+**2026-10-29 上午 · 远程副本归档即删、几项定下不做（未发版，跟下一版 Studio 走）**
+
+用户 10-29 早：「B 归档 = 同时删除」（会话本体在 A，B 只是看）。查到上次「文件夹 20 秒内没删掉」不是杀毒软件：是 B 的 Host 给查看器送图片用的流，查看器换页后一直没关，句柄占着图片（杀掉 Host 立刻能删）。改动：远程缓存的图片（`/api/remote/files/…`）和 `/api/fs/raw` 里 ≤32 MB 的图片改成整个读进内存再发（`FileReply` 的 `whole`），不再留着文件；归档副本时先把 `remote-files/<taskId>` 改名挪到 `.gone-…` 再删（挪不动才退回原来的重试），Host 启动时清掉剩下的；归档时还在路上的取文件不再写回来（不会把文件夹又建出来）。验证：远程单测 31 过（新加「取到一半归档」）；全量 vitest 989 过（claude-runtime 集成测试那条高负载偶发失败，单独重跑 16/16 过）；e2e remote-files（归档后 5 秒内文件夹没了）、remote-tasks、chat-files、viewer-rendered 7 条过。
+
+用户同时定的：会话级授权先不做；远端允许的模型到渠道一级就够；对话正文里 A 的绝对路径先不管（B 只关心在哪个项目）；HTML 的 CSS / JS 不用做——看了 project_mining 里的 HTML 报告（`out/html`、`AIWork`、`Docs` 下 15 份），全是单文件，样式和脚本都内联，远程查看用 `srcDoc` + `sandbox="allow-scripts"`，内联的都能用；引外部 css / js 的只有 `Tools/Archify/web/index.html`（是个工具页，不是报告），Archify 导出页只引 Google 字体（本地看也一样）。
 
 **2026-10-29 早 · 远程第 3、4 步和收尾，测试通道 Studio 0.9.6、Reviewer 0.9.6（用户回来先看这条）**
 

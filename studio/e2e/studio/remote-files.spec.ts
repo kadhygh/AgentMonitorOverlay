@@ -171,6 +171,6 @@ test("B opens a remote task's Markdown, HTML and pictures: fetched from A with a
   // Archived on B: the copy goes, and the files fetched for it with it.
   await b.page.getByTestId("task-archive").click();
   await expect(b.page.getByTestId("task-card").filter({ hasText: "带文件的远程任务" })).toHaveCount(0);
-  // (A file just written may be held a moment, by a virus scan: the Host tries again for a while.)
-  await expect.poll(() => existsSync(join(b.dataDir, "remote-files", task.id)), { timeout: 20_000 }).toBe(false);
+  // (The folder is moved aside at once, even while a file in it is held a moment by a virus scan; deleted after.)
+  await expect.poll(() => existsSync(join(b.dataDir, "remote-files", task.id)), { timeout: 5_000 }).toBe(false);
 });

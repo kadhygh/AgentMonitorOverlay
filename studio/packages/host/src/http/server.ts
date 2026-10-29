@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readFile } from "node:fs/promises";
 import { pipeline } from "node:stream";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -180,6 +181,15 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   const sendFile = (res: ServerResponse, file: FileReply) => {
     if (!existsSync(file.path)) return fail(res, 404, "not_found", "file not found");
     res.writeHead(200, { "content-type": file.mime, "cache-control": file.options.fresh ? "no-store" : "private, max-age=31536000, immutable" });
+    // A remote task's copy (at most 20 MB) is read whole: a stream to a picture the page no longer shows was seen to
+    // stay open, holding the file, so archiving the copy could not delete its folder (2026-10-29).
+    if (file.options.whole) {
+      readFile(file.path).then(
+        (data) => res.end(data),
+        () => res.destroy(),
+      );
+      return;
+    }
     // pipeline, not pipe: a request given up halfway (a picture replaced before it loaded) closes the file too, so a
     // folder of fetched files can be removed (远程 step 3, 2026-10-29).
     pipeline(createReadStream(file.path), res, () => undefined);

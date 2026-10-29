@@ -46,7 +46,7 @@ export function remoteRoutes(service: HostService): Route[] {
       open: true,
       handle: async ({ params }) => {
         const f = await service.remote.serveFile(params.key!, params.rel!);
-        return new FileReply(f.path, f.mime, { fresh: true });
+        return new FileReply(f.path, f.mime, { fresh: true, whole: true });
       },
     },
   ];

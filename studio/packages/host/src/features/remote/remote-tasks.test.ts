@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -520,5 +520,24 @@ describe("remote files between two Hosts (step 3)", () => {
     // Archived on B: the copy goes, its files too.
     await b.service.tasks.archiveTask(task.id);
     expect(existsSync(join(b.store.path, "..", "remote-files", task.id))).toBe(false);
+  }, 60_000);
+
+  it("archived while a file is on its way: the folder goes at once and the file is not written back", async () => {
+    const { a, b, toB } = await paired();
+    const proj = tempDir("proj");
+    writeFileSync(join(proj, "a.md"), "# 一");
+    writeFileSync(join(proj, "big.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(REMOTE_FILE_CHUNK * 3, 5)]));
+    const ws = a.service.projects.addWorkspace({ path: proj });
+    const { task } = await a.service.tasks.createTask({ title: "取到一半归档", workspaceId: ws.id });
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id)?.remote?.state, (s) => s === "active", "B's copy");
+    await b.remote.fetchFile(task.id, "a.md");
+    const root = join(b.store.path, "..", "remote-files");
+    const coming = b.remote.fetchFile(task.id, "big.png");
+    await b.service.tasks.archiveTask(task.id);
+    expect(existsSync(join(root, task.id))).toBe(false);
+    await expect(coming).rejects.toThrow("已经归档");
+    expect(existsSync(join(root, task.id))).toBe(false);
+    expect(readdirSync(root).filter((n) => n.startsWith(".gone-"))).toEqual([]);
   }, 60_000);
 });

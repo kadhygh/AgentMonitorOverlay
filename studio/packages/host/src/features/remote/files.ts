@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { open, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
@@ -192,6 +192,8 @@ export function safeRel(rel: string): string {
 type Ask = <T>(peer: DeviceRef, kind: string, body: unknown, timeoutMs?: number, offline?: string) => Promise<T>;
 
 const FILE_MS = 60_000;
+/** A dropped copy's folder, moved aside until it can be deleted (task ids never start so). */
+const GONE_PREFIX = ".gone-";
 
 export class RemoteFiles {
   /** Key → task: pages' images are served under /api/remote/files/<key>/… (an <img> sends no token). Per Host run. */
@@ -249,12 +251,26 @@ export class RemoteFiles {
     return k;
   }
 
-  /** Everything kept of a task's files goes (its copy was archived or deleted). */
+  /**
+   * Everything kept of a task's files goes (its copy was archived or deleted). 2026-10-29, the user: 归档同时删除 — the
+   * session lives on A, B only looks. So the folder is first moved aside (a rename goes through where deleting a file
+   * held for a moment by a virus scan or a viewer does not), which takes it away at once; what is aside is deleted now,
+   * tried again for a while, and swept when the Host starts.
+   */
   drop(taskId: Id): void {
     const k = this.keyOf.get(taskId);
     if (k) this.keys.delete(k);
     this.keyOf.delete(taskId);
-    this.remove(this.dirOf(taskId), 8);
+    const dir = this.dirOf(taskId);
+    if (!existsSync(dir)) return;
+    const aside = join(this.root(), `${GONE_PREFIX}${taskId}-${randomBytes(4).toString("hex")}`);
+    try {
+      renameSync(dir, aside);
+    } catch {
+      this.remove(dir, 8);
+      return;
+    }
+    this.remove(aside, 8);
   }
 
   /** Removes a folder; a file held for a moment (a virus scan of what was just written, a viewer) is tried again later. */
@@ -274,7 +290,12 @@ export class RemoteFiles {
     } catch {
       return;
     }
-    for (const n of names) if (!this.store.getTask(n)?.remote) this.remove(join(this.root(), n), 1);
+    for (const n of names) if (n.startsWith(GONE_PREFIX) || !this.store.getTask(n)?.remote) this.remove(join(this.root(), n), 1);
+  }
+
+  /** The copy is still here (it may have been archived while a file was on its way). */
+  private stillHere(taskId: Id): void {
+    if (!this.store.getTask(taskId)?.remote) throw new HostError("not_found", "这个远程任务已经归档了");
   }
 
   /** A file of a remote task: fetched from A (or found unchanged there), kept here. `fetchId` names its progress events. */
@@ -321,6 +342,7 @@ export class RemoteFiles {
     const at = join(this.dirOf(taskId), safeRel(rel));
     const dir = this.dirOf(taskId);
     if (!resolve(at).startsWith(resolve(dir) + sep)) throw new HostError("bad_request", `对方给的文件位置不对：${rel}`);
+    this.stillHere(taskId);
     if (first.unchanged && existsSync(at) && index.files[rel]) {
       index.asked[askedKey] = rel;
       index.files[rel] = { ...index.files[rel]!, mtime: first.mtime };
@@ -354,6 +376,8 @@ export class RemoteFiles {
     }
     const data = Buffer.concat(parts);
     if (data.length !== first.size || createHash("sha256").update(data).digest("hex") !== first.sha256) throw new HostError("runtime_error", "取来的文件和对方的对不上（传的时候可能出了错），再打开一次");
+    // Archived while it came: nothing is written back (that would bring the folder back).
+    this.stillHere(taskId);
     mkdirSync(dirname(at), { recursive: true });
     writeFileSync(at, data);
     const now = this.index(taskId);
