@@ -224,17 +224,26 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     return name;
   };
 
+  // Registering takes a passphrase when the admin page set one (kept in the store, hashed) or the service was started with
+  // --passphrase / AMO_RELAY_PASSPHRASE. The page's one wins when both exist, so the page is what decides once it's used.
+  const inviteNeeded = () => store.hasPassphrase() || !!opts.passphrase;
+  const passphraseOk = (given: unknown): boolean => {
+    if (store.hasPassphrase()) return store.passphraseMatches(given);
+    if (opts.passphrase) return typeof given === "string" && samePassphrase(given, opts.passphrase);
+    return true;
+  };
+
   async function route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     // HEAD is answered as GET; Node leaves the body out.
     const method = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
     const path = url.pathname;
     if (method === "GET" && path === "/api/health") {
-      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null, shell: files.shell(), devices: DEVICE_CHANNEL_VERSION };
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: inviteNeeded(), client: files.manifest()?.version ?? null, shell: files.shell(), devices: DEVICE_CHANNEL_VERSION };
       return send(res, 200, health);
     }
     if (method === "POST" && path === "/api/register") {
       const body = await readJson(req);
-      if (opts.passphrase && (typeof body.passphrase !== "string" || !samePassphrase(body.passphrase, opts.passphrase))) throw new RelayError("unauthorized", "邀请口令不对");
+      if (!passphraseOk(body.passphrase)) throw new RelayError("unauthorized", "邀请口令不对");
       const joined = store.register(body.name, body.password, body.role);
       pushMembers();
       return send(res, 200, joined);
@@ -259,7 +268,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       };
       if (method === "GET" && path === "/api/admin/members") {
         const online = new Map(members().map((m) => [m.name, m]));
-        return send(res, 200, { service: serviceName, invite: !!opts.passphrase, members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
+        return send(res, 200, { service: serviceName, invite: inviteNeeded(), members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
       }
       const body = await readJson(req);
       if (method === "POST" && path === "/api/admin/rename") {
@@ -284,6 +293,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       if (method === "POST" && path === "/api/admin/admin-password") {
         store.setAdminPassword(body.password);
         return send(res, 200, { ok: true });
+      }
+      // The registration passphrase (2026-10-29, the user asked): empty clears it; logins already made are untouched.
+      if (method === "POST" && path === "/api/admin/passphrase") {
+        store.setPassphrase(typeof body.passphrase === "string" ? body.passphrase : null);
+        return send(res, 200, { invite: inviteNeeded() });
       }
       throw new RelayError("not_found", "没有这个管理操作");
     }

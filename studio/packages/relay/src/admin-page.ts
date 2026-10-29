@@ -3,7 +3,8 @@ import { escapeHtml } from "./public.js";
 // The team server's admin page (/admin, 2026-10-29, the user: a plain page on the LAN is enough, no AMO login). Its own
 // password (set on the service machine: amo-relay admin-password) is asked once and kept for the tab (sessionStorage),
 // sent with each call as x-amo-admin. What it does: the members with who is online, rename an account (everywhere its
-// name is kept), set a new password, turn an account off or on.
+// name is kept), set a new password, turn an account off or on, set or clear the registration passphrase (hashed, so
+// it's never shown — only replaced).
 
 export function adminPage(service: string): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(service)} · 管理</title>
@@ -24,6 +25,7 @@ input{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:3p
 code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}[hidden]{display:none!important}
 </style></head><body><main>
 <div class="card"><div class="row" style="justify-content:space-between"><h1>${escapeHtml(service)} · 管理</h1><button type="button" id="adminpw" hidden>改管理密码</button></div><p class="muted" id="sub">团队服务器的账号管理。只在局域网里用。</p>
+<div class="row" id="reg" hidden><span id="regtext"></span><button type="button" id="setpp"></button><button type="button" id="clearpp" class="danger" hidden>取消口令</button></div>
 <form id="login" class="row" hidden><input id="pw" type="password" placeholder="管理密码" autocomplete="current-password"><button class="primary">进入</button></form>
 <div id="msg"></div></div>
 <div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
@@ -43,8 +45,11 @@ function cell(text, cls) { var td = document.createElement("td"); td.textContent
 function btn(text, cls, run) { var b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.onclick = run; return b; }
 function load() {
   return call("GET", "/api/admin/members").then(function (data) {
-    $("login").hidden = true; $("list").hidden = false; $("adminpw").hidden = false;
-    $("sub").textContent = data.members.length + " 个账号 · 注册" + (data.invite ? "要邀请口令" : "不要邀请口令（能连上服务器的人都能注册）");
+    $("login").hidden = true; $("list").hidden = false; $("adminpw").hidden = false; $("reg").hidden = false;
+    $("sub").textContent = data.members.length + " 个账号";
+    $("regtext").textContent = "注册：" + (data.invite ? "要邀请口令" : "不要邀请口令（能连上服务器的人都能注册）");
+    $("setpp").textContent = data.invite ? "改邀请口令" : "设邀请口令";
+    $("clearpp").hidden = !data.invite;
     var rows = $("rows"); rows.innerHTML = "";
     data.members.forEach(function (m) {
       var tr = document.createElement("tr");
@@ -70,7 +75,7 @@ function load() {
       acts.appendChild(box); tr.appendChild(acts); rows.appendChild(tr);
     });
   }, function (e) {
-    $("list").hidden = true; $("login").hidden = false; $("adminpw").hidden = true;
+    $("list").hidden = true; $("login").hidden = false; $("adminpw").hidden = true; $("reg").hidden = true;
     if (e.status === 401) { setPw(""); if (pw() !== "") say(e.message, true); }
     say(e.status === 401 && !$("pw").value ? "" : e.message, e.status !== 401 || !!$("pw").value);
   });
@@ -81,7 +86,16 @@ $("adminpw").onclick = function () {
   if (a !== b) { say("两次输的不一样，管理密码没有改。", true); return; }
   call("POST", "/api/admin/admin-password", { password: a }).then(function () { setPw(a); say("管理密码已改好，下次用新密码进入。"); }, function (e) { say(e.message, true); });
 };
-$("login").onsubmit = function (ev) { ev.preventDefault(); setPw($("pw").value); load(); };
+$("setpp").onclick = function () {
+  var v = prompt("新的邀请口令（至少 4 位）。新注册的人要在 AMO 平台的注册页填它。现在的口令看不到，只能换一个新的：", ""); if (v === null) return;
+  if (!v.trim()) { say("口令是空的，没有改。", true); return; }
+  call("POST", "/api/admin/passphrase", { passphrase: v }).then(function () { say("邀请口令已设好：新注册的人要填它。已经有的账号不受影响。"); load(); }, function (e) { say(e.message, true); });
+};
+$("clearpp").onclick = function () {
+  if (!confirm("取消邀请口令？之后能连上服务器的人都能注册。已经有的账号不受影响。")) return;
+  call("POST", "/api/admin/passphrase", { passphrase: "" }).then(function (r) { say(r.invite ? "页面上设的口令已取消，但服务启动时带了 --passphrase，注册仍要那个口令。" : "邀请口令已取消：能连上服务器的人都能注册。"); load(); }, function (e) { say(e.message, true); });
+};
+$("login").onsubmit =function (ev) { ev.preventDefault(); setPw($("pw").value); load(); };
 if (pw()) load(); else { $("login").hidden = false; call("GET", "/api/admin/members").catch(function (e) { if (e.status === 403) say(e.message, true); }); }
 </script></body></html>`;
 }

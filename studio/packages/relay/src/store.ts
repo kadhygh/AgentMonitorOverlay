@@ -395,6 +395,27 @@ export class RelayStore {
     return !!row && typeof password === "string" && passwordMatches(password, String(row.value));
   }
 
+  /** The registration passphrase set from the admin page (2026-10-29, the user: strangers on the LAN must not sign up);
+   *  hashed like the passwords, so the page can't show it, only replace it. Empty or null clears it. */
+  setPassphrase(value: unknown): void {
+    if (value === null || value === undefined || value === "") {
+      this.db.prepare("DELETE FROM admin WHERE key = 'passphrase'").run();
+      return;
+    }
+    if (typeof value !== "string" || value.trim().length < 4) throw new RelayError("bad_request", "邀请口令至少 4 位");
+    if (value.length > LIMITS.password) throw new RelayError("bad_request", "邀请口令太长");
+    this.db.prepare("INSERT INTO admin (key, value) VALUES ('passphrase', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(hashPassword(value.trim()));
+  }
+
+  hasPassphrase(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM admin WHERE key = 'passphrase'").get();
+  }
+
+  passphraseMatches(value: unknown): boolean {
+    const row = this.db.prepare("SELECT value FROM admin WHERE key = 'passphrase'").get() as Row | undefined;
+    return !!row && typeof value === "string" && passwordMatches(value.trim(), String(row.value));
+  }
+
   private requireMember(name: string): void {
     if (!this.db.prepare("SELECT 1 FROM members WHERE name = ?").get(name)) throw new RelayError("not_found", `没有这个人：${name}`);
   }

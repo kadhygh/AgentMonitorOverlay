@@ -119,6 +119,49 @@ describe("relay service", () => {
     expect((await admin("GET", "/api/admin/members", undefined, "new-admin-pw")).status).toBe(200);
   });
 
+  it("the admin page sets the registration passphrase: needed once set, open again once cleared; the page's one wins over --passphrase", async () => {
+    store = new RelayStore(":memory:");
+    const filesDir = mkdtempSync(join(tmpdir(), "relay-files-"));
+    closers.push(() => rmSync(filesDir, { recursive: true, force: true }));
+    server = await startRelayServer({ store, filesDir, host: "127.0.0.1", port: 0, name: "测试组" });
+    const url = server.url;
+    store.setAdminPassword("admin-pw");
+    const admin = (method: string, path: string, body?: unknown) =>
+      fetch(`${url}${path}`, { method, headers: { "content-type": "application/json", "x-amo-admin": "admin-pw" }, ...(body ? { body: JSON.stringify(body) } : {}) }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, unknown> }));
+    const anon = new RelayClient(url);
+    // Open to start with.
+    expect(await anon.health()).toMatchObject({ invite: false });
+    expect((await admin("GET", "/api/admin/members")).body).toMatchObject({ invite: false });
+    const early = await anon.register("早来的", "pw-early");
+    expect((await admin("POST", "/api/admin/passphrase", { passphrase: "ab" })).status).toBe(400);
+    expect(await admin("POST", "/api/admin/passphrase", { passphrase: "芝麻开门" })).toMatchObject({ status: 200, body: { invite: true } });
+    expect(await anon.health()).toMatchObject({ invite: true });
+    expect((await admin("GET", "/api/admin/members")).body).toMatchObject({ invite: true });
+    await expect(anon.register("路人", "pw-lu")).rejects.toMatchObject({ status: 401 });
+    await expect(anon.register("路人", "pw-lu", { passphrase: "错的" })).rejects.toMatchObject({ status: 401 });
+    expect((await anon.register("新人", "pw-new", { passphrase: "芝麻开门" })).name).toBe("新人");
+    // Accounts already there are untouched.
+    expect((await new RelayClient(url, early.key).me()).name).toBe("早来的");
+    expect((await anon.login("早来的", "pw-early")).name).toBe("早来的");
+    // Cleared: open again.
+    expect(await admin("POST", "/api/admin/passphrase", { passphrase: "" })).toMatchObject({ status: 200, body: { invite: false } });
+    expect(await anon.health()).toMatchObject({ invite: false });
+    expect((await anon.register("路人", "pw-lu")).name).toBe("路人");
+
+    // A service started with --passphrase: the page's one replaces it while set; cleared, the started one is back.
+    await server.close();
+    server = await startRelayServer({ store, passphrase: "启动口令", filesDir, host: "127.0.0.1", port: 0, name: "测试组" });
+    const url2 = server.url;
+    const anon2 = new RelayClient(url2);
+    const admin2 = (body: unknown) => fetch(`${url2}/api/admin/passphrase`, { method: "POST", headers: { "content-type": "application/json", "x-amo-admin": "admin-pw" }, body: JSON.stringify(body) }).then((r) => r.json() as Promise<Record<string, unknown>>);
+    expect(await admin2({ passphrase: "页面口令" })).toMatchObject({ invite: true });
+    await expect(anon2.register("甲", "pw-jia", { passphrase: "启动口令" })).rejects.toMatchObject({ status: 401 });
+    expect((await anon2.register("甲", "pw-jia", { passphrase: "页面口令" })).name).toBe("甲");
+    expect(await admin2({ passphrase: null })).toMatchObject({ invite: true });
+    await expect(anon2.register("乙", "pw-yi")).rejects.toMatchObject({ status: 401 });
+    expect((await anon2.register("乙", "pw-yi", { passphrase: "启动口令" })).name).toBe("乙");
+  });
+
   it("hands out the client: landing page, content, downloads, never outside its folder", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-public-"));
     closers.push(() => rmSync(dir, { recursive: true, force: true }));
