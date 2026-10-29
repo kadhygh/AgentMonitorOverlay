@@ -8,8 +8,8 @@ import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
 // 远程, step 4 (plans/remote-session.md 方式 2, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data,
-// the mock model), paired through a relay service started here — never the team server. B asks A to run a task from
-// the remote page (the top bar's 「远程」, 设置 → 远程 until 2026-10-29); A's Focus shows the request; A picks the project and an allowed model and allows it; B's board shows the
+// the mock model), paired through a relay service started here — never the team server. B asks A to run a task (as an
+// older B does: a new one creates it from its new-task page, remote-create.spec.ts); A's Focus shows the request; A picks the project and an allowed model and allows it; B's board shows the
 // task, running. A refuses a second request with a reason, and B reads it.
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
@@ -83,19 +83,11 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
   await a.api("PUT", "/api/remote/allowed", { profiles: ["codex-mock"], defaultProfile: "codex-mock", permission: null });
   const aFocus = await turnOnFocus(a.page, a.app);
 
-  // B: 远程 → the paired device → 在它上面新建任务 (the request dialog, until the new-task page has a remote mode).
+  // B sends a request as an older B would (远程创建 replaced the request dialog, 2026-10-29: a new B creates the task
+  // from its new-task page, remote-create.spec.ts); A still answers requests, and B still lists what it sent.
   const bSettings = await openRemote(b.page);
-  const peer = bSettings.getByTestId("remote-peer").filter({ hasText: "A 台式机" });
-  await expect(peer.getByTestId("remote-ask-open")).toHaveText("在它上面新建任务");
-  await peer.getByTestId("remote-ask-open").click();
-  const ask = b.page.getByTestId("remote-ask-dialog");
-  await ask.getByTestId("remote-ask-title").fill("远程请求的任务");
-  await ask.getByTestId("remote-ask-text").fill("请帮我跑一下这个");
-  await expect(ask).toContainText("只在 A 台式机 在线时能发");
-  await screenshot(b.app, "studio", "remote-ask-dialog", b.page);
-  await ask.getByTestId("remote-ask-send").click();
-  await expect(ask).toHaveCount(0);
-  await expect(bSettings.getByTestId("remote-message")).toHaveText("已发给 A 台式机，等它同意");
+  const sentA = (await b.api<RemoteState>("GET", "/api/remote")).peers.find((p) => p.role === "guest")!;
+  await b.api("POST", "/api/remote/asks", { account: sentA.account, device: sentA.device, title: "远程请求的任务", text: "请帮我跑一下这个" });
   // The request waits under 「在别的设备上跑的」.
   const sent = bSettings.getByTestId("remote-copies").getByTestId("remote-ask");
   await expect(sent).toHaveAttribute("data-state", "pending");
@@ -142,10 +134,7 @@ test("B asks A to run a task; A's Focus shows it, A picks the project and an all
 
   // A second request, refused with a reason: B reads it (and the dot on the top bar's 「远程」 says there is something to see).
   const again = await openRemote(b.page);
-  await again.getByTestId("remote-peer").filter({ hasText: "A 台式机" }).getByTestId("remote-ask-open").click();
-  await b.page.getByTestId("remote-ask-title").fill("第二个请求");
-  await b.page.getByTestId("remote-ask-text").fill("这个也跑一下");
-  await b.page.getByTestId("remote-ask-send").click();
+  await b.api("POST", "/api/remote/asks", { account: sentA.account, device: sentA.device, title: "第二个请求", text: "这个也跑一下" });
   await until(() => a.api<RemoteState>("GET", "/api/remote"), (s) => s.taskRequests.length === 1, "A has the second request");
   const aAgain = await openRemote(a.page);
   await aAgain.getByTestId("remote-task-request").getByTestId("remote-task-refuse").click();

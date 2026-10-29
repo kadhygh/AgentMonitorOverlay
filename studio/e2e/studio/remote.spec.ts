@@ -126,14 +126,14 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   await expect(aPeer.getByTestId("remote-presence")).toHaveText("在线");
   await expect(aPeer).toContainText("这台电脑允许了它");
   // Only a device that allowed this computer can run a task for it.
-  await expect(aPeer.getByTestId("remote-ask-open")).toHaveCount(0);
+  await expect(aPeer.getByTestId("remote-new-task")).toHaveCount(0);
 
   // B: A is there, online; the request is gone from its list.
   const bPeer = bRemote.getByTestId("remote-peer");
   await expect(bPeer).toHaveCount(1, { timeout: 20_000 });
   await expect(bPeer).toContainText("A 台式机");
   await expect(bPeer).toContainText("它允许了这台电脑");
-  await expect(bPeer.getByTestId("remote-ask-open")).toHaveText("在它上面新建任务");
+  await expect(bPeer.getByTestId("remote-new-task")).toHaveText("在它上面新建任务");
   await expect(bRemote.getByTestId("remote-outgoing")).toHaveCount(0);
   await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程 · 1 在线");
 
