@@ -20,6 +20,9 @@ export const newTaskView: ViewDef<"new"> = {
         onBack={() => setView(back.view)}
         // The task page returns to the same place; a task only filed goes back there right away.
         onCreated={(task, session) => setView(session ? { kind: "task", taskId: task.id, sessionId: session.id, created: true, ...(view.back ? { back: view.back } : {}) } : back.view)}
+        // 远程创建 (2026-10-29): the device card's 「在它上面新建任务」 picks the device; the copy opens once it is here.
+        {...(view.remote ? { remoteDevice: view.remote } : {})}
+        onOpenRemote={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), created: true, ...(view.back ? { back: view.back } : {}) })}
       />
     );
   },

@@ -62,6 +62,7 @@
 .remote-device-name { font-size: var(--fs-sm); font-weight: 600; }
 .remote-allowed-list { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .remote-allowed-item { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.remote-allowed-closed { color: var(--attention); }
 
 /* The dialogs: asking a device to run a task, answering a request, pairing a device. */
 .remote-request-modal { width: 500px; max-width: calc(100vw - 32px); }

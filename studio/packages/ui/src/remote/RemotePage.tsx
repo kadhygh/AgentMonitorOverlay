@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { PEER_PRESENCE_LABEL, peerPresence, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { relativeTime } from "../lib/status.js";
 import { BackButton } from "../shell/BackButton.js";
 import { copyStatus, useRemote } from "./remote.js";
-import { AskDialog, AskRows, IncomingTaskRequests } from "./RemoteRequests.js";
+import { AskRows, IncomingTaskRequests } from "./RemoteRequests.js";
 import { PairDialog } from "./PairDialog.js";
 
 // 远程 (2026-10-29, plans/remote-page-and-new-task.md §1–3): a page of its own, opened from the top bar (设置 → 远程
@@ -75,6 +75,7 @@ export function RemotePage({
   backLabel,
   onBack,
   onOpenTask,
+  onNewTaskOn,
 }: {
   link: HostLink;
   tasks?: readonly Task[];
@@ -85,6 +86,8 @@ export function RemotePage({
   onBack(): void;
   /** A granted task or a remote copy opened from here (its 「←」 returns here). */
   onOpenTask(taskId: string): void;
+  /** 「在它上面新建任务」: the new-task page in 「在别的设备上」 with that device picked (远程创建, 2026-10-29). */
+  onNewTaskOn(peer: { account: string; device: string }): void;
 }) {
   const remote = useRemote(link);
   const taskTitle = (id: string) => tasks.find((t) => t.id === id)?.title || "未命名任务";
@@ -93,8 +96,6 @@ export function RemotePage({
   const [pings, setPings] = useState<Record<string, RemotePingResult | "busy">>({});
   const [unpairing, setUnpairing] = useState<RemotePeer | null>(null);
   const [pairing, setPairing] = useState(false);
-  /** Step 4: the device being asked to run a task (step 3 of the page plan points this at the new-task page). */
-  const [asking, setAsking] = useState<RemotePeer | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLElement>(null);
   // 刚失联 turns into 离线 by the clock alone; the next retry counts down while offline.
@@ -350,15 +351,15 @@ export function RemotePage({
                         </span>
                       )}
                       <div className="settings-row remote-card-actions">
-                        {/* Step 4: a device that allowed this computer can run a task for it (the new-task page's remote mode later). */}
+                        {/* A device that allowed this computer: a task on it from the new-task page's 「在别的设备上」 (2026-10-29). */}
                         {guest && (
                           <button
                             type="button"
                             className="btn-ghost small"
-                            disabled={busy || !online}
-                            title={online ? `在 ${p.name} 上建一个任务：写清要做什么，${p.name} 同意后在那边开跑，这台电脑的看板上能看到` : `${p.name} 不在线：要它在线时才能发（团队服务器不替你存请求）`}
-                            onClick={() => setAsking(p)}
-                            data-testid="remote-ask-open"
+                            disabled={!online}
+                            title={online ? `打开新任务页，在 ${p.name} 上建任务：建好就在那边开跑，这台电脑的看板上能看到` : `${p.name} 不在线：要它开着 Studio、连上团队服务器才能在它上面建任务`}
+                            onClick={() => onNewTaskOn({ account: p.account, device: p.device })}
+                            data-testid="remote-new-task"
                           >
                             在它上面新建任务
                           </button>
@@ -398,11 +399,18 @@ export function RemotePage({
               </span>
               远程设置
             </button>
-            {!settingsOpen && <span className="settings-hint">本机设备名、远端允许的模型、被远程使用时不睡眠。</span>}
+            {!settingsOpen && <span className="settings-hint">本机设备名、远端允许的模型和项目、被远程使用时不睡眠。</span>}
             {settingsOpen && (
               <>
                 <DeviceName link={link} remote={remote} busy={busy} run={run} />
                 <AllowedModels key={JSON.stringify(remote.allowed)} allowed={remote.allowed} profiles={profiles} busy={busy} onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed", {}, next), "已保存远端允许的模型")} />
+                <AllowedProjects
+                  key={JSON.stringify(remote.allowedProjects)}
+                  allowed={remote.allowedProjects ?? NO_REMOTE_PROJECTS}
+                  workspaces={workspaces}
+                  busy={busy}
+                  onSave={(next) => void run(() => call(link, "PUT /api/remote/allowed-projects", {}, next), "已保存远端允许的项目")}
+                />
                 <div className="remote-subsection">
                   <span className="remote-subheading">被远程使用时</span>
                   <span className="settings-hint" data-testid="remote-awake-note">
@@ -417,17 +425,6 @@ export function RemotePage({
       </div>
 
       {pairing && <PairDialog link={link} remote={remote} onClose={() => setPairing(false)} />}
-      {asking && (
-        <AskDialog
-          link={link}
-          peer={asking}
-          onClose={() => setAsking(null)}
-          onDone={(text) => {
-            setAsking(null);
-            setMessage({ text });
-          }}
-        />
-      )}
       {unpairing && (
         <ConfirmDialog
           title={`解除和「${unpairing.name}」的配对？`}
@@ -561,6 +558,51 @@ function AllowedModels({ allowed, profiles, busy, onSave }: { allowed: RemoteAll
       </div>
       {!firstOk && <span className="form-error">默认的模型要在勾选的里面</span>}
       <span className="settings-hint">远程会话的命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。</span>
+    </div>
+  );
+}
+
+/**
+ * 远端允许的项目 (2026-10-29, the user: no yes on this computer for a task a paired device creates — this limits it):
+ * the projects a paired device may create tasks in from its new-task page (「在别的设备上」), and whether it may leave
+ * the project out (the common folder). Nothing ticked: it cannot create tasks here at all.
+ */
+function AllowedProjects({ allowed, workspaces, busy, onSave }: { allowed: RemoteAllowedProjects; workspaces: readonly Workspace[]; busy: boolean; onSave(next: RemoteAllowedProjects): void }) {
+  const [picked, setPicked] = useState<string[]>(allowed.workspaceIds);
+  const [common, setCommon] = useState(allowed.common);
+  const projects = projectWorkspaces(workspaces);
+  // A project ticked and then archived stays listed (greyed) until it is unticked.
+  const gone = allowed.workspaceIds.filter((id) => !projects.some((w) => w.id === id)).map((id) => workspaces.find((w) => w.id === id)).filter((w): w is Workspace => !!w);
+  const changed = JSON.stringify([[...picked].sort(), common]) !== JSON.stringify([[...allowed.workspaceIds].sort(), allowed.common]);
+  const open = remoteCreateOpen({ workspaceIds: picked, common });
+  const toggle = (id: string, on: boolean) => setPicked((l) => (on ? [...l, id] : l.filter((x) => x !== id)));
+  return (
+    <div className="remote-subsection" aria-label="远端允许的项目" data-testid="remote-allowed-projects">
+      <span className="remote-subheading">远端允许的项目</span>
+      <span className="settings-hint">配对的设备在它的新任务页选「在别的设备上」时，能把任务建在这台电脑的哪些项目里（建好就开跑，不用这边点同意；模型照上面的「远端允许的模型」）。</span>
+      <div className="remote-allowed-list">
+        <label className="remote-allowed-item" data-testid="remote-allowed-common">
+          <input type="checkbox" checked={common} onChange={(e) => setCommon(e.target.checked)} />
+          不选项目（公共文件夹）
+        </label>
+        {[...projects, ...gone].map((w) => (
+          <label key={w.id} className="remote-allowed-item" title={w.path} data-testid="remote-allowed-project">
+            <input type="checkbox" checked={picked.includes(w.id)} onChange={(e) => toggle(w.id, e.target.checked)} />
+            {w.name}
+            {w.archivedAt && <span className="settings-hint">（已归档）</span>}
+          </label>
+        ))}
+      </div>
+      {projects.length === 0 && <span className="settings-hint">这台电脑还没有添加项目，只能勾公共文件夹。</span>}
+      <div className="settings-row">
+        <span className={open ? "settings-hint" : "settings-hint remote-allowed-closed"} data-testid="remote-allowed-projects-state">
+          {open ? `别的设备可以在${common ? (picked.length ? `公共文件夹和 ${picked.length} 个项目` : "公共文件夹") : ` ${picked.length} 个项目`}里建任务。` : "! 一个都不勾：别的设备不能在这台电脑上建任务。"}
+        </span>
+        <span className="spacer" />
+        <button type="button" className="btn-primary small" disabled={busy || !changed} onClick={() => onSave({ workspaceIds: picked, common })} data-testid="remote-allowed-projects-save">
+          保存
+        </button>
+      </div>
     </div>
   );
 }

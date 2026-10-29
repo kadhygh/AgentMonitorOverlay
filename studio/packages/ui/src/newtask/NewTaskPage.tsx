@@ -22,6 +22,9 @@ import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
+import { useRemote } from "../remote/remote.js";
+import { RemoteDraft } from "./RemoteDraft.js";
+import { remoteModeShown } from "./remoteTargets.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -40,6 +43,10 @@ interface NewTaskPageProps {
   onBack(): void;
   /** `session` null: the task was only filed (放进待办). */
   onCreated(task: Task, session: Session | null): void;
+  /** 远程创建 (2026-10-29): opened in 「在别的设备上」 with this device picked (the remote page's 「在它上面新建任务」). */
+  remoteDevice?: { account: string; device: string };
+  /** A task created on another device: its copy here, once it has come. */
+  onOpenRemote?(taskId: string, sessionId: string | null): void;
 }
 
 /**
@@ -47,8 +54,13 @@ interface NewTaskPageProps {
  * rows of chips (both may stay unpicked: no project runs in the common folder), the model is a tile, the effort a set
  * of bars, the permissions a segmented control. Enter starts, Ctrl+Enter files the task in 待办. The draft is kept.
  */
-export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], profiles, scope, canvasTopicId, backLabel = "看板", onBack, onCreated }: NewTaskPageProps) {
+export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], profiles, scope, canvasTopicId, backLabel = "看板", onBack, onCreated, remoteDevice, onOpenRemote }: NewTaskPageProps) {
   const { draft, update, reset } = useTaskDraft(profiles);
+  // 「在这台电脑上 | 在别的设备上」 (4.1): shown with remote on, logged in, and a device that allowed this computer.
+  const remote = useRemote(link);
+  const [side, setSide] = useState<"here" | "remote">(remoteDevice ? "remote" : "here");
+  const remoteShown = remoteModeShown(remote);
+  const remoteMode = remoteShown && side === "remote" && !!remote;
   const rows = useDraftChoices({ draft, update, workspaces, topics, tasks });
   const projects = rows.projects;
   const [drawer, setDrawer] = useState(false);
@@ -153,7 +165,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
   // Alt 1–6: the 常用 tiles; Alt E: one effort up.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.ctrlKey) return;
+      // Not in 「在别的设备上」: its models are the other computer's.
+      if (!e.altKey || e.ctrlKey || remoteMode) return;
       if (/^[1-6]$/.test(e.key)) {
         const t = tilePicks(profiles, draft.pick)[Number(e.key) - 1];
         if (t) {
@@ -168,7 +181,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [profiles, draft, model, update]);
+  }, [profiles, draft, model, update, remoteMode]);
 
   return (
     <section className="draft-page" aria-label="新任务">
@@ -180,9 +193,36 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
       </div>
       <div className="draft-wrap">
         <div className="draft">
-          <h1 className="draft-ask">要推进什么？</h1>
-          <p className="draft-lede">写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。</p>
+          <div className="draft-ask-row">
+            <h1 className="draft-ask">要推进什么？</h1>
+            {remoteShown && (
+              <span className="perm draft-side" role="group" aria-label="在哪台电脑上" data-testid="draft-side">
+                <button type="button" aria-pressed={!remoteMode} onClick={() => setSide("here")}>
+                  在这台电脑上
+                </button>
+                <button type="button" aria-pressed={remoteMode} onClick={() => setSide("remote")} data-testid="draft-side-remote">
+                  在别的设备上
+                </button>
+              </span>
+            )}
+          </div>
+          <p className="draft-lede">
+            {remoteMode ? "任务建在你的另一台电脑上，会话在那边跑、用那边的模型账号；那边不用点同意，能选什么由它的「远程设置」定。" : "写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。"}
+          </p>
 
+          {remoteMode ? (
+            <RemoteDraft
+              link={link}
+              remote={remote}
+              {...(remoteDevice ? { initialDevice: remoteDevice } : {})}
+              tasks={tasks}
+              draft={draft}
+              update={update}
+              onDone={() => reset({ projectId: draft.projectId, topicId: draft.topicId })}
+              onOpenTask={(taskId, sessionId) => onOpenRemote?.(taskId, sessionId)}
+            />
+          ) : (
+          <>
           <div className="draft-where">
             <label className="pick-row">
               <span className="pick-lab">名称</span>
@@ -360,6 +400,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
             <span className="form-error" role="alert">
               {error}
             </span>
+          )}
+          </>
           )}
         </div>
       </div>

@@ -17,6 +17,8 @@ export const remoteView: ViewDef<"remote"> = {
         onBack={() => setView(back.view)}
         // A task opened from here returns here (and from here to where 远程 was opened from).
         onOpenTask={(taskId) => setView({ kind: "task", taskId, nav: Date.now(), back: { kind: "remote", ...(view.back ? { back: view.back } : {}) } })}
+        // 远程创建 (2026-10-29): the new-task page in 「在别的设备上」, returning here.
+        onNewTaskOn={(peer) => setView({ kind: "new", remote: peer, back: { kind: "remote", ...(view.back ? { back: view.back } : {}) } })}
       />
     );
   },

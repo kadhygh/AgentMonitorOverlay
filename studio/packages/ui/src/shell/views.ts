@@ -13,7 +13,8 @@ export type View =
   | { kind: "board" }
   /** `callout`: a question on the canvas to open (from Focus, 画布审阅 2026-10-27); `nav` changes with each ask. */
   | { kind: "canvas"; callout?: string; nav?: number }
-  | { kind: "new"; topicId?: string; back?: View }
+  /** `remote` (远程创建, 2026-10-29): opened in 「在别的设备上」 with that device picked. */
+  | { kind: "new"; topicId?: string; back?: View; remote?: { account: string; device: string } }
   | { kind: "packs"; workspaceId: string }
   /**
    * `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage

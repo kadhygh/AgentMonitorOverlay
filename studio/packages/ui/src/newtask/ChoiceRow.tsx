@@ -10,6 +10,7 @@ export function ChoiceRow({
   label,
   noun,
   noneLabel = "不选",
+  noneDisabled,
   choices,
   selected,
   onPick,
@@ -20,6 +21,8 @@ export function ChoiceRow({
   /** What is picked, for the picker ("项目"). */
   noun: string;
   noneLabel?: string;
+  /** Why 「不选」 cannot be picked (远程创建: the other computer does not allow the common folder); absent: it can. */
+  noneDisabled?: string;
   choices: readonly Choice[];
   selected: string | null;
   onPick(id: string | null): void;
@@ -41,7 +44,7 @@ export function ChoiceRow({
       }}
     >
       <span className="pick-lab">{label}</span>
-      <button type="button" className="chip none" aria-pressed={selected === null} onClick={() => onPick(null)}>
+      <button type="button" className="chip none" aria-pressed={selected === null && !noneDisabled} disabled={!!noneDisabled} title={noneDisabled} onClick={() => onPick(null)}>
         {noneLabel}
       </button>
       {shown.map((c) => (

@@ -36,6 +36,11 @@
 .draft { width: min(780px, 100%); display: flex; flex-direction: column; gap: 18px; }
 .draft-ask { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.25; letter-spacing: 0.01em; }
 .draft-lede { margin: -8px 0 0; color: var(--text-dim); }
+/* 2026-10-29 (远程创建): 「在这台电脑上 | 在别的设备上」 beside the question. */
+.draft-ask-row { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.draft-side { margin-left: auto; }
+.remote-draft-note { padding-left: 50px; }
+.remote-draft-problem { color: var(--attention); font-size: var(--fs-sm); }
 .draft-where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pick-lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.06em; }

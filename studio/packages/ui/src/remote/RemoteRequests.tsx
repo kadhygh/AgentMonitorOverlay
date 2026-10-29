@@ -5,9 +5,10 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
 
 // 远程 step 4 (2026-10-29, plans/remote-session.md 方式 2): B asks one of the person's other computers (A) to run a task;
-// A's person picks where it goes and the model, and allows or refuses it. On B: 「在它上面新建任务」 on a paired device
-// that allowed this computer (「请它跑一个任务…」 until the remote page, 2026-10-29), and the requests sent (等它同意 /
-// 拒绝了 / 同意了) under the remote page's 「在别的设备上跑的」. On A: the requests to answer, under 「等你处理」.
+// A's person picks where it goes and the model, and allows or refuses it. On B: the requests sent (等它同意 / 拒绝了 /
+// 同意了) under the remote page's 「在别的设备上跑的」. On A: the requests to answer, under 「等你处理」. Since 远程创建
+// (2026-10-29) a new B creates tasks on A from its new-task page instead (no yes on A, 远端允许的项目 limits it), so
+// the request dialog is gone; A still answers requests from an older B here, and B keeps showing what it sent before.
 
 export function Dialog({ title, testId, busy, onClose, children, head, className = "" }: { title: string; testId: string; busy: boolean; onClose(): void; children: ReactNode; /** Beside the title, on the right. */ head?: ReactNode; className?: string }) {
   return createPortal(
@@ -39,56 +40,6 @@ export function Dialog({ title, testId, busy, onClose, children, head, className
 }
 
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
-
-/** On B: what to ask a device to run — a title and the first message. */
-export function AskDialog({ link, peer, onClose, onDone }: { link: HostLink; peer: RemotePeer; onClose(): void; onDone(text: string): void }) {
-  const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const first = useRef<HTMLInputElement>(null);
-  useEffect(() => first.current?.focus(), []);
-  async function send() {
-    setBusy(true);
-    setError(null);
-    try {
-      await call(link, "POST /api/remote/asks", {}, { account: peer.account, device: peer.device, title, text });
-      onDone(`已发给 ${peer.name}，等它同意`);
-    } catch (err) {
-      setError(message(err));
-      setBusy(false);
-    }
-  }
-  return (
-    <Dialog title={`请「${peer.name}」帮忙跑一个任务`} testId="remote-ask-dialog" busy={busy} onClose={onClose}>
-      <label className="remote-request-field">
-        <span className="settings-label">标题</span>
-        <input ref={first} className="field" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="比如：整理掉落表的说明" data-testid="remote-ask-title" />
-      </label>
-      <label className="remote-request-field">
-        <span className="settings-label">要做的事</span>
-        <textarea className="field" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="会作为任务的第一句话，发给那边新开的会话" data-testid="remote-ask-text" />
-      </label>
-      <ul className="confirm-risks">
-        <li>{peer.name} 那边的人决定放在哪个项目、哪个专题、用哪个模型；同意后这个任务出现在这台电脑的看板上，会话在那台电脑上跑。</li>
-        <li>只在 {peer.name} 在线时能发：团队服务器不替你存请求。发出后等它同意之前可以撤回。</li>
-      </ul>
-      {error && (
-        <span className="form-error" role="alert" data-testid="remote-ask-error">
-          {error}
-        </span>
-      )}
-      <div className="settings-row end">
-        <button type="button" className="btn-ghost small" onClick={onClose} disabled={busy}>
-          取消
-        </button>
-        <button type="button" className="btn-primary small" onClick={() => void send()} disabled={busy || !title.trim() || !text.trim()} data-testid="remote-ask-send">
-          发送请求
-        </button>
-      </div>
-    </Dialog>
-  );
-}
 
 /** On B: the requests this computer sent (the remote page's 「在别的设备上跑的」), with 撤回 / 知道了. */
 export function AskRows({ asks, peers, busy, onWithdraw }: { asks: readonly RemoteTaskRequest[]; peers: readonly RemotePeer[]; busy: boolean; onWithdraw(r: RemoteTaskRequest): void }) {
