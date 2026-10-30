@@ -41,6 +41,12 @@ test("值守: make a command item and a session item, run them now, edit and rem
   await form.getByRole("radio", { name: "每天定时" }).click();
   await form.getByLabel("每天几点").fill("9:30");
   await form.getByLabel("开会话时说的话").fill("看一下有没有新问题");
+  // The profile's own permissions, to pick one that does not stop to ask (2026-10-31).
+  const permission = form.getByLabel("值守会话的权限");
+  await permission.selectOption({ index: 1 });
+  const chosen = await permission.inputValue();
+  expect(chosen).not.toBe("");
+  await screenshot(app, "studio", "settings-duty-form", page);
   await form.getByTestId("duty-save").click();
   const session = dialog.getByTestId("duty-item").filter({ hasText: "早上看一眼" });
   await expect(session).toContainText("每天 09:30");

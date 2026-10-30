@@ -239,7 +239,8 @@
 .duty-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed var(--border-strong); border-radius: 8px; }
 .duty-form .settings-row .field { flex: 0 1 auto; }
 .duty-form .stack-field .field { width: 100%; }
-.duty-form textarea.field { resize: vertical; font: inherit; padding: 6px 8px; }
+.duty-form textarea.field { height: auto; min-height: 84px; resize: vertical; font: inherit; padding: 6px 8px; }
 .duty-form .field.mono { font-family: var(--font-code); font-size: 12.5px; }
 .duty-num { width: 72px; }
+.duty-form .settings-row .field.duty-grow { flex: 1; min-width: 220px; }
 .settings-hint.error { color: var(--error); }

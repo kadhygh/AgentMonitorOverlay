@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { projectWorkspaces, type DutyAction, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
+import { defaultModel, effortLabel, useProfileChoices } from "../lib/choices.js";
 
 // 设置 → 值守 (2026-10-31, plans/issues.md): items that run at set times — start a session with a set prompt, run a
 // command, or one of Studio's own jobs. The list says when each runs next and how its last run went; 立即运行 runs one
@@ -147,6 +148,11 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
   const [mode, setMode] = useState<"every" | "daily">(item && "daily" in item.schedule ? "daily" : "every");
   const [kind, setKind] = useState<DutyAction["kind"]>(a?.kind ?? "session");
   const [profileId, setProfileId] = useState(a?.kind === "session" ? a.profileId : (ctx.profiles[0]?.id ?? ""));
+  const [model, setModel] = useState(a?.kind === "session" ? (a.options?.model ?? "") : "");
+  const [effort, setEffort] = useState(a?.kind === "session" ? (a.options?.effort ?? "") : "");
+  const [permission, setPermission] = useState(a?.kind === "session" ? (a.options?.permission ?? "") : "");
+  const { choices } = useProfileChoices(link, kind === "session" && profileId ? profileId : null);
+  const shownModel = choices && ((model && choices.models.find((m) => m.id === model)) || defaultModel(choices));
   const [fallback, setFallback] = useState(a?.kind === "session" ? (a.fallbackProfileId ?? "") : "");
   const [prompt, setPrompt] = useState(a?.kind === "session" ? a.prompt : "");
   const [taskId, setTaskId] = useState(a?.kind === "session" ? (a.taskId ?? "") : "");
@@ -164,7 +170,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
     if (builtin) return { title, schedule };
     const action: DutyAction =
       kind === "session"
-        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, fallbackProfileId: fallback || null }
+        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null }
         : kind === "command"
           ? { kind, command, workspaceId: workspaceId || null, timeoutSec: Math.round(Number(timeoutMin) * 60) }
           : { kind, name };
@@ -187,10 +193,10 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
       <div className="settings-row">
         <span className="settings-label">多久一次</span>
         <div role="radiogroup" aria-label="多久一次" className="chips">
-          <button type="button" role="radio" className="chip" aria-checked={mode === "every"} onClick={() => setMode("every")}>
+          <button type="button" role="radio" className="chip" aria-checked={mode === "every"} aria-pressed={mode === "every"} onClick={() => setMode("every")}>
             每隔
           </button>
-          <button type="button" role="radio" className="chip" aria-checked={mode === "daily"} onClick={() => setMode("daily")}>
+          <button type="button" role="radio" className="chip" aria-checked={mode === "daily"} aria-pressed={mode === "daily"} onClick={() => setMode("daily")}>
             每天定时
           </button>
         </div>
@@ -214,14 +220,14 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
           <div className="settings-row">
             <span className="settings-label">做什么</span>
             <div role="radiogroup" aria-label="做什么" className="chips">
-              <button type="button" role="radio" className="chip" aria-checked={kind === "session"} onClick={() => setKind("session")}>
+              <button type="button" role="radio" className="chip" aria-checked={kind === "session"} aria-pressed={kind === "session"} onClick={() => setKind("session")}>
                 开会话
               </button>
-              <button type="button" role="radio" className="chip" aria-checked={kind === "command"} onClick={() => setKind("command")}>
+              <button type="button" role="radio" className="chip" aria-checked={kind === "command"} aria-pressed={kind === "command"} onClick={() => setKind("command")}>
                 跑命令
               </button>
               {ctx.builtins.length > 0 && (
-                <button type="button" role="radio" className="chip" aria-checked={kind === "builtin"} onClick={() => setKind("builtin")}>
+                <button type="button" role="radio" className="chip" aria-checked={kind === "builtin"} aria-pressed={kind === "builtin"} onClick={() => setKind("builtin")}>
                   Studio 自带
                 </button>
               )}
@@ -231,7 +237,18 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
             <>
               <div className="settings-row">
                 <span className="settings-label">模型</span>
-                <select className="field" value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="值守的模型">
+                <select
+                  className="field"
+                  value={profileId}
+                  onChange={(e) => {
+                    // Model, effort and permissions are the profile's own: a new profile starts from its defaults.
+                    setProfileId(e.target.value);
+                    setModel("");
+                    setEffort("");
+                    setPermission("");
+                  }}
+                  aria-label="值守的模型"
+                >
                   {ctx.profiles.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.label}
@@ -250,6 +267,39 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
                     ))}
                 </select>
               </div>
+              {choices && (
+                <div className="settings-row">
+                  <span className="settings-label">型号</span>
+                  <select className="field" value={model} onChange={(e) => { setModel(e.target.value); setEffort(""); }} aria-label="值守会话的型号">
+                    <option value="">默认{defaultModel(choices) ? `（${defaultModel(choices)!.label}）` : ""}</option>
+                    {choices.models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  {!!shownModel?.efforts.length && (
+                    <select className="field" value={effort} onChange={(e) => setEffort(e.target.value)} aria-label="值守会话的思考强度">
+                      <option value="">默认{shownModel.defaultEffort ? `（${effortLabel(shownModel.defaultEffort)}）` : ""}</option>
+                      {shownModel.efforts.map((x) => (
+                        <option key={x} value={x}>
+                          {effortLabel(x)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <span className="settings-label">权限</span>
+                  <select className="field" value={permission} onChange={(e) => setPermission(e.target.value)} aria-label="值守会话的权限">
+                    <option value="">默认（{choices.permissions.find((p) => p.id === choices.defaultPermission)?.label ?? choices.defaultPermission}）</option>
+                    {choices.permissions.map((p) => (
+                      <option key={p.id} value={p.id} disabled={!!p.unavailable}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <span className="settings-hint">没人看着时，选一个不用逐条询问的权限，不然会话会停在等你批准。额度不够改用别的模型时，用那个模型的默认设置。</span>
               <div className="settings-row">
                 <span className="settings-label">在哪</span>
                 <select className="field" value={taskId} onChange={(e) => setTaskId(e.target.value)} aria-label="在哪个任务里开会话">
@@ -270,7 +320,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
                         </option>
                       ))}
                     </select>
-                    <input className="field" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="新任务的名字（不填用值守项的名字）" aria-label="新任务的名字" />
+                    <input className="field duty-grow" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="新任务的名字（不填用值守项的名字）" aria-label="新任务的名字" />
                   </>
                 )}
               </div>

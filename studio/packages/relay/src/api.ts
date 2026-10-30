@@ -1,3 +1,4 @@
+import type { Issue, IssueImage, IssueList, IssueRelease, IssuePatch, NewIssue, NewIssueEntry } from "./issues-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
@@ -198,6 +199,52 @@ export class RelayClient {
   }
 
   /** Messages from others after `after` (in one thread, or any of mine); waits up to `timeoutMs` for the first. */
+  // ---- 问题页 (2026-10-31, plans/issues.md): Studio's issue tools read and answer them as the person.
+  issues(after?: number): Promise<IssueList> {
+    return this.call("GET", `/api/issues${after ? `?after=${after}` : ""}`);
+  }
+  async issue(number: number): Promise<Issue> {
+    return (await this.call<{ issue: Issue }>("GET", `/api/issues/${number}`)).issue;
+  }
+  async createIssue(n: NewIssue): Promise<Issue> {
+    return (await this.call<{ issue: Issue }>("POST", "/api/issues", n)).issue;
+  }
+  async addIssueEntry(number: number, e: NewIssueEntry): Promise<Issue> {
+    return (await this.call<{ issue: Issue }>("POST", `/api/issues/${number}/entries`, e)).issue;
+  }
+  async updateIssue(number: number, patch: IssuePatch & { ai?: boolean }): Promise<Issue> {
+    return (await this.call<{ issue: Issue }>("PATCH", `/api/issues/${number}`, patch)).issue;
+  }
+  /** 发布打包 (on=false takes it back). */
+  async requestIssueRelease(on = true): Promise<IssueRelease> {
+    return (await this.call<{ release: IssueRelease }>("POST", "/api/issues/release", { on })).release;
+  }
+  issueReleased(version: string, numbers: number[]): Promise<IssueList> {
+    return this.call("POST", "/api/issues/release/done", { version, numbers });
+  }
+  /** A screenshot for an issue entry (pictures only). */
+  async uploadIssueImage(name: string, data: Blob | ArrayBuffer | Uint8Array, type: string): Promise<IssueImage> {
+    const headers: Record<string, string> = { "content-type": type };
+    if (this.key) headers.authorization = `Bearer ${this.key}`;
+    let res: Response;
+    try {
+      res = await fetch(`${this.server}/api/issues/images?${new URLSearchParams({ name, type })}`, { method: "POST", headers, body: data as unknown as RequestInit["body"] });
+    } catch (err) {
+      throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
+    }
+    const out = (await res.json().catch(() => ({}))) as { image?: IssueImage; error?: string; message?: string };
+    if (!res.ok || !out.image) throw new RelayClientError(res.status, out.error ?? "error", out.message ?? `HTTP ${res.status}`);
+    return out.image;
+  }
+  async issueImageData(id: string): Promise<Uint8Array> {
+    const res = await fetch(`${this.server}/api/issues/images/${encodeURIComponent(id)}`, { headers: this.key ? { authorization: `Bearer ${this.key}` } : {} });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
   async wait(opts: { threadId?: string; after?: number; timeoutMs?: number; signal?: AbortSignal; ai?: boolean }): Promise<Message[]> {
     const q = new URLSearchParams({ after: String(opts.after ?? 0), timeout: String(opts.timeoutMs ?? 60_000) });
     if (opts.threadId) q.set("thread", opts.threadId);

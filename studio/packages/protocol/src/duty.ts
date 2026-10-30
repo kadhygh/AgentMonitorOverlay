@@ -1,4 +1,4 @@
-import type { Id, Timestamp } from "./entities.js";
+import type { Id, SessionOptions, Timestamp } from "./entities.js";
 
 // 值守 (duty, 2026-10-31, plans/issues.md): the Host does something at set times or when there is something to do —
 // starts a session with a set prompt, runs a command, or runs one of Studio's own jobs (问题页's, stage 3). The waiting,
@@ -14,9 +14,11 @@ export const DUTY_MIN_EVERY = 10;
 export type DutyAction =
   /**
    * A session with `prompt`: in task `taskId`, or (without one) in a new task titled `taskTitle` in project
-   * `workspaceId`. `fallbackProfileId`: used when the first one's subscription is (nearly) used up.
+   * `workspaceId`. `options`: model, effort and permissions for `profileId` (its defaults otherwise; an unattended
+   * run usually wants a permission that does not stop to ask). `fallbackProfileId`: used, with its own defaults, when
+   * the first one's subscription is (nearly) used up.
    */
-  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; fallbackProfileId?: Id | null }
+  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; options?: SessionOptions; fallbackProfileId?: Id | null }
   /** A command line, run in project `workspaceId`'s folder (the common folder without one), below normal priority. */
   | { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number }
   /** One of Studio's own jobs, by name (DutyState.builtins lists them). */

@@ -185,7 +185,9 @@ export class DutyFeature extends Feature {
       if (workspaceId) this.requireLiveWorkspace(workspaceId);
       const fallbackProfileId = optId(a.fallbackProfileId);
       if (fallbackProfileId) this.requireProfile(fallbackProfileId);
-      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", fallbackProfileId };
+      const o = (a.options && typeof a.options === "object" ? a.options : {}) as Record<string, unknown>;
+      const options = Object.fromEntries((["model", "effort", "permission"] as const).flatMap((k) => (typeof o[k] === "string" && o[k] ? [[k, o[k] as string]] : [])));
+      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", ...(Object.keys(options).length ? { options } : {}), fallbackProfileId };
     }
     if (a.kind === "command") {
       const command = typeof a.command === "string" ? a.command.trim() : "";
@@ -306,16 +308,18 @@ export class DutyFeature extends Feature {
       profileId = fallback;
       note = `（${full}，改用 ${this.requireProfile(fallback).label}）`;
     }
+    // The chosen model, effort and permissions are the first profile's; the fallback runs with its own defaults.
+    const first = { profileId, text: a.prompt, ...(profileId === a.profileId && a.options && Object.keys(a.options).length ? { options: a.options } : {}) };
     if (a.taskId) {
       const task = this.store.getTask(a.taskId);
       if (!task || task.archivedAt) return { ok: false, summary: "要开会话的任务已经归档或删掉了" };
-      const session = await this.f.tasks.addSession(task.id, { profileId, text: a.prompt });
+      const session = await this.f.tasks.addSession(task.id, first);
       return { ok: true, summary: `在「${task.title}」里开了会话${note}`, sessionId: session.id, taskId: task.id };
     }
     const stamp = new Date(this.now());
     const pad = (n: number) => String(n).padStart(2, "0");
     const titleText = `${a.taskTitle || item.title} · ${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}:${pad(stamp.getMinutes())}`;
-    const made = await this.f.tasks.createTask({ title: titleText, ...(a.workspaceId ? { workspaceId: a.workspaceId } : {}), firstSession: { profileId, text: a.prompt } });
+    const made = await this.f.tasks.createTask({ title: titleText, ...(a.workspaceId ? { workspaceId: a.workspaceId } : {}), firstSession: first });
     return { ok: true, summary: `新建任务「${titleText}」${note}`, ...(made.session ? { sessionId: made.session.id } : {}), taskId: made.task.id };
   }
 

@@ -68,7 +68,8 @@ const GUIDE: Record<GuideSection, string> = {
 - list_file_marks：人加到书签里的重要文件（带说明和行号范围）；专门的文档在项目里时，人会把它加到书签。
 - view_open：给人看东西（查看包）：一次调用里放进要看的所有条目，左边列表、右边预览。kind: file 看文件现状，用 highlights 标出重点行并写明为什么；kind: git 看改动（source: working 未提交 / base / commit / range），files 是要人重点看的文件（列在最上面，其余改动列在下面照样能看），highlights 标出改动文件里的重点行（每条带 path，行号按新版本）；kind: proposal 给出你建议但还没做的改动（path + 改后的完整内容），显示成对比，磁盘上不改。不要一个文件调一次；几秒内再调会加进同一个窗口。人写的批注由人复制后贴回来（通常贴给你），不会自动回到对话。
 - review_open：让人审阅文件。mode: file 加 file 打开磁盘上的当前文件，可带 line / endLine 定位行号；mode: changes（默认）看 Git 改动，可带 file 选中文件，base 对比指定 ref，commit / range 看提交范围（只读）。默认当前项目；人写的批注由人复制后贴回来，不会自动回到对话。保存修改后再调一次就会重新读取；不代表人已审阅或批准。
-- prompt_template_list / prompt_template_save / prompt_template_delete：人的提示词模板（人在输入框里 @ → 提示词模板… 选一条，粘进输入框）。人让你加或改模板时才用：save 不带 id 是新建，带 id 是修改；workspace 填项目（id 或名字）就只在那个项目里出现，不填是全局，"all" 改回全局。删除要人批准。`,
+- prompt_template_list / prompt_template_save / prompt_template_delete：人的提示词模板（人在输入框里 @ → 提示词模板… 选一条，粘进输入框）。人让你加或改模板时才用：save 不带 id 是新建，带 id 是修改；workspace 填项目（id 或名字）就只在那个项目里出现，不填是全局，"all" 改回全局。删除要人批准。
+- issue_list / issue_get / issue_reply / issue_update / issue_released：团队服务器问题页上人报的 AMO 问题（用人在平台里的登录，写的内容标成 AI 的）。只在人让你处理问题页时用（通常是值守开的会话，照人指定的提示词模板做）；issue_get 给的截图带本机路径，可以直接打开看。`,
 };
 
 export function guideText(section?: string): string {

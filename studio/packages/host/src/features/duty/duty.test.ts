@@ -76,7 +76,7 @@ describe("值守", () => {
 
   it("a session item makes a task each time and its run lasts until the session stops", async () => {
     const { duty, store } = setup();
-    const id = duty.create({ title: "问题页", enabled: false, schedule: { every: 30 }, action: { kind: "session", profileId: "p", prompt: "看一下有没有新问题", taskTitle: "处理问题" } }).items[0]!.id;
+    const id = duty.create({ title: "问题页", enabled: false, schedule: { every: 30 }, action: { kind: "session", profileId: "p", prompt: "看一下有没有新问题", taskTitle: "处理问题", options: { model: "m2", permission: "full", effort: "" } } }).items[0]!.id;
     duty.runNow(id);
     const run = await until(
       () => {
@@ -90,16 +90,20 @@ describe("值守", () => {
     const task = store.getTask(run!.taskId!)!;
     expect(task.title).toMatch(/^处理问题 · \d\d-\d\d \d\d:\d\d$/);
     expect(store.getSession(run!.sessionId!)!.profileId).toBe("p");
+    // The item's model and permissions (an unattended run should not stop to ask); empty ones are left out.
+    expect(duty.items()[0]!.action).toMatchObject({ options: { model: "m2", permission: "full" } });
+    expect(store.getSession(run!.sessionId!)!.options).toMatchObject({ model: "m2", permission: "full" });
   });
 
   it("a used-up subscription takes the fallback model, or skips the run", async () => {
     const { duty, service, store } = setup();
     vi.spyOn(service.runtime, "usage").mockImplementation(async (profileId) => ({ profileId, label: profileId.toUpperCase(), windows: [{ label: "5 小时", usedPercent: profileId === "p" ? 99 : 10, resetsAt: null }], note: null, updatedAt: null }));
-    const id = duty.create({ title: "修", enabled: false, schedule: { every: 30 }, action: { kind: "session", profileId: "p", fallbackProfileId: "q", prompt: "修一下" } }).items[0]!.id;
+    const id = duty.create({ title: "修", enabled: false, schedule: { every: 30 }, action: { kind: "session", profileId: "p", fallbackProfileId: "q", prompt: "修一下", options: { model: "m2" } } }).items[0]!.id;
     duty.runNow(id);
     const started = await until(() => lastRun(duty.runs(), id), (r) => !!r?.sessionId, "the session");
     expect(started!.summary).toContain("P「5 小时」已用 99%，改用 Q");
     expect(store.getSession(started!.sessionId!)!.profileId).toBe("q");
+    expect(store.getSession(started!.sessionId!)!.options).toEqual({});
     await until(
       () => {
         duty.tick();

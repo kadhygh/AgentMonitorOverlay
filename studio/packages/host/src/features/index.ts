@@ -48,6 +48,7 @@ import { statsRoutes } from "./stats/routes.js";
 import { remoteRoutes } from "./remote/routes.js";
 import { teamRelayRoutes } from "./teamrelay/routes.js";
 import { teamRelayTools } from "./teamrelay/mcp.js";
+import { issuesTools } from "./issues/mcp.js";
 import { dutyRoutes } from "./duty/routes.js";
 
 /**
@@ -95,4 +96,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "remote", routes: remoteRoutes },
   { name: "teamrelay", routes: teamRelayRoutes, tools: teamRelayTools },
   { name: "duty", routes: dutyRoutes },
+  { name: "issues", routes: () => [], tools: issuesTools },
 ];
