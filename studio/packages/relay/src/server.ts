@@ -9,6 +9,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { adminPage } from "./admin-page.js";
+import { issuesPage } from "./issues-page.js";
+import { IssueStore } from "./issues.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
@@ -140,6 +142,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const serviceName = opts.name?.trim() || "AMO 中转";
   const files = new PublicFiles(opts.publicDir);
   const platform = new PlatformFiles(opts.platformDir);
+  // 问题页 (2026-10-31, plans/issues.md): its tables in the same database.
+  const issues = new IssueStore(store.db);
   const sockets = new Map<string, Set<WebSocket>>();
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
@@ -255,6 +259,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     // The admin page (2026-10-29, the user: a plain page for the LAN, no AMO login): its own password, set on the service
     // machine (`amo-relay admin-password`), sent with every call as x-amo-admin.
     if (method === "GET" && path === "/admin") return sendHtml(res, adminPage(serviceName));
+    // 问题页 (2026-10-31): the page is plain; what it shows and does takes the team account (/api/issues below).
+    if (method === "GET" && path === "/issues") return sendHtml(res, issuesPage(serviceName));
     if (path.startsWith("/api/admin/")) {
       if (!store.hasAdminPassword()) throw new RelayError("forbidden", "还没有设管理密码：在服务器上运行 amo-relay admin-password（或在开发机上 npm run relay:mac -- admin-password）");
       if (!store.adminPasswordMatches(req.headers["x-amo-admin"])) {
@@ -380,6 +386,51 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return send(res, 200, { ok: true });
     }
     if (method === "GET" && path === "/api/members") return send(res, 200, { members: members() });
+
+    // 问题页 (2026-10-31, plans/issues.md): issues, their entries and screenshots, 发布打包. Studio's 值守 reads and
+    // answers them with the person's account (`ai` marks what its AI wrote).
+    if (path === "/api/issues" || path.startsWith("/api/issues/")) {
+      if (method === "GET" && path === "/api/issues") {
+        const after = Number(url.searchParams.get("after") ?? 0);
+        return send(res, 200, issues.list(Number.isFinite(after) && after > 0 ? after : undefined));
+      }
+      if (method === "POST" && path === "/api/issues") return send(res, 200, { issue: issues.create(me, (await readJson(req)) as never) });
+      if (method === "POST" && path === "/api/issues/images") {
+        if (!opts.filesDir) throw new RelayError("bad_request", "这个服务没有开文件存储，不能传截图");
+        const data = await readRaw(req, MAX_FILE_BYTES);
+        if (!data.length) throw new RelayError("bad_request", "图片是空的");
+        const id = `ii_${randomBytes(8).toString("hex")}`;
+        const image = issues.addImage(me, { id, name: url.searchParams.get("name"), type: url.searchParams.get("type") || req.headers["content-type"], size: data.length });
+        mkdirSync(opts.filesDir, { recursive: true });
+        writeFileSync(join(opts.filesDir, id), data);
+        return send(res, 200, { image });
+      }
+      const im = /^\/api\/issues\/images\/(ii_[0-9a-f]{16})$/.exec(path);
+      if (im && method === "GET") {
+        const image = issues.image(im[1]!);
+        const where = opts.filesDir ? join(opts.filesDir, image.id) : null;
+        if (!where || !existsSync(where)) throw new RelayError("not_found", "图片的内容不在了");
+        res.writeHead(200, { "content-type": image.type, "content-length": String(image.size), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });
+        createReadStream(where).pipe(res);
+        return;
+      }
+      if (method === "POST" && path === "/api/issues/release") {
+        const body = await readJson(req);
+        return send(res, 200, { release: issues.requestRelease(me, body.on !== false) });
+      }
+      if (method === "POST" && path === "/api/issues/release/done") {
+        const body = await readJson(req);
+        return send(res, 200, issues.released(me, body.version, body.numbers));
+      }
+      const nm = /^\/api\/issues\/(\d+)(\/entries)?$/.exec(path);
+      if (nm) {
+        const number = Number(nm[1]);
+        if (method === "GET" && !nm[2]) return send(res, 200, { issue: issues.get(number) });
+        if (method === "POST" && nm[2]) return send(res, 200, { issue: issues.addEntry(me, number, (await readJson(req)) as never) });
+        if (method === "PATCH" && !nm[2]) return send(res, 200, { issue: issues.update(me, number, (await readJson(req)) as never) });
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
 
     // Devices (devices-protocol.ts): pairing requests and pairs, each call naming the calling device of this account.
     if (path === "/api/devices/pair" || path === "/api/devices/pairs" || path === "/api/devices/unpair" || path === "/api/devices/online" || path.startsWith("/api/devices/pair/")) {

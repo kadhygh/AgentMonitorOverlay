@@ -345,6 +345,10 @@ export class RelayStore {
         ["device_pair_requests", "to_account"],
         ["device_pairs", "owner_account"],
         ["device_pairs", "guest_account"],
+        // 问题页 (2026-10-31).
+        ["issues", "author"],
+        ["issue_entries", "author"],
+        ["issue_images", "by_name"],
       ];
       for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
       // A direct chat is found by its two names.

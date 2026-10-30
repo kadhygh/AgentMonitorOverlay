@@ -83,3 +83,7 @@
 | 2 | Host 值守：规则、到点和条件、开会话或跑命令、并发和额度；设置里一页「值守」 | host 单测 + e2e |
 | 3 | 问题 ↔ 会话打通：新问题建任务、追问和回答往返（照中转进会话的做法）、修好以后回写状态 | e2e（testkit 假服务器） |
 | 4 | 打包脚本 + 修复车道：3 个、30 分钟、手动三种触发；发布后回写「已发布于」 | 跑一次真的测试通道 |
+
+## 进度
+
+- **阶段 1 完成（2026-10-31，分支 `studio/issues`）**：中转服务加了问题的存储（`relay/src/issues.ts`，表 `issues`、`issue_entries`、`issue_images`、`issue_meta`，在中转自己的数据库里；改登录名时跟着改）、类型（`issues-protocol.ts`，`@amo-studio/relay/light` 也导出，给 Host 用）、接口 `/api/issues…`（列表支持 `?after=rev` 只拿变了的；截图 `POST /api/issues/images`，只收图片；`ai: true` 标出 AI 写的；`发布打包` 的请求和 `release/done`）、页面 `/issues`（`issues-page.ts`：登录用团队账号，key 存在浏览器里；平台以后可以用 `#key=…&v=studio:0.9.16` 打开；粘贴或拖入截图；每 5 秒拿一次变化，正在写的补充不会被刷掉），下载页加了「报问题」。用户在已修好、已发布、卡住、不修了的问题下面再写话，问题会重新打开。验证：`relay/src/issues.test.ts`（2 条），e2e `e2e/relay/issues-page.spec.ts`（用系统的 Edge），截图 `screenshots/relay/I1-asking.png`、`I2-release-requested.png`、`I3-dark.png`。还没部署到服务器。
