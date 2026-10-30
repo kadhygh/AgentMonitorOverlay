@@ -33,7 +33,7 @@
 |---|---|
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
 | 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`）；10-29 晚改成弹窗、加「安全」、B 能带图片和文件给 A（`plans/remote-page-and-new-task.md` 第 7、8 节，Studio 0.9.10）。等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名、远程权限上限，用户 10-29 定先不做 |
-| 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭，都没提交、没发布。上线要：部署中转服务（会重启几秒）、发 Studio。终端里的会话、普通聊天、超时提醒以后再说 |
+| 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭。`634b77c` 提交，中转服务 10-30 已部署，Studio 0.9.12 在测试通道（publish 时删了 0.9.9）；试过后 `npm run relay:mac -- promote studio 0.9.12`。终端里的会话、普通聊天、超时提醒以后再说 |
 | 便签进 Portable 包 | 到发布时再做 |
 | 位置批注的截图 | 用户 10-28 决定先不做，用一段时间再定 |
 | Studio 托盘 | 用户 10-29 定：× 只关窗口，托盘右键「完全退出」连 Host 一起关（有会话在跑先确认）；平台的 Studio 卡片显示后台状态、给「重启 Studio」（没有会话在跑才能点）。画布调整合并后做，见 `plans/remote-session.md`「前置」 |
@@ -47,13 +47,13 @@
 
 ## 最近的改动（新的在上面）
 
-**2026-10-30 · 远程默认关闭；中转发送可以不用确认（没提交、没发布）**
+**2026-10-30 · 远程默认关闭；中转发送可以不用确认（`634b77c`；测试通道 Studio 0.9.12）**
 
 - 用户 10-30：远程默认关，要手动打开；只开 Studio、没在平台登录时也是关的，而且打不开。做法：Host 的 kv `remote.enabled` 记「为哪个账号（server + name）打开的」，当前登录的不是它就是关（换账号登录又是关的）。关着时 `RemoteState.connection.state = "disabled"`、`enabled: false`，不建 `DeviceLink`，配对、授权、远程设置都保留；`requireStarted` 报「远程功能没有打开」。`PUT /api/remote/enabled`（打开要有登录，会等正在读的 account.json）。`teamLogin()` 不受开关影响：中转只是借用同一个登录。界面：远程弹窗关着时显示「远程功能没有打开」+「打开远程功能」（没登录时按钮灰着）；关在 远程设置 最下面；顶栏写「远程 · 关」；授权弹窗、新任务页的「在别的设备上」、远程任务卡跟着变。**以前用过远程的人更新后要重新打开一次**（CHANGELOG 写了）。
 - 用户 10-30：中转这种要确认的发送加个设置，开了就不用确认。`StudioSettings.teamAutoSend`（kv `settings:team-auto-send`，设置 → 功能 → 中转，默认关）。开着时 `team_ask` / `team_followup` 当场发出，工具直接回「已发给 X」；发失败就是工具的报错，不再另发消息进会话。只管中转；Studio 内部的传话（`task_message`）还是每次确认。
 - 测试：Host 单测 remote 两个文件的 helper 先 `setEnabled(true)`，「没登录」那条加了打开 / 关闭 / 换账号；teamrelay 加一条（不用确认直接发、远程关着中转照常用）。UI 单测 `remoteButton`、`remoteModeShown` 加了关闭的情况。e2e 远程 5 个 spec 启动后先打开（`remote.spec` 第一条走界面点「打开远程功能」，最后点「关闭远程功能」），teamrelay spec 加了设置那一步。全量 vitest 1045 过（2 条在负载下超时，单独重跑都过：平台 `stopStudio`、Claude 子 agent 审批）；e2e 远程 5 个、teamrelay、taskpage、newtask、settings 都过。新截图 `screenshots/studio/remote-disabled.png`、`remote-switch.png`、`remote-no-login.png`（改）、`screenshots/teamrelay/T4-auto-send-setting.png`。
 
-**2026-10-30 · 会话里直接用中转，回复自动回到会话（第一版，没提交、没发布）**
+**2026-10-30 · 会话里直接用中转，回复自动回到会话（第一版，`634b77c`；中转服务已部署，测试通道 Studio 0.9.12）**
 
 - 用户定的（`plans/relay-in-sessions.md`）：用你本人的账号发、标「AI 代发」；团队里谁都能找，每次发之前都先问你（自动审批也问）；不做超时提醒；第一版只做「AI 找人确认」；`relay inbox` 只取这个对话发出的。
 - 中转（`packages/relay`）：`Via` 加 `conv`（对话标记），会话的 `RequestState.conv` 是提问方最近一条带标记的 AI 消息的。`relay inbox --conv <标记>` 和 MCP `relay_inbox` 一次取回这个对话发出、已回到我这边的会话的新内容（`inbox.ts`，新内容由 `usage.ts` 的 `sinceLastWord` / `newRepliesText` 算，「复制新回复」也用它）；`ask` / `send` 加 `--conv`，MCP 进程自己生成标记；用法说明写了。新入口 `@amo-studio/relay/light`（只有客户端部分，Host 用；Studio 和 Reviewer 的打包加了 relay 包）。**服务代码改了，部署会重启中转几秒。**
