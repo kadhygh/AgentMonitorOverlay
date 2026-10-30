@@ -41,6 +41,9 @@ import { LOADER_HTML, type LoaderState } from "./loader.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_RELAY_TEST === "1";
+/** In tests, the last text 复制… would have put on the clipboard (`__relayCopied`). */
+let copied = "";
+if (testMode) Object.assign(globalThis, { __relayCopied: () => copied });
 const home = relayHome();
 const buildMode = readBuildMode(here);
 const byPlatform = buildMode === "platform";
@@ -370,7 +373,8 @@ function wire(): void {
     else rmSync(settingsPath(home), { force: true });
   });
   ipcMain.handle("relay:mcp", () => hookup());
-  ipcMain.handle("relay:copy", (_e, text: string) => clipboard.writeText(text));
+  // Tests never touch the person's clipboard (2026-10-30): what would be copied is kept here for them to read.
+  ipcMain.handle("relay:copy", (_e, text: string) => (testMode ? void (copied = text) : clipboard.writeText(text)));
   ipcMain.on("relay:notify", (_e, n: { title: string; body: string; threadId: string }) => {
     // Not in tests: flashing gives even a skipTaskbar window a taskbar button (2026-10-29: a row of them during e2e).
     if (win && !inUse() && !testMode) win.flashFrame(true);

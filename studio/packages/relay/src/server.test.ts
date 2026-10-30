@@ -13,7 +13,8 @@ import { createRelayMcp } from "./mcp.js";
 import type { RelayEvent } from "./protocol.js";
 import { acceptsGzip, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
-import { usagePrompt } from "./usage.js";
+import { newRepliesText, usagePrompt } from "./usage.js";
+import { takeInbox } from "./inbox.js";
 import { DeviceHub } from "./devices.js";
 import { CLOSE_REPLACED, DEVICE_CHANNEL_VERSION, PAIR_REQUEST_DAYS, type DeviceEvent, type PairRequest, type PeerView } from "./devices-protocol.js";
 
@@ -382,7 +383,7 @@ describe("relay service", () => {
     expect(client.getInstructions()!.length).toBeLessThan(400);
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).not.toContain("relay_ask");
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(15);
     const text = (r: unknown) => ((r as { content: Array<{ text: string }> }).content[0]?.text ?? "");
 
     expect(text(await client.callTool({ name: "relay_people", arguments: {} }))).toContain("程序老李");
@@ -451,6 +452,45 @@ describe("relay service", () => {
     expect(text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }))).toContain(`- designdoc.md v2 · fileId ${again2.id}`);
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
+  });
+
+  it("relay inbox (2026-10-30): one conversation takes back at once only the sessions it sent, each from its last word on, and not twice", async () => {
+    const { planner, coder, plannerSettings } = await service();
+    const ask = (title: string, conv: string) => planner.ask({ to: "程序老李", title, body: `问${title}`, questions: [{ text: `${title}怎么做` }], via: { kind: "ai", client: "test", conv } });
+    const [one, two, other] = [await ask("甲", "conv-a"), await ask("乙", "conv-a"), await ask("丙", "conv-b")];
+    expect(one.thread.request?.conv).toBe("conv-a");
+    const is = (c: string) => (x: string) => x === c;
+    expect(await takeInbox(planner, "策划小王", is("conv-a"))).toEqual([]);
+    for (const t of [one, two, other]) await coder.send(t.thread.id, { kind: "reply", answers: [{ questionId: "q1", text: `答${t.thread.title}` }] });
+
+    const got = await takeInbox(planner, "策划小王", is("conv-a"));
+    expect(got.map((i) => i.thread.title).sort()).toEqual(["乙", "甲"]);
+    expect(got.every((i) => i.fresh.some((m) => m.kind === "reply") && i.fresh.every((m) => m.kind !== "request"))).toBe(true);
+    expect(got.every((i) => i.thread.request?.pickedAt !== null)).toBe(true);
+    const first = got.find((i) => i.thread.title === "甲")!;
+    expect(newRepliesText(first.thread, first, "x")).toContain("**甲怎么做** → 答甲");
+    expect(newRepliesText(first.thread, first, "x")).not.toContain("问甲");
+    // Taken: not again; the other conversation's still waits for it.
+    expect(await takeInbox(planner, "策划小王", is("conv-a"))).toEqual([]);
+    expect((await takeInbox(planner, "策划小王", is("conv-b"))).map((i) => i.thread.title)).toEqual(["丙"]);
+    // Carried on from another conversation: the session is that one's now.
+    await planner.send(one.thread.id, { kind: "text", body: "再问一句", pass: true, via: { kind: "ai", conv: "conv-c" } });
+    expect((await planner.threads()).find((t) => t.id === one.thread.id)?.request?.conv).toBe("conv-c");
+
+    // The MCP: its own mark on what it sends; relay_inbox takes those.
+    const mcp = await createRelayMcp({ settings: () => plannerSettings, conv: "conv-m" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "claude-code", version: "1" });
+    await Promise.all([mcp.connect(a), client.connect(b)]);
+    closers.push(() => client.close());
+    const text = (r: unknown) => ((r as { content: Array<{ text: string }> }).content[0]?.text ?? "");
+    const asked = text(await client.callTool({ name: "relay_session_open", arguments: { to: "程序老李", title: "丁", body: "问丁", questions: [{ text: "丁怎么做" }] } }));
+    const threadId = /threadId: (\S+)/.exec(asked)![1]!;
+    expect((await coder.threads()).find((t) => t.id === threadId)?.request?.conv).toBe("conv-m");
+    expect(text(await client.callTool({ name: "relay_inbox", arguments: {} }))).toBe("这个对话发出的会话还没有新回复。");
+    await coder.send(threadId, { kind: "reply", answers: [{ questionId: "q1", text: "答丁" }] });
+    expect(text(await client.callTool({ name: "relay_inbox", arguments: {} }))).toContain("**丁怎么做** → 答丁");
+    expect(text(await client.callTool({ name: "relay_inbox", arguments: {} }))).toBe("这个对话发出的会话还没有新回复。");
   });
 });
 
@@ -674,7 +714,8 @@ describe("usage prompt", () => {
     const p = usagePrompt({ me: "小王", members: [{ name: "小王", role: "" }, { name: "老李", role: "程序" }], cli: "amo-relay" });
     expect(p).toContain("- 老李（程序）");
     expect(p).not.toContain("- 小王");
-    expect(p).toContain("`relay ask --json <文件>`");
+    expect(p).toContain("`relay ask --json <文件> --conv <标记>`");
+    expect(p).toContain("`relay inbox --conv <标记>`");
     expect(p).toContain('PowerShell 写 `& "amo-relay" people`');
     expect(p).not.toContain("newtask");
     expect(p).toContain("`relay put <本机文件> --thread <threadId>`");

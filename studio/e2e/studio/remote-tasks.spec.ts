@@ -70,6 +70,8 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   studios.push(a);
   const b = await launchStudio({ env: { AMO_HOME: await home("笔记本的我", keyB, "B 笔记本") } });
   studios.push(b);
+  // 远程 is off until turned on (2026-10-30).
+  await Promise.all([a, b].map((x) => x.api("PUT", "/api/remote/enabled", { enabled: true })));
 
   // Paired as step 1 does it (its own spec walks through the screens): B asks, A allows.
   await until(() => b.api<RemoteState>("GET", "/api/remote"), (s) => s.connection.state === "online", "B online");

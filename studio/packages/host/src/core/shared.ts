@@ -9,6 +9,8 @@ export const LEGACY_COMMON_WORKSPACE_KEY = "settings:common-workspace";
 export const COMMON_NAME = "公共";
 export const PRESETS_KEY = "settings:presets";
 export const DISABLED_FEATURES_KEY = "settings:disabled-features";
+/** 设置 → 功能 → 中转 (2026-10-30): "1" when what sessions ask through 中转 goes without waiting for 发送. */
+export const TEAM_AUTO_SEND_KEY = "settings:team-auto-send";
 /** 设置 → 额度: where each account's quota shows. */
 export const QUOTA_DISPLAY_KEY = "settings:quota-display";
 /** 设置 → 模型 → 快速选择: the model tiles, in order. */

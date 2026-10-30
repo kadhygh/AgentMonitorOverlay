@@ -69,6 +69,9 @@ async function launch(who: string, extraArgs: string[] = []): Promise<{ app: Ele
   return { app, page, home };
 }
 
+/** What 复制… copied: kept in the test client, never on this machine's clipboard. */
+const copiedText = (app: ElectronApplication) => app.evaluate(() => (globalThis as unknown as { __relayCopied: () => string }).__relayCopied());
+
 async function shot(app: ElectronApplication, name: string): Promise<void> {
   const png = await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0]!.webContents.capturePage()).toPNG().toString("base64"));
   writeFileSync(join(shots, `${name}.png`), Buffer.from(png, "base64"));
@@ -103,7 +106,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   expect(readFileSync(usageFile, "utf8")).toContain("我是 策划小王（策划）");
   expect(readFileSync(usageFile, "utf8")).toContain("程序老李（程序 · 战斗）");
   expect(readFileSync(usageFile, "utf8")).toContain("`relay newtask --title");
-  const copied = await a.app.evaluate(({ clipboard }) => clipboard.readText());
+  const copied = await copiedText(a.app);
   expect(copied).toContain(usageFile);
   expect(copied.length).toBeLessThan(400);
   const req = join(root, "req.json");
@@ -297,7 +300,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await flowShortcut.click();
   await b.page.frameLocator(".doc-frame").locator("#copy").click();
   await expect(b.page.locator(".toast")).toHaveText("已复制");
-  expect(await b.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("按团队流程推进这个任务");
+  expect(await copiedText(b.app)).toBe("按团队流程推进这个任务");
   await b.page.locator(".viewer-foot").getByRole("button", { name: "完成" }).click();
   await expect(flowShortcut).not.toContainText("有更新");
 
@@ -502,9 +505,14 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await row(a.page, "背包格子上限怎么存").click();
   await expect(a.page.locator(".aiband")).toContainText("程序老赵 回复了");
   await shot(a.app, "33-tight-planner-back");
-  await a.page.locator(".aiband").getByRole("button", { name: "复制给 AI" }).click();
-  await expect.poll(() => a.app.evaluate(({ clipboard }) => clipboard.readText())).toContain(`程序老赵 回复了你发的会话（threadId ${threadId}）`);
-  expect(await a.app.evaluate(({ clipboard }) => clipboard.readText())).toContain("**上限放哪** → 服务端配置表");
+  // 复制新回复 (2026-10-30): for the conversation that asked — only what came after its own words; 复制整个会话: all.
+  await a.page.locator(".aiband").getByRole("button", { name: "复制新回复" }).click();
+  await expect.poll(() => copiedText(a.app)).toContain(`程序老赵 回复了你发的会话「背包格子上限怎么存」（threadId ${threadId}）`);
+  expect(await copiedText(a.app)).toContain("**上限放哪** → 服务端配置表");
+  expect(await copiedText(a.app)).not.toContain("写死在客户端常量里");
+  await a.page.locator(".aiband").getByRole("button", { name: "复制整个会话" }).click();
+  await expect.poll(() => copiedText(a.app)).toContain("写死在客户端常量里");
+  expect(await copiedText(a.app)).toContain("**上限放哪** → 服务端配置表");
 
   // The AI reads it and asks again with a new round; the coder answers that one too.
   expect(await exec("cmd.exe", ["/c", cli, "replies", threadId])).toContain("**上限放哪** → 服务端配置表");
@@ -516,6 +524,15 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await expect(b.page.locator(".reply-form")).toContainText("配置表用哪张");
   await b.page.locator(".reply-form .opt", { hasText: "新建 bag_limit" }).click();
   await b.page.getByRole("button", { name: "回复并返回给 策划小张 的 AI" }).click();
+
+  // Back again: 复制新回复 has the second round only — not the first, nor the AI's own follow-up.
+  await expect(a.page.locator(".aiband")).toContainText("程序老赵 回复了");
+  await a.page.locator(".aiband").getByRole("button", { name: "复制新回复" }).click();
+  await expect.poll(() => copiedText(a.app)).toContain("**配置表用哪张** → 新建 bag_limit");
+  const fresh = await copiedText(a.app);
+  expect(fresh).not.toContain("**上限放哪**");
+  expect(fresh).not.toContain("好，改放配置表。");
+  await shot(a.app, "35-tight-copy-new");
 
   // Settled: the AI closes it; both see it done.
   expect(await exec("cmd.exe", ["/c", cli, "replies", threadId])).toContain("**配置表用哪张** → 新建 bag_limit");

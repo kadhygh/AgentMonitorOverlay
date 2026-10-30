@@ -4,7 +4,7 @@ import { sessionStatus, waitedText } from "./bits.js";
 import { copyText } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
-import { threadAsText, VERDICT_LABEL, type Answer, type FileNote, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+import { newRepliesText, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 import { writeUsageFile } from "./usageFile.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
@@ -60,6 +60,15 @@ export function SessionView(props: {
     }
     await copyText(threadAsText(thread, messages));
     toast("已复制整个会话（含逐条回答），可以贴给 AI");
+  };
+  // 复制新回复 (2026-10-30, the user): pasted back into the conversation that asked, the AI has seen the earlier rounds —
+  // only what came after my last word (mine or my AI's), with the questions it answers.
+  const sinceMine = useMemo(() => (messages ? sinceLastWord(messages, me) : null), [messages, me]);
+  const copyNew = async () => {
+    if (!sinceMine) return;
+    const usage = await writeUsageFile(session);
+    await copyText(newRepliesText(thread, sinceMine, `用 relay_session_get 或命令行 relay replies ${thread.id}${usage ? `，命令见 ${usage.file}` : ""}`));
+    toast("已复制新回复，贴回原来的对话");
   };
   const copyPickup = async () => {
     await copyText(`用 AMO 中转取会话 ${thread.id} 的回复（命令行 relay replies ${thread.id}，或 MCP 的 relay_session_get），按回复接着推进：没问清楚就追问（send --then ask / relay_session_reply then="ask"），已经敲定就标记完成（--then done / then="done"）。`);
@@ -180,7 +189,7 @@ export function SessionView(props: {
           </button>
         </div>
       </header>
-      <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onAct={(a, t) => void act(a, t)} />
+      <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onCopyNew={sinceMine ? () => void copyNew() : undefined} onAct={(a, t) => void act(a, t)} />
       {(files.length > 0 || r.state !== "done") && (
         <div className="atts">
           <span className="muted tiny">附件</span>
@@ -201,7 +210,7 @@ export function SessionView(props: {
 const agoText = (ms: number) => (ms < 60_000 ? "刚刚" : `${waitedText(ms)}前`);
 
 /** Back with me and handled by my AI: copy it over to it, has it taken it, is it stuck — and ways to take it myself. */
-function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: ThreadView; me: string; limits: { aiLateMinutes: number; aiStuckMinutes: number }; onPickup: () => void; onCopy: () => void; onAct: (a: SessionAction, toast: string) => void }) {
+function AiBand({ thread, me, limits, onPickup, onCopy, onCopyNew, onAct }: { thread: ThreadView; me: string; limits: { aiLateMinutes: number; aiStuckMinutes: number }; onPickup: () => void; onCopy: () => void; onCopyNew: (() => void) | undefined; onAct: (a: SessionAction, toast: string) => void }) {
   const r = thread.request!;
   if (r.from !== me || r.state !== "returned" || r.waitingOn !== me) return null;
   if (r.handler === "person") {
@@ -219,8 +228,13 @@ function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: Threa
   const now = Date.now();
   const tools = (
     <>
-      <button type="button" className="small primary" onClick={onCopy} title="复制回复和接下来怎么做，贴给你的 AI">
-        复制给 AI
+      {onCopyNew && (
+        <button type="button" className="small primary" onClick={onCopyNew} title="只复制你上次发言之后的回复和接下来怎么做，贴回原来的对话">
+          复制新回复
+        </button>
+      )}
+      <button type="button" className={onCopyNew ? "small" : "small primary"} onClick={onCopy} title="复制整个会话和接下来怎么做，贴给新对话">
+        复制整个会话
       </button>
       <button type="button" className="small" onClick={onPickup} title="一行提示词，贴给 agent，它自己去取这条回复并继续">
         复制取回指令
@@ -252,7 +266,7 @@ function AiBand({ thread, me, limits, onPickup, onCopy, onAct }: { thread: Threa
   }
   return (
     <div className="aiband warn">
-      ! {r.to} 回复了（{agoText(now - (r.returnedAt ?? now))}）。点「复制给 AI」，贴给你的 AI（原来的对话或新对话都行），它会接着推进。
+      ! {r.to} 回复了（{agoText(now - (r.returnedAt ?? now))}）。贴回原来的对话用「复制新回复」，开新对话用「复制整个会话」，你的 AI 会接着推进。
       <span className="grow" />
       {tools}
     </div>

@@ -5,6 +5,7 @@ export * from "./server.js";
 export { DeviceHub } from "./devices.js";
 export * from "./client.js";
 export * from "./usage.js";
+export * from "./inbox.js";
 export * from "./shell-api.js";
 export * from "./api.js";
 export { createRelayMcp, RELAY_MCP_NAME } from "./mcp.js";

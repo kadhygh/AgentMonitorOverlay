@@ -13,6 +13,8 @@ export default defineConfig({
       "@amo-studio/traymenu": src("traymenu"),
       "@amo-studio/host": src("host"),
       "@amo-studio/reviewer": src("reviewer"),
+      // Before the package itself: an alias matches as a prefix.
+      "@amo-studio/relay/light": fileURLToPath(new URL("./packages/relay/src/light.ts", import.meta.url)),
       "@amo-studio/relay": src("relay"),
     },
   },

@@ -29,6 +29,7 @@ import { TopicDocsFeature } from "./features/topicdocs/service.js";
 import { CanvasReviewFeature } from "./features/canvasreview/service.js";
 import { TaskPlansFeature } from "./features/taskplans/service.js";
 import { RelaysFeature } from "./features/relays/service.js";
+import { TeamRelayFeature } from "./features/teamrelay/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
@@ -76,6 +77,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly dsh = new DshFeature(this);
   readonly maintenance = new MaintenanceFeature(this);
   readonly remote = new RemoteFeature(this);
+  /** 会话里用中转 (2026-10-30): sessions ask people on the team through AMO 中转; replies come back into them. */
+  readonly teamRelay = new TeamRelayFeature(this);
   /** The runtimes of this computer, plus "remote" for copies of tasks paired devices granted it (远程 step 2). */
   readonly runtime: SessionRuntimeApi;
 

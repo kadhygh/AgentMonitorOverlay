@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type RemoteState, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { copyStatus, grantsOf, useRemote, type CopyStatus } from "../remote/remote.js";
+import { teamWaits, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
@@ -58,6 +59,7 @@ interface BoardProps {
 /** Four columns; the person moves cards (drag a card onto another column), agents never do. Cards carry no buttons. */
 export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist, onArchive, link }: BoardProps) {
   const remote = useRemote(link ?? null);
+  const teamThreads = useTeamThreads(link ?? null);
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskColumn | null>(null);
@@ -74,6 +76,7 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
       key={task.id}
       task={task}
       sessions={taskSessions(task, sessions)}
+      teamWaiting={teamWaits(teamThreads, taskSessions(task, sessions))}
       scope={scope}
       grouped={grouped}
       workspaces={workspaces}
@@ -180,6 +183,7 @@ function TaskCard({
   decisions = 0,
   checklist,
   remote = null,
+  teamWaiting = [],
 }: {
   remote?: RemoteState | null;
   task: Task;
@@ -196,6 +200,8 @@ function TaskCard({
   mail?: number;
   decisions?: number;
   checklist?: { done: number; total: number };
+  /** 会话里用中转 (2026-10-30): 「等 X 回复（中转）· 已等 …」, one per person its sessions wait on. */
+  teamWaiting?: string[];
 }) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
@@ -291,6 +297,11 @@ function TaskCard({
           {asks}
         </span>
       )}
+      {teamWaiting.map((w) => (
+        <span key={w} className="card-asks card-team" data-testid="card-team-wait">
+          {w}
+        </span>
+      ))}
       {granted.length > 0 && (
         <span className="card-granted" data-testid="card-granted" title="这个任务授权给了你的其他设备远程使用（任务页的 ⋯ 或顶栏的「远程」里可以收回）">
           已授权给 {granted.map((g) => g.name).join("、")}

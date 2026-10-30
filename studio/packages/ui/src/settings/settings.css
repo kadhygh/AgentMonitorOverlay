@@ -22,7 +22,7 @@
 /* 设置 → 功能 */
 .feature-row { align-items: flex-start; cursor: pointer; }
 .feature-row input { margin-top: 3px; }
-.feature-text { display: flex; flex-direction: column; gap: 2px; }
+.feature-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 
 /* 设置 in pages: the areas on the left, one page on the right (the dialog keeps its size between pages). */
 .settings-modal { position: relative; width: min(880px, calc(100vw - 40px)); height: min(640px, calc(100vh - 120px)); overflow: hidden; gap: 12px; }

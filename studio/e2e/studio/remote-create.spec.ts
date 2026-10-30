@@ -65,6 +65,8 @@ async function twoPaired(): Promise<{ a: Studio; b: Studio }> {
   studios.push(a);
   const b = await launchStudio({ env: { AMO_HOME: await home("笔记本的我", store!.register("笔记本的我", "pw-bbbb").key, "B 笔记本") } });
   studios.push(b);
+  // 远程 is off until turned on (2026-10-30).
+  await Promise.all([a, b].map((x) => x.api("PUT", "/api/remote/enabled", { enabled: true })));
   await until(() => b.api<RemoteState>("GET", "/api/remote"), (s) => s.connection.state === "online", "B online");
   await until(() => a.api<RemoteState>("GET", "/api/remote"), (s) => s.connection.state === "online", "A online");
   await b.api("POST", "/api/remote/pair", { account: "台式机的我" });

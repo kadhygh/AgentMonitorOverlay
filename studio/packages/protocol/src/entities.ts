@@ -512,6 +512,44 @@ export interface Relay {
   error?: string;
 }
 export const RELAY_TEXT_MAX = 20_000;
+
+/**
+ * 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): what a session asked to send through AMO 中转 — a new session
+ * for someone to confirm (ask) or a follow-up in one (followup). Every one waits for the person first, in auto mode too
+ * (it goes to a real person); sent as the person, marked as their AI's (AI 代发).
+ */
+export interface TeamSend {
+  id: Id;
+  /** The Studio session that asked. */
+  sessionId: Id;
+  kind: "ask" | "followup";
+  to: string;
+  title: string;
+  /** followup: the 中转 session; ask: set once sent. */
+  threadId: string | null;
+  body: string;
+  questions: Array<{ text: string; options?: string[] }>;
+  /** Local files to take along (ask). */
+  files: string[];
+  state: "pending" | "sent" | "dismissed" | "failed";
+  createdAt: Timestamp;
+  decidedAt: Timestamp | null;
+  error?: string;
+}
+export const TEAM_SEND_FILES_MAX = 5;
+
+/** A 中转 session one of this computer's sessions sent, as last seen on the team server (「等 X 回复（中转）」). */
+export interface TeamThread {
+  threadId: string;
+  sessionId: Id;
+  title: string;
+  to: string;
+  state: "open" | "returned" | "done";
+  /** When it last went to `to` (open) or came back (returned), ms. */
+  since: number;
+  /** When the last reply went back into the session, ms. */
+  deliveredAt: number | null;
+}
 export const TOPIC_DOC_BODY_MAX = 50_000;
 
 /** The longest task description (characters). */

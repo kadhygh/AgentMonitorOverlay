@@ -18,6 +18,7 @@ import { PairDialog } from "./PairDialog.js";
 const CONNECTION_LABEL: Record<RemoteConnection["state"], string> = {
   off: "没有开远程功能",
   "no-account": "没有登录",
+  disabled: "远程功能没有打开",
   connecting: "正在连接…",
   online: "已连接",
   offline: "没连上，稍后自动重试",
@@ -178,21 +179,40 @@ export function RemoteDialog({
   if (!remote) return shell(<div className="placeholder">读取中…</div>);
 
   const { connection } = remote;
-  if (!remote.account || connection.state === "off")
+  // 2026-10-30 (the user: 远程默认关闭，手动开启后才开；只开 Studio 未登录时关闭且无法开启): off until turned on here,
+  // and it cannot be turned on without the AMO platform's login.
+  if (!remote.account || connection.state === "off" || !remote.enabled) {
+    const off = connection.state === "off";
+    const account = remote.account;
     return shell(
       <div className="remote-body">
-        <div className="remote-login" data-testid="remote-login">
+        <div className="remote-login" data-testid="remote-login" data-state={connection.state}>
           <span className="remote-login-title" data-testid="remote-account">
-            {connection.state === "off" ? "这个 Studio 没有开远程功能" : "在 AMO 平台里登录"}
+            {off ? "这个 Studio 没有开远程功能" : account ? "远程功能没有打开" : "在 AMO 平台里登录"}
           </span>
-          {connection.state !== "off" && (
+          {!off && (
             <span className="settings-hint" data-testid="remote-login-hint">
-              远程功能用的是团队服务器的账号，登录只在 AMO 平台里做（Studio 不另做登录）。登录后这里会自动连上，不用重启 Studio。Studio 的其他功能不受影响。
+              {account
+                ? `打开后，这台电脑用账号 ${account.name} 连上团队服务器 ${serverText(account.server)}，你自己的其他电脑可以和它配对、远程使用授权给它们的任务（会话还在这台电脑上跑，用这台电脑的模型账号）。默认关着，需要时再打开；关掉后配对和授权都保留。`
+                : "远程功能用的是团队服务器的账号，登录只在 AMO 平台里做（Studio 不另做登录）。登录后可以在这里打开远程功能（默认关着），不用重启 Studio。Studio 的其他功能不受影响。"}
+            </span>
+          )}
+          {!off && (
+            <div className="settings-row">
+              <button type="button" className="btn-primary small" disabled={busy || !account} title={account ? undefined : "先在 AMO 平台里登录"} onClick={() => void run(() => call(link, "PUT /api/remote/enabled", {}, { enabled: true }))} data-testid="remote-enable">
+                打开远程功能
+              </button>
+            </div>
+          )}
+          {message && (
+            <span className={message.error ? "form-error" : "settings-hint remote-message"} role={message.error ? "alert" : "status"} data-testid="remote-message">
+              {message.text}
             </span>
           )}
         </div>
       </div>,
     );
+  }
 
   const devices = devicesOf(remote.peers);
   const copies = tasks.filter((t) => t.remote && !t.archivedAt);
@@ -438,6 +458,26 @@ export function RemoteDialog({
                 有任务授权给在线的设备时，这台电脑不会自动睡眠（屏幕照常会关），免得那边用到一半断掉；设备都断开或授权都收回后恢复。托盘「完全退出」前也会先提醒。
               </span>
               <span className="settings-hint">这台电脑主动连出到团队服务器，不对局域网开端口。</span>
+            </div>
+            <div className="remote-subsection" aria-label="远程功能" data-testid="remote-switch">
+              <span className="remote-subheading">远程功能</span>
+              <span className="settings-hint">关掉后这台电脑马上断开团队服务器：配对的设备找不到它，授权出去的任务那边暂时不能操作，这台电脑上的远程任务也发不了消息。配对、授权和这些设置都保留，再打开就恢复。</span>
+              <div className="settings-row end">
+                <button
+                  type="button"
+                  className="btn-ghost small danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await call(link, "PUT /api/remote/enabled", {}, { enabled: false });
+                      setSettingsOpen(false);
+                    })
+                  }
+                  data-testid="remote-disable"
+                >
+                  关闭远程功能
+                </button>
+              </div>
             </div>
           </div>
         </RemoteModal>

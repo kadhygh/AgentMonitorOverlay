@@ -275,7 +275,7 @@ export function SettingsDialog({ link, settings, page: startPage, onClose, onOpe
               </section>
             )}
             {page === "common" && <FolderAccessSection link={link} />}
-            {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
+            {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
             {page === "maintenance" && <MaintenancePage link={link} />}

@@ -47,6 +47,10 @@ export function GrantDialog({ link, task, remote, onClose, onDone }: { link: Hos
         </span>
         {!remote || remote.connection.state === "off" || !remote.account ? (
           <span className="settings-hint">远程功能要先在 AMO 平台里登录，再在顶栏的「远程」里和你的另一台电脑配对。</span>
+        ) : !remote.enabled ? (
+          <span className="settings-hint" data-testid="grant-disabled">
+            远程功能没有打开：在顶栏的「远程」里打开后，才能授权给你的另一台电脑。
+          </span>
         ) : peers.length === 0 ? (
           <span className="settings-hint" data-testid="grant-none">
             {granted.size ? "已经授权给所有可以授权的设备了。" : "还没有可以授权的设备：在你的另一台电脑上向这台发起配对，这台允许后它就会出现在这里（顶栏的「远程」）。"}

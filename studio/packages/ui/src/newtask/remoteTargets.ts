@@ -28,7 +28,7 @@ export function remoteTargets(remote: RemoteState | null, now: number = Date.now
 }
 
 /** The 「在这台电脑上 | 在别的设备上」 switch: only with remote on, logged in, and a device that allowed this computer. */
-export const remoteModeShown = (remote: RemoteState | null): boolean => !!remote && remote.connection.state !== "off" && !!remote.account && remoteTargets(remote).length > 0;
+export const remoteModeShown = (remote: RemoteState | null): boolean => !!remote && remote.connection.state !== "off" && !!remote.account && remote.enabled && remoteTargets(remote).length > 0;
 
 /** Why a device's offline chip cannot be picked. */
 export const PRESENCE_TAG: Record<PeerPresence, string> = { online: "", lost: "刚失联", offline: "离线", unknown: "没连上服务器" };

@@ -69,6 +69,8 @@ async function host(name: string, server: string, account: string, key: string) 
   const service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES);
   const options = { env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }), pingTimeoutMs: 2000 };
   service.remote.start(options);
+  // Off until turned on (2026-10-30).
+  await service.remote.setEnabled(true);
   cleanups.push(async () => {
     service.remote.stop();
     await servers.close();

@@ -41,7 +41,7 @@ ${people}
 - 你用的就是我（${ctx.me}）的身份：会话只能发给别人，不能发给 ${ctx.me}；要问我本人，直接在当前对话里问。
 - 会话在谁手里就由谁处理。你发出的会话，对方必须回复，不能直接关掉；结束由你这边来标记。
 - 对方看不到我本机的文件和这段对话：背景、方案和关键片段都要写进正文，文档作为文件传上去。
-- 我说「程序回复了」但没贴内容时，用 ${cliMode ? q("queue") : "`relay_queue`"} 看哪些会话返回给了我，再取回来接着处理。
+- 我说「程序回复了」但没贴内容时，用 ${cliMode ? q("inbox --conv <标记>") : "`relay_inbox`"} 一次取回这个对话发出的所有新回复，接着处理。
 - 提示「已由本人接手」时，就不要再动那个会话了。`;
   const flow = ctx.flow?.trim() ? `\n\n## 团队流程\n${ctx.flow.trim()}` : "";
   if (cliMode) {
@@ -60,10 +60,13 @@ ${people}
 ## 怎么用：命令行
 下面的 \`relay\` 指本机的 \`"${ctx.cli}"\`。路径里有空格，要带引号：PowerShell 写 \`& "${ctx.cli}" people\`，cmd 和 bash 写 \`"${ctx.cli}" people\`。内容长的，用 \`--body-file <文件>\` 代替 \`--body "…"\`。
 
+**对话标记**：第一次发会话前，给这个对话取一个标记（短的英文或拼音，比如 \`bag-limit\`），之后这个对话里的 ask、send、inbox 都带上 \`--conv <标记>\`。取回复时只取这个对话发出的，不会拿走我别的 AI 对话的。
+
 **会话**
 - ${q("people")}：能找的人和他们负责什么
 - ${q("queue")}：待我这边处理的会话
-- ${q("ask --json <文件>")}：发会话（\`-\` 表示从标准输入读），发出就返回 threadId，不等回复。JSON：\`{"to":"名字","title":"一句话说清要确认什么","body":"Markdown 正文：背景、方案、要确认的点","questions":[{"text":"一个问题只问一件事","options":["选项1","选项2"]}]${tasks ? ',"taskId":"可选，挂在任务下","files":["可选，fileId"]' : ""}}\`
+- ${q("ask --json <文件> --conv <标记>")}：发会话（\`-\` 表示从标准输入读），发出就返回 threadId，不等回复。JSON：\`{"to":"名字","title":"一句话说清要确认什么","body":"Markdown 正文：背景、方案、要确认的点","questions":[{"text":"一个问题只问一件事","options":["选项1","选项2"]}]${tasks ? ',"taskId":"可选，挂在任务下","files":["可选，fileId"]' : ""}}\`
+- ${q("inbox --conv <标记>")}：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的），取过的不会再给
 - ${q("replies [threadId]")}：取会话内容（逐条回答、补充说明、结论、附上的批注）；不带 id 时列出我的会话
 - ${q('send <threadId> --body "…" --then ask')}：用话追问，会话回到对方手里；再加 \`--questions <文件>\`（JSON 数组，格式同上面的 questions）就是新一轮逐条回答的问题
 - ${q('send <threadId> --body "…" --then done')}：问清楚了，写一句收尾并标记完成；然后按回复调整方案，告诉我对方怎么答的
@@ -80,6 +83,7 @@ ${taskCommands}**文件和批注**
 ## 怎么用：MCP 工具（amo-relay）
 - \`relay_people\`、\`relay_queue\`：能找的人；待我这边处理的会话。
 - \`relay_session_open\`：发会话（to、title、body、questions${tasks ? "，可带 taskId 和 files" : ""}）；发出就返回 threadId，不等回复。
+- \`relay_inbox\`：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的）。
 - \`relay_session_get\`：取会话内容。
 - \`relay_session_reply\`：then="ask" 追问（带 questions 是新一轮问题），then="done" 收尾并标记完成。
 - \`relay_session_handoff\`：交给我本人。
@@ -89,7 +93,7 @@ ${tasks ? "- 团队任务：`relay_task_list` / `relay_task_get` / `relay_task_c
 
 /** The MCP's instructions: short, since they sit in every conversation of a client; the rest is in the tools. */
 export function mcpInstructions(ctx: UsageContext & { usageFile?: string }): string {
-  return `我是 ${ctx.me}${ctx.role ? `（${ctx.role}）` : ""}。团队用 AMO 中转互相传话：遇到卡点、或方案要程序把关时，照常写进文档，同时用 relay_session_open 把要程序确认的部分发成会话（不能发给我自己），发完就结束这一轮，不等回复。我把回复贴回来后（或用 relay_queue / relay_session_get 取），relay_session_reply 追问（then="ask"）或收尾（then="done"）。${ctx.tasks ? "团队任务用 relay_task_*，" : ""}文件用 relay_file_*（先发会话，再把文档传进会话）。${ctx.usageFile ? `详细用法和团队流程在 ${ctx.usageFile}。` : ""}`;
+  return `我是 ${ctx.me}${ctx.role ? `（${ctx.role}）` : ""}。团队用 AMO 中转互相传话：遇到卡点、或方案要程序把关时，照常写进文档，同时用 relay_session_open 把要程序确认的部分发成会话（不能发给我自己），发完就结束这一轮，不等回复。我把回复贴回来后（或用 relay_inbox 一次取回这个对话发出的新回复），relay_session_reply 追问（then="ask"）或收尾（then="done"）。${ctx.tasks ? "团队任务用 relay_task_*，" : ""}文件用 relay_file_*（先发会话，再把文档传进会话）。${ctx.usageFile ? `详细用法和团队流程在 ${ctx.usageFile}。` : ""}`;
 }
 
 /** Where a session stands, in words. */
@@ -154,6 +158,28 @@ export function threadAsText(thread: Thread, messages: Message[], requestMessage
       return messageAsText(m, questions);
     }),
   ].join("\n\n");
+}
+
+/**
+ * What came after `me`'s last word (theirs or their AI's) in a session, with the message whose questions it answers;
+ * null when nothing new did. 复制新回复 and `relay inbox` (2026-10-30): the conversation that asked saw the rest.
+ */
+export function sinceLastWord(messages: Message[], me: string): { fresh: Message[]; asked: Message | undefined } | null {
+  let i = messages.length - 1;
+  while (i >= 0 && !(messages[i]!.author === me && messages[i]!.kind !== "event")) i--;
+  const fresh = messages.slice(i + 1);
+  if (i < 0 || !fresh.some((m) => m.kind !== "event")) return null;
+  const asked = messages
+    .slice(0, i + 1)
+    .reverse()
+    .find((m) => m.kind !== "reply" && m.questions?.length);
+  return { fresh, asked };
+}
+
+/** The new part of a session that came back, for the AI that asked: what to do with it, then the messages. */
+export function newRepliesText(thread: Thread, since: NonNullable<ReturnType<typeof sinceLastWord>>, how: string): string {
+  const r = thread.request!;
+  return `${r.to} 回复了你发的会话「${thread.title}」（threadId ${thread.id}）。下面只有你上次发言之后的新内容，之前的你已经看过（要看全文，${how}）。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。\n\n${threadAsText(thread, since.fresh, since.asked)}`;
 }
 
 /** A team task for an AI: what it is, where it stands, what was decided, its sessions. */

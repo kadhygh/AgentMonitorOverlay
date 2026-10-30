@@ -173,6 +173,11 @@ export interface StudioSettings {
   presets: SessionPreset[];
   /** Optional features turned off. */
   disabledFeatures: OptionalFeature[];
+  /**
+   * 设置 → 功能 → 中转 (2026-10-30, the user: 开启后不用审批自动发送): what a session asks someone on the team through
+   * 中转 (team_ask, team_followup) goes at once instead of waiting for the person's 发送. Off by default.
+   */
+  teamAutoSend: boolean;
   /** Global shortcut that shows and hides the scratchpad window, as an Electron accelerator; "" when off. */
   scratchpadShortcut: string;
   /**
@@ -459,7 +464,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; teamAutoSend?: boolean; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
@@ -617,6 +622,14 @@ export interface HostRoutes {
    * 主控), beside that session; returns it. `profileId`: its model (the laying session's otherwise).
    */
   "POST /api/topics/:id/canvas/items/:itemId/discuss": { req: { profileId?: Id }; res: Session };
+  /** 会话里用中转 (2026-10-30): what sessions asked to send through 中转 — pending ones, and those decided in the last day. */
+  "GET /api/teamrelay/sends": { req: void; res: import("./entities.js").TeamSend[] };
+  /** The person says send it: it goes to 中转 as them (AI 代发). */
+  "POST /api/teamrelay/sends/:id/send": { req: void; res: import("./entities.js").TeamSend };
+  /** Not sent; the session hears so. */
+  "POST /api/teamrelay/sends/:id/dismiss": { req: void; res: import("./entities.js").TeamSend };
+  /** The 中转 sessions this computer's sessions sent, as last seen. */
+  "GET /api/teamrelay/threads": { req: void; res: import("./entities.js").TeamThread[] };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -638,6 +651,9 @@ export type HostEvent = { seq: number } & (
   | { type: "topicdoc.removed"; topicId: Id; docId: Id }
   | { type: "taskplan.upserted"; plan: TaskPlan }
   | { type: "relay.upserted"; relay: Relay }
+  | { type: "teamsend.upserted"; send: import("./entities.js").TeamSend }
+  /** The 中转 sessions this computer's sessions sent, all of them, when one changed. */
+  | { type: "teamthreads.changed"; threads: import("./entities.js").TeamThread[] }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */
@@ -915,6 +931,8 @@ export interface HostRoutes {
   "GET /api/remote": { req: void; res: import("./remote.js").RemoteState };
   /** Renames this computer (device.json, shared with the AMO platform). */
   "PUT /api/remote/device": { req: { name: string }; res: import("./remote.js").RemoteState };
+  /** 2026-10-30: turns remote on or off for the account logged in now (on needs the AMO platform's login). */
+  "PUT /api/remote/enabled": { req: { enabled: boolean }; res: import("./remote.js").RemoteState };
   /**
    * Asks account `account` to pair with this computer; a device of it allows or refuses. `device` (远程页的配对弹窗,
    * 2026-10-29): only that device of the account, picked from GET /api/remote/devices/online.

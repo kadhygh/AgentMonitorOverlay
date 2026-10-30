@@ -65,11 +65,20 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   studios.push(a);
   const b = await launchStudio({ env: { AMO_HOME: await home("笔记本的我", keyB, "B 笔记本") } });
   studios.push(b);
+  await a.api("PUT", "/api/remote/enabled", { enabled: true });
 
-  // B: connected as itself, nothing paired yet; the top bar says just 「远程」.
-  await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程");
+  // B: logged in, but 远程 is off until the person turns it on (2026-10-30): not on the server as a device.
+  await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程 · 关");
   const bRemote = await openRemote(b.page);
   await expect(b.page.getByTestId("topbar-remote")).toHaveAttribute("aria-current", "page");
+  await expect(bRemote.getByTestId("remote-login")).toHaveAttribute("data-state", "disabled");
+  await expect(bRemote.getByTestId("remote-account")).toHaveText("远程功能没有打开");
+  await expect(bRemote.getByTestId("remote-login-hint")).toContainText("笔记本的我");
+  await expect(bRemote.getByTestId("remote-pair-open")).toHaveCount(0);
+  await screenshot(b.app, "studio", "remote-disabled", b.page);
+  // Turned on: connected as itself, nothing paired yet; the top bar says just 「远程」.
+  await bRemote.getByTestId("remote-enable").click();
+  await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程");
   await expect(bRemote.getByTestId("remote-account")).toHaveText("笔记本的我");
   await expect(bRemote.getByTestId("remote-connection")).toHaveAttribute("data-state", "online", { timeout: 20_000 });
   await expect(bRemote.getByTestId("remote-device-label")).toHaveText("B 笔记本");
@@ -173,6 +182,15 @@ test("B asks to pair, A allows from Focus, both test the connection, A unpairs a
   await expect(bRemote.getByTestId("remote-peer")).toHaveCount(0, { timeout: 20_000 });
   await expect(bRemote.getByTestId("remote-no-peers")).toBeVisible();
   await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程");
+  // 远程设置 → 关闭远程功能 (2026-10-30): off the server at once, the dialog says how to turn it on again.
+  await bRemote.getByTestId("remote-settings-open").click();
+  await bSettings.getByTestId("remote-switch").scrollIntoViewIfNeeded();
+  await screenshot(b.app, "studio", "remote-switch", b.page);
+  await bSettings.getByTestId("remote-disable").click();
+  await expect(bSettings).toHaveCount(0);
+  await expect(bRemote.getByTestId("remote-account")).toHaveText("远程功能没有打开");
+  await expect(b.page.getByTestId("topbar-remote")).toHaveText("远程 · 关");
+  expect((await b.api<{ enabled: boolean; connection: { state: string } }>("GET", "/api/remote")).connection.state).toBe("disabled");
   // 关闭: the board it was opened over.
   await bRemote.getByTestId("remote-dialog-close").click();
   await expect(b.page.getByRole("dialog", { name: "远程", exact: true })).toHaveCount(0);
@@ -190,6 +208,8 @@ test("the pair dialog lists this account's other online devices; picking one ask
   studios.push(a);
   const b = await launchStudio({ env: { AMO_HOME: await home("我", key, "笔记本", "laptop") } });
   studios.push(b);
+  // 远程 is off until turned on (2026-10-30).
+  await Promise.all([a, b].map((x) => x.api("PUT", "/api/remote/enabled", { enabled: true })));
 
   const bRemote = await openRemote(b.page);
   await expect(bRemote.getByTestId("remote-connection")).toHaveAttribute("data-state", "online", { timeout: 20_000 });
@@ -233,11 +253,15 @@ test("without the AMO platform's login, 远程 says where to log in and the rest
   // launchStudio's own AMO_HOME: an empty folder, nobody logged in.
   const s = await launchStudio();
   studios.push(s);
-  await expect(s.page.getByTestId("topbar-remote")).toHaveText("远程");
+  await expect(s.page.getByTestId("topbar-remote")).toHaveText("远程 · 关");
   await expect(s.page.getByTestId("topbar-remote-dot")).toHaveCount(0);
   const remote = await openRemote(s.page);
   await expect(remote.getByTestId("remote-account")).toHaveText("在 AMO 平台里登录");
   await expect(remote.getByTestId("remote-login-hint")).toContainText("登录只在 AMO 平台里做");
+  // Off, and it cannot be turned on without the login (2026-10-30).
+  await expect(remote.getByTestId("remote-enable")).toBeDisabled();
+  expect((await s.api<{ enabled: boolean }>("GET", "/api/remote")).enabled).toBe(false);
+  await expect(s.api("PUT", "/api/remote/enabled", { enabled: true })).rejects.toThrow(/登录/);
   await expect(remote.getByTestId("remote-peers")).toHaveCount(0);
   await expect(remote.getByTestId("remote-pair-open")).toHaveCount(0);
   await screenshot(s.app, "studio", "remote-no-login", s.page);

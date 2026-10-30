@@ -23,7 +23,7 @@ test("传话: confirmed from the task page and Focus, then a task that takes rel
     topicId: topic.id,
     firstSession: { profileId: "claude-mock", text: "开始迁移装甲车" },
   });
-  const relayText = (text: string) => `[[mcp: relay_send ${JSON.stringify({ taskId: target.id, text })}]]`;
+  const relayText = (text: string) => `[[mcp: task_message ${JSON.stringify({ taskId: target.id, text })}]]`;
   const { session: leadSession } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "迁移主控",
     workspaceId: ws.id,

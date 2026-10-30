@@ -40,8 +40,12 @@ export interface Answer {
   text?: string;
 }
 
-/** Who wrote a message: the person, or an AI on their behalf (the client is the MCP client's name, e.g. claude-code). */
-export type Via = { kind: "person" } | { kind: "ai"; client?: string };
+/**
+ * Who wrote a message: the person, or an AI on their behalf (the client is the MCP client's name, e.g. claude-code).
+ * `conv` (2026-10-30, plans/relay-in-sessions.md): which AI conversation of theirs — `relay inbox` takes back only what
+ * that conversation sent, and Studio sends each reply back into the session that asked.
+ */
+export type Via = { kind: "person" } | { kind: "ai"; client?: string; conv?: string };
 
 /** event: a session's state changed (标记完成, 接手, …), written by whoever did it; its body says what happened. */
 export type MessageKind = "text" | "request" | "reply" | "event";
@@ -99,6 +103,8 @@ export interface RequestState {
   /** The message whose questions wait for answers (the request, or a follow-up with questions); null after a plain
    * follow-up, which is answered in words. */
   askSeq: number | null;
+  /** The AI conversation on the asking side that last wrote with a mark (Via.conv); null when none did. */
+  conv: string | null;
 }
 
 export interface Thread {

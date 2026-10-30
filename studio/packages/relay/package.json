@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./light": {
+      "types": "./dist/light.d.ts",
+      "default": "./dist/light.js"
     }
   },
   "engines": {

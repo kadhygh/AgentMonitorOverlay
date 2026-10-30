@@ -48,7 +48,7 @@ const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewe
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
   studio: {
-    packages: ["app", "host", "protocol", "locate", "account", "traymenu", "ui", "reviewer", "notes"],
+    packages: ["app", "host", "protocol", "locate", "account", "relay", "traymenu", "ui", "reviewer", "notes"],
     programs: ["studio", "notes", "reviewer"],
     // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -66,7 +66,7 @@ const BUILDS = {
     ],
   },
   reviewer: {
-    packages: ["reviewer", "host", "protocol", "locate", "account", "ui"],
+    packages: ["reviewer", "host", "protocol", "locate", "account", "relay", "ui"],
     programs: ["reviewer"],
     // Its Host runs no models; the SDK's JavaScript is still loaded.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,

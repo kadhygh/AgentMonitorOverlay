@@ -23,6 +23,11 @@ import { sendAlong, UploadInbox } from "./uploads.js";
 const PAIRS_KEY = "remote.pairs";
 /** Unpairings the server has not heard of yet (it was not reachable): sent first thing after the next connect. */
 const UNPAIRS_KEY = "remote.unpairs";
+/**
+ * 2026-10-30 (the user: 远程默认关闭，手动开启后才开；未登录时关闭且无法开启): the account (server + name) the person
+ * turned remote on for. Absent, or another account logged in now: off — this computer does not connect as a device.
+ */
+const ENABLED_KEY = "remote.enabled";
 
 interface StoredPair {
   account: string;
@@ -130,6 +135,15 @@ export class RemoteFeature extends Feature {
     this.presence.clear();
   }
 
+  /**
+   * The platform's login and this computer's device id, for 会话里用中转 (features/teamrelay, 2026-10-30): it speaks to
+   * 中转 as the person. Null while not signed in (or remote is off: tests).
+   */
+  teamLogin(): { account: Account; deviceId: string } | null {
+    // Not gated by 远程's switch: 中转 is not remote, it only uses the same login.
+    return this.account && this.device ? { account: this.account, deviceId: this.device.id } : null;
+  }
+
   private get env(): Env | undefined {
     return this.opts?.env;
   }
@@ -178,7 +192,7 @@ export class RemoteFeature extends Feature {
         this.link = null;
         this.incoming = [];
         this.outgoing = [];
-      } else if (!before || before.server !== a.server || before.name !== a.name || before.key !== a.key) {
+      } else if (!before || before.server !== a.server || before.name !== a.name || before.key !== a.key || !this.link) {
         this.connect();
       }
       this.changed();
@@ -195,6 +209,11 @@ export class RemoteFeature extends Feature {
     const a = this.account;
     const d = this.device;
     if (!a || !d || !this.opts) return;
+    if (!this.enabled()) {
+      this.incoming = [];
+      this.outgoing = [];
+      return;
+    }
     const link = new DeviceLink({
       server: a.server,
       key: a.key,
@@ -433,16 +452,54 @@ export class RemoteFeature extends Feature {
     this.store.setKv(UNPAIRS_KEY, JSON.stringify(list));
   }
 
+  // ---- 2026-10-30: the switch
+
+  /** Remote is on for the account logged in now. */
+  enabled(): boolean {
+    const a = this.account;
+    if (!a) return false;
+    try {
+      const v = JSON.parse(this.store.getKv(ENABLED_KEY)?.value ?? "null") as { server?: unknown; name?: unknown } | null;
+      return !!v && v.server === a.server && v.name === a.name;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Turns remote on (needs the platform's login; waits for a read of account.json under way) or off. */
+  async setEnabled(on: boolean): Promise<RemoteState> {
+    if (!this.opts) throw new HostError("bad_request", "这个 Host 没有开远程功能");
+    await this.reading;
+    if (on) {
+      const a = this.account;
+      if (!a) throw new HostError("bad_request", "在 AMO 平台里登录后才能打开远程功能");
+      this.store.setKv(ENABLED_KEY, JSON.stringify({ server: a.server, name: a.name }));
+      if (!this.link) this.connect();
+    } else {
+      this.store.setKv(ENABLED_KEY, "null");
+      this.link?.stop();
+      this.link = null;
+      this.incoming = [];
+      this.outgoing = [];
+      this.presence.clear();
+    }
+    this.changed();
+    return this.state();
+  }
+
   state(): RemoteState {
     // Not started (the Reviewer, tests): nothing of %APPDATA%\AMO is read.
     const started = !!this.opts;
     const info = this.account;
     const link = this.link;
+    const enabled = this.enabled();
     const connection: RemoteConnection = !started
       ? { state: "off", message: null, retryAt: null, since: null }
       : !this.account
         ? { state: "no-account", message: null, retryAt: null, since: null }
-        : link
+        : !enabled
+          ? { state: "disabled", message: null, retryAt: null, since: null }
+          : link
           ? { state: link.state, message: link.message, retryAt: link.retryAt ? iso(link.retryAt) : null, since: link.since ? iso(link.since) : null }
           : { state: "connecting", message: null, retryAt: null, since: null };
     const online = connection.state === "online";
@@ -453,6 +510,7 @@ export class RemoteFeature extends Feature {
     const incoming: RemoteIncomingRequest[] = this.incoming.map((r) => ({ id: r.id, account: r.from.account, device: r.from.device, name: r.from.name, createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt) }));
     const outgoing: RemoteOutgoingRequest[] = this.outgoing.map((r) => ({ id: r.id, to: r.to, ...(r.toDevice ? { toDevice: { device: r.toDevice.device, name: r.toDevice.name } } : {}), state: r.state === "refused" ? "refused" : "pending", answeredBy: r.answeredBy?.name ?? null, createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt) }));
     return {
+      enabled,
       device: this.device,
       account: info ? { server: info.server, name: info.name } : null,
       connection,
@@ -476,6 +534,7 @@ export class RemoteFeature extends Feature {
   private requireStarted(): void {
     if (!this.opts) throw new HostError("bad_request", "这个 Host 没有开远程功能");
     if (!this.account) throw new HostError("bad_request", "在 AMO 平台里登录后才能用远程功能");
+    if (!this.enabled()) throw new HostError("bad_request", "远程功能没有打开：在顶栏的「远程」里打开");
   }
 
   rename(name: string): RemoteState {
@@ -587,6 +646,7 @@ export class RemoteFeature extends Feature {
 
   reconnect(): RemoteState {
     if (this.opts && !this.account) void this.loadAccount();
+    else if (!this.enabled()) return this.state();
     else if (this.link && this.link.state !== "online" && this.link.state !== "connecting") {
       this.link.retryNow();
     }

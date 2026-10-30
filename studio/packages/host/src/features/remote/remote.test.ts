@@ -134,6 +134,8 @@ async function host(name: string, server: string, account: string | null, key = 
   const events: RemoteState[] = [];
   service.on("event", (e) => e.type === "remote.updated" && events.push(e.remote));
   service.remote.start({ env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }), pingTimeoutMs: 2000 });
+  // Off until turned on (2026-10-30).
+  if (account) await service.remote.setEnabled(true);
   cleanups.push(() => {
     service.remote.stop();
     store.close();
@@ -150,12 +152,29 @@ describe("remote between two Hosts", () => {
     const a = await host("A-PC", url, null);
     expect(a.state()).toMatchObject({ account: null, connection: { state: "no-account" }, device: { name: "A-PC" } });
     await expect(a.remote.requestPair("笔记本的我")).rejects.toThrow("在 AMO 平台里登录后才能用远程功能");
+    // Not logged in: it cannot be turned on (2026-10-30).
+    await expect(a.remote.setEnabled(true)).rejects.toThrow("在 AMO 平台里登录后才能打开远程功能");
     await saveAccount({ server: url, name: "台式机的我", key: keys["台式机的我"]! }, { env: a.env, protector: fake });
-    await until(a.state, online, "online after login");
-    expect(a.state().account).toEqual({ server: url, name: "台式机的我" });
+    // Logged in, still off until the person turns it on: not on the server as a device.
+    await until(a.state, (s) => s.connection.state === "disabled", "disabled after login");
+    expect(a.state()).toMatchObject({ enabled: false, account: { server: url, name: "台式机的我" } });
+    await expect(a.remote.requestPair("笔记本的我")).rejects.toThrow("远程功能没有打开");
+    await a.remote.setEnabled(true);
+    await until(a.state, online, "online once turned on");
+    expect(a.state().enabled).toBe(true);
+    // Turned off: off the server at once.
+    await a.remote.setEnabled(false);
+    expect(a.state().connection.state).toBe("disabled");
+    await a.remote.setEnabled(true);
+    await until(a.state, online, "online again");
     // Logged out in the platform: off the server again.
     rmSync(join(a.home, "account.json"));
     await until(a.state, (s) => s.connection.state === "no-account", "no-account after logout");
+    // Another account logging in on this computer starts with it off; the same one again finds it on.
+    await saveAccount({ server: url, name: "笔记本的我", key: keys["笔记本的我"]! }, { env: a.env, protector: fake });
+    await until(a.state, (s) => s.connection.state === "disabled" && s.account?.name === "笔记本的我", "off for another account");
+    await saveAccount({ server: url, name: "台式机的我", key: keys["台式机的我"]! }, { env: a.env, protector: fake });
+    await until(a.state, online, "on again for the account that turned it on");
   });
 
   it("pairs B with A, tests the connection both ways, and an unpairing on A reaches B", async () => {

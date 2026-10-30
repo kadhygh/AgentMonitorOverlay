@@ -96,9 +96,12 @@ export function checkName(value: unknown): string {
 
 function checkVia(value: unknown): Via {
   if (!value || typeof value !== "object") return { kind: "person" };
-  const v = value as { kind?: unknown; client?: unknown };
+  const v = value as { kind?: unknown; client?: unknown; conv?: unknown };
   if (v.kind !== "ai") return { kind: "person" };
-  return typeof v.client === "string" && v.client.trim() ? { kind: "ai", client: v.client.trim().slice(0, 60) } : { kind: "ai" };
+  const via: Via = { kind: "ai" };
+  if (typeof v.client === "string" && v.client.trim()) via.client = v.client.trim().slice(0, 60);
+  if (typeof v.conv === "string" && v.conv.trim()) via.conv = v.conv.trim().slice(0, 80);
+  return via;
 }
 
 function checkQuestions(value: NewRequest["questions"]): Question[] {
@@ -457,6 +460,8 @@ export class RelayStore {
         returnedAt: row.s_returned == null ? null : Number(row.s_returned),
         pickedAt: row.s_picked == null ? null : Number(row.s_picked),
         askSeq: row.s_qseq === undefined ? Number(row.req_seq) : row.s_qseq == null ? null : Number(row.s_qseq),
+        // The asking side's latest AI message with a mark: a session carried on in another conversation moves there.
+        conv: ((this.db.prepare("SELECT json_extract(via, '$.conv') AS c FROM messages WHERE thread_id = ? AND author = ? AND json_extract(via, '$.conv') IS NOT NULL ORDER BY seq DESC LIMIT 1").get(id, String(row.req_from)) as Row | undefined)?.c as string | undefined) ?? null,
       };
     }
     return thread;

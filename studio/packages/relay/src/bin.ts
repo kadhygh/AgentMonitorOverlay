@@ -8,7 +8,8 @@ import { createRelayMcp } from "./mcp.js";
 import { RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
-import { notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { takeInbox } from "./inbox.js";
+import { newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
 import { typeOf } from "./types.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
@@ -18,8 +19,8 @@ import { typeOf } from "./types.js";
 //   passwd --data <dir> <名字> <新密码>        on the service machine, while it is stopped or running
 //   register --server <host:port> --name <名字> --password <密码> [--role …] [--passphrase …] | login --server … --name … --password …
 //   whoami | people | prompt | mcp
-//   ask --json <file|->   replies [threadId] [--after n]   wait <threadId> [--minutes n]
-//   send <threadId> --body <text> [--then ask|done]   queue   handoff <threadId> --note <text>
+//   ask --json <file|-> [--conv <mark>]   inbox --conv <mark>   replies [threadId] [--after n]   wait <threadId> [--minutes n]
+//   send <threadId> --body <text> [--then ask|done] [--conv <mark>]   queue   handoff <threadId> --note <text>
 //   tasks [--mine]   task <taskId>   transfer <taskId> --to <名字> [--status …] --reason <text>
 
 const USAGE = `amo-relay <command>
@@ -30,10 +31,11 @@ const USAGE = `amo-relay <command>
   register --server <地址:端口> --name <名字> --password <密码> [--role <负责什么>] [--passphrase <邀请口令>]
   login    --server <地址:端口> --name <名字> --password <密码>
   whoami | people | prompt | mcp
-  ask      --json <文件|->
+  ask      --json <文件|-> [--conv <标记>]          （标记：这个 AI 对话的，inbox 只取它发出的）
+  inbox    --conv <标记>                           （一次取回这个对话发出、已经回到我这边的会话的新回复）
   replies  [threadId] [--after n]
   wait     <threadId> [--minutes n]
-  send     <threadId> --body <文字>|--body-file <文件> [--then ask|done] [--questions <文件|->]
+  send     <threadId> --body <文字>|--body-file <文件> [--then ask|done] [--questions <文件|->] [--conv <标记>]
                                                    （ask：追问，会话回到对方手里，--questions 是新一轮问题的 JSON 数组；done：收尾并标记完成）
   queue                                            （待我这边处理的会话）
   handoff  <threadId> --note <文字>                 （交给本人处理）
@@ -67,6 +69,8 @@ function textArg(value: string | undefined, file: string | undefined): string | 
 
 /** What the command line writes counts as the person's AI: it is what agents without MCP use. */
 const CLI_VIA = { kind: "ai", client: "amo-relay cli" } as const;
+/** CLI_VIA with this conversation's mark (--conv), so `inbox` finds what it sent. */
+const viaWith = (conv: string | undefined) => (conv?.trim() ? { ...CLI_VIA, conv: conv.trim() } : CLI_VIA);
 
 const cliCommand = () => `node "${fileURLToPath(import.meta.url)}"`;
 
@@ -167,8 +171,17 @@ async function main(): Promise<void> {
       if (!flags.json) throw new Error("用法：amo-relay ask --json <文件|->");
       const { client } = joined();
       const req = (await readJsonArg(flags.json)) as NewRequest;
-      const res = await client.ask({ ...req, via: CLI_VIA });
+      const res = await client.ask({ ...req, via: viaWith(flags.conv) });
       out(`已发给 ${res.thread.request?.to}。threadId: ${res.thread.id}`);
+      return;
+    }
+    case "inbox": {
+      if (!flags.conv?.trim()) throw new Error("用法：amo-relay inbox --conv <标记>（发会话时用的那个）");
+      const { client, me } = joined();
+      const conv = flags.conv.trim();
+      const items = await takeInbox(client, me, (c) => c === conv);
+      if (!items.length) out("这个对话发出的会话还没有新回复。");
+      else out(items.map((i) => newRepliesText(i.thread, i, `用 relay replies ${i.thread.id}`)).join("\n\n---\n\n"));
       return;
     }
     case "replies": {
@@ -207,11 +220,11 @@ async function main(): Promise<void> {
       if (questions && then !== "ask") throw new Error("--questions 只能和 --then ask 一起用");
       const { client } = joined();
       if (body) {
-        const res = await client.send(pos[0], { kind: "text", body, pass: then === "ask", questions, via: CLI_VIA });
+        const res = await client.send(pos[0], { kind: "text", body, pass: then === "ask", questions, via: viaWith(flags.conv) });
         out(then === "ask" ? `已追问（#${res.message.seq}），会话回到对方手里。` : `已发出（#${res.message.seq}）。`);
       }
       if (then === "done") {
-        await client.session(pos[0], "done", { via: CLI_VIA });
+        await client.session(pos[0], "done", { via: viaWith(flags.conv) });
         out("已标记完成。");
       }
       return;

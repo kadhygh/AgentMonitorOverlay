@@ -19,6 +19,7 @@ const task = (state: "active" | "revoked" = "active", reason?: string): Task => 
 });
 const peer = (online: boolean | null, lastSeen: string | null = null): RemotePeer => ({ account: "台式机的我", device: "d_a", name: "A 台式机", role: "guest", pairedAt: "", online, lastSeen });
 const state = (peers: RemotePeer[], connected = true): RemoteState => ({
+  enabled: true,
   device: { id: "d_b", name: "B" },
   account: { server: "http://x", name: "笔记本的我" },
   connection: { state: connected ? "online" : "offline", message: null, retryAt: null, since: null },
@@ -47,7 +48,9 @@ describe("remoteButton (the top bar's 远程)", () => {
     expect(remoteButton(null, now).shown).toBe(false);
     expect(remoteButton({ ...state([]), connection: { state: "off", message: null, retryAt: null, since: null } }, now).shown).toBe(false);
     expect(remoteButton(state([]), now)).toEqual({ shown: true, label: "远程", waiting: false });
-    expect(remoteButton({ ...state([]), account: null, connection: { state: "no-account", message: null, retryAt: null, since: null } }, now)).toEqual({ shown: true, label: "远程", waiting: false });
+    expect(remoteButton({ ...state([]), account: null, enabled: false, connection: { state: "no-account", message: null, retryAt: null, since: null } }, now)).toEqual({ shown: true, label: "远程 · 关", waiting: false });
+    // Off until turned on (2026-10-30): no count, no dot.
+    expect(remoteButton({ ...state([peer(true)]), enabled: false, incoming: [{ id: "pr_1", account: "a", device: "d", name: "A", createdAt: "", expiresAt: "" }], connection: { state: "disabled", message: null, retryAt: null, since: null } }, now)).toEqual({ shown: true, label: "远程 · 关", waiting: false });
     // Paired both ways with one device (two entries), another device away.
     const other: RemotePeer = { ...peer(false), device: "d_c", name: "C" };
     expect(remoteButton(state([peer(true), { ...peer(true), role: "owner" }, other]), now).label).toBe("远程 · 1 在线");

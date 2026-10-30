@@ -42,6 +42,7 @@ import "./viewer/viewer.css";
 import "./viewpacks/viewpacks.css";
 import "./taskplans/taskplans.css";
 import "./relays/relays.css";
+import "./teamrelay/teamrelay.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";

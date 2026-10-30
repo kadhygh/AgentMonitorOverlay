@@ -11,6 +11,11 @@ export function remoteRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/remote", () => service.remote.state()),
     route("PUT", "/api/remote/device", ({ body }) => service.remote.rename(str(obj(body).name, "name"))),
+    route("PUT", "/api/remote/enabled", ({ body }) => {
+      const enabled = obj(body).enabled;
+      if (typeof enabled !== "boolean") throw new HostError("bad_request", "enabled must be true or false");
+      return service.remote.setEnabled(enabled);
+    }),
     route("POST", "/api/remote/pair", ({ body }) => {
       const b = obj(body);
       return service.remote.requestPair(str(b.account, "account"), b.device === undefined || b.device === null || b.device === "" ? undefined : str(b.device, "device"));

@@ -41,6 +41,7 @@ import { SessionBanners, SessionHead } from "./SessionHead.js";
 import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
+import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
@@ -143,6 +144,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const plans = useTaskPlans(link).filter((p) => p.fromTaskId === task.id);
   // 传话 to this task, or from it (a 主控), waiting for the person.
   const relays = useRelays(link).filter((r) => r.toTaskId === task.id || r.fromTaskId === task.id);
+  // 会话里用中转 (2026-10-30): what its sessions ask to send through 中转, and whom they wait on there.
+  const teamSends = useTeamSends(link);
+  const teamThreads = useTeamThreads(link);
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -614,6 +618,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
       <RelayBanner link={link} relays={relays} tasks={tasks} />
+      <TeamRelayBanner link={link} sends={teamSends} threads={teamThreads} sessions={own} />
 
       {task.archivedAt && (
         <div className="archived-banner task" role="status" data-testid="task-archived-banner">

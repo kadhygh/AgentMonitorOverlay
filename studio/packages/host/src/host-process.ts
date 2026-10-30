@@ -310,7 +310,10 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       },
     });
     mcp = { url: `${http.url}/mcp`, token: mcpToken };
-    if (options.remote) service.remote.start(options.remote);
+    if (options.remote) {
+      service.remote.start(options.remote);
+      service.teamRelay.start();
+    }
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 
@@ -340,6 +343,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         if (stopped) return;
         stopped = true;
         clearInterval(pruning);
+        service.teamRelay.stop();
         service.remote.stop();
         await finalHttp.close();
         await finalClaude.closeAll();

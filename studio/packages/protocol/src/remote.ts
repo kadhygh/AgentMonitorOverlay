@@ -8,10 +8,11 @@ import type { QuestionReply } from "./questions.js";
 
 /**
  * off: the Host was started without remote (tests, the Reviewer); no-account: nobody logged in in the AMO platform;
+ * disabled: logged in, but the person has not turned remote on (2026-10-30: off until they do, per account);
  * connecting / online / offline (retrying at retryAt); unauthorized: the server no longer takes the login;
  * server-old: the team server has no devices channel yet; replaced: another program connected as this device.
  */
-export type RemoteConnectionState = "off" | "no-account" | "connecting" | "online" | "offline" | "unauthorized" | "server-old" | "replaced";
+export type RemoteConnectionState = "off" | "no-account" | "disabled" | "connecting" | "online" | "offline" | "unauthorized" | "server-old" | "replaced";
 
 export interface RemoteConnection {
   state: RemoteConnectionState;
@@ -70,6 +71,11 @@ export interface RemoteOutgoingRequest {
 }
 
 export interface RemoteState {
+  /**
+   * 2026-10-30 (the user: 默认关闭，手动开启才开，未登录无法开启): whether the person turned remote on for the account
+   * logged in now. Off, this computer does not connect to the team server as a device; pairs and grants are kept.
+   */
+  enabled: boolean;
   /** This computer (device.json); null until the Host made it (it does when it starts remote). */
   device: RemoteDevice | null;
   /** The AMO platform's login, without the key. */

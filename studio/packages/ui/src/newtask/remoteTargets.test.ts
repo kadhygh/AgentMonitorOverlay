@@ -7,6 +7,7 @@ import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProj
 const now = Date.parse("2026-10-29T10:00:00Z");
 const peer = (name: string, role: "owner" | "guest", online: boolean | null): RemotePeer => ({ account: `${name}的账号`, device: `d_${name}`, name, role, pairedAt: "", online, lastSeen: null });
 const state = (peers: RemotePeer[], patch: Partial<RemoteState> = {}): RemoteState => ({
+  enabled: true,
   device: { id: "d_b", name: "B" },
   account: { server: "http://x", name: "笔记本的我" },
   connection: { state: "online", message: null, retryAt: null, since: null },
@@ -51,6 +52,8 @@ describe("remote targets", () => {
     expect(remoteModeShown(state([peer("乙", "guest", false)]))).toBe(true);
     expect(remoteModeShown(state([peer("乙", "guest", true)], { account: null }))).toBe(false);
     expect(remoteModeShown(state([peer("乙", "guest", true)], { connection: { state: "off", message: null, retryAt: null, since: null } }))).toBe(false);
+    // 远程 turned off (2026-10-30).
+    expect(remoteModeShown(state([peer("乙", "guest", true)], { enabled: false, connection: { state: "disabled", message: null, retryAt: null, since: null } }))).toBe(false);
   });
 });
 

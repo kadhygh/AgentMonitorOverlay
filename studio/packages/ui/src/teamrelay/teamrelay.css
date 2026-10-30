@@ -1,0 +1,18 @@
+/* 会话里用中转 (2026-10-30): a session's send waiting for the person (task page, Focus), and whom it waits on. */
+.teamsend-banner { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.teamsend-card { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--attention); background: var(--attention-bg, var(--panel-raised)); }
+.teamsend-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 600; flex-wrap: wrap; }
+.teamsend-mark { padding: 0 6px; border-radius: var(--r-btn); background: var(--attention); color: var(--on-attention, #1b1b1b); font-size: 11px; line-height: 18px; }
+.teamsend-from { font-weight: 400; color: var(--text-dim); }
+.teamsend-title { font-size: var(--fs-sm); font-weight: 600; }
+.teamsend-body { margin: 0; font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; max-height: 9.6em; overflow: auto; }
+.teamsend-questions { margin: 0; padding-left: 20px; font-size: var(--fs-sm); line-height: 1.6; }
+.teamsend-options { color: var(--text-dim); }
+.teamsend-files { font-size: 12px; color: var(--text-dim); }
+.teamsend-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.teamsend-note { flex: 1; font-size: 12px; color: var(--text-dim); }
+.teamsend-wait { font-size: var(--fs-sm); color: var(--text-dim); }
+.focus-teamsend { padding: 8px 10px; }
+.focus-teamsend .teamsend-body { font-size: 12px; max-height: 6.4em; }
+.focus-teamsend .teamsend-note { display: none; }
+.card-team { color: var(--text-dim); }

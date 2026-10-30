@@ -31,7 +31,7 @@ export class RelaysFeature extends Feature {
     return relay;
   }
 
-  /** A 主控's relay (MCP relay_send): waits for the person, or goes at once to a task that takes relays. */
+  /** A 主控's relay (MCP task_message): waits for the person, or goes at once to a task that takes relays. */
   send(fromSessionId: Id, input: { taskId?: unknown; text?: unknown }): Relay {
     const facts = roleFacts(this.host, fromSessionId);
     if (facts.role !== "lead" && facts.role !== "topic") throw new HostError("bad_request", "只有主控（或专题会话）能传话：要找别的任务，用 mailbox_send 留言。");

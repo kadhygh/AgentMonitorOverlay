@@ -2,7 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, type RelaySettings } from "./client.js";
 import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
-import { mcpInstructions, notesAsText, sessionStateText, taskAsText, threadAsText } from "./usage.js";
+import { mcpInstructions, newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText } from "./usage.js";
+import { takeInbox } from "./inbox.js";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -29,6 +31,8 @@ export interface RelayMcpOptions {
   settings?: () => RelaySettings | null;
   /** Shown in the usage text for clients without MCP; usually left out here. */
   cli?: string;
+  /** This conversation's mark (Via.conv); default a new one per process. */
+  conv?: string;
 }
 
 /** The server with its tools; `instructions` from the service's member list when it answers. */
@@ -48,9 +52,12 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     }
   }
   const server = new McpServer({ name: RELAY_MCP_NAME, version: RELAY_VERSION }, { instructions });
+  // One MCP process per AI conversation (its client starts it over stdio): its mark goes on everything it sends, and
+  // relay_inbox takes back only those (2026-10-30, the user: not the replies another conversation of mine waits for).
+  const conv = opts.conv ?? `mcp-${randomUUID().slice(0, 8)}`;
   const via = () => {
     const client = server.server.getClientVersion()?.name;
-    return client ? { kind: "ai" as const, client } : { kind: "ai" as const };
+    return client ? { kind: "ai" as const, client, conv } : { kind: "ai" as const, conv };
   };
 
   const tool = (run: (client: RelayClient, me: string) => Promise<string>) => async (): Promise<ToolResult> => {
@@ -90,7 +97,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   const openSession = async (args: { to: string; taskId?: string; files?: string[]; title: string; body: string; questions?: Array<{ id?: string; text: string; options?: string[] }> }) =>
     tool(async (client) => {
       const out = await client.ask({ ...args, via: via() });
-      return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_session_get 取回复，或 relay_session_wait 等一会儿。`;
+      return `已发给 ${out.thread.request?.to}，对方要回复后返回给你。threadId: ${out.thread.id}\n之后用 relay_inbox 一次取回这个对话发出的新回复，或 relay_session_wait 等一会儿。`;
     })();
   const openDesc = "发会话请某人处理一件事，立刻返回 threadId。对方看不到本机文件和对话：正文写清背景，文档用 files 带上。";
   server.registerTool("relay_session_open", { title: "发会话", description: openDesc, inputSchema: openSchema, annotations: annotations(false) }, openSession);
@@ -109,6 +116,15 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     })();
   const getDesc = "带 threadId：会话内容（逐条回答、结论、批注）；不带：我的会话列表。";
   server.registerTool("relay_session_get", { title: "取会话", description: getDesc, inputSchema: getSchema, annotations: annotations(true) }, getSession);
+
+  const inbox = async () =>
+    tool(async (client, me) => {
+      const items = await takeInbox(client, me, (c) => c === conv);
+      if (!items.length) return "这个对话发出的会话还没有新回复。";
+      return items.map((i) => newRepliesText(i.thread, i, `用 relay_session_get（threadId ${i.thread.id}）`)).join("\n\n---\n\n");
+    })();
+  const inboxDesc = "一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的），取过的不再给。";
+  server.registerTool("relay_inbox", { title: "取新回复", description: inboxDesc, inputSchema: {}, annotations: annotations(true) }, inbox);
 
   const waitSchema = { threadId: z.string(), minutes: z.number().optional(), after: z.number().int().optional() };
   const waitSession = async (args: { threadId: string; minutes?: number; after?: number }, extra: { signal: AbortSignal }) =>
@@ -187,7 +203,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       const taken = live.filter((t) => t.request!.from === me && t.request!.handler === "person");
       const asked = live.filter((t) => t.request!.to === me);
       const parts: string[] = [];
-      if (forAi.length) parts.push(`返回给我、等你接着处理（用 relay_session_get 取）：\n${forAi.map(line).join("\n")}`);
+      if (forAi.length) parts.push(`返回给我、等你接着处理（这个对话发出的用 relay_inbox 一次取回，别的用 relay_session_get）：\n${forAi.map(line).join("\n")}`);
       if (taken.length) parts.push(`已由本人接手（不要动）：\n${taken.map(line).join("\n")}`);
       if (asked.length) parts.push(`别人发给我、等我本人回复（除非我让你帮忙，否则不用管）：\n${asked.map(line).join("\n")}`);
       return parts.join("\n\n") || "没有待处理的会话。";

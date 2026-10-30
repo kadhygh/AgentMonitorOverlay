@@ -8,6 +8,7 @@ import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayCard, useRelays } from "../relays/Relays.js";
+import { TeamSendCard, useTeamSends } from "../teamrelay/TeamRelay.js";
 import { useWaitingQuestionList } from "../canvas/useCallouts.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
@@ -69,6 +70,8 @@ export function FocusApp() {
   const plans = useTaskPlans(host.kind === "ready" ? host.link : NO_LINK).filter((p) => p.state === "open");
   // 传话 (stage 16): answered here in place, like an approval.
   const relays = useRelays(host.kind === "ready" ? host.link : NO_LINK).filter((r) => r.state === "pending");
+  // 会话里用中转 (2026-10-30): a session wants to ask someone on the team; it waits for the person.
+  const teamSends = useTeamSends(host.kind === "ready" ? host.link : null).filter((s) => s.state === "pending");
   // 画布审阅 (2026-10-27): topics whose canvas has questions waiting for the person, oldest question first.
   const questionsByTopic = useWaitingQuestionList(host.kind === "ready" ? host.link : null);
   // 远程 (2026-10-29): someone asks to pair with this computer — answered here, like an approval.
@@ -150,7 +153,7 @@ export function FocusApp() {
   // title folded it). Opening it here no longer counts as seeing it.
   const list = [...waiting, ...finished];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id)]);
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...teamSends.map((s) => s.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -181,7 +184,7 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
-  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length + taskAsks.length - toReview.length;
+  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length - toReview.length;
 
   // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
   const firstSeen = useRef<Map<string, number>>(new Map());
@@ -244,7 +247,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + canvasAsks.length + pairAsks.length + taskAsks.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
   // show under 进行中 either (10-22).
@@ -449,6 +452,14 @@ export function FocusApp() {
                 <RelayCard link={link} relay={r} tasks={state.tasks} className="focus-detail focus-relay" />
               </div>
             ))}
+            {teamSends.map((s) => {
+              const taskId = state.sessions.find((x) => x.id === s.sessionId)?.taskId;
+              return (
+                <div key={s.id} className="focus-entry open" data-tone="att" data-testid="focus-teamsend">
+                  <TeamSendCard link={link} send={s} from={state.tasks.find((t) => t.id === taskId)?.title || undefined} className="focus-detail focus-teamsend teamsend-card" />
+                </div>
+              );
+            })}
             {plans.map((p) => (
               // Read and changed on the 主控's task page (or its topic's canvas): here only that it waits.
               <div key={p.id} className="focus-entry" data-tone="att" data-testid="focus-plan">

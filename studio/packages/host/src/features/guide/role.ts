@@ -52,7 +52,7 @@ const ROLE_NAME: Record<AmoRole, string> = { lead: "主控", worker: "执行", t
 
 const ROLE_DUTY: Record<AmoRole, string> = {
   lead:
-    "你是主控：负责协调这个专题（不在专题里时是这个项目）的任务。把大的工作拆成平级的任务、在画布上排好关系（canvas_*），给任务写说明（task_describe），把计划和决定写进专题文档（topic_doc_write）。具体的活交给各个任务的会话去做，让人可以直接和每个任务对话，要它们马上知道的用 relay_send 传话；不要把重活都放进自己的子 agent 里。Studio 不替你建分支、不合并，人说开才开、说合才合。",
+    "你是主控：负责协调这个专题（不在专题里时是这个项目）的任务。把大的工作拆成平级的任务、在画布上排好关系（canvas_*），给任务写说明（task_describe），把计划和决定写进专题文档（topic_doc_write）。具体的活交给各个任务的会话去做，让人可以直接和每个任务对话，要它们马上知道的用 task_message 传话；不要把重活都放进自己的子 agent 里。Studio 不替你建分支、不合并，人说开才开、说合才合。",
   worker:
     "你是执行：专注做好自己的任务。平时不用主动记进度：人让你记时用 task_note_add，一段工作要交给别的会话或人接手时用 handoff_submit。需要主控或别的任务知道的事用 mailbox_send；需要人拍板用 decision_request；本任务里要并行做一部分、或换个干净的上下文，可以用 session_start 再开一个会话。不要去改别的任务的内容。",
   topic: "你是专题会话：从专题的角度看全局、整理画布、回答人的问题，和主控一样可以写专题文档、给任务写说明、标画布颜色。",

@@ -38,12 +38,14 @@ export function useRemote(link: HostLink | null): RemoteState | null {
 export const remoteWaiting = (remote: RemoteState | null): number => (remote ? remote.incoming.length + (remote.taskRequests?.length ?? 0) + (remote.asks?.filter((r) => r.state === "refused").length ?? 0) : 0);
 
 /**
- * The top bar's 「远程」 (2026-10-29): hidden when this Host has no remote at all (the Reviewer's, tests), plain 「远程」
- * when nothing is paired or nobody is logged in (the page then says to log in in the AMO platform), 「远程 · N 在线」
- * with paired devices (a device paired both ways counts once), and a dot while something waits (remoteWaiting).
+ * The top bar's 「远程」 (2026-10-29): hidden when this Host has no remote at all (the Reviewer's, tests), 「远程 · 关」
+ * while it is off (2026-10-30: off until turned on; nobody logged in counts as off — the page says what to do), plain
+ * 「远程」 when nothing is paired, 「远程 · N 在线」 with paired devices (a device paired both ways counts once), and a
+ * dot while something waits (remoteWaiting).
  */
 export function remoteButton(remote: RemoteState | null, now: number = Date.now()): { shown: boolean; label: string; waiting: boolean } {
   if (!remote || remote.connection.state === "off") return { shown: false, label: "远程", waiting: false };
+  if (!remote.account || !remote.enabled) return { shown: true, label: "远程 · 关", waiting: false };
   const devices = new Map<string, boolean>();
   for (const p of remote.peers) {
     const k = `${p.account}\n${p.device}`;
@@ -79,6 +81,7 @@ export function copyStatus(task: Task, remote: RemoteState | null, now: number =
   const peer = remote.peers.find((p) => p.account === r.account && p.device === r.device && p.role === "guest");
   const online = remote.connection.state === "online" && !!peer && peerPresence(peer, now) === "online";
   if (online) return { state: "online", name: r.name, label: `远程 · ${r.name}`, blocked: null };
+  if (!remote.enabled) return { state: "offline", name: r.name, label: "远程已关", blocked: "远程功能关着：在顶栏的「远程」里打开后再发", self: true };
   const self = remote.connection.state !== "online";
   return { state: "offline", name: r.name, label: self ? "没连上服务器" : `${r.name} 离线`, blocked: `${self ? "这台电脑没连上团队服务器" : `${r.name} 离线`}，回来后再发`, self };
 }
