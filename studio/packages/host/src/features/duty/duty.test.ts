@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -116,6 +116,50 @@ describe("值守", () => {
     duty.update(id, { action: { kind: "session", profileId: "p", prompt: "修一下" } });
     duty.runNow(id);
     expect(await until(() => lastRun(duty.runs(), id), (r) => r?.ok !== null && !r?.sessionId, "the skip")).toMatchObject({ ok: true, skipped: true, summary: "额度快用完了（P「5 小时」已用 99%），这次跳过" });
+  });
+
+  it("a session item checks first: nothing found, no model; a finding starts one with it; the same finding not again", async () => {
+    const { duty, store } = setup();
+    const dir = mkdtempSync(join(tmpdir(), "amo-duty-check-"));
+    cleanups.push(() => removeTempDir(dir));
+    const found = join(dir, "found.txt");
+    // The check prints what the file holds (nothing while it is empty) and fails when the file says "fail".
+    const check = `node -e "const t=require('fs').readFileSync(process.argv[1],'utf8'); if(t==='fail') process.exit(2); process.stdout.write(t)" "${found}"`;
+    writeFileSync(found, "");
+    const id = duty.create({ title: "问题页", enabled: false, schedule: { every: 30 }, action: { kind: "session", profileId: "p", prompt: "照模板做", check: { kind: "command", command: check } } }).items[0]!.id;
+    const once = async (what: string) => {
+      duty.runNow(id);
+      return until(
+        () => {
+          duty.tick();
+          return lastRun(duty.runs(), id);
+        },
+        (r) => r?.ok !== null,
+        what,
+      );
+    };
+    expect(await once("an empty check")).toMatchObject({ ok: true, skipped: true, summary: "检查过了，没有要做的" });
+    expect(store.listTasks()).toHaveLength(0);
+
+    writeFileSync(found, "新问题：#1 输入栏没缓存");
+    const run = await once("a finding");
+    expect(run).toMatchObject({ ok: true, summary: "会话这一轮结束了" });
+    expect(store.listItems(run!.sessionId!).find((i) => i.type === "user")).toMatchObject({ text: "照模板做\n\n值守检查发现：\n新问题：#1 输入栏没缓存" });
+    expect(await once("the same finding")).toMatchObject({ ok: true, skipped: true, summary: "检查结果和上次开会话时一样，不再开" });
+
+    writeFileSync(found, "fail");
+    expect(await once("a failing check")).toMatchObject({ ok: false, summary: "检查没跑通：退出码 2" });
+    // Nothing for a while, then the same finding again: it is new again.
+    writeFileSync(found, "");
+    await once("nothing");
+    writeFileSync(found, "新问题：#1 输入栏没缓存");
+    expect((await once("the finding back"))?.sessionId).toBeTruthy();
+
+    duty.registerCheck({ name: "x.pending", label: "X", description: "看 X", run: async () => null });
+    expect(duty.state().checks).toContainEqual({ name: "x.pending", label: "X", description: "看 X" });
+    expect(() => duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "nope" } } })).toThrow("没有这个 Studio 检查");
+    duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "x.pending" } } });
+    expect(await once("a builtin check")).toMatchObject({ skipped: true, summary: "检查过了，没有要做的" });
   });
 
   it("a feature's job ships its item off; it can be turned on and timed, not removed or changed", async () => {

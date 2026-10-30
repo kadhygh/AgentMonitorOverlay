@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { DUTY_MIN_EVERY, type DutyAction, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
+import { DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -9,13 +9,21 @@ import { sessionMoving } from "../tasks/service.js";
 
 // 值守 (duty, 2026-10-31, plans/issues.md): items that run at set times — every so many seconds, or once a day — and do
 // one thing: start a session with a set prompt (in a task, or a new task each time), run a command line, or run one of
-// Studio's own jobs (a feature registers it: 问题页's polling and packaging, stage 3–4). Waiting and counting are code;
+// Studio's own jobs (a feature registers it). Waiting and counting are code;
 // a model runs only when an item's action is a session. An item runs once at a time: while its last run goes on (its
 // session still at work, its command not ended) the next one is skipped. Before a session it looks at the model's
 // subscription: (nearly) used up, it takes the fallback model or skips. It never restarts the Host or updates Studio.
+// A session item can check first (a command, or a feature's check such as 问题页's): the model starts only when the
+// check finds something, with what it found under the prompt; a finding that already started a session is not acted on
+// again (the user, 2026-10-31: "每次都先走脚本，有问题才拉起ai").
 
 const ITEMS_KEY = "duty.items";
 const RUNS_KEY = "duty.runs";
+/** Per item: what its check found the last time that started a session. */
+const FOUND_KEY = "duty.found";
+/** A check gets this long by default. */
+const CHECK_TIMEOUT_SEC = 120;
+const FOUND_KEPT = 8000;
 const RUNS_PER_ITEM = 5;
 const TICK_MS = 1000;
 /** A subscription window used this much counts as used up. */
@@ -43,6 +51,14 @@ export interface DutyJob {
   item?: { id: Id; title: string; schedule: DutySchedule };
 }
 
+/** One of Studio's own checks a session item can run first: what there is to do, or null for nothing. */
+export interface DutyCheckJob {
+  name: string;
+  label: string;
+  description: string;
+  run(ctx: { item: DutyItem; signal: AbortSignal }): Promise<string | null>;
+}
+
 interface Running {
   abort: AbortController;
   run: DutyRun;
@@ -55,6 +71,7 @@ export class DutyFeature extends Feature {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly running = new Map<Id, Running>();
   private readonly jobs = new Map<string, DutyJob>();
+  private readonly checks = new Map<string, DutyCheckJob>();
   /** Tests: the clock. */
   now: () => number = Date.now;
 
@@ -105,6 +122,7 @@ export class DutyFeature extends Feature {
       running: [...this.running.keys()],
       next,
       builtins: [...this.jobs.values()].map((j) => ({ name: j.name, label: j.label, description: j.description })),
+      checks: [...this.checks.values()].map((j) => ({ name: j.name, label: j.label, description: j.description })),
     };
   }
 
@@ -114,6 +132,26 @@ export class DutyFeature extends Feature {
   }
 
   // ---- the person's changes
+
+  /** A feature's own check, for session items to run first. */
+  registerCheck(check: DutyCheckJob): void {
+    this.checks.set(check.name, check);
+  }
+
+  private found(): Record<Id, string> {
+    try {
+      return JSON.parse(this.store.getKv(FOUND_KEY)?.value ?? "{}") as Record<Id, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  private setFound(itemId: Id, text: string | null): void {
+    const all = this.found();
+    if (text === null) delete all[itemId];
+    else all[itemId] = text;
+    this.store.setKv(FOUND_KEY, JSON.stringify(all));
+  }
 
   /** A feature's own job; its item (off) is added the first time. */
   register(job: DutyJob): void {
@@ -185,9 +223,10 @@ export class DutyFeature extends Feature {
       if (workspaceId) this.requireLiveWorkspace(workspaceId);
       const fallbackProfileId = optId(a.fallbackProfileId);
       if (fallbackProfileId) this.requireProfile(fallbackProfileId);
+      const check = a.check ? this.check(a.check) : null;
       const o = (a.options && typeof a.options === "object" ? a.options : {}) as Record<string, unknown>;
       const options = Object.fromEntries((["model", "effort", "permission"] as const).flatMap((k) => (typeof o[k] === "string" && o[k] ? [[k, o[k] as string]] : [])));
-      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", ...(Object.keys(options).length ? { options } : {}), fallbackProfileId };
+      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", ...(Object.keys(options).length ? { options } : {}), fallbackProfileId, ...(check ? { check } : {}) };
     }
     if (a.kind === "command") {
       const command = typeof a.command === "string" ? a.command.trim() : "";
@@ -202,6 +241,23 @@ export class DutyFeature extends Feature {
       return { kind: "builtin", name: a.name };
     }
     throw new HostError("bad_request", "动作要是 session、command 或 builtin");
+  }
+
+  private check(value: unknown): DutyCheck {
+    const c = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+    if (c.kind === "command") {
+      const command = typeof c.command === "string" ? c.command.trim() : "";
+      if (!command) throw new HostError("bad_request", "检查要写命令");
+      const workspaceId = typeof c.workspaceId === "string" && c.workspaceId ? c.workspaceId : null;
+      if (workspaceId) this.requireLiveWorkspace(workspaceId);
+      const timeoutSec = typeof c.timeoutSec === "number" && c.timeoutSec > 0 ? Math.min(Math.floor(c.timeoutSec), 3600) : CHECK_TIMEOUT_SEC;
+      return { kind: "command", command, workspaceId, timeoutSec };
+    }
+    if (c.kind === "builtin") {
+      if (typeof c.name !== "string" || !this.checks.has(c.name)) throw new HostError("bad_request", `没有这个 Studio 检查：${String(c.name)}`);
+      return { kind: "builtin", name: c.name };
+    }
+    throw new HostError("bad_request", "检查要是 command 或 builtin");
   }
 
   // ---- the clock
@@ -269,7 +325,7 @@ export class DutyFeature extends Feature {
     try {
       const a = item.action;
       if (a.kind === "session") {
-        const started = await this.startSession(item, a);
+        const started = await this.startSession(item, a, r.abort.signal);
         if (started.sessionId && !started.skipped) {
           r.sessionId = started.sessionId;
           r.run = { ...run, summary: started.summary, sessionId: started.sessionId, ...(started.taskId ? { taskId: started.taskId } : {}) };
@@ -298,7 +354,45 @@ export class DutyFeature extends Feature {
     return full ? `${usage!.label}「${full.label}」已用 ${full.usedPercent}%` : null;
   }
 
-  private async startSession(item: DutyItem, a: Extract<DutyAction, { kind: "session" }>): Promise<DutyJobResult> {
+  /** What the item's check found: text to act on, null for nothing, or why the check failed. */
+  private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null } | { failed: string }> {
+    if (c.kind === "builtin") {
+      const job = this.checks.get(c.name);
+      if (!job) return { failed: `没有这个 Studio 检查：${c.name}` };
+      try {
+        const found = (await job.run({ item, signal }))?.trim();
+        return { found: found ? found.slice(0, FOUND_KEPT) : null };
+      } catch (err) {
+        return { failed: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    const out = await this.exec(c.command, c.workspaceId, c.timeoutSec ?? CHECK_TIMEOUT_SEC, signal);
+    if (out.error) return { failed: out.error };
+    if (out.code !== 0) return { failed: `退出码 ${out.code}${out.last ? `：${out.last}` : ""}` };
+    const found = out.output.trim();
+    return { found: found ? found.slice(-FOUND_KEPT) : null };
+  }
+
+  private async startSession(item: DutyItem, a: Extract<DutyAction, { kind: "session" }>, signal: AbortSignal): Promise<DutyJobResult> {
+    let prompt = a.prompt;
+    let found: string | null = null;
+    if (a.check) {
+      const checked = await this.runCheck(item, a.check, signal);
+      if ("failed" in checked) return { ok: false, summary: `检查没跑通：${checked.failed}` };
+      if (checked.found === null) {
+        // Nothing now: the next finding starts a session even if it reads like an older one.
+        this.setFound(item.id, null);
+        return { ok: true, skipped: true, summary: "检查过了，没有要做的" };
+      }
+      if (this.found()[item.id] === checked.found) return { ok: true, skipped: true, summary: "检查结果和上次开会话时一样，不再开" };
+      found = checked.found;
+      prompt = `${a.prompt}\n\n值守检查发现：\n${found}`;
+    }
+    // Kept once a session has it: a skip for the subscription leaves the finding to the next run.
+    const started = <T>(result: T): T => {
+      if (found !== null) this.setFound(item.id, found);
+      return result;
+    };
     let profileId = a.profileId;
     const full = await this.usedUp(profileId);
     let note = "";
@@ -309,26 +403,33 @@ export class DutyFeature extends Feature {
       note = `（${full}，改用 ${this.requireProfile(fallback).label}）`;
     }
     // The chosen model, effort and permissions are the first profile's; the fallback runs with its own defaults.
-    const first = { profileId, text: a.prompt, ...(profileId === a.profileId && a.options && Object.keys(a.options).length ? { options: a.options } : {}) };
+    const first = { profileId, text: prompt, ...(profileId === a.profileId && a.options && Object.keys(a.options).length ? { options: a.options } : {}) };
     if (a.taskId) {
       const task = this.store.getTask(a.taskId);
       if (!task || task.archivedAt) return { ok: false, summary: "要开会话的任务已经归档或删掉了" };
       const session = await this.f.tasks.addSession(task.id, first);
-      return { ok: true, summary: `在「${task.title}」里开了会话${note}`, sessionId: session.id, taskId: task.id };
+      return started({ ok: true, summary: `在「${task.title}」里开了会话${note}`, sessionId: session.id, taskId: task.id });
     }
     const stamp = new Date(this.now());
     const pad = (n: number) => String(n).padStart(2, "0");
     const titleText = `${a.taskTitle || item.title} · ${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}:${pad(stamp.getMinutes())}`;
     const made = await this.f.tasks.createTask({ title: titleText, ...(a.workspaceId ? { workspaceId: a.workspaceId } : {}), firstSession: first });
-    return { ok: true, summary: `新建任务「${titleText}」${note}`, ...(made.session ? { sessionId: made.session.id } : {}), taskId: made.task.id };
+    return started({ ok: true, summary: `新建任务「${titleText}」${note}`, ...(made.session ? { sessionId: made.session.id } : {}), taskId: made.task.id });
   }
 
-  private runCommand(a: Extract<DutyAction, { kind: "command" }>, signal: AbortSignal): Promise<DutyJobResult> {
-    const ws = a.workspaceId ? this.store.getWorkspace(a.workspaceId) : this.commonWorkspace();
-    if (!ws) return Promise.resolve({ ok: false, summary: "命令所在的项目不在了" });
+  private async runCommand(a: Extract<DutyAction, { kind: "command" }>, signal: AbortSignal): Promise<DutyJobResult> {
+    const out = await this.exec(a.command, a.workspaceId, a.timeoutSec ?? DEFAULT_TIMEOUT_SEC, signal);
+    if (out.error) return { ok: false, summary: out.error };
+    return { ok: out.code === 0, summary: `${out.code === 0 ? "完成" : `退出码 ${out.code}`}${out.last ? `：${out.last}` : ""}` };
+  }
+
+  /** A command line in a project's folder (the common folder without one), below normal priority, without Host's variables. */
+  private exec(command: string, workspaceId: Id | null | undefined, timeoutSec: number, signal: AbortSignal): Promise<{ code: number | null; output: string; last: string; error?: string }> {
+    const ws = workspaceId ? this.store.getWorkspace(workspaceId) : this.commonWorkspace();
+    if (!ws) return Promise.resolve({ code: null, output: "", last: "", error: "命令所在的项目不在了" });
     return new Promise((done) => {
       let output = "";
-      const child = spawn(a.command, { cwd: ws.path, shell: true, windowsHide: true, env: withoutHostEnv(process.env) });
+      const child = spawn(command, { cwd: ws.path, shell: true, windowsHide: true, env: withoutHostEnv(process.env) });
       lowerAgentPriority(child.pid);
       const keep = (b: Buffer) => {
         output = (output + b.toString("utf8")).slice(-OUTPUT_KEPT);
@@ -342,18 +443,17 @@ export class DutyFeature extends Feature {
         if (process.platform === "win32") execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => undefined);
         else child.kill("SIGTERM");
       };
-      const timer = setTimeout(() => kill(`超过 ${Math.round((a.timeoutSec ?? DEFAULT_TIMEOUT_SEC) / 60)} 分钟没结束，停掉了`), (a.timeoutSec ?? DEFAULT_TIMEOUT_SEC) * 1000);
+      const timer = setTimeout(() => kill(timeoutSec < 120 ? `超过 ${timeoutSec} 秒没结束，停掉了` : `超过 ${Math.round(timeoutSec / 60)} 分钟没结束，停掉了`), timeoutSec * 1000);
       timer.unref?.();
       signal.addEventListener("abort", () => kill("Studio 退出或值守项被删，停掉了"), { once: true });
       child.on("error", (err) => {
         clearTimeout(timer);
-        done({ ok: false, summary: `运行不了：${err.message}` });
+        done({ code: null, output, last: "", error: `运行不了：${err.message}` });
       });
       child.on("close", (code) => {
         clearTimeout(timer);
         const last = output.trim().split(/\r?\n/).at(-1)?.trim().slice(0, 200) ?? "";
-        if (why) return done({ ok: false, summary: why });
-        done({ ok: code === 0, summary: `${code === 0 ? "完成" : `退出码 ${code}`}${last ? `：${last}` : ""}` });
+        done({ code, output, last, ...(why ? { error: why } : {}) });
       });
     });
   }

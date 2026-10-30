@@ -112,6 +112,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.tasks.ensureStructure();
     this.sessions.watchReports();
     this.tasks.watchColumns();
+    this.duty.registerCheck(this.issues.dutyCheck());
   }
 
   /** The common space: where tasks without a project, the scheduler and topic sessions without a project run. */

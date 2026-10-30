@@ -39,6 +39,7 @@ interface Ctx {
   profiles: ModelProfile[];
   snapshot: StateSnapshot | null;
   builtins: DutyState["builtins"];
+  checks: DutyState["checks"];
 }
 
 function actionText(a: DutyAction, ctx: Ctx): string {
@@ -51,7 +52,9 @@ function actionText(a: DutyAction, ctx: Ctx): string {
   const task = ctx.snapshot?.tasks.find((t) => t.id === a.taskId);
   const ws = ctx.snapshot?.workspaces.find((w) => w.id === a.workspaceId);
   const where = task ? `在任务「${task.title}」里` : `每次新建任务${ws ? `（项目「${ws.name}」）` : ""}`;
-  return `开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}`;
+  const c = a.check;
+  const check = !c ? "" : c.kind === "builtin" ? `先检查「${ctx.checks.find((x) => x.name === c.name)?.label ?? c.name}」，有事才开` : `先跑检查命令 ${c.command}，有输出才开`;
+  return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}`;
 }
 
 export function DutyPage({ link }: { link: HostLink }) {
@@ -70,7 +73,7 @@ export function DutyPage({ link }: { link: HostLink }) {
   }, [link]);
 
   const profiles = (snapshot?.profiles ?? []).filter((p) => !p.hidden && p.runtime !== "remote");
-  const ctx: Ctx = { profiles, snapshot, builtins: state?.builtins ?? [] };
+  const ctx: Ctx = { profiles, snapshot, builtins: state?.builtins ?? [], checks: state?.checks ?? [] };
   const act = (run: () => Promise<DutyState>) => {
     setMessage(null);
     run().then(setState, fail);
@@ -161,6 +164,11 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
   const [command, setCommand] = useState(a?.kind === "command" ? a.command : "");
   const [timeoutMin, setTimeoutMin] = useState(String(a?.kind === "command" ? Math.round((a.timeoutSec ?? 1800) / 60) : 30));
   const [name, setName] = useState(a?.kind === "builtin" ? a.name : (ctx.builtins[0]?.name ?? ""));
+  const check = a?.kind === "session" ? a.check : null;
+  const [checkKind, setCheckKind] = useState<"" | "command" | "builtin">(check?.kind ?? "");
+  const [checkCommand, setCheckCommand] = useState(check?.kind === "command" ? check.command : "");
+  const [checkWorkspace, setCheckWorkspace] = useState(check?.kind === "command" ? (check.workspaceId ?? "") : "");
+  const [checkName, setCheckName] = useState(check?.kind === "builtin" ? check.name : (ctx.checks[0]?.name ?? ""));
   const [error, setError] = useState<string | null>(null);
   const tasks = (ctx.snapshot?.tasks ?? []).filter((t) => !t.archivedAt && !t.remote);
   const projects = projectWorkspaces(ctx.snapshot?.workspaces ?? []);
@@ -170,7 +178,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
     if (builtin) return { title, schedule };
     const action: DutyAction =
       kind === "session"
-        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null }
+        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : null }
         : kind === "command"
           ? { kind, command, workspaceId: workspaceId || null, timeoutSec: Math.round(Number(timeoutMin) * 60) }
           : { kind, name };
@@ -328,6 +336,48 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
                 开会话时说的话
                 <textarea className="field" rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="开会话时说的话" />
               </label>
+              <div className="settings-row">
+                <span className="settings-label">先检查</span>
+                <div role="radiogroup" aria-label="先检查" className="chips">
+                  <button type="button" role="radio" className="chip" aria-checked={checkKind === ""} aria-pressed={checkKind === ""} onClick={() => setCheckKind("")}>
+                    不检查，到点就开
+                  </button>
+                  <button type="button" role="radio" className="chip" aria-checked={checkKind === "command"} aria-pressed={checkKind === "command"} onClick={() => setCheckKind("command")}>
+                    跑检查命令
+                  </button>
+                  {ctx.checks.length > 0 && (
+                    <button type="button" role="radio" className="chip" aria-checked={checkKind === "builtin"} aria-pressed={checkKind === "builtin"} onClick={() => setCheckKind("builtin")}>
+                      Studio 自带检查
+                    </button>
+                  )}
+                </div>
+              </div>
+              {checkKind === "command" && (
+                <div className="settings-row">
+                  <input className="field mono duty-grow" value={checkCommand} onChange={(e) => setCheckCommand(e.target.value)} placeholder="例如 node scripts/check.mjs" aria-label="检查命令" />
+                  <select className="field" value={checkWorkspace} onChange={(e) => setCheckWorkspace(e.target.value)} aria-label="检查命令所在的项目">
+                    <option value="">公共目录</option>
+                    {projects.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {checkKind === "builtin" && (
+                <div className="settings-row">
+                  <select className="field" value={checkName} onChange={(e) => setCheckName(e.target.value)} aria-label="Studio 自带检查">
+                    {ctx.checks.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="settings-hint">{ctx.checks.find((c) => c.name === checkName)?.description}</span>
+                </div>
+              )}
+              {checkKind && <span className="settings-hint">到点先检查，有事才开会话，检查发现的内容接在上面那段话后面。{checkKind === "command" ? "检查命令有输出、退出码 0 算有事；没输出算没事；别的退出码算检查失败。" : ""}和上次开会话时一模一样的发现不会再开一次。</span>}
             </>
           )}
           {kind === "command" && (

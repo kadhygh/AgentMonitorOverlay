@@ -11,6 +11,14 @@ export type DutySchedule = { every: number } | { daily: string };
 /** At least this many seconds between two runs of an item. */
 export const DUTY_MIN_EVERY = 10;
 
+/**
+ * What a session item checks before it starts a model (2026-10-31, the user: "每次都先走脚本，有问题才拉起ai"): a
+ * command line, or one of Studio's own checks (DutyState.checks). A command says there is something to do by printing
+ * it and exiting 0; nothing printed = nothing to do; another exit code = the check failed. What the check found is
+ * put under the prompt. The same finding that already started a session does not start another one.
+ */
+export type DutyCheck = { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number } | { kind: "builtin"; name: string };
+
 export type DutyAction =
   /**
    * A session with `prompt`: in task `taskId`, or (without one) in a new task titled `taskTitle` in project
@@ -18,7 +26,7 @@ export type DutyAction =
    * run usually wants a permission that does not stop to ask). `fallbackProfileId`: used, with its own defaults, when
    * the first one's subscription is (nearly) used up.
    */
-  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; options?: SessionOptions; fallbackProfileId?: Id | null }
+  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; options?: SessionOptions; fallbackProfileId?: Id | null; check?: DutyCheck | null }
   /** A command line, run in project `workspaceId`'s folder (the common folder without one), below normal priority. */
   | { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number }
   /** One of Studio's own jobs, by name (DutyState.builtins lists them). */
@@ -62,4 +70,6 @@ export interface DutyState {
   next: Record<Id, Timestamp>;
   /** The jobs a builtin action can name. */
   builtins: Array<{ name: string; label: string; description: string }>;
+  /** The checks a session item can run first. */
+  checks: Array<{ name: string; label: string; description: string }>;
 }

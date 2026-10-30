@@ -71,7 +71,7 @@ async function setup(signedIn = true) {
     return { text, error: !!out.isError, value: out.isError ? null : (JSON.parse(text) as Record<string, any>) };
   };
   if (signedIn) await until(() => service.remote.teamLogin(), (l) => !!l, "the platform's login");
-  return { tool, page: new RelayClient(relay.url, me.key), root };
+  return { tool, page: new RelayClient(relay.url, me.key), root, service };
 }
 
 describe("问题页 tools", () => {
@@ -119,8 +119,40 @@ describe("问题页 tools", () => {
     expect(await page.issue(1)).toMatchObject({ status: "released", fixedIn: "Studio 0.9.17" });
   });
 
+  it("值守's check: new issues, the person's answers, a test build when due — nothing otherwise", async () => {
+    const { service, page } = await setup();
+    const issues = service.issues;
+    expect(await issues.pending()).toBeNull();
+    await page.createIssue({ title: "输入栏没缓存", body: "x" });
+    await page.createIssue({ title: "列表断开", body: "y" });
+    expect(await issues.pending()).toBe("新问题：#1 输入栏没缓存；#2 列表断开");
+
+    // The AI takes #1 and asks; fixes #2. Nothing to do until the person answers.
+    await issues.reply(1, { body: "哪个输入栏？", status: "asking" });
+    await issues.reply(2, { body: "修好了", status: "fixed" });
+    expect(await issues.pending()).toBeNull();
+    await page.addIssueEntry(1, { body: "新建任务页那个" });
+    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（等你回答，第 3 条）");
+    await issues.reply(1, { body: "明白了" });
+    expect(await issues.pending()).toBeNull();
+
+    // 发布打包, or the fixed one waiting 30 minutes, or three fixed.
+    await page.requestIssueRelease();
+    expect(await issues.pending()).toBe("该打测试包了（你点了「发布打包」）：#2");
+    await page.requestIssueRelease(false);
+    issues.now = () => Date.now() + 31 * 60_000;
+    expect(await issues.pending()).toBe("该打测试包了（最早修好的已经等了 30 分钟）：#2");
+    issues.now = Date.now;
+    await issues.reply(1, { body: "修好了", status: "fixed" });
+    await issues.reply((await page.createIssue({ body: "第三个" })).number, { body: "修好了", status: "fixed" });
+    expect(await issues.pending()).toBe("该打测试包了（修好待发布的有 3 个）：#1 #2 #3");
+    // Registered as 值守's check.
+    expect(service.duty.state().checks.map((c) => c.name)).toContain("issues.pending");
+  });
+
   it("says to sign in on the platform when there is no login", async () => {
-    const { tool } = await setup(false);
+    const { tool, service } = await setup(false);
     expect(await tool("issue_list")).toMatchObject({ error: true, text: "要先在 AMO 平台里登录团队服务器，才能读写问题页。" });
+    await expect(service.issues.pending()).rejects.toThrow("要先在 AMO 平台里登录");
   });
 });

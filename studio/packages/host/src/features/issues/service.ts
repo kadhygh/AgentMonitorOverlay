@@ -4,12 +4,14 @@ import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import { ISSUE_IMAGES_PER_ENTRY, ISSUE_STATUS_LABEL, ISSUE_STATUSES, RelayClient, RelayClientError, type Issue, type IssueList, type IssuePatch, type IssueStatus } from "@amo-studio/relay/light";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
+import type { DutyCheckJob } from "../duty/service.js";
 
 // 问题页 ↔ 会话 (2026-10-31, plans/issues.md stage 3): a session reads the issues the person reported on the team
 // server's /issues page and answers them — as the person (the platform's login, like 中转), each entry marked as the
 // AI's. No built-in job: the person starts a 值守 item whose prompt names the prompt template that says how to work
-// the issues (the user, 2026-10-31), and the session uses these tools. Screenshots are fetched into the data folder so
-// the agent can open them.
+// the issues (the user, 2026-10-31), and the session uses these tools; the item checks the page first (dutyCheck, in
+// code), so a model starts only when there is something to do. Screenshots are fetched into the data folder so the
+// agent can open them.
 
 export const ISSUES_NOT_SIGNED_IN = "要先在 AMO 平台里登录团队服务器，才能读写问题页。";
 const IMAGE_MAX = 10 * 1024 * 1024;
@@ -32,7 +34,41 @@ export interface IssueLine {
   updatedAt: string;
 }
 
+/** 打包 when this many are fixed and waiting, or the oldest has waited this long, or the person clicked 发布打包. */
+const PACK_AT = 3;
+const PACK_AFTER_MS = 30 * 60_000;
+
 export class IssuesFeature extends Feature {
+  /** Tests: the clock. */
+  now: () => number = Date.now;
+
+  /**
+   * 值守's check 「问题页」 (2026-10-31): what there is to do on the page, in code, so a model starts only then — new
+   * issues, the person's answers, and a test build when it is due. The lines carry no times, so the same state reads
+   * the same and 值守 does not start a second session for it.
+   */
+  dutyCheck(): DutyCheckJob {
+    return {
+      name: "issues.pending",
+      label: "问题页有事要做",
+      description: `有新问题、你在问题下回复了，或者该打测试包了（修好待发的有 ${PACK_AT} 个、最早的等了 30 分钟、你点了「发布打包」）`,
+      run: () => this.pending(),
+    };
+  }
+
+  async pending(): Promise<string | null> {
+    const { issues, release } = await this.call((c) => c.issues());
+    const lines: string[] = [];
+    const fresh = issues.filter((i) => i.status === "new").sort((a, b) => a.number - b.number);
+    if (fresh.length) lines.push(`新问题：${fresh.map((i) => `#${i.number} ${i.title}`).join("；")}`);
+    const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck")).sort((a, b) => a.number - b.number);
+    if (answered.length) lines.push(`你回复了：${answered.map((i) => `#${i.number} ${i.title}（${ISSUE_STATUS_LABEL[i.status]}，第 ${i.entryCount} 条）`).join("；")}`);
+    const fixed = issues.filter((i) => i.status === "fixed").sort((a, b) => a.number - b.number);
+    const why = !fixed.length ? null : release.requestedAt ? "你点了「发布打包」" : fixed.length >= PACK_AT ? `修好待发布的有 ${fixed.length} 个` : fixed.some((i) => this.now() - i.updatedAt >= PACK_AFTER_MS) ? "最早修好的已经等了 30 分钟" : null;
+    if (why) lines.push(`该打测试包了（${why}）：${fixed.map((i) => `#${i.number}`).join(" ")}`);
+    return lines.length ? lines.join("\n") : null;
+  }
+
   private client(): RelayClient {
     const login = this.f.remote.teamLogin();
     if (!login) throw new HostError("bad_request", ISSUES_NOT_SIGNED_IN);
