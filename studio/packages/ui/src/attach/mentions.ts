@@ -2,10 +2,11 @@ import { lineSuffix, RUNTIME_LABELS, type FileMark, type ProjectFile, type Sessi
 import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
-// changed files and the file selector — and last「AMO 扩展功能」(10-26): sub-session setups and 快速提交. Pure logic;
+// changed files and the file selector — and last「AMO 扩展功能」(10-26): sub-session setups, 快速提交 and (10-31)
+// 提示词模板. Pure logic;
 // the hook and the list live beside it.
 
-export type MentionKind = "task" | "session" | "project" | "mark" | "file" | "find" | "subsession" | "commit";
+export type MentionKind = "task" | "session" | "project" | "mark" | "file" | "find" | "subsession" | "commit" | "template";
 
 export interface MentionOption {
   kind: MentionKind;
@@ -105,6 +106,8 @@ export function mentionGroups(input: {
   subsession?: boolean;
   /** 快速提交 is offered (a live session). */
   commit?: boolean;
+  /** 提示词模板… is offered (2026-10-31: a composer with room for several lines). */
+  template?: boolean;
   /** Projects to offer (2026-10-29: the new-task page, and the composer once something is typed). */
   projects?: readonly Workspace[];
   /**
@@ -157,6 +160,7 @@ export function mentionGroups(input: {
   const ext: MentionOption[] = [
     ...(input.subsession ? [{ kind: "subsession" as const, id: "subsession", name: "开子会话…", hint: "选模型和强度，告诉它怎么开" }] : []),
     ...(input.commit ? [{ kind: "commit" as const, id: "commit", name: QUICK_COMMIT, hint: "分条提交、拉取合并，可选推送　Ctrl+Shift+P" }] : []),
+    ...(input.template ? [{ kind: "template" as const, id: "template", name: "提示词模板…", hint: "选一条存好的提示词，粘进输入框" }] : []),
   ].filter((o) => !q || contains(o.name, q));
   return [
     ...groups.filter((g) => g.options.length),

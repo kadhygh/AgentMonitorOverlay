@@ -61,6 +61,8 @@ export function QuickStart({
     picks: { value: new Map(Object.entries(draft.refs ?? {})), set: (next) => update({ refs: Object.fromEntries(next) }) },
     onFile: () => {},
     onFind: () => {},
+    // One line: no room for a template's paragraphs (the new-task page has them).
+    templates: false,
   });
   useEffect(() => input.current?.focus(), []);
 

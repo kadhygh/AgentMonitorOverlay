@@ -31,7 +31,6 @@
     "smoke:stage1": "npm run build && node scripts/smoke-stage1.mjs",
     "smoke:stage4": "npm run build && node scripts/smoke-stage4.mjs",
     "smoke:stage5": "npm run build && node scripts/smoke-stage5.mjs",
-    "smoke:stage6": "npm run build && node scripts/smoke-stage6.mjs",
     "smoke:stage7": "npm run build && node scripts/smoke-stage7.mjs",
     "start": "npm run build && electron packages/app",
     "notes": "npm run build && electron packages/notes",

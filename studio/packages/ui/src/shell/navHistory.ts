@@ -23,7 +23,6 @@ const scopeKey = (s: Scope) => (s.kind === "all" ? "all" : `${s.kind}:${s.id}`);
 export function samePlace(a: Place, b: Place): boolean {
   if (a.view.kind !== b.view.kind || scopeKey(a.scope) !== scopeKey(b.scope)) return false;
   if (a.view.kind === "task" && b.view.kind === "task") return a.view.taskId === b.view.taskId && (a.view.sessionId ?? null) === (b.view.sessionId ?? null);
-  if (a.view.kind === "packs" && b.view.kind === "packs") return a.view.workspaceId === b.view.workspaceId;
   return true;
 }
 

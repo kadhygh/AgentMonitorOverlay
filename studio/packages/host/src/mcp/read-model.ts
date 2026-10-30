@@ -182,34 +182,6 @@ export class ReadModel {
     };
   }
 
-  /**
-   * Extension packs of one workspace (id or name) or of all of them: what each offers (documents, task templates,
-   * session presets), not the contents. Packs with errors are listed with their errors.
-   */
-  packList(workspace?: string) {
-    const all = this.store.listWorkspaces();
-    const list = workspace ? all.filter((w) => w.id === this.workspaceId(workspace)) : all;
-    return {
-      packs: list.flatMap((w) =>
-        this.service.extensions.packs(w.id).map((p) => ({
-          workspace: { id: w.id, name: w.name },
-          pack: p.dirName,
-          title: p.manifest?.title ?? null,
-          ...(p.manifest?.description ? { description: p.manifest.description } : {}),
-          ...(p.errors.length ? { errors: p.errors } : {}),
-          docs: p.manifest?.docs.map((d) => ({ id: d.id, title: d.title, ...(d.summary ? { summary: d.summary } : {}) })) ?? [],
-          templates: p.manifest?.templates.map((t) => ({ id: t.id, title: t.title, steps: t.steps.length })) ?? [],
-          presets: p.manifest?.presets.map((x) => ({ id: x.id, title: x.title })) ?? [],
-        })),
-      ),
-    };
-  }
-
-  /** One pack document's text. */
-  packDoc(workspace: string, pack: string, doc: string) {
-    return this.service.extensions.packDoc(this.workspaceId(workspace), pack, doc);
-  }
-
   /** The task's sessions as a tree, each with an excerpt of its latest reply. */
   sessionTree(taskId: Id) {
     this.requireTask(taskId);

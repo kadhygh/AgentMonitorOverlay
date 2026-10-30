@@ -40,6 +40,6 @@
 ## 四、删之前要知道的
 
 - **工程里旧 AMO 留下的文件**：旧 AMO 往你的工程里部署过 Hook（`.codex/hooks.json`、`.grok/hooks/amo.json`、`.claude/settings.local.json` 里的 Hook、`.amo/`）。删掉旧 AMO 后这些 Hook 找不到后台，CLI 里可能会报 Hook 失败。需要逐个工程清掉；loop 不会去你的真实工程里改，删除前我可以先写一个只读的检查脚本，列出哪些工程还有这些文件。
-- **`.amo/` 被 Git 排除**：旧 AMO 的"Git exclude"会把 `.amo/` 写进工程的 `.git/info/exclude`。Studio 的扩展包放在 `.amo/packs/`，如果某个工程做过这一步，扩展包默认不会进提交；要提交就删掉那一行，或者 `git add -f .amo/packs`。（已写进 `design/pack-format.md`）
+- **`.amo/` 被 Git 排除**：旧 AMO 的"Git exclude"会把 `.amo/` 写进工程的 `.git/info/exclude`。Studio 的扩展包放在 `.amo/packs/`，如果某个工程做过这一步，扩展包默认不会进提交；要提交就删掉那一行，或者 `git add -f .amo/packs`。（扩展包 2026-10-31 已删掉，格式说明在 `docs/archive/pack-format.md`）
 - **旧 AMO 的密钥泄露问题**：阶段 4 发现旧 AMO 启动的 Codex/Claude 可能让 agent 的命令读到模型密钥（Studio 已修）。删除旧 AMO 后这个问题自然消失；在那之前如果还在用旧 AMO，要知道有这个风险。
 - 执行时会先在分支上删除、跑一遍 Studio 的完整验证和 e2e、确认 `studio/` 不依赖任何被删的文件，再请你确认合并。

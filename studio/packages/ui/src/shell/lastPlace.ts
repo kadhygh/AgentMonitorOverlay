@@ -53,7 +53,7 @@ export function readPlace(): { view: View; scope: Scope } {
   return { view: { kind: "board" }, scope };
 }
 
-/** Keeps the page and scope in front (other pages, like a project's packs, come back as the board). */
+/** Keeps the page and scope in front (other pages come back as the board). */
 export function savePlace(view: View, scope: Scope): void {
   const saved: SavedView =
     view.kind === "task"

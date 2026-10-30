@@ -25,7 +25,6 @@ import "./chat/options.css";
 import "./review/review.css";
 import "./canvas/canvas.css";
 import "./collab/collab.css";
-import "./packs/packs.css";
 import "./planning/planning.css";
 import "./settings/settings.css";
 import "./settings/stats.css";

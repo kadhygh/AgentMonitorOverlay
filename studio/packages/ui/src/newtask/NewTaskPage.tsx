@@ -7,8 +7,6 @@ import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
 import { pickFolder, shortModel } from "../lib/profiles.js";
 import { StartingCover } from "../lib/StartingCover.js";
-import { usePacks } from "../packs/usePacks.js";
-import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { EffortBars, FastToggle, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
@@ -18,6 +16,7 @@ import { ChoiceRow } from "./ChoiceRow.js";
 import { useDraftChoices } from "./useDraftChoices.js";
 import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
+import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { IconPaperclip } from "../attach/icons.js";
@@ -69,7 +68,6 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
   // 正在启动: the page is covered while the first session starts (filing in 待办 is quick).
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [templateKey, setTemplateKey] = useState("");
   // "显示在画布上" for a task in a topic: off unless the page was opened from that topic's canvas (then always on).
   const [showOnCanvas, setShowOnCanvas] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -98,12 +96,6 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
   const onCanvas = !!topic && (fromCanvas || showOnCanvas);
   // 找文件 from the @ list: the picked project's files.
   const [finding, setFinding] = useState<{ query: string } | null>(null);
-
-  // Task templates from the extension packs of the chosen project.
-  const packsOn = useFeature("packs");
-  const { packs } = usePacks(link, packsOn && draft.projectId ? [draft.projectId] : []);
-  const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, title: `${p.manifest!.title} · ${t.title}`, template: t })) : []));
-  const chosenTemplate = templates.find((t) => t.key === templateKey) ?? null;
 
   // @ refers to a project, a task or one of its sessions, or (once a project is picked) a file, as in a session's
   // composer (2026-10-29); it never sets the task's own project or topic.
@@ -136,11 +128,10 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     if (!file) setStarting(`正在启动 ${shortModel(profiles.find((p) => p.id === draft.pick.profileId))}…`);
     setError("");
     try {
-      const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
       const text = withFileRefs(draftText(draft), attach.files.map(attach.refOf));
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
       const { refs: _refs, ...rest } = draft;
-      const created = await submitDraft(link, { ...rest, text }, file, template, onCanvas, images);
+      const created = await submitDraft(link, { ...rest, text }, file, onCanvas, images);
       attach.reset();
       reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
@@ -258,26 +249,6 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
               设为主控
               <span className="drawer-note">协调{topic ? "这个专题" : "这个项目"}的任务</span>
             </label>
-            {templates.length > 0 && (
-              <div className="pick-row" role="group" aria-label="流程模板">
-                <span className="pick-lab">模板</span>
-                <button type="button" className="chip none" aria-pressed={!chosenTemplate} onClick={() => setTemplateKey("")}>
-                  不用模板
-                </button>
-                {templates.map((t) => (
-                  <button key={t.key} type="button" className="chip" aria-pressed={chosenTemplate?.key === t.key} title={t.template.description} onClick={() => setTemplateKey(t.key)}>
-                    {t.title}
-                  </button>
-                ))}
-              </div>
-            )}
-            {chosenTemplate && (
-              <ol className="draft-steps" data-testid="template-steps">
-                {chosenTemplate.template.steps.map((s, i) => (
-                  <li key={i}>{s}</li>
-                ))}
-              </ol>
-            )}
           </div>
 
           <div
@@ -414,6 +385,20 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => input.current?.focus());
+          }}
+        />
+      )}
+      {mentions.askingTemplate && (
+        <PromptTemplateDialog
+          link={link}
+          workspaceId={draft.projectId}
+          projects={projects}
+          onDone={(body) => {
+            const caret = mentions.finishTemplate(body);
+            requestAnimationFrame(() => {
+              input.current?.focus();
+              if (caret !== null) input.current?.setSelectionRange(caret, caret);
+            });
           }}
         />
       )}

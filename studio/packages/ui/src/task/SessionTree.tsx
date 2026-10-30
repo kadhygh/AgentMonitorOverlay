@@ -41,9 +41,6 @@ interface SessionTreeProps {
   onRestore(id: string): void;
   /** Unread mail per session id. */
   unread?: ReadonlyMap<string, number>;
-  /** Session presets from the extension packs of the task's workspaces. */
-  presets?: ReadonlyArray<{ key: string; label: string }>;
-  onPreset?(key: string): void;
   /** The new-session form, opened from 新会话 in the task head (2026-10-14). */
   creating: boolean;
   onCreating(open: boolean): void;
@@ -88,7 +85,7 @@ function RemoteNewSession({ name, allowed, blocked, profiles, busy, onStart }: {
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. Shown or hidden as a whole by 会话 in the task head (2026-10-15). */
-export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating, remote }: SessionTreeProps) {
+export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, creating, onCreating, remote }: SessionTreeProps) {
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
@@ -187,19 +184,6 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
           >
             开始新会话
           </button>
-          {presets.length > 0 && onPreset && (
-            <label className="stack-field">
-              按扩展包预设
-              <select value="" onChange={(e) => e.target.value && onPreset(e.target.value)} disabled={busy} aria-label="按预设新建会话">
-                <option value="">选择启动预设…</option>
-                {presets.map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
         </div>
       )}
 

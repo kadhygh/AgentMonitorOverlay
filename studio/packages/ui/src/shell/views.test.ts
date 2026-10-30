@@ -19,6 +19,5 @@ describe("where a task page returns", () => {
   it("keeps a page's own origin, and leaves other pages alone", () => {
     expect(withOrigin({ kind: "task", taskId: "t1", back: { kind: "board" } }, { kind: "canvas" })).toEqual({ kind: "task", taskId: "t1", back: { kind: "board" } });
     expect(withOrigin({ kind: "canvas" }, { kind: "task", taskId: "t1", back: { kind: "board" } })).toEqual({ kind: "canvas" });
-    expect(withOrigin({ kind: "task", taskId: "t1" }, { kind: "packs", workspaceId: "w" })).toEqual({ kind: "task", taskId: "t1" });
   });
 });

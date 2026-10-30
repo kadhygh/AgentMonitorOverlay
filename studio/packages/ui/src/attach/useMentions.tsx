@@ -14,7 +14,8 @@ import { mentionGroups, mentionSpans, nextSubSessionName, QUICK_COMMIT, withMent
  * one carrying its range and note. Under「AMO 扩展功能」: 开子会话… (2026-10-26) asks for a model and effort and puts
  *「@子会话N」in the text, the message then saying how to start sub-sessions with AMO's session_start; 快速提交 (also
  * Ctrl+Shift+P) confirms whether to push too and puts「@快速提交」there, the message then saying how to commit, pull,
- * merge (and push).
+ * merge (and push). 提示词模板… (2026-10-31) opens the template window; the picked template's text goes where @ was typed
+ * (plain text, nothing added to the message).
  *
  * 2026-10-29: projects too (in the composer once something is typed). The new-task page and the quick bar use the same
  * list with no session of their own (`current` null): each task lists its sessions under it, the files are the picked
@@ -41,6 +42,8 @@ export function useComposerMentions(input: {
   workspaceId?: string | null;
   /** Kept by the caller instead of here (the new-task draft). */
   picks?: { value: ReadonlyMap<string, MentionPick>; set(next: ReadonlyMap<string, MentionPick>): void };
+  /** 提示词模板… (default: yes; not in a one-line field). */
+  templates?: boolean;
 }) {
   const { link, text, setText, tasks, sessions, current } = input;
   const [caret, setCaret] = useState<number | null>(null);
@@ -65,8 +68,11 @@ export function useComposerMentions(input: {
   const [subAt, setSubAt] = useState<number | null>(null);
   // 快速提交: likewise for its「@快速提交」.
   const [commitAt, setCommitAt] = useState<number | null>(null);
+  // 提示词模板…: likewise for the template's text.
+  const [templateAt, setTemplateAt] = useState<number | null>(null);
   const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
   const commit = !!current && !current.archivedAt;
+  const template = input.templates !== false && !current?.archivedAt;
 
   // Files come from the Host: the recent ones for a bare "@", matches once something is typed (debounced).
   useEffect(() => {
@@ -104,21 +110,23 @@ export function useComposerMentions(input: {
       marks: workspaceId ? (marks ?? []) : [],
       subsession,
       commit,
+      template,
       ...(projects && (query || projectsAlways) ? { projects: pinnedFirst(projects, pins.project, (w) => w.id) } : {}),
       ...(draftMode ? { sessionsUnderTasks: true, find: !!workspaceId } : {}),
     });
-  }, [query, tasks, pins, sessions, current, shownFiles, marks, workspaceId, subsession, commit, projects, projectsAlways, draftMode]);
+  }, [query, tasks, pins, sessions, current, shownFiles, marks, workspaceId, subsession, commit, template, projects, projectsAlways, draftMode]);
   const flat = groups.flatMap((g) => g.options);
   const hl = Math.min(highlight, Math.max(flat.length - 1, 0));
 
   const choose = (option: MentionOption) => {
     if (!active) return;
     setHighlight(0);
-    if (option.kind === "file" || option.kind === "find" || option.kind === "mark" || option.kind === "subsession" || option.kind === "commit") {
+    if (option.kind === "file" || option.kind === "find" || option.kind === "mark" || option.kind === "subsession" || option.kind === "commit" || option.kind === "template") {
       setText(withoutMention(text, active));
       setCaret(null);
       if (option.kind === "subsession") setSubAt(active.start);
       else if (option.kind === "commit") setCommitAt(active.start);
+      else if (option.kind === "template") setTemplateAt(active.start);
       else if (option.kind === "find") input.onFind(active.query);
       else if (option.kind === "mark") {
         const m = marks?.find((x) => x.id === option.id);
@@ -161,6 +169,19 @@ export function useComposerMentions(input: {
       const at = Math.min(commitAt ?? text.length, text.length);
       setCommitAt(null);
       return push === null ? null : insertPick(at, QUICK_COMMIT, { kind: "commit", push });
+    },
+    /** 提示词模板…'s window is up. */
+    askingTemplate: templateAt !== null,
+    /** The window's answer: the template's text where @ was typed (on a new line after other text); the caret after it (null when cancelled). */
+    finishTemplate(body: string | null): number | null {
+      const at = Math.min(templateAt ?? text.length, text.length);
+      setTemplateAt(null);
+      if (body === null) return null;
+      const before = text.slice(0, at);
+      const after = text.slice(at);
+      const inserted = `${before && !/\s$/.test(before) ? "\n" : ""}${body}${after && !/^\s/.test(after) ? "\n" : ""}`;
+      setText(before + inserted + after);
+      return at + inserted.length;
     },
     /** 开子会话…'s dialog is up. */
     askingSubsession: subAt !== null,

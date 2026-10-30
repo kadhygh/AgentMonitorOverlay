@@ -132,6 +132,28 @@ button.file-chip:hover { border-color: var(--border-strong); }
 .quickcommit-choice:has(input:checked) { border-color: var(--primary); background: var(--tint); }
 .quickcommit-choice input { margin-top: 3px; }
 .quickcommit-keys { margin-right: auto; }
+/* 提示词模板 (2026-10-31): list on the left, the picked one (or the form) on the right. */
+.prompt-modal { width: 820px; gap: 12px; }
+.prompt-body { display: flex; gap: 12px; height: 380px; min-height: 0; }
+.prompt-side { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.prompt-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.prompt-item { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid transparent; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.prompt-item:hover { background: var(--tint); }
+.prompt-item[aria-selected="true"] { border-color: var(--primary); background: var(--tint); }
+.prompt-item:disabled { cursor: default; opacity: 0.6; }
+.prompt-item-title { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.prompt-item-sub { font-size: 12px; color: var(--text-dim); }
+.prompt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-m); padding: 10px 12px; }
+.prompt-preview, .prompt-form { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.prompt-preview-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.prompt-preview-actions { margin-left: auto; display: flex; gap: 4px; }
+.prompt-preview-actions .link-btn.danger { color: var(--danger-text); }
+.prompt-preview-text { flex: 1; min-height: 0; overflow: auto; margin: 0; font: inherit; font-size: 13px; line-height: var(--lh); white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt-form select { flex: 1; min-width: 0; }
+.prompt-text { flex: 1; min-height: 0; resize: none; font: inherit; font-size: 13px; line-height: var(--lh); }
+.prompt-empty { padding: 6px 2px; }
+.prompt-new { margin-right: auto; }
+.prompt-keys { margin-right: 4px; }
 .subsession-field { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .subsession-field > .settings-label { flex: none; width: 64px; padding-top: 5px; }
 .subsession-field > .model-row, .subsession-field > .model-drawer { flex: 1; min-width: 0; }

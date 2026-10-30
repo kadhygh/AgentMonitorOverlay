@@ -1,9 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace, ChecklistItem, TaskTemplateChoice } from "@amo-studio/protocol";
+import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
 import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
-import { newId } from "../../store/store.js";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
@@ -141,7 +140,6 @@ export class TasksFeature extends Feature {
     column?: TaskColumn;
     lead?: boolean;
     firstSession?: NewSessionInput;
-    template?: TaskTemplateChoice;
   }): Promise<{ task: Task; session: Session | null }> {
     const workspace = input.workspaceId ? this.requireLiveWorkspace(input.workspaceId) : this.commonWorkspace();
     const topic = input.topicId ? this.requireLiveTopic(input.topicId) : null;
@@ -151,19 +149,10 @@ export class TasksFeature extends Feature {
       this.firstImages(input.firstSession);
     }
     if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
-    const template = input.template ? this.f.extensions.packTemplate(workspace.id, input.template) : null;
-    const base = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || template?.title || "";
-    const title = template?.titlePrefix && !base.startsWith(template.titlePrefix.trim()) ? `${template.titlePrefix}${base}` : base;
+    const title = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || "";
     const column = input.firstSession ? "doing" : (input.column ?? "todo");
     const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column, lead: input.lead === true });
     this.publish({ type: "task.upserted", task });
-    if (template && input.template) {
-      template.steps.forEach((text, position) => {
-        const item: ChecklistItem = { id: newId("chk"), taskId: task.id, position, text, done: false, doneBySessionId: null, doneAt: null, source: `${input.template!.pack}/${template.id}` };
-        this.store.putChecklistItem(item);
-        this.publish({ type: "checklist.upserted", item });
-      });
-    }
     const session = input.firstSession ? await this.startSession({ taskId: task.id, topicId: null }, workspace, input.firstSession) : null;
     return { task: this.store.getTask(task.id)!, session };
   }

@@ -370,65 +370,47 @@ describe("Host API", () => {
     expect(mail[0]).toMatchObject({ fromSessionId: null, text: "针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡" });
   });
 
-  it("lists a workspace's extension packs and reads their documents", async () => {
-    const path = join(root, "packed");
-    const dir = join(path, ".amo", "packs", "demo");
-    mkdirSync(join(dir, "docs"), { recursive: true });
-    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", docs: [{ id: "style", title: "规范", path: "docs/style.md" }] }));
-    writeFileSync(join(dir, "docs", "style.md"), "# 规范");
-    const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
-    const packs = await ok<Array<{ dirName: string; manifest: { title: string } | null; errors: string[] }>>("GET", `/api/workspaces/${ws.id}/packs`);
-    expect(packs.map((p) => [p.dirName, p.manifest?.title, p.errors])).toEqual([["demo", "示例", []]]);
-    expect(await ok("GET", `/api/workspaces/${ws.id}/packs/demo/docs/style`)).toMatchObject({ pack: "demo", id: "style", text: "# 规范" });
-    expect((await api("GET", `/api/workspaces/${ws.id}/packs/demo/docs/nope`)).status).toBe(404);
-    expect((await api("GET", `/api/workspaces/${ws.id}/packs/${encodeURIComponent("..")}/docs/style`)).status).toBe(404);
-    expect((await api("GET", "/api/workspaces/nope/packs")).status).toBe(404);
+  it("keeps prompt templates, global or for one project", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const events: string[] = [];
+    service.on("event", (e: { type: string }) => events.push(e.type));
+    const global = await ok<{ id: string; workspaceId: string | null; by: string }>("POST", "/api/prompt-templates", { title: " 每日 巡检 ", body: "看一遍昨天的提交\n\n" });
+    expect(global).toMatchObject({ title: "每日 巡检", body: "看一遍昨天的提交", workspaceId: null, by: "person" });
+    const own = await ok<{ id: string }>("POST", "/api/prompt-templates", { title: "打包", body: "打 portable 包", workspaceId: ws.id });
+    const other = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "beta") });
+    await ok("POST", "/api/prompt-templates", { title: "别处的", body: "x", workspaceId: other.id });
+    const titles = (r: Array<{ title: string }>) => r.map((t) => t.title);
+    expect(titles(await ok("GET", "/api/prompt-templates"))).toEqual(["别处的", "打包", "每日 巡检"]);
+    expect(titles(await ok("GET", `/api/prompt-templates?workspace=${ws.id}`))).toEqual(["打包", "每日 巡检"]);
+    // An edit goes on top; a template can turn global.
+    expect(await ok("PATCH", `/api/prompt-templates/${global.id}`, { body: "新的" })).toMatchObject({ body: "新的", title: "每日 巡检" });
+    expect(await ok("PATCH", `/api/prompt-templates/${own.id}`, { workspaceId: null })).toMatchObject({ workspaceId: null });
+    expect(titles(await ok("GET", `/api/prompt-templates?workspace=${other.id}`))).toEqual(["打包", "每日 巡检", "别处的"]);
+    expect((await api("POST", "/api/prompt-templates", { title: "", body: "x" })).status).toBe(400);
+    expect((await api("POST", "/api/prompt-templates", { title: "x", body: " " })).status).toBe(400);
+    expect((await api("POST", "/api/prompt-templates", { title: "x".repeat(81), body: "x" })).status).toBe(400);
+    expect((await api("POST", "/api/prompt-templates", { title: "x", body: "x", workspaceId: "nope" })).status).toBe(404);
+    expect((await api("PATCH", "/api/prompt-templates/nope", { body: "x" })).status).toBe(404);
+    expect(await ok("DELETE", `/api/prompt-templates/${own.id}`)).toEqual({ ok: true });
+    expect((await api("DELETE", `/api/prompt-templates/${own.id}`)).status).toBe(404);
+    expect(titles(await ok("GET", "/api/prompt-templates"))).toEqual(["每日 巡检", "别处的"]);
+    expect(events.filter((e) => e === "prompt-templates.changed")).toHaveLength(6);
   });
 
-  it("creates a task from a pack template with its steps as a checklist", async () => {
-    const path = join(root, "templated");
-    const dir = join(path, ".amo", "packs", "demo");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", templates: [{ id: "feat", title: "新功能", titlePrefix: "[功能]", steps: ["读规范", "实现", "补测试"] }] }));
-    const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
-    const other = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
-    const scope = { workspaceId: ws.id };
-    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", ...scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
-    expect(task.title).toBe("[功能] 冲刺");
-    const items = await ok<Array<{ id: string; text: string; done: boolean; source: string }>>("GET", `/api/checklist?taskId=${task.id}`);
-    expect(items.map((i) => [i.text, i.done, i.source])).toEqual([["读规范", false, "demo/feat"], ["实现", false, "demo/feat"], ["补测试", false, "demo/feat"]]);
+  it("ticks a task's checklist (older tasks have one from 扩展包 templates)", async () => {
+    const { task } = await createTask("冲刺");
+    for (const [position, text] of ["读规范", "实现", "补测试"].entries()) {
+      service.store.putChecklistItem({ id: `chk-${position}`, taskId: task.id, position, text, done: false, doneBySessionId: null, doneAt: null, source: "demo/feat" });
+    }
+    const items = await ok<Array<{ id: string; text: string; done: boolean }>>("GET", `/api/checklist?taskId=${task.id}`);
+    expect(items.map((i) => [i.text, i.done])).toEqual([["读规范", false], ["实现", false], ["补测试", false]]);
     expect(await ok("PATCH", `/api/checklist/${items[1]!.id}`, { done: true })).toMatchObject({ done: true, doneBySessionId: null });
     expect((await ok<Array<{ done: boolean }>>("GET", "/api/checklist")).map((i) => i.done)).toEqual([false, true, false]);
     expect((await api("PATCH", `/api/checklist/${items[1]!.id}`, { done: "yes" })).status).toBe(400);
     expect((await api("PATCH", "/api/checklist/nope", { done: true })).status).toBe(404);
-    // Without a title the template's title is used; templates come from the task's own workspace; unknown ones fail.
-    const untitled = await ok<{ task: Task }>("POST", "/api/tasks", { ...scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
-    expect(untitled.task.title).toBe("[功能] 新功能");
-    const bad = (template: unknown, s: unknown = scope) => api("POST", "/api/tasks", { scope: s, firstSession: { profileId: "p-ds" }, template }).then((r) => r.status);
-    expect(await bad({ workspaceId: ws.id, pack: "demo", template: "nope" })).toBe(400);
-    expect(await bad({ workspaceId: ws.id, pack: "nope", template: "feat" })).toBe(400);
-    expect(await bad({ workspaceId: ws.id, pack: "demo", template: "feat" }, { kind: "workspace", workspaceId: other.id })).toBe(400);
     // A session ticks only its own task's steps.
     const { session } = await createTask("other task");
     expect(() => service.collab.setChecklistDone(items[0]!.id, true, session.id)).toThrow("a session can only tick its own task's checklist");
-  });
-
-  it("fills a pack's session preset in for a task without starting anything", async () => {
-    const path = join(root, "preset");
-    const dir = join(path, ".amo", "packs", "demo");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", presets: [{ id: "impl", title: "实现", profile: "p-ds", prompt: "实现「{{task.title}}」" }] }));
-    const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
-    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", workspaceId: ws.id, firstSession: { profileId: "p-ds" } });
-    const sessionsBefore = (await ok<StateSnapshot>("GET", "/api/state")).sessions.length;
-    const draft = await ok("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, { taskId: task.id });
-    expect(draft).toEqual({ presetId: "impl", title: "实现", workspaceId: ws.id, profileId: "p-ds", text: "实现「冲刺」", contextFiles: [], warnings: [] });
-    expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.length).toBe(sessionsBefore);
-    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/nope/draft`, { taskId: task.id })).status).toBe(404);
-    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, {})).status).toBe(400);
-    // A workspace task takes presets from its own workspace only.
-    const { task: elsewhere } = await createTask("elsewhere");
-    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, { taskId: elsewhere.id })).status).toBe(400);
   });
 
   it("keeps whole-picture todos", async () => {

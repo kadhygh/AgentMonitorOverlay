@@ -86,32 +86,28 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists sixteen read-only tools and twenty-four that write for the caller", async () => {
+  it("lists fifteen read-only tools and twenty-six that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "amo_guide", "amo_whoami", "board_list", "canvas_callout", "canvas_callout_close", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_item_update", "canvas_items_post", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
-      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "review_open", "session_start", "session_tree", "task_describe", "task_get", "task_message", "task_note_add", "task_plan_propose", "team_ask", "team_done", "team_followup", "team_members", "team_session", "team_sessions", "topic_doc_write", "topic_docs", "topic_get", "topic_list", "view_open",
+      "mailbox_read", "mailbox_send", "project_context", "prompt_template_delete", "prompt_template_list", "prompt_template_save", "review_open", "session_start", "session_tree", "task_describe", "task_get", "task_message", "task_note_add", "task_plan_propose", "team_ask", "team_done", "team_followup", "team_members", "team_session", "team_sessions", "topic_doc_write", "topic_docs", "topic_get", "topic_list", "view_open",
     ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual([
-      "amo_guide", "amo_whoami", "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "team_members", "team_session", "team_sessions", "topic_docs", "topic_get", "topic_list",
+      "amo_guide", "amo_whoami", "board_list", "canvas_read", "list_file_marks", "project_context", "prompt_template_list", "session_tree", "task_get", "team_members", "team_session", "team_sessions", "topic_docs", "topic_get", "topic_list",
     ]);
     await client.close();
   });
 
-  it("leaves out the tools of a feature turned off in settings, and brings them back", async () => {
+  it("turns off only features that exist; 扩展包 (removed 2026-10-31) left in the settings is ignored", async () => {
     expect(() => service.config.updateSettings({ disabledFeatures: ["nope"] })).toThrow(/disabledFeatures/);
-    expect(service.config.updateSettings({ disabledFeatures: ["packs"] }).disabledFeatures).toEqual(["packs"]);
+    expect(() => service.config.updateSettings({ disabledFeatures: ["packs"] })).toThrow(/disabledFeatures/);
+    store.setKv("settings:disabled-features", JSON.stringify(["packs", "planning"]));
+    expect(service.config.disabledFeatures()).toEqual(["planning"]);
     const client = await connect();
-    const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).not.toContain("pack_list");
-    expect(names).not.toContain("pack_doc");
-    expect(names).toContain("board_list");
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain("board_list");
     await client.close();
     expect(service.config.updateSettings({ disabledFeatures: [] }).disabledFeatures).toEqual([]);
-    const again = await connect();
-    expect((await again.listTools()).tools.map((t) => t.name)).toContain("pack_list");
-    await again.close();
   });
 
   it("opens a file for the identified caller's project and directs comments back to that caller", async () => {
@@ -182,7 +178,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(40);
+    expect((await client.listTools()).tools).toHaveLength(41);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -235,24 +231,22 @@ describe("AMO MCP", () => {
     await client.close();
   });
 
-  it("reads extension packs and ticks the caller's own checklist", async () => {
+  it("keeps the person's prompt templates when asked, and ticks the caller's own checklist", async () => {
     const alpha = store.listWorkspaces().find((w) => w.name === "alpha")!;
-    const dir = join(alpha.path, ".amo", "packs", "demo");
-    mkdirSync(join(dir, "docs"), { recursive: true });
-    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", docs: [{ id: "style", title: "规范", path: "docs/style.md" }], templates: [{ id: "t", title: "流程", steps: ["读规范", "实现"] }] }));
-    writeFileSync(join(dir, "docs", "style.md"), "# 规范\n\n用驼峰。");
     const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
-    const list = (await call(client, "pack_list", { workspace: "alpha" })).data as { packs: Array<Record<string, unknown>> };
-    expect(list.packs).toEqual([
-      { workspace: { id: alpha.id, name: "alpha" }, pack: "demo", title: "示例", docs: [{ id: "style", title: "规范" }], templates: [{ id: "t", title: "流程", steps: 2 }], presets: [] },
-    ]);
-    expect(((await call(client, "pack_list")).data as { packs: unknown[] }).packs).toHaveLength(1);
-    expect((await call(client, "pack_doc", { workspace: "alpha", pack: "demo", doc: "style" })).data).toMatchObject({ text: "# 规范\n\n用驼峰。" });
-    const missing = await call(client, "pack_doc", { workspace: "alpha", pack: "demo", doc: "nope" });
-    expect(missing.isError).toBe(true);
-    expect(missing.content[0]!.text).toBe("扩展包 demo 里没有文档 nope");
+    const saved = (await call(client, "prompt_template_save", { title: "每日巡检", body: "看一遍昨天的提交\n列出风险", workspace: "alpha" })).data as { id: string };
+    expect(saved).toMatchObject({ title: "每日巡检", body: "看一遍昨天的提交\n列出风险", project: "alpha", by: "AI" });
+    expect(service.promptTemplates.list()[0]).toMatchObject({ id: saved.id, workspaceId: alpha.id, by: "agent" });
+    service.promptTemplates.create({ title: "全局的", body: "x" });
+    expect(((await call(client, "prompt_template_list", { workspace: "alpha" })).data as Array<{ title: string; by: string }>).map((t) => [t.title, t.by])).toEqual([["全局的", "人"], ["每日巡检", "AI"]]);
+    expect((await call(client, "prompt_template_save", { id: saved.id, workspace: "all" })).data).toMatchObject({ project: "全局" });
+    const unknown = await call(client, "prompt_template_save", { title: "x", body: "y", workspace: "nope" });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.content[0]!.text).toBe("没有叫 nope 的项目");
+    expect((await call(client, "prompt_template_delete", { id: saved.id })).data).toMatchObject({ removed: { title: "每日巡检" } });
+    expect(service.promptTemplates.list().map((t) => t.title)).toEqual(["全局的"]);
 
-    // A checklist on the caller's task (as a template would make it): task_get shows it, checklist_check ticks it.
+    // A checklist on the caller's task (older tasks have them from 扩展包 templates): task_get shows it, checklist_check ticks it.
     for (const [position, text] of ["读规范", "实现"].entries()) {
       store.putChecklistItem({ id: `chk-${position}`, taskId: importTask.id, position, text, done: false, doneBySessionId: null, doneAt: null, source: "demo/t" });
     }

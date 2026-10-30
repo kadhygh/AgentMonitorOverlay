@@ -5,7 +5,7 @@ export * from "./api.js";
 export * from "./canvas.js";
 export * from "./scope.js";
 export * from "./canvas-layout.js";
-export * from "./packs.js";
+export * from "./prompt-templates.js";
 export * from "./scheduler.js";
 export * from "./scratchpad.js";
 export * from "./scratchpad-doc.js";

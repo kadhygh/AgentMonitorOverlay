@@ -58,7 +58,7 @@ export function ProposalsPanel({
       <div className="anno-head">
         <span className="anno-title">调度提案</span>
         <span className="anno-count">{proposals.length}</span>
-        <span className="pack-item-sub">批准后才会建任务并开始第一轮</span>
+        <span className="proposal-sub">批准后才会建任务并开始第一轮</span>
       </div>
       <div className="proposal-list">
         {proposals.map((p) => (
@@ -116,13 +116,13 @@ function ProposalCard({
   }
   return (
     <div className="proposal-card" data-testid="proposal-card">
-      <span className="pack-item-title">{todo?.text ?? "（待办已不存在）"}</span>
-      <span className="pack-item-sub">
+      <span className="proposal-title">{todo?.text ?? "（待办已不存在）"}</span>
+      <span className="proposal-sub">
         在 {workspace?.name ?? "?"}
         {idle ? " · 现在空闲" : " · 现在忙碌"}
         {proposal.reason ? ` · ${proposal.reason}` : ""}
       </span>
-      <textarea className="preset-text" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} aria-label="提案提示词" />
+      <textarea className="proposal-text" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} aria-label="提案提示词" />
       <div className="composer-bar">
         <label className="inline-field">
           模型

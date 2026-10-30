@@ -13,6 +13,5 @@ ROADMAP 的阶段都完成后，剩下的都在等你。这里记录 loop 在等
 
 | 事项 | 现状 | 什么时候做 |
 |---|---|---|
-| 扩展包 `.amo/packs/` 的实际用法 | 格式和示例已有（`design/pack-format.md`、`examples/packs/demo/`），还没有真实的包 | 做到扩展包相关功能时再一起处理（对应 NEEDS_YOU 的 S6-09） |
 | 清理旧 AMO 部署在工程里的 Hook | 旧 Hook 还在；新版开 Codex 会话时可能触发它们，旧 AMO 可能冒出卡片。步骤见 `plans/remove-old-amo.md` | 用户先确认新版体验，之后再清 |
 | Portable 包 | `release/AMO-Studio-0.8.0-portable.zip` 是阶段 8 时打的 | 只在用户确认的发布节点重新打包（见 LOOP_RULES 第 6 节） |

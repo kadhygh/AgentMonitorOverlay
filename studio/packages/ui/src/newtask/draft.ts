@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ModelProfile, Session, SessionOptions, Task, TaskTemplateChoice } from "@amo-studio/protocol";
+import type { ModelProfile, Session, SessionOptions, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { defaultProfile, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
@@ -116,7 +116,7 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
  * `onCanvas`: a task in a topic also goes on that topic's canvas ("显示在画布上"). `attachments`: uploaded images that go
  * with the first message (not when only filing).
  */
-export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, template?: TaskTemplateChoice, onCanvas = false, attachments: readonly string[] = []): Promise<{ task: Task; session: Session | null }> {
+export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, onCanvas = false, attachments: readonly string[] = []): Promise<{ task: Task; session: Session | null }> {
   const text = draftText(draft);
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
@@ -127,7 +127,6 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     ...(file
       ? {}
       : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}) } }),
-    ...(template ? { template } : {}),
   });
   if (!file) {
     rememberProfile(draft.pick.profileId);

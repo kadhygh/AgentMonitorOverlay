@@ -129,13 +129,6 @@ export interface TerminalAttach {
   launched: boolean;
 }
 
-/** A task template picked when creating a task: which workspace's pack, which template. */
-export interface TaskTemplateChoice {
-  workspaceId: Id;
-  pack: string;
-  template: string;
-}
-
 /**
  * A file Studio keeps for a conversation or the scratchpad: an image pasted or dropped in, stored in the data folder
  * (`attachments/`), never in a project. `path` is where agents read it.
@@ -155,10 +148,9 @@ export const ATTACHMENT_MIMES = ["image/png", "image/jpeg", "image/gif", "image/
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 /** Features the person can turn off (设置 → 功能): their pages, panels and agent tools go away; their data stays. */
-export type OptionalFeature = "packs" | "planning";
+export type OptionalFeature = "planning";
 
 export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; hint: string }[] = [
-  { id: "packs", label: "扩展包", hint: "项目里 .amo/packs 的规范文档、任务模板和会话预设" },
   { id: "planning", label: "整体待办与调度", hint: "画布侧栏的整体待办、调度 agent 和它的提案" },
 ];
 
@@ -382,20 +374,6 @@ export interface CredentialStatus {
   writable: boolean;
 }
 
-/** Whether git leaves a project's `.amo/` (its extension packs) out: by `.git/info/exclude`, a .gitignore or the global one. */
-export interface GitExcludeState {
-  /** The folder is in a git repository. */
-  git: boolean;
-  /** git ignores `.amo/` already. */
-  excluded: boolean;
-  /** The rule that does, as git names it (`.git/info/exclude:12`, `.gitignore:3`). */
-  source: string | null;
-  /** The line 一键忽略 adds to `.git/info/exclude`: `/.amo/`, or `/<sub>/.amo/` for a project inside a larger repository. */
-  entry: string;
-  /** Files under `.amo/` git tracks already; ignoring does not apply to them. */
-  tracked: number;
-}
-
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
@@ -420,10 +398,6 @@ export interface HostRoutes {
   "POST /api/workspaces/:id/archive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
   /** Restores the project and the tasks that were archived with it. */
   "POST /api/workspaces/:id/unarchive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
-  /** Whether git leaves the project's `.amo/` out. */
-  "GET /api/workspaces/:id/git-exclude": { req: void; res: GitExcludeState };
-  /** Adds `.amo/` to the repository's `.git/info/exclude` (this machine only; the project's .gitignore is not touched). */
-  "POST /api/workspaces/:id/git-exclude": { req: void; res: GitExcludeState };
   "GET /api/settings": { req: void; res: StudioSettings };
   /** The Claude Code that Claude sessions run on (2026-10-24). */
   "GET /api/claude-code": { req: void; res: ClaudeCodeStatus };
@@ -472,18 +446,12 @@ export interface HostRoutes {
   /** Saves a writable credential (the Claude subscription token) in the Windows Credential Manager. */
   "PUT /api/credentials/:id": { req: { secret: string }; res: CredentialStatus[] };
   "DELETE /api/credentials/:id": { req: void; res: CredentialStatus[] };
-  /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
-  "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
-  "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
-  /** Fills a pack's session preset in for a task; nothing is started (the person confirms in the new-session form). */
-  "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft": { req: { taskId: Id }; res: import("./packs.js").PresetDraft };
   /**
    * `workspaceId` null or absent: the common space. `topicId`: put it in that topic. Without `firstSession` the task is
-   * only filed (column `todo` unless given); with it, the first session starts. `template`: a task template from an
-   * extension pack; the task gets its title prefix and its steps as a checklist.
+   * only filed (column `todo` unless given); with it, the first session starts.
    */
   "POST /api/tasks": {
-    req: { title?: string; workspaceId?: Id | null; topicId?: Id | null; column?: TaskColumn; lead?: boolean; firstSession?: NewSessionInput; template?: TaskTemplateChoice };
+    req: { title?: string; workspaceId?: Id | null; topicId?: Id | null; column?: TaskColumn; lead?: boolean; firstSession?: NewSessionInput };
     res: { task: Task; session: Session | null };
   };
   /**
@@ -677,6 +645,8 @@ export type HostEvent = { seq: number } & (
   | { type: "profiles.updated"; profiles: ModelProfile[] }
   /** File marks (S12-D) changed: one was added, edited or removed (`workspaceId` is its project, null for 其他). */
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null; topicId?: Id | null }
+  /** 提示词模板 (2026-10-31): one was added, edited or removed. */
+  | { type: "prompt-templates.changed"; templateId: Id }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
@@ -842,6 +812,12 @@ export interface HostRoutes {
   /** Note, topic or order of either kind (a line range only for files). */
   "PATCH /api/bookmarks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").Bookmark };
   "DELETE /api/bookmarks/:id": { req: void; res: { ok: true } };
+  // 提示词模板 (2026-10-31).
+  /** Every template, or (`?workspace=<id>`) those a composer in that project offers: the global ones and the project's (`global`: only the global ones). */
+  "GET /api/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
+  "POST /api/prompt-templates": { req: import("./prompt-templates.js").NewPromptTemplate; res: import("./prompt-templates.js").PromptTemplate };
+  "PATCH /api/prompt-templates/:id": { req: import("./prompt-templates.js").PromptTemplatePatch; res: import("./prompt-templates.js").PromptTemplate };
+  "DELETE /api/prompt-templates/:id": { req: void; res: { ok: true } };
 }
 
 // ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------

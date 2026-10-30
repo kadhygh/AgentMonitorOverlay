@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -20,12 +20,8 @@ import { AnnotationPanel } from "../review/AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "../collab/MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "../collab/NotesPanel.js";
-import { PackDocsPanel } from "../packs/PackDocsPanel.js";
 import { ChecklistPanel } from "../collab/ChecklistPanel.js";
 import { EditableName } from "./EditableName.js";
-import { usePacks } from "../packs/usePacks.js";
-import { useFeature } from "../lib/features.js";
-import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
@@ -221,18 +217,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   };
   const newSession = (input: { profileId: string; options?: SessionOptions }) =>
     run(starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input)), (s) => setSelected(s.id));
-  const openPreset = (key: string) => {
-    const [workspaceId, pack, preset] = key.split("/") as [string, string, string];
-    void run(() => call(link, "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft", { id: workspaceId, pack, preset }, { taskId: task.id }), setDraft);
-  };
-  const startPreset = (d: PresetDraft, input: { profileId: string; text: string }) =>
-    run(
-      starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text })),
-      (s) => {
-        setDraft(null);
-        setSelected(s.id);
-      },
-    );
   const restore = (id: string) => run(() => call(link, "POST /api/sessions/:id/unarchive", { id }), () => setSelected(id));
   const archive = (id: string) =>
     run(() => call(link, "POST /api/sessions/:id/archive", { id }), () => {
@@ -257,13 +241,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const mail = useTaskMail(link, task, sessions);
   const decisions = useOpenDecisions(link);
   const notes = useTaskNotes(link, task.id);
-  const [draft, setDraft] = useState<PresetDraft | null>(null);
-  // The extension packs of the task's own project.
-  const packsOn = useFeature("packs");
-  const { packs } = usePacks(link, packsOn ? [task.workspaceId] : []);
-  const presetChoices = packs.flatMap((p) =>
-    p.manifest ? p.manifest.presets.map((pr) => ({ key: `${p.workspaceId}/${p.dirName}/${pr.id}`, label: `${p.manifest!.title} · ${pr.title}` })) : [],
-  );
   const unread = new Map<string, number>();
   for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
   const forwardMail = (m: { id: string }, sessionId: string) =>
@@ -627,24 +604,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             onNewSession={(input) => void newSession(input)}
             onRestore={(id) => void restore(id)}
             unread={unread}
-            presets={presetChoices}
-            onPreset={openPreset}
             creating={creating}
             onCreating={setCreating}
             {...(copy ? { remote: { name: copy.name, allowed: task.remote!.allowed, blocked: copy.blocked } } : {})}
           />
         )}
         <div className="thread-col">
-          {draft && (
-            <PresetDraftForm
-              key={`${draft.workspaceId}/${draft.presetId}`}
-              draft={draft}
-              profiles={profiles}
-              busy={busy}
-              onStart={(input) => void startPreset(draft, input)}
-              onCancel={() => setDraft(null)}
-            />
-          )}
           {session && (
             <SessionHead
               link={link}
@@ -724,7 +689,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
             <ChecklistPanel link={link} items={checklist} sessions={sessions} />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
-            <PackDocsPanel link={link} packs={packs} />
             </>
           }
           annotations={annotations}

@@ -30,7 +30,9 @@ describe("last place", () => {
   it("comes back to the canvas; other pages come back as the board", () => {
     savePlace({ kind: "canvas" }, { kind: "workspace", id: "w1" });
     expect(readPlace().view).toEqual({ kind: "canvas" });
-    savePlace({ kind: "packs", workspaceId: "w1" }, { kind: "all" });
+    savePlace({ kind: "new" }, { kind: "all" });
+    expect(readPlace().view).toEqual({ kind: "new" });
+    savePlace({ kind: "review" } as never, { kind: "all" });
     expect(readPlace().view).toEqual({ kind: "board" });
   });
 

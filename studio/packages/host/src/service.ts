@@ -17,7 +17,7 @@ import { PlanningFeature } from "./features/planning/service.js";
 import { CollabFeature } from "./features/collab/service.js";
 import { CanvasFeature } from "./features/canvas/service.js";
 import { ReviewFeature } from "./features/review/service.js";
-import { PacksFeature } from "./features/packs/service.js";
+import { PromptTemplatesFeature } from "./features/prompttemplates/service.js";
 import { AttachmentsFeature } from "./features/attachments/service.js";
 import { ScratchpadFeature } from "./features/scratchpad/service.js";
 import { GitReviewFeature } from "./features/gitreview/service.js";
@@ -58,7 +58,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly canvases = new CanvasFeature(this);
   readonly canvasReview = new CanvasReviewFeature(this);
   readonly review = new ReviewFeature(this);
-  readonly extensions = new PacksFeature(this);
+  readonly promptTemplates = new PromptTemplatesFeature(this);
   readonly attachments = new AttachmentsFeature(this);
   readonly scratchpad = new ScratchpadFeature(this);
   readonly gitReview = new GitReviewFeature(this);

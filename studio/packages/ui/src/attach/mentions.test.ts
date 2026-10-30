@@ -110,6 +110,12 @@ describe("开子会话… (2026-10-26)", () => {
     expect(mentionGroups({ ...input, query: "提交", subsession: true, commit: true }).at(-1)!.options.map((o) => o.name)).toEqual(["快速提交"]);
   });
 
+  it("offers 提示词模板… last under「AMO 扩展功能」 (2026-10-31)", () => {
+    expect(mentionGroups({ ...input, subsession: true, commit: true, template: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["subsession", "commit", "template"]);
+    expect(mentionGroups({ ...input, template: true }).at(-1)!.options.map((o) => o.name)).toEqual(["提示词模板…"]);
+    expect(mentionGroups({ ...input, query: "模板", commit: true, template: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["template"]);
+  });
+
   it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
     const picked = new Map([
       ["子会话1", { kind: "subsession" as const, spec: { model: "Claude/claude-sonnet", modelName: "Sonnet", effort: "high", permission: "write" as const, report: true } }],

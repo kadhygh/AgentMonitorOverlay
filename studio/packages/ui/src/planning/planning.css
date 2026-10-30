@@ -19,3 +19,7 @@
 /* Scheduler round (S7-04) */
 .scheduler-run { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .scheduler-run select { flex: 1; min-width: 0; }
+/* Were shared with the 扩展包 page (removed 2026-10-31). */
+.proposal-title { font-size: 13px; font-weight: 500; }
+.proposal-sub { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+.proposal-text { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg, var(--panel-raised)); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }

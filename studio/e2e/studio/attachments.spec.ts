@@ -192,9 +192,10 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await expect(suggest).toContainText("最近改动的文件");
   await expect(suggest.getByRole("option", { name: /README\.md/ })).toBeVisible();
   await expect(suggest.getByRole("option", { name: /new_feature\.ts/ })).toBeVisible();
-  // 找文件… ends the files; 「AMO 扩展功能」 come last (10-26).
+  // 找文件… ends the files; 「AMO 扩展功能」 come last (10-26), 提示词模板… (10-31) at the end.
   await expect(suggest.locator('[data-kind="find"] + .suggest-h')).toHaveText("AMO 扩展功能");
-  await expect(suggest.getByRole("option").last()).toContainText("快速提交");
+  await expect(suggest.getByRole("option").last()).toContainText("提示词模板…");
+  await expect(suggest.locator('[data-kind="commit"]')).toContainText("快速提交");
   await screenshot(studio.app, "stage-11", "S11-B-05-at-menu", page);
 
   // A session keeps its name in the text; the message will say which session it is.
@@ -270,7 +271,7 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   await composer(page).pressSequentially("接下来开子会话就用 @");
   // Under「AMO 扩展功能」(10-26), after 找文件….
   await expect(suggest.getByText("AMO 扩展功能")).toBeVisible();
-  await expect(suggest.getByRole("option").last()).toContainText("快速提交");
+  await expect(suggest.getByRole("option").last()).toContainText("提示词模板…");
   await suggest.getByRole("option", { name: /开子会话…/ }).click();
   const dialog = page.getByTestId("subsession-dialog");
   await expect(dialog).toBeVisible();

@@ -20,6 +20,7 @@ import { MentionBackdrop, MentionList, useComposerMentions } from "../attach/use
 import { FileSelector } from "../attach/FileSelector.js";
 import { SubSessionDialog } from "../attach/SubSessionDialog.js";
 import { QuickCommitDialog } from "../attach/QuickCommitDialog.js";
+import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { DecisionPrompt, SessionDecisions } from "../collab/DecisionPanel.js";
@@ -721,6 +722,21 @@ ${d}` : back));
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+          }}
+        />
+      )}
+      {mentions.askingTemplate && (
+        <PromptTemplateDialog
+          link={link}
+          workspaceId={session?.workspaceId ?? null}
+          projects={projects ?? []}
+          onDone={(body) => {
+            const caret = mentions.finishTemplate(body);
+            requestAnimationFrame(() => {
+              const el = document.querySelector<HTMLTextAreaElement>(".chat-input textarea");
+              el?.focus();
+              if (el && caret !== null) el.setSelectionRange(caret, caret);
+            });
           }}
         />
       )}

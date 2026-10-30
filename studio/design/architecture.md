@@ -28,10 +28,10 @@ AMO Studio.exe（Electron 主进程，packages/app）
 
 | 包 | 内容 |
 |---|---|
-| `protocol` | 实体、API 路由类型、事件；纯函数：会话树、画布布局与大纲、批注汇总、扩展包校验、工程空闲判定 |
-| `host` | `service.ts`（业务）、`http/server.ts`（路由）、`store/`、`runtime/codex`、`runtime/claude`、`mcp/`（工具、身份、读模型）、`packs/`（扩展包加载、预设草稿）、`scheduler/`（调度简报）、`terminal/`（交接终端） |
+| `protocol` | 实体、API 路由类型、事件；纯函数：会话树、画布布局与大纲、批注汇总、工程空闲判定 |
+| `host` | `service.ts`（业务）、`http/server.ts`（路由）、`store/`、`runtime/codex`、`runtime/claude`、`mcp/`（工具、身份、读模型）、`scheduler/`（调度简报）、`terminal/`（交接终端） |
 | `app` | Electron 主进程：窗口、Focus、单实例、数据目录（`paths.ts`）、首次设置（`setup.ts`）、Host 连接 |
-| `ui` | 看板、任务页（对话、会话树、审阅、右栏面板）、画布、新任务、扩展包页、Focus |
+| `ui` | 看板、任务页（对话、会话树、审阅、右栏面板）、画布、新任务、Focus |
 | `testkit` | mock 模型（Codex 用的 Responses API、Claude 用的 Messages API）、端口与临时目录工具、额度计数 |
 
 ## 数据
@@ -45,7 +45,6 @@ AMO Studio.exe（Electron 主进程，packages/app）
 - API 只听 127.0.0.1，需要令牌；MCP 用单独的令牌，只能访问 `/mcp`。
 - agent 运行的命令读不到模型密钥（Codex `shell_environment_policy`、Claude `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`）。
 - MCP 写入一律按调用者自己的会话限定；画布写入要人批准；调度只能提案；派发未开放。
-- 扩展包按不可信内容处理：只读、路径解析符号链接后不越界、不执行代码、预设经人确认。
 - 测试窗口在屏幕外、不进任务栏、不获得焦点；测试只在 `%TEMP%` 下的沙箱里跑。
 
 ## 测试

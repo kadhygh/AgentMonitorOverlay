@@ -1,14 +1,13 @@
-import type { ModelProfile, TodoItem, Workspace, WorkspaceActivity, WorkspacePack } from "@amo-studio/protocol";
+import type { ModelProfile, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
 
-// The first message of a scheduler round (design/scheduler.md): what is open, which projects are free, which models and
-// presets exist, and the rules. The agent answers by calling schedule_propose; it never starts work itself.
+// The first message of a scheduler round (design/scheduler.md): what is open, which projects are free, which models
+// exist, and the rules. The agent answers by calling schedule_propose; it never starts work itself.
 
 export interface SchedulerBriefInput {
   todos: readonly TodoItem[];
   workspaces: readonly Workspace[];
   activity: ReadonlyMap<string, WorkspaceActivity>;
   profiles: readonly ModelProfile[];
-  packs: ReadonlyArray<WorkspacePack & { workspaceId: string }>;
   perRound: number;
 }
 
@@ -22,7 +21,6 @@ export function schedulerBrief(input: SchedulerBriefInput): string {
     `- 只提案，不要自己开会话、不要修改文件、不要运行命令；提案要等人批准后才会开工。`,
     `- 这一轮最多提 ${input.perRound} 条；忙碌的工程不要提；没有合适的就不提，直接说明原因。`,
     "- 每条提案写清楚：todoId、workspace（工作区 id）、profileId（模型）、prompt（新会话的第一句话，具体到要做什么）、reason（一两句话：为什么是现在、为什么是这个工程）。",
-    "- 如果工程的扩展包里有合适的启动预设，可以参考它的写法。",
     "- 提完后用一两句话总结你提了什么。",
     "",
     "## 整体待办（未完成）",
@@ -36,7 +34,5 @@ export function schedulerBrief(input: SchedulerBriefInput): string {
   }
   lines.push("", "## 可用的模型");
   for (const p of input.profiles.filter((x) => !x.hidden)) lines.push(`- profileId=${p.id}：${p.label}`);
-  const presets = input.packs.flatMap((p) => (p.manifest ? p.manifest.presets.map((x) => `- ${ws(p.workspaceId)} / ${p.manifest!.title} / ${x.title}`) : []));
-  if (presets.length) lines.push("", "## 扩展包里的启动预设（可以用 pack_list / pack_doc 查看详情）", ...presets);
   return lines.join("\n");
 }

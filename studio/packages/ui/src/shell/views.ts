@@ -15,7 +15,6 @@ export type View =
   | { kind: "canvas"; callout?: string; nav?: number }
   /** `remote` (远程创建, 2026-10-29): opened in 「在别的设备上」 with that device picked. */
   | { kind: "new"; topicId?: string; back?: View; remote?: { account: string; device: string } }
-  | { kind: "packs"; workspaceId: string }
   /**
    * `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage
    * of `sessionId` to scroll to and flash (书签). `scroll`: where its conversation was read (后退 back to it).

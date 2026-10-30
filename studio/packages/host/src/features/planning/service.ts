@@ -134,7 +134,6 @@ export class PlanningFeature extends Feature {
       workspaces,
       activity: workspacesActivity(workspaces, this.store.listSessions()),
       profiles: this.profiles,
-      packs: workspaces.flatMap((w) => this.f.extensions.packs(w.id).map((p) => ({ ...p, workspaceId: w.id }))),
       perRound: PROPOSALS_PER_ROUND,
     });
     const session = await this.f.tasks.addSession(task.id, { profileId: input.profileId, text });

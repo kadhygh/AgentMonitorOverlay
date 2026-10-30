@@ -1,5 +1,7 @@
 # 扩展包格式（schemaVersion 1）
 
+> 2026-10-31 起扩展包已从 Studio 删掉（用户：提示词模板比它好用，见 `plans/prompt-templates.md`；以后可能做类似 DSH 的插件架构）。这份只留作历史，里面提到的代码和示例都不在了。
+
 扩展包放在工作区里：`<工作区>/.amo/packs/<name>/pack.json`，一个目录一个扩展包，随工程进版本库。校验代码：`packages/protocol/src/packs.ts`。
 
 ## 示例

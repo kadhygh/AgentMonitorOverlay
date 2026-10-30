@@ -1,7 +1,6 @@
 import type { AnyViewDef, BoardPanel } from "./shell/views.js";
 import { boardView } from "./board/view.js";
 import { canvasView } from "./canvas/view.js";
-import { packsView } from "./packs/view.js";
 import { newTaskView } from "./newtask/view.js";
 import { taskView } from "./task/view.js";
 import { proposalsPanel } from "./planning/view.js";
@@ -12,4 +11,4 @@ import { proposalsPanel } from "./planning/view.js";
 /** Panels shown above the board, in order. */
 export const BOARD_PANELS: readonly BoardPanel[] = [proposalsPanel];
 
-export const VIEWS: readonly AnyViewDef[] = [boardView(BOARD_PANELS), canvasView, packsView, newTaskView, taskView];
+export const VIEWS: readonly AnyViewDef[] = [boardView(BOARD_PANELS), canvasView, newTaskView, taskView];
