@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
+import { DUTY_DONE_MARK, DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -162,15 +162,16 @@ export class DutyFeature extends Feature {
     }
   }
 
-  create(input: DutyItemInput): DutyState {
+  /** `by` "agent": saved by an agent (duty_save, which the person approved); the list marks it. */
+  create(input: DutyItemInput, by?: "agent"): DutyState {
     const at = new Date(this.now()).toISOString();
-    const item: DutyItem = { id: newId("duty"), title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), createdAt: at, updatedAt: at };
+    const item: DutyItem = { id: newId("duty"), title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), ...(by ? { by } : {}), createdAt: at, updatedAt: at };
     this.saveItems([...this.items(), item]);
     this.changed();
     return this.state();
   }
 
-  update(id: Id, input: DutyItemInput): DutyState {
+  update(id: Id, input: DutyItemInput, by?: "agent"): DutyState {
     const items = this.items();
     const item = items.find((i) => i.id === id);
     if (!item) throw new HostError("not_found", `值守项 ${id} 不在了`);
@@ -183,9 +184,26 @@ export class DutyFeature extends Feature {
       ...(input.action !== undefined ? { action: this.action(input.action) } : {}),
       updatedAt: new Date(this.now()).toISOString(),
     };
+    // Who saved it last: an agent's change marks it; the person's own edit (not just turning it on or off) clears that.
+    if (by) next.by = by;
+    else if (input.title !== undefined || input.schedule !== undefined || input.action !== undefined) delete next.by;
     this.saveItems(items.map((i) => (i.id === id ? next : i)));
     this.changed();
     return this.state();
+  }
+
+  /** Turns an item off (a run going on finishes); duty_stop and a command's AMO_DUTY_DONE. */
+  turnOff(id: Id): DutyItem {
+    const item = this.items().find((i) => i.id === id);
+    if (!item) throw new HostError("not_found", `值守项 ${id} 不在了`);
+    if (item.enabled) this.update(id, { enabled: false });
+    return this.items().find((i) => i.id === id)!;
+  }
+
+  /** The item whose run started this session (running now, or one of its kept runs). */
+  itemForSession(sessionId: Id): DutyItem | null {
+    const id = [...this.running].find(([, r]) => r.sessionId === sessionId)?.[0] ?? this.runs().find((r) => r.sessionId === sessionId)?.itemId;
+    return (id && this.items().find((i) => i.id === id)) || null;
   }
 
   remove(id: Id): DutyState {
@@ -226,7 +244,7 @@ export class DutyFeature extends Feature {
       const check = a.check ? this.check(a.check) : null;
       const o = (a.options && typeof a.options === "object" ? a.options : {}) as Record<string, unknown>;
       const options = Object.fromEntries((["model", "effort", "permission"] as const).flatMap((k) => (typeof o[k] === "string" && o[k] ? [[k, o[k] as string]] : [])));
-      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", ...(Object.keys(options).length ? { options } : {}), fallbackProfileId, ...(check ? { check } : {}) };
+      return { kind: "session", profileId, prompt, taskId, workspaceId, taskTitle: typeof a.taskTitle === "string" ? a.taskTitle.trim().slice(0, 100) : "", ...(Object.keys(options).length ? { options } : {}), fallbackProfileId, ...(check ? { check } : {}), ...(a.untilDone === true ? { untilDone: true } : {}) };
     }
     if (a.kind === "command") {
       const command = typeof a.command === "string" ? a.command.trim() : "";
@@ -334,7 +352,7 @@ export class DutyFeature extends Feature {
           return;
         }
         result = started;
-      } else if (a.kind === "command") result = await this.runCommand(a, r.abort.signal);
+      } else if (a.kind === "command") result = await this.runCommand(item, a, r.abort.signal);
       else {
         const job = this.jobs.get(a.name);
         result = job ? await job.run({ item, signal: r.abort.signal }) : { ok: false, summary: `没有这个 Studio 任务：${a.name}` };
@@ -354,8 +372,8 @@ export class DutyFeature extends Feature {
     return full ? `${usage!.label}「${full.label}」已用 ${full.usedPercent}%` : null;
   }
 
-  /** What the item's check found: text to act on, null for nothing, or why the check failed. */
-  private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null } | { failed: string }> {
+  /** What the item's check found: text to act on, null for nothing, or why the check failed; `done`: it printed AMO_DUTY_DONE. */
+  private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null; done?: boolean } | { failed: string }> {
     if (c.kind === "builtin") {
       const job = this.checks.get(c.name);
       if (!job) return { failed: `没有这个 Studio 检查：${c.name}` };
@@ -369,29 +387,36 @@ export class DutyFeature extends Feature {
     const out = await this.exec(c.command, c.workspaceId, c.timeoutSec ?? CHECK_TIMEOUT_SEC, signal);
     if (out.error) return { failed: out.error };
     if (out.code !== 0) return { failed: `退出码 ${out.code}${out.last ? `：${out.last}` : ""}` };
-    const found = out.output.trim();
-    return { found: found ? found.slice(-FOUND_KEPT) : null };
+    const { done, rest } = doneMark(out.output);
+    return { found: rest ? rest.slice(-FOUND_KEPT) : null, done };
   }
 
   private async startSession(item: DutyItem, a: Extract<DutyAction, { kind: "session" }>, signal: AbortSignal): Promise<DutyJobResult> {
     let prompt = a.prompt;
     let found: string | null = null;
+    let lastWord = "";
     if (a.check) {
       const checked = await this.runCheck(item, a.check, signal);
       if ("failed" in checked) return { ok: false, summary: `检查没跑通：${checked.failed}` };
+      // The check says the watch is over: off after this run (a last finding still gets its session).
+      if (checked.done) {
+        this.turnOff(item.id);
+        lastWord = "；检查说这是最后一次，值守已关掉";
+      }
       if (checked.found === null) {
         // Nothing now: the next finding starts a session even if it reads like an older one.
         this.setFound(item.id, null);
-        return { ok: true, skipped: true, summary: "检查过了，没有要做的" };
+        return { ok: true, skipped: true, summary: checked.done ? "检查说不用再值守了，已关掉" : "检查过了，没有要做的" };
       }
-      if (this.found()[item.id] === checked.found) return { ok: true, skipped: true, summary: "检查结果和上次开会话时一样，不再开" };
+      if (this.found()[item.id] === checked.found) return { ok: true, skipped: true, summary: `检查结果和上次开会话时一样，不再开${lastWord}` };
       found = checked.found;
       prompt = `${a.prompt}\n\n值守检查发现：\n${found}`;
     }
+    if (a.untilDone) prompt += `\n\n（这是值守项「${item.title}」开的会话。它盯的事处理完、不用再值守时，调 AMO 的 duty_stop 关掉它。）`;
     // Kept once a session has it: a skip for the subscription leaves the finding to the next run.
-    const started = <T>(result: T): T => {
+    const started = (result: DutyJobResult): DutyJobResult => {
       if (found !== null) this.setFound(item.id, found);
-      return result;
+      return { ...result, summary: result.summary + lastWord };
     };
     let profileId = a.profileId;
     const full = await this.usedUp(profileId);
@@ -417,10 +442,13 @@ export class DutyFeature extends Feature {
     return started({ ok: true, summary: `新建任务「${titleText}」${note}`, ...(made.session ? { sessionId: made.session.id } : {}), taskId: made.task.id });
   }
 
-  private async runCommand(a: Extract<DutyAction, { kind: "command" }>, signal: AbortSignal): Promise<DutyJobResult> {
+  private async runCommand(item: DutyItem, a: Extract<DutyAction, { kind: "command" }>, signal: AbortSignal): Promise<DutyJobResult> {
     const out = await this.exec(a.command, a.workspaceId, a.timeoutSec ?? DEFAULT_TIMEOUT_SEC, signal);
     if (out.error) return { ok: false, summary: out.error };
-    return { ok: out.code === 0, summary: `${out.code === 0 ? "完成" : `退出码 ${out.code}`}${out.last ? `：${out.last}` : ""}` };
+    const { done, rest } = doneMark(out.output);
+    if (done) this.turnOff(item.id);
+    const last = rest.split(/\r?\n/).at(-1)?.trim().slice(0, 200) ?? "";
+    return { ok: out.code === 0, summary: `${out.code === 0 ? "完成" : `退出码 ${out.code}`}${done ? "，值守已关掉" : ""}${last ? `：${last}` : ""}` };
   }
 
   /** A command line in a project's folder (the common folder without one), below normal priority, without Host's variables. */
@@ -484,4 +512,11 @@ function sessionEnd(s: Session | undefined): DutyJobResult {
   if (s.status === "error") return { ok: false, summary: "会话出错停下了", sessionId: s.id };
   if (s.status === "interrupted") return { ok: false, summary: "会话被打断了", sessionId: s.id };
   return { ok: true, summary: "会话这一轮结束了", sessionId: s.id };
+}
+
+/** A command's output without its AMO_DUTY_DONE lines, and whether it had one. */
+function doneMark(output: string): { done: boolean; rest: string } {
+  const lines = output.split(/\r?\n/);
+  const kept = lines.filter((l) => l.trim() !== DUTY_DONE_MARK);
+  return { done: kept.length !== lines.length, rest: kept.join("\n").trim() };
 }

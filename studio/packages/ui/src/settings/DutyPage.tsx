@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { projectWorkspaces, type DutyAction, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
+import { DUTY_DONE_MARK, projectWorkspaces, type DutyAction, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { defaultModel, effortLabel, useProfileChoices } from "../lib/choices.js";
@@ -54,7 +54,7 @@ function actionText(a: DutyAction, ctx: Ctx): string {
   const where = task ? `在任务「${task.title}」里` : `每次新建任务${ws ? `（项目「${ws.name}」）` : ""}`;
   const c = a.check;
   const check = !c ? "" : c.kind === "builtin" ? `先检查「${ctx.checks.find((x) => x.name === c.name)?.label ?? c.name}」，有事才开` : `先跑检查命令 ${c.command}，有输出才开`;
-  return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}`;
+  return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}${a.untilDone ? "；做完了 AI 可以关掉它" : ""}`;
 }
 
 export function DutyPage({ link }: { link: HostLink }) {
@@ -99,6 +99,7 @@ export function DutyPage({ link }: { link: HostLink }) {
                     <b>{item.title}</b>
                   </label>
                   {item.builtin && <span className="settings-tag">Studio 自带</span>}
+                  {item.by === "agent" && <span className="settings-tag" title="AI 用 duty_save 建的或最后改的（你批准过）">AI 建的</span>}
                   <span className="settings-hint">{scheduleText(item.schedule)}</span>
                   <span className="grow" />
                   <button type="button" className="btn-ghost small" disabled={running} onClick={() => act(() => call(link, "POST /api/duty/items/:id/run", { id: item.id }))}>
@@ -169,6 +170,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
   const [checkCommand, setCheckCommand] = useState(check?.kind === "command" ? check.command : "");
   const [checkWorkspace, setCheckWorkspace] = useState(check?.kind === "command" ? (check.workspaceId ?? "") : "");
   const [checkName, setCheckName] = useState(check?.kind === "builtin" ? check.name : (ctx.checks[0]?.name ?? ""));
+  const [untilDone, setUntilDone] = useState(a?.kind === "session" && a.untilDone === true);
   const [error, setError] = useState<string | null>(null);
   const tasks = (ctx.snapshot?.tasks ?? []).filter((t) => !t.archivedAt && !t.remote);
   const projects = projectWorkspaces(ctx.snapshot?.workspaces ?? []);
@@ -178,7 +180,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
     if (builtin) return { title, schedule };
     const action: DutyAction =
       kind === "session"
-        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : null }
+        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : null, untilDone }
         : kind === "command"
           ? { kind, command, workspaceId: workspaceId || null, timeoutSec: Math.round(Number(timeoutMin) * 60) }
           : { kind, name };
@@ -377,7 +379,11 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
                   <span className="settings-hint">{ctx.checks.find((c) => c.name === checkName)?.description}</span>
                 </div>
               )}
-              {checkKind && <span className="settings-hint">到点先检查，有事才开会话，检查发现的内容接在上面那段话后面。{checkKind === "command" ? "检查命令有输出、退出码 0 算有事；没输出算没事；别的退出码算检查失败。" : ""}和上次开会话时一模一样的发现不会再开一次。</span>}
+              {checkKind && <span className="settings-hint">到点先检查，有事才开会话，检查发现的内容接在上面那段话后面。{checkKind === "command" ? `检查命令有输出、退出码 0 算有事；没输出算没事；别的退出码算检查失败；输出一行 ${DUTY_DONE_MARK} 就在这次之后关掉值守。` : ""}和上次开会话时一模一样的发现不会再开一次。</span>}
+              <label className="duty-toggle">
+                <input type="checkbox" checked={untilDone} onChange={(e) => setUntilDone(e.target.checked)} aria-label="AI 做完可以关掉值守" />
+                AI 判断事情做完、不用再盯了，可以自己关掉这个值守项
+              </label>
             </>
           )}
           {kind === "command" && (

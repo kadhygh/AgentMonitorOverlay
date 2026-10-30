@@ -12,6 +12,12 @@ export type DutySchedule = { every: number } | { daily: string };
 export const DUTY_MIN_EVERY = 10;
 
 /**
+ * A line a command (an item's command, or a session item's check) prints to say the watch is over: the item is turned
+ * off after this run (2026-10-31: the script decides; with other output, a check still starts its session once).
+ */
+export const DUTY_DONE_MARK = "AMO_DUTY_DONE";
+
+/**
  * What a session item checks before it starts a model (2026-10-31, the user: "每次都先走脚本，有问题才拉起ai"): a
  * command line, or one of Studio's own checks (DutyState.checks). A command says there is something to do by printing
  * it and exiting 0; nothing printed = nothing to do; another exit code = the check failed. What the check found is
@@ -24,9 +30,10 @@ export type DutyAction =
    * A session with `prompt`: in task `taskId`, or (without one) in a new task titled `taskTitle` in project
    * `workspaceId`. `options`: model, effort and permissions for `profileId` (its defaults otherwise; an unattended
    * run usually wants a permission that does not stop to ask). `fallbackProfileId`: used, with its own defaults, when
-   * the first one's subscription is (nearly) used up.
+   * the first one's subscription is (nearly) used up. `untilDone`: the session is told it may turn the item off
+   * (duty_stop) once what the item watches for is done.
    */
-  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; options?: SessionOptions; fallbackProfileId?: Id | null; check?: DutyCheck | null }
+  | { kind: "session"; profileId: Id; prompt: string; taskId?: Id | null; workspaceId?: Id | null; taskTitle?: string; options?: SessionOptions; fallbackProfileId?: Id | null; check?: DutyCheck | null; untilDone?: boolean }
   /** A command line, run in project `workspaceId`'s folder (the common folder without one), below normal priority. */
   | { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number }
   /** One of Studio's own jobs, by name (DutyState.builtins lists them). */
@@ -40,6 +47,8 @@ export interface DutyItem {
   action: DutyAction;
   /** Shipped by a feature (问题页's): the person can turn it on or off and change its times, not remove it. */
   builtin?: boolean;
+  /** Last saved by an agent (duty_save), not in 设置 → 值守. */
+  by?: "agent";
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

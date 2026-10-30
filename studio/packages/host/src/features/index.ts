@@ -50,6 +50,7 @@ import { teamRelayRoutes } from "./teamrelay/routes.js";
 import { teamRelayTools } from "./teamrelay/mcp.js";
 import { issuesTools } from "./issues/mcp.js";
 import { dutyRoutes } from "./duty/routes.js";
+import { dutyTools } from "./duty/mcp.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -95,6 +96,6 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "stats", routes: statsRoutes },
   { name: "remote", routes: remoteRoutes },
   { name: "teamrelay", routes: teamRelayRoutes, tools: teamRelayTools },
-  { name: "duty", routes: dutyRoutes },
+  { name: "duty", routes: dutyRoutes, tools: dutyTools },
   { name: "issues", routes: () => [], tools: issuesTools },
 ];

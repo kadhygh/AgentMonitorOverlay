@@ -52,10 +52,13 @@ test("值守: make a command item and a session item, run them now, edit and rem
   await expect(form.getByLabel("Studio 自带检查")).toHaveValue("issues.pending");
   await form.getByRole("radio", { name: "跑检查命令" }).click();
   await form.getByLabel("检查命令", { exact: true }).fill(`node -e ""`);
+  await expect(form).toContainText("AMO_DUTY_DONE");
+  await form.getByLabel("AI 做完可以关掉值守").check();
   await screenshot(app, "studio", "settings-duty-form", page);
   await form.getByTestId("duty-save").click();
   const checked = dialog.getByTestId("duty-item").filter({ hasText: "早上看一眼" });
   await expect(checked).toContainText("先跑检查命令");
+  await expect(checked).toContainText("做完了 AI 可以关掉它");
   await checked.getByRole("button", { name: "立即运行" }).click();
   await expect(checked.getByTestId("duty-run")).toContainText("○ 跳过");
   await expect(checked.getByTestId("duty-run")).toContainText("检查过了，没有要做的");

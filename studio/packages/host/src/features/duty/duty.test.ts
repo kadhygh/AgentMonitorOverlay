@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
+import { amoToolsFor } from "../../mcp/tools.js";
 
 // 值守 (2026-10-31, plans/issues.md): items run at their times, once at a time — a command, a session (its run lasts
 // as long as the session works), one of Studio's jobs — and a used-up subscription takes the fallback model or skips.
@@ -44,7 +45,7 @@ function setup() {
     await servers.close();
     store.close();
   });
-  return { service, store, duty: service.duty };
+  return { service, store, duty: service.duty, root };
 }
 
 const lastRun = (runs: DutyRun[], itemId: string) => runs.find((r) => r.itemId === itemId);
@@ -160,6 +161,72 @@ describe("值守", () => {
     expect(() => duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "nope" } } })).toThrow("没有这个 Studio 检查");
     duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "x.pending" } } });
     expect(await once("a builtin check")).toMatchObject({ skipped: true, summary: "检查过了，没有要做的" });
+  });
+
+  it("an agent sets an item up (approved), its session is told to stop it, and duty_stop turns it off", async () => {
+    const { service, duty, store, root } = setup();
+    mkdirSync(join(root, "alpha"));
+    const alpha = store.addWorkspace({ path: join(root, "alpha"), name: "alpha" });
+    const task = store.createTask({ title: "盯构建", workspaceId: alpha.id });
+    const asking = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "q", workspaceId: alpha.id, title: "", status: "idle", writer: "workbench", runtimeRef: null });
+    const tool = async (sessionId: string, name: string, args: Record<string, unknown> = {}) => {
+      const t = amoToolsFor(service, { sessionId } as never).find((x) => x.name === name)!;
+      const out = await t.run(args);
+      const text = out.content.map((c) => c.text).join("");
+      return { tool: t, error: !!out.isError, text, value: out.isError ? null : (JSON.parse(text) as Record<string, any>) };
+    };
+    writeFileSync(join(root, "alpha", "check.js"), "console.log('构建失败：3 个测试没过')");
+    const saved = await tool(asking.id, "duty_save", { title: "盯构建", schedule: { every: 1800 }, action: { kind: "session", prompt: "看看为什么失败", untilDone: true, check: { kind: "command", command: "node check.js" } } });
+    // Saving waits for the person; turning off and listing do not.
+    expect(saved.tool.autoApprove).toBe(false);
+    expect((await tool(asking.id, "duty_stop")).tool.autoApprove).toBe(true);
+    // Defaults: the caller's model, its own task, its project's folder for the check.
+    const item = saved.value!.item;
+    expect(item).toMatchObject({ enabled: true, by: "agent", schedule: { every: 1800 }, action: { kind: "session", profileId: "q", taskId: task.id, untilDone: true, check: { kind: "command", command: "node check.js", workspaceId: alpha.id } } });
+    expect((await tool(asking.id, "duty_list")).value!.items[0]).toMatchObject({ id: item.id, nextRun: expect.any(String) });
+    // Not started by 值守: duty_stop wants an id.
+    expect(await tool(asking.id, "duty_stop")).toMatchObject({ error: true, text: expect.stringContaining("不是值守开的") });
+
+    duty.runNow(item.id);
+    const run = await until(() => lastRun(duty.runs(), item.id), (r) => !!r?.sessionId, "the session");
+    expect(store.getSession(run!.sessionId!)!.taskId).toBe(task.id);
+    const said = store.listItems(run!.sessionId!).find((i) => i.type === "user");
+    expect(said).toMatchObject({ text: expect.stringContaining("值守检查发现：\n构建失败：3 个测试没过") });
+    expect(said).toMatchObject({ text: expect.stringContaining("调 AMO 的 duty_stop 关掉它") });
+    // The session it started stops it without an id.
+    expect((await tool(run!.sessionId!, "duty_stop")).value!.item).toMatchObject({ id: item.id, enabled: false });
+    // The person's own edit clears the mark; turning it on alone keeps it.
+    duty.update(item.id, { enabled: true });
+    expect(duty.items()[0]!.by).toBe("agent");
+    duty.update(item.id, { title: "盯构建（人改的）" });
+    expect(duty.items()[0]!.by).toBeUndefined();
+  });
+
+  it("a command that prints AMO_DUTY_DONE turns its item off: a command item, a check with or without a finding", async () => {
+    const { duty } = setup();
+    const done = (id: string, what: string) => {
+      duty.runNow(id);
+      return until(
+        () => {
+          duty.tick();
+          return lastRun(duty.runs(), id);
+        },
+        (r) => r?.ok !== null,
+        what,
+      );
+    };
+    const cmd = duty.create({ title: "等文件", enabled: true, schedule: { every: 60 }, action: { kind: "command", command: `node -e "console.log('到了'); console.log('AMO_DUTY_DONE')"` } }).items[0]!.id;
+    expect(await done(cmd, "the command")).toMatchObject({ ok: true, summary: "完成，值守已关掉：到了" });
+    expect(duty.items().find((i) => i.id === cmd)!.enabled).toBe(false);
+
+    const quiet = duty.create({ title: "没事了", enabled: true, schedule: { every: 60 }, action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "command", command: `node -e "console.log('AMO_DUTY_DONE')"` } } }).items[1]!.id;
+    expect(await done(quiet, "a check that ends it")).toMatchObject({ ok: true, skipped: true, summary: "检查说不用再值守了，已关掉" });
+    expect(duty.items().find((i) => i.id === quiet)!.enabled).toBe(false);
+
+    const last = duty.create({ title: "最后一次", enabled: true, schedule: { every: 60 }, action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "command", command: `node -e "console.log('最后一个问题'); console.log('AMO_DUTY_DONE')"` } } }).items[2]!.id;
+    const run = await done(last, "a last finding");
+    expect(run).toMatchObject({ ok: true, sessionId: expect.any(String) });
+    expect(duty.items().find((i) => i.id === last)!.enabled).toBe(false);
   });
 
   it("a feature's job ships its item off; it can be turned on and timed, not removed or changed", async () => {
