@@ -370,7 +370,7 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
       )}
       {view.tools.length === 0 && <p className="pf-hint">{view.connection.state === "checking" ? "正在读取服务器上的工具…" : "服务器上还没有发布工具。"}</p>}
       {view.tools.map((t) => (
-        <ToolRow key={t.id} tool={t} online={view.connection.state === "online"} writable={view.root.writable} onNeedStudioDir={onNeedStudioDir} />
+        <ToolRow key={t.id} tool={t} connection={view.connection.state} writable={view.root.writable} onNeedStudioDir={onNeedStudioDir} />
       ))}
     </div>
   );
@@ -409,8 +409,11 @@ function RootBanner({ view }: { view: PlatformView }) {
   return null;
 }
 
-function statusLine(t: ToolView): { tone: "ok" | "warn" | "idle"; text: string } {
+function statusLine(t: ToolView, checking: boolean): { tone: "ok" | "warn" | "idle"; text: string } {
   const running = t.running ? " · 正在运行" : "";
+  // While connecting (2026-10-30): what the server has is not known yet — before the first answer an installed tool
+  // would read 「这个通道里没有它」, after a 重试 or a channel switch the last answer; say it is being read instead.
+  if (checking) return t.installed ? { tone: "ok", text: `✓ ${t.installed} · 正在读取服务器上的版本…${running}` } : { tone: "idle", text: "○ 没装 · 正在读取服务器上的版本…" };
   switch (t.standing) {
     case "not-installed":
       return { tone: "idle", text: t.available ? `○ 没装 · 服务器上是 ${t.available}` : "○ 没装 · 这个通道里没有它" };
@@ -475,11 +478,12 @@ function taskLine(task: TaskView): string {
   }
 }
 
-function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolView; online: boolean; writable: boolean; onNeedStudioDir: (message: string) => void }) {
+function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: ToolView; connection: PlatformView["connection"]["state"]; writable: boolean; onNeedStudioDir: (message: string) => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const busy = t.task !== null;
-  const status = statusLine(t);
+  const checking = connection === "checking";
+  const status = statusLine(t, checking);
   const studio = studioLine(t);
   const studioRestart = studioRestartLine(t);
   const short = t.name.replace(/（独立版）$/, "");
@@ -494,8 +498,9 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
   };
 
   const actions: Array<{ label: string; kind: "primary" | "plain" | "quiet"; run: () => void; disabled?: boolean; title?: string }> = [];
-  // A folder it cannot write to: nothing to install or update (RootBanner says why); offline: nothing to fetch.
-  const cannot = !writable ? "这个文件夹不能写入，见上面的提示" : !online ? "现在连不上服务器" : undefined;
+  // A folder it cannot write to: nothing to install or update (RootBanner says why); offline or connecting: nothing to
+  // fetch yet. Only these wait for the server — 打开, 关闭, 回到, 卸载 are this machine's (2026-10-30, the user agreed).
+  const cannot = !writable ? "这个文件夹不能写入，见上面的提示" : checking ? "正在连接服务器…" : connection !== "online" ? "现在连不上服务器" : undefined;
   if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
@@ -555,7 +560,7 @@ function ToolRow({ tool: t, online, writable, onNeedStudioDir }: { tool: ToolVie
         </div>
         <div className="pf-actions">
           {actions.map((a) => (
-            <button key={a.label} type="button" className={a.kind === "primary" ? "btn-primary" : "btn-ghost"} disabled={busy || a.disabled} title={a.title ?? (a.disabled ? "现在连不上服务器" : undefined)} onClick={a.run}>
+            <button key={a.label} type="button" className={a.kind === "primary" ? "btn-primary" : "btn-ghost"} disabled={busy || a.disabled} title={a.title} onClick={a.run}>
               {a.label}
             </button>
           ))}
@@ -810,7 +815,7 @@ function SelfSection({ view }: { view: PlatformView }) {
         )}
         <span className="pf-spacer" />
         {s.standing === "update" && (
-          <button type="button" className="btn-primary" disabled={busy || !online || !view.root.writable} title={!view.root.writable ? "这个文件夹不能写入，见「工具」页上的提示" : online ? undefined : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
+          <button type="button" className="btn-primary" disabled={busy || !online || !view.root.writable} title={!view.root.writable ? "这个文件夹不能写入，见「工具」页上的提示" : online ? undefined : view.connection.state === "checking" ? "正在连接服务器…" : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
             更新平台
           </button>
         )}

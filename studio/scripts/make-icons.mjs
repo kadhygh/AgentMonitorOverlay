@@ -124,17 +124,16 @@ const uiMascot = join(studio, "packages", "ui", "public", "mascot");
 const appMascot = join(studio, "packages", "app", "assets", "mascot");
 for (const dir of [uiMascot, appMascot]) mkdirSync(dir, { recursive: true });
 copyFileSync(join(mascot, "icon", "amo-studio-128.png"), join(uiMascot, "icon.png"));
+// The window icon (taskbar, Alt+Tab) shows her whole, as the page does: cut tighter (1.22×, the headphones' outer edges
+// off; 2026-10-29) it looked odd, the user had it undone on 10-30.
+copyFileSync(join(mascot, "icon", "amo-studio-256.png"), join(appMascot, "icon.png"));
 const FACE_SIZE = 128;
-// The window icon (taskbar, Alt+Tab) is a square cell and she is wide: drawn whole she fills only ~70% of its height.
-// The window's copies are cut tighter — this much bigger, the headphones' outer edges cut (2026-10-29 evening, the
-// user: 「标题栏和任务栏的图标再变大一些」). The page and Focus show her whole (ui/public/mascot).
-const WINDOW_ZOOM = 1.22;
 await page.setContent("<html><body style='margin:0'></body></html>");
-/** What is drawn in `file`, squared around its middle with a little room; `zoom` > 1 cuts the sides, never top or bottom. */
-const cut = async (file, size, zoom) =>
+/** What is drawn in `file`, squared around its middle with a little room. */
+const cut = async (file, size) =>
   Buffer.from(
     await page.evaluate(
-      async ({ dataUrl, size, zoom }) => {
+      async ({ dataUrl, size }) => {
         const img = new Image();
         img.src = dataUrl;
         await img.decode();
@@ -149,7 +148,7 @@ const cut = async (file, size, zoom) =>
         for (let y = 0; y < height; y++)
           for (let x = 0; x < width; x++)
             if (data[(y * width + x) * 4 + 3] > 8) [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
-        const side = Math.ceil(Math.max(Math.max(x1 - x0, y1 - y0) / zoom, y1 - y0) * 1.04);
+        const side = Math.ceil(Math.max(x1 - x0, y1 - y0) * 1.04);
         const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
         let canvas = document.createElement("canvas");
         canvas.width = canvas.height = side;
@@ -169,15 +168,14 @@ const cut = async (file, size, zoom) =>
         g.drawImage(canvas, 0, 0, size, size);
         return out.toDataURL("image/png").split(",")[1];
       },
-      { dataUrl: `data:image/png;base64,${readFileSync(file).toString("base64")}`, size, zoom },
+      { dataUrl: `data:image/png;base64,${readFileSync(file).toString("base64")}`, size },
     ),
     "base64",
   );
-writeFileSync(join(appMascot, "icon.png"), await cut(join(mascot, "icon", "amo-studio-512.png"), 256, WINDOW_ZOOM));
 const faces = readdirSync(mascot).filter((f) => /^0\d-[a-z]+\.png$/.test(f));
 for (const file of faces) {
-  writeFileSync(join(uiMascot, file), await cut(join(mascot, file), FACE_SIZE, 1));
-  writeFileSync(join(appMascot, file), await cut(join(mascot, file), FACE_SIZE, WINDOW_ZOOM));
+  const face = await cut(join(mascot, file), FACE_SIZE);
+  for (const dir of [uiMascot, appMascot]) writeFileSync(join(dir, file), face);
 }
 await browser.close();
 console.log(`icons written for Studio, Reviewer, 便签, 平台, 中转 (${ICO_SIZES.join(", ")} px; 16–24 px from the small cut); 「AMO 娘」 icon and ${faces.length} faces`);

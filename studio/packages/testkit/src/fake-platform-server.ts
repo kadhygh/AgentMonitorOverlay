@@ -36,6 +36,8 @@ export interface FakePlatformServer {
   breakObject(sha256: string): void;
   /** Holds every object download this long before sending it (to see the progress on screen). */
   delayObjects(ms: number): void;
+  /** Holds every channels request this long before answering (to see the platform while it is connecting). */
+  delayChannels(ms: number): void;
   /** Makes every later request with this key fail as logged out. */
   revokeKeys(): void;
   /** Every request, as "METHOD /path". */
@@ -74,6 +76,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   const broken = new Set<string>();
   const requests: string[] = [];
   let delay = 0;
+  let channelsDelay = 0;
   // As the real server (10-28): stable is never older than test — pointing stable at a version moves test along when
   // test has an older one or none.
   const newer = (a: string, b: string) => {
@@ -180,7 +183,10 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         looks.set(me, { nick: next.nick, avatar: next.avatar });
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && path === "/api/platform/channels") return send(res, 200, channels);
+      if (req.method === "GET" && path === "/api/platform/channels") {
+        if (channelsDelay) await new Promise((r) => setTimeout(r, channelsDelay));
+        return send(res, 200, channels);
+      }
       const tool = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)$/.exec(path);
       if (req.method === "GET" && tool) {
         const m = manifests.get(`${decodeURIComponent(tool[1]!)}@${decodeURIComponent(tool[2]!)}`);
@@ -248,6 +254,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
       else point(channel, toolId, version);
     },
     delayObjects: (ms) => void (delay = ms),
+    delayChannels: (ms) => void (channelsDelay = ms),
     corruptObject: (sha) => void corrupt.add(sha),
     breakObject: (sha) => void broken.add(sha),
     revokeKeys: () => keys.clear(),

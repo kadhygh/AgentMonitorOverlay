@@ -702,6 +702,43 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   registry.close();
 });
 
+test("正在连接 (2026-10-30): the versions say they are being read, not the last answer; 安装 greyed with 正在连接服务器…; 打开 still works", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+  try {
+    own.publish("studio", "0.9.0", tool("studio", "0.9.0"), { name: "AMO Studio", exe: "run.cmd" });
+    own.publish("reviewer", "1.0.0", tool("reviewer", "1.0.0"), { name: "AMO Reviewer", exe: "run.cmd" });
+    const { app, page } = await launch();
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await row(page, "reviewer").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 已是最新");
+
+    // A new version on the server, and the platform asks again while the server is slow to answer.
+    own.publish("reviewer", "1.1.0", tool("reviewer", "1.1.0"), { name: "AMO Reviewer", exe: "run.cmd" });
+    own.delayChannels(12_000);
+    const asking = refresh(page);
+    await expect(page.getByTestId("pf-connection")).toContainText("正在连接");
+    await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 正在读取服务器上的版本…");
+    await expect(status(page, "studio")).toHaveText("○ 没装 · 正在读取服务器上的版本…");
+    const install = row(page, "studio").getByRole("button", { name: "安装" });
+    await expect(install).toBeDisabled();
+    await expect(install).toHaveAttribute("title", "正在连接服务器…");
+    // This machine's own: not held up by the server.
+    await expect(row(page, "reviewer").getByRole("button", { name: "打开" })).toBeEnabled();
+    await screenshot(app, "platform", "P37-connecting", page);
+
+    await expect(status(page, "reviewer")).toHaveText("! 1.0.0 · 有新版 1.1.0", { timeout: 30_000 });
+    await expect(install).toBeEnabled();
+    await expect(install).not.toHaveAttribute("title", /.+/);
+    await asking;
+  } finally {
+    await own.close();
+  }
+});
+
 test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO 中转」, installed, opened with the team server's address, updated", async () => {
   const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
   try {
