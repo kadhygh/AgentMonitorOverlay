@@ -24,6 +24,27 @@ describe("parseBlocks", () => {
     expect(list.items[0]!.children).toEqual({ ordered: false, items: [{ text: "读配置", children: null }, { text: "读表", children: null }] });
   });
 
+  it("keeps one list across blank lines, sub-lists and indented paragraphs (2026-10-30: it showed 1, 1, 1 2)", () => {
+    const src = ["## 先定", "", "1. **目录**。两种做法：", "   - **A 原地**", "   - **B 复制**", "", "   我倾向于 A。", "", "2. **显示**。", "   - 第一阶段", "", "3. **渠道**。", "", "4. **批量**。", "", "## 想请你定的", "", "- 第 1 点"].join("\n");
+    const blocks = parseBlocks(src);
+    expect(kinds(blocks)).toEqual(["heading", "list", "heading", "list"]);
+    const list = (blocks[1] as Extract<Block, { kind: "list" }>).list;
+    expect(list.items.map((i) => i.text)).toEqual(["**目录**。两种做法：", "**显示**。", "**渠道**。", "**批量**。"]);
+    expect(list.items[0]!.children!.items.map((i) => i.text)).toEqual(["**A 原地**", "**B 复制**"]);
+    expect(list.items[0]!.after).toEqual(["我倾向于 A。"]);
+    expect(src.slice(blocks[1]!.start, blocks[1]!.end).endsWith("4. **批量**。")).toBe(true);
+    // A paragraph before any sub-list stays with the item's text; a list after a plain paragraph is a new one.
+    const [one] = parseBlocks("1. 第一\n\n   接着说\n2. 第二");
+    expect((one as Extract<Block, { kind: "list" }>).list.items.map((i) => i.text)).toEqual(["第一\n\n接着说", "第二"]);
+    expect(kinds(parseBlocks("- a\n\n段落\n\n- b"))).toEqual(["list", "paragraph", "list"]);
+    expect(kinds(parseBlocks("1. a\n\n- b"))).toEqual(["list", "list"]);
+  });
+
+  it("an ordered list that starts later keeps its number", () => {
+    expect((parseBlocks("3. 第三\n4. 第四")[0] as Extract<Block, { kind: "list" }>).list.start).toBe(3);
+    expect((parseBlocks("1. 第一")[0] as Extract<Block, { kind: "list" }>).list.start).toBeUndefined();
+  });
+
   it("parses pipe tables and pads short rows", () => {
     const src = ["| 表 | 概率和 |", "| --- | ---: |", "| Boss_Lv20 | 0.97 |", "| Chest_Rare |"].join("\n");
     const [table] = parseBlocks(src);

@@ -162,6 +162,29 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(a.page.getByTestId("msg-user").filter({ hasText: "从 B 发来的消息" })).toBeVisible({ timeout: 30_000 });
   await screenshot(b.app, "studio", "remote-b-conversation", b.page);
 
+  // 2026-10-30: B renames the task and the session; the names change on A too.
+  await b.page.getByTestId("task-title").getByRole("button").click();
+  await b.page.getByRole("textbox", { name: "任务名" }).fill("远程一起做的任务（B 改名）");
+  await b.page.getByRole("textbox", { name: "任务名" }).press("Enter");
+  await expect(b.page.getByTestId("task-title")).toHaveText("远程一起做的任务（B 改名）");
+  await expect(a.page.getByTestId("task-title")).toHaveText("远程一起做的任务（B 改名）", { timeout: 30_000 });
+  await b.page.getByTestId("thread-head").locator(".thread-title button").click();
+  await b.page.getByRole("textbox", { name: "会话名" }).fill("B 起的会话名");
+  await b.page.getByRole("textbox", { name: "会话名" }).press("Enter");
+  await expect(b.page.getByTestId("thread-head")).toContainText("B 起的会话名");
+  await expect(a.page.getByTestId("thread-head")).toContainText("B 起的会话名", { timeout: 30_000 });
+  // 归档 from B too: archived on A, restored from B's banner.
+  await b.page.getByTestId("session-archive").click();
+  await expect(a.page.getByTestId("session-archived-banner")).toBeVisible({ timeout: 30_000 });
+  await expect(b.page.getByTestId("session-archived-banner")).toBeVisible();
+  await expect(b.page.getByTestId("archived-row").filter({ hasText: "B 起的会话名" })).toBeVisible();
+  await screenshot(b.app, "studio", "remote-b-archived", b.page);
+  await b.page.getByTestId("session-unarchive").click();
+  await expect(b.page.getByTestId("session-archived-banner")).toHaveCount(0);
+  await expect(b.page.getByTestId("archived-row")).toHaveCount(0);
+  await expect(b.page.getByTestId("thread-head")).toContainText("B 起的会话名");
+  await expect(a.page.getByTestId("session-archived-banner")).toHaveCount(0, { timeout: 30_000 });
+
   // An approval: it waits on B, and A's Focus leaves it to B (B is online).
   const aFocus = await turnOnFocus(a.page, a.app);
   await composer(b.page).fill("[[shell: cmd /c echo remote-ok]]");

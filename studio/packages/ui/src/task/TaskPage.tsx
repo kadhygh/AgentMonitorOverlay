@@ -367,7 +367,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               value={task.title}
               placeholder="未命名任务"
               label="任务名"
-              disabled={!!task.archivedAt || !!copy}
+              // A remote task is renamed on its own computer (2026-10-30), not while it is away or the grant is gone.
+              disabled={!!task.archivedAt || (!!copy && (copy.state === "revoked" || !!copy.blocked))}
               onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
             />
             {task.lead && (

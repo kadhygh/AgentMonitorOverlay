@@ -330,6 +330,27 @@ export class RemoteGrants {
           await sessions.interrupt(s.id);
           return ok({ ok: true });
         }
+        case REMOTE_KINDS.rename: {
+          // The new name comes back to B with the task's or session's own push.
+          if (typeof b.sessionId === "string") {
+            const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
+            await sessions.renameSession(s.id, b.title);
+          } else {
+            const taskId = id(b.taskId, "taskId");
+            this.grantFor(from, taskId);
+            if (this.store.getTask(taskId)?.archivedAt) throw new HostError("read_only", "这个任务已经归档了");
+            this.ctx.host.tasks.updateTask(taskId, { title: boundedText(b.title, "title", 200) });
+          }
+          return ok({ ok: true });
+        }
+        case REMOTE_KINDS.archive: {
+          // The sessions archived (or restored) go to B with their own pushes.
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), false);
+          if (this.store.getTask(s.taskId!)?.archivedAt) throw new HostError("read_only", "这个任务已经归档了");
+          if (b.archived === false) await sessions.unarchive(s.id);
+          else await sessions.archive(s.id);
+          return ok({ ok: true });
+        }
         case REMOTE_KINDS.start: {
           const taskId = id(b.taskId, "taskId");
           this.grantFor(from, taskId);

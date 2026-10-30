@@ -26,6 +26,9 @@ test("renders tables, nested lists, code with copy, and opens links outside the 
   await expect(reply.locator("table.md-table tbody tr")).toHaveCount(2);
   await expect(reply.locator("ol.md-list > li")).toHaveCount(2);
   await expect(reply.locator("ol.md-list > li").first().locator("ul.md-list > li")).toHaveCount(2);
+  // 2026-10-30: a blank line and an indented paragraph inside item 1 keep one list (it came out as 1, 1 before).
+  await expect(reply.locator("ol.md-list > li").first().locator(".md-li-after")).toHaveText("改完先自己核一遍。");
+  await expect(reply.locator("ol.md-list > li").nth(1)).toContainText("再跑一次");
   await expect(reply.locator(".md-code-head")).toContainText("csharp");
   await expect(reply.locator(".md-pre")).toHaveText("DropTable.Normalize(table);");
 

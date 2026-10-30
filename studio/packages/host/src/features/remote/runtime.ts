@@ -8,7 +8,7 @@ import type { RemoteCopies } from "./copies.js";
 // 远程, step 2 (2026-10-29): "remote" as one more way a session runs, beside Codex, Claude and DSH. The Host's features
 // call one runtime; this one sends the sessions of copies (runtime "remote") to the paired device they run on, and every
 // other session to the runtimes of this computer. What a copy cannot do here (Git Review, a terminal, a branch, its
-// model or name, archiving it alone) is refused with a reason the person can read.
+// model) is refused with a reason the person can read.
 
 const no = (what: string) => new HostError("read_only", `远程任务的会话不能在这台电脑上${what}：任务在授权它的电脑上运行，那边才能做`);
 
@@ -40,7 +40,7 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     return this.inner.setOptions(sessionId, options);
   }
   rename(sessionId: Id, title: string): Promise<Session> {
-    if (this.remote(sessionId)) throw no("改名");
+    if (this.remote(sessionId)) return this.copies().renameSession(sessionId, title);
     return this.inner.rename(sessionId, title);
   }
   sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []) {
@@ -56,11 +56,11 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     return this.inner.fork(sessionId, profileId);
   }
   archive(sessionId: Id): Promise<Session[]> {
-    if (this.remote(sessionId)) throw no("单独归档（归档整个任务会清掉这台电脑上的副本）");
+    if (this.remote(sessionId)) return this.copies().archive(sessionId, true);
     return this.inner.archive(sessionId);
   }
   unarchive(sessionId: Id): Promise<Session[]> {
-    if (this.remote(sessionId)) throw no("恢复");
+    if (this.remote(sessionId)) return this.copies().archive(sessionId, false);
     return this.inner.unarchive(sessionId);
   }
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {

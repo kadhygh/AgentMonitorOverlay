@@ -157,8 +157,8 @@ describe("remote tasks between two Hosts (step 2)", () => {
     expect(a.store.getSession(third.id)).toMatchObject({ profileId: "q", options: { permission: "read-only" } });
 
     // What only A does is refused on B (its Host and its runtime both).
-    await expect(async () => b.service.tasks.updateTask(task.id, { title: "改名" })).rejects.toThrow("远程任务");
-    expect(() => b.remote.guardRoute("PATCH", "/api/tasks/:id", { id: task.id })).toThrow("A-PC 上的远程任务");
+    await expect(async () => b.service.tasks.updateTask(task.id, { column: "done" })).rejects.toThrow("远程任务");
+    expect(() => b.remote.guardRoute("POST", "/api/tasks/:id/unarchive", { id: task.id })).toThrow("A-PC 上的远程任务");
     expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/fork", { id: session.id })).toThrow("A-PC 上的远程任务");
     expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/messages", { id: session.id })).not.toThrow();
     await expect(b.service.sessions.fork(session.id)).rejects.toThrow("远程任务的会话不能在这台电脑上分支");
@@ -696,6 +696,38 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     b.service.review.addAnnotation(session.id, { itemId: reply.id, start: 0, end: quote.length, quote, note: "这里再看看" });
     await b.service.review.sendAnnotations(session.id);
     await userOn(a, session.id, "这里再看看");
+  }, 60_000);
+
+  it("B renames the task and a session (2026-10-30): renamed on A, the copy says so at once; other changes stay A's", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    expect(() => b.remote.guardRoute("PATCH", "/api/tasks/:id", { id: task.id })).not.toThrow();
+    expect(() => b.remote.guardRoute("PATCH", "/api/sessions/:id", { id: session.id })).not.toThrow();
+
+    expect((await b.service.tasks.patchTask(task.id, { title: "B 起的名字" })).title).toBe("B 起的名字");
+    expect(a.store.getTask(task.id)!.title).toBe("B 起的名字");
+    expect((await b.service.sessions.renameSession(session.id, "B 的会话名")).title).toBe("B 的会话名");
+    expect(a.store.getSession(session.id)!.title).toBe("B 的会话名");
+    // A's own rename still comes over.
+    a.service.tasks.updateTask(task.id, { title: "A 又改了" });
+    await until(() => b.store.getTask(task.id)!.title, (t) => t === "A 又改了", "A's name on B");
+
+    expect(() => b.service.tasks.patchTask(task.id, { title: "x", column: "done" })).toThrow("状态、说明和专题");
+    expect(() => b.service.tasks.patchTask(task.id, { title: "  " })).toThrow("empty");
+
+    // 归档 / 恢复 a session from B (2026-10-30): done on A, the copy shows it when B's call returns; the task stays.
+    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/archive", { id: session.id })).not.toThrow();
+    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/unarchive", { id: session.id })).not.toThrow();
+    await until(() => a.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "A idle");
+    expect((await b.service.sessions.archive(session.id)).map((s) => s.id)).toContain(session.id);
+    expect(a.store.getSession(session.id)!.archivedAt).toBeTruthy();
+    expect(b.store.getSession(session.id)!.archivedAt).toBeTruthy();
+    expect(b.store.getTask(task.id)!.remote!.state).toBe("active");
+    await b.service.sessions.unarchive(session.id);
+    expect(a.store.getSession(session.id)!.archivedAt).toBeFalsy();
+    expect(b.store.getSession(session.id)!.archivedAt).toBeFalsy();
   }, 60_000);
 
   it("a task B creates that waits for a yes keeps what B sent until then: refused, it is gone; allowed, the first message carries it", async () => {

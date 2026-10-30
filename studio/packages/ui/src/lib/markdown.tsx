@@ -11,11 +11,18 @@ import { useWorkerHighlight } from "./useWorkerHighlight.js";
 export interface ListItem {
   text: string;
   children: ListNode | null;
+  /** Indented paragraphs that came after its child list (shown below it). */
+  after?: string[];
 }
 export interface ListNode {
   ordered: boolean;
   items: ListItem[];
+  /** An ordered list's first number when it is not 1. */
+  start?: number;
 }
+
+/** A list's lines: its items, and paragraphs indented under an item after a blank line. */
+type ListLine = { indent: number; ordered: boolean; num: number; text: string; para?: true };
 
 export type Block = { start: number; end: number } & (
   | { kind: "code"; lang: string; text: string }
@@ -37,15 +44,28 @@ function splitRow(line: string): string[] {
 }
 
 /** Builds nested lists from indented item lines (2+ spaces of extra indent opens a child list). */
-function buildList(lines: Array<{ indent: number; ordered: boolean; text: string }>): ListNode {
-  const root: ListNode = { ordered: lines[0]!.ordered, items: [] };
+function newList(l: ListLine): ListNode {
+  return { ordered: l.ordered, items: [], ...(l.ordered && l.num !== 1 ? { start: l.num } : {}) };
+}
+
+function buildList(lines: ListLine[]): ListNode {
+  const root = newList(lines[0]!);
   const stack: Array<{ node: ListNode; indent: number }> = [{ node: root, indent: lines[0]!.indent }];
   for (const l of lines) {
+    if (l.para) {
+      // The item it is indented under: the deepest one whose own marker sits left of it.
+      while (stack.length > 1 && l.indent <= stack.at(-1)!.indent) stack.pop();
+      const owner = stack.at(-1)!.node.items.at(-1);
+      if (!owner) continue;
+      if (owner.children) (owner.after ??= []).push(l.text);
+      else owner.text += `\n\n${l.text}`;
+      continue;
+    }
     while (stack.length > 1 && l.indent < stack.at(-1)!.indent) stack.pop();
     let top = stack.at(-1)!;
     if (l.indent >= top.indent + 2 && top.node.items.length) {
       const parent = top.node.items.at(-1)!;
-      parent.children ??= { ordered: l.ordered, items: [] };
+      parent.children ??= newList(l);
       stack.push({ node: parent.children, indent: l.indent });
       top = stack.at(-1)!;
     }
@@ -106,19 +126,32 @@ export function parseBlocks(source: string): Block[] {
     if (LIST_ITEM.test(line)) {
       flush();
       const first = i;
-      const items: Array<{ indent: number; ordered: boolean; text: string }> = [];
+      const items: ListLine[] = [];
       while (i < lines.length) {
         const m = LIST_ITEM.exec(lines[i]!);
         if (m) {
-          items.push({ indent: m[1]!.length, ordered: !!m[3], text: m[4]! });
+          items.push({ indent: m[1]!.length, ordered: !!m[3], num: m[3] ? Number(m[3]) : 0, text: m[4]! });
           i++;
         } else if (items.length && /^\s{2,}\S/.test(lines[i]!)) {
-          // Lazy continuation line of the previous item.
+          // Lazy continuation line of the previous item (or paragraph).
           items.at(-1)!.text += `\n${lines[i]!.trim()}`;
           i++;
+        } else if (!lines[i]!.trim()) {
+          // Blank lines inside a list (2026-10-30: 「1.」 with a sub-list and an indented paragraph, then 「2.」, came out
+          // as three lists each numbered from 1): the list goes on when the next line is an item of it (or deeper), or
+          // a paragraph indented under an item; anything else ends it, the blank lines after it.
+          let j = i;
+          while (j < lines.length && !lines[j]!.trim()) j++;
+          const next = j < lines.length ? lines[j]! : "";
+          const n = LIST_ITEM.exec(next);
+          if (n ? n[1]!.length > items[0]!.indent || !!n[3] === items[0]!.ordered : /^\s{2,}\S/.test(next) && !/^\s*```/.test(next)) {
+            i = j;
+            if (!n) items.push({ indent: /^\s*/.exec(next)![0].length, ordered: false, num: 0, text: lines[i++]!.trim(), para: true });
+          } else break;
         } else break;
       }
       i--;
+      while (i > first && !lines[i]!.trim()) i--;
       blocks.push({ kind: "list", list: buildList(items), start: offsets[first]!, end: lineEnd(i) });
       continue;
     }
@@ -243,11 +276,16 @@ export function renderInline(text: string): ReactNode[] {
 function ListView({ list }: { list: ListNode }) {
   const Tag = list.ordered ? "ol" : "ul";
   return (
-    <Tag className="md-list">
+    <Tag className="md-list" {...(list.start !== undefined ? { start: list.start } : {})}>
       {list.items.map((it, j) => (
         <li key={j}>
           <span className="md-li-text">{renderInline(it.text)}</span>
           {it.children && <ListView list={it.children} />}
+          {it.after?.map((p, k) => (
+            <span key={k} className="md-li-text md-li-after">
+              {renderInline(p)}
+            </span>
+          ))}
         </li>
       ))}
     </Tag>

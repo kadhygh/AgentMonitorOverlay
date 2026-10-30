@@ -368,6 +368,37 @@ export class RemoteCopies {
     await this.ask(peer, REMOTE_KINDS.interrupt, { sessionId });
   }
 
+  /**
+   * 改名 (2026-10-30, the user could not rename a remote task or its sessions): renamed on A; the name is put on the copy
+   * at once too, A's push (task / session) brings the same.
+   */
+  async renameSession(sessionId: Id, title: string): Promise<Session> {
+    const { peer } = this.target(sessionId);
+    await this.ask(peer, REMOTE_KINDS.rename, { sessionId, title });
+    const stored = this.store.updateSession(sessionId, { title });
+    this.publish({ type: "session.upserted", session: stored });
+    return stored;
+  }
+
+  /**
+   * 归档 / 恢复 one session (2026-10-30, the user had no 归档 in a remote task): done on A, whose pushes of the sessions
+   * it changed come before its answer on the same link.
+   */
+  async archive(sessionId: Id, archived: boolean): Promise<Session[]> {
+    const { task, peer } = this.target(sessionId);
+    await this.ask(peer, REMOTE_KINDS.archive, { sessionId, archived });
+    return this.store.listSessions({ taskId: task.id }).filter((s) => !!s.archivedAt === archived);
+  }
+
+  async renameTask(task: Task, title: string): Promise<Task> {
+    if (!task.remote) throw new HostError("not_found", `task ${task.id} not found`);
+    if (task.remote.state !== "active") throw new HostError("read_only", `授权已收回：${task.remote.reason ?? ""}`.replace(/：$/, ""));
+    await this.ask(peerOf(task), REMOTE_KINDS.rename, { taskId: task.id, title });
+    const stored = this.store.updateTask(task.id, { title });
+    this.publish({ type: "task.upserted", task: stored });
+    return stored;
+  }
+
   /** 新会话 in a copy: on A, on a model A allows (the first message goes with it); the copy of it comes back. */
   async start(task: Task, input: NewSessionInput): Promise<Session> {
     const r = task.remote!;

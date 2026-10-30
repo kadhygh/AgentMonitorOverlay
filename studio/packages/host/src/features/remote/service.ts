@@ -772,6 +772,10 @@ export class RemoteFeature extends Feature {
     return this.copies.start(task, input);
   }
 
+  renameCopy(task: Task, title: string): Promise<Task> {
+    return this.copies.renameTask(task, title);
+  }
+
   dropCopy(task: Task): void {
     this.copies.drop(task);
   }
@@ -789,8 +793,8 @@ export class RemoteFeature extends Feature {
 
   /**
    * What a copy takes from this computer's own API (B's Host refuses the rest, 「B 能看到什么」): reading it, a message,
-   * an answer to an approval or question, 打断, a new session, and archiving it (which deletes the copy). Changing the
-   * task (its name, column, topic, 说明), a session's model or name, a branch, a terminal… are
+   * an answer to an approval or question, 打断, a new session, renaming the task or a session and archiving or restoring
+   * a session (on A), and archiving the task (which deletes the copy). Changing the task's column, topic or 说明, a session's model, a branch, a terminal… are
    * A's to do.
    */
   guardRoute(method: string, path: string, params: Record<string, string>): void {
@@ -815,6 +819,13 @@ const COPY_ROUTES = new Set([
   "POST /api/sessions/:id/questions/:itemId/answer",
   "POST /api/tasks/:id/sessions",
   "POST /api/tasks/:id/archive",
+  // 改名 (2026-10-30): renamed on A (RemoteCopies.renameTask / renameSession); other changes to the task are refused by
+  // TasksFeature.updateTask, a session's options by RemoteAwareRuntime.
+  "PATCH /api/tasks/:id",
+  "PATCH /api/sessions/:id",
+  // 归档 / 恢复 one session (2026-10-30): done on A (RemoteCopies.archive); archiving the task still deletes the copy.
+  "POST /api/sessions/:id/archive",
+  "POST /api/sessions/:id/unarchive",
   // 批注 (2026-10-30, the user could not comment on a remote reply): kept on this computer, they go to A as the text of
   // a message (composeAnnotationRefs), like any message. PATCH / DELETE /api/annotations/:id are not by task.
   "POST /api/sessions/:id/annotations",

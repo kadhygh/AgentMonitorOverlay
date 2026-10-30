@@ -173,9 +173,21 @@ export class TasksFeature extends Feature {
    * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there, and a reference
    * card to it on the new topic's canvas becomes its own card.
    */
+  /** PATCH /api/tasks/:id: a remote task's copy takes a new name, renamed on its own computer (2026-10-30). */
+  patchTask(id: Id, patch: Parameters<TasksFeature["updateTask"]>[1]): Task | Promise<Task> {
+    const current = this.requireTask(id);
+    const onlyTitle = patch.title !== undefined && Object.entries(patch).every(([k, v]) => k === "title" || v === undefined);
+    if (current.remote && onlyTitle) {
+      const title = String(patch.title).trim();
+      if (!title) throw new HostError("bad_request", "title must not be empty");
+      return this.f.remote.renameCopy(current, title.slice(0, 200));
+    }
+    return this.updateTask(id, patch);
+  }
+
   updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
-    if (current.remote) throw new HostError("read_only", `这是 ${current.remote.name} 上的远程任务：名字、状态、说明和专题跟着那台电脑走，这里不能改`);
+    if (current.remote) throw new HostError("read_only", `这是 ${current.remote.name} 上的远程任务：状态、说明和专题跟着那台电脑走，这里不能改（名字可以改，会改到那边）`);
     const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead" | "relayAuto">> = {};
     if (patch.lead !== undefined) {
       if (typeof patch.lead !== "boolean") throw new HostError("bad_request", "lead must be true or false");

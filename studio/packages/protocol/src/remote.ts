@@ -230,6 +230,10 @@ export const REMOTE_KINDS = {
   answer: "rt.answer",
   /** B → A: stop the session's turn. {sessionId} → {ok} */
   interrupt: "rt.interrupt",
+  /** B → A (2026-10-30): a new name for the task ({taskId, title}) or one of its sessions ({sessionId, title}). → {ok} */
+  rename: "rt.rename",
+  /** B → A (2026-10-30): archive one session (its branches with it), or restore it. {sessionId, archived} → {ok} */
+  archive: "rt.archive",
   /** B → A: a new session in the task, on an allowed model. {taskId, profileId (A's), text?} → {session} */
   start: "rt.start",
   /**

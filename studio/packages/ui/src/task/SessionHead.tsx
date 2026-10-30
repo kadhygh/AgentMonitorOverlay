@@ -48,7 +48,8 @@ export function SessionHead({
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
-  // 远程 (step 2): a copy of another computer's session — its folder, terminal, branches, name and archive are there.
+  // 远程 (step 2): a copy of another computer's session — its folder, terminal and branches are there
+  // (its name and 归档 too, but they are done from here: sent there, 2026-10-30).
   const remote = session.runtime === "remote";
   return (
     <div className="thread-head" data-testid="thread-head">
@@ -57,7 +58,7 @@ export function SessionHead({
           value={session.title}
           placeholder="新会话"
           label="会话名"
-          disabled={!!session.archivedAt || remote}
+          disabled={!!session.archivedAt}
           onSave={onRename}
         />
       </span>
@@ -107,7 +108,8 @@ export function SessionHead({
         </>
       )}
       {/* 归档 out of ⋯, right of 分支 (2026-10-28); an archived session is restored from its banner below. */}
-      {!session.archivedAt && !remote && (
+      {/* A remote task's session is archived on its own computer too (2026-10-30). */}
+      {!session.archivedAt && (
         <button type="button" className="bar-btn labeled soft-danger" aria-label="归档会话" title="归档会话：变成只读，从它开出的分支一起归档；之后可以恢复" disabled={busy} onClick={onArchive} data-testid="session-archive">
           <ArchiveIcon />
           <span className="bar-label">归档</span>
