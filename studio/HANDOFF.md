@@ -47,7 +47,9 @@
 
 ## 最近的改动（新的在上面）
 
-**2026-10-30 晚（四）· 便签 0.9.7「关于」、平台 0.9.12「关闭」误报（未发布、未提交）**
+**2026-10-30 晚（四）· 便签 0.9.7「关于」、平台 0.9.12「关闭」误报（测试通道）**
+
+- 晚～晚（四）的改动一起提交（5c833ce）。便签 0.9.7、平台 0.9.12 发了测试通道（publish 删了便签 0.9.4、平台 0.9.9）。试过后 `promote notes 0.9.7`、`promote platform 0.9.12`；Studio 0.9.15 也还在测试通道。
 
 - 便签「关于」：无边框窗口的拖动区收不到网页的 contextmenu，右键走 BrowserWindow 的 `system-context-menu`（`notes/src/main.ts` 的 createPad），菜单「关于便签」→ `amo:notes-about` → 页面问 `amo:notes-about-info`（版本读 notes 自己的 package.json；`--amo-app=notes` 时写随哪个 Studio 版本运行）→ 便签顶上一条提示，× 或 Esc 收起。e2e 用 `__notesAbout` 触发，截图 `screenshots/notes/N-about.png`。notes e2e 6 条过 5 条，挂的那条是本机自己的便签占着 Ctrl+Alt+Space（快捷键退到 Ctrl Shift F12），和改动无关。
 - 平台「关闭」误报 0.9.7：`close()` 按「旧版本文件夹里有在跑的进程」判旧版本，Studio 0.9.7 的文件夹里还有它带起来的 claude.exe 或随它的便签，就误判了。改成先读 Studio 的 `/api/health` 版本，读不到才看进程，而且只看 programs.json 里 Studio 自己的 exe 名。platform.test 13 条过。
