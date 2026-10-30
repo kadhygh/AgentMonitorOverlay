@@ -36,6 +36,16 @@ describe("claudeEnv", () => {
     expect(env.claude_config_dir).toBeUndefined();
   });
 
+  // 2026-10-30: the installed Studio's Host runs as Electron's Node with its data folder and UI in AMO_STUDIO_*; an
+  // agent's e2e run or dev Studio must not get them.
+  it("leaves out the Host's own variables", () => {
+    const env = claudeEnv(glm, BUILTIN_CLAUDE_PROVIDERS, credentials, studio("home"), { ...base, ELECTRON_RUN_AS_NODE: "1", AMO_STUDIO_DATA_DIR: "D:/data", AMO_STUDIO_UI_DIR: "D:/ui", AMO_HOME: "C:/amo" });
+    expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    expect(env.AMO_STUDIO_DATA_DIR).toBeUndefined();
+    expect(env.AMO_STUDIO_UI_DIR).toBeUndefined();
+    expect(env.AMO_HOME).toBe("C:/amo");
+  });
+
   // 2026-10-21: the switch that stops auto mode's whole-checkout git snapshots lives in the CLI. A new SDK that drops or
   // renames it would bring the desktop-wide lag back without a word, so the bundled CLI must still know the name.
   it("the bundled CLI still knows CLAUDE_CODE_BASH_EDIT_DIFF", async () => {

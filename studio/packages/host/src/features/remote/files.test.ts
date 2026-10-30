@@ -83,6 +83,16 @@ describe("remote files on A (step 3)", () => {
     expect(await readRemoteFile(roots, { taskId: "t", path: "附件/att-1.png", offset: 0 }, "A")).toMatchObject({ rel: "附件/att-1.png", kind: "image" });
   });
 
+  it("finds a relative path written from a subfolder by its end, as local links do (2026-10-30)", async () => {
+    const { root, roots } = layout();
+    const asked: string[] = [];
+    const finding: FileRoots = { ...roots, findByEnd: async (w) => (asked.push(w), w === "img/p.png" ? join(root, "docs", "img", "p.png") : null) };
+    expect(await readRemoteFile(finding, { taskId: "t", path: "img/p.png", offset: 0 }, "A")).toMatchObject({ rel: "docs/img/p.png", kind: "image" });
+    expect(await readRemoteFile(finding, { taskId: "t", path: "任务文件夹/img/p.png", offset: 0 }, "A")).toMatchObject({ rel: "docs/img/p.png" });
+    await expect(readRemoteFile(finding, { taskId: "t", path: "nope/x.md", offset: 0 }, "A")).rejects.toThrow("找不到这个文件");
+    expect(asked).toEqual(["img/p.png", "img/p.png", "nope/x.md"]);
+  });
+
   it("refuses what is outside the folder, escapes through a link, the wrong kind, odd content and big files, saying why", async () => {
     const { top, root, outside, attachments, roots } = layout();
     const ask = (path: string, cwd?: string) => readRemoteFile(roots, { taskId: "t", path, offset: 0, ...(cwd ? { cwd } : {}) }, "A 台式机");

@@ -1,6 +1,7 @@
 import type { ClaudeLogin, ModelOption, ModelProfile } from "@amo-studio/protocol";
 import { GLM_MODELS } from "../choices.js";
 import type { CredentialReader } from "../credentials.js";
+import { hostOnlyEnv } from "../agent-env.js";
 import { localClaudeSignedIn } from "./claude-login.js";
 
 // Environment for a managed Claude Code process. The routing for GLM follows old AMO's glm-5.3 preset
@@ -79,7 +80,8 @@ export function claudeEnv(
     throw new ClaudeProfileError("这个 Claude 会话是用令牌登录开始的，令牌登录已经去掉：新开一个会话（用本机 Claude Code 的登录）");
   }
   if (profile.credentialId && !local && !key) throw new ClaudeProfileError(`profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`);
-  const inherited = Object.fromEntries(Object.entries(base).filter(([k, v]) => v !== undefined && !/^(ANTHROPIC_|CLAUDE)/i.test(k))) as Record<string, string>;
+  // Nor the Host's own (agent-env.ts): the CLI is a native exe and needs neither.
+  const inherited = Object.fromEntries(Object.entries(base).filter(([k, v]) => v !== undefined && !/^(ANTHROPIC_|CLAUDE)/i.test(k) && !hostOnlyEnv(k))) as Record<string, string>;
   return {
     ...inherited,
     ...provider.env,

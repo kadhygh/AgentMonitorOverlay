@@ -59,3 +59,20 @@ export function catalogProjectChoices(c: RemoteCatalog, topicId: string | null):
 
 /** The project picked at first: the only one when the common folder is not allowed, else none. */
 export const defaultProject = (c: RemoteCatalog): string | null => (!c.allowCommon && c.projects.length === 1 ? c.projects[0]!.id : null);
+
+export interface CatalogPicks {
+  topicId: string | null;
+  projectId: string | null;
+  profileId: string | null;
+}
+
+/**
+ * The device's catalog changed while the page shows it (2026-10-30: it pushes it when its 远程设置 is saved): what is
+ * still there stays picked, the rest goes back to what a fresh catalog starts with.
+ */
+export function keptPicks(c: RemoteCatalog, picks: CatalogPicks): CatalogPicks {
+  const topicId = picks.topicId && c.topics.some((t) => t.id === picks.topicId) ? picks.topicId : null;
+  const projectId = picks.projectId && c.projects.some((p) => p.id === picks.projectId) ? picks.projectId : defaultProject(c);
+  const profileId = picks.profileId && c.models.some((m) => m.id === picks.profileId) ? picks.profileId : (c.models[0]?.id ?? null);
+  return { topicId, projectId, profileId };
+}

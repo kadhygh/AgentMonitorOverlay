@@ -327,7 +327,12 @@ export type RemotePush =
   /** Streaming text of an agent item (not stored on its own on either side). */
   | { type: "delta"; sessionId: Id; itemId: Id; append: string }
   /** Step 4: A's person answered one of B's requests. */
-  | { type: "request"; request: RemoteTaskRequest };
+  | { type: "request"; request: RemoteTaskRequest }
+  /**
+   * 2026-10-30 (the user: B's new-task page kept the old projects after A saved 远端允许的项目): what B may pick creating
+   * a task on A changed — sent to a device that asked for it (rt.catalog) since A's Host started. An older B ignores it.
+   */
+  | { type: "catalog"; catalog: RemoteCatalog };
 
 // ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
 // A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under

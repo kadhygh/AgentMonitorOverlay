@@ -19,7 +19,10 @@ export function FolderAccessSection({ link }: { link: HostLink }) {
   }, [link]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!list?.available) return null;
-  const ready = list.folders.filter((f) => f.state === "ready").length;
+  const live = list.folders.filter((f) => !f.archived);
+  const ready = live.filter((f) => f.state === "ready").length;
+  // Archived projects still set up (2026-10-30): said here so it is not missed.
+  const left = list.folders.length - live.length;
 
   return (
     <section className="settings-section" aria-label="DSH 沙箱权限" data-testid="folder-access-section">
@@ -29,7 +32,7 @@ export function FolderAccessSection({ link }: { link: HostLink }) {
       </span>
       <div className="settings-row">
         <span className="settings-label" data-testid="folder-access-summary">
-          {ready} / {list.folders.length} 个项目已设置
+          {ready} / {live.length} 个项目已设置{left ? `；${left} 个已归档的项目还留着 DSH 的权限，可以在「管理…」里恢复` : ""}
         </span>
         <span className="spacer" />
         <button type="button" className="btn-ghost small" onClick={() => setOpen(true)} data-testid="folder-access-open">

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Protector } from "@amo-studio/account";
 import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
@@ -330,7 +330,7 @@ describe("launch and the machine", () => {
     let stop: StudioStop = { ok: false, reason: "running", running: 1 };
     let left: number[] = [];
     const waited: Array<readonly number[]> = [];
-    const { platform, launched, picks } = make({
+    const { platform, launched, picks, running } = make({
       extra: {
         fetch: routed,
         stopStudio: async () => stop,
@@ -381,5 +381,20 @@ describe("launch and the machine", () => {
     health = { ok: true, pid: 5000, running: 0 };
     await platform.refreshStudio();
     expect(card().studio).toMatchObject({ version: null, restart: "unsupported" });
+
+    // 关闭 (2026-10-30): the version Studio says counts, not a helper left in an old folder (Claude Code's exe) or 便签
+    // through an older Studio; a Studio that says nothing: only its own exe counts.
+    const studioDir = dirname(launched[0]!.file);
+    const old = join(dirname(studioDir), "0.8.0");
+    running.push(join(old, "resources", "claude.exe"));
+    health = { ok: true, pid: 5000, running: 0, version: "0.9.9" };
+    expect(await platform.close("studio")).toEqual({ ok: true });
+    expect(launched.at(-1)!.args).toContain("--amo-quit");
+    health = { ok: true, pid: 5000, running: 0, version: "0.9.7" };
+    expect(await platform.close("studio")).toMatchObject({ ok: false, message: expect.stringContaining("是 0.9.7 打开的") });
+    health = { ok: true, pid: 5000, running: 0 };
+    expect(await platform.close("studio")).toEqual({ ok: true });
+    running.push(join(old, "AMO Studio.exe"));
+    expect(await platform.close("studio")).toMatchObject({ ok: false, message: expect.stringContaining("是 0.8.0 打开的") });
   });
 });

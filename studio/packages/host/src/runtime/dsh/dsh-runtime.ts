@@ -27,6 +27,7 @@ import {
 } from "./install.js";
 import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
+import { withoutHostEnv } from "../agent-env.js";
 
 // DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/done/stage-17-dsh.md). Each session runs its own
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
@@ -388,8 +389,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   // ---- processes --------------------------------------------------------------------------------------------------
 
   private spawn(cwd: string, profile: ModelProfile | null, permission: DshPermissionMode, label: string, model?: string): AcpConnection {
-    const env: NodeJS.ProcessEnv = { ...(this.options.env ?? process.env), [DSH_HOME_ENV]: join(this.options.dir, "home"), [DSH_PERMISSION_ENV]: permission };
-    delete env.ELECTRON_RUN_AS_NODE;
+    const env: NodeJS.ProcessEnv = { ...withoutHostEnv(this.options.env ?? process.env), [DSH_HOME_ENV]: join(this.options.dir, "home"), [DSH_PERMISSION_ENV]: permission };
     const credentialId = profile?.credentialId ?? this.options.profiles.find((p) => p.runtime === "dsh" && p.credentialId)?.credentialId;
     const key = credentialId ? this.options.credentials.read(credentialId) : null;
     if (key) env[DSH_KEY_ENV] = key;

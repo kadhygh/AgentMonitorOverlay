@@ -96,12 +96,6 @@ test("A ticks a project and a model; B creates a task on A from its new-task pag
   await expect(draft.getByTestId("remote-draft-state")).toContainText("A 台式机 还没勾远端允许的项目：在那台电脑的 远程 → 远程设置 里勾");
   await expect(b.page.getByTestId("remote-draft-start")).toBeDisabled();
   await screenshot(b.app, "studio", "remote-create-not-allowed", b.page);
-  // Back to this computer: the local rows again.
-  await side.getByRole("button", { name: "在这台电脑上" }).click();
-  await expect(b.page.getByRole("group", { name: "设备" })).toHaveCount(0);
-  await expect(b.page.getByRole("group", { name: "项目" })).toBeVisible();
-  await b.page.getByTestId("back").click();
-
   // A: 远程 → 远程设置: a model, then a project (not the common folder).
   const aRemote = await openRemote(a.page);
   await aRemote.getByTestId("remote-settings-open").click();
@@ -132,6 +126,19 @@ test("A ticks a project and a model; B creates a task on A from its new-task pag
   await security.scrollIntoViewIfNeeded();
   await screenshot(a.app, "studio", "remote-security", a.page);
   expect((await a.api<RemoteState>("GET", "/api/remote")).security).toEqual({ sameAccount: "run", otherAccount: "run" });
+
+  // 2026-10-30 (the user: B kept the old catalog after A saved): B's page, open all along, has A's choices now.
+  await expect(draft.getByTestId("remote-draft-state")).toHaveCount(0);
+  await expect(draft.getByRole("group", { name: "项目" }).getByRole("button")).toHaveText(["不选", "可以远程的项目"]);
+  await expect(b.page.getByTestId("remote-draft-model")).toHaveText([`Codex · ${mock.label}`]);
+  await expect(b.page.getByTestId("remote-draft-start")).toBeEnabled();
+
+  // Back to this computer: the local rows again.
+  await side.getByRole("button", { name: "在这台电脑上" }).click();
+  await expect(b.page.getByRole("group", { name: "设备" })).toHaveCount(0);
+  await expect(b.page.getByRole("group", { name: "项目" })).toBeVisible();
+  await b.page.getByTestId("back").click();
+
 
   // B: 远程 → A's card → 在它上面新建任务: the new-task page in 「在别的设备上」, A picked, A's catalog.
   const bRemote = await openRemote(b.page);

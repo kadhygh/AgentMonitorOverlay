@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RemoteCatalog, RemoteState, Task } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
+import { onHostEvent } from "../host/events.js";
 import { StartingCover } from "../lib/StartingCover.js";
 import { IconPaperclip } from "../attach/icons.js";
 import { useAttachments } from "../attach/useAttachments.js";
@@ -9,7 +10,7 @@ import { withFileRefs } from "../attach/refs.js";
 import { topicProject } from "./choices.js";
 import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
-import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
+import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
 
 // 新任务页的「在别的设备上」 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
@@ -116,6 +117,23 @@ export function RemoteDraft({
     // By the device and whether it is online; `attempt` asks again (重试).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.key, online, attempt, link.url]);
+
+  // 2026-10-30 (the user: A saved 远端允许的项目, this page kept the old ones): the device pushes its catalog when it
+  // changes; it is taken as it is, and what is still there stays picked.
+  const picks = useRef({ topicId, projectId, profileId });
+  picks.current = { topicId, projectId, profileId };
+  useEffect(
+    () =>
+      onHostEvent((e) => {
+        if (e.type !== "remote.catalog" || targetKey(e) !== deviceKey) return;
+        const next = keptPicks(e.catalog, picks.current);
+        setLoaded({ key: deviceKey, catalog: e.catalog, error: null });
+        setTopicId(next.topicId);
+        setProjectId(next.projectId);
+        setProfileId(next.profileId);
+      }),
+    [deviceKey],
+  );
 
   useEffect(() => input.current?.focus(), []);
 

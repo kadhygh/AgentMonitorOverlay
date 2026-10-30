@@ -41,13 +41,28 @@
 
 /* 远程 (step 2, 2026-10-29): under the head of a copy of another computer's task (where it runs, or that it is away or
    revoked), and of a task of this computer granted to other devices. */
-.remote-banner { display: flex; align-items: center; gap: 12px; margin: 10px 24px 0; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); font-size: 13px; }
+.remote-banner { flex: none; display: flex; align-items: center; gap: 12px; margin: 10px 24px 8px; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); font-size: 13px; }
 .remote-banner.offline, .remote-banner.revoked { border-style: dashed; border-color: var(--border-strong); background: repeating-linear-gradient(135deg, var(--chip) 0 8px, var(--panel) 8px 16px); }
 .remote-banner.offline .remote-badge, .remote-banner.revoked .remote-badge { border-color: var(--text-faint); color: var(--text-faint); }
 .remote-banner-text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .remote-banner-text b { font-weight: 700; }
 .remote-banner-text span { color: var(--text-dim); }
 .meta-item .remote-badge { margin-right: 5px; }
+/* 2026-10-30 (the user): a copy's banner is one line — the mark, the title and its models — and its explanation folds
+   out under the title (the mark has a fixed width, so the text below starts where the title does). */
+.remote-banner[data-state] { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.remote-banner-head { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 7px 14px; border: none; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.remote-banner-head .remote-badge { width: 36px; box-sizing: border-box; text-align: center; }
+.remote-banner-title { flex: none; font-weight: 700; white-space: nowrap; }
+.remote-banner-watch { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); font-size: 12px; }
+.remote-banner-models { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-banner-status { flex: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.remote-banner-dot { width: 7px; height: 7px; border-radius: 50%; }
+.remote-banner-more { flex: none; margin-left: auto; color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+.remote-banner-head:hover .remote-banner-more, .remote-banner-head:hover .remote-banner-caret { color: var(--text); }
+.remote-banner-caret { flex: none; color: var(--text-faint); font-size: 14px; line-height: 1; transition: transform 0.15s; }
+.remote-banner-caret.open { transform: rotate(180deg); }
+.remote-banner-detail { margin: 0; padding: 0 14px 9px 60px; color: var(--text-dim); line-height: 1.6; }
 
 /* The box after 归档任务 (stage 14). */
 .archived-dialog { width: 440px; gap: 12px; }

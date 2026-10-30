@@ -47,6 +47,32 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-30 晚（四）· 便签 0.9.7「关于」、平台 0.9.12「关闭」误报（未发布、未提交）**
+
+- 便签「关于」：无边框窗口的拖动区收不到网页的 contextmenu，右键走 BrowserWindow 的 `system-context-menu`（`notes/src/main.ts` 的 createPad），菜单「关于便签」→ `amo:notes-about` → 页面问 `amo:notes-about-info`（版本读 notes 自己的 package.json；`--amo-app=notes` 时写随哪个 Studio 版本运行）→ 便签顶上一条提示，× 或 Esc 收起。e2e 用 `__notesAbout` 触发，截图 `screenshots/notes/N-about.png`。notes e2e 6 条过 5 条，挂的那条是本机自己的便签占着 Ctrl+Alt+Space（快捷键退到 Ctrl Shift F12），和改动无关。
+- 平台「关闭」误报 0.9.7：`close()` 按「旧版本文件夹里有在跑的进程」判旧版本，Studio 0.9.7 的文件夹里还有它带起来的 claude.exe 或随它的便签，就误判了。改成先读 Studio 的 `/api/health` 版本，读不到才看进程，而且只看 programs.json 里 Studio 自己的 exe 名。platform.test 13 条过。
+- 用户报「任务里新会话的输入栏没缓存」还没复现：输入框草稿按会话 id 存（`task/sessionDraft.ts`，localStorage 在数据目录的 electron 里，端口固定 47900），读代码没找到会丢的路径，等用户说具体步骤。
+
+**2026-10-30 晚（三）· 测试通道 Studio 0.9.14 → 0.9.15、便签 0.9.5 → 0.9.6（未提交）**
+
+- 下面两条（晚、晚二）的改动用户要求先发测试通道：Studio 0.9.14、便签 0.9.5 发了（publish 删了 Studio 0.9.11）。然后查用户报的两个问题，又发了 Studio 0.9.15、便签 0.9.6（删了 Studio 0.9.12、便签 0.9.3）。试过后 `npm run relay:mac -- promote studio 0.9.15`、`promote notes 0.9.6`。
+- 远程点文件「找不到这个文件」：我在回复里写的 `screenshots/studio/…` 是相对 `studio\` 的，任务文件夹是仓库根。本机靠 S18（按路径结尾在 git 文件列表里找唯一一个）能打开，远程 A 端 `readRemoteFile` 没这一步。`FileRoots.findByEnd`（grants 里接 `chatFiles.findByEnd`，新公开方法），找不到时按结尾找，仍要在任务文件夹里。单测 files.test 加一条。
+- 便签粘到微信只有文字：用户试的是旧版。实测 Electron 44 写进剪贴板的格式齐全（PNG、CF_DIBV5、HTML、Unicode 文字、Bitmap、DIB），但微信一次粘贴只取一样，有文字就取文字。所以加了缩略图上的「复制」（`PadImages.onCopy`）：只复制这一张，窗口不关。e2e 里页面的「复制」按钮改成 exact 匹配。微信里还没实际试过。
+
+**2026-10-30 晚（二）· 远程图片和批注、远程信息条改版、便签复制图片、归档项目的 DSH 权限（未提交；0.9.14 起已发测试通道）**
+
+- 用户在 B 的远程会话里：发截图看不到（A 收到了）、加不了批注（「这一项要在那台电脑上操作」）。图片：A 的条目用 A 的附件 id，B 没有这些附件。新 `remote/copy-images.ts`（`CopyImages`，B 端）：B 发出的消息记下本地附件（`sent`），A 的这条消息回来时按顺序对上；对不上的（A 那边的人发的、工具图）用 `rt.file` 从 A 取回来存成 B 的附件（A 本来就允许取任务对话里的附件），kv `remote.images` 按任务记 A id → B id（取不到记 null，显示成文件名），`putItem` 每次都按它改写；副本归档时清掉。批注：`COPY_ROUTES` 放开 `POST /api/sessions/:id/annotations` 和 `/annotations/send`（批注存在 B，发出去是普通消息文本，走 rt.send）。单测：B 发的图是 B 的附件、A 发的图取回来、B 加批注发到 A。
+- 远程信息条（用户 10-30）：新 `task/RemoteBanner.tsx`，默认一行（「远程」+ 在哪 + 这个任务的模型 + 最需要人的状态），说明折叠（localStorage `amo.remoteBannerOpen`），展开的说明左边对齐标题（标记固定 36px 宽）；`.remote-banner` 加 `flex: none` 和下边距（以前被会话区顶住）。额度监控 B 拿不到（远程模型的 usage 是 null），只放了模型和状态。e2e `remote-tasks` 加了收起 / 展开和截图 `remote-b-banner`、`remote-b-banner-open`。
+- 便签复制带图（用户 10-30）：新 IPC `amo:copy-rich`（notes 主进程，Electron 44 的 `clipboard.write([new ClipboardItem(...)])`）：文字、HTML（图片内联 data URI）、第一张图的 PNG 一起写；`ui/src/host/client.ts` `copyRich`；`ScratchpadApp` 复制时取这一页的图片，只有图片也能复制。e2e 记录复制的图片数（`__notesCopiedImages`）。**没在真剪贴板上试过**（测试模式只记录），用户试一下粘到微信 / Studio / Word。
+- 低优先级：用户以为是文件夹权限没恢复。查了 `G:\PROJECT\AgentMonitorOverlay` 现在是 Medium（正常）；我遇到的是 Studio 10-22 定的 agent 内存优先级（`runtime/priority.ts`，agent 跑的命令都是低内存优先级），`priority.test.ts` 在 agent 里跑会失败，改成这种情况下跳过。另按用户说的加了检测：DSH 沙箱权限列表把已归档但还带着设置的项目也列出来（`FolderAccessStatus.archived`），只给「恢复原来的权限」，`folderTarget` 对 folder / revert 放行已归档项目。
+- 测试：typecheck；remote、dsh、runtime、ui 单测过；`server-manager.test.ts`（真 codex app-server）在这里失败，撤掉我的改动也一样失败，是环境问题；e2e `remote-create`、`remote-tasks` 3 条过，notes 5 过 1 失败（用户自己的便签占着 Ctrl+Alt+Space，测试的便签退到 Ctrl+Shift+F12，和改动无关）。
+
+**2026-10-30 晚 · 远程：A 改设置 B 马上看到；会话不再继承 Host 的环境变量（未提交；0.9.14 起已发测试通道）**
+
+- 用户 10-30（第一次两台真电脑接通后）：A 上勾了远端允许的项目点保存，B 不会马上更新。查实：B 的新任务页只在选中设备 / 设备上线时 `rt.catalog` 取一次，A 改设置没有任何通知。改了：新推送 `RemotePush { type: "catalog" }`。A（`create.ts` `RemoteCreates`）记下问过 catalog 的设备（`serveCatalog`，只记本次 Host 启动后问过的），远程状态变（`service.changed()`：远端允许的项目 / 模型、安全、改名、上下线）或 Host 事件（项目、专题、任务、模型渠道、数据删除）时 300 ms 合一次，对在线的设备算 catalog，和上次给它的比（不看 lastUsed 排序），不同才推。B 的 Host 转成 Host 事件 `remote.catalog`（不进日志），`RemoteDraft` 收到就换上，选过的还在就保留（`keptPicks`）。旧版 B 忽略这个推送。另外 `grants.ts` 在 `profiles.updated` 时把授权任务再推一遍（模型名、能选的模型）。
+- 同一次发现（用安装版 AMO 迭代 AMO）：Host 自己的 `ELECTRON_RUN_AS_NODE=1` 和 `AMO_STUDIO_DATA_DIR / UI_DIR / VERSION` 传进了会话，agent 跑 e2e 时 Electron 起不来（bad option: --remote-debugging-port），开开发版 Studio 会用安装版的数据目录和界面。新 `runtime/agent-env.ts`（`withoutHostEnv`），Claude（`claudeEnv`）、Codex（app-server，`cmd.env` 需要时再加回 ELECTRON_RUN_AS_NODE）、DSH 都去掉。
+- 测试：typecheck；remote、runtime、newtask 单测过（新加：catalog 推送、`keptPicks`、`claudeEnv` 去掉 Host 变量），`priority.test.ts` 一条在 AMO 会话里跑会失败（会话进程本身已是低内存优先级，测试假定是 5），和改动无关；e2e `remote-create` 2 条过（新加：B 的新任务页一直开着，A 保存后它直接变成可选）。CHANGELOG「下一版」写了。还剩：提交、发版；两台都要更新才生效。
+
 **2026-10-30 · AI 不要求就不用画布（测试通道 Studio 0.9.13）**
 
 - 用户 10-30：人不要求时 AI 不用画布；人说了（「主控用画布展开任务」「放到画布上审阅」）就照以前一样做完整。改了：`AMO_MCP_INSTRUCTIONS` 删掉「要点多的报告放画布」，换成「人要求时用画布并做完整（见 amo_guide lead、canvas），没要求不动，读可以」；角色卡主控职责写「人让你用画布展开时照 lead 一节排好分组和依赖，没说不动」，专题会话「人让你整理画布时再整理、标颜色」；`amo_guide` canvas 一节开头写明这个前提，画布审阅改成「人让你放到画布上时」，lead 第 3 步「人让你用画布展开时排好分组、依赖、颜色」；`canvas_items_post` 的说明去掉「instead of one long reply」。

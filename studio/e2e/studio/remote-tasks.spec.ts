@@ -141,6 +141,15 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(b.page.getByTestId("remote-banner")).toHaveAttribute("data-state", "online");
   await expect(b.page.getByTestId("task-remote-where")).toContainText("在 A 台式机 上（台式机的我）");
   await expect(b.page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 30_000 });
+  // 2026-10-30: one line — where it runs and its model; the explanation folds out under the title.
+  const banner = b.page.getByTestId("remote-banner");
+  await expect(banner.getByTestId("remote-banner-watch")).toContainText("Mock");
+  await expect(banner.getByTestId("remote-banner-detail")).toHaveCount(0);
+  await screenshot(b.app, "studio", "remote-b-banner", b.page);
+  await banner.getByTestId("remote-banner-toggle").click();
+  await expect(banner.getByTestId("remote-banner-detail")).toContainText("模型调用和命令都在那台电脑上");
+  await screenshot(b.app, "studio", "remote-b-banner-open", b.page);
+  await banner.getByTestId("remote-banner-toggle").click();
   // What only A does is not offered: Git Review, 分支, 在终端打开, 书签 of the task.
   await expect(b.page.getByTestId("task-review")).toHaveCount(0);
   await expect(b.page.getByTestId("session-fork")).toHaveCount(0);

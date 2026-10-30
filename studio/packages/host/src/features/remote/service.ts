@@ -98,6 +98,7 @@ export class RemoteFeature extends Feature {
   private readonly onHostEvent = (e: HostEvent) => {
     try {
       this.grants.onHostEvent(e);
+      this.creates.onHostEvent(e);
     } catch (err) {
       console.log(`remote: ${String(err)}`);
     }
@@ -124,6 +125,7 @@ export class RemoteFeature extends Feature {
 
   stop(): void {
     this.host.off("event", this.onHostEvent);
+    this.creates.stop();
     if (this.watch) clearInterval(this.watch);
     this.watch = null;
     this.link?.stop();
@@ -291,6 +293,8 @@ export class RemoteFeature extends Feature {
       if (!this.pairs().some((p) => same(p, f.from) && p.role === "guest")) return;
       const push = f.body as RemotePush | null;
       if (push && push.type === "request") this.asks.apply(f.from, push.request);
+      // 2026-10-30: the new-task page showing that device takes it as it is (ui/src/newtask/RemoteDraft.tsx).
+      else if (push && push.type === "catalog") this.host.emit("event", { type: "remote.catalog", account: f.from.account, device: f.from.device, catalog: push.catalog, seq: this.store.lastEventSeq() });
       else this.copies.apply(f.from, f.body);
       return;
     }
@@ -324,7 +328,7 @@ export class RemoteFeature extends Feature {
       }
     };
     // 远程创建 (2026-10-29): what the device may pick, and the task made here now.
-    if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.catalog(f.from));
+    if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.serveCatalog(f.from));
     if (f.kind === REMOTE_KINDS.upload) return said(() => this.inbox.receive(f.from, body));
     if (f.kind === REMOTE_KINDS.create) return this.creates.create(f.from, body).then((made): Answer => ({ kind: REMOTE_KINDS.ok, body: made }), failed);
     // Step 4: a request for a task, or taking one back.
@@ -529,6 +533,8 @@ export class RemoteFeature extends Feature {
   private changed(): void {
     // Not kept in the event log: windows read GET /api/remote when they open (like item.delta, emitted as it is).
     this.host.emit("event", { type: "remote.updated", remote: this.state(), seq: this.store.lastEventSeq() });
+    // 远程设置, this computer's name, a device back online: what paired devices may pick here may have changed too.
+    this.creates.announce();
   }
 
   private requireStarted(): void {
@@ -784,7 +790,7 @@ export class RemoteFeature extends Feature {
   /**
    * What a copy takes from this computer's own API (B's Host refuses the rest, 「B 能看到什么」): reading it, a message,
    * an answer to an approval or question, 打断, a new session, and archiving it (which deletes the copy). Changing the
-   * task (its name, column, topic, 说明), a session's model or name, a branch, a terminal, comments sent into it… are
+   * task (its name, column, topic, 说明), a session's model or name, a branch, a terminal… are
    * A's to do.
    */
   guardRoute(method: string, path: string, params: Record<string, string>): void {
@@ -809,4 +815,8 @@ const COPY_ROUTES = new Set([
   "POST /api/sessions/:id/questions/:itemId/answer",
   "POST /api/tasks/:id/sessions",
   "POST /api/tasks/:id/archive",
+  // 批注 (2026-10-30, the user could not comment on a remote reply): kept on this computer, they go to A as the text of
+  // a message (composeAnnotationRefs), like any message. PATCH / DELETE /api/annotations/:id are not by task.
+  "POST /api/sessions/:id/annotations",
+  "POST /api/sessions/:id/annotations/send",
 ]);

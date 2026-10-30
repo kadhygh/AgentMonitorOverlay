@@ -209,6 +209,7 @@
 .folder-access-list li.focused { background: var(--menu-hover); }
 .fa-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .fa-name { font-weight: 600; font-size: var(--fs-sm); }
+.fa-archived { margin-left: 8px; font-weight: 400; font-size: 11px; color: var(--attention); }
 .fa-path { font-family: var(--font-code); font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fa-detail { font-size: 12px; color: var(--text-dim); }
 .fa-detail.error { color: var(--danger); }

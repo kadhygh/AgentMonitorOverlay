@@ -568,8 +568,14 @@ export class Platform implements PlatformCalls {
     const exeOf = tool === "notes" && !this.programs().notes && this.programs().studio ? "studio" : tool;
     const since = QUIT_SINCE[exeOf];
     if (since) {
-      const paths = await (this.options.runningPaths ?? runningExePaths)().catch(() => [] as string[]);
-      const old = runningVersions(paths, this.installer.toolDir(exeOf)).filter((v) => compareVersions(v, since) < 0);
+      // 2026-10-30 (the user: 关闭 said Studio was 0.9.7 while 0.9.13 ran): any exe in an old version folder counted — a
+      // helper it carries (Claude Code's exe), 便签 through an older Studio. Now only the tool's own exe counts, and Studio
+      // says itself which version started it (/api/health), which is the one that gets --amo-quit.
+      const health = exeOf === "studio" && tool === "studio" ? await studioHealth(readSettings(this.options.env).studioDataDir, this.options.fetch).catch(() => null) : null;
+      const exe = basename(this.programs()[exeOf]?.exe ?? "").toLowerCase();
+      const paths = health?.hostUp && health.version ? [] : await (this.options.runningPaths ?? runningExePaths)().catch(() => [] as string[]);
+      const said = health?.hostUp && health.version && /^\d+\.\d+\.\d+$/.test(health.version) ? [health.version] : [];
+      const old = [...said, ...runningVersions(exe ? paths.filter((p) => basename(p).toLowerCase() === exe) : paths, this.installer.toolDir(exeOf))].filter((v) => compareVersions(v, since) < 0);
       if (old.length) {
         const name = this.toolName(tool).replace(/（独立版）$/, "");
         const where = exeOf === "studio" && tool === "studio" ? "Studio 托盘图标的右键「完全退出」" : `它自己托盘图标的右键「退出」`;

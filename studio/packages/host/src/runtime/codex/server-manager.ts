@@ -6,6 +6,7 @@ import { connect as tcpConnect, createServer } from "node:net";
 import { join } from "node:path";
 import type { ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "../credentials.js";
+import { withoutHostEnv } from "../agent-env.js";
 import { lowerAgentPriority } from "../priority.js";
 import { codexServerSpec, type CodexProviderDef } from "../profiles.js";
 import { resolveCodexCommand, type CodexCommand } from "./command.js";
@@ -206,7 +207,8 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];
     const child = spawn(cmd.command, args, {
       cwd: this.options.cwd,
-      env: withoutWindowsApps({ ...process.env, ...cmd.env, ...this.options.env, ...spec.env }),
+      // Not the Host's own variables (agent-env.ts); cmd.env puts ELECTRON_RUN_AS_NODE back when codex.js needs it.
+      env: withoutWindowsApps({ ...withoutHostEnv(process.env), ...cmd.env, ...this.options.env, ...spec.env }),
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });

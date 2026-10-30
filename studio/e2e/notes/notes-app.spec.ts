@@ -52,6 +52,8 @@ async function windowAt(a: ElectronApplication, hash: string): Promise<Page> {
 }
 const running = () => JSON.parse(readFileSync(join(home, "running.json"), "utf8")) as { url: string; token: string; pid: number };
 const copied = (a: ElectronApplication) => a.evaluate(() => (globalThis as { __notesCopied?: string[] }).__notesCopied?.at(-1) ?? null);
+/** How many pictures the last 复制 put on the clipboard with the text (2026-10-30). */
+const copiedImages = (a: ElectronApplication) => a.evaluate(() => (globalThis as { __notesCopiedImages?: number[] }).__notesCopiedImages?.at(-1) ?? null);
 const padVisible = (a: ElectronApplication) => a.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.isVisible());
 
 /** Pastes a small drawn PNG into the page, the way a screenshot from the clipboard arrives. */
@@ -85,7 +87,7 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   await expect(keys).toContainText("复制这一页并隐藏");
   await expect(keys).toContainText("Ctrl Alt Space 随时叫回来");
   await expect(pad.getByTestId("pad-status")).toContainText("空白页");
-  await expect(pad.getByRole("button", { name: "复制" })).toBeDisabled();
+  await expect(pad.getByRole("button", { name: "复制", exact: true })).toBeDisabled();
   await screenshot(app, "notes", "N1-empty", pad, "scratchpad");
 
   await pad.getByLabel("便签内容").fill("回复要点：\n- 掉落表按权重\n- 周五发版");
@@ -93,7 +95,7 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
   expect(JSON.parse(readFileSync(join(home, "data", "pages.json"), "utf8")).pages[0].text).toContain("周五发版");
   await expect(pad.locator(".pad-hint")).toHaveText("Alt 1–3");
-  await expect(pad.getByRole("button", { name: "复制" }).locator("kbd")).toHaveText("Ctrl ↵");
+  await expect(pad.getByRole("button", { name: "复制", exact: true }).locator("kbd")).toHaveText("Ctrl ↵");
   await screenshot(app, "notes", "N2-page", pad, "scratchpad");
 
   // Ctrl+Enter: the page on the clipboard (recorded in tests), the window hidden.
@@ -260,10 +262,29 @@ test("pages, pasted images, 复制's line breaks, and the page count in the sett
   await pad.getByTestId("pad-image").nth(1).hover();
   await pad.getByRole("button", { name: "移除图片 2" }).click();
   await expect(pad.getByTestId("pad-image")).toHaveCount(1);
+  // One picture alone (for WeChat, which takes the text when a paste has both); the window stays.
+  await pad.getByTestId("pad-image").first().hover();
+  await pad.getByRole("button", { name: "复制图片 1" }).click();
+  await expect.poll(() => copiedImages(app)).toBe(1);
+  expect(await copied(app)).toBe("");
+  await expect(pad.getByTestId("pad-status")).toContainText("已复制这张图片");
+  expect(await padVisible(app)).toBe(true);
+  await screenshot(app, "notes", "N-copy-image", pad, "scratchpad");
 
-  // 复制 keeps the lines by default (Windows line breaks, trailing spaces and blank lines dropped) and hides.
-  await pad.getByRole("button", { name: "复制" }).click();
+  // 关于便签 (2026-10-30): the title bar's right-click menu; its version; Esc puts it away, not the window.
+  await app.evaluate(() => (globalThis as { __notesAbout?: () => void }).__notesAbout?.());
+  const version = JSON.parse(readFileSync(join(studioRoot, "packages", "notes", "package.json"), "utf8")).version as string;
+  await expect(pad.getByTestId("pad-about")).toContainText(`AMO 便签 版本 ${version}`);
+  await screenshot(app, "notes", "N-about", pad, "scratchpad");
+  await pad.keyboard.press("Escape");
+  await expect(pad.getByTestId("pad-about")).toHaveCount(0);
+  expect(await padVisible(app)).toBe(true);
+
+  // 复制 keeps the lines by default (Windows line breaks, trailing spaces and blank lines dropped) and hides; the page's
+  // picture goes along (2026-10-30).
+  await pad.getByRole("button", { name: "复制", exact: true }).click();
   await expect.poll(() => copied(app)).toBe("回复要点：\r\n- 掉落表按权重\r\n- 周五发版");
+  await expect.poll(() => copiedImages(app)).toBe(1);
   await expect.poll(() => padVisible(app)).toBe(false);
 
   // The settings: fewer pages hide the content beyond the count, more bring it back; 安全换行 copies one line.
@@ -284,6 +305,6 @@ test("pages, pasted images, 复制's line breaks, and the page count in the sett
   await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
   await expect.poll(() => padVisible(app)).toBe(true);
   await pad.keyboard.press("Alt+1");
-  await pad.getByRole("button", { name: "复制" }).click();
+  await pad.getByRole("button", { name: "复制", exact: true }).click();
   await expect.poll(() => copied(app)).toBe("回复要点： - 掉落表按权重 - 周五发版");
 });

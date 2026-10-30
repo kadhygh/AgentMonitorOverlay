@@ -1,4 +1,5 @@
-import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type Id, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { randomBytes } from "node:crypto";
+import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, REMOTE_KINDS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type HostEvent, type Id, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemotePush, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext, RemoteGrants } from "./grants.js";
@@ -18,6 +19,14 @@ const SECURITY_KEY = "remote.security";
 const START: readonly RemoteStart[] = ["run", "confirm"];
 const TITLE_MAX = 200;
 const TEXT_MAX = 100_000;
+/** Changes that come together (saving 远程设置, a burst of task updates) make one catalog push. */
+const ANNOUNCE_MS = 300;
+
+/** A catalog as B would see it, ordering by recent work left out (it moves with every task update). */
+const catalogStamp = (c: RemoteCatalog): string => {
+  const byId = <T extends { id: Id }>(list: T[]) => [...list].sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify({ ...c, topics: byId(c.topics).map(({ lastUsed: _, ...t }) => t), projects: byId(c.projects).map(({ lastUsed: _, ...p }) => p) });
+};
 
 export interface GrantedTaskInput {
   title: string;
@@ -64,6 +73,15 @@ const textOf = (v: unknown, what: string, max: number, required: boolean): strin
 };
 
 export class RemoteCreates {
+  /**
+   * 2026-10-30 (the user: A saved 远端允许的项目, B's new-task page did not change): the devices that asked for the catalog
+   * since this Host started, and what they last got. Something it is made of changed (远程设置, a project, a topic, a
+   * model, this computer's name): each online one gets the new catalog, if theirs differs. One that never asked reads
+   * it when its page picks this computer.
+   */
+  private readonly told = new Map<string, { to: DeviceRef; stamp: string }>();
+  private announcing: NodeJS.Timeout | null = null;
+
   constructor(
     private readonly ctx: RemoteContext,
     private readonly grants: RemoteGrants,
@@ -144,6 +162,72 @@ export class RemoteCreates {
 
   private requireOwner(from: DeviceRef): void {
     if (!this.ctx.peer(from, "owner")) throw new HostError("bad_request", `只有 ${this.ctx.deviceName()} 允许配对的设备才能在它上面建任务`);
+  }
+
+  /** rt.catalog as the device asked for it: it hears of changes from now on (announce). */
+  serveCatalog(from: DeviceRef): RemoteCatalog {
+    const c = this.catalog(from);
+    this.told.set(`${from.account}\n${from.device}`, { to: { account: from.account, device: from.device }, stamp: catalogStamp(c) });
+    return c;
+  }
+
+  /** What the catalog is made of may have changed: the devices that asked hear of it shortly. */
+  announce(): void {
+    if (this.announcing || !this.told.size) return;
+    this.announcing = setTimeout(() => {
+      this.announcing = null;
+      this.tell();
+    }, ANNOUNCE_MS);
+    this.announcing.unref?.();
+  }
+
+  /** A change on this computer the catalog is made of. */
+  onHostEvent(e: HostEvent): void {
+    switch (e.type) {
+      case "workspace.upserted":
+      case "workspace.removed":
+      case "topic.upserted":
+      // A topic's projects are also its tasks'.
+      case "task.upserted":
+      case "profiles.updated":
+      case "data.purged":
+        this.announce();
+        return;
+      default:
+        return;
+    }
+  }
+
+  stop(): void {
+    if (this.announcing) clearTimeout(this.announcing);
+    this.announcing = null;
+    this.told.clear();
+  }
+
+  private tell(): void {
+    const link = this.ctx.link();
+    if (!link || link.state !== "online") return;
+    for (const [key, seen] of this.told) {
+      const peer = this.ctx.peer(seen.to, "owner");
+      // Unpaired since: it no longer asks.
+      if (!peer) {
+        this.told.delete(key);
+        continue;
+      }
+      // Away: it reads the catalog again when it is back (its page asks when this computer comes online).
+      if (!peer.online) continue;
+      let catalog: RemoteCatalog;
+      try {
+        catalog = this.catalog(seen.to);
+      } catch {
+        continue;
+      }
+      const stamp = catalogStamp(catalog);
+      if (stamp === seen.stamp) continue;
+      this.told.set(key, { to: seen.to, stamp });
+      const body: RemotePush = { type: "catalog", catalog };
+      link.send({ type: "relay", to: seen.to, id: `p_${randomBytes(8).toString("hex")}`, kind: REMOTE_KINDS.push, body });
+    }
   }
 
   /** rt.catalog: what the device may pick — A's topics, the allowed projects, the common folder, the allowed models. */

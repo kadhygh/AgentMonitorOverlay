@@ -25,6 +25,12 @@ export interface FileRoots {
   attachments: string;
   /** …of which only these files: the pictures sent in the task's conversations (as their items name them; read when needed). */
   attached(): readonly string[];
+  /**
+   * A relative path not found from the folder: the one file of the task's folder whose path ends with it, as this
+   * computer's own links find it (2026-10-30: an agent wrote `screenshots/…` from a subfolder; on A it opened, on B
+   * 「找不到这个文件」).
+   */
+  findByEnd?(written: string): Promise<string | null>;
 }
 
 const win = process.platform === "win32";
@@ -109,7 +115,14 @@ const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, device: string): Promise<RemoteFileAnswer> {
   if (typeof ask.path !== "string" || ask.path.length > 2000) throw new HostError("bad_request", "文件路径不对");
   const asked = resolveAsked(roots, ask.path, typeof ask.cwd === "string" ? ask.cwd : undefined);
-  const where = real(asked);
+  let where = real(asked);
+  if (!where && roots.findByEnd) {
+    const p = ask.path.trim();
+    const inTask = underTaskFolder(p);
+    const rel = inTask ?? (isAbsolute(p) || /^file:/i.test(p) || p.startsWith(`${REMOTE_ATTACHMENTS_FOLDER}/`) ? null : p);
+    const found = rel ? await roots.findByEnd(rel) : null;
+    where = found ? real(found) : null;
+  }
   if (!where) throw new HostError("not_found", `${device} 上找不到这个文件：${slash(ask.path)}`);
   const root = real(roots.root);
   const attachments = real(roots.attachments);

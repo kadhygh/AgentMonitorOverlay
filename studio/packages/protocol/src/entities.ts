@@ -348,6 +348,11 @@ export interface FolderAccessStatus {
   scannedAt?: string;
   error?: string;
   backup?: string;
+  /**
+   * An archived project whose folder still has DSH's setup (2026-10-30, the user archived a set-up project and found
+   * it still Low when it came back): listed so it can be put back; only 恢复原来的权限 is offered.
+   */
+  archived?: boolean;
 }
 
 export type SessionItem =

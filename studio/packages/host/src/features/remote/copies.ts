@@ -8,6 +8,7 @@ import { CommandError } from "./link.js";
 import type { RemoteContext } from "./grants.js";
 import { RemoteFiles } from "./files.js";
 import { sendAlong } from "./uploads.js";
+import { CopyImages } from "./copy-images.js";
 
 // 远程, step 2 on B (plans/remote-session.md, 2026-10-29): this computer's copies of the tasks paired devices granted
 // it. A copy is an ordinary task of this Host (in the common space, Task.remote saying where it runs) with sessions whose
@@ -32,11 +33,14 @@ export class RemoteCopies {
 
   /** Step 3: the files fetched from A for the copies (thrown away with a copy). */
   readonly files: RemoteFiles;
+  /** The pictures in the copies' conversations, as this computer's own attachments (2026-10-30). */
+  readonly images: CopyImages;
   /** Step 4: what A's list says besides its grants (this computer's requests to it). */
   onList: ((peer: DeviceRef, list: RemoteListAnswer) => void) | null = null;
 
   constructor(private readonly ctx: RemoteContext) {
     this.files = new RemoteFiles(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
+    this.images = new CopyImages(ctx, this.files, (item) => this.putItem(item));
   }
 
   private get store() {
@@ -204,7 +208,8 @@ export class RemoteCopies {
   }
 
   private putItem(item: SessionItem): void {
-    const { item: stored, added } = this.store.putRemoteItem(item);
+    const taskId = this.store.getSession(item.sessionId)?.taskId;
+    const { item: stored, added } = this.store.putRemoteItem(taskId ? this.images.localize(taskId, item) : item);
     this.publish({ type: added ? "item.appended" : "item.updated", item: stored });
   }
 
@@ -316,6 +321,7 @@ export class RemoteCopies {
     this.profilesChanged(before);
     // The files fetched for it go too (plans/remote-session.md: 归档时一起清掉).
     this.files.drop(task.id);
+    this.images.drop(task.id);
   }
 
   private tellDropped(peer: DeviceRef, taskId: Id): void {
@@ -337,7 +343,14 @@ export class RemoteCopies {
   async send(sessionId: Id, text: string, images: readonly Attachment[]): Promise<{ mode: SendMode }> {
     const { peer } = this.target(sessionId);
     const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, this.ctx.peer(peer)?.name ?? peer.account, text, images);
-    return this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text: along.text, ...(along.uploads.length ? { uploads: along.uploads } : {}) });
+    // A's copy of the message names its own attachments: this computer's go in their place (copy-images.ts).
+    this.images.sent(sessionId, images.map((a) => a.id));
+    try {
+      return await this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text: along.text, ...(along.uploads.length ? { uploads: along.uploads } : {}) });
+    } catch (err) {
+      this.images.failed(sessionId);
+      throw err;
+    }
   }
 
   async approve(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {

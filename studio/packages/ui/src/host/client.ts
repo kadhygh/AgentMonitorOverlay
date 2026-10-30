@@ -30,6 +30,8 @@ declare global {
       setAppIcon?(face: string | null): void;
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
+      /** The 便签 program (2026-10-30): text and pictures together. */
+      copyRich?(input: { text: string; images: Uint8Array[] }): Promise<void>;
       setMinWidth?(px: number): void;
       /** The AMO Reviewer program alone (2026-10-29): its 主题, which its main process sets for all its windows. */
       theme?(): Promise<"light" | "dark" | "system">;
@@ -100,9 +102,19 @@ declare global {
         closeSettings(): void;
         pickFolder(start?: string | null): Promise<string | null>;
         trayAction?(action: "show" | "settings" | "quit" | "close"): void;
+        aboutInfo?(): Promise<NotesAbout>;
+        onAbout?(listener: () => void): () => void;
       };
     };
   }
+}
+
+/** 关于便签 (2026-10-30). `viaStudio`: the Studio version whose exe runs it (便签 has no install of its own), else null. */
+export interface NotesAbout {
+  version: string;
+  dev: boolean;
+  viaStudio: string | null;
+  electron: string;
 }
 
 export interface HostLink {
@@ -151,4 +163,12 @@ export const loadState = (link: HostLink): Promise<StateSnapshot> => call(link, 
 export async function copyText(text: string): Promise<void> {
   if (window.amo?.copyText) return window.amo.copyText(text);
   await navigator.clipboard?.writeText(text);
+}
+
+/** Text and pictures (PNG, JPEG… bytes) together; without the 便签 program's bridge, the text and the first picture. */
+export async function copyRich(text: string, images: Uint8Array<ArrayBuffer>[]): Promise<void> {
+  if (!images.length) return copyText(text);
+  if (window.amo?.copyRich) return window.amo.copyRich({ text, images });
+  const png = new Blob([images[0]!], { type: "image/png" });
+  await navigator.clipboard?.write([new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }), "image/png": png })]);
 }

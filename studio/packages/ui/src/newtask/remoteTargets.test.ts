@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RemoteCatalog, RemotePeer, RemoteState } from "@amo-studio/protocol";
-import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, remoteModeShown, remoteTargets } from "./remoteTargets.js";
+import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, remoteModeShown, remoteTargets } from "./remoteTargets.js";
 
 // 新任务页的「在别的设备上」 (2026-10-29): which devices it offers, when the switch shows, and the rows from a catalog.
 
@@ -81,5 +81,14 @@ describe("rows from a catalog", () => {
     expect(defaultProject(catalog())).toBeNull();
     expect(defaultProject(catalog({ projects: [{ id: "w1", name: "客户端", lastUsed: null }] }))).toBe("w1");
     expect(defaultProject(catalog({ projects: [{ id: "w1", name: "客户端", lastUsed: null }], allowCommon: true }))).toBeNull();
+  });
+
+  it("keeps what is still there when the catalog changes (2026-10-30), else what a fresh one starts with", () => {
+    const picked = { topicId: "t2", projectId: "w2", profileId: "p" };
+    expect(keptPicks(catalog(), picked)).toEqual(picked);
+    // The project and the model no longer allowed, the topic archived there.
+    const only = catalog({ topics: [], projects: [{ id: "w1", name: "客户端", lastUsed: null }], models: [{ id: "q", label: "Codex · Q" }] });
+    expect(keptPicks(only, picked)).toEqual({ topicId: null, projectId: "w1", profileId: "q" });
+    expect(keptPicks(catalog({ models: [] }), { topicId: null, projectId: null, profileId: "q" })).toEqual({ topicId: null, projectId: null, profileId: null });
   });
 });

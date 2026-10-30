@@ -76,13 +76,16 @@ export class DshFeature extends Feature {
     const all = this.store.listWorkspaces();
     const list = [...all.filter((w) => isCommon(w)), ...projectWorkspaces(all)];
     const folders = await Promise.all(list.map(async (w) => ({ workspaceId: w.id, name: isCommon(w) ? "公共目录" : w.name, path: w.path, ...(await runtime.folderStatus(w.path)) })));
-    return { available: true, folders };
+    // Archived projects whose folder still has the setup (2026-10-30): listed after the rest, to be put back.
+    const archived = all.filter((w) => w.archivedAt && !isCommon(w) && !list.some((x) => x.path.toLowerCase() === w.path.toLowerCase()));
+    const left = await Promise.all(archived.map(async (w): Promise<FolderAccessStatus> => ({ workspaceId: w.id, name: w.name, path: w.path, archived: true, ...(await runtime.folderStatus(w.path)) })));
+    return { available: true, folders: [...folders, ...left.filter((f) => f.state === "ready" || f.labelled || f.state === "running")] };
   }
 
   /** One project's folder (the hint under 工程内写 asks before a DSH session starts there). */
   async folder(workspaceId: Id): Promise<FolderAccessStatus> {
-    const { runtime, w } = this.folderTarget(workspaceId);
-    return { workspaceId: w.id, name: isCommon(w) ? "公共目录" : w.name, path: w.path, ...(await runtime.folderStatus(w.path)) };
+    const { runtime, w } = this.folderTarget(workspaceId, true);
+    return { workspaceId: w.id, name: isCommon(w) ? "公共目录" : w.name, path: w.path, ...(w.archivedAt ? { archived: true } : {}), ...(await runtime.folderStatus(w.path)) };
   }
 
   /** Sets one project's folder up; GET follows it. */
@@ -94,7 +97,8 @@ export class DshFeature extends Feature {
 
   /** 恢复原来的权限: undoes the setup on a project's folder; GET follows it. */
   async revertFolder(workspaceId: Id): Promise<FolderAccessStatus> {
-    const { runtime, w } = this.folderTarget(workspaceId);
+    // An archived project's folder too (2026-10-30).
+    const { runtime, w } = this.folderTarget(workspaceId, true);
     runtime.revertFolder(w.path);
     return this.folder(workspaceId);
   }
@@ -110,10 +114,10 @@ export class DshFeature extends Feature {
     return this.folder(workspaceId);
   }
 
-  private folderTarget(workspaceId: Id): { runtime: DshRuntime; w: Workspace } {
+  private folderTarget(workspaceId: Id, archivedToo = false): { runtime: DshRuntime; w: Workspace } {
     const runtime = this.options.dsh;
     const w = this.store.getWorkspace(workspaceId);
-    if (!w || w.archivedAt) throw new HostError("not_found", `project ${workspaceId} not found`);
+    if (!w || (w.archivedAt && !archivedToo)) throw new HostError("not_found", `project ${workspaceId} not found`);
     if (!runtime?.foldersAvailable) throw new HostError("not_found", "这台机器上 Studio 不处理文件夹权限（只在 Windows 上）");
     return { runtime, w };
   }

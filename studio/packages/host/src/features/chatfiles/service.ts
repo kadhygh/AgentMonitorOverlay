@@ -70,6 +70,17 @@ export class ChatFilesFeature extends Feature {
     return { found };
   }
 
+  /**
+   * The one file under `root` whose path ends with the relative `written`, as the links of a conversation find it (S18);
+   * null when none or several. 远程 (2026-10-30): A finds what B's link asks for the same way.
+   */
+  async findByEnd(root: string, written: string): Promise<string | null> {
+    if (!relativeMention(written)) return null;
+    const list = await this.fileList(root);
+    const rel = list ? findByEnd(written, list) : null;
+    return rel ? path.normalize(path.join(root, rel)) : null;
+  }
+
   /** The project's files from git (tracked, and untracked ones not ignored), kept for a short while. */
   private fileList(root: string): Promise<FileList> {
     const now = Date.now();

@@ -120,12 +120,17 @@ export class RemoteGrants {
     const next: RemoteAllowed = { profiles, defaultProfile, permission };
     this.store.setKv(ALLOWED_KEY, JSON.stringify(next));
     // What granted tasks may start on changed: the devices hear it.
+    this.pushTasks();
+    this.ctx.changed();
+    return next;
+  }
+
+  /** Every granted task again, as the devices see it (what new sessions may run on, the models' names). */
+  private pushTasks(): void {
     for (const g of this.list()) {
       const task = this.store.getTask(g.taskId);
       if (task) this.push(g, this.taskPush(task));
     }
-    this.ctx.changed();
-    return next;
   }
 
   /**
@@ -260,6 +265,7 @@ export class RemoteGrants {
       root,
       attachments: this.ctx.host.attachments.dir(),
       attached: () => this.store.listSessions({ taskId }).flatMap((s) => attachedPaths(this.store.listItems(s.id))),
+      findByEnd: (written) => this.ctx.host.chatFiles.findByEnd(root, written),
     };
   }
 
@@ -420,6 +426,10 @@ export class RemoteGrants {
         return;
       case "data.purged":
         for (const g of grants.filter((x) => e.taskIds.includes(x.taskId))) this.revoke(g.taskId, g, `任务在 ${this.ctx.deviceName()} 上删除了`);
+        return;
+      // 2026-10-30: a channel added, renamed, removed or hidden here — the copies' model names and choices follow.
+      case "profiles.updated":
+        this.pushTasks();
         return;
       default:
         return;

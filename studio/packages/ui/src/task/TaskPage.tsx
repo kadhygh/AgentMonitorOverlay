@@ -45,6 +45,7 @@ import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/Team
 import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
+import { RemoteBanner } from "./RemoteBanner.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -564,31 +565,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         setToast({ text });
       }} />}
 
-      {copy && (
-        <div className={`remote-banner ${copy.state}`} role="status" data-testid="remote-banner" data-state={copy.state}>
-          <span className="remote-badge">远程</span>
-          <span className="remote-banner-text">
-            {copy.state === "revoked" ? (
-              <>
-                <b>授权已收回</b>
-                <span>
-                  {task.remote!.reason && task.remote!.reason !== "授权已收回" ? `${task.remote!.reason}。` : `${copy.name} 收回了这个任务的授权。`}已经同步的记录还能看，不会再连回去。归档会清掉这台电脑上的副本。
-                </span>
-              </>
-            ) : copy.state === "offline" ? (
-              <>
-                <b>{copy.label}</b>
-                <span>记录能看；现在不能发消息、不能审批，写好的消息留在输入框里。{copy.self ? "这台电脑连上团队服务器后" : `${copy.name} 回来后`}会自动重连，补齐这段时间的记录。</span>
-              </>
-            ) : (
-              <>
-                <b>在 {copy.name} 上运行</b>
-                <span>这是 {task.remote!.account} 的「{copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。对话里的 HTML、Markdown 和图片可以点开看（从那台电脑取过来）；其他文件、Git Review、终端要在那边用。</span>
-              </>
-            )}
-          </span>
-        </div>
-      )}
+      {copy && <RemoteBanner task={task} copy={copy} sessions={own} profiles={profiles} />}
       {granted.length > 0 && (
         <div className="remote-banner granted" role="status" data-testid="granted-banner">
           <span className="remote-badge">已授权</span>

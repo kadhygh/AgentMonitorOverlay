@@ -690,6 +690,8 @@ export type HostEvent = { seq: number } & (
   | { type: "remote.updated"; remote: import("./remote.js").RemoteState }
   /** 远程 step 3: how far a file being fetched from a paired device has come (`fetchId` as POST /api/remote/files was given). Not kept in the log. */
   | { type: "remote.file"; fetchId: string; received: number; total: number }
+  /** 远程 (2026-10-30): a paired device says what may be picked creating a task on it changed (RemoteCatalog). Not kept in the log. */
+  | { type: "remote.catalog"; account: string; device: string; catalog: import("./remote.js").RemoteCatalog }
 );
 
 export type HostEventType = HostEvent["type"];

@@ -112,7 +112,10 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
                 data-state={f.state}
               >
                 <div className="fa-main">
-                  <span className="fa-name">{f.name}</span>
+                  <span className="fa-name">
+                    {f.name}
+                    {f.archived && <span className="fa-archived">已归档 · 权限还没恢复</span>}
+                  </span>
                   <span className="fa-path" title={f.path}>
                     {f.path}
                   </span>
@@ -122,7 +125,7 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
                 </div>
                 <span className={`fa-state ${f.state}`}>{STATE[f.state]}</span>
                 <div className="fa-actions">
-                  {f.state === "ready" || (f.state === "running" && f.job === "scan") ? (
+                  {f.archived ? null : f.state === "ready" || (f.state === "running" && f.job === "scan") ? (
                     <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => void act(f, "scan")} data-testid="folder-access-scan">
                       {f.state === "running" ? "扫描中…" : "重新扫描"}
                     </button>

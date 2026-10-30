@@ -63,11 +63,14 @@ function memoryPriority(pid: number): number {
 }
 
 describe.runIf(process.platform === "win32")("agent memory priority (10-22; the I/O priority is no longer lowered, 10-28)", () => {
-  it("goes low for the agent and for what it starts afterwards", async () => {
+  it("goes low for the agent and for what it starts afterwards", async ({ skip }) => {
     // The parent starts its child once told to (after its own priority changed), and prints the child's pid.
     const parent = spawn(process.execPath, ["-e", "process.stdin.once('data', () => { const c = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' }); process.stdout.write(String(c.pid)); setTimeout(() => {}, 30000); });"], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     let childPid = 0;
     try {
+      // Run by an agent in Studio (2026-10-30: AMO worked on from the installed AMO), the tests are an agent's command and
+      // start low already: there is no change to see.
+      if (memoryPriority(parent.pid!) === 2) skip("these tests run from an agent's command, already at low memory priority");
       expect(memoryPriority(parent.pid!)).toBe(5);
       expect(await lowerAgentMemory(parent.pid!)).toBe(true);
       expect(memoryPriority(parent.pid!)).toBe(2);

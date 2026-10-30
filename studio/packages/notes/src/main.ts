@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -146,6 +146,13 @@ function createPad(): BrowserWindow {
     w.on("moved", rememberBounds);
     w.on("resized", rememberBounds);
   }
+  // 关于 (2026-10-30, the user: in the tray its version could not be seen): right-click on the title bar. The bar is the
+  // frameless window's drag region, where Windows shows its own window menu: that one is replaced.
+  w.on("system-context-menu", (event) => {
+    event.preventDefault();
+    Menu.buildFromTemplate([{ label: "关于便签", click: () => w.webContents.send("amo:notes-about") }]).popup({ window: w });
+  });
+  if (testMode) (globalThis as { __notesAbout?: () => void }).__notesAbout = () => w.webContents.send("amo:notes-about");
   w.once("ready-to-show", () => (padReady = true));
   w.on("closed", () => {
     pad = null;
@@ -412,6 +419,35 @@ async function start(): Promise<void> {
     // Tests run side by side: they record what would be copied instead of taking the person's clipboard.
     if (testMode) (globalThis as { __notesCopied?: string[] }).__notesCopied = [...((globalThis as { __notesCopied?: string[] }).__notesCopied ?? []), String(text)];
     else clipboard.writeText(String(text));
+  });
+  // 复制 with the page's pictures (2026-10-30, the user: pasting gave only the text). Windows' clipboard holds one bitmap:
+  // the first picture goes as that (chat boxes, Studio, Paint take it), the text as text, and all of them in HTML with
+  // the pictures inline (Word, rich editors take the lot).
+  ipcMain.handle("amo:copy-rich", async (_event, input: unknown) => {
+    const b = input && typeof input === "object" ? (input as { text?: unknown; images?: unknown }) : {};
+    const text = typeof b.text === "string" ? b.text : "";
+    const pics = (Array.isArray(b.images) ? b.images : []).flatMap((x) => (x instanceof Uint8Array ? [nativeImage.createFromBuffer(Buffer.from(x))] : [])).filter((img) => !img.isEmpty());
+    if (testMode) {
+      (globalThis as { __notesCopied?: string[] }).__notesCopied = [...((globalThis as { __notesCopied?: string[] }).__notesCopied ?? []), text];
+      (globalThis as { __notesCopiedImages?: number[] }).__notesCopiedImages = [...((globalThis as { __notesCopiedImages?: number[] }).__notesCopiedImages ?? []), pics.length];
+      return;
+    }
+    if (!pics.length) return void (await clipboard.writeText(text));
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = `${text ? `<div>${esc(text).replace(/\r?\n/g, "<br>")}</div>` : ""}${pics.map((p) => `<p><img src="${p.toDataURL()}"></p>`).join("")}`;
+    // Electron 44's clipboard takes W3C ClipboardItems: one entry, all its kinds committed together.
+    await clipboard.write([new ClipboardItem({ ...(text ? { "text/plain": text } : {}), "text/html": html, "image/png": new Blob([new Uint8Array(pics[0]!.toPNG())], { type: "image/png" }) })]);
+  });
+  // 关于便签: 便签's own version (its package, also when it runs on Studio's exe), and whether Studio carries it.
+  ipcMain.handle("amo:notes-about-info", () => {
+    let version = "";
+    try {
+      version = (JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as { version?: string }).version ?? "";
+    } catch {
+      // shown without a number
+    }
+    const viaStudio = process.argv.includes("--amo-app=notes");
+    return { version, dev: !app.isPackaged, viaStudio: viaStudio ? app.getVersion() : null, electron: process.versions.electron };
   });
   ipcMain.handle("amo:scratchpad-open", () => showPad());
   ipcMain.on("amo:scratchpad-hide", (event) => {

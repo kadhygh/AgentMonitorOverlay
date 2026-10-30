@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { call, copyText, type HostLink } from "../host/client.js";
+import { call, copyRich, type HostLink, type NotesAbout } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
-import { imagesOf } from "../lib/attachments.js";
+import { attachmentUrl, imagesOf } from "../lib/attachments.js";
 import { scratchpadBridge } from "./bridge.js";
 import { clipboardText, pageFromKey, shortcutLabel } from "./logic.js";
 import { inNotesProgram, notesCall } from "../notes/api.js";
@@ -60,6 +60,14 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
   // The 便签 program after the pages came over from Studio: said once, until closed.
   const [imported, setImported] = useState(false);
   const notes = inNotesProgram();
+  // 关于便签 (2026-10-30): from the title bar's right-click menu, under the title bar until closed.
+  const [about, setAbout] = useState<NotesAbout | null>(null);
+  const aboutRef = useRef(about);
+  aboutRef.current = about;
+  useEffect(() => {
+    const api = window.amo?.notes;
+    return api?.onAbout?.(() => void api.aboutInfo?.().then(setAbout).catch(() => undefined));
+  }, []);
   const { doc } = pad;
   const active = doc?.activePage ?? 0;
 
@@ -95,6 +103,8 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
       if (e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
+        // Esc puts 关于 away first.
+        if (aboutRef.current) return setAbout(null);
         scratchpadBridge()?.hide?.();
         return;
       }
@@ -135,7 +145,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
   }
 
   async function copy() {
-    if (!/\S/.test(text)) {
+    if (!/\S/.test(text) && !images.length) {
       setNote("这一页是空的");
       area.current?.focus();
       return;
@@ -144,11 +154,33 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
     const safe = await call(link, "GET /api/settings")
       .then((s) => s.scratchpadSafeNewlines)
       .catch(() => false);
-    await copyText(clipboardText(text, safe));
-    setNote(safe ? "已复制（安全换行）" : "已复制");
+    // The page's pictures go along (2026-10-30, the user: pasting gave only the text).
+    const pics = await picturesOf(images);
+    await copyRich(/\S/.test(text) ? clipboardText(text, safe) : "", pics);
+    const what = pics.length ? (/\S/.test(text) ? `已复制文字和 ${pics.length} 张图片` : `已复制 ${pics.length} 张图片`) : "已复制";
+    setNote(`${what}${safe && /\S/.test(text) ? "（安全换行）" : ""}`);
     bridge?.hide?.();
   }
   copyRef.current = copy;
+
+  /** One picture alone (the thumbnail's 复制); the window stays, to copy the next. */
+  async function copyImage(id: string) {
+    const [pic] = await picturesOf([id]);
+    if (!pic) return setNote("这张图片读不到了");
+    await copyRich("", [pic]);
+    setNote("已复制这张图片");
+  }
+
+  function picturesOf(ids: readonly string[]): Promise<Uint8Array<ArrayBuffer>[]> {
+    return Promise.all(
+      ids.map((id) =>
+        fetch(attachmentUrl(link, id))
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .then((b) => (b ? new Uint8Array(b) : null))
+          .catch(() => null),
+      ),
+    ).then((list) => list.filter((b): b is Uint8Array<ArrayBuffer> => !!b));
+  }
 
   function clear() {
     const el = area.current;
@@ -209,6 +241,18 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
         )}
       </header>
       <div className="pad-rule" aria-hidden="true" />
+      {about && (
+        <div className="pad-notice pad-about" role="status" data-testid="pad-about">
+          <span>
+            <b>AMO 便签</b> {about.version ? `版本 ${about.version}` : "版本读不到"}
+            {about.dev ? "（开发版）" : ""}
+            {about.viaStudio ? ` · 没有单独安装，随 AMO Studio ${about.viaStudio} 运行` : ""}
+          </span>
+          <button type="button" className="pad-icon" aria-label="关闭关于" title="关闭（Esc）" onClick={() => setAbout(null)}>
+            ×
+          </button>
+        </div>
+      )}
       {imported && (
         <div className="pad-notice" role="status" data-testid="pad-imported">
           <span>已从 AMO Studio 搬过来原来的便签内容和图片，Studio 里的旧数据还留着。</span>
@@ -248,7 +292,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
           </ul>
         )}
       </div>
-      <PadImages link={link} ids={images} onOpen={setViewing} onRemove={(id) => pad.removeImage(active, id)} />
+      <PadImages link={link} ids={images} onOpen={setViewing} onRemove={(id) => pad.removeImage(active, id)} onCopy={(id) => void copyImage(id)} />
       <div className="pad-rule" aria-hidden="true" />
       <footer className="pad-foot">
         <span className="pad-status" data-testid="pad-status" title={kept || status}>

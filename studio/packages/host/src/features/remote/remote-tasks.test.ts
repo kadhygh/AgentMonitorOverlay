@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type ModelProfile, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -500,6 +500,38 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     await expect(b.remote.copies.ask(A, "rt.nothing-yet", {})).rejects.toThrow("A-PC 上的 Studio 版本太旧，先在那台电脑上更新");
   }, 60_000);
 
+  it("a device that read the catalog hears of changes at once: 远端允许的项目, 远端允许的模型, a project renamed; nothing changed, nothing sent", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    const pushed: RemoteCatalog[] = [];
+    b.service.on("event", (e) => e.type === "remote.catalog" && e.account === A.account && e.device === A.device && pushed.push(e.catalog));
+    const yes = a.service.projects.addWorkspace({ path: tempDir("allowed-proj") });
+    const later = a.service.projects.addWorkspace({ path: tempDir("later-proj") });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: null });
+    // Not asked yet: nothing is sent.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(pushed).toEqual([]);
+    expect((await b.remote.catalog(A)).projects.map((p) => p.id)).toEqual([yes.id]);
+
+    // A saves 远端允许的项目: B has the new catalog without asking.
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id, later.id], common: true });
+    const first = await until(() => pushed.at(-1), (c) => !!c && c.projects.length === 2, "pushed projects");
+    expect(first).toMatchObject({ name: "A-PC", allowCommon: true });
+    expect(first!.projects.map((p) => p.id).sort()).toEqual([yes.id, later.id].sort());
+    // 远端允许的模型.
+    a.remote.setAllowed({ profiles: ["p", "q"], defaultProfile: "q", permission: null });
+    expect((await until(() => pushed.at(-1), (c) => c!.models.length === 2, "pushed models"))!.models.map((m) => m.id)).toEqual(["q", "p"]);
+    // A project renamed there.
+    a.service.projects.updateWorkspace(later.id, { name: "改了名" });
+    await until(() => pushed.at(-1), (c) => c!.projects.some((p) => p.name === "改了名"), "pushed rename");
+    // Work in a task changes only the order: not sent.
+    const count = pushed.length;
+    await a.service.tasks.createTask({ title: "只是干活", workspaceId: yes.id });
+    await new Promise((r) => setTimeout(r, 800));
+    expect(pushed.length).toBe(count);
+  }, 60_000);
+
   it("creates in an allowed project on an allowed model: made in the topic, granted, running, the copy on B; a disallowed project, model or the common folder is refused with the reason", async () => {
     const { a, b } = await paired();
     const A = toA(a);
@@ -634,6 +666,36 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     const started = await b.service.tasks.addSession(task.id, { profileId: b.store.getTask(task.id)!.remote!.allowed[0]!, text: withFileRefs("新会话", [join(dir, "说明.txt")]) });
     const first = (await userOn(a, started.id, "新会话"))!;
     expect(splitFileRefItems(first.text).refs[0]!.path.startsWith(a.service.attachments.dir())).toBe(true);
+  }, 60_000);
+
+  it("pictures in a copy are B's own (2026-10-30): B's sent one names B's attachment, one sent on A is fetched; B comments on a reply and sends it", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    const png = Buffer.concat([PNG, Buffer.alloc(200, 3)]);
+    const pic = b.service.attachments.save(png, { name: "截图.png", mime: "image/png" });
+    await b.service.sessions.sendMessage(session.id, "看图", [pic.id]);
+    expect((await userOn(a, session.id, "看图"))!.images![0]!.id).not.toBe(pic.id);
+    // On B the message names the picture B has.
+    await until(() => (items(b, session.id).find((i) => i.type === "user" && i.text === "看图") as Extract<SessionItem, { type: "user" }> | undefined)?.images?.[0]?.id, (id) => id === pic.id, "B's own picture");
+
+    // A's person sends one on A: B fetches it and keeps it as its own.
+    await until(() => a.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "A idle");
+    const onA = a.service.attachments.save(Buffer.concat([PNG, Buffer.alloc(300, 9)]), { name: "A的图.png", mime: "image/png" });
+    await a.service.sessions.sendMessage(session.id, "A 发的图", [onA.id]);
+    const got = await until(() => (items(b, session.id).find((i) => i.type === "user" && i.text === "A 发的图") as Extract<SessionItem, { type: "user" }> | undefined)?.images?.[0], (im) => !!im?.id && im.id !== onA.id, "A's picture kept on B");
+    expect(readFileSync(b.service.attachments.get(got!.id!).path).equals(readFileSync(onA.path))).toBe(true);
+
+    // 批注 on a reply in the copy: kept on B, sent to A as a message.
+    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/annotations", { id: session.id })).not.toThrow();
+    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/annotations/send", { id: session.id })).not.toThrow();
+    await until(() => b.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "B's copy idle");
+    const reply = items(b, session.id).find((i): i is Extract<SessionItem, { type: "agent" }> => i.type === "agent" && !i.streaming)!;
+    const quote = reply.markdown.slice(0, 4);
+    b.service.review.addAnnotation(session.id, { itemId: reply.id, start: 0, end: quote.length, quote, note: "这里再看看" });
+    await b.service.review.sendAnnotations(session.id);
+    await userOn(a, session.id, "这里再看看");
   }, 60_000);
 
   it("a task B creates that waits for a yes keeps what B sent until then: refused, it is gone; allowed, the first message carries it", async () => {
