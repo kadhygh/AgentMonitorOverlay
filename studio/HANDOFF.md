@@ -47,6 +47,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-31 · 测试通道 Studio 0.9.16；问题页 + 值守开工**
+
+- 晚（五）～（七）三项（远程改名、远程会话归档、编号列表）提交（652abdc），Studio 0.9.16 发了测试通道（publish 删了 0.9.13）。试过后 `promote studio 0.9.16`。verify 时整套单测在低优先级下有几条超时，单独重跑只剩 `server-manager.test`（这台机器上的老问题，和改动无关）。
+- 定了问题页 + 值守的方案（`plans/issues.md`）：问题只在服务器 `/issues` 页面上报和往来；Host 新功能叫「值守」（`duty`）；每个问题一个 Opus 会话，在自己的 worktree 修、验证、合回 master（AGENTS.md 里写了这个例外）；打包用脚本（凑满 3 个 / 每 30 分钟 / 点「发布打包」）。不做 /loop 试跑，直接从阶段 1 开始，在 worktree `G:\PROJECT\AgentMonitorOverlay-issues`（分支 `studio/issues`）里做。
+
 **2026-10-30 晚（七）· 远程任务的会话在 B 上归档 / 恢复（未发布、未提交）**
 
 - 用户：控制端任务里的会话没有「归档」。加 `rt.archive`（{sessionId, archived}）：B 的 `RemoteAwareRuntime.archive / unarchive` → `copies.archive`，A 上走 `sessions.archive / unarchive`，A 推送改动的会话在应答之前，所以 B 调用返回时副本已更新。COPY_ROUTES 放开两个路由；B 上归档整个任务仍是 dropCopy，不碰 A。界面去掉 SessionHead 归档按钮的 `!remote`。单测接在改名那条后面（remote-tasks 23 条过；同文件「A away」那条一次偶发连不上假服务器，单独重跑两次都过），e2e remote-tasks 加 B 归档、A 显示已归档、B 恢复（过），截图 `screenshots/studio/remote-b-archived.png`。
