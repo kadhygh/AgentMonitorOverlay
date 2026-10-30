@@ -10,7 +10,7 @@ export function canvasReviewTools({ service, caller, ownTopic }: ToolContext): A
       name: "canvas_items_post",
       title: "画布铺审阅条目",
       description:
-        "Lay a review out on your topic's canvas as numbered item cards (#1, #2… continuing the canvas's numbers), instead of one long reply: each point a card the person can confirm, question or talk over on its own. group: an existing group (id or exact title) to add to, or the title of a new group (recommended: one group per review); omit to put them below everything. Each item: title (one line), body (Markdown: what you found, why it matters, what you suggest), refs (files, commits, links), status (todo by default; confirmed, discuss, parked, done). Studio lays them out. Then use canvas_callout to highlight or ask on the items.",
+        "When the person asks for a review on the canvas: lay it out on your topic's canvas as numbered item cards (#1, #2… continuing the canvas's numbers), each point a card the person can confirm, question or talk over on its own. group: an existing group (id or exact title) to add to, or the title of a new group (recommended: one group per review); omit to put them below everything. Each item: title (one line), body (Markdown: what you found, why it matters, what you suggest), refs (files, commits, links), status (todo by default; confirmed, discuss, parked, done). Studio lays them out. Then use canvas_callout to highlight or ask on the items.",
       inputSchema: {
         group: z.string().optional(),
         items: z.array(z.object({ title: z.string(), body: z.string().optional(), refs: z.array(z.string()).optional(), status: STATUS.optional() })),

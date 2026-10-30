@@ -70,6 +70,7 @@ const result = (page: Page, id: string) => page.getByTestId(`tool-${id}-result`)
 const more = (page: Page, id: string) => row(page, id).getByRole("button", { name: "更多操作" });
 const menu = (page: Page, id: string) => row(page, id).getByRole("menu");
 const refresh = (page: Page) => page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("refresh", []));
+const call = (page: Page, method: string, args: unknown[] = []) => page.evaluate(([m, a]) => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call(m, a), [method, args] as const);
 
 test("log in → install → a new version → update → 回滚 → 卸载; Studio waits for its data dir", async () => {
   const realHome = join(process.env.APPDATA ?? "", "AMO");
@@ -702,7 +703,7 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   registry.close();
 });
 
-test("正在连接 (2026-10-30): the versions say they are being read, not the last answer; 安装 greyed with 正在连接服务器…; 打开 still works", async () => {
+test("正在连接 (2026-10-30): asked again with an answer in hand, in the background — nothing greys; only with nothing to show yet the versions say they are being read", async () => {
   const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
   try {
     own.publish("studio", "0.9.0", tool("studio", "0.9.0"), { name: "AMO Studio", exe: "run.cmd" });
@@ -715,17 +716,28 @@ test("正在连接 (2026-10-30): the versions say they are being read, not the l
     await form.getByRole("button", { name: "登录" }).click();
     await row(page, "reviewer").getByRole("button", { name: "安装" }).click();
     await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 已是最新");
+    const install = row(page, "studio").getByRole("button", { name: "安装" });
 
-    // A new version on the server, and the platform asks again while the server is slow to answer.
+    // A new version on the server, asked again while the server is slow to answer (as when the window comes forward):
+    // the last answer stays and the buttons stay usable until the new one comes (the user, 2026-10-30).
     own.publish("reviewer", "1.1.0", tool("reviewer", "1.1.0"), { name: "AMO Reviewer", exe: "run.cmd" });
-    own.delayChannels(12_000);
+    own.delayChannels(8_000);
     const asking = refresh(page);
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId("pf-connection")).not.toContainText("正在连接");
+    await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 已是最新");
+    await expect(install).toBeEnabled();
+    await expect(status(page, "reviewer")).toHaveText("! 1.0.0 · 有新版 1.1.0", { timeout: 30_000 });
+    await asking;
+
+    // Nothing to show yet (logged out and in again while the server is slow): 正在连接, the versions being read.
+    await call(page, "logout");
+    own.delayChannels(12_000);
+    const login = call(page, "login", [own.url, "小王", "secret"]);
     await expect(page.getByTestId("pf-connection")).toContainText("正在连接");
     await expect(status(page, "reviewer")).toHaveText("✓ 1.0.0 · 正在读取服务器上的版本…");
-    await expect(status(page, "studio")).toHaveText("○ 没装 · 正在读取服务器上的版本…");
-    const install = row(page, "studio").getByRole("button", { name: "安装" });
-    await expect(install).toBeDisabled();
-    await expect(install).toHaveAttribute("title", "正在连接服务器…");
+    // What is not installed comes with the server's answer.
+    await expect(row(page, "studio")).toHaveCount(0);
     // This machine's own: not held up by the server.
     await expect(row(page, "reviewer").getByRole("button", { name: "打开" })).toBeEnabled();
     await screenshot(app, "platform", "P37-connecting", page);
@@ -733,7 +745,7 @@ test("正在连接 (2026-10-30): the versions say they are being read, not the l
     await expect(status(page, "reviewer")).toHaveText("! 1.0.0 · 有新版 1.1.0", { timeout: 30_000 });
     await expect(install).toBeEnabled();
     await expect(install).not.toHaveAttribute("title", /.+/);
-    await asking;
+    await login;
   } finally {
     await own.close();
   }

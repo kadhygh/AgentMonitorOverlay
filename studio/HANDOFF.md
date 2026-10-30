@@ -47,6 +47,17 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-10-30 · AI 不要求就不用画布（测试通道 Studio 0.9.13）**
+
+- 用户 10-30：人不要求时 AI 不用画布；人说了（「主控用画布展开任务」「放到画布上审阅」）就照以前一样做完整。改了：`AMO_MCP_INSTRUCTIONS` 删掉「要点多的报告放画布」，换成「人要求时用画布并做完整（见 amo_guide lead、canvas），没要求不动，读可以」；角色卡主控职责写「人让你用画布展开时照 lead 一节排好分组和依赖，没说不动」，专题会话「人让你整理画布时再整理、标颜色」；`amo_guide` canvas 一节开头写明这个前提，画布审阅改成「人让你放到画布上时」，lead 第 3 步「人让你用画布展开时排好分组、依赖、颜色」；`canvas_items_post` 的说明去掉「instead of one long reply」。
+- 测试：typecheck；guide、mcp、canvasreview、codex 的单测过（`server-manager` 一条在负载下超时，单独重跑过）。
+
+**2026-10-30 · 平台 0.9.11：切回前台不再闪「正在连接」（测试通道已发）**
+
+- 用户 10-30：平台每次切回前台都显示「正在连接」，「更新到」跟着变灰。原因是 `refresh()` 一开始总把连接设成 `checking`，0.9.10 起 `checking` 时安装、更新灰着。改成：已有通道信息且在线时后台刷新（不进 `checking`，失败才变 offline）；`refresh({ focus: true })`（`main.ts` 的窗口 focus）距上次服务器回答不到 `FOCUS_RECHECK_MS`（60 秒）只查本机在运行的工具。「刷新」、登录、装完照常立刻问。
+- 测试：平台单测加一条（后台刷新不出 checking、切回前台 1 分钟内不问服务器），67 条过。e2e「正在连接」改成：在线时刷新按钮不灰；登出再登录（没有通道信息）才出「正在连接」，截图 `P37-connecting` 更新。平台 e2e（放宽到 30 秒）这条和登录→更新→卸载那条过；「第二个工具只下载自己的文件」卡在卸载那一步，换回提交前的代码一样失败，是原有问题，待查。
+- `packages/platform` 0.9.11，CHANGELOG 写了；`release/` 里已打好包。`relay:mac -- publish platform` 被自动审批拦下（生产部署），用户自己跑的：0.9.11 进了测试通道，删了 0.9.8。试过后 `npm run relay:mac -- promote platform 0.9.11`。
+
 **2026-10-30 · 远程默认关闭；中转发送可以不用确认（`634b77c`；测试通道 Studio 0.9.12）**
 
 - 用户 10-30：远程默认关，要手动打开；只开 Studio、没在平台登录时也是关的，而且打不开。做法：Host 的 kv `remote.enabled` 记「为哪个账号（server + name）打开的」，当前登录的不是它就是关（换账号登录又是关的）。关着时 `RemoteState.connection.state = "disabled"`、`enabled: false`，不建 `DeviceLink`，配对、授权、远程设置都保留；`requireStarted` 报「远程功能没有打开」。`PUT /api/remote/enabled`（打开要有登录，会等正在读的 account.json）。`teamLogin()` 不受开关影响：中转只是借用同一个登录。界面：远程弹窗关着时显示「远程功能没有打开」+「打开远程功能」（没登录时按钮灰着）；关在 远程设置 最下面；顶栏写「远程 · 关」；授权弹窗、新任务页的「在别的设备上」、远程任务卡跟着变。**以前用过远程的人更新后要重新打开一次**（CHANGELOG 写了）。

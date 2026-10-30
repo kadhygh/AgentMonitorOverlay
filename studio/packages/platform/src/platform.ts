@@ -70,6 +70,8 @@ export interface PlatformOptions {
 
 /** How long 重启 Studio waits for the old Studio and its Host to end (closing sessions and app-servers takes a moment). */
 const STUDIO_STOP_WAIT_MS = 60_000;
+/** Coming forward asks the server again only after this long (what runs on the machine is asked every time). */
+export const FOCUS_RECHECK_MS = 60_000;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -80,6 +82,8 @@ export class Platform implements PlatformCalls {
   private channels: Channels | null = null;
   private readonly manifests = new Map<string, Manifest>();
   private connection: PlatformView["connection"] = { state: "idle", message: null };
+  /** When the server last answered the channels (0: not since the login or the start). */
+  private lastServerCheck = 0;
   private running: Record<string, boolean> = {};
   private studio: StudioHealth = { hostUp: false, sessions: null, version: null };
   /** 重启 Studio is under way. */
@@ -413,8 +417,13 @@ export class Platform implements PlatformCalls {
     return Object.fromEntries(ids.map((id, i) => [id, inUse[i] === true]));
   }
 
-  /** Asks the server for the channels and their manifests, and the machine which tools run. */
-  async refresh(): Promise<void> {
+  /**
+   * Asks the server for the channels and their manifests, and the machine which tools run. 2026-10-30 (the user: every
+   * time the window came forward it read 正在连接 and 更新到 went grey): with an answer already in hand it asks again in
+   * the background — the page keeps the last answer, its buttons usable, until a new one comes or the server fails —
+   * and `focus` (the window coming forward) asks the server only when the last answer is older than FOCUS_RECHECK_MS.
+   */
+  async refresh(opts: { focus?: boolean } = {}): Promise<void> {
     const local = async () => {
       const ids = this.toolIds();
       const [running, studio] = await Promise.all([this.checkRunning(ids), studioHealth(readSettings(this.options.env).studioDataDir, this.options.fetch)]);
@@ -427,7 +436,13 @@ export class Platform implements PlatformCalls {
       this.changed();
       return;
     }
-    this.connection = { state: "checking", message: null };
+    if (opts.focus === true && this.channels && this.connection.state === "online" && Date.now() - this.lastServerCheck < FOCUS_RECHECK_MS) {
+      await local();
+      this.changed();
+      return;
+    }
+    // 正在连接 only while there is nothing to show yet (the first time, after a login, or after it failed).
+    if (!this.channels || this.connection.state !== "online") this.connection = { state: "checking", message: null };
     // The profile (账号, and the face at the foot of the pages) alongside; its failure does not stop the tools.
     const profile = this.account ? this.readProfile(this.account) : null;
     this.changed();
@@ -448,6 +463,7 @@ export class Platform implements PlatformCalls {
       if (this.client !== client) return;
       this.channels = channels;
       this.connection = { state: "online", message: null };
+      this.lastServerCheck = Date.now();
     } catch (err) {
       if (this.client !== client) return;
       const text = this.failed(err);

@@ -8,7 +8,7 @@ import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakeP
 import { PlatformClient } from "./client.js";
 import { planLaunch, type LaunchSpec } from "./launch.js";
 import { trayMenu } from "./tray.js";
-import { Platform, type PlatformOptions } from "./platform.js";
+import { FOCUS_RECHECK_MS, Platform, type PlatformOptions } from "./platform.js";
 import { channelFromArgs } from "./settings.js";
 import { sessionCount, stopStudio, studioHealth, studioRestart, waitForExit, type StudioStop } from "./system.js";
 
@@ -86,6 +86,28 @@ describe("Platform", () => {
     expect(launched[0]!.file).toMatch(/\\0\.9\.0\\AMO Studio\.exe$/);
     expect(launched[0]!.env.AMO_STUDIO_DATA_DIR).toBe(data);
     expect(launched[0]!.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+  });
+
+  it("asked again with an answer in hand: in the background (never 正在连接); coming forward asks the server only after a minute (2026-10-30)", async () => {
+    const { platform } = make();
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    const states: string[] = [];
+    platform.onChange((v) => states.push(v.connection.state));
+    const asked = () => server.requests.filter((r) => r.includes("/channels")).length;
+    const before = asked();
+    await platform.refresh();
+    expect(asked()).toBe(before + 1);
+    expect(states).not.toContain("checking");
+    // Coming forward right after: what runs is read again, the server is not asked.
+    await platform.refresh({ focus: true });
+    expect(asked()).toBe(before + 1);
+    expect(platform.view().connection.state).toBe("online");
+    // A minute on, it is.
+    (platform as unknown as { lastServerCheck: number }).lastServerCheck -= FOCUS_RECHECK_MS + 1;
+    await platform.refresh({ focus: true });
+    expect(asked()).toBe(before + 2);
+    expect(states).not.toContain("checking");
   });
 
   it("an update while the tool runs is installed all the same and says it takes effect next time", async () => {
