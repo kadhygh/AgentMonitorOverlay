@@ -12,7 +12,7 @@
 |---|---|
 | 开发目录 | `G:\PROJECT\AgentMonitorOverlay\studio`（桌面快捷方式「AMO Source」指这里的 `start-studio.cmd`） |
 | 分支 | `master` 是主线；旧版 AMO 在标签 `amo-legacy-final` |
-| worktree | `G:\PROJECT\AgentMonitorOverlay-review`（分支 `studio/stage3-topics`，已经都合进 master，没有未合并的提交）；`G:\PROJECT\AgentMonitorOverlay-templates`（分支 `studio/prompt-templates`：提示词模板 + 删扩展包，10-31，等用户决定合并） |
+| worktree | `G:\PROJECT\AgentMonitorOverlay-review`（分支 `studio/stage3-topics`，已经都合进 master，没有未合并的提交） |
 | 开发版 | `npm start`（先 build 再开窗口），数据在 `studio\.data`。Host 常驻在 47900 端口；改了 Host 代码要先 `npm run host:stop` 再 `npm start` |
 | 帮用户重启开发版 | **先问用户，而且只在没有会话运行时做**。`npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程（命令行不含 `--type=`）→ 备份 `.data\studio.db*` 到 `.data\backup-before-<名字>-<日期>` → 在 PowerShell 里先删掉匹配 `^(CLAUDE|ANTHROPIC_|AMO_STUDIO_|NO_COLOR$|FORCE_COLOR$|COLOR$|TERM$)` 的环境变量（Claude Code 工具 shell 带的，Studio 会传给维护终端）→ `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`）→ 用 `.data/host-token` 在 node 脚本里查 `GET /api/state` 核对任务和会话数（不打印令牌）。只改界面时让用户按 Ctrl+R 即可 |
 | 验证 | `npm run verify`（typecheck + vitest + build）；`npm run e2e`（Playwright project：`studio`、`notes`、`reviewer`、`relay`）。都用 BelowNormal 优先级、`--maxWorkers=6` |
@@ -37,7 +37,7 @@
 | 便签进 Portable 包 | 到发布时再做 |
 | 位置批注的截图 | 用户 10-28 决定先不做，用一段时间再定 |
 | Studio 托盘 | 用户 10-29 定：× 只关窗口，托盘右键「完全退出」连 Host 一起关（有会话在跑先确认）；平台的 Studio 卡片显示后台状态、给「重启 Studio」（没有会话在跑才能点）。画布调整合并后做，见 `plans/remote-session.md`「前置」 |
-| 提示词模板 / 删扩展包 | 10-31 在 worktree `studio/prompt-templates` 做完，未提交、未合并（见下面最新一条）。以后可能做类似 DSH 的插件架构，到时另起方案 |
+| 提示词模板 / 删扩展包 | 10-31 合进 master，未发布（见「最近的改动」10-31 那条）。以后可能做类似 DSH 的插件架构，到时另起方案 |
 
 ### 已知问题
 
@@ -47,12 +47,17 @@
 
 ## 最近的改动（新的在上面）
 
-**2026-10-31 · 提示词模板，删掉扩展包（worktree `G:\PROJECT\AgentMonitorOverlay-templates`，分支 `studio/prompt-templates`，未提交、未发布）**
+**2026-10-31 · 提示词模板，删掉扩展包（在 worktree 分支 `studio/prompt-templates` 做完后合进 master，未发布）**
 
 - 用户要「任务模板」：常开的同样任务，存好提示词，在 @ 菜单里和快速提交同一级的位置选，弹窗选中后粘进输入框；模板可以让 AI 通过 AMO 的 MCP 按要求加。用户定的三条都按建议（`plans/prompt-templates.md`）：全局 + 可只在某项目出现；第一版不做变量；AI 新增、修改直接生效，删除要人批准，列表标「AI 写的」。同时用户定**删掉扩展包**（模板比它好用；以后可能做类似 DSH 的插件架构）。
 - 模板：protocol `prompt-templates.ts`；Host `features/prompttemplates/`（存在 kv `prompt-templates`，一个 JSON 列表；`GET/POST /api/prompt-templates`、`PATCH/DELETE /api/prompt-templates/:id`，事件 `prompt-templates.changed`）；MCP `prompt_template_list`（只读）、`prompt_template_save`（自动通过）、`prompt_template_delete`（不自动通过）；guide 的 files 一节写了用法。界面 `attach/PromptTemplateDialog.tsx`、`usePromptTemplates.ts`，@ 列表「AMO 扩展功能」最后一项「提示词模板…」（会话输入框、新建任务页；快速新任务那条单行输入框不给）。
 - 删扩展包：Host `features/packs`、`packs/`、读模型 packList/packDoc、调度简报里的预设、`POST /api/tasks` 的 `template`；「一键忽略 .amo/」（`git-exclude`）；protocol `packs.ts`、`TaskTemplateChoice`、可关闭功能 `packs`（设置里存着的 `packs` 读时忽略）；界面 `ui/src/packs/`、任务页预设和文档面板、会话树「按扩展包预设」、新建任务「流程模板」；e2e packs / pack-acceptance；`examples/packs`、`scripts/smoke-stage6.mjs`；`design/pack-format.md` 挪到 `docs/archive/`。任务清单（`checklist_items`、`checklist_check`）留着，老任务的清单照样能勾。ProposalsPanel 原来借用 packs.css 的三个类，改名放进 planning.css。
 - 验证：tsc（`tsc -b` + ui）过；vitest 全量 1028 过、4 个失败都在 runtime（`server-manager` 端口、`claude-runtime.integration` 子 agent 的用量 20 对 10），单独重跑仍有 2 个，和这次改动无关，主工作区另一个会话在同时跑测试，可能抢端口，没在干净的 master 上对照。e2e：prompt-templates（2 条）、features、task-head、attachments、newtask 全过。截图 `screenshots/studio/prompt-templates-dialog.png`、`stage-11/S11-B-05-at-menu.png`（菜单里多一项，光打 @ 时它在滚动区底下，打「@模板」能直接筛出来）、`stage-11/R4-features-off.png`、`stage-14/S14-E-edit-project.png`。CHANGELOG 写在 Studio「下一版」，没升版本号（主线上另一个会话也在升，合并时再定）。
+
+**2026-10-31 · 测试通道 Studio 0.9.16；问题页 + 值守开工**
+
+- 晚（五）～（七）三项（远程改名、远程会话归档、编号列表）提交（652abdc），Studio 0.9.16 发了测试通道（publish 删了 0.9.13）。试过后 `promote studio 0.9.16`。verify 时整套单测在低优先级下有几条超时，单独重跑只剩 `server-manager.test`（这台机器上的老问题，和改动无关）。
+- 定了问题页 + 值守的方案（`plans/issues.md`）：问题只在服务器 `/issues` 页面上报和往来；Host 新功能叫「值守」（`duty`）；每个问题一个 Opus 会话，在自己的 worktree 修、验证、合回 master（AGENTS.md 里写了这个例外）；打包用脚本（凑满 3 个 / 每 30 分钟 / 点「发布打包」）。不做 /loop 试跑，直接从阶段 1 开始，在 worktree `G:\PROJECT\AgentMonitorOverlay-issues`（分支 `studio/issues`）里做。
 
 **2026-10-30 晚（七）· 远程任务的会话在 B 上归档 / 恢复（未发布、未提交）**
 

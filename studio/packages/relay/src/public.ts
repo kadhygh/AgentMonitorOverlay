@@ -112,6 +112,7 @@ small{font-weight:400;opacity:.85}ol{padding-left:20px}code{background:var(--bg)
 </style></head><body><main><div class="card">
 <h1>${escapeHtml(service)}</h1><p class="muted">团队的 AMO 工具（AMO Studio、AMO Reviewer、AMO 便签等）都从 AMO 平台安装和更新。</p>
 ${platformLink}
+<a class="btn alt" href="/issues" data-testid="landing-issues">报问题<small>用 AMO 时遇到的问题写在这里，附上截图</small></a>
 <ol class="muted">
 <li>下载后解压到任意文件夹，双击 <code>AMO Platform.exe</code>。</li>
 <li>登录时服务器地址填 <code id="addr"></code>，用团队服务器的账号登录。</li>
