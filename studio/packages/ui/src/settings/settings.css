@@ -230,3 +230,22 @@
 .settings-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--attention); margin-left: 6px; vertical-align: middle; flex: none; }
 .nav-settings-folded { position: relative; }
 .settings-dot.corner { position: absolute; top: 3px; right: 3px; margin: 0; }
+/* 值守 (2026-10-31): one card per item — toggle, name, times and buttons; what it does; how its last run went. */
+.duty-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.duty-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.duty-item[data-enabled="false"] .duty-item-head b { color: var(--text-dim); }
+.duty-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.duty-item-head .grow { flex: 1; }
+.duty-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.duty-run { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.duty-run > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+.duty-mark { flex: none; color: var(--text-dim); }
+.duty-mark.on { color: var(--primary); }
+.duty-mark.bad { color: var(--error); }
+.duty-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed var(--border-strong); border-radius: 8px; }
+.duty-form .settings-row .field { flex: 0 1 auto; }
+.duty-form .stack-field .field { width: 100%; }
+.duty-form textarea.field { resize: vertical; font: inherit; padding: 6px 8px; }
+.duty-form .field.mono { font-family: var(--font-code); font-size: 12.5px; }
+.duty-num { width: 72px; }
+.settings-hint.error { color: var(--error); }

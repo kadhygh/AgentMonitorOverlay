@@ -692,6 +692,8 @@ export type HostEvent = { seq: number } & (
   | { type: "remote.file"; fetchId: string; received: number; total: number }
   /** 远程 (2026-10-30): a paired device says what may be picked creating a task on it changed (RemoteCatalog). Not kept in the log. */
   | { type: "remote.catalog"; account: string; device: string; catalog: import("./remote.js").RemoteCatalog }
+  /** 值守 (2026-10-31): its items, runs or what runs now changed. Not kept in the log. */
+  | { type: "duty.updated"; duty: import("./duty.js").DutyState }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -979,4 +981,14 @@ export interface HostRoutes {
   "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
   /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
   "POST /api/remote/create": { req: import("./remote.js").RemoteCreateAsk & { account: string; device: string; /** Pictures uploaded here (POST /api/attachments); files go in the text's 引用文件 block. */ attachments?: Id[] }; res: import("./remote.js").RemoteCreateResult };
+}
+
+// ---- 值守 (2026-10-31, plans/issues.md): items that run at set times — a session, a command, or one of Studio's jobs ---------
+export interface HostRoutes {
+  "GET /api/duty": { req: void; res: import("./duty.js").DutyState };
+  "POST /api/duty/items": { req: import("./duty.js").DutyItemInput; res: import("./duty.js").DutyState };
+  "PATCH /api/duty/items/:id": { req: import("./duty.js").DutyItemInput; res: import("./duty.js").DutyState };
+  "DELETE /api/duty/items/:id": { req: void; res: import("./duty.js").DutyState };
+  /** Runs it now (not when it is running already). */
+  "POST /api/duty/items/:id/run": { req: void; res: import("./duty.js").DutyState };
 }

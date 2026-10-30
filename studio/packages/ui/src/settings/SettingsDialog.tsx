@@ -12,6 +12,7 @@ import { QuotaPage } from "./QuotaPage.js";
 import { StatsPage } from "./StatsPage.js";
 import { useDialogSize } from "./dialogSize.js";
 import { MaintenancePage } from "./MaintenancePage.js";
+import { DutyPage } from "./DutyPage.js";
 import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
@@ -48,6 +49,7 @@ const PAGES = [
   { id: "stats", label: "统计" },
   { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
+  { id: "duty", label: "值守" },
   { id: "scratchpad", label: "便签" },
   { id: "data", label: "数据管理" },
   { id: "maintenance", label: "维护" },
@@ -278,6 +280,7 @@ export function SettingsDialog({ link, settings, page: startPage, onClose, onOpe
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
+            {page === "duty" && <DutyPage link={link} />}
             {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>

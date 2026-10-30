@@ -314,6 +314,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       service.remote.start(options.remote);
       service.teamRelay.start();
     }
+    // 值守 (2026-10-31): its clock runs in every Host; without items it does nothing.
+    service.duty.start();
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 
@@ -343,6 +345,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         if (stopped) return;
         stopped = true;
         clearInterval(pruning);
+        service.duty.stop();
         service.teamRelay.stop();
         service.remote.stop();
         await finalHttp.close();
