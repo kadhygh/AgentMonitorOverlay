@@ -1,8 +1,10 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio } from "../support/studio.js";
 
-// Stage 14 (S14-C): the search box left of "+ 新任务", 置顶 in the title bar, task pages that return where they were
+// Stage 14 (S14-C): the search box left of "+ 新任务", no 置顶 in the title bar (removed 10-31), task pages that return where they were
 // opened from, the box after 归档任务, and archived tasks and sessions that say so plainly.
 
 let studio: Studio | undefined;
@@ -79,28 +81,21 @@ test("search: Ctrl K, every word, archived last; it opens a task or a session an
   await expect(page.getByTestId("search-results")).toHaveCount(0);
 });
 
-test("置顶 keeps the workbench above other windows, without taking focus, and is remembered", async () => {
+// 2026-10-31, 问题 #4: the workbench's 置顶 is gone, and one left on before is not applied (nothing would turn it off).
+test("no 置顶 in the workbench's title bar; a 置顶 left on by an older Studio is not applied", async () => {
   studio = await launchStudio({ mockModel: false });
-  const { page } = studio;
-  const pin = page.getByTestId("pin-toggle");
-  await expect(pin).toHaveAttribute("aria-pressed", "false");
-  expect((await windowState(studio.app)).alwaysOnTop).toBe(false);
-  await pin.click();
-  await expect(pin).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(async () => (await windowState(studio!.app)).alwaysOnTop).toBe(true);
-  const state = await windowState(studio.app);
-  expect(state).toMatchObject({ focused: false, anyFocused: false, onScreen: false });
-  await screenshot(studio.app, "stage-14", "S14-C-pin", page);
-
-  // The next start keeps it on.
   const root = studio.root;
+  const prefsFile = join(studio.dataDir, "shell-prefs.json");
   await studio.close({ keepData: true });
+  const prefs = existsSync(prefsFile) ? (JSON.parse(readFileSync(prefsFile, "utf8")) as Record<string, unknown>) : {};
+  writeFileSync(prefsFile, JSON.stringify({ ...prefs, pinned: true }));
+
   studio = await launchStudio({ mockModel: false, root });
-  await expect(studio.page.getByTestId("pin-toggle")).toHaveAttribute("aria-pressed", "true");
-  expect((await windowState(studio.app)).alwaysOnTop).toBe(true);
-  await studio.page.getByTestId("pin-toggle").click();
-  await expect(studio.page.getByTestId("pin-toggle")).toHaveAttribute("aria-pressed", "false");
-  await expect.poll(async () => (await windowState(studio!.app)).alwaysOnTop).toBe(false);
+  const { page } = studio;
+  await expect(page.getByTestId("focus-toggle")).toBeVisible();
+  await expect(page.getByTestId("pin-toggle")).toHaveCount(0);
+  expect((await windowState(studio.app)).alwaysOnTop).toBe(false);
+  await screenshot(studio.app, "stage-14", "S14-C-no-pin", page);
 });
 
 test("归档任务: a box says what was archived and returns to the canvas or board; the page keeps a banner", async () => {

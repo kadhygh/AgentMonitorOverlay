@@ -118,8 +118,6 @@ interface PrefsData {
   focus?: boolean;
   focusPos?: Point;
   main?: { bounds: Rect; maximized: boolean };
-  /** 置顶 (stage 14): the workbench window stays above other windows. */
-  pinned?: boolean;
   /** 界面大小 (2026-10-15): the zoom of every Studio page. */
   uiScale?: number;
 }
@@ -160,14 +158,6 @@ export class ShellPrefs {
 
   setMain(main: NonNullable<PrefsData["main"]>): void {
     this.save({ main });
-  }
-
-  pinned(): boolean {
-    return this.data.pinned ?? false;
-  }
-
-  setPinned(on: boolean): void {
-    this.save({ pinned: on });
   }
 
   uiScale(): number {

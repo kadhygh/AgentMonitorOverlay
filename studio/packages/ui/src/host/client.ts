@@ -70,12 +70,6 @@ declare global {
         set(scale: number): Promise<void>;
         onChange(cb: (scale: number) => void): () => void;
       };
-      /** 置顶 (stage 14): the workbench window above other windows (Electron). */
-      pin?: {
-        get(): Promise<boolean>;
-        set(on: boolean): Promise<void>;
-        onChange(cb: (on: boolean) => void): () => void;
-      };
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board; `topicId`: that topic's
        * canvas (画布审阅, 2026-10-27), opening the question `calloutId`. */

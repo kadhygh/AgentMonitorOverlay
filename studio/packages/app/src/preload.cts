@@ -37,16 +37,6 @@ electron.contextBridge.exposeInMainWorld("amo", {
       return () => electron.ipcRenderer.removeListener("amo:window-maximized", listener);
     },
   },
-  /** 置顶 (stage 14): keep the workbench window above other windows. */
-  pin: {
-    get: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:pin-get"),
-    set: (on: boolean): Promise<void> => electron.ipcRenderer.invoke("amo:pin-set", on),
-    onChange: (cb: (on: boolean) => void): (() => void) => {
-      const listener = (_event: unknown, on: boolean) => cb(on);
-      electron.ipcRenderer.on("amo:pin-changed", listener);
-      return () => electron.ipcRenderer.removeListener("amo:pin-changed", listener);
-    },
-  },
   /** 界面大小 (2026-10-15): the zoom of every Studio page. */
   uiScale: {
     get: (): Promise<number> => electron.ipcRenderer.invoke("amo:ui-scale-get"),

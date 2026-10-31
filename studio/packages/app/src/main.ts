@@ -376,15 +376,6 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
     }
     await shell.openExternal(url);
   });
-  // 置顶 (stage 14): the workbench window above other windows, remembered for the next start.
-  ipcMain.handle("amo:pin-get", () => mainWindow?.isAlwaysOnTop() ?? false);
-  ipcMain.handle("amo:pin-set", (_event, on: unknown) => {
-    const pinned = on === true;
-    prefs.setPinned(pinned);
-    if (!mainWindow) return;
-    mainWindow.setAlwaysOnTop(pinned);
-    mainWindow.webContents.send("amo:pin-changed", pinned);
-  });
   // 界面大小 (2026-10-15): one zoom for every Studio page, kept for the next start. Chromium zooms by origin, so
   // setting it on one page sets it on all of them; each page gets it again when it loads.
   const setUiScale = (scale: number) => {
@@ -698,8 +689,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     show: false,
     ...(testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
     paintWhenInitiallyHidden: true,
-    // 置顶, as it was left (stage 14). The window never activates for it, so off-screen test windows stay harmless.
-    alwaysOnTop: prefs.pinned(),
+    // No 置顶 for the workbench any more (2026-10-31, 问题 #4): one left on in shell-prefs.json is no longer applied,
+    // since there is no button left to turn it off.
     webPreferences: {
       preload: join(here, "preload.cjs"),
       contextIsolation: true,

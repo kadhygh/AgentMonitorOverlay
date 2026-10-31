@@ -18,18 +18,6 @@ export function useFocusToggle(): { on: boolean; available: boolean; set(on: boo
   return { on, available: !!api, set: (next) => void api?.set(next) };
 }
 
-/** 置顶 (stage 14): the workbench window above other windows, mirrored from the Electron shell. */
-export function usePinToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
-  const api = window.amo?.pin;
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (!api) return;
-    void api.get().then(setOn);
-    return api.onChange(setOn);
-  }, [api]);
-  return { on, available: !!api, set: (next) => void api?.set(next) };
-}
-
 /**
  * The top bar, which is also the window's title bar: brand and scope, what needs the person, the marks, 远程 (its own
  * page), scratchpad and Focus windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
@@ -41,7 +29,6 @@ export function TopBar({
   needs,
   scopeName,
   focus,
-  pin,
   mark = "./icon.svg",
   remote,
   duty,
@@ -56,8 +43,6 @@ export function TopBar({
   nav?: { canBack: boolean; canForward: boolean; go(dir: -1 | 1): void };
   onView(view: View): void;
   focus: { on: boolean; available: boolean; set(on: boolean): void };
-  /** 置顶 (stage 14). */
-  pin?: { on: boolean; available: boolean; set(on: boolean): void };
   /** 书签 (文件标记 before 2026-10-19): the bookmarks window. */
   onMarks?: () => void;
   needs: number;
@@ -162,23 +147,7 @@ export function TopBar({
           <span className="focus-state" aria-hidden="true" />
         </button>
       )}
-      {pin?.available && (
-        <button
-          type="button"
-          className="tb-btn focus-toggle pin-toggle"
-          aria-pressed={pin.on}
-          title={pin.on ? "置顶已开：工作台窗口一直浮在其他窗口上面。点击关闭" : "置顶：让工作台窗口一直浮在其他窗口上面"}
-          onClick={() => pin.set(!pin.on)}
-          data-testid="pin-toggle"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path className="fill" d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3Z" />
-            <path d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3ZM8 9v4.5" />
-          </svg>
-          置顶
-          <span className="focus-state" aria-hidden="true" />
-        </button>
-      )}
+      {/* 置顶 (stage 14) is gone (2026-10-31, 问题 #4: the workbench never needs to float); the viewer and Git Review keep theirs. */}
       {/* 2026-10-29: × only hides the window; Studio and the sessions go on in the tray (完全退出 is in the tray's menu). */}
       <WindowControls closeTitle="关闭窗口（Studio 留在托盘里，会话继续；完全退出在托盘图标的右键菜单里）" />
     </header>

@@ -11,7 +11,7 @@ import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, useSettings, type SettingsPage } from "./settings/SettingsDialog.js";
 import { setQuickModels } from "./lib/recents.js";
-import { TopBar, useFocusToggle, usePinToggle, ViewBar } from "./shell/TopBar.js";
+import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
 import { readPlace, savePlace } from "./shell/lastPlace.js";
 import { SearchBox } from "./shell/SearchBox.js";
@@ -87,7 +87,6 @@ export function App() {
   // A task or new-task page remembers where it was opened from (stage 14), whoever opens it: its "←" goes back there.
   const setView = (next: View) => setShownView((current) => withOrigin(next, current));
   const focus = useFocusToggle();
-  const pin = usePinToggle();
   const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
   const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
   const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
@@ -210,7 +209,7 @@ export function App() {
   if (host.kind !== "ready") {
     return (
       <div className="app">
-        <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} pin={pin} />
+        <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} />
         <ViewBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} search={<SearchBox state={null} onOpen={() => undefined} disabled />} disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
@@ -267,7 +266,6 @@ export function App() {
         needs={needs}
         scopeName={scopeName}
         focus={focus}
-        pin={pin}
         onMarks={() => openMarks(marksTarget())}
         nav={{ ...nav, go }}
         remote={{ ...remoteButton(remoteState), current: remoteOpen, open: () => setRemoteOpen(true) }}
