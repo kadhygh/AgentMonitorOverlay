@@ -89,7 +89,10 @@ export function sendHtml(res: ServerResponse, html: string): void {
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** The page to send people: download the desktop client, or use it in the browser; and the AMO platform, when it is here. */
+/**
+ * The page to send people: the AMO platform's download, when it is here. 报问题 sits folded at the bottom under 维护工具
+ * (2026-10-31, the user: it is the maintainer's, not what a teammate comes for).
+ */
 export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null): string {
   // 2026-10-28, the user: everything goes through AMO 平台 — the page offers only its download. The relay client's zip and
   // the browser client (/app/) are no longer linked; their routes stay (installed clients load /client/ from here).
@@ -108,16 +111,19 @@ main{max-width:620px;margin:48px auto;padding:0 16px}
 h1{font-size:22px;margin:0 0 4px;font-family:"Noto Serif SC","Songti SC",SimSun,serif}.muted{color:var(--muted)}
 .btn{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:12px 16px;border-radius:3px;background:var(--accent);color:var(--on);text-decoration:none;font-weight:600}
 .btn.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
-small{font-weight:400;opacity:.85}ol{padding-left:20px}code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}
+small{font-weight:400;opacity:.85}ol{padding-left:20px}
+.tools{margin-top:16px;padding-top:12px;border-top:1px dashed var(--line)}.tools summary{cursor:pointer;color:var(--muted);font-size:14px}code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}
 </style></head><body><main><div class="card">
 <h1>${escapeHtml(service)}</h1><p class="muted">团队的 AMO 工具（AMO Studio、AMO Reviewer、AMO 便签等）都从 AMO 平台安装和更新。</p>
 ${platformLink}
-<a class="btn alt" href="/issues" data-testid="landing-issues">报问题<small>用 AMO 时遇到的问题写在这里，附上截图</small></a>
 <ol class="muted">
 <li>下载后解压到任意文件夹，双击 <code>AMO Platform.exe</code>。</li>
 <li>登录时服务器地址填 <code id="addr"></code>，用团队服务器的账号登录。</li>
 <li>在「工具」里安装要用的工具；第一次打开 AMO Studio 前，先在「目录」里设好 Studio 数据目录。</li>
 <li>平台会待在托盘里，有新版时在这里更新，正在用的工具不会被打断。</li>
 </ol>
+<details class="tools" data-testid="landing-tools"><summary>维护工具</summary>
+<a class="btn alt" href="/issues" data-testid="landing-issues">报问题<small>用 AMO 时遇到的问题写在这里，附上截图</small></a>
+</details>
 </div></main><script>document.getElementById("addr").textContent=location.origin</script></body></html>`;
 }

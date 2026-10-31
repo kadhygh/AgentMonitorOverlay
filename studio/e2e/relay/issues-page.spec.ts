@@ -51,6 +51,11 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   browser = await chromium.launch({ channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1280, height: 820 }, colorScheme: "light" });
   await page.goto(`${server.url}/`);
+  // Folded at the bottom under 维护工具 (2026-10-31).
+  await expect(page.getByTestId("landing-issues")).toBeHidden();
+  await page.screenshot({ path: join(shots, "I0-landing.png") });
+  await page.getByTestId("landing-tools").locator("summary").click();
+  await page.screenshot({ path: join(shots, "I0-landing-tools.png") });
   await page.getByTestId("landing-issues").click();
   await expect(page).toHaveURL(/\/issues$/);
   await page.getByPlaceholder("登录名").fill("老戴");
