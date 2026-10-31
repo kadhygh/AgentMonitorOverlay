@@ -3,7 +3,7 @@
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.7.1";
+export const RELAY_VERSION = "0.7.2";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
