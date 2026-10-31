@@ -23,7 +23,14 @@ export const DUTY_DONE_MARK = "AMO_DUTY_DONE";
  * it and exiting 0; nothing printed = nothing to do; another exit code = the check failed. What the check found is
  * put under the prompt. The same finding that already started a session does not start another one.
  */
-export type DutyCheck = { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number } | { kind: "builtin"; name: string };
+export type DutyCheckOne = { kind: "command"; command: string; workspaceId?: Id | null; timeoutSec?: number } | { kind: "builtin"; name: string };
+/**
+ * `all` (2026-10-31, plans/release.md: the day's 维护 looks at 问题页 and at what is due for release, one session at a
+ * time in the 值守 directory): each in turn; what they found together; failed only when every one failed (one that
+ * failed beside a finding is said under it); the watch is over only when every one says so.
+ */
+export type DutyCheck = DutyCheckOne | { kind: "all"; checks: DutyCheckOne[] };
+export const DUTY_CHECKS_MAX = 5;
 
 export type DutyAction =
   /**

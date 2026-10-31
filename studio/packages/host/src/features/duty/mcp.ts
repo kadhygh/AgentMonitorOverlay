@@ -33,7 +33,7 @@ export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
         "Only when the person asks: add a 值守 item (no id; title, schedule and action) or change one (id). The person approves each save. It runs on its own from then on; it is on unless enabled=false.",
         'schedule: {"every": seconds (at least 10)} or {"daily": "HH:MM"}.',
         'action: {"kind":"command","command":"…","workspace"?,"timeoutSec"?} — a command line run in the project folder (yours by default) below normal priority; or {"kind":"session","prompt":"…","check"?,"untilDone"?,"profileId"?,"taskId"?,"workspace"?,"options"?} — a session with that prompt (by default with your model, in your own task; taskId null: a new task each time, in project workspace). workspace: the name, id or folder path of a project (project_context) — for a session of a task, the folder it works in when that is not the task folder.',
-        'check (session only): {"kind":"command","command":"…"} or {"kind":"builtin","name":"…"} (duty_list lists them) runs first; the session starts only when it finds something — a command finds something by printing it and exiting 0 (nothing printed = nothing to do; another exit code = the check failed) — and what it found is put under the prompt; the same finding does not start a second session.',
+        'check (session only): {"kind":"command","command":"…"} or {"kind":"builtin","name":"…"} (duty_list lists them) runs first; the session starts only when it finds something — a command finds something by printing it and exiting 0 (nothing printed = nothing to do; another exit code = the check failed) — and what it found is put under the prompt; the same finding does not start a second session. Several things to look at for one session (one at a time in one folder): {"kind":"all","checks":[ …up to 5 of the above ]} — what they found together; a command check runs in the session folder unless it names its own workspace.',
         `A command (action or check) that prints a line ${DUTY_DONE_MARK} turns the item off after this run. untilDone: true tells the session it may turn the item off with duty_stop once what it watches for is done.`,
         "Scripts you write for it: keep them in the project, make them print only what matters, and test them once yourself first.",
       ].join(" "),
@@ -64,11 +64,14 @@ export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
             if (a.kind === "command" && out.workspaceId === undefined && task) out.workspaceId = task.workspaceId;
             const check = a.check as Record<string, unknown> | undefined;
             // A check runs where the session would work.
-            if (check?.kind === "command") {
-              const { workspace, ...rest } = check;
-              const workspaceId = typeof workspace === "string" && workspace ? service.sessions.workspaceByRef(workspace).id : (check.workspaceId ?? out.workspaceId ?? task?.workspaceId);
-              out.check = { ...rest, ...(workspaceId ? { workspaceId } : {}) };
-            }
+            const placed = (one: Record<string, unknown>): Record<string, unknown> => {
+              if (one.kind !== "command") return one;
+              const { workspace, ...rest } = one;
+              const workspaceId = typeof workspace === "string" && workspace ? service.sessions.workspaceByRef(workspace).id : (one.workspaceId ?? out.workspaceId ?? task?.workspaceId);
+              return { ...rest, ...(workspaceId ? { workspaceId } : {}) };
+            };
+            if (check?.kind === "all" && Array.isArray(check.checks)) out.check = { ...check, checks: (check.checks as Record<string, unknown>[]).map(placed) };
+            else if (check) out.check = placed(check);
             return out;
           };
           const input: DutyItemInput = {};

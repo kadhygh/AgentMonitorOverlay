@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { DUTY_DONE_MARK, DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
+import { DUTY_CHECKS_MAX, DUTY_DONE_MARK, DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyCheckOne, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -286,6 +286,16 @@ export class DutyFeature extends Feature {
 
   private check(value: unknown): DutyCheck {
     const c = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+    if (c.kind === "all") {
+      const list = Array.isArray(c.checks) ? c.checks : [];
+      if (!list.length || list.length > DUTY_CHECKS_MAX) throw new HostError("bad_request", `几样检查要写 1 到 ${DUTY_CHECKS_MAX} 样`);
+      return { kind: "all", checks: list.map((x) => this.checkOne(x)) };
+    }
+    return this.checkOne(c);
+  }
+
+  private checkOne(value: unknown): DutyCheckOne {
+    const c = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
     if (c.kind === "command") {
       const command = typeof c.command === "string" ? c.command.trim() : "";
       if (!command) throw new HostError("bad_request", "检查要写命令");
@@ -398,6 +408,21 @@ export class DutyFeature extends Feature {
 
   /** What the item's check found: text to act on, null for nothing, or why the check failed; `done`: it printed AMO_DUTY_DONE. */
   private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null; done?: boolean } | { failed: string }> {
+    if (c.kind === "all") {
+      const found: string[] = [];
+      const failed: string[] = [];
+      let done = true;
+      for (const one of c.checks) {
+        const r = await this.runCheck(item, one, signal);
+        const name = one.kind === "builtin" ? (this.checks.get(one.name)?.label ?? one.name) : one.command;
+        if ("failed" in r) failed.push(`「${name}」${r.failed}`);
+        else if (r.found) found.push(r.found);
+        if ("failed" in r || !r.done) done = false;
+      }
+      if (failed.length === c.checks.length) return { failed: failed.join("；") };
+      const text = [...found, ...(found.length && failed.length ? [`（没跑通的检查：${failed.join("；")}）`] : [])].join("\n\n");
+      return { found: text ? text.slice(0, FOUND_KEPT) : null, done };
+    }
     if (c.kind === "builtin") {
       const job = this.checks.get(c.name);
       if (!job) return { failed: `没有这个 Studio 检查：${c.name}` };

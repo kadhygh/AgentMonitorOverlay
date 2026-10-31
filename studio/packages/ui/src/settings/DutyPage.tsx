@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DUTY_DONE_MARK, projectWorkspaces, type DutyAction, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
+import { DUTY_DONE_MARK, projectWorkspaces, type DutyAction, type DutyCheckOne, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { defaultModel, effortLabel, useProfileChoices } from "../lib/choices.js";
@@ -42,6 +42,10 @@ export interface DutyCtx {
   checks: DutyState["checks"];
 }
 
+function checkLabel(c: DutyCheckOne, ctx: DutyCtx): string {
+  return c.kind === "builtin" ? `「${ctx.checks.find((x) => x.name === c.name)?.label ?? c.name}」` : `「${c.command}」`;
+}
+
 export function actionText(a: DutyAction, ctx: DutyCtx): string {
   const profile = (id?: string | null) => ctx.profiles.find((p) => p.id === id)?.label ?? id ?? "";
   if (a.kind === "builtin") return `Studio：${ctx.builtins.find((b) => b.name === a.name)?.label ?? a.name}`;
@@ -53,7 +57,7 @@ export function actionText(a: DutyAction, ctx: DutyCtx): string {
   const ws = ctx.snapshot?.workspaces.find((w) => w.id === a.workspaceId);
   const where = task ? `在任务「${task.title}」里${ws && ws.id !== task.workspaceId ? `（在「${ws.name}」的文件夹里跑）` : ""}` : `每次新建任务${ws ? `（项目「${ws.name}」）` : ""}`;
   const c = a.check;
-  const check = !c ? "" : c.kind === "builtin" ? `先检查「${ctx.checks.find((x) => x.name === c.name)?.label ?? c.name}」，有事才开` : `先跑检查命令 ${c.command}，有输出才开`;
+  const check = !c ? "" : c.kind === "all" ? `先查 ${c.checks.map((x) => checkLabel(x, ctx)).join("、")}，有一样有事就开` : c.kind === "builtin" ? `先检查${checkLabel(c, ctx)}，有事才开` : `先跑检查命令 ${c.command}，有输出才开`;
   return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}${a.untilDone ? "；做完了 AI 可以关掉它" : ""}`;
 }
 
@@ -170,7 +174,8 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; i
   const [timeoutMin, setTimeoutMin] = useState(String(a?.kind === "command" ? Math.round((a.timeoutSec ?? 1800) / 60) : 30));
   const [name, setName] = useState(a?.kind === "builtin" ? a.name : (ctx.builtins[0]?.name ?? ""));
   const check = a?.kind === "session" ? a.check : null;
-  const [checkKind, setCheckKind] = useState<"" | "command" | "builtin">(check?.kind ?? "");
+  // Several checks (kind all) come from duty_save; the form keeps them as they are or takes them off.
+  const [checkKind, setCheckKind] = useState<"" | "command" | "builtin" | "all">(check?.kind ?? "");
   const [checkCommand, setCheckCommand] = useState(check?.kind === "command" ? check.command : "");
   const [checkWorkspace, setCheckWorkspace] = useState(check?.kind === "command" ? (check.workspaceId ?? "") : "");
   const [checkName, setCheckName] = useState(check?.kind === "builtin" ? check.name : (ctx.checks[0]?.name ?? ""));
@@ -184,7 +189,7 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; i
     if (builtin) return { title, schedule };
     const action: DutyAction =
       kind === "session"
-        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : null, untilDone }
+        ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : checkKind === "all" && check?.kind === "all" ? check : null, untilDone }
         : kind === "command"
           ? { kind, command, workspaceId: workspaceId || null, timeoutSec: Math.round(Number(timeoutMin) * 60) }
           : { kind, name };
@@ -360,6 +365,11 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; i
                   <button type="button" role="radio" className="chip" aria-checked={checkKind === "command"} aria-pressed={checkKind === "command"} onClick={() => setCheckKind("command")}>
                     跑检查命令
                   </button>
+                  {check?.kind === "all" && (
+                    <button type="button" role="radio" className="chip" aria-checked={checkKind === "all"} aria-pressed={checkKind === "all"} onClick={() => setCheckKind("all")} title={check.checks.map((x) => checkLabel(x, ctx)).join("、")}>
+                      几样都查（{check.checks.length} 样）
+                    </button>
+                  )}
                   {ctx.checks.length > 0 && (
                     <button type="button" role="radio" className="chip" aria-checked={checkKind === "builtin"} aria-pressed={checkKind === "builtin"} onClick={() => setCheckKind("builtin")}>
                       Studio 自带检查

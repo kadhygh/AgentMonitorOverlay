@@ -161,6 +161,23 @@ describe("值守", () => {
     expect(() => duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "nope" } } })).toThrow("没有这个 Studio 检查");
     duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "builtin", name: "x.pending" } } });
     expect(await once("a builtin check")).toMatchObject({ skipped: true, summary: "检查过了，没有要做的" });
+
+    // Several (the day's 维护: 问题页 and what is due for release): what they found together; one failing beside a
+    // finding is said under it; all failing fails the run.
+    let issues: string | null = "新问题：#2 列表断开";
+    duty.registerCheck({ name: "y.pending", label: "问题页", description: "看问题页", run: async () => issues });
+    expect(() => duty.update(id, { action: { kind: "session", profileId: "p", prompt: "x", check: { kind: "all", checks: [] } } })).toThrow("1 到 5 样");
+    writeFileSync(found, "该发布：AMO 便签（notes）");
+    duty.update(id, { action: { kind: "session", profileId: "p", prompt: "维护", check: { kind: "all", checks: [{ kind: "builtin", name: "y.pending" }, { kind: "command", command: check }] } } });
+    const both = await once("two findings");
+    expect(store.listItems(both!.sessionId!).find((i) => i.type === "user")).toMatchObject({ text: "维护\n\n值守检查发现：\n新问题：#2 列表断开\n\n该发布：AMO 便签（notes）" });
+    writeFileSync(found, "fail");
+    issues = "新问题：#3 便签闪退";
+    const half = await once("one failing beside a finding");
+    expect(store.listItems(half!.sessionId!).find((i) => i.type === "user")).toMatchObject({ text: expect.stringContaining("新问题：#3 便签闪退\n\n（没跑通的检查：「node -e") });
+    issues = null;
+    duty.registerCheck({ name: "y.pending", label: "问题页", description: "看问题页", run: async () => Promise.reject(new Error("没登录")) });
+    expect(await once("both failing")).toMatchObject({ ok: false, summary: expect.stringContaining("检查没跑通：「问题页」没登录；「node -e") });
   });
 
   it("an agent sets an item up (approved), its session is told to stop it, and duty_stop turns it off", async () => {
