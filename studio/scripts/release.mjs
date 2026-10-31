@@ -163,20 +163,20 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Writes the new version: package.json, the CHANGELOG heading, and for the service RELAY_VERSION. */
+/** Writes the new version: package.json (the service: RELAY_VERSION) and the CHANGELOG heading. */
 function writeVersion(t, version) {
-  const pj = pkgFile(t);
-  writeFileSync(pj, readFileSync(pj, "utf8").replace(/"version": "[^"]+"/, `"version": "${version}"`));
   const cl = changelogFile(t);
+  const log = readFileSync(cl, "utf8");
+  // CRLF in a checkout with core.autocrlf (the 值守 directory): 0.7.1 went out with its entries still under 「下一版」.
+  const eol = log.includes("\r\n") ? "\r\n" : "\n";
+  const next = new RegExp(`\\r?\\n${NEXT}\\r?\\n`);
+  if (!next.test(log)) throw new Error(`${t.label}：CHANGELOG.md 里找不到「${NEXT.slice(3)}」这一节`);
+  const pj = pkgFile(t);
+  const text = readFileSync(pj, "utf8");
+  writeFileSync(pj, t.service ? text.replace(VERSION_RE, `export const RELAY_VERSION = "${version}";`) : text.replace(/"version": "[^"]+"/, `"version": "${version}"`));
   // An empty 「下一版」 stays on top for the next change.
-  writeFileSync(cl, readFileSync(cl, "utf8").replace(`\n${NEXT}\n`, `\n${NEXT}\n\n## ${version}（${today()}）\n`));
-  const files = [pj, cl];
-  if (t.service) {
-    const proto = join(studio, "packages", "relay", "src", "protocol.ts");
-    writeFileSync(proto, readFileSync(proto, "utf8").replace(/export const RELAY_VERSION = "[^"]+";/, `export const RELAY_VERSION = "${version}";`));
-    files.push(proto);
-  }
-  return files;
+  writeFileSync(cl, log.replace(next, `${eol}${NEXT}${eol}${eol}## ${version}（${today()}）${eol}`));
+  return [pj, cl];
 }
 
 /** Commits the release and lands it on master: directly in the main checkout, by a fast-forward from the 值守 directory. */
