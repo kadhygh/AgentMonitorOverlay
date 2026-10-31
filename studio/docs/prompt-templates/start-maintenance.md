@@ -16,7 +16,7 @@
 
 ## 2. 两个前提
 
-- 用 `project_context` 找路径是值守目录的项目。没有就停下，请人在 Studio 左栏「+ 添加项目」加上 `G:\PROJECT\AgentMonitorOverlay-duty`，名字写「AMO（值守目录）」，加好了再接着做。
+- 用 `project_context` 找路径是值守目录的项目。没有就停下，请人在 Studio 左栏「+ 添加项目」加上 `G:\PROJECT\AgentMonitorOverlay-duty`（名字随意），加好了再接着做。
 - 用 `prompt_template_list` 确认有「问题页值守」这份模板。没有就停下告诉人。
 
 ## 3. 值守项
@@ -29,7 +29,7 @@ schedule: {"every": 60}
 action: {
   "kind": "session",
   "prompt": "照提示词模板「问题页值守」做：用 prompt_template_list 找到它，读全文，一步一步照做。",
-  "workspace": "AMO（值守目录）",
+  "workspace": "G:\\PROJECT\\AgentMonitorOverlay-duty",
   "check": {"kind": "all", "checks": [
     {"kind": "builtin", "name": "issues.pending"},
     {"kind": "command", "command": "node studio/scripts/release.mjs due --wait 30"}
