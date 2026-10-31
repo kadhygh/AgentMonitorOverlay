@@ -25,18 +25,39 @@ export function TitleMark() {
 /**
  * Minimise, maximise / restore and close, in the page's own style. `maximize={false}`: a small window (the 画布小窗) has
  * no maximise button. `closeTitle`: what × does, when it is not just closing the window (the workbench hides).
+ * `pin`: a 置顶 button left of 最小化, always in the same place (2026-10-31, 问题 #3: the viewer and Git Review).
  */
-export function WindowControls({ maximize = true, closeTitle = "关闭" }: { maximize?: boolean; closeTitle?: string }) {
+export function WindowControls({ maximize = true, closeTitle = "关闭", pin = false }: { maximize?: boolean; closeTitle?: string; pin?: boolean }) {
   const api = window.amo?.windowControls;
   const [maximized, setMaximized] = useState(false);
+  const [onTop, setOnTop] = useState(false);
   useEffect(() => {
     if (!api || !maximize) return;
     void api.isMaximized().then(setMaximized);
     return api.onMaximized(setMaximized);
   }, [api, maximize]);
+  useEffect(() => {
+    if (pin) void api?.onTop?.().then(setOnTop);
+  }, [api, pin]);
   if (!api) return null;
   return (
     <div className="win-controls" role="group" aria-label="窗口" data-testid="win-controls">
+      {pin && api.onTop && (
+        <button
+          type="button"
+          className="win-btn pin"
+          aria-pressed={onTop}
+          aria-label="置顶"
+          title={onTop ? "已置顶：这个窗口一直在其他窗口上面。点一下取消" : "置顶：让这个窗口一直在其他窗口上面"}
+          onClick={() => void api.onTop?.(!onTop).then(setOnTop)}
+          data-testid="win-pin"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path className="fill" d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3Z" />
+            <path d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3ZM8 9v4.5" />
+          </svg>
+        </button>
+      )}
       <button type="button" className="win-btn" aria-label="最小化" title="最小化" onClick={api.minimize}>
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M0.5 5.5 H9.5" />

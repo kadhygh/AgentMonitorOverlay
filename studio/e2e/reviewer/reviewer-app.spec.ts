@@ -46,12 +46,13 @@ async function windowAt(a: ElectronApplication, part: string): Promise<Page> {
   }
 }
 
-/** The head is the window's title bar: it drags the window and ends with 最小化 / 最大化 / 关闭 at the top right. */
+/** The head is the window's title bar: it drags the window and ends with 置顶 (问题 #3) / 最小化 / 最大化 / 关闭 at the top right. */
 async function expectTitleBar(win: Page, head: string) {
   const bar = win.locator(head);
   expect(await bar.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region"))).toBe("drag");
   const controls = bar.getByTestId("win-controls");
-  for (const name of ["最小化", "最大化", "关闭"]) await expect(controls.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(controls.getByRole("button").first()).toHaveAttribute("data-testid", "win-pin");
+  for (const name of ["置顶", "最小化", "最大化", "关闭"]) await expect(controls.getByRole("button", { name, exact: true })).toBeVisible();
   const box = (await controls.boundingBox())!;
   expect(Math.round(box.x + box.width)).toBe(await win.evaluate(() => document.documentElement.clientWidth));
   expect(Math.round(box.y)).toBe(0);

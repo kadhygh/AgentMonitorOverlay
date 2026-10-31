@@ -151,7 +151,7 @@ export function ReviewHead({
         </button>
       )}
       <ThemeButton />
-      {titleBar && <WindowControls />}
+      {titleBar && <WindowControls pin />}
     </header>
   );
 }

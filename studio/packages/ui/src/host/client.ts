@@ -92,6 +92,8 @@ declare global {
         close(): void;
         isMaximized(): Promise<boolean>;
         onMaximized(cb: (maximized: boolean) => void): () => void;
+        /** 置顶 (问题 #3): on top of other windows or not; without a value, whether it is. Absent in older preloads. */
+        onTop?(on?: boolean): Promise<boolean>;
       };
       /** Workbench: Focus asked to show a task. */
       onNavigate?(cb: (target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }) => void): () => void;

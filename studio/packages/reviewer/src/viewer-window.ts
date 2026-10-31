@@ -58,7 +58,8 @@ export function setupViewerWindows(options: ViewerWindowOptions): { closeAll(): 
 
 function createViewerWindow(url: string, { preload, icon, testMode }: ViewerWindowOptions): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1000,
+    // 1060 (was 1000): room in the head for 置顶 left of 最小化 (2026-10-31, 问题 #3), so 文件 mode's buttons still fit.
+    width: 1060,
     height: 820,
     minWidth: 520,
     minHeight: 360,

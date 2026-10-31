@@ -142,12 +142,25 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   expect(viewers(app)).toHaveLength(1);
   await screenshot(app, "stage-13", "S13-A-viewer-markdown", viewer, "viewer");
 
-  // 固定: that window stays as it is, and the next file opens in a new preview window, which the chip then reuses.
+  // 置顶 left of 最小化 (问题 #3): the window goes above the others, and back.
+  const onTop = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => w.isAlwaysOnTop() && w.webContents.getURL().includes("#viewer")).map((w) => w.webContents.getURL()));
+  const pinButton = viewer.getByTestId("win-pin");
+  await expect(viewer.getByTestId("win-controls").locator("button").first()).toHaveAttribute("data-testid", "win-pin");
+  await expect(pinButton).toHaveAttribute("aria-pressed", "false");
+  await pinButton.click();
+  await expect(pinButton).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(onTop).toEqual([viewer.url()]);
+  await screenshot(app, "stage-13", "S13-A-viewer-on-top", viewer, "viewer");
+  await pinButton.click();
+  await expect(pinButton).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(onTop).toEqual([]);
+
+  // 锁定 (was 固定, 问题 #3): that window stays as it is, and the next file opens in a new preview window, which the chip then reuses.
   await viewer.getByTestId("viewer-pin").click();
-  await expect(viewer.getByTestId("viewer-pin")).toHaveText("已固定");
+  await expect(viewer.getByTestId("viewer-pin")).toHaveText("已锁定");
   const second = await nextWindow(app, () => links.first().click());
   await expect(second.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
-  await expect(second.getByTestId("viewer-pin")).toHaveText("固定");
+  await expect(second.getByTestId("viewer-pin")).toHaveText("锁定");
   await chip.click();
   await expect(second.getByTestId("viewer-name")).toHaveText("README.md");
   await expect(viewer.getByTestId("viewer-name")).toHaveText("README.md");

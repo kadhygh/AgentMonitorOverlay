@@ -29,6 +29,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     toggleMaximize: (): void => electron.ipcRenderer.send("amo:window", "maximize"),
     close: (): void => electron.ipcRenderer.send("amo:window", "close"),
     isMaximized: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:window-maximized"),
+    /** 置顶 (问题 #3): on top of other windows or not; without a value, whether it is (the viewer and Git Review). */
+    onTop: (on?: boolean): Promise<boolean> => electron.ipcRenderer.invoke("amo:window-top", on),
     onMaximized: (cb: (maximized: boolean) => void): (() => void) => {
       const listener = (_event: unknown, maximized: boolean) => cb(maximized);
       electron.ipcRenderer.on("amo:window-maximized", listener);

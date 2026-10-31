@@ -108,7 +108,7 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
             className="btn-ghost small vw-pin"
             aria-pressed={pinned}
             disabled={pinned}
-            title={pinned ? "已固定：这个窗口会保留，之后打开的在新窗口里" : "固定这个窗口：之后打开的查看包和文件在新窗口里，这个窗口保留"}
+            title={pinned ? "已锁定：这个窗口会保留，之后打开的在新窗口里" : "锁定这个窗口：之后打开的查看包和文件在新窗口里，这个窗口保留"}
             onClick={() =>
               void pinViewer()
                 .then(setPinned)
@@ -116,10 +116,10 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
             }
             data-testid="viewer-pin"
           >
-            {pinned ? "已固定" : "固定"}
+            {pinned ? "已锁定" : "锁定"}
           </button>
         </div>
-        <WindowControls />
+        <WindowControls pin />
       </header>
       <main className="vp-body">
         {many && (

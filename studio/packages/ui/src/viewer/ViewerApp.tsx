@@ -216,7 +216,7 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
           className="btn-ghost small vw-pin"
           aria-pressed={pinned}
           disabled={pinned}
-          title={pinned ? "已固定：这个窗口会保留，之后点开的文件在新窗口里" : "固定这个窗口：之后点开的文件会在新窗口里打开，这个窗口保留"}
+          title={pinned ? "已锁定：这个窗口会保留，之后点开的文件在新窗口里" : "锁定这个窗口：之后点开的文件会在新窗口里打开，这个窗口保留"}
           onClick={() =>
             void pinViewer()
               .then(setPinned)
@@ -224,10 +224,11 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
           }
           data-testid="viewer-pin"
         >
-          {pinned ? "已固定" : "固定"}
+          {pinned ? "已锁定" : "锁定"}
           </button>
         </div>
-        <WindowControls />
+        {/* 2026-10-31, 问题 #3: 固定 is called 锁定 now, and 置顶 sits left of 最小化. */}
+        <WindowControls pin />
       </header>
       {remote?.stale && (
         <div className="vw-stale" role="status" data-testid="viewer-remote-stale">

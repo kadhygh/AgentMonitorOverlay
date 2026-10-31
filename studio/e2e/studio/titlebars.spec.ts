@@ -103,7 +103,7 @@ test("书签, 画布小窗, Git Review and the viewer draw their own title bars 
   // Git Review.
   const review = await opened(app, () => page.evaluate((id) => (window as unknown as AmoWindow).amo.openReview({ workspaceId: id }), ws.id));
   await expect(review.getByTestId("review-file")).toHaveCount(1);
-  await expectTitleBar(review, ".gr-head", ["最小化", "最大化", "关闭"]);
+  await expectTitleBar(review, ".gr-head", ["置顶", "最小化", "最大化", "关闭"]);
   expect(await captionHeight(app, "review")).toBe(0);
   await expect(review).toHaveTitle("Git Review · game");
   await shoot(app, review, "review", "review");
@@ -111,7 +111,7 @@ test("书签, 画布小窗, Git Review and the viewer draw their own title bars 
   // The viewer; in 改动 mode the Review inside it has no buttons of its own (one set, the viewer's).
   const viewer = await opened(app, () => page.evaluate(([path, id]) => (window as unknown as AmoWindow).amo.openViewer({ path: path!, workspaceId: id! }), [join(dir, "drop.lua"), ws.id]));
   await expect(viewer.getByTestId("viewer-name")).toHaveText("drop.lua");
-  await expectTitleBar(viewer, ".vw-head", ["最小化", "最大化", "关闭"]);
+  await expectTitleBar(viewer, ".vw-head", ["置顶", "最小化", "最大化", "关闭"]);
   expect(await captionHeight(app, "viewer")).toBe(0);
   await expect(viewer).toHaveTitle("drop.lua · 查看器");
   await shoot(app, viewer, "viewer", "viewer");

@@ -70,6 +70,11 @@
 .win-btn svg { fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
 .win-btn:hover { background: var(--chip); color: var(--text); }
 .win-btn.close:hover { background: var(--error); color: #fff; }
+/* 置顶 (问题 #3): the pin's head fills when on, in the accent colour. */
+.win-btn.pin svg { shape-rendering: auto; stroke-linejoin: round; }
+.win-btn.pin .fill { fill: none; stroke: none; }
+.win-btn.pin[aria-pressed="true"] { color: var(--primary); }
+.win-btn.pin[aria-pressed="true"] .fill { fill: currentColor; }
 
 /* The other windows' title bars (2026-10-29, the user: 书签, the 画布小窗, Git Review, the viewer in AMO's style): a head
    row of the page (`.titlebar`) drags the window; what is in it stays clickable, and so do the parts with a tooltip

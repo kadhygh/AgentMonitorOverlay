@@ -5,7 +5,7 @@ import { BrowserWindow, ipcMain } from "electron";
 // WindowControls.tsx), which act on the window that sent them. Studio's workbench hides on × by its own close handler;
 // every other window closes.
 
-/** `amo:window` and `amo:window-maximized` for every window of the program; call once. */
+/** `amo:window`, `amo:window-maximized` and `amo:window-top` for every window of the program; call once. */
 export function installWindowControls(): void {
   ipcMain.on("amo:window", (event, action: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -20,6 +20,13 @@ export function installWindowControls(): void {
   ipcMain.handle("amo:window-maximized", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return !!win && !win.isDestroyed() && win.isMaximized();
+  });
+  // 置顶 (pin) left of 最小化 (2026-10-31, 问题 #3): the window above other windows or not; without a value, whether it is.
+  ipcMain.handle("amo:window-top", (event, on: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return false;
+    if (typeof on === "boolean") win.setAlwaysOnTop(on, "floating");
+    return win.isAlwaysOnTop();
   });
 }
 
