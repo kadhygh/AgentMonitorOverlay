@@ -233,6 +233,8 @@ function drawList() {
 function stepTook(b, k, now) {
   var from = b.stepAt[k]; if (from === undefined) return null;
   var to = k < b.step ? b.stepAt[k + 1] : b.endedAt !== null ? b.endedAt : now;
+  // A build kept by 0.7.3 has only its start: its steps' times are not known.
+  if (to === undefined) return null;
   return Math.max(0, to - from);
 }
 // What a step usually takes: the median of its last 10 finished runs in the builds before this one.
@@ -241,7 +243,7 @@ function expected(builds, name) {
   for (var i = 1; i < builds.length && took.length < 10; i++) {
     var b = builds[i], k = b.steps.indexOf(name);
     if (k < 0 || b.stepAt[k] === undefined || (k === b.step && !b.ok)) continue;
-    took.push(stepTook(b, k, 0));
+    var ms = stepTook(b, k, 0); if (ms !== null) took.push(ms);
   }
   if (!took.length) return null;
   took.sort(function (x, y) { return x - y; });
