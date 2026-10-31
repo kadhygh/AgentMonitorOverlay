@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { REMOTE_TASK_FOLDER, remoteFileKind, sortComments, type GitCommentPoint, type GitReviewComment, type TextFile, type Workspace } from "@amo-studio/protocol";
 import { ActionMenu } from "../lib/ActionMenu.js";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
@@ -7,6 +7,7 @@ import { Markdown, MarkdownFileLinks, MarkdownImages } from "../lib/markdown.js"
 import { rawFileUrl } from "../lib/openin.js";
 import { viewRemoteFile } from "../files/FileLinks.js";
 import { highlightsSupported } from "../review/highlights.js";
+import { FloatBox } from "../review/FloatBox.js";
 import { CommentDraft } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey, setDraftText, useEditing } from "../gitreview/drafts.js";
@@ -103,8 +104,8 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
   const [pick, setPick] = useState<{ anchor: PassageAnchor; x: number; y: number } | null>(null);
   /** 位置批注 (2026-10-28): the menu of a right click on an HTML page. */
   const [menu, setMenu] = useState<{ x: number; y: number; line: number; point: GitCommentPoint; near: PassageAnchor; selection: PassageAnchor | null } | null>(null);
-  /** Words, or a place (with its element's line) and the words nearest it. */
-  const [draft, setDraft] = useState<(PassageAnchor & { point?: GitCommentPoint; line?: number }) | null>(null);
+  /** Words, or a place (with its element's line) and the words nearest it; `at`: where its box opens in the pane. */
+  const [draft, setDraft] = useState<(PassageAnchor & { point?: GitCommentPoint; line?: number; at: PanePoint }) | null>(null);
   const [busy, setBusy] = useState(false);
   const pane = useRef<HTMLDivElement>(null);
   /** Rendered Markdown, which scrolls itself. */
@@ -324,6 +325,11 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
     });
 
   const width = pane.current?.clientWidth ?? 0;
+  /** A point of the window (the right-click menu's) in the pane. */
+  const inPane = (p: { x: number; y: number }): PanePoint => {
+    const box = pane.current?.getBoundingClientRect();
+    return box ? { x: p.x - box.left, y: p.y - box.top } : p;
+  };
   const projectDrafts = comments.filter((c) => c.state === "draft");
 
   return (
@@ -365,7 +371,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 dropDraft(draftKey);
-                setDraft(pick.anchor);
+                setDraft({ ...pick.anchor, at: { x: pick.x, y: pick.y } });
                 setPick(null);
               }}
               data-testid="passage-add"
@@ -387,7 +393,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
                     title: "在这个位置钉一个点写意见；复制出去时写明它在源码里的行和附近的文字",
                     run: () => {
                       dropDraft(draftKey);
-                      setDraft({ ...menu.near, point: menu.point, line: menu.line });
+                      setDraft({ ...menu.near, point: menu.point, line: menu.line, at: inPane(menu) });
                     },
                   },
                   menu.selection && {
@@ -395,13 +401,17 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
                     key: "S",
                     run: () => {
                       dropDraft(draftKey);
-                      setDraft(menu.selection);
+                      setDraft({ ...menu.selection!, at: inPane(menu) });
                     },
                   },
                 ],
               ]}
             />
           )}
+          {draft && ws && <DraftFloat key={`${draft.quote}|${draft.at.x}|${draft.at.y}`} draft={draft} pane={pane.current} busy={busy} store={draftKey} onSave={save} onCancel={() => {
+            dropDraft(draftKey);
+            setDraft(null);
+          }} />}
         </div>
         <aside className="vw-notes" aria-label="批注" data-testid="passage-notes">
           <div className="vw-notes-head">
@@ -414,22 +424,6 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
           </div>
           <div className="vw-notes-list" ref={list}>
             {!ws && <p className="vw-notes-empty">{remote ? "远程任务的文件只能看，不能批注（批注写回以后再做）。" : "这个文件不在任何项目里，不能批注。"}</p>}
-            {draft && (
-              <div className="gr-comment vw-note" data-testid="passage-draft">
-                {draft.point ? <PlaceLabel n="+" where={draft.point.where} /> : <blockquote className="vw-note-quote">{draft.quote}</blockquote>}
-                <CommentDraft
-                  busy={busy}
-                  store={draftKey}
-                  anchor="passage"
-                  placeholder={draft.point ? "对这个位置的意见或问题（Ctrl+Enter 保存）" : "对这段话的意见或问题（Ctrl+Enter 保存）"}
-                  onSave={save}
-                  onCancel={() => {
-                    dropDraft(draftKey);
-                    setDraft(null);
-                  }}
-                />
-              </div>
-            )}
             {mine.map((c) => (
               <NoteCard key={c.id} comment={c} n={placeNo.get(c.id)} busy={busy} hot={hot === c.id} lost={!!c.passage && found !== null && !found.has(c.id)} onGo={() => c.passage && goTo(c.id, true)} onEdit={edit} onDelete={remove} />
             ))}
@@ -443,6 +437,46 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
       </div>
       {ws && (projectDrafts.length > 0 || draft) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} />}
     </div>
+  );
+}
+
+/** A point in the page's pane, in px from its top left. */
+type PanePoint = { x: number; y: number };
+
+const FLOAT_W = 360;
+
+/**
+ * 批注小窗 (2026-10-31, 问题 #2): a new comment is written in a box by the words or the place it is about, not in the
+ * list (the list stays, for the comments written). Under the point, inside the pane; above it when there is no room
+ * below. It stays where it is put while the page scrolls under it (the page scrolls in its frame or its own box).
+ */
+function DraftFloat({
+  draft,
+  pane,
+  busy,
+  store,
+  onSave,
+  onCancel,
+}: {
+  draft: PassageAnchor & { point?: GitCommentPoint; at: PanePoint };
+  pane: HTMLElement | null;
+  busy: boolean;
+  store: string;
+  onSave(note: string): void;
+  onCancel(): void;
+}) {
+  const inner = pane?.clientWidth ?? 800;
+  const height = pane?.clientHeight ?? 600;
+  const left = Math.max(8, Math.min(draft.at.x - FLOAT_W / 2, inner - FLOAT_W - 8));
+  const above = height - draft.at.y < 240 && draft.at.y > 240;
+  // The point is the selection's (or the click's) bottom: above, it clears the line it is on.
+  const style: CSSProperties = above ? { left, top: draft.at.y - 26, transform: "translateY(-100%)" } : { left, top: draft.at.y + 8 };
+  const title = draft.point ? "在这里批注" : "批注这段话";
+  return (
+    <FloatBox className="vw-float" style={style} width={FLOAT_W} fromBottom={above} bounds={{ left, inner }} title={title} label={title} testId="passage-draft">
+      {draft.point ? <PlaceLabel n="+" where={draft.point.where} /> : <blockquote className="vw-note-quote">{draft.quote}</blockquote>}
+      <CommentDraft busy={busy} store={store} anchor="passage" placeholder={draft.point ? "对这个位置的意见或问题（Ctrl+Enter 保存）" : "对这段话的意见或问题（Ctrl+Enter 保存）"} onSave={onSave} onCancel={onCancel} />
+    </FloatBox>
   );
 }
 
@@ -479,8 +513,16 @@ function NoteCard({
   const editing = useEditing(comment.id);
   const editKey = editDraftKey(comment.id);
   const p = comment.passage;
+  const card = useRef<HTMLDivElement>(null);
+  // 批注小窗 (2026-10-31, 问题 #2): edited in a box over the page, left of its card (the list is narrow, and scrolls).
+  const [at, setAt] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    const box = card.current?.getBoundingClientRect();
+    if (!editing || !box) return setAt(null);
+    setAt({ position: "fixed", left: Math.max(8, box.left - FLOAT_W - 10), top: Math.max(8, Math.min(box.top, window.innerHeight - 240)) });
+  }, [editing]);
   return (
-    <div className="gr-comment vw-note" data-id={comment.id} data-hot={hot ? "" : undefined} data-lost={lost ? "" : undefined} data-testid="passage-note">
+    <div ref={card} className="gr-comment vw-note" data-id={comment.id} data-hot={hot ? "" : undefined} data-lost={lost ? "" : undefined} data-testid="passage-note">
       {p?.point ? (
         <button type="button" className="vw-note-quote vw-note-place" title={lost ? "页面上找不到这个位置了（可能已改写）" : `在页面上找到这个位置（源码第 ${comment.line} 行）`} onClick={onGo}>
           <PlaceLabel n={n ?? ""} where={p.point.where} />
@@ -495,10 +537,11 @@ function NoteCard({
         </div>
       )}
       {lost && <span className="vw-note-lost">{p?.point ? "位置找不到了" : "原文找不到了"}</span>}
-      {editing ? (
-        <CommentDraft busy={busy} store={editKey} anchor={`passage:${comment.id}`} initial={comment.note} label="修改批注" placeholder="对这段话的意见或问题（Ctrl+Enter 保存）" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
-      ) : (
-        <span className="gr-comment-note">{comment.note}</span>
+      <span className="gr-comment-note">{comment.note}</span>
+      {editing && at && (
+        <FloatBox className="vw-float" style={at} width={FLOAT_W} title="修改这条批注" label="修改这条批注" testId="passage-edit">
+          <CommentDraft busy={busy} store={editKey} anchor={`passage:${comment.id}`} initial={comment.note} label="修改批注" placeholder="对这段话的意见或问题（Ctrl+Enter 保存）" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
+        </FloatBox>
       )}
       {!editing && (
         <div className="anno-actions">

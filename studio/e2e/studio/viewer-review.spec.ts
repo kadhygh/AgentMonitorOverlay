@@ -71,6 +71,24 @@ test("comments in the viewer's 文件 mode survive switching views, keep their p
   // A comment on line 335, half written; 改动 and back: still there, still in view.
   await code.locator('[data-line="new:335"] [data-testid="add-comment"]').click();
   await code.getByTestId("comment-draft").locator("textarea").fill("这个值从哪来");
+  // 批注小窗 (2026-10-31, 问题 #2): written in a box floating under the line, over the lines below (they do not move
+  // down), sized by its corner.
+  const float = code.getByTestId("comment-float");
+  await expect(float).toContainText("批注第 335 行");
+  const line335 = (await code.locator('[data-line="new:335"]').boundingBox())!;
+  const line336 = (await code.locator('[data-line="new:336"]').boundingBox())!;
+  expect(Math.round(line336.y)).toBe(Math.round(line335.y + line335.height));
+  const box = (await float.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(line335.y + line335.height);
+  const corner = (await float.getByTestId("comment-float-resize").boundingBox())!;
+  await viewer.mouse.move(corner.x + 7, corner.y + 7);
+  await viewer.mouse.down();
+  await viewer.mouse.move(corner.x + 7 + 100, corner.y + 7 + 40, { steps: 4 });
+  await viewer.mouse.up();
+  const sized = (await float.boundingBox())!;
+  expect(Math.round(sized.width - box.width)).toBe(100);
+  expect(Math.round(sized.height - box.height)).toBe(40);
+  await screenshot(app, "stage-14", "S14-A-viewer-comment-float", viewer, "viewer");
   await viewer.getByTestId("viewer-mode-changes").click();
   await expect(viewer.getByTestId("review-file-head")).toContainText("big.lua");
   await viewer.getByTestId("viewer-mode-file").click();

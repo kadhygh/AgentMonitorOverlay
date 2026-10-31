@@ -98,12 +98,26 @@ test("passages of rendered HTML and Markdown take comments; HTML keeps its scrip
   await select(frame, "body", "掉率 0.15 比较合适");
   await viewer.getByTestId("passage-add").click();
   await expect(viewer.getByTestId("passage-draft")).toContainText("掉率 0.15 比较合适");
+  // 批注小窗 (2026-10-31, 问题 #2): written in a box over the page by the words, not in the list beside it.
+  await expect(viewer.getByTestId("passage-notes").getByTestId("passage-draft")).toHaveCount(0);
+  await expect(viewer.getByTestId("viewer-rendered").locator(".vw-rendered-doc").getByTestId("passage-draft")).toBeVisible();
   await viewer.getByTestId("passage-draft").locator("textarea").fill("再低一点，0.12");
+  await screenshot(app, "stage-18", "S25-rendered-html-float", viewer, "viewer");
   await viewer.getByTestId("passage-draft").locator("textarea").press("Control+Enter");
   const notes = viewer.getByTestId("passage-note");
   await expect(notes).toHaveCount(1);
   await expect(notes.first()).toContainText("再低一点，0.12");
   await expect.poll(() => painted(frame)).toBe(1);
+  // Edited in a box over the page, left of its card.
+  await notes.first().getByRole("button", { name: "编辑" }).click();
+  const editBox = viewer.getByTestId("passage-edit");
+  await expect(editBox.getByLabel("修改批注")).toHaveValue("再低一点，0.12");
+  expect((await editBox.boundingBox())!.x + (await editBox.boundingBox())!.width).toBeLessThanOrEqual((await notes.first().boundingBox())!.x);
+  await screenshot(app, "stage-18", "S25-rendered-html-edit-float", viewer, "viewer");
+  await editBox.getByLabel("修改批注").fill("再低一点，0.12 吧");
+  await editBox.getByLabel("修改批注").press("Control+Enter");
+  await expect(editBox).toHaveCount(0);
+  await expect(notes.first()).toContainText("再低一点，0.12 吧");
 
   // One inside a folded part: going to it from the list opens the part again.
   await frame.evaluate(() => (document.querySelector("details")!.open = true));

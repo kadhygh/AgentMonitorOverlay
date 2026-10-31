@@ -220,6 +220,18 @@ button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(
 .gr-pair-notes > div { min-width: 0; }
 .gr-pair-notes .gr-comment, .gr-pair-notes .gr-draft { margin: 4px 16px 6px 64px; }
 
+/* 批注小窗 (2026-10-31, 问题 #2): a comment is written in a box floating under its line or its card, over the rows
+   below. Its chunk is drawn whole and above the next chunks while it is open (content-visibility would clip it). */
+.gr-chunk:has(.float-note) { content-visibility: visible; position: relative; z-index: 3; }
+.float-anchor { position: relative; height: 0; }
+.float-anchor > .float-note { top: 2px; left: 108px; }
+.gr-plain .float-anchor > .float-note { left: calc(var(--gr-no-w, 52px) + 24px); }
+.gr-split .float-anchor > .float-note { left: 64px; }
+.gr-comment > .float-anchor { margin-top: -6px; }
+.gr-comment > .float-anchor > .float-note { top: 10px; left: -13px; }
+.float-note > .gr-draft { margin: 0; padding: 0; max-width: none; border: 0; border-radius: 0; background: none; }
+.float-note > .gr-draft textarea { background: var(--bg); resize: none; }
+
 /* A commit's window and the history picker (S13-B). */
 .gr-commit { min-width: 60px; display: inline-flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
 .gr-commit code { font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }

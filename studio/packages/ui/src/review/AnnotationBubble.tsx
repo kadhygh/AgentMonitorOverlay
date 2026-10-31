@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { Annotation } from "@amo-studio/protocol";
 import type { SelectionAnchor } from "../lib/selection.js";
+import { FloatBox } from "./FloatBox.js";
 
 // Annotating in place (after the ChatGPT app): selecting text in a reply shows a small bar by the selection
 // (批注 / 引用); 批注 turns it into a bubble to write the note in, right there. Clicking an annotated passage opens the
@@ -21,7 +22,7 @@ export function contentRect(scroller: HTMLElement, rect: DOMRect): ContentRect {
 }
 
 /** Below the passage, centred on it and kept inside the scroller; above it when there is no room below. */
-function usePlacement(scroller: RefObject<HTMLElement | null>, at: ContentRect, width: number): { style: CSSProperties; ref: RefObject<HTMLDivElement | null> } {
+function usePlacement(scroller: RefObject<HTMLElement | null>, at: ContentRect, width: number): { style: CSSProperties; ref: RefObject<HTMLDivElement | null>; above: boolean } {
   const ref = useRef<HTMLDivElement>(null);
   const [above, setAbove] = useState(false);
   const el = scroller.current;
@@ -35,7 +36,7 @@ function usePlacement(scroller: RefObject<HTMLElement | null>, at: ContentRect, 
     setAbove(roomBelow < h + 12 && at.top - s.scrollTop > h + 12);
   }, [scroller, at.top, at.bottom]);
   const style: CSSProperties = { left, width, ...(above ? { top: at.top - 6, transform: "translateY(-100%)" } : { top: at.bottom + 6 }) };
-  return { style, ref };
+  return { style, ref, above };
 }
 
 export function SelectionBar({
@@ -115,14 +116,11 @@ export function AnnotationBubble({
   const [note, setNote] = useState(initial);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const { style, ref } = usePlacement(scroller, target.at, 340);
+  const { style, ref, above } = usePlacement(scroller, target.at, 340);
   // Moved by its head (2026-10-20), to see the text it covers while writing; it still scrolls with the conversation.
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
-  useEffect(() => setOffset({ x: 0, y: 0 }), [target]);
+  // Sized by its corner too (2026-10-31, 问题 #2): FloatBox, shared with Reviewer's comment boxes.
   const left = typeof style.left === "number" ? style.left : 0;
   const inner = scroller.current?.clientWidth ?? 800;
-  const placed: CSSProperties = { ...style, transform: `${style.transform ?? ""} translate(${offset.x}px, ${offset.y}px)`.trim() };
   useEffect(() => {
     input.current?.focus();
     input.current?.setSelectionRange(initial.length, initial.length);
@@ -148,13 +146,17 @@ export function AnnotationBubble({
   }
 
   return (
-    <div
-      ref={ref}
+    <FloatBox
+      boxRef={ref}
       className="anno-bubble"
-      style={placed}
-      role="dialog"
-      aria-label={target.kind === "edit" ? "修改批注" : "添加批注"}
-      data-testid="annotation-bubble"
+      style={style}
+      width={340}
+      fromBottom={above}
+      bounds={{ left, inner }}
+      resetKey={target}
+      title={target.kind === "edit" ? "修改批注" : "添加批注"}
+      label={target.kind === "edit" ? "修改批注" : "添加批注"}
+      testId="annotation-bubble"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -165,31 +167,6 @@ export function AnnotationBubble({
         }
       }}
     >
-      <div
-        className="anno-bubble-head"
-        title="按住拖动，挪开看下面的文字"
-        data-testid="annotation-bubble-drag"
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          drag.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
-        }}
-        onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d) return;
-          // Sideways it stays inside the conversation; up and down it goes where it is put.
-          const x = Math.max(8 - left, Math.min(d.ox + e.clientX - d.x, inner - 340 - 8 - left));
-          setOffset({ x, y: d.oy + e.clientY - d.y });
-        }}
-        onPointerUp={() => (drag.current = null)}
-        onPointerCancel={() => (drag.current = null)}
-      >
-        <span className="anno-bubble-grip" aria-hidden="true">
-          ⠿
-        </span>
-        {target.kind === "edit" ? "修改批注" : "添加批注"}
-      </div>
       <blockquote className="anno-bubble-quote" title={quote}>
         {quote}
       </blockquote>
@@ -208,6 +185,6 @@ export function AnnotationBubble({
           保存
         </button>
       </div>
-    </div>
+    </FloatBox>
   );
 }

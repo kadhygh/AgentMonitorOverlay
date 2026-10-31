@@ -77,6 +77,17 @@ test("annotate replies, edit, locate, and refer to them from the next message (�
   const bubble = page.getByTestId("annotation-bubble");
   await expect(bubble.getByLabel("批注内容")).toHaveValue("先确认策划的意图");
   await screenshot(studio.app, "stage-12", "S12-N-annotation-bubble-edit", page);
+  // Sized by its corner (2026-10-31, 问题 #2), its top staying where it is.
+  const before = (await bubble.boundingBox())!;
+  const corner = (await bubble.getByTestId("annotation-bubble-resize").boundingBox())!;
+  await page.mouse.move(corner.x + 7, corner.y + 7);
+  await page.mouse.down();
+  await page.mouse.move(corner.x + 7 + 80, corner.y + 7 + 60, { steps: 4 });
+  await page.mouse.up();
+  const after = (await bubble.boundingBox())!;
+  expect(Math.round(after.width - before.width)).toBe(80);
+  expect(Math.round(after.height - before.height)).toBe(60);
+  expect(Math.round(after.y)).toBe(Math.round(before.y));
   await bubble.getByLabel("批注内容").fill("先确认策划的意图（改过）");
   await bubble.getByRole("button", { name: "保存" }).click();
   // Newest first (2026-10-26).

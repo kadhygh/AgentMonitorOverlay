@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import type { GitFileDiff, GitReviewComment } from "@amo-studio/protocol";
 import { commentWhere } from "@amo-studio/protocol";
 import { CodeTokens } from "../lib/CodeTokens.js";
+import { FloatBox } from "../review/FloatBox.js";
 import { dropDraft, draftText, editDraftKey, setDraftText, useEditing } from "./drafts.js";
 import type { DiffRow } from "./logic.js";
 import { LazyChunks } from "./LazyChunks.js";
@@ -146,16 +147,18 @@ function Notes({ row, props }: { row: LineRow; props: LinesProps }) {
         <CommentCard key={c.id} comment={c} busy={busy} onEdit={onEdit} onDelete={onDelete} />
       ))}
       {draftAt === row.key && (
-        <CommentDraft
-          busy={busy}
-          store={key}
-          anchor={row.key}
-          onSave={(note) => onAdd(row, note)}
-          onCancel={() => {
-            dropDraft(key);
-            onDraft(null);
-          }}
-        />
+        <FloatDraft title={`批注第 ${row.number} 行`}>
+          <CommentDraft
+            busy={busy}
+            store={key}
+            anchor={row.key}
+            onSave={(note) => onAdd(row, note)}
+            onCancel={() => {
+              dropDraft(key);
+              onDraft(null);
+            }}
+          />
+        </FloatDraft>
       )}
     </>
   );
@@ -324,6 +327,21 @@ function Cell({ cell, side, commentable, props }: { cell: SideCell | null; side:
   );
 }
 
+/**
+ * 批注小窗 (2026-10-31, 问题 #2): a comment is written in a box floating just under its line (or its card), over the
+ * lines below, not in the rows (the user: 舒服很多). It is moved by its head and sized by its corner (FloatBox); its
+ * chunk is drawn over the next ones while it is open (gitreview.css).
+ */
+function FloatDraft({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="float-anchor">
+      <FloatBox className="gr-float" width={400} title={title} label={title} testId="comment-float">
+        {children}
+      </FloatBox>
+    </div>
+  );
+}
+
 export function CommentDraft({
   busy,
   onSave,
@@ -402,10 +420,11 @@ function CommentCard({ comment, busy, onEdit, onDelete, where, onLocate }: { com
           <code>{comment.lineText.trim() || "（空行）"}</code>
         </div>
       )}
-      {editing ? (
-        <CommentDraft busy={busy} store={editKey} anchor={`${comment.side}:${comment.line}`} initial={comment.note} label="修改批注" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
-      ) : (
-        <span className="gr-comment-note">{comment.note}</span>
+      <span className="gr-comment-note">{comment.note}</span>
+      {editing && (
+        <FloatDraft title="修改这条批注">
+          <CommentDraft busy={busy} store={editKey} anchor={`${comment.side}:${comment.line}`} initial={comment.note} label="修改批注" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
+        </FloatDraft>
       )}
       {!editing && (
         <div className="anno-actions">
