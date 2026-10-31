@@ -74,6 +74,7 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await ai(me.key, "POST", "/api/issues/1/entries", { body: "是新建任务页的输入框，还是任务里点「新会话」之后的输入框？切走之前打了多少字？", ai: true, status: "asking" });
   await expect(page.getByTestId("issues-detail")).toContainText("还是任务里点「新会话」之后的输入框", { timeout: 15_000 });
   await expect(page.getByTestId("issue-row")).toContainText("等你回答");
+  await expect(page.getByTestId("issues-tab-you")).toHaveText("要你看1");
   await page.screenshot({ path: join(shots, "I1-asking.png") });
 
   // Answer with another screenshot.
@@ -83,6 +84,7 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await page.locator("#commentText").press("Control+Enter");
   await expect(page.getByTestId("issue-entry")).toHaveCount(3);
   await expect(page.locator("#commentText")).toHaveValue("");
+  await expect(page.getByTestId("issues-tab-you")).toHaveText("要你看");
 
   // Fixed by the AI, then 发布打包.
   await ai(me.key, "POST", "/api/issues/1/entries", { body: "修好了：新会话开好后草稿立刻按会话存下。", ai: true, status: "fixed" });
@@ -90,6 +92,17 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await page.getByRole("button", { name: "发布打包" }).click();
   await expect(page.getByTestId("issues-release")).toContainText("已请求发布");
   await page.screenshot({ path: join(shots, "I2-release-requested.png") });
+
+  // A bigger one: the AI suggests talking it over; 要你看 lists it.
+  await ai(me.key, "POST", "/api/issues", { title: "便签想支持多窗口", body: "每条便签能单独拖出来" });
+  await ai(me.key, "POST", "/api/issues/2/entries", { body: "这牵涉便签的窗口模型和存储，不是顺手能改的，建议单开会话讨论方案。", ai: true, status: "discuss" });
+  await expect(page.getByTestId("issues-tab-you")).toHaveText("要你看1", { timeout: 15_000 });
+  await page.getByTestId("issues-tab-you").click();
+  await expect(page.getByTestId("issue-row")).toHaveCount(1);
+  await expect(page.getByTestId("issue-row")).toContainText("建议单开讨论");
+  await page.getByTestId("issue-row").click();
+  await expect(page.locator("#commentText")).toHaveAttribute("placeholder", /想让 AI 直接修/);
+  await page.screenshot({ path: join(shots, "I4-discuss.png") });
 
   // Dark.
   await page.emulateMedia({ colorScheme: "dark" });

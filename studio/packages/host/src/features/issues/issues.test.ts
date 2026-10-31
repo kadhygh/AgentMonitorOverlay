@@ -135,6 +135,13 @@ describe("问题页 tools", () => {
     expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（等你回答，第 3 条）");
     await issues.reply(1, { body: "明白了" });
     expect(await issues.pending()).toBeNull();
+    // 建议单开讨论: waits for the person like asking; their answer on the issue brings it back, still in that status.
+    await issues.reply(1, { body: "这个牵涉缓存的整体设计，建议单开讨论", status: "discuss" });
+    expect(await issues.pending()).toBeNull();
+    await page.addIssueEntry(1, { body: "直接修就行" });
+    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（建议单开讨论，第 6 条）");
+    await issues.reply(1, { body: "好", status: "working" });
+    expect(await issues.pending()).toBeNull();
 
     // 发布打包, or the fixed one waiting 30 minutes, or three fixed.
     await page.requestIssueRelease();

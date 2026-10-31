@@ -44,8 +44,8 @@ textarea{width:100%;resize:vertical;min-height:72px}
 .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{grid-column:2;font-size:12px;color:var(--muted)}
 .st{display:inline-block;padding:0 6px;border-radius:3px;border:1px solid currentColor;font-size:12px;line-height:18px;white-space:nowrap}
-.st-new{color:var(--accent)}.st-working,.st-asking{color:var(--warn)}.st-fixed,.st-released{color:var(--ok)}.st-stuck{color:var(--danger)}.st-closed{color:var(--muted)}
-.tabs{display:flex;gap:4px;margin-bottom:6px}.tabs button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.st-new{color:var(--accent)}.st-working,.st-asking{color:var(--warn)}.st-fixed,.st-released{color:var(--ok)}.st-stuck{color:var(--danger)}.st-discuss{color:var(--accent)}.st-closed{color:var(--muted)}
+.tabs{display:flex;gap:4px;margin-bottom:6px}.tabs .n{margin-left:4px;font-variant-numeric:tabular-nums}.tabs button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
 .entry{padding:10px 12px;border-radius:6px;border:1px solid var(--soft);margin:8px 0}
 .entry.ai{background:var(--ai)}
 .entry.status{border-style:dashed;padding:4px 12px;font-size:12px;color:var(--muted)}
@@ -68,14 +68,14 @@ textarea{width:100%;resize:vertical;min-height:72px}
 <div class="thumbs" id="newThumbs"></div>
 <div class="row"><select id="newTool"><option value="">哪个工具（可不选）</option></select><input id="newVersion" placeholder="版本（可不填）" size="10"><span class="grow"></span><button class="primary" id="newSubmit">提交</button></div>
 <div id="newMsg"></div></form>
-<div class="card"><div class="tabs"><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><ul class="list" id="list" data-testid="issues-list"></ul></div>
+<div class="card"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="等你回答、卡住了、建议单开讨论，而且最后一条是 AI 写的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><ul class="list" id="list" data-testid="issues-list"></ul></div>
 </section>
 <section id="detail" class="card" data-testid="issues-detail"><div class="empty muted">选左边的一个问题看它的来往。</div></section>
 </div>
 <div id="viewer" hidden><img alt=""></div>
 <script>
 var LABELS = ${labels}, TOOLS = ${tools};
-var SYMBOL = { new: "○", working: "◐", asking: "?", fixed: "✓", released: "✓", stuck: "!", closed: "–" };
+var SYMBOL = { new: "○", working: "◐", asking: "?", fixed: "✓", released: "✓", stuck: "!", discuss: "◇", closed: "–" };
 var KEY = "amo-issues-key", NAME = "amo-issues-name";
 var $ = function (id) { return document.getElementById(id); };
 var state = { key: "", name: "", issues: {}, rev: 0, release: null, selected: null, filter: "open", detail: null, versions: {} };
@@ -162,11 +162,15 @@ $("newForm").onsubmit = function (ev) {
 document.querySelectorAll("[data-filter]").forEach(function (b) { b.onclick = function () { state.filter = b.getAttribute("data-filter"); document.querySelectorAll("[data-filter]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); drawList(); }; });
 function put(issue) { var had = state.issues[issue.number]; state.issues[issue.number] = Object.assign({}, had || {}, issue); }
 function open(i) { return i.status !== "released" && i.status !== "closed"; }
+// 要你看 (2026-10-31): what waits for the person — the AI asked, got stuck or suggests talking it over, and has not
+// been answered yet.
+function forYou(i) { return (i.status === "asking" || i.status === "stuck" || i.status === "discuss") && !i.awaitsAi; }
 function drawList() {
   var ul = $("list"); ul.innerHTML = "";
   var all = Object.keys(state.issues).map(function (k) { return state.issues[k]; }).sort(function (a, b) { return b.number - a.number; });
-  var shown = all.filter(function (i) { return state.filter === "all" || open(i); });
-  if (!shown.length) { ul.appendChild(el("li", "muted", all.length ? "没有进行中的问题。" : "还没有问题。")); return; }
+  var you = all.filter(forYou).length; $("youN").textContent = you ? String(you) : "";
+  var shown = all.filter(function (i) { return state.filter === "all" || (state.filter === "you" ? forYou(i) : open(i)); });
+  if (!shown.length) { ul.appendChild(el("li", "muted", !all.length ? "还没有问题。" : state.filter === "you" ? "没有要你看的。" : "没有进行中的问题。")); return; }
   shown.forEach(function (i) {
     var li = el("li"); li.setAttribute("aria-current", String(i.number === state.selected)); li.setAttribute("data-testid", "issue-row");
     li.appendChild(el("span", "num", "#" + i.number)); li.appendChild(el("span", "t", i.title));
@@ -211,7 +215,7 @@ function drawDetail() {
     if (e.images.length) { var th = el("div", "thumbs"); e.images.forEach(function (im) { var t = el("div", "thumb"); var img = document.createElement("img"); img.src = imgUrl(im.id); img.alt = im.name; img.onclick = function () { view(im.id); }; t.appendChild(img); th.appendChild(t); }); d.appendChild(th); }
     top.appendChild(d);
   });
-  var ta = $("commentText"); if (ta) ta.placeholder = i.status === "asking" ? "回答 AI 的问题…（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
+  var ta = $("commentText"); if (ta) ta.placeholder = i.status === "discuss" ? "想让 AI 直接修就在这里说一声；要单开讨论就在 Studio 里开个会话，谈完把这条关掉或留个话。Ctrl+Enter 发送" : i.status === "asking" ? "回答 AI 的问题…（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
 }
 function drawForm(i) {
   var form = el("form", "card"); form.style.margin = "12px 0 0"; form.setAttribute("data-testid", "issue-comment");

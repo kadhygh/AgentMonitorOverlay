@@ -2,7 +2,7 @@
 // two and screenshots); Studio's 值守 fetches them, fixes each in a session, answers on the issue and sets its status;
 // 发布打包 on the page asks for a test build. Shared by the service, the page and Studio's Host.
 
-export const ISSUE_STATUSES = ["new", "working", "asking", "fixed", "released", "stuck", "closed"] as const;
+export const ISSUE_STATUSES = ["new", "working", "asking", "fixed", "released", "stuck", "discuss", "closed"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
 export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
@@ -12,6 +12,9 @@ export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
   fixed: "已修好，待发布",
   released: "已发布",
   stuck: "卡住了",
+  // The AI thinks it is too big or too open to fix in passing: the person talks it over in a session of their own, or
+  // answers on the issue (“直接修”) and the AI goes on (2026-10-31, plans/release.md).
+  discuss: "建议单开讨论",
   closed: "不修了",
 };
 

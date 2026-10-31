@@ -18,7 +18,7 @@ const IMAGE_MAX = 10 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
 const EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
 /** Statuses an issue is still open in (for 值守's list). */
-const OPEN = new Set<IssueStatus>(["new", "working", "asking", "fixed", "stuck"]);
+const OPEN = new Set<IssueStatus>(["new", "working", "asking", "fixed", "stuck", "discuss"]);
 
 export interface IssueLine {
   number: number;
@@ -61,7 +61,7 @@ export class IssuesFeature extends Feature {
     const lines: string[] = [];
     const fresh = issues.filter((i) => i.status === "new").sort((a, b) => a.number - b.number);
     if (fresh.length) lines.push(`新问题：${fresh.map((i) => `#${i.number} ${i.title}`).join("；")}`);
-    const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck")).sort((a, b) => a.number - b.number);
+    const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck" || i.status === "discuss")).sort((a, b) => a.number - b.number);
     if (answered.length) lines.push(`你回复了：${answered.map((i) => `#${i.number} ${i.title}（${ISSUE_STATUS_LABEL[i.status]}，第 ${i.entryCount} 条）`).join("；")}`);
     const fixed = issues.filter((i) => i.status === "fixed").sort((a, b) => a.number - b.number);
     const why = !fixed.length ? null : release.requestedAt ? "你点了「发布打包」" : fixed.length >= PACK_AT ? `修好待发布的有 ${fixed.length} 个` : fixed.some((i) => this.now() - i.updatedAt >= PACK_AFTER_MS) ? "最早修好的已经等了 30 分钟" : null;
