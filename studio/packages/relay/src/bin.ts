@@ -104,7 +104,7 @@ async function main(): Promise<void> {
       const platformGiven = flags["platform-dir"] ?? process.env.AMO_RELAY_PLATFORM_DIR;
       const platformDir = platformGiven && platformGiven !== "true" ? resolve(platformGiven) : undefined;
       const store = new RelayStore(join(data, "relay.db"));
-      const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
+      const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), dataDir: data, name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT });
       out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
       const stop = () => void server.close().then(() => (store.close(), process.exit(0)));
       process.on("SIGINT", stop);

@@ -9,6 +9,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { adminPage } from "./admin-page.js";
+import { ServerMonitor } from "./monitor.js";
 import { issuesPage } from "./issues-page.js";
 import { IssueStore } from "./issues.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
@@ -44,6 +45,11 @@ export interface RelayServerOptions {
   /** Devices (devices.ts): how often each is pinged (default 15 s) and how long unanswered means gone (default 60 s). */
   deviceHeartbeatMs?: number;
   deviceDeadMs?: number;
+  /** The service's data folder: its size is shown on the admin page's 服务器状态, and the 24-hour curve is kept there
+   *  (monitor.json); none = the curve only in memory. */
+  dataDir?: string;
+  /** How often 服务器状态 takes a point (default 5 min). Tests shorten it. */
+  monitorEveryMs?: number;
 }
 
 export interface RelayServer {
@@ -154,6 +160,14 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     isMember: (n) => store.members().some((m) => m.name === n),
     ...(opts.deviceHeartbeatMs ? { heartbeatMs: opts.deviceHeartbeatMs } : {}),
     ...(opts.deviceDeadMs ? { deadMs: opts.deviceDeadMs } : {}),
+  });
+
+  // 服务器状态 (monitor.ts, 2026-10-31): a point every 5 minutes, the rest worked out when the admin page asks.
+  const monitor = new ServerMonitor({
+    file: opts.dataDir ? join(opts.dataDir, "monitor.json") : undefined,
+    dirs: [{ label: "数据", path: opts.dataDir }, { label: "平台发布", path: opts.platformDir }, { label: "客户端", path: opts.publicDir }],
+    counts: () => ({ people: sockets.size, devices: devices.liveCount }),
+    ...(opts.monitorEveryMs ? { everyMs: opts.monitorEveryMs } : {}),
   });
 
   const members = (): Member[] =>
@@ -275,6 +289,9 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       if (method === "GET" && path === "/api/admin/members") {
         const online = new Map(members().map((m) => [m.name, m]));
         return send(res, 200, { service: serviceName, invite: inviteNeeded(), members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
+      }
+      if (method === "GET" && path === "/api/admin/monitor") {
+        return send(res, 200, { everyMs: monitor.intervalMs, now: await monitor.now(), history: monitor.history() });
       }
       const body = await readJson(req);
       if (method === "POST" && path === "/api/admin/rename") {
@@ -748,6 +765,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();
       devices.close();
+      monitor.close();
       wss.close();
       deviceWss.close();
       server.closeAllConnections();
