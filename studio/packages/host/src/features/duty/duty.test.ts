@@ -238,6 +238,51 @@ describe("值守", () => {
     expect(store.listItems(r2!.sessionId!).find((i) => i.type === "user")).toMatchObject({ text: expect.stringContaining("你在项目「beta（值守目录）」的文件夹") });
   });
 
+  it("a finding names its session, which is shown under the one that set the item up; an answer goes on in the session that took it", async () => {
+    const { service, duty, store, root } = setup();
+    mkdirSync(join(root, "alpha"));
+    const alpha = store.addWorkspace({ path: join(root, "alpha"), name: "alpha" });
+    const task = store.createTask({ title: "10-31维护", workspaceId: alpha.id });
+    const setter = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p", workspaceId: alpha.id, title: "开始维护", status: "idle", writer: "workbench", runtimeRef: null });
+    let finding: { text: string; sessionId?: string; title?: string } | null = { text: "新问题：#1 输入栏没缓存", title: "#1 输入栏没缓存" };
+    duty.registerCheck({ name: "z.pending", label: "问题页", description: "看问题页", run: async () => finding });
+    const t = amoToolsFor(service, { sessionId: setter.id } as never).find((x) => x.name === "duty_save")!;
+    const item = JSON.parse((await t.run({ title: "AMO 维护", schedule: { every: 60 }, action: { kind: "session", prompt: "照模板做", check: { kind: "builtin", name: "z.pending" } } })).content.map((c) => c.text).join("")).item;
+    duty.update(item.id, { enabled: false });
+    const once = async (what: string) => {
+      duty.runNow(item.id);
+      return until(
+        () => {
+          duty.tick();
+          return lastRun(duty.runs(), item.id);
+        },
+        (r) => r?.ok !== null,
+        what,
+      );
+    };
+    const first = await once("the first session");
+    expect(first).toMatchObject({ ok: true, taskId: task.id });
+    expect(store.getSession(first!.sessionId!)).toMatchObject({ taskId: task.id, title: "#1 输入栏没缓存", startedBy: setter.id });
+    expect(store.listSessions({ taskId: task.id })).toHaveLength(2);
+
+    // The person answered on the issue that session took: the same session goes on, no new one.
+    const before = store.listItems(first!.sessionId!).filter((i) => i.type === "agent").length;
+    finding = { text: "你回复了：#1 输入栏没缓存（等你回答，第 3 条）", sessionId: first!.sessionId!, title: "#1 输入栏没缓存" };
+    const again = await once("the answer");
+    expect(again).toMatchObject({ ok: true, sessionId: first!.sessionId, summary: "会话这一轮结束了" });
+    expect(store.listSessions({ taskId: task.id })).toHaveLength(2);
+    expect(store.listItems(first!.sessionId!).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "照模板做\n\n值守检查发现：\n你回复了：#1 输入栏没缓存（等你回答，第 3 条）" });
+    // It waited for the new reply, not the old one.
+    expect(store.listItems(first!.sessionId!).filter((i) => i.type === "agent").length).toBeGreaterThan(before);
+
+    // A session this item did not start (or one archived) is not gone on in: a new one.
+    finding = { text: "你回复了：#1 输入栏没缓存（等你回答，第 5 条）", sessionId: setter.id, title: "#1 输入栏没缓存" };
+    const fresh = await once("someone else's session");
+    expect(fresh!.sessionId).not.toBe(setter.id);
+    expect(fresh!.sessionId).not.toBe(first!.sessionId);
+    expect(store.listSessions({ taskId: task.id })).toHaveLength(3);
+  });
+
   it("a command that prints AMO_DUTY_DONE turns its item off: a command item, a check with or without a finding", async () => {
     const { duty } = setup();
     const done = (id: string, what: string) => {

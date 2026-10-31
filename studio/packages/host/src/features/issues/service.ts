@@ -4,7 +4,8 @@ import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import { ISSUE_IMAGES_PER_ENTRY, ISSUE_STATUS_LABEL, ISSUE_STATUSES, RelayClient, RelayClientError, type Issue, type IssueList, type IssuePatch, type IssueStatus } from "@amo-studio/relay/light";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import type { DutyCheckJob } from "../duty/service.js";
+import type { Id } from "@amo-studio/protocol";
+import type { DutyCheckJob, DutyFinding } from "../duty/service.js";
 
 // 问题页 ↔ 会话 (2026-10-31, plans/issues.md stage 3): a session reads the issues the person reported on the team
 // server's /issues page and answers them — as the person (the platform's login, like 中转), each entry marked as the
@@ -37,6 +38,11 @@ export interface IssueLine {
 /** 打包 when this many are fixed and waiting, or the oldest has waited this long, or the person clicked 发布打包. */
 const PACK_AT = 3;
 const PACK_AFTER_MS = 30 * 60_000;
+/** Per issue, the session that wrote on it last. */
+const SESSIONS_KEY = "issues.sessions";
+const SESSIONS_KEPT = 300;
+/** A 值守 session's name: "#<编号> " and this much of the issue's title. */
+const TITLE_MAX = 30;
 
 export class IssuesFeature extends Feature {
   /** Tests: the clock. */
@@ -52,11 +58,20 @@ export class IssuesFeature extends Feature {
       name: "issues.pending",
       label: "问题页有事要做",
       description: `有新问题、你在问题下回复了，或者该打测试包了（修好待发的有 ${PACK_AT} 个、最早的等了 30 分钟、你点了「发布打包」）`,
-      run: () => this.pending(),
+      run: () => this.pendingWork(),
     };
   }
 
   async pending(): Promise<string | null> {
+    return (await this.pendingWork())?.text ?? null;
+  }
+
+  /**
+   * What there is to do, the session's name, and — when it is only the person's answers on issues one session took —
+   * that session, for 值守 to go on in (问题 #1's follow-up, the user, 2026-10-31: an answer started a new session
+   * instead of the one that asked; each 值守 session named "#<编号> <一句话>").
+   */
+  async pendingWork(): Promise<DutyFinding | null> {
     const { issues, release } = await this.call((c) => c.issues());
     const lines: string[] = [];
     const fresh = issues.filter((i) => i.status === "new").sort((a, b) => a.number - b.number);
@@ -66,7 +81,32 @@ export class IssuesFeature extends Feature {
     const fixed = issues.filter((i) => i.status === "fixed").sort((a, b) => a.number - b.number);
     const why = !fixed.length ? null : release.requestedAt ? "你点了「发布打包」" : fixed.length >= PACK_AT ? `修好待发布的有 ${fixed.length} 个` : fixed.some((i) => this.now() - i.updatedAt >= PACK_AFTER_MS) ? "最早修好的已经等了 30 分钟" : null;
     if (why) lines.push(`该打测试包了（${why}）：${fixed.map((i) => `#${i.number}`).join(" ")}`);
-    return lines.length ? lines.join("\n") : null;
+    if (!lines.length) return null;
+    // The template takes answered ones first, then new ones: the session is named after the first it will take.
+    const first = answered[0] ?? fresh[0];
+    const title = first ? `#${first.number} ${oneLine(first.title)}` : "打测试包";
+    const known = this.sessions();
+    const took = new Set(answered.map((i) => known[i.number]));
+    const sessionId = answered.length && !fresh.length && !why && took.size === 1 ? [...took][0] : undefined;
+    return { text: lines.join("\n"), title, ...(sessionId ? { sessionId } : {}) };
+  }
+
+  /** Per issue, the session that wrote on it last (kept in Studio: the page does not know Studio's sessions). */
+  private sessions(): Record<number, Id> {
+    try {
+      return JSON.parse(this.store.getKv(SESSIONS_KEY)?.value ?? "{}") as Record<number, Id>;
+    } catch {
+      return {};
+    }
+  }
+
+  private wroteOn(number: number, sessionId: Id | undefined): void {
+    if (!sessionId || !this.store.getSession(sessionId)) return;
+    const all = this.sessions();
+    delete all[number];
+    // Insertion order: the oldest go first.
+    const kept = Object.entries({ ...all, [number]: sessionId }).slice(-SESSIONS_KEPT);
+    this.store.setKv(SESSIONS_KEY, JSON.stringify(Object.fromEntries(kept)));
   }
 
   private client(): RelayClient {
@@ -132,25 +172,29 @@ export class IssuesFeature extends Feature {
   }
 
   /** A word on the issue as the AI, with screenshots from this computer, optionally changing its status. */
-  async reply(number: number, input: { body?: string; status?: string; images?: unknown }): Promise<Issue> {
+  async reply(number: number, input: { body?: string; status?: string; images?: unknown }, sessionId?: Id): Promise<Issue> {
     const files = localImages(input.images);
     const st = input.status === undefined ? undefined : issueStatus(input.status);
-    return this.call(async (c) => {
+    const out = await this.call(async (c) => {
       const ids: string[] = [];
       for (const f of files) ids.push((await c.uploadIssueImage(basename(f), readFileSync(f), IMAGE_TYPES[extname(f).toLowerCase()]!)).id);
       return c.addIssueEntry(number, { body: input.body ?? "", images: ids, ai: true, ...(st ? { status: st } : {}) });
     });
+    this.wroteOn(number, sessionId);
+    return out;
   }
 
   /** Status, title, who works on it, the build it went out in — each marked as the AI's. */
-  async update(number: number, patch: { status?: string; title?: string; worker?: string; fixedIn?: string }): Promise<Issue> {
+  async update(number: number, patch: { status?: string; title?: string; worker?: string; fixedIn?: string }, sessionId?: Id): Promise<Issue> {
     const p: IssuePatch = {};
     if (patch.status !== undefined) p.status = issueStatus(patch.status);
     if (patch.title !== undefined) p.title = patch.title;
     if (patch.worker !== undefined) p.worker = patch.worker;
     if (patch.fixedIn !== undefined) p.fixedIn = patch.fixedIn;
     if (!Object.keys(p).length) throw new HostError("bad_request", "没有要改的（status、title、worker、fixedIn）");
-    return this.call((c) => c.updateIssue(number, { ...p, ai: true }));
+    const out = await this.call((c) => c.updateIssue(number, { ...p, ai: true }));
+    this.wroteOn(number, sessionId);
+    return out;
   }
 
   /** A test build went out: the issues it fixed become 已发布 with that version, and 发布打包's request is done. */
@@ -159,6 +203,12 @@ export class IssuesFeature extends Feature {
     const out = await this.call((c) => c.issueReleased(version.trim(), numbers));
     return { release: out.release, released: numbers.filter((n) => out.issues.some((i) => i.number === n && i.status === "released")) };
   }
+}
+
+/** An issue's title as a session's name: one line, not too long. */
+function oneLine(title: string): string {
+  const t = title.replace(/\s+/g, " ").trim() || "（没写标题）";
+  return t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX)}…` : t;
 }
 
 function issueStatus(value: string): IssueStatus {

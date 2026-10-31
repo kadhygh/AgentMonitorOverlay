@@ -42,6 +42,8 @@ export interface DutyJobResult {
   skipped?: boolean;
   sessionId?: Id;
   taskId?: Id;
+  /** Went on in an older session: the replies it had before. */
+  repliesBefore?: number;
 }
 
 /** One of Studio's own jobs a builtin item names (registered by the feature that owns it). */
@@ -54,12 +56,23 @@ export interface DutyJob {
   item?: { id: Id; title: string; schedule: DutySchedule };
 }
 
+/**
+ * What a check found; the session that already worked on it — 值守 goes on in that one when it is this item's, idle
+ * and still there (问题 #1's follow-up, the user, 2026-10-31: "没有在旧的继续，而是拉了个新的session"); and the name
+ * for a new session (the user, 2026-10-31: "issueid + 一句话说明").
+ */
+export interface DutyFinding {
+  text: string;
+  sessionId?: Id;
+  title?: string;
+}
+
 /** One of Studio's own checks a session item can run first: what there is to do, or null for nothing. */
 export interface DutyCheckJob {
   name: string;
   label: string;
   description: string;
-  run(ctx: { item: DutyItem; signal: AbortSignal }): Promise<string | null>;
+  run(ctx: { item: DutyItem; signal: AbortSignal }): Promise<string | DutyFinding | null>;
 }
 
 interface Running {
@@ -68,6 +81,8 @@ interface Running {
   /** A session action: done once the session stops moving. */
   sessionId?: Id;
   seenMoving?: boolean;
+  /** An older session it went on in: its replies before this run (a newer one is this run's). */
+  repliesBefore?: number;
 }
 
 export class DutyFeature extends Feature {
@@ -347,14 +362,20 @@ export class DutyFeature extends Feature {
       const s = this.store.getSession(r.sessionId);
       const moving = !!s && sessionMoving(s);
       if (moving) r.seenMoving = true;
-      // A quick turn can start and end between two looks: a finished reply in it (the session is new) counts as moved.
-      else if (!s || r.seenMoving || s.status === "error" || s.status === "interrupted" || this.store.listItems(s.id).some((i) => i.type === "agent" && !i.streaming) || now - Date.parse(r.run.startedAt) > SESSION_GRACE_MS) this.finish(id, r, sessionEnd(s));
+      // A quick turn can start and end between two looks: a finished reply in it counts as moved — one newer than this
+      // run's start in an older session it went on in.
+      else if (!s || r.seenMoving || s.status === "error" || s.status === "interrupted" || this.replies(s.id) > (r.repliesBefore ?? 0) || now - Date.parse(r.run.startedAt) > SESSION_GRACE_MS) this.finish(id, r, sessionEnd(s));
     }
     for (const item of this.items()) {
       if (!item.enabled || this.running.has(item.id)) continue;
       const at = this.nextRun(item);
       if (at !== null && now >= at) void this.launch(item);
     }
+  }
+
+  /** A session's finished replies. */
+  private replies(sessionId: Id): number {
+    return this.store.listItems(sessionId).filter((i) => i.type === "agent" && !i.streaming).length;
   }
 
   private finish(id: Id, r: Running, result: DutyJobResult): void {
@@ -379,6 +400,7 @@ export class DutyFeature extends Feature {
         const started = await this.startSession(item, a, r.abort.signal);
         if (started.sessionId && !started.skipped) {
           r.sessionId = started.sessionId;
+          if (started.repliesBefore !== undefined) r.repliesBefore = started.repliesBefore;
           this.keepSession(started.sessionId, item.id);
           r.run = { ...run, summary: started.summary, sessionId: started.sessionId, ...(started.taskId ? { taskId: started.taskId } : {}) };
           this.saveRun(r.run);
@@ -407,28 +429,34 @@ export class DutyFeature extends Feature {
   }
 
   /** What the item's check found: text to act on, null for nothing, or why the check failed; `done`: it printed AMO_DUTY_DONE. */
-  private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null; done?: boolean } | { failed: string }> {
+  private async runCheck(item: DutyItem, c: DutyCheck, signal: AbortSignal): Promise<{ found: string | null; done?: boolean; sessionId?: Id; title?: string } | { failed: string }> {
     if (c.kind === "all") {
-      const found: string[] = [];
+      const found: Array<{ text: string; sessionId?: Id; title?: string }> = [];
       const failed: string[] = [];
       let done = true;
       for (const one of c.checks) {
         const r = await this.runCheck(item, one, signal);
         const name = one.kind === "builtin" ? (this.checks.get(one.name)?.label ?? one.name) : one.command;
         if ("failed" in r) failed.push(`「${name}」${r.failed}`);
-        else if (r.found) found.push(r.found);
+        else if (r.found) found.push({ text: r.found, ...(r.sessionId ? { sessionId: r.sessionId } : {}), ...(r.title ? { title: r.title } : {}) });
         if ("failed" in r || !r.done) done = false;
       }
       if (failed.length === c.checks.length) return { failed: failed.join("；") };
-      const text = [...found, ...(found.length && failed.length ? [`（没跑通的检查：${failed.join("；")}）`] : [])].join("\n\n");
-      return { found: text ? text.slice(0, FOUND_KEPT) : null, done };
+      const text = [...found.map((f) => f.text), ...(found.length && failed.length ? [`（没跑通的检查：${failed.join("；")}）`] : [])].join("\n\n");
+      // An older session to go on in only when it is all that was found: something else is new work.
+      const sessionId = found.length === 1 ? found[0]!.sessionId : undefined;
+      const title = found.find((f) => f.title)?.title;
+      return { found: text ? text.slice(0, FOUND_KEPT) : null, done, ...(sessionId ? { sessionId } : {}), ...(title ? { title } : {}) };
     }
     if (c.kind === "builtin") {
       const job = this.checks.get(c.name);
       if (!job) return { failed: `没有这个 Studio 检查：${c.name}` };
       try {
-        const found = (await job.run({ item, signal }))?.trim();
-        return { found: found ? found.slice(0, FOUND_KEPT) : null };
+        const out = await job.run({ item, signal });
+        const finding = typeof out === "string" ? { text: out } : out;
+        const found = finding?.text.trim();
+        if (!found) return { found: null };
+        return { found: found.slice(0, FOUND_KEPT), ...(finding!.sessionId ? { sessionId: finding!.sessionId } : {}), ...(finding!.title?.trim() ? { title: finding!.title.trim().slice(0, 100) } : {}) };
       } catch (err) {
         return { failed: err instanceof Error ? err.message : String(err) };
       }
@@ -444,6 +472,8 @@ export class DutyFeature extends Feature {
     let prompt = a.prompt;
     let found: string | null = null;
     let lastWord = "";
+    let goOnIn: Id | undefined;
+    let sessionTitle: string | undefined;
     if (a.check) {
       const checked = await this.runCheck(item, a.check, signal);
       if ("failed" in checked) return { ok: false, summary: `检查没跑通：${checked.failed}` };
@@ -459,6 +489,8 @@ export class DutyFeature extends Feature {
       }
       if (this.found()[item.id] === checked.found) return { ok: true, skipped: true, summary: `检查结果和上次开会话时一样，不再开${lastWord}` };
       found = checked.found;
+      goOnIn = checked.sessionId;
+      sessionTitle = checked.title;
       prompt = `${a.prompt}\n\n值守检查发现：\n${found}`;
     }
     if (a.untilDone) prompt += `\n\n（这是值守项「${item.title}」开的会话。它盯的事处理完、不用再值守时，调 AMO 的 duty_stop 关掉它。）`;
@@ -485,15 +517,29 @@ export class DutyFeature extends Feature {
       // directory), like session_start's workspace: still a session of the task.
       const other = a.workspaceId && a.workspaceId !== task.workspaceId && !task.remote ? this.store.getWorkspace(a.workspaceId) : null;
       if (other === undefined || other?.archivedAt) return { ok: false, summary: "会话要跑的项目已经删掉了" };
+      // The person answered on what an older session of this item took: go on there, where the work and its context
+      // are (问题 #1's follow-up, the user, 2026-10-31). Only with the item's own model: a fallback starts afresh.
+      const older = goOnIn && !note ? this.store.getSession(goOnIn) : undefined;
+      if (older && this.sessions()[older.id] === item.id && older.taskId === task.id && !older.archivedAt && !sessionMoving(older) && older.status !== "error") {
+        const repliesBefore = this.replies(older.id);
+        await this.f.sessions.sendMessage(older.id, prompt);
+        return started({ ok: true, summary: `在「${task.title}」的会话「${older.title || "未命名会话"}」里接着做`, sessionId: older.id, taskId: task.id, repliesBefore });
+      }
       const session = other
         ? await this.f.tasks.startSession({ taskId: task.id, topicId: null }, other, { ...first, text: `（你在项目「${other.name}」的文件夹 ${other.path} 里工作，和任务本身的项目不同。）\n${first.text}` })
         : await this.f.tasks.addSession(task.id, first);
-      return started({ ok: true, summary: `在「${task.title}」里开了会话${note}`, sessionId: session.id, taskId: task.id });
+      // Shown under the session that set the item up, like one it started with session_start (the user, 2026-10-31:
+      // "要使用子session的那种方式，挂在值守父任务上"), and named after what it is for.
+      const parent = item.setBy ? this.store.getSession(item.setBy) : undefined;
+      if (parent && parent.taskId === task.id && parent.kind === "main" && !parent.archivedAt) this.publish({ type: "session.upserted", session: this.store.setSessionStartedBy(session.id, parent.id) });
+      if (sessionTitle) await this.f.sessions.renameSession(session.id, sessionTitle).catch(() => undefined);
+      return started({ ok: true, summary: `在「${task.title}」里开了会话${sessionTitle ? `「${sessionTitle}」` : ""}${note}`, sessionId: session.id, taskId: task.id });
     }
     const stamp = new Date(this.now());
     const pad = (n: number) => String(n).padStart(2, "0");
     const titleText = `${a.taskTitle || item.title} · ${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}:${pad(stamp.getMinutes())}`;
     const made = await this.f.tasks.createTask({ title: titleText, ...(a.workspaceId ? { workspaceId: a.workspaceId } : {}), firstSession: first });
+    if (made.session && sessionTitle) await this.f.sessions.renameSession(made.session.id, sessionTitle).catch(() => undefined);
     return started({ ok: true, summary: `新建任务「${titleText}」${note}`, ...(made.session ? { sessionId: made.session.id } : {}), taskId: made.task.id });
   }
 

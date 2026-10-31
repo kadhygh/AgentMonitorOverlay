@@ -157,6 +157,33 @@ describe("问题页 tools", () => {
     expect(service.duty.state().checks.map((c) => c.name)).toContain("issues.pending");
   });
 
+  it("值守's check names the session after the first issue, and gives back the session that took an answered issue", async () => {
+    const { service, page } = await setup();
+    const store = service.store;
+    const ws = service.commonWorkspace();
+    const task = store.createTask({ title: "10-31维护", workspaceId: ws.id });
+    const session = (title: string) => store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p", workspaceId: ws.id, title, status: "idle", writer: "workbench", runtimeRef: null });
+    const a = session("a");
+    const b = session("b");
+    const tool = (sessionId: string, name: string, args: Record<string, unknown>) => amoToolsFor(service, { sessionId } as never).find((x) => x.name === name)!.run(args);
+    await page.createIssue({ title: "远程任务里，控制端按@什么都出不来，按说也应该能at出被控端的模板", body: "x" });
+    await page.createIssue({ title: "列表断开", body: "y" });
+    expect(await service.issues.pendingWork()).toEqual({ text: expect.stringContaining("新问题：#1"), title: "#1 远程任务里，控制端按@什么都出不来，按说也应该能at出被控端…" });
+
+    // a takes #1 and asks; b takes #2 and asks.
+    await tool(a.id, "issue_update", { number: 1, status: "working" });
+    await tool(a.id, "issue_reply", { number: 1, body: "哪个输入框？", status: "asking" });
+    await tool(b.id, "issue_reply", { number: 2, body: "哪个列表？", status: "asking" });
+    await page.addIssueEntry(1, { body: "新建任务页那个" });
+    expect(await service.issues.pendingWork()).toMatchObject({ text: expect.stringContaining("你回复了：#1"), title: expect.stringMatching(/^#1 /), sessionId: a.id });
+    // Answers on issues two sessions took, or a new issue beside: no one session to go on in.
+    await page.addIssueEntry(2, { body: "任务列表" });
+    expect(await service.issues.pendingWork()).not.toHaveProperty("sessionId");
+    await tool(b.id, "issue_reply", { number: 2, body: "明白了", status: "working" });
+    await page.createIssue({ title: "第三个", body: "z" });
+    expect(await service.issues.pendingWork()).not.toHaveProperty("sessionId");
+  });
+
   it("says to sign in on the platform when there is no login", async () => {
     const { tool, service } = await setup(false);
     expect(await tool("issue_list")).toMatchObject({ error: true, text: "要先在 AMO 平台里登录团队服务器，才能读写问题页。" });

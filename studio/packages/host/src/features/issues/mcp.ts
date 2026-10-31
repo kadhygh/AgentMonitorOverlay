@@ -8,7 +8,7 @@ import { HostError } from "../../core/shared.js";
  * answer them as the person, marked as the AI's. All run without asking: the issues are the person's own, and how to
  * work them is said by the prompt template the person's 值守 item names (2026-10-31).
  */
-export function issuesTools({ service }: ToolContext): AmoTool[] {
+export function issuesTools({ service, caller }: ToolContext): AmoTool[] {
   const t = service.issues;
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -47,7 +47,8 @@ export function issuesTools({ service }: ToolContext): AmoTool[] {
       inputSchema: { number: z.number().int(), body: z.string().optional(), status: status.optional(), images: z.array(z.string()).optional() },
       readOnly: false,
       autoApprove: true,
-      run: (args) => run(() => t.reply(args.number as number, args as { body?: string; status?: string; images?: string[] })),
+      // Who wrote is kept (2026-10-31): the person's answer goes back to this session (值守's check).
+      run: (args) => run(() => t.reply(args.number as number, args as { body?: string; status?: string; images?: string[] }, caller?.sessionId)),
     },
     {
       name: "issue_update",
@@ -56,7 +57,7 @@ export function issuesTools({ service }: ToolContext): AmoTool[] {
       inputSchema: { number: z.number().int(), status: status.optional(), worker: z.string().optional(), title: z.string().optional(), fixedIn: z.string().optional() },
       readOnly: false,
       autoApprove: true,
-      run: (args) => run(() => t.update(args.number as number, args as { status?: string; worker?: string; title?: string; fixedIn?: string })),
+      run: (args) => run(() => t.update(args.number as number, args as { status?: string; worker?: string; title?: string; fixedIn?: string }, caller?.sessionId)),
     },
     {
       name: "issue_released",
