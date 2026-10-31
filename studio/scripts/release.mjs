@@ -57,9 +57,13 @@ function run(command, argv, opts = {}) {
   if (res.status !== 0) throw new Error(`${command} ${argv.join(" ")}: exit ${res.status}`);
 }
 
-const pkgFile = (t) => join(studio, "packages", t.pkg, "package.json");
+// The service's version lives in RELAY_VERSION, not in packages/relay/package.json: the workspace's packages depend on
+// each other at "0.0.0", and a different version there sends npm ci to the registry (404).
+const PROTOCOL = join(studio, "packages", "relay", "src", "protocol.ts");
+const VERSION_RE = /export const RELAY_VERSION = "([^"]+)";/;
+const pkgFile = (t) => (t.service ? PROTOCOL : join(studio, "packages", t.pkg, "package.json"));
 const changelogFile = (t) => join(studio, "packages", t.pkg, "CHANGELOG.md");
-const versionOf = (t, text = readFileSync(pkgFile(t), "utf8")) => JSON.parse(text).version;
+const versionOf = (t, text = readFileSync(pkgFile(t), "utf8")) => (t.service ? VERSION_RE.exec(text)[1] : JSON.parse(text).version);
 const tagOf = (t, v) => `${t.id}-v${v}`;
 const lastTag = (t) => git("tag", "--list", `${t.id}-v*`, "--sort=-v:refname").split("\n").filter(Boolean)[0] ?? null;
 /** At a ref (master) when given, else as on disk. */

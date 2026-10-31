@@ -1,7 +1,7 @@
 {
   "name": "@amo-studio/relay",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.0.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
