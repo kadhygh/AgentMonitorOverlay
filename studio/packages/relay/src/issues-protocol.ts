@@ -83,7 +83,40 @@ export interface IssueRelease {
   requestedAt: number | null;
   requestedBy: string;
   last: { version: string; at: number } | null;
+  /** The test build going on now, or the last one (ended). */
+  build: IssueBuild | null;
 }
+
+/**
+ * A test build as `npm run release` reports it while it runs (2026-10-31, the user: 问题页 shows whether a build is
+ * going on and how far it got). Reported with the platform's login of the machine that builds; best effort.
+ */
+export interface IssueBuild {
+  /** What goes out: "AMO Studio 0.9.19、AMO 便签 0.9.8". */
+  label: string;
+  /** Its steps in order ("测试", "提交版本", "打包", "发布"). */
+  steps: string[];
+  /** The step it is at (index into steps); where it stopped when it failed. */
+  step: number;
+  by: string;
+  startedAt: number;
+  /** The last word from it: a build that has not ended and says nothing for long has probably gone. */
+  updatedAt: number;
+  endedAt: number | null;
+  ok: boolean | null;
+  /** Why it stopped, or what went out. */
+  message: string;
+}
+
+/** POST /api/issues/release/build: one of start (a new build), step (where it is now), end. */
+export interface IssueBuildReport {
+  start?: { label: string; steps: string[] };
+  step?: number;
+  end?: { ok: boolean; message?: string };
+}
+
+/** A build that has not ended and said nothing this long is shown as probably gone. */
+export const ISSUE_BUILD_QUIET_MS = 30 * 60_000;
 
 /** GET /api/issues[?after=rev]: the issues changed after `after` (all without it), and the counter now. */
 export interface IssueList {

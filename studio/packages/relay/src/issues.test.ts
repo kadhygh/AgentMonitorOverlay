@@ -94,6 +94,34 @@ describe("问题页 (2026-10-31)", () => {
     await expect(call("GET", "/api/issues/9")).rejects.toThrow("没有问题 #9");
   });
 
+  it("a test build says where it is: started, its steps, its end — the page reads it with the list", async () => {
+    const { url, key } = await service();
+    const client = new RelayClient(url, key);
+    expect((await client.issues()).release.build).toBeNull();
+    // A step with no build going on, or a bad one, is refused.
+    await expect(client.reportIssueBuild({ step: 1 })).rejects.toThrow("现在没有在打包");
+    await expect(client.reportIssueBuild({ start: { label: "AMO Studio 0.9.19", steps: [] } })).rejects.toThrow("1 到 12 个步骤");
+
+    const started = await client.reportIssueBuild({ start: { label: "AMO Studio 0.9.19", steps: ["测试", "提交版本", "打包", "发布"] } });
+    expect(started.build).toMatchObject({ label: "AMO Studio 0.9.19", step: 0, by: "老戴", endedAt: null, ok: null });
+    const rev = (await client.issues()).rev;
+    await client.reportIssueBuild({ step: 2 });
+    // A step takes the counter up: the page's next look (after=rev) sees it.
+    const later = await client.issues(rev);
+    expect(later.rev).toBeGreaterThan(rev);
+    expect(later.release.build).toMatchObject({ step: 2, endedAt: null });
+    await expect(client.reportIssueBuild({ step: 4 })).rejects.toThrow("步骤要在 0 到 3 之间");
+
+    // It stops at 打包: the step stays as where it stopped.
+    const failed = await client.reportIssueBuild({ end: { ok: false, message: "npm run package:platform: exit 1" } });
+    expect(failed.build).toMatchObject({ step: 2, ok: false, message: "npm run package:platform: exit 1", endedAt: expect.any(Number) });
+    await expect(client.reportIssueBuild({ step: 3 })).rejects.toThrow("现在没有在打包");
+    // The next one starts afresh.
+    await client.reportIssueBuild({ start: { label: "AMO Studio 0.9.19", steps: ["测试", "打包", "发布"] } });
+    await client.reportIssueBuild({ step: 2 });
+    expect((await client.reportIssueBuild({ end: { ok: true, message: "已发到测试通道：AMO Studio 0.9.19" } })).build).toMatchObject({ steps: ["测试", "打包", "发布"], step: 2, ok: true });
+  });
+
   it("an account renamed on the admin side keeps its issues", async () => {
     await service();
     const { IssueStore } = await import("./issues.js");

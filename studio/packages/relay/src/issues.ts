@@ -9,6 +9,8 @@ import {
   ISSUE_STATUS_LABEL,
   ISSUE_TOOLS,
   type Issue,
+  type IssueBuild,
+  type IssueBuildReport,
   type IssueEntry,
   type IssueImage,
   type IssueList,
@@ -26,7 +28,7 @@ import {
 
 type Row = Record<string, unknown>;
 
-const LIMITS = { title: 120, body: 50_000, version: 40, fixedIn: 80, worker: 200 };
+const LIMITS = { title: 120, body: 50_000, version: 40, fixedIn: 80, worker: 200, buildLabel: 200, buildMessage: 2000 };
 const REOPENED = new Set<IssueStatus>(["fixed", "released", "stuck", "closed"]);
 
 function text(value: unknown, what: string, max: number): string {
@@ -264,7 +266,39 @@ export class IssueStore {
   release(): IssueRelease {
     const at = this.meta("release.requestedAt");
     const last = this.meta("release.last");
-    return { requestedAt: at ? Number(at) : null, requestedBy: this.meta("release.requestedBy") ?? "", last: last ? (JSON.parse(last) as IssueRelease["last"]) : null };
+    const build = this.meta("release.build");
+    return { requestedAt: at ? Number(at) : null, requestedBy: this.meta("release.requestedBy") ?? "", last: last ? (JSON.parse(last) as IssueRelease["last"]) : null, build: build ? (JSON.parse(build) as IssueBuild) : null };
+  }
+
+  /** `npm run release` says where its test build is (2026-10-31): started, at a step, ended. */
+  reportBuild(by: string, report: IssueBuildReport): IssueRelease {
+    const r = (report && typeof report === "object" ? report : {}) as IssueBuildReport;
+    const now = this.now();
+    const current = this.release().build;
+    let next: IssueBuild;
+    if (r.start) {
+      const label = text(r.start.label, "打包的内容", LIMITS.buildLabel);
+      const steps = Array.isArray(r.start.steps) ? r.start.steps.map((s) => text(s, "步骤", 40)).filter(Boolean) : [];
+      if (!label || !steps.length || steps.length > 12) throw new RelayError("bad_request", "要写打包的内容和 1 到 12 个步骤");
+      next = { label, steps, step: 0, by, startedAt: now, updatedAt: now, endedAt: null, ok: null, message: "" };
+    } else {
+      if (!current || current.endedAt !== null) throw new RelayError("conflict", "现在没有在打包");
+      next = { ...current, updatedAt: now };
+    }
+    if (r.step !== undefined) {
+      if (!Number.isInteger(r.step) || r.step < 0 || r.step >= next.steps.length) throw new RelayError("bad_request", `步骤要在 0 到 ${next.steps.length - 1} 之间`);
+      next.step = r.step;
+    }
+    if (r.end) {
+      next.endedAt = now;
+      next.ok = r.end.ok === true;
+      next.message = text(r.end.message, "结果", LIMITS.buildMessage);
+    }
+    this.tx(() => {
+      this.setMeta("release.build", JSON.stringify(next));
+      this.bump();
+    });
+    return this.release();
   }
 
   /** 发布打包 clicked: kept until Studio says the build is out (or the person takes it back). */

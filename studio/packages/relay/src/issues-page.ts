@@ -1,11 +1,14 @@
 import { escapeHtml } from "./public.js";
-import { ISSUE_STATUS_LABEL, ISSUE_TOOLS } from "./issues-protocol.js";
+import { ISSUE_BUILD_QUIET_MS, ISSUE_STATUS_LABEL, ISSUE_TOOLS } from "./issues-protocol.js";
 
 // 问题页 (/issues, 2026-10-31, plans/issues.md): the person reports AMO's problems here — a line or two, screenshots
 // pasted or dropped — and talks them over with the AI Studio's 值守 sets on them; 发布打包 asks for a test build. Plain
 // page, no framework: everything is drawn with textContent. Signing in takes the team account (the key is kept in this
 // browser); the AMO platform can open it with `#key=…&v=studio:0.9.16,notes:0.9.7` (the installed versions fill the
 // version box). New things are asked for every few seconds while the page is in front.
+// 2026-10-31 改版 (the user: 能看到是否在打包和进度；一个问题不要一直展开占满屏幕): the build `npm run release` reports
+// is a bar on top; the list is the page's main thing, 报问题 opens on demand; one issue opens beside the list (in its
+// place on a narrow window) and closes again, its older entries folded.
 
 export function issuesPage(service: string): string {
   const labels = JSON.stringify(ISSUE_STATUS_LABEL);
@@ -16,69 +19,90 @@ export function issuesPage(service: string): string {
 @media (prefers-color-scheme:dark){:root{--bg:#111316;--panel:#181b1f;--ink:#e6e8eb;--muted:#7c8590;--line:#3a414a;--soft:#2a3038;--accent:#7fb2ff;--on:#0b1626;--danger:#e08a73;--ok:#7cc48f;--warn:#e0b45a;--ai:#1c2635}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
-header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--soft);background:var(--panel)}
-h1{font-size:18px;margin:0;font-family:"Noto Serif SC","Songti SC",SimSun,serif}
-.muted{color:var(--muted)}.grow{flex:1}
+header{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--soft);background:var(--panel)}
+h1{font-size:18px;margin:0;font-family:"Noto Serif SC","Songti SC",SimSun,serif;white-space:nowrap}
+.muted{color:var(--muted)}.grow{flex:1;min-width:0}
+#sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--ink);cursor:pointer}
-button.primary{background:var(--accent);color:var(--on);border-color:var(--accent)}button.danger{color:var(--danger);border-color:var(--danger)}
+button.primary{background:var(--accent);color:var(--on);border-color:var(--accent)}button.link{border:0;padding:2px 4px;color:var(--accent)}
 button:disabled{opacity:.5;cursor:default}
 input,select,textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:3px;background:var(--panel);color:var(--ink)}
 textarea{width:100%;resize:vertical;min-height:72px}
-.wrap{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:16px;padding:16px 20px;align-items:start}
-@media (max-width:860px){.wrap{grid-template-columns:1fr}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
 .card h2{font-size:14px;margin:0 0 8px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.release{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.release b{font-size:15px}
+/* the bar on top: the build going on (or the last one), what waits to go out, 发布打包 */
+.bar{margin:14px 20px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.bar .state{flex:1;min-width:260px}
+.bar .now{font-weight:600}.bar .sub{font-size:12px;color:var(--muted)}
+.steps{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.step{font-size:12px;padding:0 8px;border-radius:10px;border:1px solid var(--soft);color:var(--muted);white-space:nowrap}
+.step.done{color:var(--ok);border-color:var(--ok)}.step.now{color:var(--warn);border-color:var(--warn);font-weight:600}.step.bad{color:var(--danger);border-color:var(--danger);font-weight:600}
+.s-ok{color:var(--ok)}.s-warn{color:var(--warn)}.s-bad{color:var(--danger)}
+/* the list, and one issue beside it */
+.wrap{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;padding:14px 20px 20px;align-items:start}
+.wrap.closed{grid-template-columns:minmax(320px,760px)}
+.wrap.closed #detail{display:none}
+@media (max-width:860px){.wrap,.wrap.closed{grid-template-columns:1fr}.wrap.open #side{display:none}}
+.head{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.tabs{display:flex;gap:4px}.tabs .n{margin-left:4px;font-variant-numeric:tabular-nums}.tabs button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+#newForm{margin:6px 0 10px;padding:10px 12px;border:1px solid var(--soft);border-radius:6px;background:var(--bg)}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
 .thumb{position:relative;width:84px;height:64px;border:1px solid var(--soft);border-radius:4px;overflow:hidden;background:var(--bg)}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
 .thumb button{position:absolute;top:2px;right:2px;padding:0 6px;font-size:12px;background:var(--panel)}
 .thumb.up{opacity:.5}
 .drop{outline:2px dashed var(--accent);outline-offset:2px}
-.list{list-style:none;margin:0;padding:0}
-.list li{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:8px 10px;border-radius:4px;cursor:pointer;border:1px solid transparent}
+.list{list-style:none;margin:0;padding:0;max-height:calc(100vh - 230px);overflow:auto}
+.list li{display:grid;grid-template-columns:auto 1fr auto;gap:0 8px;align-items:baseline;padding:6px 8px;border-radius:4px;cursor:pointer;border:1px solid transparent}
 .list li:hover{background:var(--bg)}.list li[aria-current=true]{border-color:var(--line);background:var(--bg)}
+.list li.muted{display:block;cursor:default}
 .num{color:var(--muted);font-variant-numeric:tabular-nums}
 .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{grid-column:2;font-size:12px;color:var(--muted)}
+.meta{grid-column:2/4;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .st{display:inline-block;padding:0 6px;border-radius:3px;border:1px solid currentColor;font-size:12px;line-height:18px;white-space:nowrap}
 .st-new{color:var(--accent)}.st-working,.st-asking{color:var(--warn)}.st-fixed,.st-released{color:var(--ok)}.st-stuck{color:var(--danger)}.st-discuss{color:var(--accent)}.st-closed{color:var(--muted)}
-.tabs{display:flex;gap:4px;margin-bottom:6px}.tabs .n{margin-left:4px;font-variant-numeric:tabular-nums}.tabs button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
-.entry{padding:10px 12px;border-radius:6px;border:1px solid var(--soft);margin:8px 0}
+#detail .top{display:flex;gap:8px;align-items:center}
+#detail .top h2{margin:0;flex:1;min-width:0}
+.narrow{display:none}@media (max-width:860px){.narrow{display:inline}.wide{display:none}}
+.entry{padding:8px 12px;border-radius:6px;border:1px solid var(--soft);margin:8px 0}
 .entry.ai{background:var(--ai)}
-.entry.status{border-style:dashed;padding:4px 12px;font-size:12px;color:var(--muted)}
-.who{font-size:12px;color:var(--muted);margin-bottom:4px}.who b{color:var(--ink)}
+.entry.status{border-style:dashed;padding:2px 12px;font-size:12px;color:var(--muted)}
+.fold{display:block;width:100%;margin:8px 0;border-style:dashed;color:var(--muted);font-size:12px}
+.who{font-size:12px;color:var(--muted);margin-bottom:2px}.who b{color:var(--ink)}
 .tag{font-size:11px;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:0 4px;margin-left:4px}
 .body{white-space:pre-wrap;word-break:break-word}
 .msg{margin:8px 0 0;padding:6px 10px;border-radius:4px;background:var(--bg)}.msg.err{color:var(--danger)}
-.empty{padding:24px;text-align:center}
 #viewer{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;cursor:zoom-out}
 #viewer img{max-width:94vw;max-height:94vh;box-shadow:0 4px 24px rgba(0,0,0,.4)}
 [hidden]{display:none!important}
 </style></head><body>
 <header><h1>${escapeHtml(service)} · 问题</h1><span class="muted grow" id="sub">遇到 AMO 的问题写在这里，附上截图；AI 会接着修，修好的攒够了就发测试版。</span><span id="me" class="muted"></span><button type="button" id="logout" hidden>退出</button></header>
 <form id="login" class="card" style="max-width:420px;margin:32px auto" hidden><h2>用团队服务器的账号登录</h2><div class="row"><input id="name" placeholder="登录名" autocomplete="username"><input id="pw" type="password" placeholder="密码" autocomplete="current-password"><button class="primary">登录</button></div><div id="loginMsg"></div></form>
-<div class="wrap" id="app" hidden>
-<section>
-<div class="card release" data-testid="issues-release"><span id="relText" class="grow"></span><button type="button" id="relBtn" class="primary">发布打包</button></div>
-<form class="card" id="newForm" data-testid="issues-new"><h2>报一个问题</h2>
+<div id="app" hidden>
+<div class="card bar" data-testid="issues-release"><div class="state"><div id="buildNow" class="now" data-testid="issues-build"></div><div id="buildSteps" class="steps"></div><div id="relText" class="sub"></div></div><button type="button" id="relBtn" class="primary">发布打包</button></div>
+<div class="wrap closed" id="wrap">
+<section id="side" class="card">
+<div class="head"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="等你回答、卡住了、建议单开讨论，而且最后一条是 AI 写的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><span class="grow"></span><button type="button" id="newToggle" class="primary" data-testid="issues-new-toggle" aria-expanded="false">报问题</button></div>
+<form id="newForm" data-testid="issues-new" hidden>
 <textarea id="newBody" placeholder="哪里不对：在哪个界面、做了什么、看到了什么。截图直接粘贴（Ctrl+V）或拖进来。Ctrl+Enter 提交。"></textarea>
 <div class="thumbs" id="newThumbs"></div>
-<div class="row"><select id="newTool"><option value="">哪个工具（可不选）</option></select><input id="newVersion" placeholder="版本（可不填）" size="10"><span class="grow"></span><button class="primary" id="newSubmit">提交</button></div>
+<div class="row"><select id="newTool"><option value="">哪个工具（可不选）</option></select><input id="newVersion" placeholder="版本（可不填）" size="10"><span class="grow"></span><button type="button" id="newCancel">收起</button><button class="primary" id="newSubmit">提交</button></div>
 <div id="newMsg"></div></form>
-<div class="card"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="等你回答、卡住了、建议单开讨论，而且最后一条是 AI 写的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><ul class="list" id="list" data-testid="issues-list"></ul></div>
+<ul class="list" id="list" data-testid="issues-list"></ul>
 </section>
-<section id="detail" class="card" data-testid="issues-detail"><div class="empty muted">选左边的一个问题看它的来往。</div></section>
+<section id="detail" class="card" data-testid="issues-detail"></section>
+</div>
 </div>
 <div id="viewer" hidden><img alt=""></div>
 <script>
-var LABELS = ${labels}, TOOLS = ${tools};
+var LABELS = ${labels}, TOOLS = ${tools}, QUIET_MS = ${ISSUE_BUILD_QUIET_MS};
 var SYMBOL = { new: "○", working: "◐", asking: "?", fixed: "✓", released: "✓", stuck: "!", discuss: "◇", closed: "–" };
+/** Entries shown of a long issue: the report, and this many of the last. */
+var LAST_SHOWN = 3;
 var KEY = "amo-issues-key", NAME = "amo-issues-name";
 var $ = function (id) { return document.getElementById(id); };
-var state = { key: "", name: "", issues: {}, rev: 0, release: null, selected: null, filter: "open", detail: null, versions: {} };
+var state = { key: "", name: "", issues: {}, rev: 0, release: null, selected: null, filter: "open", detail: null, versions: {}, unfolded: {} };
 function store(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
 function say(where, text, err) { var el = $(where); el.innerHTML = ""; if (!text) return; var d = document.createElement("div"); d.className = "msg" + (err ? " err" : ""); d.textContent = text; el.appendChild(d); }
@@ -94,6 +118,7 @@ function call(method, path, body, raw) {
   });
 }
 function when(ms) { if (!ms) return ""; var d = new Date(ms), now = new Date(); var t = d.toTimeString().slice(0, 5); return d.toDateString() === now.toDateString() ? t : (d.getMonth() + 1) + "-" + d.getDate() + " " + t; }
+function minutes(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? "不到 1 分钟" : m < 60 ? m + " 分钟" : Math.floor(m / 60) + " 小时 " + (m % 60) + " 分钟"; }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function badge(st) { return el("span", "st st-" + st, SYMBOL[st] + " " + LABELS[st]); }
 function imgUrl(id) { return "/api/issues/images/" + id + "?key=" + encodeURIComponent(state.key); }
@@ -141,10 +166,13 @@ function picker(box, thumbs, msg) {
   };
 }
 
-// --- new issue
+// --- new issue: opened on demand above the list
 Object.keys(TOOLS).forEach(function (id) { var o = el("option", "", TOOLS[id]); o.value = id; $("newTool").appendChild(o); });
 $("newTool").onchange = function () { var v = state.versions[this.value]; if (v) $("newVersion").value = v; };
 var newPics = picker($("newForm"), $("newThumbs"), "newMsg");
+function showNew(on) { $("newForm").hidden = !on; $("newToggle").setAttribute("aria-expanded", String(on)); $("newToggle").hidden = on; if (on) $("newBody").focus(); }
+$("newToggle").onclick = function () { showNew(true); };
+$("newCancel").onclick = function () { showNew(false); };
 $("newBody").addEventListener("keydown", function (e) { if (e.key === "Enter" && e.ctrlKey) { e.preventDefault(); $("newForm").requestSubmit(); } });
 $("newForm").onsubmit = function (ev) {
   ev.preventDefault();
@@ -153,7 +181,7 @@ $("newForm").onsubmit = function (ev) {
   if (!body && !images.length) return say("newMsg", "写一句话或贴一张截图", true);
   $("newSubmit").disabled = true;
   call("POST", "/api/issues", { body: body, images: images, tool: $("newTool").value, version: $("newVersion").value })
-    .then(function (j) { $("newBody").value = ""; newPics.clear(); say("newMsg", "已提交 #" + j.issue.number); put(j.issue); select(j.issue.number); })
+    .then(function (j) { $("newBody").value = ""; newPics.clear(); say("newMsg", ""); showNew(false); put(j.issue); select(j.issue.number); })
     .catch(function (e) { say("newMsg", e.message, true); })
     .then(function () { $("newSubmit").disabled = false; });
 };
@@ -173,14 +201,31 @@ function drawList() {
   if (!shown.length) { ul.appendChild(el("li", "muted", !all.length ? "还没有问题。" : state.filter === "you" ? "没有要你看的。" : "没有进行中的问题。")); return; }
   shown.forEach(function (i) {
     var li = el("li"); li.setAttribute("aria-current", String(i.number === state.selected)); li.setAttribute("data-testid", "issue-row");
-    li.appendChild(el("span", "num", "#" + i.number)); li.appendChild(el("span", "t", i.title));
-    var meta = el("span", "meta"); meta.appendChild(badge(i.status));
-    meta.appendChild(document.createTextNode(" " + [i.tool ? TOOLS[i.tool] : "", when(i.updatedAt), i.worker].filter(Boolean).join(" · ")));
-    li.appendChild(meta); li.onclick = function () { select(i.number); }; ul.appendChild(li);
+    li.appendChild(el("span", "num", "#" + i.number)); li.appendChild(el("span", "t", i.title)); li.appendChild(badge(i.status));
+    li.appendChild(el("span", "meta", [i.tool ? TOOLS[i.tool] : "", when(i.updatedAt), i.worker].filter(Boolean).join(" · ")));
+    li.onclick = function () { if (state.selected === i.number) close(); else select(i.number); }; ul.appendChild(li);
   });
 }
+
+// --- the bar: the build going on (or the last one), what waits to go out, 发布打包
 function drawRelease() {
   var r = state.release; if (!r) return;
+  var b = r.build, now = $("buildNow"), steps = $("buildSteps");
+  now.innerHTML = ""; steps.innerHTML = ""; now.className = "now";
+  if (b && b.endedAt === null) {
+    var quiet = Date.now() - b.updatedAt > QUIET_MS;
+    now.className = "now " + (quiet ? "s-bad" : "s-warn");
+    now.textContent = quiet
+      ? "! 打包很久没有进展了，可能中断了：" + b.label + "（停在「" + b.steps[b.step] + "」，最后一次消息在 " + when(b.updatedAt) + "）"
+      : "◐ 正在打包：" + b.label + " · 第 " + (b.step + 1) + "/" + b.steps.length + " 步「" + b.steps[b.step] + "」 · 已用 " + minutes(Date.now() - b.startedAt);
+  } else if (b) {
+    now.className = "now " + (b.ok ? "s-ok" : "s-bad");
+    now.textContent = b.ok ? "✓ 上次打包完成（" + when(b.endedAt) + "，用了 " + minutes(b.endedAt - b.startedAt) + "）：" + (b.message || b.label) : "! 上次打包停在「" + b.steps[b.step] + "」（" + when(b.endedAt) + "）：" + (b.message || b.label);
+  } else now.textContent = "现在没有在打包";
+  if (b) b.steps.forEach(function (s, k) {
+    var going = b.endedAt === null, cls = k < b.step || (!going && b.ok) ? "done" : k === b.step ? (going ? "now" : "bad") : "";
+    steps.appendChild(el("span", "step " + cls, (cls === "done" ? "✓ " : cls === "now" ? "◐ " : cls === "bad" ? "! " : "○ ") + s));
+  });
   var fixed = Object.keys(state.issues).filter(function (k) { return state.issues[k].status === "fixed"; }).length;
   var parts = ["待发布 " + fixed + " 个"];
   if (r.last) parts.push("上次发布：" + r.last.version + "（" + when(r.last.at) + "）");
@@ -194,20 +239,29 @@ $("relBtn").onclick = function () {
   call("POST", "/api/issues/release", { on: on }).then(function (j) { state.release = j.release; drawRelease(); }).catch(function (e) { alert(e.message); });
 };
 
-// --- one issue: its head and entries are drawn again when it changes; the comment box below stays (what is being
-// written, the pictures pasted) until another issue is chosen.
+// --- one issue, beside the list (instead of it on a narrow window); 收起 closes it. Its head and entries are drawn
+// again when it changes; the comment box below stays (what is being written, the pictures pasted) until another issue
+// is chosen.
 var commentPics = null, drawnFor = null;
-function select(n) { state.selected = n; drawList(); call("GET", "/api/issues/" + n).then(function (j) { if (state.selected !== n) return; put(j.issue); state.detail = j.issue; drawDetail(); }).catch(function (e) { alert(e.message); }); }
+function layout() { $("wrap").className = "wrap " + (state.selected ? "open" : "closed"); }
+function select(n) { state.selected = n; layout(); drawList(); call("GET", "/api/issues/" + n).then(function (j) { if (state.selected !== n) return; put(j.issue); state.detail = j.issue; drawDetail(); }).catch(function (e) { alert(e.message); }); }
+function close() { state.selected = null; state.detail = null; drawnFor = null; $("detail").innerHTML = ""; layout(); drawList(); }
 function drawDetail() {
   var i = state.detail, box = $("detail"); if (!i) return;
   if (drawnFor !== i.number) { box.innerHTML = ""; box.appendChild(el("div", "", "")).id = "entries"; drawForm(i); drawnFor = i.number; }
   var top = $("entries"); top.innerHTML = "";
-  var head = el("div", "row"); head.appendChild(el("span", "num", "#" + i.number)); var h = el("h2", "grow", i.title); h.style.margin = "0"; head.appendChild(h); head.appendChild(badge(i.status));
+  var head = el("div", "top");
+  var back = el("button", "", ""); back.type = "button"; back.setAttribute("data-testid", "issue-close"); back.appendChild(el("span", "wide", "收起")); back.appendChild(el("span", "narrow", "← 回列表")); back.onclick = close;
+  head.appendChild(el("span", "num", "#" + i.number)); head.appendChild(el("h2", "", i.title)); head.appendChild(badge(i.status));
   var act = open(i) ? el("button", "", "不修了") : el("button", "", "重新打开"); act.type = "button"; act.setAttribute("data-testid", "issue-toggle");
-  act.onclick = function () { patch(i.number, { status: open(i) ? "closed" : "new" }); }; head.appendChild(act); top.appendChild(head);
+  act.onclick = function () { patch(i.number, { status: open(i) ? "closed" : "new" }); }; head.appendChild(act); head.appendChild(back); top.appendChild(head);
   var meta = [i.tool ? TOOLS[i.tool] : "", i.version ? "版本 " + i.version : "", i.fixedIn ? "发布在 " + i.fixedIn : "", i.worker ? "处理：" + i.worker : ""].filter(Boolean).join(" · ");
   if (meta) top.appendChild(el("div", "muted", meta));
-  (i.entries || []).forEach(function (e) {
+  // A long one: the report and the last few; the ones between folded.
+  var entries = i.entries || [], hidden = state.unfolded[i.number] ? 0 : Math.max(0, entries.length - 1 - LAST_SHOWN);
+  entries.forEach(function (e, k) {
+    if (hidden && k === 1) { var more = el("button", "fold", "展开前面 " + hidden + " 条来往"); more.type = "button"; more.setAttribute("data-testid", "issue-unfold"); more.onclick = function () { state.unfolded[i.number] = true; drawDetail(); }; top.appendChild(more); }
+    if (hidden && k >= 1 && k <= hidden) return;
     if (e.kind === "status") { top.appendChild(el("div", "entry status", (e.ai ? "AI · " : e.author + " · ") + when(e.at) + " · " + e.body)); return; }
     var d = el("div", "entry" + (e.ai ? " ai" : "")); d.setAttribute("data-testid", "issue-entry");
     var who = el("div", "who"); who.appendChild(el("b", "", e.ai ? "AI" : e.author)); if (e.ai) who.appendChild(el("span", "tag", "代 " + e.author + " 回复")); who.appendChild(document.createTextNode(" · " + when(e.at))); d.appendChild(who);
@@ -218,7 +272,7 @@ function drawDetail() {
   var ta = $("commentText"); if (ta) ta.placeholder = i.status === "discuss" ? "想让 AI 直接修就在这里说一声；要单开讨论就在 Studio 里开个会话，谈完把这条关掉或留个话。Ctrl+Enter 发送" : i.status === "asking" ? "回答 AI 的问题…（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
 }
 function drawForm(i) {
-  var form = el("form", "card"); form.style.margin = "12px 0 0"; form.setAttribute("data-testid", "issue-comment");
+  var form = el("form"); form.style.margin = "12px 0 0"; form.setAttribute("data-testid", "issue-comment");
   var ta = el("textarea"); ta.id = "commentText"; form.appendChild(ta);
   var thumbs = el("div", "thumbs"); form.appendChild(thumbs);
   var row = el("div", "row"); row.appendChild(el("span", "grow")); var send = el("button", "primary", "发送"); row.appendChild(send); form.appendChild(row);
@@ -237,9 +291,14 @@ function drawForm(i) {
   };
 }
 function patch(n, body) { call("PATCH", "/api/issues/" + n, body).then(function (j) { put(j.issue); state.detail = j.issue; drawList(); drawDetail(); }).catch(function (e) { alert(e.message); }); }
+// Esc: the picture first, then the open issue (not while writing).
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  if (!$("viewer").hidden) { $("viewer").hidden = true; return; }
+  if (state.selected && !(document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName))) close();
+});
 
 // --- keeping up: what changed since the last look, every few seconds while the page is in front
-var timer = null;
 function refresh(all) {
   return call("GET", "/api/issues" + (all || !state.rev ? "" : "?after=" + state.rev)).then(function (j) {
     j.issues.forEach(put); state.rev = j.rev; state.release = j.release; drawList(); drawRelease();

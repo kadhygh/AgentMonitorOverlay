@@ -63,7 +63,10 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page.getByTestId("issues-list")).toContainText("还没有问题");
 
-  // Report: text, a dropped screenshot, the tool.
+  // Report: opened on demand (2026-10-31 改版); text, a dropped screenshot, the tool.
+  await expect(page.getByTestId("issues-new")).toBeHidden();
+  await expect(page.getByTestId("issues-build")).toHaveText("现在没有在打包");
+  await page.getByTestId("issues-new-toggle").click();
   await page.locator("#newBody").fill("任务里新会话的输入栏没有缓存\n切到别的任务再回来就空了");
   await drop(page, "#newForm");
   await expect(page.locator("#newThumbs .thumb:not(.up)")).toHaveCount(1);
@@ -73,6 +76,7 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await expect(page.getByTestId("issue-row")).toHaveCount(1);
   await expect(page.getByTestId("issues-detail")).toContainText("任务里新会话的输入栏没有缓存");
   await expect(page.getByTestId("issue-entry").first().locator("img")).toHaveCount(1);
+  await expect(page.getByTestId("issues-new")).toBeHidden();
 
   // 值守's AI (through the API, as Studio would) takes it and asks; the page picks it up by itself.
   await ai(me.key, "PATCH", "/api/issues/1", { status: "working", worker: "Opus 5.5 · 任务「问题 #1」", ai: true });
@@ -98,6 +102,28 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await expect(page.getByTestId("issues-release")).toContainText("已请求发布");
   await page.screenshot({ path: join(shots, "I2-release-requested.png") });
 
+  // npm run release says where its build is (2026-10-31): the bar shows the step it is at, then where it stopped.
+  await ai(me.key, "POST", "/api/issues/release/build", { start: { label: "AMO Studio 0.9.19", steps: ["测试", "提交版本", "打包", "发布"] } });
+  await ai(me.key, "POST", "/api/issues/release/build", { step: 2 });
+  await expect(page.getByTestId("issues-build")).toContainText("正在打包：AMO Studio 0.9.19 · 第 3/4 步「打包」", { timeout: 15_000 });
+  await expect(page.locator("#buildSteps .step")).toHaveText(["✓ 测试", "✓ 提交版本", "◐ 打包", "○ 发布"]);
+  await page.screenshot({ path: join(shots, "I5-building.png") });
+  await ai(me.key, "POST", "/api/issues/release/build", { end: { ok: false, message: "npm run package:platform: exit 1" } });
+  await expect(page.getByTestId("issues-build")).toContainText("上次打包停在「打包」", { timeout: 15_000 });
+  await expect(page.locator("#buildSteps .step.bad")).toHaveText("! 打包");
+
+  // A longer issue folds the entries between the report and the last few; 展开 shows them.
+  await ai(me.key, "POST", "/api/issues/1/entries", { body: "补一句：只在 Studio 刚启动时这样", ai: false });
+  await ai(me.key, "POST", "/api/issues/1/entries", { body: "好，我再看看启动时的草稿读取", ai: true, status: "working" });
+  await expect(page.getByTestId("issue-unfold")).toHaveText("展开前面 3 条来往", { timeout: 15_000 });
+  await page.screenshot({ path: join(shots, "I6-folded.png") });
+  await page.getByTestId("issue-unfold").click();
+  await expect(page.getByTestId("issue-unfold")).toHaveCount(0);
+  // 收起: the list alone again.
+  await page.getByTestId("issue-close").click();
+  await expect(page.getByTestId("issues-detail")).toBeHidden();
+  await expect(page.getByTestId("issue-row").first()).toHaveAttribute("aria-current", "false");
+
   // A bigger one: the AI suggests talking it over; 要你看 lists it.
   await ai(me.key, "POST", "/api/issues", { title: "便签想支持多窗口", body: "每条便签能单独拖出来" });
   await ai(me.key, "POST", "/api/issues/2/entries", { body: "这牵涉便签的窗口模型和存储，不是顺手能改的，建议单开会话讨论方案。", ai: true, status: "discuss" });
@@ -112,4 +138,13 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   // Dark.
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: join(shots, "I3-dark.png") });
+
+  // A narrow window (the platform's): the list, or one issue in its place with 回列表.
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 600, height: 820 });
+  await expect(page.getByTestId("issues-list")).toBeHidden();
+  await page.screenshot({ path: join(shots, "I7-narrow-issue.png") });
+  await page.getByTestId("issue-close").click();
+  await expect(page.getByTestId("issues-list")).toBeVisible();
+  await page.screenshot({ path: join(shots, "I8-narrow-list.png") });
 });

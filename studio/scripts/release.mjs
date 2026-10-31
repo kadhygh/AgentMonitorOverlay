@@ -7,7 +7,8 @@
 //   npm run release -- <tool…> | auto [--minor] [--skip-tests] [--dry-run]
 //                                                   checks, typecheck + unit tests, version +1, 「下一版」 → `## <version>（date）`,
 //                                                   commit (landed on master), package, publish to the test channel, tag
-//                                                   `<tool>-v<version>`; auto = every tool `due` lists
+//                                                   `<tool>-v<version>`; auto = every tool `due` lists; each step is
+//                                                   shown on 问题页 (with this machine's platform login)
 //   npm run release -- relay-service [--skip-tests] [--dry-run]
 //                                                   AMO 中转's service and client content (relay-release, deploy: the service
 //                                                   restarts when it changed), its version in packages/relay
@@ -214,6 +215,33 @@ const KNOWN_FLAKY = [
   { file: "packages/host/src/runtime/codex/server-manager.test.ts", why: "这台机器上端口释放慢，换了端口后整个文件跟着挂" },
 ];
 
+/**
+ * 问题页 shows the test build going on (2026-10-31, the user: 能够查看当前是否在打包，以及打包的进度): each step is
+ * reported to the team server with this machine's platform login. Best effort: no login, or the server out of reach,
+ * and the build goes on without it.
+ */
+async function buildReporter() {
+  let account;
+  try {
+    const { readAccount } = await import("@amo-studio/account");
+    account = await readAccount();
+  } catch {
+    account = null;
+  }
+  if (!account) {
+    console.log("（没登录 AMO 平台：问题页上看不到这次打包的进度）");
+    return async () => undefined;
+  }
+  return async (report) => {
+    try {
+      const res = await fetch(`${account.server}/api/issues/release/build`, { method: "POST", headers: { authorization: `Bearer ${account.key}`, "content-type": "application/json" }, body: JSON.stringify(report), signal: AbortSignal.timeout(5000) });
+      if (!res.ok) console.log(`（问题页没收到打包进度：${res.status}）`);
+    } catch (err) {
+      console.log(`（问题页没收到打包进度：${err.message}）`);
+    }
+  };
+}
+
 // ---- commands
 
 function status() {
@@ -244,45 +272,69 @@ async function release(ids) {
   console.log(`\n要发布：${plan.map((p) => `${p.t.label} ${p.to}${p.resume ? "（上次提交了没发出去，这次补发）" : ""}`).join("、")}`);
   for (const p of plan) for (const e of p.entries) console.log(`  ${p.t.label} ${e}`);
   if (has("--dry-run")) return console.log("\n--dry-run：到这里为止，什么都没改。");
+  // The service restarts 中转 while it deploys: its builds are not shown on 问题页.
+  if (service.length) return publishService(w, plan, service[0]);
 
+  const fresh = plan.filter((p) => !p.resume);
+  const steps = ["测试", ...(fresh.length ? ["提交版本"] : []), "打包", "发布"];
+  const report = await buildReporter();
+  const at = (name) => report({ step: steps.indexOf(name) });
+  await report({ start: { label: plan.map((p) => `${p.t.label} ${p.to}`).join("、"), steps } });
+  try {
+    tests();
+    let sha = git("rev-parse", "HEAD");
+    if (fresh.length) {
+      await at("提交版本");
+      const files = fresh.flatMap((p) => writeVersion(p.t, p.to));
+      const names = fresh.map((p) => `${p.t.label} ${p.to}`).join("、");
+      sha = commit(w, files, `chore(release): test channel — ${names}${has("--skip-tests") ? "（没跑测试）" : ""}`);
+      console.log(`\n已提交 ${sha.slice(0, 7)}，在 master 上`);
+    }
+    await at("打包");
+    run("npm", ["run", "package:platform", "--", "--only", plan.map((p) => p.t.id).join(",")]);
+    await at("发布");
+    const done = [];
+    const failed = [];
+    for (const p of plan) {
+      try {
+        run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "publish", p.t.id], { shell: false });
+        git("tag", tagOf(p.t, p.to), sha);
+        done.push(p);
+      } catch (err) {
+        console.error(`\n${p.t.label} ${p.to} 没发出去：${err.message}`);
+        failed.push(`${p.t.label} ${p.to}`);
+      }
+    }
+    console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}`).join("、") || "无"}`);
+    for (const p of done) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
+    if (done.length < plan.length) {
+      console.log("没发出去的下次再跑 release 会补发（版本号不再加）。");
+      process.exitCode = 1;
+    }
+    await report({ end: { ok: !failed.length, message: [done.length ? `已发到测试通道：${done.map((p) => `${p.t.label} ${p.to}`).join("、")}` : "", failed.length ? `没发出去：${failed.join("、")}` : ""].filter(Boolean).join("；") } });
+  } catch (err) {
+    // The step it was at stays as where it stopped.
+    await report({ end: { ok: false, message: err.message } });
+    throw err;
+  }
+}
+
+/** 中转's service: its version committed, its content built and deployed (the service restarts). */
+function publishService(w, plan, t) {
   tests();
   const fresh = plan.filter((p) => !p.resume);
   let sha = git("rev-parse", "HEAD");
   if (fresh.length) {
-    const files = fresh.flatMap((p) => writeVersion(p.t, p.to));
-    const names = fresh.map((p) => `${p.t.label} ${p.to}`).join("、");
-    sha = commit(w, files, service.length ? `chore(release): 中转服务 ${fresh[0].to}${has("--skip-tests") ? "（没跑测试）" : ""}` : `chore(release): test channel — ${names}${has("--skip-tests") ? "（没跑测试）" : ""}`);
+    sha = commit(w, fresh.flatMap((p) => writeVersion(p.t, p.to)), `chore(release): 中转服务 ${fresh[0].to}${has("--skip-tests") ? "（没跑测试）" : ""}`);
     console.log(`\n已提交 ${sha.slice(0, 7)}，在 master 上`);
   }
-
-  if (service.length) {
-    const t = service[0];
-    // The desktop client's zip only when its shell changed since the last deploy.
-    const tag = lastTag(t);
-    const shell = !tag || git("diff", "--name-only", tag, sha, "--", "studio/packages/relay-app", "studio/packages/relay/src/shell-api.ts") !== "";
-    run(process.execPath, [join(studio, "scripts", "relay-release.mjs"), ...(shell ? ["--shell"] : [])], { shell: false });
-    run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "deploy"], { shell: false });
-    git("tag", tagOf(t, plan[0].to), sha);
-    return console.log(`\n中转服务 ${plan[0].to} 已部署，tag ${tagOf(t, plan[0].to)}`);
-  }
-
-  run("npm", ["run", "package:platform", "--", "--only", plan.map((p) => p.t.id).join(",")]);
-  const done = [];
-  for (const p of plan) {
-    try {
-      run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "publish", p.t.id], { shell: false });
-      git("tag", tagOf(p.t, p.to), sha);
-      done.push(p);
-    } catch (err) {
-      console.error(`\n${p.t.label} ${p.to} 没发出去：${err.message}`);
-    }
-  }
-  console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}`).join("、") || "无"}`);
-  for (const p of done) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
-  if (done.length < plan.length) {
-    console.log("没发出去的下次再跑 release 会补发（版本号不再加）。");
-    process.exitCode = 1;
-  }
+  // The desktop client's zip only when its shell changed since the last deploy.
+  const tag = lastTag(t);
+  const shell = !tag || git("diff", "--name-only", tag, sha, "--", "studio/packages/relay-app", "studio/packages/relay/src/shell-api.ts") !== "";
+  run(process.execPath, [join(studio, "scripts", "relay-release.mjs"), ...(shell ? ["--shell"] : [])], { shell: false });
+  run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "deploy"], { shell: false });
+  git("tag", tagOf(t, plan[0].to), sha);
+  console.log(`\n中转服务 ${plan[0].to} 已部署，tag ${tagOf(t, plan[0].to)}`);
 }
 
 try {

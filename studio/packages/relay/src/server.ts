@@ -439,6 +439,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const body = await readJson(req);
         return send(res, 200, issues.released(me, body.version, body.numbers));
       }
+      // `npm run release` says where its test build is (2026-10-31): the page shows it.
+      if (method === "POST" && path === "/api/issues/release/build") return send(res, 200, { release: issues.reportBuild(me, (await readJson(req)) as never) });
       const nm = /^\/api\/issues\/(\d+)(\/entries)?$/.exec(path);
       if (nm) {
         const number = Number(nm[1]);

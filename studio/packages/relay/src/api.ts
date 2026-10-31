@@ -1,4 +1,4 @@
-import type { Issue, IssueImage, IssueList, IssueRelease, IssuePatch, NewIssue, NewIssueEntry } from "./issues-protocol.js";
+import type { Issue, IssueBuildReport, IssueImage, IssueList, IssueRelease, IssuePatch, NewIssue, NewIssueEntry } from "./issues-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
@@ -221,6 +221,10 @@ export class RelayClient {
   }
   issueReleased(version: string, numbers: number[]): Promise<IssueList> {
     return this.call("POST", "/api/issues/release/done", { version, numbers });
+  }
+  /** Where a test build is (npm run release): start, a step, the end. */
+  async reportIssueBuild(report: IssueBuildReport): Promise<IssueRelease> {
+    return (await this.call<{ release: IssueRelease }>("POST", "/api/issues/release/build", report)).release;
   }
   /** A screenshot for an issue entry (pictures only). */
   async uploadIssueImage(name: string, data: Blob | ArrayBuffer | Uint8Array, type: string): Promise<IssueImage> {
