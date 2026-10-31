@@ -1,0 +1,69 @@
+# 发布流程整理（2026-10-31，方案，未开工）
+
+用户：「发布 studio、platform 等工具和发布服务器没有统一的脚本，整理梳理一轮」。
+
+## 现在怎么发
+
+| 发什么 | 步骤（全靠人或 AI 记） | 脚本 |
+|---|---|---|
+| 平台上的工具（studio、reviewer、notes、platform、中转客户端外壳 relay） | 改包的 `package.json` 版本号 → `CHANGELOG.md` 的「下一版」改成版本标题 → `npm run package:platform -- --only <工具>`（先整体 build）→ `npm run relay:mac -- publish <工具>`（测试通道，顺手删旧版本）→ 手写「chore: test channel — …」提交 → 试过后 `promote` | `package-portable.mjs --platform`、`platform-publish.mjs`（经 `relay-mac.mjs publish/promote/platform-*`） |
+| 中转服务 + 中转客户端界面 | `npm run relay:release`（`-- --shell` 时连外壳 zip）→ `npm run relay:mac -- deploy`（服务变了才重启，重启前自动备份数据库） | `relay-release.mjs`、`relay-mac.mjs deploy` |
+| portable zip（不装平台的人用） | `npm run package:portable` → `smoke:portable` | `package-portable.mjs`、`smoke-portable.mjs` |
+| 本机的中转服务（Windows） | `scripts/relay-service.ps1` | 早期用，现在服务在 Mac 上 |
+
+## 问题
+
+1. **步骤分散、靠记**：版本号、CHANGELOG、打包、发布、提交五步分开做，发几个工具就重复几遍；提交说明手写。今天的问题页值守模板里也只能把这些步骤抄一遍给 AI。
+2. **不检查工作区**：打包用的是磁盘上的文件，不是提交过的代码。2026-10-31 发 Studio 0.9.17 时，主工作区里有别的会话没提交的中转改动，差点打进包里（当时改从干净的 worktree 打）。
+3. **不知道该发哪些工具**：Studio 包里带着便签、Reviewer 和 `relay/light`；改了 `packages/notes` 要不要发 Studio，全靠人判断。也没有「上次发布以来改了什么」的记录：没有发布 tag，只能翻提交说明。
+4. **不跑测试**：发布前不强制 typecheck 和单测。
+5. **中转服务没有版本**：`packages/relay` 版本是 0.0.0，没有 CHANGELOG；部署了什么只能看提交记录。客户端外壳的 `SHELL_VERSION` 要手动改。
+6. **两套入口**：工具走 `package:platform` + `relay:mac publish`，服务走 `relay:release` + `relay:mac deploy`，命令名看不出关系。
+
+## 建议：一个入口 `npm run release`
+
+```
+npm run release -- status                     各工具：本地版本、测试通道、稳定通道、上次发布以来的提交数、「下一版」写了几条
+npm run release -- studio notes [--dry-run]   发这几个工具到测试通道
+npm run release -- relay-service              部署中转服务和客户端界面
+npm run release -- promote studio 0.9.17      转正式版（照旧）
+```
+
+`release <工具…>` 按顺序做，任何一步失败就停，前面的已发布的照实报：
+
+1. **检查**：在 master 上；这些工具会打进包的目录（各自的包，加上 Studio 带的便签、Reviewer、protocol、host、ui、relay 等）没有未提交的改动，有就停下，列出文件。每个工具的 CHANGELOG「下一版」不能是空的。
+2. **验证**：`typecheck` + 单测（低优先级，`--maxWorkers=6`）；`--skip-tests` 可以跳过，提交说明里会写上。
+3. **定版本**：补丁号加一（`--minor` 加次版本号），「下一版」改成 `## <版本>（<日期>）`。
+4. **打包、发布**：`package:platform --only <这几个>`，逐个 `publish` 到测试通道（照旧删旧版本）。
+5. **提交并打 tag**：提交说明自动生成（「chore(studio): test channel — Studio 0.9.18、便签 0.9.8；publish dropped …」），每个工具打一个 tag（`studio-v0.9.18`）。以后 `status` 和「该不该发」都按 tag 算。
+6. **收尾**：打印每个工具的版本和 promote 命令。
+
+`release relay-service`：`relay:release`（外壳版本变了才带 `--shell`）→ 部署（照旧：服务变了才重启，重启前备份）→ 提交并打 `relay-service-v<n>` tag。中转服务也加一个版本号和 CHANGELOG（`packages/relay`），部署时写进服务，`/api/health` 能看到。
+
+**依赖提示**：`status` 列出「改了但没发」的工具时，把打进 Studio 的包（notes、reviewer、relay/light…）的改动也算到 Studio 头上。
+
+旧命令（`package:platform`、`relay:mac publish/deploy`、`relay:release`）保留，`release` 只是把它们串起来；AGENTS.md 和问题页值守模板改成只写 `npm run release -- …`。
+
+## 已定（2026-10-31 用户）
+
+- 发布前跑 typecheck + 单测；每个工具打 tag；中转服务加版本号和 CHANGELOG；portable zip 和 `relay-service.ps1` 留着不动。
+
+## 维护节奏（2026-10-31 用户定）
+
+只有用户一人维护，高速迭代期，每天大量小修复；小问题修好直接打包、不审核。
+
+- **两份常驻副本**：主工作区（用户和「情况 2」的会话改、提交）；**值守目录** `G:\PROJECT\AgentMonitorOverlay-duty`（master 的干净副本，不建分支，依赖装一次复用；值守修问题和打包都在这里，开工前同步到 master 最新）。包只从主干（master 的提交）打，从不读主工作区里没提交的文件。在主工作区跑 `release` 时有没提交的文件就停下，提示去值守目录打。
+- **情况 1**：用户在问题页提问题，不管了；定期看「要你看」。值守：判断大小 → 小的在值守目录修、测、提交、快进合进 master（不再每个问题开 `issue/<编号>` worktree）→ 到打包条件自动 `release` → 标已发布。大的（新功能或有几种做法、改 protocol / 数据格式、跨几个工具、估计 5 个以上文件）不修，标新状态「建议单开讨论」。
+- **情况 2**：用户在当天的维护任务里开子会话迭代（用模板「维护迭代」），在主工作区改；**验证通过就自己提交到 master**，写 CHANGELOG「下一版」。下次打包一起发。
+- **每天开工**：新建任务「MM-DD 维护」，用模板「开始维护」：建好或改好值守项（会话开在这个任务里、跑在值守目录、每 30 秒检查「维护有事要做」、话是「照模板「问题页值守」做」），只批准一次。
+
+## 这一轮要做的
+
+1. `npm run release`（上文）＋中转服务版本号和 CHANGELOG。
+2. 值守项「在哪个文件夹里跑」：会话属于当天的任务，工作文件夹是值守目录（登记成项目「AMO（值守目录）」）。
+3. 检查扩成「维护有事要做」：问题页 + master 上发布 tag 之后等了 30 分钟的提交（调值守目录里的 `release due`）。
+4. 问题页：新状态「建议单开讨论」，「要你看」（等你回答 / 卡住 / 建议单开讨论）单独列出、顶部有数字；部署中转服务。
+5. Studio 里看值守（批注 4）：设置之外有一个看值守的地方（各项、最近几次、开出的会话）；有值守的任务、值守开的会话带标记。
+6. 提示词模板跟着远程走（批注 3）：控制端在远程任务里能看到、用被控端的模板。
+7. 三份模板：「开始维护」「问题页值守」「维护迭代」；AGENTS.md 改车道例外（值守目录、维护任务的会话自己提交）。
+8. 建值守目录，发一版。

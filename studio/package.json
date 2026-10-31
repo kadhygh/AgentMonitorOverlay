@@ -39,6 +39,7 @@
     "relay": "tsc -b packages/relay && node packages/relay/dist/bin.js",
     "relay:release": "node scripts/relay-release.mjs",
     "relay:mac": "node scripts/relay-mac.mjs",
+    "release": "node scripts/release.mjs",
     "host:stop": "node scripts/host-stop.mjs",
     "package:portable": "npm run build && node scripts/package-portable.mjs release --zip",
     "package:platform": "npm run build && node scripts/package-portable.mjs --platform",

@@ -48,7 +48,7 @@ const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewe
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
   studio: {
-    packages: ["app", "host", "protocol", "locate", "account", "relay", "traymenu", "ui", "reviewer", "notes"],
+    packages: TOOLS.studio.packages,
     programs: ["studio", "notes", "reviewer"],
     // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -66,7 +66,7 @@ const BUILDS = {
     ],
   },
   reviewer: {
-    packages: ["reviewer", "host", "protocol", "locate", "account", "relay", "ui"],
+    packages: TOOLS.reviewer.packages,
     programs: ["reviewer"],
     // Its Host runs no models; the SDK's JavaScript is still loaded.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
@@ -85,7 +85,7 @@ const BUILDS = {
     ],
   },
   notes: {
-    packages: ["notes", "protocol", "ui"],
+    packages: TOOLS.notes.packages,
     programs: ["notes"],
     icon: (target) => {
       const ico = join(target, "notes.ico");
@@ -102,7 +102,7 @@ const BUILDS = {
   },
   // AMO 平台 (2026-10-28, plans/amo-lan-platform.md): the tray app that installs and updates the others from the team server.
   platform: {
-    packages: ["platform", "account", "locate", "traymenu", "ui"],
+    packages: TOOLS.platform.packages,
     programs: ["platform"],
     icon: () => join(studio, "packages", "platform", "assets", "icon.ico"),
     readme: [
@@ -118,7 +118,7 @@ const BUILDS = {
   // the user: it installs and updates through the platform like the others) is what the platform installs; the portable
   // zip is scripts/relay-release.mjs --shell's, for clients unpacked by hand (they still update themselves from it).
   relay: {
-    packages: ["relay-app", "relay", "account", "traymenu"],
+    packages: TOOLS.relay.packages,
     programs: ["relay"],
     icon: () => join(studio, "packages", "relay-app", "assets", "icon.ico"),
     readme: [
