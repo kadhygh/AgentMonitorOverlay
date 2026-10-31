@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -257,6 +257,8 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("asks the person before a subagent's command, even when the Agent call asks to bypass permissions", async () => {
+    // A retry (release runs with --retry=1) found the folder the first try made and failed at once (2026-10-31).
+    rmSync(join(wsDir, "sub-made-dir"), { recursive: true, force: true });
     const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn-mode-bypassPermissions: helper: [[shell: mkdir sub-made-dir]]]]" });
     await until(() => status(s.id) === "awaiting-approval", "subagent approval");
     const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string; summary: string };
@@ -269,7 +271,11 @@ describe("ClaudeRuntime", () => {
     expect(items(child).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir sub-made-dir", status: "completed" });
     // Its two model calls (the mock reports 10 input each), counted from its transcript once it ends (2026-10-27), in
     // the child with a speed measured from each request, and on the parent's row.
-    await until(() => (items(child).find((i) => i.type === "turn") as { decode?: unknown } | undefined)?.decode !== undefined, "subagent stats");
+    // Both calls counted, not only the first (under load the second came a look later; 2026-10-31).
+    await until(() => {
+      const turn = items(child).find((i) => i.type === "turn") as { decode?: unknown; usage?: { input?: number } } | undefined;
+      return turn?.decode !== undefined && turn.usage?.input === 20;
+    }, "subagent stats");
     expect(items(child).find((i) => i.type === "turn")).toMatchObject({ state: "completed", usage: { input: 20 }, decode: { basis: "request" } });
     expect(items(s.id).find((i) => i.type === "subagent")).toMatchObject({ usage: { input: 20 } });
   }, 120_000);
