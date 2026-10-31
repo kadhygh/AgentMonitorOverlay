@@ -199,9 +199,12 @@ function commit(w, files, message) {
   return sha;
 }
 
-function tests() {
+/** `at`: says which step begins (类型检查, 单测) to 问题页. */
+async function tests(at = async () => undefined) {
   if (has("--skip-tests")) return console.log("跳过了测试（--skip-tests）");
+  await at("类型检查");
   run("npm", ["run", "typecheck"]);
+  await at("单测");
   // One retry: a few tests are slow under below-normal priority with the desktop busy. Left out, by name: tests that
   // fail on the development machine for reasons of the machine, not of the change (run them on their own when touching
   // what they test).
@@ -276,12 +279,13 @@ async function release(ids) {
   if (service.length) return publishService(w, plan, service[0]);
 
   const fresh = plan.filter((p) => !p.resume);
-  const steps = ["测试", ...(fresh.length ? ["提交版本"] : []), "打包", "发布"];
+  // Each its own bar on 问题页, timed against the same step of the last builds (2026-10-31 晚).
+  const steps = [...(has("--skip-tests") ? [] : ["类型检查", "单测"]), ...(fresh.length ? ["提交版本"] : []), "打包", "发布"];
   const report = await buildReporter();
-  const at = (name) => report({ step: steps.indexOf(name) });
+  const at = (name) => (steps.indexOf(name) > 0 ? report({ step: steps.indexOf(name) }) : Promise.resolve());
   await report({ start: { label: plan.map((p) => `${p.t.label} ${p.to}`).join("、"), steps } });
   try {
-    tests();
+    await tests(at);
     let sha = git("rev-parse", "HEAD");
     if (fresh.length) {
       await at("提交版本");
@@ -320,8 +324,8 @@ async function release(ids) {
 }
 
 /** 中转's service: its version committed, its content built and deployed (the service restarts). */
-function publishService(w, plan, t) {
-  tests();
+async function publishService(w, plan, t) {
+  await tests();
   const fresh = plan.filter((p) => !p.resume);
   let sha = git("rev-parse", "HEAD");
   if (fresh.length) {

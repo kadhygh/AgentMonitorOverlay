@@ -24,7 +24,7 @@ export function issuesTools({ service, caller }: ToolContext): AmoTool[] {
       name: "issue_list",
       title: "问题列表",
       description:
-        "The issues the person reported on the team server's 问题页 (AMO's own problems): open ones by default (new, working, asking, fixed, stuck, discuss), all with all=true; newest change first. awaitsAi: the person wrote last, read it. release.requestedAt: the person clicked 发布打包 (a test build is wanted).",
+        "The issues the person reported on the team server's 问题页 (AMO's own problems): open ones by default (new, working, asking, fixed, stuck, discuss), all with all=true; newest change first. awaitsAi: the person wrote last, read it — except on discuss (去会话讨论), which the person took to a session: leave those alone. release.requestedAt: the person clicked 发布打包 (a test build is wanted).",
       inputSchema: { all: z.boolean().optional() },
       readOnly: true,
       autoApprove: true,
@@ -43,7 +43,7 @@ export function issuesTools({ service, caller }: ToolContext): AmoTool[] {
       name: "issue_reply",
       title: "回复问题",
       description:
-        "Write on an issue as the person's AI: body (Markdown — what you found, what you changed, what to try, or a question), images (full local paths of screenshots, at most 8), and status to change it with the same entry (asking when you need the person to answer, fixed when merged into master, stuck when you cannot go on, discuss when it is too big or too open to fix in passing — a module, a design question: say why, and the person talks it over in a session of their own or answers here to have it fixed).",
+        "Write on an issue as the person's AI: body (Markdown — what you found, what you changed, what to try, or a question), images (full local paths of screenshots, at most 8), and status to change it with the same entry (asking 需要确认 when you need the person's word — you do not understand it, or it is big: say how you would go and what it touches, and you talk it over here round after round; fixed when merged into master; stuck when you cannot go on). discuss (去会话讨论) is set by the person only: they took it to a session; leave such issues alone. Your session id is kept on the issue.",
       inputSchema: { number: z.number().int(), body: z.string().optional(), status: status.optional(), images: z.array(z.string()).optional() },
       readOnly: false,
       autoApprove: true,

@@ -23,7 +23,8 @@ export type SearchHit =
 export const searchTokens = (query: string): string[] => query.toLowerCase().split(/\s+/).filter(Boolean);
 
 /**
- * Matching tasks and sessions. Every word must appear in the name, the task / topic name, the project or the topic.
+ * Matching tasks and sessions. Every word must appear in the name, the task / topic name, the project or the topic;
+ * or the query is (the start of) one's id, which comes first.
  * Live ones first, then the ones whose name holds the whole query, then the ones whose name holds every word, then
  * the rest (found through the project or topic), each group most recently active first. An empty query lists the most
  * recently active live ones.
@@ -59,8 +60,15 @@ export function searchAll(state: Pick<StateSnapshot, "tasks" | "sessions" | "wor
   const newest = (a: SearchHit, b: SearchHit) => b.updatedAt.localeCompare(a.updatedAt);
   if (!tokens.length) return hits.filter((h) => !h.archived).sort(newest).slice(0, Math.min(limit, 8));
   const whole = query.trim().toLowerCase();
+  // An id (whole, or its start from 6 characters on), e.g. the session 问题页 shows on an issue (2026-10-31 晚, the
+  // user: 复制后方便我在搜索里直接前往): that one first, archived or not.
+  const byId = whole.length >= 6 && !/\s/.test(whole) ? new Set(hits.filter((h) => h.id.toLowerCase().startsWith(whole)).map((h) => h.id)) : new Set<string>();
   const scored: Array<{ hit: SearchHit; rank: number }> = [];
   for (const hit of hits) {
+    if (byId.has(hit.id)) {
+      scored.push({ hit, rank: -1 });
+      continue;
+    }
     const name = hit.title.toLowerCase();
     const all = [hit.title, hit.kind === "session" ? hit.owner : "", hit.where].join("\n").toLowerCase();
     if (!tokens.every((w) => all.includes(w))) continue;

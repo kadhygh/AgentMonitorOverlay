@@ -109,17 +109,36 @@ describe("问题页 (2026-10-31)", () => {
     // A step takes the counter up: the page's next look (after=rev) sees it.
     const later = await client.issues(rev);
     expect(later.rev).toBeGreaterThan(rev);
-    expect(later.release.build).toMatchObject({ step: 2, endedAt: null });
-    await expect(client.reportIssueBuild({ step: 4 })).rejects.toThrow("步骤要在 0 到 3 之间");
+    // When each step began: the one skipped on the way (提交版本) began and ended at once.
+    expect(later.release.build).toMatchObject({ step: 2, endedAt: null, stepAt: [started.build!.startedAt, expect.any(Number), expect.any(Number)] });
+    await expect(client.reportIssueBuild({ step: 4 })).rejects.toThrow("步骤要在 2 到 3 之间");
+    await expect(client.reportIssueBuild({ step: 1 })).rejects.toThrow("步骤要在 2 到 3 之间");
 
     // It stops at 打包: the step stays as where it stopped.
     const failed = await client.reportIssueBuild({ end: { ok: false, message: "npm run package:platform: exit 1" } });
     expect(failed.build).toMatchObject({ step: 2, ok: false, message: "npm run package:platform: exit 1", endedAt: expect.any(Number) });
     await expect(client.reportIssueBuild({ step: 3 })).rejects.toThrow("现在没有在打包");
-    // The next one starts afresh.
-    await client.reportIssueBuild({ start: { label: "AMO Studio 0.9.19", steps: ["测试", "打包", "发布"] } });
-    await client.reportIssueBuild({ step: 2 });
-    expect((await client.reportIssueBuild({ end: { ok: true, message: "已发到测试通道：AMO Studio 0.9.19" } })).build).toMatchObject({ steps: ["测试", "打包", "发布"], step: 2, ok: true });
+    // The next one starts afresh; the last ones are kept, newest first (Jenkins' stage view on the page).
+    await client.reportIssueBuild({ start: { label: "AMO Studio 0.9.19", steps: ["类型检查", "单测", "打包", "发布"] } });
+    await client.reportIssueBuild({ step: 3 });
+    const ok = await client.reportIssueBuild({ end: { ok: true, message: "已发到测试通道：AMO Studio 0.9.19" } });
+    expect(ok.build).toMatchObject({ steps: ["类型检查", "单测", "打包", "发布"], step: 3, ok: true });
+    expect(ok.builds.map((b) => b.ok)).toEqual([true, false]);
+    // One that never said it ended is closed when the next starts.
+    await client.reportIssueBuild({ start: { label: "AMO 便签 0.9.8", steps: ["打包", "发布"] } });
+    const next = await client.reportIssueBuild({ start: { label: "AMO 便签 0.9.8", steps: ["打包", "发布"] } });
+    expect(next.builds.map((b) => [b.ok, b.endedAt === null])).toEqual([[null, true], [false, false], [true, false], [false, false]]);
+    expect(next.builds[1]!.message).toContain("没有报结束");
+  });
+
+  it("an issue keeps the Studio session that wrote on it last; 去会话讨论 is the person's", async () => {
+    const { call } = await service();
+    await call("POST", "/api/issues", { body: "便签的复制没有图" });
+    expect((await call<{ issue: Issue }>("POST", "/api/issues/1/entries", { body: "哪个复制？", ai: true, status: "asking", session: "s-aaaa1111" })).issue).toMatchObject({ status: "asking", session: "s-aaaa1111" });
+    // The person's own words do not change it; the AI's next update does.
+    expect((await call<{ issue: Issue }>("POST", "/api/issues/1/entries", { body: "右键菜单里的", session: "s-zzzz" })).issue.session).toBe("s-aaaa1111");
+    expect((await call<{ issue: Issue }>("PATCH", "/api/issues/1", { status: "working", ai: true, session: "s-bbbb2222" })).issue.session).toBe("s-bbbb2222");
+    expect((await call<{ issue: Issue }>("PATCH", "/api/issues/1", { status: "discuss" })).issue).toMatchObject({ status: "discuss", session: "s-bbbb2222" });
   });
 
   it("an account renamed on the admin side keeps its issues", async () => {

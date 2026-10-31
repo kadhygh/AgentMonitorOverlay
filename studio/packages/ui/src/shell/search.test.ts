@@ -40,6 +40,20 @@ describe("搜索", () => {
     expect(searchAll(state, "没有这个")).toEqual([]);
   });
 
+  it("finds a session or task by its id, whole or its start from 6 characters, first (问题页 shows it, 2026-10-31)", () => {
+    const ids = {
+      ...state,
+      tasks: [...state.tasks, task("task-a36fbfe6-f964", "10-31维护", { archivedAt: "2026-10-20T00:00:00.000Z" })],
+      sessions: [...state.sessions, session("s-3173af00-39e8", "开始维护", { taskId: "t1" }), session("s-3a665306-3e14", "#1 远程任务里", { taskId: "t1" })],
+    };
+    expect(searchAll(ids, "s-3173af00-39e8").map((h) => h.id)).toEqual(["s-3173af00-39e8"]);
+    expect(searchAll(ids, " S-3173A ").map((h) => h.id)).toEqual(["s-3173af00-39e8"]);
+    // Archived too, when asked by id.
+    expect(searchAll(ids, "task-a36f")[0]).toMatchObject({ id: "task-a36fbfe6-f964", archived: true });
+    // Too short to be taken as an id: words as before.
+    expect(searchAll(ids, "s-3")).toEqual([]);
+  });
+
   it("lists the most recently active live ones for an empty query", () => {
     expect(searchAll(state, "  ").map((h) => h.id)).toEqual(["s1", "t3", "t1", "t4", "s2"]);
   });

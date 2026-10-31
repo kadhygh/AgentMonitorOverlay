@@ -33,7 +33,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 - 用中文和用户交流。界面文字也是中文，用户看得到的写法要具体、直白。
 - **用户要求才提交、推送**，提交信息照最近几条的风格写。不要自己合并或删除别人的分支和 worktree。
   - 例外（2026-10-31 用户定，维护节奏见 `studio/plans/release.md`），只限这两条车道：
-    - **维护值守**（提示词模板「问题页值守」）：在值守目录 `G:\PROJECT\AgentMonitorOverlay-duty`（master 的 detached worktree）里修问题页上的小问题，验证通过后自己提交，`npm run release -- land` 合进 master；到时候 `npm run release -- auto` 打测试包。大的标「建议单开讨论」不修；合不进、验证不过就停下，标「卡住了」。
+    - **维护值守**（提示词模板「问题页值守」）：在值守目录 `G:\PROJECT\AgentMonitorOverlay-duty`（master 的 detached worktree）里修问题页上的小问题，验证通过后自己提交，`npm run release -- land` 合进 master；到时候 `npm run release -- auto` 打测试包。大的先在问题里写清楚打算怎么做，标「需要确认」，和人谈定再做（人点了「前往讨论」的问题值守不碰）；合不进、验证不过就停下，标「卡住了」。
     - **维护迭代**（当天维护任务里的会话，模板「维护迭代」）：在主工作区改，只 add 自己改的文件，验证通过就自己提交到 master，写 CHANGELOG「下一版」；不打包、不发布。
 - 代码风格跟周围保持一致；注释写「为什么」，可以带日期和用户的决定。仓库里是长行，**不要跑 prettier**（没有配置，它会把文件改成 80 列）。
 - 跑重的任务（vitest、e2e、打包）用低优先级：`BelowNormal`，加 `--maxWorkers=6`。普通优先级会让用户的桌面卡。

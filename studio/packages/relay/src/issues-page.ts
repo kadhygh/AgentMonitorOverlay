@@ -9,6 +9,8 @@ import { ISSUE_BUILD_QUIET_MS, ISSUE_STATUS_LABEL, ISSUE_TOOLS } from "./issues-
 // 2026-10-31 改版 (the user: 能看到是否在打包和进度；一个问题不要一直展开占满屏幕): the build `npm run release` reports
 // is a bar on top; the list is the page's main thing, 报问题 opens on demand; one issue opens beside the list (in its
 // place on a narrow window) and closes again, its older entries folded.
+// 2026-10-31 晚: each step of the build its own bar (against the same step's median in the last builds) and a table of
+// the last builds like Jenkins' stage view; 前往讨论 hands an issue to the person's own session, whose id shows to copy.
 
 export function issuesPage(service: string): string {
   const labels = JSON.stringify(ISSUE_STATUS_LABEL);
@@ -32,13 +34,30 @@ textarea{width:100%;resize:vertical;min-height:72px}
 .card h2{font-size:14px;margin:0 0 8px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 /* the bar on top: the build going on (or the last one), what waits to go out, 发布打包 */
-.bar{margin:14px 20px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.bar{margin:14px 20px 0}
+.bar-top{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .bar .state{flex:1;min-width:260px}
 .bar .now{font-weight:600}.bar .sub{font-size:12px;color:var(--muted)}
-.steps{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
-.step{font-size:12px;padding:0 8px;border-radius:10px;border:1px solid var(--soft);color:var(--muted);white-space:nowrap}
-.step.done{color:var(--ok);border-color:var(--ok)}.step.now{color:var(--warn);border-color:var(--warn);font-weight:600}.step.bad{color:var(--danger);border-color:var(--danger);font-weight:600}
 .s-ok{color:var(--ok)}.s-warn{color:var(--warn)}.s-bad{color:var(--danger)}
+/* each step of the build its own bar, timed against the same step of the last builds */
+.stages{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;margin-top:8px;font-size:12px}
+.stages:empty{display:none}
+.stage-name{white-space:nowrap}.stage-time{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+.track{height:8px;border-radius:4px;background:var(--soft);overflow:hidden;position:relative}
+.fill{height:100%;border-radius:4px;background:var(--muted);transition:width .8s linear}
+.st-done .fill{background:var(--ok)}.st-now .fill{background:var(--warn)}.st-bad .fill{background:var(--danger)}
+.st-done .stage-name{color:var(--ok)}.st-now .stage-name{color:var(--warn);font-weight:600}.st-bad .stage-name{color:var(--danger);font-weight:600}.st-wait .stage-name{color:var(--muted)}
+.fill.unknown{width:100%!important;opacity:.45;background:repeating-linear-gradient(45deg,var(--warn) 0 6px,transparent 6px 12px);animation:slide 1s linear infinite;background-size:17px 17px}
+@keyframes slide{to{background-position:17px 0}}
+#history{margin-top:8px;font-size:12px}#history summary{cursor:pointer;color:var(--muted)}
+.hist-wrap{overflow:auto;max-height:280px;margin-top:6px}
+.hist{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+.hist th,.hist td{padding:3px 8px;border-bottom:1px solid var(--soft);text-align:right;white-space:nowrap}
+.hist th:nth-child(2),.hist td:nth-child(2){text-align:left;white-space:normal;min-width:140px}
+.hist th{color:var(--muted);font-weight:400;position:sticky;top:0;background:var(--panel)}
+.hist td.ok{color:var(--ok)}.hist td.bad{color:var(--danger)}.hist tr.median td{color:var(--muted);font-style:italic}
+.chip{white-space:nowrap}.sess{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;padding:0 4px;border:1px solid var(--soft);border-radius:3px;background:var(--bg)}
+.note{margin:8px 0;padding:6px 10px;border-radius:4px;background:var(--bg);font-size:13px}
 /* the list, and one issue beside it */
 .wrap{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;padding:14px 20px 20px;align-items:start}
 .wrap.closed{grid-template-columns:minmax(320px,760px)}
@@ -80,7 +99,9 @@ textarea{width:100%;resize:vertical;min-height:72px}
 <header><h1>${escapeHtml(service)} · 问题</h1><span class="muted grow" id="sub">遇到 AMO 的问题写在这里，附上截图；AI 会接着修，修好的攒够了就发测试版。</span><span id="me" class="muted"></span><button type="button" id="logout" hidden>退出</button></header>
 <form id="login" class="card" style="max-width:420px;margin:32px auto" hidden><h2>用团队服务器的账号登录</h2><div class="row"><input id="name" placeholder="登录名" autocomplete="username"><input id="pw" type="password" placeholder="密码" autocomplete="current-password"><button class="primary">登录</button></div><div id="loginMsg"></div></form>
 <div id="app" hidden>
-<div class="card bar" data-testid="issues-release"><div class="state"><div id="buildNow" class="now" data-testid="issues-build"></div><div id="buildSteps" class="steps"></div><div id="relText" class="sub"></div></div><button type="button" id="relBtn" class="primary">发布打包</button></div>
+<div class="card bar" data-testid="issues-release"><div class="bar-top"><div class="state"><div id="buildNow" class="now" data-testid="issues-build"></div><div id="relText" class="sub"></div></div><button type="button" id="relBtn" class="primary">发布打包</button></div>
+<div id="stages" class="stages" data-testid="issues-stages"></div>
+<details id="history" data-testid="issues-builds" hidden><summary id="historySum"></summary><div class="hist-wrap"><table class="hist" id="histTable"></table></div></details></div>
 <div class="wrap closed" id="wrap">
 <section id="side" class="card">
 <div class="head"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="等你回答、卡住了、建议单开讨论，而且最后一条是 AI 写的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><span class="grow"></span><button type="button" id="newToggle" class="primary" data-testid="issues-new-toggle" aria-expanded="false">报问题</button></div>
@@ -118,7 +139,6 @@ function call(method, path, body, raw) {
   });
 }
 function when(ms) { if (!ms) return ""; var d = new Date(ms), now = new Date(); var t = d.toTimeString().slice(0, 5); return d.toDateString() === now.toDateString() ? t : (d.getMonth() + 1) + "-" + d.getDate() + " " + t; }
-function minutes(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? "不到 1 分钟" : m < 60 ? m + " 分钟" : Math.floor(m / 60) + " 小时 " + (m % 60) + " 分钟"; }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function badge(st) { return el("span", "st st-" + st, SYMBOL[st] + " " + LABELS[st]); }
 function imgUrl(id) { return "/api/issues/images/" + id + "?key=" + encodeURIComponent(state.key); }
@@ -192,7 +212,8 @@ function put(issue) { var had = state.issues[issue.number]; state.issues[issue.n
 function open(i) { return i.status !== "released" && i.status !== "closed"; }
 // 要你看 (2026-10-31): what waits for the person — the AI asked, got stuck or suggests talking it over, and has not
 // been answered yet.
-function forYou(i) { return (i.status === "asking" || i.status === "stuck" || i.status === "discuss") && !i.awaitsAi; }
+// 去会话讨论 is the person's own (2026-10-31 晚): not listed.
+function forYou(i) { return (i.status === "asking" || i.status === "stuck") && !i.awaitsAi; }
 function drawList() {
   var ul = $("list"); ul.innerHTML = "";
   var all = Object.keys(state.issues).map(function (k) { return state.issues[k]; }).sort(function (a, b) { return b.number - a.number; });
@@ -208,24 +229,55 @@ function drawList() {
 }
 
 // --- the bar: the build going on (or the last one), what waits to go out, 发布打包
+// How long step k of a build took (or has taken so far); null when it did not begin.
+function stepTook(b, k, now) {
+  var from = b.stepAt[k]; if (from === undefined) return null;
+  var to = k < b.step ? b.stepAt[k + 1] : b.endedAt !== null ? b.endedAt : now;
+  return Math.max(0, to - from);
+}
+// What a step usually takes: the median of its last 10 finished runs in the builds before this one.
+function expected(builds, name) {
+  var took = [];
+  for (var i = 1; i < builds.length && took.length < 10; i++) {
+    var b = builds[i], k = b.steps.indexOf(name);
+    if (k < 0 || b.stepAt[k] === undefined || (k === b.step && !b.ok)) continue;
+    took.push(stepTook(b, k, 0));
+  }
+  if (!took.length) return null;
+  took.sort(function (x, y) { return x - y; });
+  return took[Math.floor(took.length / 2)];
+}
+function dur(ms) { if (ms === null || ms === undefined) return "—"; var s = Math.round(ms / 1000); return s < 60 ? s + " 秒" : Math.floor(s / 60) + " 分 " + String(s % 60).padStart(2, "0") + " 秒"; }
 function drawRelease() {
   var r = state.release; if (!r) return;
-  var b = r.build, now = $("buildNow"), steps = $("buildSteps");
-  now.innerHTML = ""; steps.innerHTML = ""; now.className = "now";
-  if (b && b.endedAt === null) {
-    var quiet = Date.now() - b.updatedAt > QUIET_MS;
+  var builds = r.builds || (r.build ? [r.build] : []), b = builds[0], t = Date.now(), now = $("buildNow"), stages = $("stages");
+  now.className = "now"; stages.innerHTML = "";
+  var going = !!b && b.endedAt === null, quiet = going && t - b.updatedAt > QUIET_MS;
+  if (going) {
+    var left = 0, known = true;
+    b.steps.forEach(function (s, k) { var e = expected(builds, s); if (e === null) known = false; else if (k > b.step) left += e; else if (k === b.step) left += Math.max(0, e - stepTook(b, k, t)); });
     now.className = "now " + (quiet ? "s-bad" : "s-warn");
     now.textContent = quiet
       ? "! 打包很久没有进展了，可能中断了：" + b.label + "（停在「" + b.steps[b.step] + "」，最后一次消息在 " + when(b.updatedAt) + "）"
-      : "◐ 正在打包：" + b.label + " · 第 " + (b.step + 1) + "/" + b.steps.length + " 步「" + b.steps[b.step] + "」 · 已用 " + minutes(Date.now() - b.startedAt);
+      : "◐ 正在打包：" + b.label + " · 第 " + (b.step + 1) + "/" + b.steps.length + " 步「" + b.steps[b.step] + "」 · 已用 " + dur(t - b.startedAt) + (known ? " · 预计还要 " + dur(left) : "");
   } else if (b) {
     now.className = "now " + (b.ok ? "s-ok" : "s-bad");
-    now.textContent = b.ok ? "✓ 上次打包完成（" + when(b.endedAt) + "，用了 " + minutes(b.endedAt - b.startedAt) + "）：" + (b.message || b.label) : "! 上次打包停在「" + b.steps[b.step] + "」（" + when(b.endedAt) + "）：" + (b.message || b.label);
+    now.textContent = b.ok ? "✓ 上次打包完成（" + when(b.endedAt) + "，用了 " + dur(b.endedAt - b.startedAt) + "）：" + (b.message || b.label) : "! 上次打包停在「" + b.steps[b.step] + "」（" + when(b.endedAt) + "）：" + (b.message || b.label);
   } else now.textContent = "现在没有在打包";
+  // Each step its own bar: done full, the one going on against what it usually takes, the rest waiting.
   if (b) b.steps.forEach(function (s, k) {
-    var going = b.endedAt === null, cls = k < b.step || (!going && b.ok) ? "done" : k === b.step ? (going ? "now" : "bad") : "";
-    steps.appendChild(el("span", "step " + cls, (cls === "done" ? "✓ " : cls === "now" ? "◐ " : cls === "bad" ? "! " : "○ ") + s));
+    var e = expected(builds, s), took = stepTook(b, k, t);
+    var st = k < b.step || (!going && b.ok) ? "done" : k === b.step ? (going ? "now" : "bad") : "wait";
+    var mark = { done: "✓ ", now: "◐ ", bad: "! ", wait: "○ " }[st];
+    var row = el("div", "st-" + st); row.style.display = "contents"; row.setAttribute("data-testid", "issues-stage");
+    row.appendChild(el("span", "stage-name", mark + s));
+    var track = el("div", "track"), fill = el("div", "fill"); track.appendChild(fill); row.appendChild(track);
+    var width = st === "done" ? 1 : st === "wait" ? 0 : e ? Math.min(took / e, st === "now" ? 0.97 : 1) : st === "bad" ? 1 : -1;
+    if (width < 0) fill.className = "fill unknown"; else fill.style.width = Math.round(width * 100) + "%";
+    row.appendChild(el("span", "stage-time", st === "wait" ? (e ? "约 " + dur(e) : "—") : st === "now" ? dur(took) + (e ? " / 约 " + dur(e) : "") : st === "bad" ? "停在这里 · " + dur(took) : dur(took)));
+    stages.appendChild(row);
   });
+  drawHistory(builds);
   var fixed = Object.keys(state.issues).filter(function (k) { return state.issues[k].status === "fixed"; }).length;
   var parts = ["待发布 " + fixed + " 个"];
   if (r.last) parts.push("上次发布：" + r.last.version + "（" + when(r.last.at) + "）");
@@ -234,6 +286,33 @@ function drawRelease() {
   $("relBtn").textContent = r.requestedAt ? "取消发布请求" : "发布打包";
   $("relBtn").className = r.requestedAt ? "" : "primary";
 }
+// 打包记录, like Jenkins' stage view: a row per build, how long each step took; the median on top.
+function drawHistory(builds) {
+  var box = $("history"), table = $("histTable");
+  box.hidden = !builds.length; if (!builds.length) return;
+  var names = [];
+  builds.forEach(function (b) { b.steps.forEach(function (s) { if (names.indexOf(s) < 0) names.push(s); }); });
+  var done = builds.filter(function (b) { return b.endedAt !== null && b.ok; });
+  var total = done.map(function (b) { return b.endedAt - b.startedAt; }).sort(function (x, y) { return x - y; });
+  $("historySum").textContent = "打包记录（最近 " + builds.length + " 次" + (total.length ? "，成功的一般用 " + dur(total[Math.floor(total.length / 2)]) : "") + "）";
+  table.innerHTML = "";
+  var head = el("tr"); ["开始", "内容"].concat(names, ["总时长", "结果"]).forEach(function (h) { head.appendChild(el("th", "", h)); }); table.appendChild(head);
+  var med = el("tr", "median"); med.appendChild(el("td", "", "中位数")); med.appendChild(el("td", "", "成功的打包"));
+  names.forEach(function (s) { med.appendChild(el("td", "", dur(expected([null].concat(builds), s)))); });
+  med.appendChild(el("td", "", total.length ? dur(total[Math.floor(total.length / 2)]) : "—")); med.appendChild(el("td", "", "")); table.appendChild(med);
+  var t = Date.now();
+  builds.forEach(function (b) {
+    var tr = el("tr"); tr.setAttribute("data-testid", "issues-build-row");
+    tr.appendChild(el("td", "", when(b.startedAt))); tr.appendChild(el("td", "", b.label));
+    names.forEach(function (s) { var k = b.steps.indexOf(s); tr.appendChild(el("td", k === b.step && b.endedAt !== null && !b.ok ? "bad" : "", k < 0 ? "" : dur(stepTook(b, k, t)))); });
+    tr.appendChild(el("td", "", dur((b.endedAt !== null ? b.endedAt : t) - b.startedAt)));
+    var res = b.endedAt === null ? "◐ 进行中" : b.ok ? "✓ 成功" : "! 失败";
+    var td = el("td", b.endedAt === null ? "" : b.ok ? "ok" : "bad", res); if (b.message) td.title = b.message; tr.appendChild(td);
+    table.appendChild(tr);
+  });
+}
+// While a build goes on its bars move every second.
+setInterval(function () { var r = state.release; if (r && r.build && r.build.endedAt === null && !document.hidden) drawRelease(); }, 1000);
 $("relBtn").onclick = function () {
   var on = !(state.release && state.release.requestedAt);
   call("POST", "/api/issues/release", { on: on }).then(function (j) { state.release = j.release; drawRelease(); }).catch(function (e) { alert(e.message); });
@@ -254,9 +333,24 @@ function drawDetail() {
   var back = el("button", "", ""); back.type = "button"; back.setAttribute("data-testid", "issue-close"); back.appendChild(el("span", "wide", "收起")); back.appendChild(el("span", "narrow", "← 回列表")); back.onclick = close;
   head.appendChild(el("span", "num", "#" + i.number)); head.appendChild(el("h2", "", i.title)); head.appendChild(badge(i.status));
   var act = open(i) ? el("button", "", "不修了") : el("button", "", "重新打开"); act.type = "button"; act.setAttribute("data-testid", "issue-toggle");
-  act.onclick = function () { patch(i.number, { status: open(i) ? "closed" : "new" }); }; head.appendChild(act); head.appendChild(back); top.appendChild(head);
-  var meta = [i.tool ? TOOLS[i.tool] : "", i.version ? "版本 " + i.version : "", i.fixedIn ? "发布在 " + i.fixedIn : "", i.worker ? "处理：" + i.worker : ""].filter(Boolean).join(" · ");
-  if (meta) top.appendChild(el("div", "muted", meta));
+  act.onclick = function () { patch(i.number, { status: open(i) ? "closed" : "new" }); };
+  // 前往讨论 (2026-10-31 晚): the person takes it to the session in Studio; 值守 leaves it alone until 交回值守.
+  if (open(i)) {
+    var talk = el("button", "", i.status === "discuss" ? "交回值守" : "前往讨论"); talk.type = "button"; talk.setAttribute("data-testid", "issue-discuss");
+    talk.title = i.status === "discuss" ? "值守接着处理它（当成新问题看）" : "到 Studio 里和处理它的会话讨论；值守不再处理这个问题";
+    talk.onclick = function () { patch(i.number, { status: i.status === "discuss" ? "new" : "discuss" }); };
+    head.appendChild(talk);
+  }
+  head.appendChild(act); head.appendChild(back); top.appendChild(head);
+  var meta = el("div", "muted"); meta.textContent = [i.tool ? TOOLS[i.tool] : "", i.version ? "版本 " + i.version : "", i.fixedIn ? "发布在 " + i.fixedIn : "", i.worker ? "处理：" + i.worker : ""].filter(Boolean).join(" · ");
+  if (i.session) meta.appendChild(sessionChip(i.session, meta.textContent ? " · 会话 " : "会话 "));
+  if (meta.childNodes.length) top.appendChild(meta);
+  if (i.status === "discuss") {
+    var note = el("div", "note"); note.setAttribute("data-testid", "issue-discuss-note");
+    note.appendChild(document.createTextNode(i.session ? "已转到会话里讨论，值守不再处理它。在 Studio 顶上的搜索框（Ctrl K）粘贴会话 id 就能打开：" : "已转到会话里讨论，值守不再处理它。还没有 AI 会话处理过这个问题，在 Studio 里新开一个会话讨论吧。"));
+    if (i.session) note.appendChild(sessionChip(i.session, ""));
+    top.appendChild(note);
+  }
   // A long one: the report and the last few; the ones between folded.
   var entries = i.entries || [], hidden = state.unfolded[i.number] ? 0 : Math.max(0, entries.length - 1 - LAST_SHOWN);
   entries.forEach(function (e, k) {
@@ -269,7 +363,20 @@ function drawDetail() {
     if (e.images.length) { var th = el("div", "thumbs"); e.images.forEach(function (im) { var t = el("div", "thumb"); var img = document.createElement("img"); img.src = imgUrl(im.id); img.alt = im.name; img.onclick = function () { view(im.id); }; t.appendChild(img); th.appendChild(t); }); d.appendChild(th); }
     top.appendChild(d);
   });
-  var ta = $("commentText"); if (ta) ta.placeholder = i.status === "discuss" ? "想让 AI 直接修就在这里说一声；要单开讨论就在 Studio 里开个会话，谈完把这条关掉或留个话。Ctrl+Enter 发送" : i.status === "asking" ? "回答 AI 的问题…（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
+  var ta = $("commentText"); if (ta) ta.placeholder = i.status === "discuss" ? "在这里记一笔也行；值守不会看，要它接着做就点「交回值守」。" : i.status === "asking" ? "回复 AI：确认、补充或者改主意都行（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
+}
+// A session id to copy: the page is plain http, where navigator.clipboard is missing — a hidden box and execCommand then.
+function sessionChip(id, lead) {
+  var wrap = el("span", "chip"); if (lead) wrap.appendChild(document.createTextNode(lead));
+  var code = el("span", "sess", id); code.setAttribute("data-testid", "issue-session"); wrap.appendChild(code);
+  var b = el("button", "link", "复制"); b.type = "button"; b.setAttribute("data-testid", "issue-session-copy");
+  b.onclick = function () {
+    var done = function () { b.textContent = "已复制"; setTimeout(function () { b.textContent = "复制"; }, 1500); };
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(id).then(done, function () {});
+    var box = document.createElement("textarea"); box.value = id; box.style.position = "fixed"; box.style.opacity = "0"; document.body.appendChild(box); box.select();
+    try { document.execCommand("copy"); done(); } catch (e) {} document.body.removeChild(box);
+  };
+  wrap.appendChild(b); return wrap;
 }
 function drawForm(i) {
   var form = el("form"); form.style.margin = "12px 0 0"; form.setAttribute("data-testid", "issue-comment");

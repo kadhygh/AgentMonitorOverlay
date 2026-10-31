@@ -132,14 +132,17 @@ describe("问题页 tools", () => {
     await issues.reply(2, { body: "修好了", status: "fixed" });
     expect(await issues.pending()).toBeNull();
     await page.addIssueEntry(1, { body: "新建任务页那个" });
-    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（等你回答，第 3 条）");
+    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（需要确认，第 3 条）");
     await issues.reply(1, { body: "明白了" });
     expect(await issues.pending()).toBeNull();
-    // 建议单开讨论: waits for the person like asking; their answer on the issue brings it back, still in that status.
-    await issues.reply(1, { body: "这个牵涉缓存的整体设计，建议单开讨论", status: "discuss" });
+    // 去会话讨论 (2026-10-31 晚) is the person's only: the AI cannot set it, and 值守 leaves it alone, answers included,
+    // until the person hands it back.
+    await expect(issues.reply(1, { body: "这个牵涉缓存的整体设计", status: "discuss" })).rejects.toThrow("只由人在问题页上点");
+    await page.updateIssue(1, { status: "discuss" });
+    await page.addIssueEntry(1, { body: "我在 Studio 里和它谈" });
     expect(await issues.pending()).toBeNull();
-    await page.addIssueEntry(1, { body: "直接修就行" });
-    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（建议单开讨论，第 6 条）");
+    await page.updateIssue(1, { status: "working" });
+    expect(await issues.pending()).toBe("你回复了：#1 输入栏没缓存（修复中，第 7 条）");
     await issues.reply(1, { body: "好", status: "working" });
     expect(await issues.pending()).toBeNull();
 
@@ -174,6 +177,9 @@ describe("问题页 tools", () => {
     await tool(a.id, "issue_update", { number: 1, status: "working" });
     await tool(a.id, "issue_reply", { number: 1, body: "哪个输入框？", status: "asking" });
     await tool(b.id, "issue_reply", { number: 2, body: "哪个列表？", status: "asking" });
+    // On the page too, to copy into Studio's search.
+    expect((await page.issue(1)).session).toBe(a.id);
+    expect(JSON.parse((await tool(a.id, "issue_list", {})).content.map((c) => c.text).join("")).issues).toContainEqual(expect.objectContaining({ number: 1, session: a.id }));
     await page.addIssueEntry(1, { body: "新建任务页那个" });
     expect(await service.issues.pendingWork()).toMatchObject({ text: expect.stringContaining("你回复了：#1"), title: expect.stringMatching(/^#1 /), sessionId: a.id });
     // Answers on issues two sessions took, or a new issue beside: no one session to go on in.

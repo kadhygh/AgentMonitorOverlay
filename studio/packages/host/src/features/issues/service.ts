@@ -29,6 +29,8 @@ export interface IssueLine {
   tool: string;
   version: string;
   worker: string;
+  /** The Studio session that wrote on it last; "". */
+  session: string;
   fixedIn: string;
   /** The person wrote last: something to read and answer. */
   awaitsAi: boolean;
@@ -76,7 +78,8 @@ export class IssuesFeature extends Feature {
     const lines: string[] = [];
     const fresh = issues.filter((i) => i.status === "new").sort((a, b) => a.number - b.number);
     if (fresh.length) lines.push(`新问题：${fresh.map((i) => `#${i.number} ${i.title}`).join("；")}`);
-    const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck" || i.status === "discuss")).sort((a, b) => a.number - b.number);
+    // 去会话讨论 is the person's own, answers on it included (2026-10-31 晚): not 值守's.
+    const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck")).sort((a, b) => a.number - b.number);
     if (answered.length) lines.push(`你回复了：${answered.map((i) => `#${i.number} ${i.title}（${ISSUE_STATUS_LABEL[i.status]}，第 ${i.entryCount} 条）`).join("；")}`);
     const fixed = issues.filter((i) => i.status === "fixed").sort((a, b) => a.number - b.number);
     const why = !fixed.length ? null : release.requestedAt ? "你点了「发布打包」" : fixed.length >= PACK_AT ? `修好待发布的有 ${fixed.length} 个` : fixed.some((i) => this.now() - i.updatedAt >= PACK_AFTER_MS) ? "最早修好的已经等了 30 分钟" : null;
@@ -132,7 +135,7 @@ export class IssuesFeature extends Feature {
     const issues = out.issues
       .filter((i) => all || OPEN.has(i.status))
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((i) => ({ number: i.number, title: i.title, status: i.status, statusLabel: ISSUE_STATUS_LABEL[i.status], tool: i.tool, version: i.version, worker: i.worker, fixedIn: i.fixedIn, awaitsAi: i.awaitsAi, updatedAt: new Date(i.updatedAt).toISOString() }));
+      .map((i) => ({ number: i.number, title: i.title, status: i.status, statusLabel: ISSUE_STATUS_LABEL[i.status], tool: i.tool, version: i.version, worker: i.worker, session: i.session ?? "", fixedIn: i.fixedIn, awaitsAi: i.awaitsAi, updatedAt: new Date(i.updatedAt).toISOString() }));
     return { release: out.release, issues };
   }
 
@@ -175,10 +178,12 @@ export class IssuesFeature extends Feature {
   async reply(number: number, input: { body?: string; status?: string; images?: unknown }, sessionId?: Id): Promise<Issue> {
     const files = localImages(input.images);
     const st = input.status === undefined ? undefined : issueStatus(input.status);
+    // Which session wrote, on the issue too: the person copies it from the page to find the session (2026-10-31 晚).
+    const session = sessionId ? { session: sessionId } : {};
     const out = await this.call(async (c) => {
       const ids: string[] = [];
       for (const f of files) ids.push((await c.uploadIssueImage(basename(f), readFileSync(f), IMAGE_TYPES[extname(f).toLowerCase()]!)).id);
-      return c.addIssueEntry(number, { body: input.body ?? "", images: ids, ai: true, ...(st ? { status: st } : {}) });
+      return c.addIssueEntry(number, { body: input.body ?? "", images: ids, ai: true, ...(st ? { status: st } : {}), ...session });
     });
     this.wroteOn(number, sessionId);
     return out;
@@ -192,7 +197,7 @@ export class IssuesFeature extends Feature {
     if (patch.worker !== undefined) p.worker = patch.worker;
     if (patch.fixedIn !== undefined) p.fixedIn = patch.fixedIn;
     if (!Object.keys(p).length) throw new HostError("bad_request", "没有要改的（status、title、worker、fixedIn）");
-    const out = await this.call((c) => c.updateIssue(number, { ...p, ai: true }));
+    const out = await this.call((c) => c.updateIssue(number, { ...p, ai: true, ...(sessionId ? { session: sessionId } : {}) }));
     this.wroteOn(number, sessionId);
     return out;
   }
@@ -213,6 +218,8 @@ function oneLine(title: string): string {
 
 function issueStatus(value: string): IssueStatus {
   if (!(ISSUE_STATUSES as readonly string[]).includes(value)) throw new HostError("bad_request", `状态只能是 ${ISSUE_STATUSES.join("、")}`);
+  // The person's only (前往讨论, 2026-10-31 晚): a big or unclear one is asking, with how the AI would go.
+  if (value === "discuss") throw new HostError("bad_request", "「去会话讨论」只由人在问题页上点。要人拍板就写清楚你的想法，状态用 asking（需要确认）。");
   return value as IssueStatus;
 }
 

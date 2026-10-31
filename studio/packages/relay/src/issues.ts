@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { MAX_FILE_BYTES } from "./protocol.js";
 import { RelayError } from "./store.js";
 import {
+  ISSUE_BUILDS_KEPT,
   ISSUE_IMAGES_PER_ENTRY,
   ISSUE_IMAGE_TYPES,
   ISSUE_STATUSES,
@@ -28,7 +29,7 @@ import {
 
 type Row = Record<string, unknown>;
 
-const LIMITS = { title: 120, body: 50_000, version: 40, fixedIn: 80, worker: 200, buildLabel: 200, buildMessage: 2000 };
+const LIMITS = { title: 120, body: 50_000, version: 40, fixedIn: 80, worker: 200, session: 80, buildLabel: 200, buildMessage: 2000 };
 const REOPENED = new Set<IssueStatus>(["fixed", "released", "stuck", "closed"]);
 
 function text(value: unknown, what: string, max: number): string {
@@ -75,6 +76,9 @@ export class IssueStore {
       CREATE INDEX IF NOT EXISTS issue_images_entry ON issue_images(entry);
       CREATE TABLE IF NOT EXISTS issue_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+    // 0.7.4: the Studio session that wrote on an issue last.
+    const cols = (db.prepare("PRAGMA table_info(issues)").all() as Row[]).map((c) => String(c.name));
+    if (!cols.includes("session")) db.exec("ALTER TABLE issues ADD COLUMN session TEXT NOT NULL DEFAULT ''");
   }
 
   private tx<T>(run: () => T): T {
@@ -134,6 +138,7 @@ export class IssueStore {
       version: String(row.version),
       fixedIn: String(row.fixed_in),
       worker: String(row.worker),
+      session: String(row.session ?? ""),
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
       rev: Number(row.rev),
@@ -232,9 +237,11 @@ export class IssueStore {
     const st = input.status === undefined ? (reopen ? "new" : null) : status(input.status);
     const pictures = Array.isArray(input.images) ? input.images.length : 0;
     if (!body && !pictures && !st) throw new RelayError("bad_request", "写一句话或贴一张截图");
+    const session = input.ai === true ? text(input.session, "会话", LIMITS.session) : "";
     return this.tx(() => {
       this.addEntryRow(number, by, body || pictures ? "comment" : "status", body, input.ai === true, st, input.images);
       if (st) this.db.prepare("UPDATE issues SET status = ? WHERE number = ?").run(st, number);
+      if (session) this.db.prepare("UPDATE issues SET session = ? WHERE number = ?").run(session, number);
       this.touch(number);
       return this.get(number);
     });
@@ -251,6 +258,7 @@ export class IssueStore {
       }
       if (patch.fixedIn !== undefined) this.db.prepare("UPDATE issues SET fixed_in = ? WHERE number = ?").run(text(patch.fixedIn, "发布版本", LIMITS.fixedIn), number);
       if (patch.worker !== undefined) this.db.prepare("UPDATE issues SET worker = ? WHERE number = ?").run(text(patch.worker, "处理者", LIMITS.worker), number);
+      if (patch.session && patch.ai === true) this.db.prepare("UPDATE issues SET session = ? WHERE number = ?").run(text(patch.session, "会话", LIMITS.session), number);
       if (patch.status !== undefined) {
         const st = status(patch.status);
         if (st !== row.status) {
@@ -266,27 +274,42 @@ export class IssueStore {
   release(): IssueRelease {
     const at = this.meta("release.requestedAt");
     const last = this.meta("release.last");
-    const build = this.meta("release.build");
-    return { requestedAt: at ? Number(at) : null, requestedBy: this.meta("release.requestedBy") ?? "", last: last ? (JSON.parse(last) as IssueRelease["last"]) : null, build: build ? (JSON.parse(build) as IssueBuild) : null };
+    const builds = this.builds();
+    return { requestedAt: at ? Number(at) : null, requestedBy: this.meta("release.requestedBy") ?? "", last: last ? (JSON.parse(last) as IssueRelease["last"]) : null, build: builds[0] ?? null, builds };
+  }
+
+  /** The kept builds, newest first (0.7.3 kept only the last, without its steps' times). */
+  private builds(): IssueBuild[] {
+    const all = this.meta("release.builds");
+    const one = this.meta("release.build");
+    const list = (all ? JSON.parse(all) : one ? [JSON.parse(one)] : []) as IssueBuild[];
+    return list.map((b) => ({ ...b, stepAt: Array.isArray(b.stepAt) && b.stepAt.length ? b.stepAt : [b.startedAt] }));
   }
 
   /** `npm run release` says where its test build is (2026-10-31): started, at a step, ended. */
   reportBuild(by: string, report: IssueBuildReport): IssueRelease {
     const r = (report && typeof report === "object" ? report : {}) as IssueBuildReport;
     const now = this.now();
-    const current = this.release().build;
+    const builds = this.builds();
+    const current = builds[0];
     let next: IssueBuild;
     if (r.start) {
       const label = text(r.start.label, "打包的内容", LIMITS.buildLabel);
       const steps = Array.isArray(r.start.steps) ? r.start.steps.map((s) => text(s, "步骤", 40)).filter(Boolean) : [];
       if (!label || !steps.length || steps.length > 12) throw new RelayError("bad_request", "要写打包的内容和 1 到 12 个步骤");
-      next = { label, steps, step: 0, by, startedAt: now, updatedAt: now, endedAt: null, ok: null, message: "" };
+      // One that never said it ended (the machine went off): ended where it was, so it is not shown as going on.
+      if (current && current.endedAt === null) builds[0] = { ...current, endedAt: current.updatedAt, ok: false, message: "没有报结束（被打断了？）" };
+      next = { label, steps, step: 0, stepAt: [now], by, startedAt: now, updatedAt: now, endedAt: null, ok: null, message: "" };
+      builds.unshift(next);
     } else {
       if (!current || current.endedAt !== null) throw new RelayError("conflict", "现在没有在打包");
-      next = { ...current, updatedAt: now };
+      next = { ...current, stepAt: [...current.stepAt], updatedAt: now };
+      builds[0] = next;
     }
     if (r.step !== undefined) {
-      if (!Number.isInteger(r.step) || r.step < 0 || r.step >= next.steps.length) throw new RelayError("bad_request", `步骤要在 0 到 ${next.steps.length - 1} 之间`);
+      if (!Number.isInteger(r.step) || r.step < next.step || r.step >= next.steps.length) throw new RelayError("bad_request", `步骤要在 ${next.step} 到 ${next.steps.length - 1} 之间`);
+      // A step skipped on the way began (and ended) at once.
+      for (let k = next.step + 1; k <= r.step; k++) next.stepAt[k] = now;
       next.step = r.step;
     }
     if (r.end) {
@@ -295,7 +318,8 @@ export class IssueStore {
       next.message = text(r.end.message, "结果", LIMITS.buildMessage);
     }
     this.tx(() => {
-      this.setMeta("release.build", JSON.stringify(next));
+      this.setMeta("release.builds", JSON.stringify(builds.slice(0, ISSUE_BUILDS_KEPT)));
+      this.setMeta("release.build", null);
       this.bump();
     });
     return this.release();

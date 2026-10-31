@@ -8,13 +8,15 @@ export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
   new: "新",
   working: "修复中",
-  asking: "等你回答",
+  // The AI wants the person's word — it does not understand, or the issue is big and it wrote how it would go: they
+  // talk it over here, round after round (2026-10-31 晚, the user: 不用再有建议单开讨论，issue 本身就能多轮交流).
+  asking: "需要确认",
   fixed: "已修好，待发布",
   released: "已发布",
   stuck: "卡住了",
-  // The AI thinks it is too big or too open to fix in passing: the person talks it over in a session of their own, or
-  // answers on the issue (“直接修”) and the AI goes on (2026-10-31, plans/release.md).
-  discuss: "建议单开讨论",
+  // The person took it to a session in Studio (前往讨论, the user, 2026-10-31 晚): 值守 leaves it alone, answers on
+  // it included, until they hand it back.
+  discuss: "去会话讨论",
   closed: "不修了",
 };
 
@@ -67,6 +69,8 @@ export interface Issue {
   fixedIn: string;
   /** Who works on it now, as 值守 says ("Opus 5.5 · 任务「问题 #3 …」"); "". */
   worker: string;
+  /** The Studio session that wrote on it last, to find it in Studio's search (2026-10-31 晚); "". */
+  session: string;
   createdAt: number;
   updatedAt: number;
   /** Goes up with every change of the issue (the service's change counter at that moment). */
@@ -85,7 +89,11 @@ export interface IssueRelease {
   last: { version: string; at: number } | null;
   /** The test build going on now, or the last one (ended). */
   build: IssueBuild | null;
+  /** The last ISSUE_BUILDS_KEPT builds, newest first (build is the first): how long each step took, like Jenkins' stage view. */
+  builds: IssueBuild[];
 }
+
+export const ISSUE_BUILDS_KEPT = 30;
 
 /**
  * A test build as `npm run release` reports it while it runs (2026-10-31, the user: 问题页 shows whether a build is
@@ -98,6 +106,8 @@ export interface IssueBuild {
   steps: string[];
   /** The step it is at (index into steps); where it stopped when it failed. */
   step: number;
+  /** When each step it reached began (steps 0…step): a step took until the next one began, or the end. */
+  stepAt: number[];
   by: string;
   startedAt: number;
   /** The last word from it: a build that has not ended and says nothing for long has probably gone. */
@@ -141,6 +151,8 @@ export interface NewIssueEntry {
   ai?: boolean;
   /** Changes the status with this entry. */
   status?: IssueStatus;
+  /** The Studio session writing it (the AI's). */
+  session?: string;
 }
 
 export interface IssuePatch {
@@ -148,4 +160,5 @@ export interface IssuePatch {
   title?: string;
   fixedIn?: string;
   worker?: string;
+  session?: string;
 }
