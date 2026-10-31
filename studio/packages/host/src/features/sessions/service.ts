@@ -340,6 +340,25 @@ export class SessionsFeature extends Feature {
     return peerPermission(caller, runtime, level, choices);
   }
 
+  /**
+   * A session an agent sets up for later (duty_save, 2026-10-31): model, permission and effort as session_start takes
+   * them; the permission left out is the caller's own (an unattended session that asks would wait for nobody).
+   */
+  async optionsFor(fromSessionId: Id, input: { model?: unknown; permission?: unknown; effort?: unknown }): Promise<{ profileId: Id; options: SessionOptions }> {
+    const from = this.requireSession(fromSessionId);
+    const picked: { profileId: Id; model?: string } = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
+    let options: SessionOptions = picked.model ? { model: picked.model } : {};
+    let level: PermissionLevel | null = null;
+    if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
+      level = PERMISSION_LEVELS.find((l) => l === input.permission) ?? null;
+      if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
+    }
+    const permission = await this.peerPermission(from, picked.profileId, level);
+    if (permission) options = { ...options, permission };
+    if (typeof input.effort === "string" && input.effort.trim()) options = { ...options, effort: await this.effortFor(picked.profileId, picked.model, input.effort.trim()) };
+    return { profileId: picked.profileId, options };
+  }
+
   async effortFor(profileId: Id, chosen: string | undefined, want: string): Promise<string> {
     const choices = await this.f.config.choices(profileId).catch(() => null);
     if (!choices?.models.length) return want;

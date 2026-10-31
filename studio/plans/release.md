@@ -1,4 +1,4 @@
-# 发布流程整理（2026-10-31，方案，未开工）
+# 发布流程整理（2026-10-31，方案；第 1 到 7 项已做，见文末）
 
 用户：「发布 studio、platform 等工具和发布服务器没有统一的脚本，整理梳理一轮」。
 
@@ -55,15 +55,15 @@ npm run release -- promote studio 0.9.17      转正式版（照旧）
 - **两份常驻副本**：主工作区（用户和「情况 2」的会话改、提交）；**值守目录** `G:\PROJECT\AgentMonitorOverlay-duty`（master 的干净副本，不建分支，依赖装一次复用；值守修问题和打包都在这里，开工前同步到 master 最新）。包只从主干（master 的提交）打，从不读主工作区里没提交的文件。在主工作区跑 `release` 时有没提交的文件就停下，提示去值守目录打。
 - **情况 1**：用户在问题页提问题，不管了；定期看「要你看」。值守：判断大小 → 小的在值守目录修、测、提交、快进合进 master（不再每个问题开 `issue/<编号>` worktree）→ 到打包条件自动 `release` → 标已发布。大的（新功能或有几种做法、改 protocol / 数据格式、跨几个工具、估计 5 个以上文件）不修，标新状态「建议单开讨论」。
 - **情况 2**：用户在当天的维护任务里开子会话迭代（用模板「维护迭代」），在主工作区改；**验证通过就自己提交到 master**，写 CHANGELOG「下一版」。下次打包一起发。
-- **每天开工**：新建任务「MM-DD 维护」，用模板「开始维护」：建好或改好值守项（会话开在这个任务里、跑在值守目录、每 30 秒检查「维护有事要做」、话是「照模板「问题页值守」做」），只批准一次。
+- **每天开工**：新建任务「MM-DD 维护」，用模板「开始维护」：建好或改好值守项（会话开在这个任务里、跑在值守目录、每分钟先检查问题页和 `release due --wait 30`、话是「照模板「问题页值守」做」），只批准一次。
 
 ## 这一轮要做的
 
-1. `npm run release`（上文）＋中转服务版本号和 CHANGELOG。
-2. 值守项「在哪个文件夹里跑」：会话属于当天的任务，工作文件夹是值守目录（登记成项目「AMO（值守目录）」）。
-3. 检查扩成「维护有事要做」：问题页 + master 上发布 tag 之后等了 30 分钟的提交（调值守目录里的 `release due`）。
-4. 问题页：新状态「建议单开讨论」，「要你看」（等你回答 / 卡住 / 建议单开讨论）单独列出、顶部有数字；部署中转服务。
-5. Studio 里看值守（批注 4）：设置之外有一个看值守的地方（各项、最近几次、开出的会话）；有值守的任务、值守开的会话带标记。
-6. 提示词模板跟着远程走（批注 3）：控制端在远程任务里能看到、用被控端的模板。
-7. 三份模板：「开始维护」「问题页值守」「维护迭代」；AGENTS.md 改车道例外（值守目录、维护任务的会话自己提交）。
-8. 建值守目录，发一版。
+1. ✓ `npm run release`（`scripts/release.mjs`）：status、due、`<工具…>` / auto、relay-service、promote，加上值守目录用的 `sync`（同步到 master 最新、依赖变了才装）和 `land`（值守目录的提交快进进 master）。中转服务的版本只在 `packages/relay/src/protocol.ts` 的 `RELAY_VERSION` 和 `packages/relay/CHANGELOG.md`（`packages/relay/package.json` 保持 0.0.0：workspace 里互相依赖写的是 0.0.0，改了 npm ci 会去 registry 找，404）。tag：`<工具>-v<版本>`、`relay-service-v<版本>`。
+2. ✓ 值守项选了任务时可以指定会话跑在另一个项目的文件夹里（设置 → 值守的「在哪」；duty_save 的 `workspace` 按名字或路径）。
+3. ✓ 一个值守项可以先查几样（`check: {kind: "all", checks: […]}`，最多 5 样）：「开始维护」设的是问题页（`issues.pending`）加 `node studio/scripts/release.mjs due --wait 30`，一个会话、一个文件夹，不并行。
+4. ✓ 问题页：新状态「建议单开讨论」（discuss）和「要你看」页签；中转服务 0.7.1 已部署（2026-10-31）。
+5. ✓ 顶栏「值守 N 项开着」和值守窗口；看板卡片、任务头的「值守」，会话列表的「值守开的」「设了值守」。
+6. ✓ 远程任务的模板窗口也列出那台电脑上的模板（`rt.templates`，只读；两台都要是新版）。
+7. ✓ 三份模板的原文在 `studio/docs/prompt-templates/`：`start-maintenance.md`（开始维护）、`issues-duty.md`（问题页值守，改成值守目录 + release）、`maintenance-iterate.md`（维护迭代）；AGENTS.md 的车道例外改了。duty_save 也认 `model`、`permission`（read-only / write / full）、`effort`，不写就用调用它的会话的模型和权限。
+8. 值守目录已建（`G:\PROJECT\AgentMonitorOverlay-duty`）。还要：发 Studio 测试版（带上面 2、3、5、6、7 的改动）；用户更新 Studio 后把三份模板存进 Studio，开第一天的维护任务试一遍。

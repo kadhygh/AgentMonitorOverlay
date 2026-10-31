@@ -12,6 +12,9 @@
 //                                                   AMO 中转's service and client content (relay-release, deploy: the service
 //                                                   restarts when it changed), its version in packages/relay
 //   npm run release -- promote <tool> <version>     the stable channel (relay-mac promote)
+//   npm run release -- sync                         值守 directory: to master's tip, dependencies when the lock changed
+//   npm run release -- land                         值守 directory: its commits onto master (a fast-forward of the main
+//                                                   checkout); master moved meanwhile: rebase, verify again, land again
 // Where: in the main checkout on master with nothing uncommitted under studio/packages and studio/scripts, or in the 值守
 // directory (a worktree detached at master; plans/release.md): there it first moves to master's tip and installs the
 // dependencies when package-lock.json changed, and the release commit is landed on master by a fast-forward of the main
@@ -287,6 +290,34 @@ try {
       if (!list.length || Date.now() - Math.min(...list.map((d) => d.oldest)) < wait) break;
       // No times in the lines: the same state reads the same (值守 does not act twice on one finding).
       for (const d of list) console.log(`该发布：${d.t.label}（${d.t.id}）上次发布后 ${d.changes.length} 个提交，「下一版」${d.entries.length} 条`);
+      break;
+    }
+    case "sync": {
+      const w = where();
+      if (!w.detached) throw new Error("sync 只在值守目录里用（master 的 detached worktree）");
+      const d = dirty();
+      if (d.length) throw new Error(`值守目录有没提交的改动，先提交（再 land）或丢掉：\n  ${d.join("\n  ")}`);
+      const ahead = git("rev-list", "--count", "master..HEAD");
+      if (ahead !== "0") throw new Error(`值守目录有 ${ahead} 个提交还没进 master：先 npm run release -- land`);
+      git("checkout", "-q", "--detach", "master");
+      ensureDeps();
+      console.log(`值守目录已到 master ${git("rev-parse", "--short", "HEAD")}`);
+      break;
+    }
+    case "land": {
+      const w = where();
+      if (!w.detached) throw new Error("land 只在值守目录里用；主工作区里直接提交到 master 就行");
+      if (!w.main) throw new Error("找不到检出 master 的主工作区");
+      const head = git("rev-parse", "HEAD");
+      if (gitOk("merge-base", "--is-ancestor", head, "master")) {
+        console.log("没有要合的：值守目录的提交都已经在 master 上");
+        break;
+      }
+      if (!gitOk("merge-base", "--is-ancestor", "master", head)) throw new Error("master 在这之后又有了提交：先 git rebase master，重新验证，再 land");
+      const ff = spawnSync("git", ["merge", "--ff-only", "-q", head], { cwd: w.main, encoding: "utf8" });
+      if (ff.status !== 0) throw new Error(`合不进 master（主工作区没提交的改动碰到了同样的文件）：提交留在值守目录，等人处理\n${ff.stderr.trim()}`);
+      git("checkout", "-q", "--detach", "master");
+      console.log(`已合进 master：${git("log", "--format=%h %s", "-1")}`);
       break;
     }
     case "promote":

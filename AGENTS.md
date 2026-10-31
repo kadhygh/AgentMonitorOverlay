@@ -32,15 +32,17 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 
 - 用中文和用户交流。界面文字也是中文，用户看得到的写法要具体、直白。
 - **用户要求才提交、推送**，提交信息照最近几条的风格写。不要自己合并或删除别人的分支和 worktree。
-  - 例外（2026-10-31 用户定）：「值守」处理问题页上的问题时，每个问题在自己的 worktree（分支 `issue/<编号>`）里修复、验证，通过后自己提交并合回 master，合完删掉这个 worktree 和分支；有冲突或验证不过就停下等用户。只限这条车道，见 `studio/plans/issues.md`。
+  - 例外（2026-10-31 用户定，维护节奏见 `studio/plans/release.md`），只限这两条车道：
+    - **维护值守**（提示词模板「问题页值守」）：在值守目录 `G:\PROJECT\AgentMonitorOverlay-duty`（master 的 detached worktree）里修问题页上的小问题，验证通过后自己提交，`npm run release -- land` 合进 master；到时候 `npm run release -- auto` 打测试包。大的标「建议单开讨论」不修；合不进、验证不过就停下，标「卡住了」。
+    - **维护迭代**（当天维护任务里的会话，模板「维护迭代」）：在主工作区改，只 add 自己改的文件，验证通过就自己提交到 master，写 CHANGELOG「下一版」；不打包、不发布。
 - 代码风格跟周围保持一致；注释写「为什么」，可以带日期和用户的决定。仓库里是长行，**不要跑 prettier**（没有配置，它会把文件改成 80 列）。
 - 跑重的任务（vitest、e2e、打包）用低优先级：`BelowNormal`，加 `--maxWorkers=6`。普通优先级会让用户的桌面卡。
 - 常用命令（在 `studio/` 下）：
   - `npm run verify`：类型检查、单测、构建；
   - `npm run e2e`：e2e 按程序分成几个 Playwright project：`studio`、`notes`、`reviewer`、`relay`；
   - `npm run package:portable`：打 portable 包；
-  - `npm run relay:release` 之后 `npm run relay:mac -- deploy`：发布中转的服务和界面（改了服务代码会重启中转几秒）；
-  - 发工具到平台：升该工具包的版本号、写 `CHANGELOG.md` → `npm run package:platform -- --only <工具>` → `npm run relay:mac -- publish <工具>`（默认测试通道）→ 试过后 `npm run relay:mac -- promote <工具> <版本>`；工具 id 见 `studio/scripts/amo-tools.mjs`。`publish` 之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
+  - 发布都走 `npm run release`（`scripts/release.mjs` 开头有全部用法）：`status` 看各工具和两个通道；`<工具…>` 或 `auto` 发到平台的测试通道（跑测试、升版本、「下一版」改成版本标题、提交进 master、打包、发布、打 tag `<工具>-v<版本>`）；`relay-service` 部署中转服务（会重启中转几秒）；`promote <工具> <版本>` 转正式版。只从提交过的 master 打包：主工作区有没提交的改动时到值守目录里发。改动说明先写进各包 `CHANGELOG.md` 的「## 下一版」，没写的不发。工具 id 见 `studio/scripts/amo-tools.mjs`。
+  - `npm run relay:mac -- publish` 之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
 - 计划和方案写在 `studio/plans/<主题>.md`。做完一段，在 `studio/HANDOFF.md`「最近的改动」最上面加一条（做了什么、怎么验证的、还剩什么），「当前状态」里过时的也顺手改掉；超过一两周的记录挪进 `studio/docs/history/`。

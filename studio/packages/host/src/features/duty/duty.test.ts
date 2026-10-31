@@ -226,8 +226,11 @@ describe("值守", () => {
     mkdirSync(join(root, "beta"));
     const beta = store.addWorkspace({ path: join(root, "beta"), name: "beta（值守目录）" });
     writeFileSync(join(root, "beta", "check.js"), "console.log('该发布：便签')");
-    const there = (await tool(asking.id, "duty_save", { title: "维护", schedule: { every: 1800 }, action: { kind: "session", prompt: "发布", workspace: "beta（值守目录）", check: { kind: "command", command: "node check.js" } } })).value!.item;
-    expect(there.action).toMatchObject({ taskId: task.id, workspaceId: beta.id, check: { workspaceId: beta.id } });
+    const there = (await tool(asking.id, "duty_save", { title: "维护", schedule: { every: 1800 }, action: { kind: "session", prompt: "发布", workspace: "beta（值守目录）", permission: "read-only", check: { kind: "command", command: "node check.js" } } })).value!.item;
+    // permission as session_start names it, made the model's own.
+    expect(there.action).toMatchObject({ profileId: "q", options: { permission: "read-only" }, taskId: task.id, workspaceId: beta.id, check: { workspaceId: beta.id } });
+    expect(there.action.permission).toBeUndefined();
+    expect(await tool(asking.id, "duty_save", { title: "x", schedule: { every: 60 }, action: { kind: "session", prompt: "x", permission: "root" } })).toMatchObject({ error: true, text: expect.stringContaining("permission must be one of") });
     expect(there.action.workspace).toBeUndefined();
     duty.runNow(there.id);
     const r2 = await until(() => lastRun(duty.runs(), there.id), (r) => !!r?.sessionId, "the session in beta");
