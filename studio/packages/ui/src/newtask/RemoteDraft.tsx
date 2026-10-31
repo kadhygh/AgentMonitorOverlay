@@ -7,6 +7,8 @@ import { IconPaperclip } from "../attach/icons.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { withFileRefs } from "../attach/refs.js";
+import { MentionList, useComposerMentions } from "../attach/useMentions.js";
+import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
 import { topicProject } from "./choices.js";
 import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
@@ -15,8 +17,8 @@ import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProj
 // 新任务页的「在别的设备上」 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
 // allows (its catalog, fetched when it is picked). Enter creates the task there: it is granted to this computer and its
-// session starts there; the page opens its copy here once the copy has come. No pictures or files (as in a remote
-// task's conversation) and no @ (what it would point at is on this computer).
+// session starts there; the page opens its copy here once the copy has come. @ offers only 提示词模板…, listing that
+// device's templates (问题 #1, 2026-10-31, the user: 只列被控端的): tasks, sessions and files here are not there.
 
 const LAST_DEVICE = "amo.remoteDraftDevice";
 /** How long to wait for the copy to show up here after the device made the task. */
@@ -173,6 +175,20 @@ export function RemoteDraft({
   const problem = catalog ? catalogProblem(catalog) : null;
   const noCommon = catalog && !catalog.allowCommon ? `${catalog.name} 不允许不选项目（公共文件夹）：选一个项目` : undefined;
 
+  // @: only 提示词模板… (no tasks, sessions or files of this computer), once the device's catalog is here.
+  const mentions = useComposerMentions({
+    link,
+    text: draft.text,
+    setText: (text) => update({ text }),
+    tasks: [],
+    sessions: [],
+    current: null,
+    workspaceId: null,
+    onFile: () => undefined,
+    onFind: () => undefined,
+    templates: !!catalog && !problem,
+  });
+
   async function submit() {
     if (busy) return;
     if (!target) return setError("先选一台设备。");
@@ -308,10 +324,15 @@ export function RemoteDraft({
           value={draft.text}
           rows={3}
           aria-label="第一句话"
-          placeholder={target ? `比如：把掉落表的说明整理一遍。会作为第一句话发给 ${target.name} 上新开的会话。` : "第一句话"}
-          onChange={(e) => update({ text: e.target.value })}
+          placeholder={target ? `比如：把掉落表的说明整理一遍。会作为第一句话发给 ${target.name} 上新开的会话。打 @ 用那台电脑上的提示词模板。` : "第一句话"}
+          onChange={(e) => {
+            update({ text: e.target.value });
+            mentions.track(e.target);
+          }}
+          onSelect={(e) => mentions.track(e.currentTarget)}
           onPaste={attach.onPaste}
           onKeyDown={(e) => {
+            if (mentions.onKeyDown(e)) return;
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
@@ -319,6 +340,7 @@ export function RemoteDraft({
           }}
           data-testid="remote-draft-text"
         />
+        <MentionList mentions={mentions} />
         <div className="cbar">
           <button type="button" className="round-btn attach" aria-label="添加图片或文件" title="添加图片或文件（也可以粘贴截图或拖进来）：开始时一起传到那台电脑" onClick={() => picker.current?.click()} data-testid="remote-draft-attach">
             <IconPaperclip />
@@ -369,6 +391,27 @@ export function RemoteDraft({
         <span className="form-error" role="alert" data-testid="remote-draft-error">
           {error}
         </span>
+      )}
+      {mentions.askingTemplate && target && catalog && (
+        <PromptTemplateDialog
+          link={link}
+          workspaceId={null}
+          projects={[]}
+          remote={{
+            name: catalog.name,
+            key: `${target.key}\n${projectId ?? ""}`,
+            load: () => call(link, "GET /api/remote/catalog/prompt-templates", {}, undefined, { account: target.account, device: target.device, ...(projectId ? { workspace: projectId } : {}) }),
+            projectLabel: projectName ?? "这个项目",
+            only: true,
+          }}
+          onDone={(body) => {
+            const caret = mentions.finishTemplate(body);
+            requestAnimationFrame(() => {
+              input.current?.focus();
+              if (caret !== null) input.current?.setSelectionRange(caret, caret);
+            });
+          }}
+        />
       )}
       {busy && <StartingCover label={opening ? `正在把 ${opening.name} 上的任务同步过来…` : catalog?.confirm ? `正在发给 ${target?.name ?? "那台电脑"}${attach.empty ? "" : "（连同图片和文件）"}…` : `正在 ${target?.name ?? "那台电脑"} 上建任务、启动会话${attach.empty ? "" : "（先传图片和文件）"}…`} />}
     </>

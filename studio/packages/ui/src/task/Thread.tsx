@@ -20,7 +20,7 @@ import { MentionBackdrop, MentionList, useComposerMentions } from "../attach/use
 import { FileSelector } from "../attach/FileSelector.js";
 import { SubSessionDialog } from "../attach/SubSessionDialog.js";
 import { QuickCommitDialog } from "../attach/QuickCommitDialog.js";
-import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
+import { PromptTemplateDialog, remoteTaskTemplates } from "../attach/PromptTemplateDialog.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { DecisionPrompt, SessionDecisions } from "../collab/DecisionPanel.js";
@@ -730,7 +730,7 @@ ${d}` : back));
           link={link}
           workspaceId={session?.workspaceId ?? null}
           projects={projects ?? []}
-          {...(isRemote && session.taskId ? { remote: { taskId: session.taskId, name: tasks.find((t) => t.id === session.taskId)?.remote?.name ?? "那台电脑" } } : {})}
+          {...(isRemote && session.taskId ? { remote: remoteTaskTemplates(link, session.taskId, tasks.find((t) => t.id === session.taskId)?.remote?.name ?? "那台电脑") } : {})}
           onDone={(body) => {
             const caret = mentions.finishTemplate(body);
             requestAnimationFrame(() => {

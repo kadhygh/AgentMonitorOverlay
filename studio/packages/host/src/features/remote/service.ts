@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -329,6 +329,7 @@ export class RemoteFeature extends Feature {
     };
     // 远程创建 (2026-10-29): what the device may pick, and the task made here now.
     if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.serveCatalog(f.from));
+    if (f.kind === REMOTE_KINDS.createTemplates) return said(() => ({ templates: this.creates.templates(f.from, body.workspaceId) }));
     if (f.kind === REMOTE_KINDS.upload) return said(() => this.inbox.receive(f.from, body));
     if (f.kind === REMOTE_KINDS.create) return this.creates.create(f.from, body).then((made): Answer => ({ kind: REMOTE_KINDS.ok, body: made }), failed);
     // Step 4: a request for a task, or taking one back.
@@ -703,6 +704,13 @@ export class RemoteFeature extends Feature {
   async catalog(peer: DeviceRef): Promise<RemoteCatalog> {
     const p = this.creatable(peer);
     return this.copies.ask<RemoteCatalog>(peer, REMOTE_KINDS.catalog, {}, 30_000, `${p.name} 不在线`);
+  }
+
+  /** The device's templates for a task created there in that project (null: the common folder); 问题 #1. */
+  async catalogTemplates(peer: DeviceRef, workspaceId: Id | null): Promise<PromptTemplate[]> {
+    const p = this.creatable(peer);
+    const answer = await this.copies.ask<{ templates?: PromptTemplate[] }>(peer, REMOTE_KINDS.createTemplates, { workspaceId }, 30_000, `${p.name} 不在线`);
+    return Array.isArray(answer.templates) ? answer.templates : [];
   }
 
   /**

@@ -265,6 +265,13 @@ export const REMOTE_KINDS = {
    * offers there (A's global ones and its project's). {taskId} → {templates: PromptTemplate[]}
    */
   templates: "rt.templates",
+  /**
+   * B → A (2026-10-31, 问题 #1: the new-task page's 「在别的设备上」 had no @): the templates a task created there from
+   * the catalog would offer — A's global ones, and the picked project's (`workspaceId`, one of the allowed; null: the
+   * common folder, global ones only). {workspaceId} → {templates: PromptTemplate[]}. Lower case: the server forwards
+   * only kinds of [a-z0-9._-] (FRAME_KIND_RE).
+   */
+  createTemplates: "rt.create-templates",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */

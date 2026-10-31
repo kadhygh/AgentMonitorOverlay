@@ -955,6 +955,8 @@ export interface HostRoutes {
   "PUT /api/remote/security": { req: import("./remote.js").RemoteSecurity; res: import("./remote.js").RemoteState };
   /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
   "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
+  /** 远程创建, on B (问题 #1): the device's templates for a task created there in that project (rt.createTemplates). `?account=&device=&workspace=` (no workspace: the common folder) */
+  "GET /api/remote/catalog/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
   /** A remote copy's templates as its own computer offers them (rt.templates). */
   "GET /api/remote/tasks/:id/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
   /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */

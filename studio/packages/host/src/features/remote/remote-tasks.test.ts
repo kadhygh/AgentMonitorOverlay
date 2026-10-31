@@ -500,6 +500,26 @@ describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)
     await expect(b.remote.copies.ask(A, "rt.nothing-yet", {})).rejects.toThrow("A-PC 上的 Studio 版本太旧，先在那台电脑上更新");
   }, 60_000);
 
+  it("问题 #1: B's first sentence offers A's templates — the global ones and the picked allowed project's; not another project's, not B's own", async () => {
+    const { a, b } = await paired();
+    const A = toA(a);
+    const yes = a.service.projects.addWorkspace({ path: tempDir("tpl-allowed") });
+    const no = a.service.projects.addWorkspace({ path: tempDir("tpl-other") });
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: false });
+    a.service.promptTemplates.create({ title: "全局的", body: "g" });
+    a.service.promptTemplates.create({ title: "允许项目的", body: "y", workspaceId: yes.id });
+    a.service.promptTemplates.create({ title: "别的项目的", body: "n", workspaceId: no.id });
+    b.service.promptTemplates.create({ title: "B 自己的", body: "b" });
+    const titles = async (workspaceId: string | null) => (await b.remote.catalogTemplates(A, workspaceId)).map((t) => t.title).sort();
+    expect(await titles(yes.id)).toEqual(["允许项目的", "全局的"]);
+    // A project not allowed, or no project while the common folder is not: refused as rt.create would.
+    await expect(titles(no.id)).rejects.toThrow("这个项目不在 A-PC 远端允许的项目里");
+    await expect(titles(null)).rejects.toThrow("A-PC 不允许远程任务不选项目");
+    // The common folder: the global ones only (A's list without a project would be every project's).
+    a.remote.setAllowedProjects({ workspaceIds: [yes.id], common: true });
+    expect(await titles(null)).toEqual(["全局的"]);
+  }, 60_000);
+
   it("a device that read the catalog hears of changes at once: 远端允许的项目, 远端允许的模型, a project renamed; nothing changed, nothing sent", async () => {
     const { a, b } = await paired();
     const A = toA(a);

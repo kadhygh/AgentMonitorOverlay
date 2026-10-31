@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, REMOTE_KINDS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type HostEvent, type Id, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemotePush, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, REMOTE_KINDS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type HostEvent, type Id, type PromptTemplate, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemotePush, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext, RemoteGrants } from "./grants.js";
@@ -255,6 +255,23 @@ export class RemoteCreates {
         .map((t) => ({ id: t.id, title: t.title, workspaceIds: topicWorkspaceIds(t, tasks, workspaces).filter((id) => allowed.has(id)), lastUsed: last.get(t.id) ?? null })),
     );
     return { name: this.ctx.deviceName(), topics, projects, allowCommon: this.allowedProjects().common, models: this.models().map((id) => ({ id, label: this.grants.labelOf(id) })), confirm: this.confirms(from) };
+  }
+
+  /**
+   * rt.createTemplates (问题 #1, 2026-10-31): what @ → 提示词模板… offers in the device's first sentence — the global
+   * templates and the picked project's, only for a project it may create in (no project: the global ones alone; the
+   * Host's list without a project would be every project's).
+   */
+  templates(from: DeviceRef, workspaceId: unknown): PromptTemplate[] {
+    this.requireOwner(from);
+    const name = this.ctx.deviceName();
+    const list = this.ctx.host.promptTemplates;
+    if (workspaceId === null || workspaceId === undefined || workspaceId === "") {
+      if (!this.allowedProjects().common) throw new HostError("bad_request", `${name} 不允许远程任务不选项目（公共文件夹）：选一个项目`);
+      return list.list().filter((t) => t.workspaceId === null);
+    }
+    if (typeof workspaceId !== "string" || !this.liveProjects().includes(workspaceId)) throw new HostError("bad_request", `这个项目不在 ${name} 远端允许的项目里（可能刚被取消勾选）`);
+    return list.list(workspaceId);
   }
 
   /** rt.create: checked against 远端允许的项目 and 远端允许的模型, then made, granted and started. */

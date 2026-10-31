@@ -38,6 +38,9 @@ export function remoteRoutes(service: HostService): Route[] {
     route("PUT", "/api/remote/security", ({ body }) => service.remote.setSecurity(body)),
     route("GET", "/api/remote/tasks/:id/prompt-templates", ({ params }) => service.remote.copies.templates(service.requireTask(params.id!))),
     route("GET", "/api/remote/catalog", ({ query }) => service.remote.catalog({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") })),
+    route("GET", "/api/remote/catalog/prompt-templates", ({ query }) =>
+      service.remote.catalogTemplates({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") }, query.get("workspace") || null),
+    ),
     route("POST", "/api/remote/create", ({ body }) => service.remote.create(peer(body), obj(body))),
     route("POST", "/api/remote/files", ({ body }) => {
       const b = obj(body);
