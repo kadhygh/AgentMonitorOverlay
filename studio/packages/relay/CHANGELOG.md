@@ -4,6 +4,8 @@
 
 ## 下一版
 
+## 0.7.6（2026-10-31）
+
 - AMO Studio 安卓版从这里更新：服务器上放最新的安装包（`npm run relay:mac -- android-publish`），登录的人能读到它的版本和改动说明（`/api/platform/android`）并下载安装包（`/platform/android/<文件名>`）。
 
 ## 0.7.5（2026-10-31）
