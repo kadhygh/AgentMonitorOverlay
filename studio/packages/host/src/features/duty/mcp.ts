@@ -9,7 +9,7 @@ import { answer, write, type AmoTool, type ToolContext } from "../../mcp/tool-ki
  * for the person's approval — an item runs commands and starts sessions on its own, also while nobody watches;
  * turning one off does not.
  */
-export function dutyTools({ service, caller, ownTask }: ToolContext): AmoTool[] {
+export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
   const duty = service.duty;
   const shown = (item: DutyItem) => {
     const run = duty.runs().find((r) => r.itemId === item.id);
@@ -32,7 +32,7 @@ export function dutyTools({ service, caller, ownTask }: ToolContext): AmoTool[] 
       description: [
         "Only when the person asks: add a 值守 item (no id; title, schedule and action) or change one (id). The person approves each save. It runs on its own from then on; it is on unless enabled=false.",
         'schedule: {"every": seconds (at least 10)} or {"daily": "HH:MM"}.',
-        'action: {"kind":"command","command":"…","timeoutSec"?} — a command line run in the project folder below normal priority; or {"kind":"session","prompt":"…","check"?,"untilDone"?,"profileId"?,"taskId"?,"options"?} — a session with that prompt (by default with your model, in your own task).',
+        'action: {"kind":"command","command":"…","workspace"?,"timeoutSec"?} — a command line run in the project folder (yours by default) below normal priority; or {"kind":"session","prompt":"…","check"?,"untilDone"?,"profileId"?,"taskId"?,"workspace"?,"options"?} — a session with that prompt (by default with your model, in your own task; taskId null: a new task each time, in project workspace). workspace: the name, id or folder path of a project (project_context) — for a session of a task, the folder it works in when that is not the task folder.',
         'check (session only): {"kind":"command","command":"…"} or {"kind":"builtin","name":"…"} (duty_list lists them) runs first; the session starts only when it finds something — a command finds something by printing it and exiting 0 (nothing printed = nothing to do; another exit code = the check failed) — and what it found is put under the prompt; the same finding does not start a second session.',
         `A command (action or check) that prints a line ${DUTY_DONE_MARK} turns the item off after this run. untilDone: true tells the session it may turn the item off with duty_stop once what it watches for is done.`,
         "Scripts you write for it: keep them in the project, make them print only what matters, and test them once yourself first.",
@@ -55,11 +55,20 @@ export function dutyTools({ service, caller, ownTask }: ToolContext): AmoTool[] 
             const out = { ...a };
             if (a.kind === "session") {
               if (out.profileId === undefined && session) out.profileId = session.profileId;
-              if (out.taskId === undefined && out.workspaceId === undefined) out.taskId = ownTask(c);
+              // A topic's session has no task: a new one each time.
+              if (out.taskId === undefined) out.taskId = session?.taskId ?? null;
             }
+            // By name or path, as session_start takes it (2026-10-31: the 维护 task's 值守 works in the 值守 directory).
+            if (typeof a.workspace === "string" && a.workspace) out.workspaceId = service.sessions.workspaceByRef(a.workspace).id;
+            delete out.workspace;
             if (a.kind === "command" && out.workspaceId === undefined && task) out.workspaceId = task.workspaceId;
             const check = a.check as Record<string, unknown> | undefined;
-            if (check?.kind === "command" && check.workspaceId === undefined && task) out.check = { ...check, workspaceId: task.workspaceId };
+            // A check runs where the session would work.
+            if (check?.kind === "command") {
+              const { workspace, ...rest } = check;
+              const workspaceId = typeof workspace === "string" && workspace ? service.sessions.workspaceByRef(workspace).id : (check.workspaceId ?? out.workspaceId ?? task?.workspaceId);
+              out.check = { ...rest, ...(workspaceId ? { workspaceId } : {}) };
+            }
             return out;
           };
           const input: DutyItemInput = {};
@@ -67,7 +76,7 @@ export function dutyTools({ service, caller, ownTask }: ToolContext): AmoTool[] 
           if (args.schedule !== undefined) input.schedule = args.schedule as DutyItemInput["schedule"];
           if (args.enabled !== undefined) input.enabled = args.enabled as boolean;
           if (args.action !== undefined) input.action = withDefaults(args.action as Record<string, unknown>) as DutyItemInput["action"];
-          const saved = args.id === undefined ? duty.create({ ...input, enabled: input.enabled ?? true }, "agent").items.at(-1)! : duty.update(String(args.id), input, "agent").items.find((i) => i.id === args.id)!;
+          const saved = args.id === undefined ? duty.create({ ...input, enabled: input.enabled ?? true }, "agent", c.sessionId).items.at(-1)! : duty.update(String(args.id), input, "agent", c.sessionId).items.find((i) => i.id === args.id)!;
           return { item: shown(saved), note: saved.enabled ? "已保存并开着，到点就运行；人在 设置 → 值守 里能看到它（标着 AI 建的）。" : "已保存，关着。" };
         }),
     },

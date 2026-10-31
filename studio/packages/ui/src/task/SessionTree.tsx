@@ -13,6 +13,7 @@ import { wakeLabel } from "../chat/WakeBar.js";
 import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { useStoredIds } from "../lib/storedIds.js";
+import { dutyOfSession, useDuty } from "../duty/duty.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -312,10 +313,12 @@ function TreeLevel({
   modelOf(s: Session): string;
   folded: { has(id: string): boolean; toggle(id: string): void };
 }) {
+  const duty = useDuty();
   return (
     <>
       {nodes.map((node) => {
         const s = node.session;
+        const onDuty = dutyOfSession(duty, s.id);
         const look = SESSION_LOOK[s.status];
         const letters = unread?.get(s.id) ?? 0;
         // 被中断 (2026-10-28: a main session cut off from outside, a subagent stopped before it finished) says so in words.
@@ -369,6 +372,16 @@ function TreeLevel({
                 {s.wake && (s.wake.loop || s.wake.limit) && (
                   <span className="tree-wake" data-kind={s.wake.limit ? "limit" : "loop"} data-testid="session-wake">
                     {wakeLabel(s.wake)}
+                  </span>
+                )}
+                {onDuty.started && (
+                  <span className="duty-chip" title={onDuty.startedBy ? `值守项「${onDuty.startedBy.title}」开的会话` : "值守开的会话（那一项已经删了）"} data-testid="session-duty">
+                    值守开的
+                  </span>
+                )}
+                {onDuty.set.length > 0 && (
+                  <span className="duty-chip" title={`这个会话设了值守：${onDuty.set.map((i) => `${i.title}（${i.enabled ? "开着" : "关着"}）`).join("、")}`} data-testid="session-duty-set">
+                    设了值守
                   </span>
                 )}
                 {loud ? (

@@ -242,5 +242,13 @@
 .duty-form textarea.field { height: auto; min-height: 84px; resize: vertical; font: inherit; padding: 6px 8px; }
 .duty-form .field.mono { font-family: var(--font-code); font-size: 12.5px; }
 .duty-num { width: 72px; }
+/* 值守 outside 设置 (2026-10-31): the top bar's dialog, and the marks on task cards, the task head and the session list. */
+.duty-dialog { width: 760px; }
+.duty-dialog .spacer { flex: 1; }
+.duty-dialog .modal-head { gap: 12px; }
+.duty-chip { flex: none; display: inline-block; font-size: 11px; line-height: 16px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; color: var(--primary); white-space: nowrap; font-weight: 500; }
+.card-title .duty-chip { margin-right: 6px; vertical-align: 1px; }
+.meta-item .duty-chip { margin-right: 4px; }
+.tb-btn.duty-toggle-btn:not([data-on]) { color: var(--text-dim); }
 .duty-form .settings-row .field.duty-grow { flex: 1; min-width: 220px; }
 .settings-hint.error { color: var(--error); }

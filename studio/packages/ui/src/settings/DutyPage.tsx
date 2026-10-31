@@ -14,20 +14,20 @@ const UNITS = [
   ["小时", 3600],
 ] as const;
 
-function scheduleText(s: DutySchedule): string {
+export function scheduleText(s: DutySchedule): string {
   if ("daily" in s) return `每天 ${s.daily}`;
   const unit = [...UNITS].reverse().find(([, n]) => s.every % n === 0) ?? UNITS[0];
   return `每 ${s.every / unit[1]} ${unit[0]}`;
 }
 
-function when(iso: string | null | undefined): string {
+export function when(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   const t = d.toTimeString().slice(0, 5);
   return d.toDateString() === new Date().toDateString() ? t : `${d.getMonth() + 1}-${d.getDate()} ${t}`;
 }
 
-function runMark(run: DutyRun | undefined, running: boolean): string {
+export function runMark(run: DutyRun | undefined, running: boolean): string {
   if (running) return "◐ 运行中";
   if (!run) return "○ 还没运行过";
   if (run.ok === null) return "◐ 运行中";
@@ -35,14 +35,14 @@ function runMark(run: DutyRun | undefined, running: boolean): string {
   return run.ok ? "✓ 完成" : "! 失败";
 }
 
-interface Ctx {
+export interface DutyCtx {
   profiles: ModelProfile[];
   snapshot: StateSnapshot | null;
   builtins: DutyState["builtins"];
   checks: DutyState["checks"];
 }
 
-function actionText(a: DutyAction, ctx: Ctx): string {
+export function actionText(a: DutyAction, ctx: DutyCtx): string {
   const profile = (id?: string | null) => ctx.profiles.find((p) => p.id === id)?.label ?? id ?? "";
   if (a.kind === "builtin") return `Studio：${ctx.builtins.find((b) => b.name === a.name)?.label ?? a.name}`;
   if (a.kind === "command") {
@@ -51,7 +51,7 @@ function actionText(a: DutyAction, ctx: Ctx): string {
   }
   const task = ctx.snapshot?.tasks.find((t) => t.id === a.taskId);
   const ws = ctx.snapshot?.workspaces.find((w) => w.id === a.workspaceId);
-  const where = task ? `在任务「${task.title}」里` : `每次新建任务${ws ? `（项目「${ws.name}」）` : ""}`;
+  const where = task ? `在任务「${task.title}」里${ws && ws.id !== task.workspaceId ? `（在「${ws.name}」的文件夹里跑）` : ""}` : `每次新建任务${ws ? `（项目「${ws.name}」）` : ""}`;
   const c = a.check;
   const check = !c ? "" : c.kind === "builtin" ? `先检查「${ctx.checks.find((x) => x.name === c.name)?.label ?? c.name}」，有事才开` : `先跑检查命令 ${c.command}，有输出才开`;
   return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}${a.untilDone ? "；做完了 AI 可以关掉它" : ""}`;
@@ -71,9 +71,13 @@ export function DutyPage({ link }: { link: HostLink }) {
       if (e.type === "duty.updated") setState(e.duty);
     });
   }, [link]);
+  // The tasks and projects as they are when a form opens (a task made since the page opened is offered too).
+  useEffect(() => {
+    if (editing) call(link, "GET /api/state").then(setSnapshot, fail);
+  }, [link, editing]);
 
-  const profiles = (snapshot?.profiles ?? []).filter((p) => !p.hidden && p.runtime !== "remote");
-  const ctx: Ctx = { profiles, snapshot, builtins: state?.builtins ?? [], checks: state?.checks ?? [] };
+  const profiles =(snapshot?.profiles ?? []).filter((p) => !p.hidden && p.runtime !== "remote");
+  const ctx: DutyCtx = { profiles, snapshot, builtins: state?.builtins ?? [], checks: state?.checks ?? [] };
   const act = (run: () => Promise<DutyState>) => {
     setMessage(null);
     run().then(setState, fail);
@@ -140,7 +144,7 @@ export function DutyPage({ link }: { link: HostLink }) {
   );
 }
 
-function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item: DutyItem | null; onDone(state: DutyState | null): void }) {
+function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; item: DutyItem | null; onDone(state: DutyState | null): void }) {
   const a = item?.action;
   const builtin = !!item?.builtin;
   const [title, setTitle] = useState(item?.title ?? "");
@@ -320,7 +324,16 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: Ctx; item:
                     </option>
                   ))}
                 </select>
-                {!taskId && (
+                {taskId ? (
+                  <select className="field" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="会话在哪个文件夹里跑">
+                    <option value="">在任务自己的项目里跑</option>
+                    {projects.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        在「{w.name}」的文件夹里跑
+                      </option>
+                    ))}
+                  </select>
+                ) : (
                   <>
                     <select className="field" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="新任务的项目">
                       <option value="">不属于项目</option>

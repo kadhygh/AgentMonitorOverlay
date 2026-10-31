@@ -24,6 +24,8 @@ import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { openViewer } from "./viewer/open.js";
 import { onHostEvent } from "./host/events.js";
+import { setDutyOpener, useDuty, useDutyWatch } from "./duty/duty.js";
+import { DutyDialog } from "./duty/DutyDialog.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 import { useMascotIcon } from "./focus/mascot.js";
 import { useSessionSeen } from "./lib/sessionSeen.js";
@@ -94,6 +96,14 @@ export function App() {
   const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
   // 远程 (2026-10-29): the top bar's button — 「远程 · N 在线」, a dot while something waits.
   const remoteState = useRemote(host.kind === "ready" ? host.link : null);
+  // 值守 (2026-10-31): kept live for the top bar, its dialog and the marks on tasks and sessions.
+  useDutyWatch(host.kind === "ready" ? host.link : null);
+  const duty = useDuty();
+  const [dutyOpen, setDutyOpen] = useState(false);
+  useEffect(() => {
+    setDutyOpener(() => setDutyOpen(true));
+    return () => setDutyOpener(null);
+  }, []);
   // Open, and on which page when something asked for one; `at` remounts it there.
   const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
   // 远程 (2026-10-29 evening, the user): a dialog over whatever is in front, opened from the top bar or by Focus.
@@ -261,6 +271,7 @@ export function App() {
         onMarks={() => openMarks(marksTarget())}
         nav={{ ...nav, go }}
         remote={{ ...remoteButton(remoteState), current: remoteOpen, open: () => setRemoteOpen(true) }}
+        duty={{ on: duty?.items.filter((i) => i.enabled).length ?? 0, total: duty?.items.length ?? 0, running: (duty?.running.length ?? 0) > 0, open: () => setDutyOpen(true) }}
       />
       <div className="body">
         <ScopeNav
@@ -303,6 +314,21 @@ export function App() {
           onOpenRemote={() => {
             setSettingsOpen(false);
             setRemoteOpen(true);
+          }}
+        />
+      )}
+      {dutyOpen && (
+        <DutyDialog
+          link={link}
+          state={state}
+          onClose={() => setDutyOpen(false)}
+          onOpenTask={(taskId, sessionId) => {
+            setDutyOpen(false);
+            setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), nav: Date.now() });
+          }}
+          onSettings={() => {
+            setDutyOpen(false);
+            setSettingsOpen({ page: "duty", at: Date.now() });
           }}
         />
       )}

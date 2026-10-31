@@ -49,6 +49,8 @@ export interface DutyItem {
   builtin?: boolean;
   /** Last saved by an agent (duty_save), not in 设置 → 值守. */
   by?: "agent";
+  /** The session that saved it (duty_save): marked 设了值守 in its task's session list. */
+  setBy?: Id;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -75,6 +77,8 @@ export interface DutyState {
   runs: DutyRun[];
   /** Items running now. */
   running: Id[];
+  /** The sessions 值守 started (the latest few hundred) → the item that started each: marked in the session list. */
+  sessions: Record<Id, Id>;
   /** When each enabled item runs next. */
   next: Record<Id, Timestamp>;
   /** The jobs a builtin action can name. */

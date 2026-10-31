@@ -182,7 +182,7 @@ describe("值守", () => {
     expect((await tool(asking.id, "duty_stop")).tool.autoApprove).toBe(true);
     // Defaults: the caller's model, its own task, its project's folder for the check.
     const item = saved.value!.item;
-    expect(item).toMatchObject({ enabled: true, by: "agent", schedule: { every: 1800 }, action: { kind: "session", profileId: "q", taskId: task.id, untilDone: true, check: { kind: "command", command: "node check.js", workspaceId: alpha.id } } });
+    expect(item).toMatchObject({ enabled: true, by: "agent", setBy: asking.id, schedule: { every: 1800 }, action: { kind: "session", profileId: "q", taskId: task.id, untilDone: true, check: { kind: "command", command: "node check.js", workspaceId: alpha.id } } });
     expect((await tool(asking.id, "duty_list")).value!.items[0]).toMatchObject({ id: item.id, nextRun: expect.any(String) });
     // Not started by 值守: duty_stop wants an id.
     expect(await tool(asking.id, "duty_stop")).toMatchObject({ error: true, text: expect.stringContaining("不是值守开的") });
@@ -190,6 +190,8 @@ describe("值守", () => {
     duty.runNow(item.id);
     const run = await until(() => lastRun(duty.runs(), item.id), (r) => !!r?.sessionId, "the session");
     expect(store.getSession(run!.sessionId!)!.taskId).toBe(task.id);
+    // Kept for the marks in the session list, past the item's last few runs.
+    expect(duty.state().sessions).toEqual({ [run!.sessionId!]: item.id });
     const said = store.listItems(run!.sessionId!).find((i) => i.type === "user");
     expect(said).toMatchObject({ text: expect.stringContaining("值守检查发现：\n构建失败：3 个测试没过") });
     expect(said).toMatchObject({ text: expect.stringContaining("调 AMO 的 duty_stop 关掉它") });
@@ -199,7 +201,21 @@ describe("值守", () => {
     duty.update(item.id, { enabled: true });
     expect(duty.items()[0]!.by).toBe("agent");
     duty.update(item.id, { title: "盯构建（人改的）" });
-    expect(duty.items()[0]!.by).toBeUndefined();
+    expect(duty.items()[0]).not.toHaveProperty("by");
+    expect(duty.items()[0]).not.toHaveProperty("setBy");
+
+    // The day's 维护 task, its 值守 working in another folder (the 值守 directory): named like session_start's
+    // workspace; the check runs there too; the session stays the task's.
+    mkdirSync(join(root, "beta"));
+    const beta = store.addWorkspace({ path: join(root, "beta"), name: "beta（值守目录）" });
+    writeFileSync(join(root, "beta", "check.js"), "console.log('该发布：便签')");
+    const there = (await tool(asking.id, "duty_save", { title: "维护", schedule: { every: 1800 }, action: { kind: "session", prompt: "发布", workspace: "beta（值守目录）", check: { kind: "command", command: "node check.js" } } })).value!.item;
+    expect(there.action).toMatchObject({ taskId: task.id, workspaceId: beta.id, check: { workspaceId: beta.id } });
+    expect(there.action.workspace).toBeUndefined();
+    duty.runNow(there.id);
+    const r2 = await until(() => lastRun(duty.runs(), there.id), (r) => !!r?.sessionId, "the session in beta");
+    expect(store.getSession(r2!.sessionId!)).toMatchObject({ taskId: task.id, workspaceId: beta.id });
+    expect(store.listItems(r2!.sessionId!).find((i) => i.type === "user")).toMatchObject({ text: expect.stringContaining("你在项目「beta（值守目录）」的文件夹") });
   });
 
   it("a command that prints AMO_DUTY_DONE turns its item off: a command item, a check with or without a finding", async () => {

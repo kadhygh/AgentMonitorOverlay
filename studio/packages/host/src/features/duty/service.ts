@@ -21,6 +21,9 @@ const ITEMS_KEY = "duty.items";
 const RUNS_KEY = "duty.runs";
 /** Per item: what its check found the last time that started a session. */
 const FOUND_KEY = "duty.found";
+/** The sessions 值守 started → their item (2026-10-31: marked in Studio; duty_stop finds its item by it). */
+const SESSIONS_KEY = "duty.sessions";
+const SESSIONS_KEPT = 300;
 /** A check gets this long by default. */
 const CHECK_TIMEOUT_SEC = 120;
 const FOUND_KEPT = 8000;
@@ -120,6 +123,7 @@ export class DutyFeature extends Feature {
       items: this.items(),
       runs: this.runs(),
       running: [...this.running.keys()],
+      sessions: this.sessions(),
       next,
       builtins: [...this.jobs.values()].map((j) => ({ name: j.name, label: j.label, description: j.description })),
       checks: [...this.checks.values()].map((j) => ({ name: j.name, label: j.label, description: j.description })),
@@ -153,6 +157,20 @@ export class DutyFeature extends Feature {
     this.store.setKv(FOUND_KEY, JSON.stringify(all));
   }
 
+  private sessions(): Record<Id, Id> {
+    try {
+      return JSON.parse(this.store.getKv(SESSIONS_KEY)?.value ?? "{}") as Record<Id, Id>;
+    } catch {
+      return {};
+    }
+  }
+
+  private keepSession(sessionId: Id, itemId: Id): void {
+    // Insertion order: the oldest go first.
+    const all = Object.entries({ ...this.sessions(), [sessionId]: itemId }).slice(-SESSIONS_KEPT);
+    this.store.setKv(SESSIONS_KEY, JSON.stringify(Object.fromEntries(all)));
+  }
+
   /** A feature's own job; its item (off) is added the first time. */
   register(job: DutyJob): void {
     this.jobs.set(job.name, job);
@@ -163,15 +181,15 @@ export class DutyFeature extends Feature {
   }
 
   /** `by` "agent": saved by an agent (duty_save, which the person approved); the list marks it. */
-  create(input: DutyItemInput, by?: "agent"): DutyState {
+  create(input: DutyItemInput, by?: "agent", setBy?: Id): DutyState {
     const at = new Date(this.now()).toISOString();
-    const item: DutyItem = { id: newId("duty"), title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), ...(by ? { by } : {}), createdAt: at, updatedAt: at };
+    const item: DutyItem = { id: newId("duty"), title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), ...(by ? { by } : {}), ...(by && setBy ? { setBy } : {}), createdAt: at, updatedAt: at };
     this.saveItems([...this.items(), item]);
     this.changed();
     return this.state();
   }
 
-  update(id: Id, input: DutyItemInput, by?: "agent"): DutyState {
+  update(id: Id, input: DutyItemInput, by?: "agent", setBy?: Id): DutyState {
     const items = this.items();
     const item = items.find((i) => i.id === id);
     if (!item) throw new HostError("not_found", `值守项 ${id} 不在了`);
@@ -185,8 +203,13 @@ export class DutyFeature extends Feature {
       updatedAt: new Date(this.now()).toISOString(),
     };
     // Who saved it last: an agent's change marks it; the person's own edit (not just turning it on or off) clears that.
-    if (by) next.by = by;
-    else if (input.title !== undefined || input.schedule !== undefined || input.action !== undefined) delete next.by;
+    if (by) {
+      next.by = by;
+      if (setBy) next.setBy = setBy;
+    } else if (input.title !== undefined || input.schedule !== undefined || input.action !== undefined) {
+      delete next.by;
+      delete next.setBy;
+    }
     this.saveItems(items.map((i) => (i.id === id ? next : i)));
     this.changed();
     return this.state();
@@ -202,7 +225,7 @@ export class DutyFeature extends Feature {
 
   /** The item whose run started this session (running now, or one of its kept runs). */
   itemForSession(sessionId: Id): DutyItem | null {
-    const id = [...this.running].find(([, r]) => r.sessionId === sessionId)?.[0] ?? this.runs().find((r) => r.sessionId === sessionId)?.itemId;
+    const id = this.sessions()[sessionId] ?? [...this.running].find(([, r]) => r.sessionId === sessionId)?.[0] ?? this.runs().find((r) => r.sessionId === sessionId)?.itemId;
     return (id && this.items().find((i) => i.id === id)) || null;
   }
 
@@ -346,6 +369,7 @@ export class DutyFeature extends Feature {
         const started = await this.startSession(item, a, r.abort.signal);
         if (started.sessionId && !started.skipped) {
           r.sessionId = started.sessionId;
+          this.keepSession(started.sessionId, item.id);
           r.run = { ...run, summary: started.summary, sessionId: started.sessionId, ...(started.taskId ? { taskId: started.taskId } : {}) };
           this.saveRun(r.run);
           this.changed();
@@ -432,7 +456,13 @@ export class DutyFeature extends Feature {
     if (a.taskId) {
       const task = this.store.getTask(a.taskId);
       if (!task || task.archivedAt) return { ok: false, summary: "要开会话的任务已经归档或删掉了" };
-      const session = await this.f.tasks.addSession(task.id, first);
+      // In another project's folder (2026-10-31, plans/release.md: the day's 维护 task, its 值守 working in the 值守
+      // directory), like session_start's workspace: still a session of the task.
+      const other = a.workspaceId && a.workspaceId !== task.workspaceId && !task.remote ? this.store.getWorkspace(a.workspaceId) : null;
+      if (other === undefined || other?.archivedAt) return { ok: false, summary: "会话要跑的项目已经删掉了" };
+      const session = other
+        ? await this.f.tasks.startSession({ taskId: task.id, topicId: null }, other, { ...first, text: `（你在项目「${other.name}」的文件夹 ${other.path} 里工作，和任务本身的项目不同。）\n${first.text}` })
+        : await this.f.tasks.addSession(task.id, first);
       return started({ ok: true, summary: `在「${task.title}」里开了会话${note}`, sessionId: session.id, taskId: task.id });
     }
     const stamp = new Date(this.now());

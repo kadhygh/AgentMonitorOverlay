@@ -44,7 +44,10 @@ export function TopBar({
   pin,
   mark = "./icon.svg",
   remote,
+  duty,
 }: {
+  /** 值守 (2026-10-31): shown once there are items — how many are on, ◐ while one runs; opens the 值守 dialog. */
+  duty?: { on: number; total: number; running: boolean; open(): void };
   /** 远程 (2026-10-29): the button that opens the remote page (remote/remote.ts remoteButton says what it shows). */
   remote?: { shown: boolean; label: string; waiting: boolean; current: boolean; open(): void };
   /** The top-left icon: 「AMO 娘」's while she is the 桌宠 (focus/mascot.ts), else the app's viewfinder. */
@@ -100,6 +103,22 @@ export function TopBar({
             <path d="M4.5 2.5h7a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11.2l-3.52 2.64A.3.3 0 0 1 4 13.6V3a.5.5 0 0 1 .5-.5Z" />
           </svg>
           书签
+        </button>
+      )}
+      {duty && duty.total > 0 && (
+        <button
+          type="button"
+          className="tb-btn duty-toggle-btn"
+          title={duty.running ? "值守：有一项正在运行。点开看每一项上次做了什么、下次什么时候" : "值守：到点自动做事的项。点开看每一项上次做了什么、下次什么时候"}
+          onClick={duty.open}
+          data-testid="topbar-duty"
+          data-on={duty.on > 0 || undefined}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8.5" r="5.5" />
+            <path d="M8 5.5v3l2 1.5M6.5 1.5h3" />
+          </svg>
+          值守{duty.running ? " ◐" : ""} {duty.on > 0 ? `${duty.on} 项开着` : "都关着"}
         </button>
       )}
       {remote?.shown && (

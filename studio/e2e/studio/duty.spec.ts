@@ -85,4 +85,27 @@ test("值守: make a command item and a session item, run them now, edit and rem
   page.once("dialog", (d) => void d.accept());
   await renamed.getByRole("button", { name: "删除" }).click();
   await expect(dialog.getByTestId("duty-item")).toHaveCount(1);
+
+  // 值守 outside 设置 (2026-10-31): the top bar's button and dialog; the session an item started is marked, and so is
+  // the task an item opens its sessions in (now the one its run made).
+  await session.getByRole("button", { name: "编辑" }).click();
+  await session.getByLabel("在哪个任务里开会话").selectOption({ index: 1 });
+  await session.getByTestId("duty-save").click();
+  await expect(session).toContainText("在任务「早上看一眼");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("topbar-duty")).toContainText("1 项开着");
+  await expect(page.getByTestId("card-duty")).toHaveCount(1);
+  await page.getByTestId("topbar-duty").click();
+  const panel = page.getByTestId("duty-dialog");
+  await expect(panel.getByTestId("duty-dialog-item")).toContainText("早上看一眼");
+  await expect(panel.getByTestId("duty-dialog-item")).toContainText("✓ 完成");
+  await screenshot(app, "studio", "duty-dialog", page);
+  await panel.getByTestId("duty-dialog-session").click();
+  await expect(panel).toBeHidden();
+  await expect(page.getByTestId("session-duty")).toHaveText("值守开的");
+  await expect(page.getByTestId("task-duty")).toContainText("早上看一眼");
+  await screenshot(app, "studio", "duty-marks", page);
+  await page.getByTestId("task-duty").click();
+  await expect(panel).toBeVisible();
 });

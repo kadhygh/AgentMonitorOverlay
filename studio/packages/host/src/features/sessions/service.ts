@@ -375,7 +375,7 @@ export class SessionsFeature extends Feature {
   }
 
   /** A live project (or the common space) by id, name or folder path, as project_context lists them. */
-  private workspaceByRef(ref: unknown): Workspace {
+  workspaceByRef(ref: unknown): Workspace {
     if (typeof ref !== "string") throw new HostError("bad_request", "workspace must be a project's name, id or path");
     const want = ref.trim();
     const norm = (p: string) => resolve(p).replace(/[\\/]+$/, "").toLowerCase();

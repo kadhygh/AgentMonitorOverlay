@@ -8,6 +8,7 @@ import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
 import { KindIcon } from "./KindIcon.js";
 import { setGroupByTopic, useGroupByTopic } from "./prefs.js";
+import { dutyOfTask, useDuty } from "../duty/duty.js";
 
 /** What the board shows: everything, one topic's tasks, or one project's. Archived tasks are never on the board. */
 export type Scope = { kind: "all" } | { kind: "topic"; id: string } | { kind: "workspace"; id: string };
@@ -205,6 +206,8 @@ function TaskCard({
 }) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
+  // 值守 (2026-10-31): items on that open sessions in this task.
+  const duty = dutyOfTask(useDuty(), task.id);
   // 远程 (step 2): a copy says where it runs and whether that computer can be reached; a task of this computer says
   // which devices it is granted to.
   const copy: CopyStatus | null = copyStatus(task, remote);
@@ -272,6 +275,11 @@ function TaskCard({
         {task.lead && (
           <span className="lead-badge" title="主控：协调这个专题（或项目）的任务" data-testid="lead-badge">
             主控
+          </span>
+        )}
+        {duty.length > 0 && (
+          <span className="duty-chip" title={`值守开着：${duty.map((i) => i.title).join("、")}。到点（检查到有事）会在这个任务里开会话`} data-testid="card-duty">
+            值守
           </span>
         )}
         {task.title || "未命名任务"}
