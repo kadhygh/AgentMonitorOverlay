@@ -955,6 +955,8 @@ export interface HostRoutes {
   "PUT /api/remote/security": { req: import("./remote.js").RemoteSecurity; res: import("./remote.js").RemoteState };
   /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
   "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
+  /** A remote copy's templates as its own computer offers them (rt.templates). */
+  "GET /api/remote/tasks/:id/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
   /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
   "POST /api/remote/create": { req: import("./remote.js").RemoteCreateAsk & { account: string; device: string; /** Pictures uploaded here (POST /api/attachments); files go in the text's 引用文件 block. */ attachments?: Id[] }; res: import("./remote.js").RemoteCreateResult };
 }

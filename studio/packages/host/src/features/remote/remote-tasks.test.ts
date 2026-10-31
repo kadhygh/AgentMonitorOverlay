@@ -714,6 +714,14 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     a.service.tasks.updateTask(task.id, { title: "A 又改了" });
     await until(() => b.store.getTask(task.id)!.title, (t) => t === "A 又改了", "A's name on B");
 
+    // 提示词模板 (2026-10-31): B sees the templates A offers for the task (A's global ones and its project's), not those
+    // of A's other projects nor its own.
+    const other = a.store.addWorkspace({ path: tempDir("A-other"), name: "别的项目" });
+    a.service.promptTemplates.create({ title: "全局的", body: "g" });
+    a.service.promptTemplates.create({ title: "别的项目的", body: "o", workspaceId: other.id });
+    b.service.promptTemplates.create({ title: "B 自己的", body: "b" });
+    expect((await b.service.remote.copies.templates(b.store.getTask(task.id)!)).map((t) => t.title)).toEqual(["全局的"]);
+
     expect(() => b.service.tasks.patchTask(task.id, { title: "x", column: "done" })).toThrow("状态、说明和专题");
     expect(() => b.service.tasks.patchTask(task.id, { title: "  " })).toThrow("empty");
 

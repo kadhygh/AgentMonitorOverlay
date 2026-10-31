@@ -330,6 +330,12 @@ export class RemoteGrants {
           await sessions.interrupt(s.id);
           return ok({ ok: true });
         }
+        case REMOTE_KINDS.templates: {
+          const taskId = id(b.taskId, "taskId");
+          this.grantFor(from, taskId);
+          const task = this.store.getTask(taskId);
+          return ok({ templates: this.ctx.host.promptTemplates.list(task?.workspaceId ?? "") });
+        }
         case REMOTE_KINDS.rename: {
           // The new name comes back to B with the task's or session's own push.
           if (typeof b.sessionId === "string") {

@@ -1,4 +1,4 @@
-import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -388,6 +388,14 @@ export class RemoteCopies {
     const { task, peer } = this.target(sessionId);
     await this.ask(peer, REMOTE_KINDS.archive, { sessionId, archived });
     return this.store.listSessions({ taskId: task.id }).filter((s) => !!s.archivedAt === archived);
+  }
+
+  /** The templates the task's own computer offers for it; an older one does not know the ask. */
+  async templates(task: Task): Promise<PromptTemplate[]> {
+    if (!task.remote) throw new HostError("not_found", `task ${task.id} not found`);
+    if (task.remote.state !== "active") throw new HostError("read_only", `授权已收回：${task.remote.reason ?? ""}`.replace(/：$/, ""));
+    const answer = await this.ask<{ templates?: PromptTemplate[] }>(peerOf(task), REMOTE_KINDS.templates, { taskId: task.id });
+    return Array.isArray(answer.templates) ? answer.templates : [];
   }
 
   async renameTask(task: Task, title: string): Promise<Task> {

@@ -162,6 +162,21 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(a.page.getByTestId("msg-user").filter({ hasText: "从 B 发来的消息" })).toBeVisible({ timeout: 30_000 });
   await screenshot(b.app, "studio", "remote-b-conversation", b.page);
 
+  // 提示词模板 (2026-10-31): B's template window lists A's templates after its own, read-only; one pastes like B's.
+  await a.api("POST", "/api/prompt-templates", { title: "A 上的巡检", body: "在 A 上看一遍" });
+  await b.api("POST", "/api/prompt-templates", { title: "B 自己的", body: "b" });
+  await composer(b.page).fill("@");
+  await b.page.getByTestId("suggest").getByRole("option", { name: /提示词模板/ }).click();
+  const templates = b.page.getByTestId("prompt-dialog");
+  await expect(templates.getByTestId("prompt-item")).toHaveCount(2);
+  await templates.getByTestId("prompt-item").filter({ hasText: "A 上的巡检" }).click();
+  await expect(templates.getByTestId("prompt-preview")).toContainText("在 A 台式机 上 · 全局");
+  await expect(templates.getByTestId("prompt-preview")).toContainText("要改去那台电脑上改");
+  await screenshot(b.app, "studio", "remote-b-templates", b.page);
+  await templates.getByTestId("prompt-ok").click();
+  await expect(composer(b.page)).toHaveValue("在 A 上看一遍");
+  await composer(b.page).fill("");
+
   // 2026-10-30: B renames the task and the session; the names change on A too.
   await b.page.getByTestId("task-title").getByRole("button").click();
   await b.page.getByRole("textbox", { name: "任务名" }).fill("远程一起做的任务（B 改名）");

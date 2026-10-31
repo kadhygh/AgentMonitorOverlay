@@ -730,6 +730,7 @@ ${d}` : back));
           link={link}
           workspaceId={session?.workspaceId ?? null}
           projects={projects ?? []}
+          {...(isRemote && session.taskId ? { remote: { taskId: session.taskId, name: tasks.find((t) => t.id === session.taskId)?.remote?.name ?? "那台电脑" } } : {})}
           onDone={(body) => {
             const caret = mentions.finishTemplate(body);
             requestAnimationFrame(() => {

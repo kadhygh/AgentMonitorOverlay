@@ -260,6 +260,11 @@ export const REMOTE_KINDS = {
    * {received}
    */
   upload: "rt.upload",
+  /**
+   * B → A (2026-10-31, the user: 「远程控制端可能看到被控端的模板」): the prompt templates a granted task's composer
+   * offers there (A's global ones and its project's). {taskId} → {templates: PromptTemplate[]}
+   */
+  templates: "rt.templates",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */

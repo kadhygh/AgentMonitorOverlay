@@ -16,8 +16,25 @@ interface Editing {
   workspaceId: string | null;
 }
 
-export function PromptTemplateDialog({ link, workspaceId, projects, onDone }: { link: HostLink; workspaceId: string | null; projects: readonly Workspace[]; onDone(text: string | null): void }) {
-  const templates = usePromptTemplates(link, workspaceId);
+/** A template of the computer a remote task runs on: listed after this computer's, read-only here. */
+type Listed = PromptTemplate & { there?: boolean };
+
+export function PromptTemplateDialog({ link, workspaceId, projects, remote, onDone }: { link: HostLink; workspaceId: string | null; projects: readonly Workspace[]; /** A remote task (2026-10-31): its own computer's templates too. */ remote?: { taskId: string; name: string }; onDone(text: string | null): void }) {
+  const local = usePromptTemplates(link, workspaceId);
+  const [there, setThere] = useState<PromptTemplate[] | null>(null);
+  const [thereError, setThereError] = useState("");
+  useEffect(() => {
+    if (!remote) return;
+    let live = true;
+    call(link, "GET /api/remote/tasks/:id/prompt-templates", { id: remote.taskId }).then(
+      (t) => live && setThere(t),
+      (err: unknown) => live && setThereError(err instanceof HostApiError ? err.message : String(err)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [link, remote?.taskId]);
+  const templates: Listed[] | null = local && (!remote || there || thereError) ? [...local, ...(there ?? []).map((t) => ({ ...t, id: `there:${t.id}`, there: true }))] : null;
   const [query, setQuery] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -41,6 +58,7 @@ export function PromptTemplateDialog({ link, workspaceId, projects, onDone }: { 
   });
 
   const projectName = (id: string | null) => (id ? (projects.find((w) => w.id === id)?.name ?? "某个项目") : "全局");
+  const where = (t: Listed) => (t.there ? `在 ${remote?.name} 上 · ${t.workspaceId ? "这个任务的项目" : "全局"}` : projectName(t.workspaceId));
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (templates ?? []).filter((t) => !q || t.title.toLowerCase().includes(q) || t.body.toLowerCase().includes(q));
@@ -144,11 +162,12 @@ export function PromptTemplateDialog({ link, workspaceId, projects, onDone }: { 
                 >
                   <span className="prompt-item-title">{t.title}</span>
                   <span className="prompt-item-sub">
-                    {projectName(t.workspaceId)}
+                    {where(t)}
                     {t.by === "agent" ? " · AI 写的" : ""}
                   </span>
                 </button>
               ))}
+              {thereError && <span className="settings-hint prompt-empty" data-testid="prompt-there-error">{`${remote?.name} 上的模板读不到：${thereError}`}</span>}
               {templates && !shown.length && <span className="settings-hint prompt-empty">{templates.length ? "没有符合的模板。" : "还没有模板。点「新建模板」写一条，或者在对话里让 AI 帮你存：「把下面这段存成提示词模板」。"}</span>}
             </div>
           </div>
@@ -187,17 +206,21 @@ export function PromptTemplateDialog({ link, workspaceId, projects, onDone }: { 
                 <div className="prompt-preview-head">
                   <span className="prompt-item-title">{picked.title}</span>
                   <span className="prompt-item-sub">
-                    {projectName(picked.workspaceId)}
+                    {where(picked)}
                     {picked.by === "agent" ? " · AI 写的" : ""}
                   </span>
-                  <span className="prompt-preview-actions">
-                    <button type="button" className="link-btn" disabled={busy} onClick={() => edit({ id: picked.id, title: picked.title, body: picked.body, workspaceId: picked.workspaceId })}>
-                      编辑
-                    </button>
-                    <button type="button" className="link-btn danger" disabled={busy} onClick={() => void remove(picked)}>
-                      删除
-                    </button>
-                  </span>
+                  {picked.there ? (
+                    <span className="prompt-preview-actions settings-hint">要改去那台电脑上改</span>
+                  ) : (
+                    <span className="prompt-preview-actions">
+                      <button type="button" className="link-btn" disabled={busy} onClick={() => edit({ id: picked.id, title: picked.title, body: picked.body, workspaceId: picked.workspaceId })}>
+                        编辑
+                      </button>
+                      <button type="button" className="link-btn danger" disabled={busy} onClick={() => void remove(picked)}>
+                        删除
+                      </button>
+                    </span>
+                  )}
                 </div>
                 <pre className="prompt-preview-text">{picked.body}</pre>
               </div>
