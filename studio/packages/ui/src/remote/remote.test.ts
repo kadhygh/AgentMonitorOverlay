@@ -59,6 +59,17 @@ describe("remoteButton (the top bar's 远程)", () => {
   });
 });
 
+describe("catching up after being away (读条, 2026-11-01)", () => {
+  const syncing = (taskId: string | null, done = 2, total = 5) => ({ ...state([peer(true)]), syncing: [{ account: "台式机的我", device: "d_a", name: "A 台式机", done, total, taskId }] });
+  it("the top bar says how far, with a bar; the page of the task under way and the others say so", () => {
+    expect(remoteButton(syncing(null), now)).toMatchObject({ label: "远程 · 同步 2/5", sync: { done: 2, total: 5 } });
+    expect(remoteButton(state([peer(true)]), now).sync).toBeUndefined();
+    expect(copyStatus(task(), syncing("task_1"), now)!.syncing).toBe("正在补同步离开这段时间的记录（3/5），补完一次显示");
+    expect(copyStatus(task(), syncing("task_other"), now)!.syncing).toBe("正在从 A 台式机 补同步（2/5），这个任务稍后");
+    expect(copyStatus(task(), state([peer(true)]), now)!.syncing).toBeUndefined();
+  });
+});
+
 describe("copyStatus", () => {
   it("is nothing for a task of this computer's own", () => {
     expect(copyStatus({ ...task(), remote: undefined } as Task, state([peer(true)]), now)).toBeNull();

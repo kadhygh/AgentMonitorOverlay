@@ -43,9 +43,16 @@ export const remoteWaiting = (remote: RemoteState | null): number => (remote ? r
  * 「远程」 when nothing is paired, 「远程 · N 在线」 with paired devices (a device paired both ways counts once), and a
  * dot while something waits (remoteWaiting).
  */
-export function remoteButton(remote: RemoteState | null, now: number = Date.now()): { shown: boolean; label: string; waiting: boolean } {
+export function remoteButton(remote: RemoteState | null, now: number = Date.now()): { shown: boolean; label: string; waiting: boolean; sync?: { done: number; total: number } } {
   if (!remote || remote.connection.state === "off") return { shown: false, label: "远程", waiting: false };
   if (!remote.account || !remote.enabled) return { shown: true, label: "远程 · 关", waiting: false };
+  // Catching up after being away (2026-11-01): 「远程 · 同步 3/12」 with a bar until it is done.
+  const syncing = remote.syncing ?? [];
+  if (syncing.length) {
+    const done = syncing.reduce((n, p) => n + p.done, 0);
+    const total = syncing.reduce((n, p) => n + p.total, 0);
+    return { shown: true, label: `远程 · 同步 ${done}/${total}`, waiting: remoteWaiting(remote) > 0, sync: { done, total } };
+  }
   const devices = new Map<string, boolean>();
   for (const p of remote.peers) {
     const k = `${p.account}\n${p.device}`;
@@ -71,6 +78,16 @@ export interface CopyStatus {
   blocked: string | null;
   /** Offline because this computer is not connected (rather than A being away). */
   self?: boolean;
+  /** Catching up on what happened there while away (读条, 2026-11-01): what to say; absent otherwise. */
+  syncing?: string;
+}
+
+/** The catch-up of a copy's device, when one is under way and shown (RemoteState.syncing). */
+export function copySyncing(task: Task, remote: RemoteState | null): string | undefined {
+  const r = task.remote;
+  const p = r && remote?.syncing?.find((x) => x.account === r.account && x.device === r.device);
+  if (!p) return undefined;
+  return p.taskId === task.id ? `正在补同步离开这段时间的记录（${p.done + 1}/${p.total}），补完一次显示` : `正在从 ${p.name} 补同步（${p.done}/${p.total}），这个任务稍后`;
 }
 
 export function copyStatus(task: Task, remote: RemoteState | null, now: number = Date.now()): CopyStatus | null {
@@ -80,7 +97,10 @@ export function copyStatus(task: Task, remote: RemoteState | null, now: number =
   if (!remote) return { state: "unknown", name: r.name, label: `远程 · ${r.name}`, blocked: null };
   const peer = remote.peers.find((p) => p.account === r.account && p.device === r.device && p.role === "guest");
   const online = remote.connection.state === "online" && !!peer && peerPresence(peer, now) === "online";
-  if (online) return { state: "online", name: r.name, label: `远程 · ${r.name}`, blocked: null };
+  if (online) {
+    const syncing = copySyncing(task, remote);
+    return { state: "online", name: r.name, label: `远程 · ${r.name}`, blocked: null, ...(syncing ? { syncing } : {}) };
+  }
   if (!remote.enabled) return { state: "offline", name: r.name, label: "远程已关", blocked: "远程功能关着：在顶栏的「远程」里打开后再发", self: true };
   const self = remote.connection.state !== "online";
   return { state: "offline", name: r.name, label: self ? "没连上服务器" : `${r.name} 离线`, blocked: `${self ? "这台电脑没连上团队服务器" : `${r.name} 离线`}，回来后再发`, self };

@@ -43,19 +43,30 @@ export function useSessionItems(link: HostLink, sessionId: string | null, tail?:
     const buffered: HostEvent[] = [];
     let loaded = false;
     const offEvent = onHostEvent((e) => {
+      // A remote copy caught up many items at once (2026-11-01): read them again, in one go.
+      if (e.type === "items.reloaded") {
+        if (e.sessionId !== sessionId) return;
+        loaded = false;
+        void load();
+        return;
+      }
       if (!loaded) buffered.push(e);
       else setItems((cur) => applyItemEvent(cur, e, sessionId));
     });
-    const load = () =>
-      call(link, "GET /api/sessions/:id/items", { id: sessionId }, undefined, tail ? { tail: String(tail) } : undefined)
+    // Only the latest read counts (a reload can overlap the one before it).
+    let reads = 0;
+    const load = () => {
+      const read = ++reads;
+      return call(link, "GET /api/sessions/:id/items", { id: sessionId }, undefined, tail ? { tail: String(tail) } : undefined)
         .then((fetched) => {
-          if (cancelled) return;
+          if (cancelled || read !== reads) return;
           let next: readonly SessionItem[] = fetched;
           for (const e of buffered.splice(0)) next = applyItemEvent(next, e, sessionId);
           loaded = true;
           setItems(next);
         })
-        .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
+        .catch((err: unknown) => !cancelled && read === reads && setError(err instanceof Error ? err.message : String(err)));
+    };
     const offReconnect = onHostReconnect(() => {
       loaded = false;
       void load();

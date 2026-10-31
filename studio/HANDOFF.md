@@ -47,6 +47,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-01 · 远程：离开很久再连上，一次补齐不再闪**（用户：上午派了一堆任务，下午回来看板没马上刷新、对话「疯狂闪」）：
+- 原因：控制端（`copies.ts`，代码里叫 B）重连后逐个任务 `syncTask`，每个会话补的每一条都发一个 `item.appended`，界面每条都复制排序一次。不需要「离线时间点」：B 本来就知道每个会话补到哪条 seq。
+- 改法：`syncPeer` 先并行（3 个一组）把所有任务和会话拿齐（看板立刻对），再逐任务补记录；一个会话要补的超过 20 条或不止一页时安静写库，结束发一次 `items.reloaded`（`protocol/api.ts`），`useSessionItems` 收到就整段重读。补同步超过 1 秒时 `RemoteState.syncing` 带进度，顶栏「远程 · 同步 n/总数」加进度条，任务页横幅写正在补哪个。被控端不用改，旧版互通。
+- 验证：`remote-tasks.test.ts` 新用例（离开期间写 450 条：没有逐条 appended、只有一次 reloaded、`task.upserted` 在它前面、进度清掉、3 条的照旧逐条来）、`ui/src/remote/remote.test.ts` 新一组；typecheck 过。全量 vitest 里 Codex `server-manager.test.ts` 失败，干净的 master 上一样，与此无关。没截图进度条（要两台电脑实际离线一段）。
+
 **2026-10-31 · 提示词模板，删掉扩展包（在 worktree 分支 `studio/prompt-templates` 做完后合进 master，未发布）**
 
 - 用户要「任务模板」：常开的同样任务，存好提示词，在 @ 菜单里和快速提交同一级的位置选，弹窗选中后粘进输入框；模板可以让 AI 通过 AMO 的 MCP 按要求加。用户定的三条都按建议（`plans/prompt-templates.md`）：全局 + 可只在某项目出现；第一版不做变量；AI 新增、修改直接生效，删除要人批准，列表标「AI 写的」。同时用户定**删掉扩展包**（模板比它好用；以后可能做类似 DSH 的插件架构）。

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -216,6 +216,42 @@ describe("remote tasks between two Hosts (step 2)", () => {
     await b.service.tasks.archiveTask(second.task.id);
     await b.remote.copies.syncPeer(toA(a));
     expect(b.store.getTask(second.task.id)).toBeUndefined();
+  }, 60_000);
+
+  it("B back after a long time away (2026-11-01): the many missed items are written at once and the windows told once, with the progress shown meanwhile", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 第一句"), "B has the first reply");
+    b.remote.stop();
+    await until(a.state, (s) => s.peers[0]?.online === false, "A sees B gone");
+    // Hours of work on A while B was away: more than a page of items.
+    for (let i = 0; i < 450; i++) a.store.appendItem({ id: `away-${i}`, sessionId: session.id, createdAt: new Date().toISOString(), type: "notice", level: "info", message: `离开时的第 ${i} 条` });
+    const seen: HostEvent[] = [];
+    b.service.on("event", (e: HostEvent) => seen.push(e));
+    b.restart();
+    await until(() => b.store.getItem("away-449"), Boolean, "B caught up");
+    await until(() => seen.filter((e) => e.type === "items.reloaded"), (r) => r.length > 0, "told once");
+    expect(items(b, session.id).filter((i) => i.id.startsWith("away-")).length).toBe(450);
+    // Not one by one.
+    expect(seen.filter((e) => e.type === "item.appended" && e.item.id.startsWith("away-")).length).toBe(0);
+    expect(seen.filter((e) => e.type === "items.reloaded").map((e) => (e as { sessionId: string }).sessionId)).toEqual([session.id]);
+    // The task came before its items; the progress is gone once done.
+    const firstTask = seen.findIndex((e) => e.type === "task.upserted" && e.task.id === task.id);
+    const reloaded = seen.findIndex((e) => e.type === "items.reloaded");
+    expect(firstTask).toBeGreaterThanOrEqual(0);
+    expect(firstTask).toBeLessThan(reloaded);
+    await until(b.state, (s) => (s.syncing ?? []).length === 0, "progress gone");
+
+    // A few missed items still come one by one.
+    b.remote.stop();
+    await until(a.state, (s) => s.peers[0]?.online === false, "A sees B gone again");
+    for (let i = 0; i < 3; i++) a.store.appendItem({ id: `brief-${i}`, sessionId: session.id, createdAt: new Date().toISOString(), type: "notice", level: "info", message: `短暂离开 ${i}` });
+    seen.length = 0;
+    b.restart();
+    await until(() => b.store.getItem("brief-2"), Boolean, "B caught up again");
+    await until(() => seen.filter((e) => e.type === "item.appended" && e.item.id.startsWith("brief-")), (r) => r.length === 3, "one by one");
+    expect(seen.some((e) => e.type === "items.reloaded")).toBe(false);
   }, 60_000);
 
   it("A away: B cannot send (said why) and catches up once A is back; a question is answered from B", async () => {

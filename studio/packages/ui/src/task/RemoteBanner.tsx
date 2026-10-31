@@ -64,6 +64,12 @@ export function RemoteBanner({ task, copy, sessions, profiles }: { task: Task; c
             )}
           </span>
         )}
+        {copy.syncing && (
+          <span className="remote-banner-sync" data-testid="remote-banner-sync">
+            <span className="starting-spin" aria-hidden="true" />
+            {copy.syncing}
+          </span>
+        )}
         <span className="remote-banner-more">{open ? "收起说明" : "说明"}</span>
         <span className={`remote-banner-caret${open ? " open" : ""}`} aria-hidden>
           ▾

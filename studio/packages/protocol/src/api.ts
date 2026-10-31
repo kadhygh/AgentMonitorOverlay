@@ -628,6 +628,11 @@ export type HostEvent = { seq: number } & (
   | { type: "item.updated"; item: SessionItem }
   /** Streaming text appended to an agent item; not persisted as a separate event. */
   | { type: "item.delta"; sessionId: Id; itemId: Id; append: string }
+  /**
+   * Many items of a session were written at once (a remote copy catching up after being away, 2026-11-01): read the
+   * session's items again instead of one item.appended each.
+   */
+  | { type: "items.reloaded"; sessionId: Id }
   | { type: "annotation.upserted"; annotation: Annotation }
   | { type: "annotation.removed"; sessionId: Id; annotationId: Id }
   | { type: "scratchpad.updated"; scratchpad: Scratchpad }

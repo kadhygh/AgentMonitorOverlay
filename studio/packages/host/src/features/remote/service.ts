@@ -110,6 +110,8 @@ export class RemoteFeature extends Feature {
     if (this.opts) return;
     this.opts = options;
     this.copies.onList = (peer, list) => this.asks.sync(peer, list.requests);
+    // The catch-up progress (读条, 2026-11-01): only the state, not what paired devices may pick (changed() announces that).
+    this.copies.onProgress = () => this.host.emit("event", { type: "remote.updated", remote: this.state(), seq: this.store.lastEventSeq() });
     try {
       this.device = ensureDevice({ env: options.env });
     } catch (err) {
@@ -529,6 +531,7 @@ export class RemoteFeature extends Feature {
       asks: this.asks.list(),
       allowedProjects: this.creates.allowedProjects(),
       security: this.creates.security(),
+      syncing: this.copies.syncState(),
     };
   }
 

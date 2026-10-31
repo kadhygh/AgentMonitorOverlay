@@ -96,6 +96,21 @@ export interface RemoteState {
   allowedProjects: RemoteAllowedProjects;
   /** 安全 (2026-10-29): whether a task a paired device creates here starts at once or waits for a yes here. */
   security: RemoteSecurity;
+  /**
+   * As B (2026-11-01, the user: 重连后先读条，一次性同步好): paired devices whose granted tasks this computer is catching
+   * up on after being away, once it has taken more than a moment; empty otherwise. Optional: an older Host has none.
+   */
+  syncing?: RemoteSyncing[];
+}
+
+/** One paired device's tasks being brought up to date here: `done` of `total` tasks; `taskId` the one under way. */
+export interface RemoteSyncing {
+  account: string;
+  device: string;
+  name: string;
+  done: number;
+  total: number;
+  taskId: Id | null;
 }
 
 /** Another device of this computer's own account, connected to the team server now (远程页的配对弹窗, 2026-10-29). */

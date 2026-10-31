@@ -1,4 +1,4 @@
-import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -25,6 +25,21 @@ const peerOf = (t: Task): DeviceRef => ({ account: t.remote!.account, device: t.
 /** How long a command may take before its result counts as unconfirmed. Starting a session takes longest. */
 const COMMAND_MS = 30_000;
 const START_MS = 90_000;
+/**
+ * Catching up a session with more items than this (or more than one page) writes them quietly and then tells the
+ * windows once (items.reloaded) — 2026-11-01, the user: after hours away the board lagged and an open conversation
+ * 「疯狂闪」 while thousands of item.appended came one by one. A few missed items still come one by one.
+ */
+const LIVE_ITEMS = 20;
+/** Only a catch-up longer than this shows (读条): a quick one would just flash. */
+const SHOW_SYNC_MS = 1000;
+/** Tasks asked for at once when a device comes back. */
+const TASKS_AT_ONCE = 3;
+
+interface Progress extends RemoteSyncing {
+  shown: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
 
 export class RemoteCopies {
   private readonly fetching = new Set<Id>();
@@ -37,6 +52,9 @@ export class RemoteCopies {
   readonly images: CopyImages;
   /** Step 4: what A's list says besides its grants (this computer's requests to it). */
   onList: ((peer: DeviceRef, list: RemoteListAnswer) => void) | null = null;
+  /** The catch-up progress (syncState()) changed: the remote state is told again. */
+  onProgress: (() => void) | null = null;
+  private readonly progress = new Map<string, Progress>();
 
   constructor(private readonly ctx: RemoteContext) {
     this.files = new RemoteFiles(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
@@ -98,11 +116,34 @@ export class RemoteCopies {
 
   // ---- bringing copies up to date
 
-  /** Everything granted by one device, again: new grants, grants taken back, every session's missed items. */
+  /** The devices whose tasks are being caught up on, once that has taken a moment (RemoteState.syncing). */
+  syncState(): RemoteSyncing[] {
+    return [...this.progress.values()].filter((p) => p.shown).map(({ account, device, name, done, total, taskId }) => ({ account, device, name, done, total, taskId }));
+  }
+
+  private setProgress(key: string, next: Partial<RemoteSyncing> | null): void {
+    const p = this.progress.get(key);
+    if (!p) return;
+    if (!next) {
+      if (p.timer) clearTimeout(p.timer);
+      this.progress.delete(key);
+      if (p.shown) this.onProgress?.();
+      return;
+    }
+    Object.assign(p, next);
+    if (p.shown) this.onProgress?.();
+  }
+
+  /**
+   * Everything granted by one device, again: new grants, grants taken back, every session's missed items. 2026-11-01:
+   * first every task and its sessions (a few at a time; the board is right at once), then the items, task by task,
+   * with the progress shown (RemoteState.syncing) when it takes more than a moment.
+   */
   syncPeer(peer: DeviceRef): Promise<void> {
     const key = `${peer.account}\n${peer.device}`;
     const running = this.syncing.get(key);
     if (running) return running;
+    const failed = (err: unknown) => this.ctx.host.emit("event", { type: "host.error", message: `远程任务同步失败：${err instanceof Error ? err.message : String(err)}`, seq: this.store.lastEventSeq() });
     const run = (async () => {
       let list: RemoteListAnswer;
       try {
@@ -114,26 +155,56 @@ export class RemoteCopies {
       this.onList?.(peer, list);
       const granted = new Map(list.tasks.map((t) => [t.taskId, t.grantedAt]));
       for (const t of this.copies(peer)) if (t.remote!.state === "active" && !t.archivedAt && !granted.has(t.id)) this.revokeCopy(t.id, "授权已收回");
+      const todo: Id[] = [];
       for (const [taskId, grantedAt] of granted) {
         // Put away here while A was away (or from before A knew rt.drop): A hears it now.
-        if (this.dismissed(peer, taskId, grantedAt)) {
-          this.tellDropped(peer, taskId);
-          continue;
-        }
-        await this.syncTask(peer, taskId).catch((err: unknown) => this.ctx.host.emit("event", { type: "host.error", message: `远程任务同步失败：${err instanceof Error ? err.message : String(err)}`, seq: this.store.lastEventSeq() }));
+        if (this.dismissed(peer, taskId, grantedAt)) this.tellDropped(peer, taskId);
+        else todo.push(taskId);
       }
-    })().finally(() => this.syncing.delete(key));
+      if (!todo.length) return;
+      const p: Progress = { account: peer.account, device: peer.device, name: this.ctx.peer(peer)?.name ?? peer.account, done: 0, total: todo.length, taskId: null, shown: false, timer: null };
+      p.timer = setTimeout(() => {
+        p.timer = null;
+        if (this.progress.get(key) !== p) return;
+        p.shown = true;
+        this.onProgress?.();
+      }, SHOW_SYNC_MS);
+      p.timer.unref?.();
+      this.progress.set(key, p);
+      // 1: the tasks and their sessions.
+      const sessions = new Map<Id, Id[]>();
+      const queue = [...todo];
+      const worker = async () => {
+        for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+          const taskId = id;
+          await this.syncTask(peer, taskId, false).then((ids) => void (ids && sessions.set(taskId, ids)), failed);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(TASKS_AT_ONCE, todo.length) }, worker));
+      // 2: what each session missed, task by task.
+      for (const taskId of todo) {
+        this.setProgress(key, { taskId });
+        for (const sid of sessions.get(taskId) ?? []) await this.catchUp(peer, sid).catch(failed);
+        this.setProgress(key, { done: p.done + 1 });
+      }
+    })().finally(() => {
+      this.syncing.delete(key);
+      this.setProgress(key, null);
+    });
     this.syncing.set(key, run);
     return run;
   }
 
-  /** One granted task: its copy made or brought up to date, with its sessions and their items. */
-  async syncTask(peer: DeviceRef, taskId: Id): Promise<void> {
+  /**
+   * One granted task: its copy made or brought up to date, with its sessions — and their items, unless `items` is
+   * false (syncPeer catches them up after every task is in). The ids of its sessions; null when it is not kept here.
+   */
+  async syncTask(peer: DeviceRef, taskId: Id, items = true): Promise<Id[] | null> {
     const snap = await this.ask<RemoteTaskSnapshot>(peer, REMOTE_KINDS.task, { taskId });
-    if (this.dismissed(peer, taskId, snap.grantedAt)) return;
+    if (this.dismissed(peer, taskId, snap.grantedAt)) return null;
     const existing = this.store.getTask(taskId);
     // A task of this computer's own under the same id: never overwritten (ids are random; this should not happen).
-    if (existing && (!existing.remote || !same(existing.remote, peer))) return;
+    if (existing && (!existing.remote || !same(existing.remote, peer))) return null;
     const before = this.profilesStamp();
     const remote: TaskRemote = {
       account: peer.account,
@@ -160,7 +231,8 @@ export class RemoteCopies {
       if (i < 0) break;
       this.putSession(peer, pending.splice(i, 1)[0]!);
     }
-    for (const s of snap.sessions) await this.catchUp(peer, s.id);
+    if (items) for (const s of snap.sessions) await this.catchUp(peer, s.id);
+    return snap.sessions.map((s) => s.id);
   }
 
   /** A's session as this computer keeps it. */
@@ -195,11 +267,19 @@ export class RemoteCopies {
       do {
         this.again.delete(sessionId);
         let since = this.catchUpFrom(sessionId);
-        for (;;) {
-          const r = await this.ask<RemoteItemsAnswer>(peer, REMOTE_KINDS.items, { sessionId, since });
-          for (const item of r.items) this.putItem(item);
-          if (!r.more || !r.items.length) break;
-          since = r.items[r.items.length - 1]!.seq;
+        let quiet = false;
+        try {
+          for (;;) {
+            const r = await this.ask<RemoteItemsAnswer>(peer, REMOTE_KINDS.items, { sessionId, since });
+            // Many: written quietly, the windows told once at the end (LIVE_ITEMS).
+            if (!quiet && (r.more || r.items.length > LIVE_ITEMS)) quiet = true;
+            for (const item of r.items) this.putItem(item, quiet);
+            if (!r.more || !r.items.length) break;
+            since = r.items[r.items.length - 1]!.seq;
+          }
+        } finally {
+          // Also when a page failed half way: what was written shows.
+          if (quiet) this.publish({ type: "items.reloaded", sessionId });
         }
       } while (this.again.has(sessionId));
     } finally {
@@ -207,10 +287,11 @@ export class RemoteCopies {
     }
   }
 
-  private putItem(item: SessionItem): void {
+  /** `quiet`: stored only; the windows are told by items.reloaded when the catch-up ends. */
+  private putItem(item: SessionItem, quiet = false): void {
     const taskId = this.store.getSession(item.sessionId)?.taskId;
     const { item: stored, added } = this.store.putRemoteItem(taskId ? this.images.localize(taskId, item) : item);
-    this.publish({ type: added ? "item.appended" : "item.updated", item: stored });
+    if (!quiet) this.publish({ type: added ? "item.appended" : "item.updated", item: stored });
   }
 
   /** The copy of a session of `peer`'s, while its task is still granted. */

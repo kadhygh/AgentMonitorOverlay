@@ -36,7 +36,7 @@ export function TopBar({
   /** 值守 (2026-10-31): shown once there are items — how many are on, ◐ while one runs; opens the 值守 dialog. */
   duty?: { on: number; total: number; running: boolean; open(): void };
   /** 远程 (2026-10-29): the button that opens the remote page (remote/remote.ts remoteButton says what it shows). */
-  remote?: { shown: boolean; label: string; waiting: boolean; current: boolean; open(): void };
+  remote?: { shown: boolean; label: string; waiting: boolean; sync?: { done: number; total: number }; current: boolean; open(): void };
   /** The top-left icon: 「AMO 娘」's while she is the 桌宠 (focus/mascot.ts), else the app's viewfinder. */
   mark?: string | undefined;
   /** 后退 / 前进 (2026-10-19). */
@@ -111,12 +111,18 @@ export function TopBar({
           type="button"
           className="tb-btn remote-toggle"
           aria-current={remote.current ? "page" : undefined}
-          title={remote.waiting ? "远程：有配对请求、任务请求或对方的回复等你看" : "远程：你的其他设备、授权给它们的任务、在别的设备上跑的任务"}
+          title={remote.sync ? "远程：正在补同步离开这段时间别的电脑上的进展，补完一次显示" : remote.waiting ? "远程：有配对请求、任务请求或对方的回复等你看" : "远程：你的其他设备、授权给它们的任务、在别的设备上跑的任务"}
           onClick={remote.open}
           data-testid="topbar-remote"
+          data-syncing={remote.sync ? "" : undefined}
         >
           <RemoteIcon />
           {remote.label}
+          {remote.sync && (
+            <span className="remote-sync-bar" aria-hidden="true" data-testid="topbar-remote-sync">
+              <span style={{ width: `${Math.round((remote.sync.done / Math.max(1, remote.sync.total)) * 100)}%` }} />
+            </span>
+          )}
           {remote.waiting && <span className="settings-dot" aria-label="有请求或回复等你看" data-testid="topbar-remote-dot" />}
         </button>
       )}

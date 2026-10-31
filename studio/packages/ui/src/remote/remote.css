@@ -4,6 +4,10 @@
 /* The top bar's 「远程」: like the other buttons there; while its dialog is open it looks pressed. */
 .tb-btn.remote-toggle[aria-current="page"] { border-color: var(--border-strong); background: var(--panel); color: var(--text); font-weight: 600; }
 .tb-btn.remote-toggle .settings-dot { margin-left: 0; }
+/* 补同步的读条 (2026-11-01): a thin bar along the button's bottom while copies catch up after being away. */
+.tb-btn.remote-toggle[data-syncing] { position: relative; }
+.remote-sync-bar { position: absolute; left: 6px; right: 6px; bottom: 2px; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--primary) 20%, transparent); overflow: hidden; }
+.remote-sync-bar > span { display: block; height: 100%; min-width: 8%; background: var(--primary); transition: width 0.3s ease; }
 
 .remote-modal { gap: 14px; overflow: hidden; padding-bottom: 16px; }
 .remote-modal:focus { outline: none; }

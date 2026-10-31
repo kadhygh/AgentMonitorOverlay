@@ -55,6 +55,8 @@
 .remote-banner-head .remote-badge { width: 36px; box-sizing: border-box; text-align: center; }
 .remote-banner-title { flex: none; font-weight: 700; white-space: nowrap; }
 .remote-banner-watch { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); font-size: 12px; }
+.remote-banner-sync { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.remote-banner-sync .starting-spin { width: 11px; height: 11px; border-width: 1.5px; flex: none; }
 .remote-banner-models { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .remote-banner-status { flex: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .remote-banner-dot { width: 7px; height: 7px; border-radius: 50%; }
