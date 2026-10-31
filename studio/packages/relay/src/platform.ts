@@ -13,6 +13,9 @@ import { resolve, sep } from "node:path";
 //   channels.json                         { "stable": { "studio": "0.9.0", … }, "test": { … } }
 //   downloads/AMO-Platform-win.zip        the platform itself for the download page (optional; here because deploy
 //                                         replaces app/downloads)
+//   android/latest.json, android/<name>.apk   the Android app's newest build (2026-10-31, relay-mac.mjs android-publish):
+//                                         the app asks for it and installs it itself; not a platform tool (the
+//                                         platform would offer it to install on Windows)
 // The service only reads it, on each request. Every name taken from a URL is checked against the patterns below before
 // it is joined to a path, and the result must still be under the platform dir.
 
@@ -22,6 +25,19 @@ export const TOOL_ID = /^[a-z][a-z0-9-]{0,31}$/;
 export const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 export const SHA256 = /^[0-9a-f]{64}$/;
 export const PLATFORM_ZIP = "AMO-Platform-win.zip";
+/** The Android app's file names: AMO-Studio-Android-0.1.1.apk. */
+export const APK_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.apk$/;
+
+/** android/latest.json: what the app compares with itself (versionCode) and downloads (file, checked by size and sha256). */
+export interface AndroidLatest {
+  version: string;
+  versionCode: number;
+  file: string;
+  size: number;
+  sha256: string;
+  notes: string;
+  publishedAt: string;
+}
 
 export interface PlatformChannels {
   stable: Record<string, string>;
@@ -82,6 +98,19 @@ export class PlatformFiles {
       if (got) return { ...got, gzip };
     }
     return null;
+  }
+
+  /** The Android app's newest build, or null before the first publish (or when latest.json names a file not there). */
+  androidLatest(): AndroidLatest | null {
+    const file = this.file("android", "latest.json");
+    if (!file) return null;
+    const v = JSON.parse(readFileSync(file, "utf8")) as AndroidLatest;
+    return typeof v.file === "string" && APK_NAME.test(v.file) && this.apk(v.file) ? v : null;
+  }
+
+  /** One of the Android app's builds, or null (also for a name that fails its pattern). */
+  apk(name: string): string | null {
+    return APK_NAME.test(name) ? this.file("android", name) : null;
   }
 
   /** downloads/AMO-Platform-win.zip, when there is one. */

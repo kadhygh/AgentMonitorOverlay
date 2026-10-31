@@ -18,6 +18,7 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".woff2": "font/woff2",
   ".zip": "application/zip",
+  ".apk": "application/vnd.android.package-archive",
 };
 
 export class PublicFiles {

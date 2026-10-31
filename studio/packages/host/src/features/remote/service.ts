@@ -81,6 +81,7 @@ export class RemoteFeature extends Feature {
       const pr = this.presence.get(`${ref.account}\n${ref.device}`);
       return { name: p.name, online: this.link?.state === "online" && !!pr?.online };
     },
+    ownerPeers: () => this.pairs().filter((p) => p.role === "owner").map((p) => ({ account: p.account, device: p.device })),
     changed: () => this.changed(),
   };
   /** As A (2026-10-29 evening): pictures and files paired devices send along. */
@@ -595,6 +596,8 @@ export class RemoteFeature extends Feature {
         const p = r.pair;
         this.savePairs([...this.pairs().filter((x) => !(same(x, p.peer) && x.role === "owner")), { account: p.peer.account, device: p.peer.device, name: p.peer.name, role: "owner", pairedAt: iso(p.pairedAt) }]);
         this.presence.set(`${p.peer.account}\n${p.peer.device}`, { online: p.online, lastSeen: p.online ? Date.now() : p.ago === null ? null : Date.now() - p.ago });
+        // One more of the own account's devices (2026-10-31): it sees the tasks the others were granted.
+        this.grants.shareWith(p.peer);
       }
     } finally {
       // Answered here, elsewhere, or gone: either way it is no longer waiting on this computer.

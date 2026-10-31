@@ -4,6 +4,8 @@
 
 ## 下一版
 
+- AMO Studio 安卓版从这里更新：服务器上放最新的安装包（`npm run relay:mac -- android-publish`），登录的人能读到它的版本和改动说明（`/api/platform/android`）并下载安装包（`/platform/android/<文件名>`）。
+
 ## 0.7.5（2026-10-31）
 
 - 问题页「打包记录」：0.7.3 时记下的那次打包没有每一步的时间，那几格显示「—」，不再显示「NaN 秒」。

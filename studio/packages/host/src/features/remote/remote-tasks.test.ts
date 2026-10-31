@@ -307,6 +307,59 @@ describe("remote tasks between two Hosts (step 2)", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(got.slice(before).filter((e) => e.type === "relay" && e.re === "late-1")).toEqual([]);
   }, 60_000);
+
+  it("the own account's devices share grants (2026-10-31): a later-paired one gets them, a new grant reaches all, each drops its own; another account's stays apart", async () => {
+    const { url, keys } = await relayService();
+    const a = await host("A-PC", url, "台式机的我", keys["台式机的我"]!);
+    await until(a.state, online, "A online");
+    const aDevice = a.state().device!.id;
+    const toA = { account: "台式机的我", device: aDevice };
+    /** A raw device of `account`, paired with A (A allowed it), its frames kept. */
+    const device = async (account: string, id: string, name: string) => {
+      const key = keys[account]!;
+      const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+      const ws = new WebSocket(`${url.replace("http", "ws")}/api/devices/ws?device=${id}&name=${encodeURIComponent(name)}`, { headers: { authorization: `Bearer ${key}` } });
+      cleanups.push(() => ws.terminate());
+      const got: DeviceEvent[] = [];
+      ws.on("message", (d) => got.push(JSON.parse(String(d)) as DeviceEvent));
+      await new Promise((r) => ws.once("open", r));
+      const req = (await (await fetch(`${url}/api/devices/pair`, { method: "POST", headers, body: JSON.stringify({ device: id, deviceName: name, to: "台式机的我", toDevice: aDevice }) })).json()) as { request: { id: string } };
+      await until(a.state, (s) => s.incoming.some((r) => r.id === req.request.id), `${name}'s request`);
+      await a.remote.answer(req.request.id, true);
+      await until(a.state, (s) => s.peers.some((p) => p.device === id && p.online), `A sees ${name}`);
+      const ref = { account, device: id };
+      const granted = () => got.flatMap((e) => (e.type === "relay" && e.kind === REMOTE_KINDS.push && (e.body as { type: string }).type === "granted" ? [(e.body as { taskId: string }).taskId] : []));
+      return { ws, ref, granted };
+    };
+    const grantsOf = (ref: { device: string }) => a.state().grants.filter((g) => g.device === ref.device).map((g) => g.taskId).sort();
+
+    const desk = await device("台式机的我", "d_desk00000000000000000000", "台式机");
+    const first = await taskOnA(a, "先授权的");
+    a.remote.grant(first.task.id, desk.ref);
+    // Paired later, the phone gets what the desk computer has, and hears of it.
+    const phone = await device("台式机的我", "d_phone0000000000000000000", "手机");
+    expect(grantsOf(phone.ref)).toEqual([first.task.id]);
+    await until(phone.granted, (l) => l.includes(first.task.id), "phone hears the first grant");
+    // A grant to the phone now reaches the desk computer too.
+    const second = await taskOnA(a, "后授权的");
+    a.remote.grant(second.task.id, phone.ref);
+    expect(grantsOf(desk.ref)).toEqual([first.task.id, second.task.id].sort());
+    await until(desk.granted, (l) => l.includes(second.task.id), "desk hears the second grant");
+    // Another account's device: granted alone, and not given the own account's tasks when it pairs.
+    const guest = await device("笔记本的我", "d_guest0000000000000000000", "别人的笔记本");
+    expect(grantsOf(guest.ref)).toEqual([]);
+    const third = await taskOnA(a, "给别人的");
+    a.remote.grant(third.task.id, guest.ref);
+    expect(grantsOf(desk.ref)).not.toContain(third.task.id);
+    expect(grantsOf(phone.ref)).not.toContain(third.task.id);
+    // The phone puts its copy away: its grant ends, the desk computer's stays.
+    phone.ws.send(JSON.stringify({ type: "relay", to: toA, id: "drop-1", kind: REMOTE_KINDS.drop, body: { taskId: first.task.id } }));
+    await until(() => grantsOf(phone.ref), (l) => !l.includes(first.task.id), "phone's grant dropped");
+    expect(grantsOf(desk.ref)).toContain(first.task.id);
+    // Taken back from the desk computer here: the phone's own grant to the second stays.
+    a.remote.revoke(second.task.id, desk.ref);
+    expect(grantsOf(phone.ref)).toEqual([second.task.id]);
+  }, 60_000);
 });
 
 describe("remote limits on A", () => {

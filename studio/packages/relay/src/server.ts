@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
-import { PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
+import { APK_NAME, PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
@@ -23,7 +23,8 @@ import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js"
 // cookie, is the credential — so the desktop client's pages, loaded from disk, reach it. It also hands out the client
 // (public.ts): / is the page to send people, /client/ and /app/ the client's content, /downloads/ its zip. With a
 // platform dir it also hands out the AMO platform's tools to people signed in (platform.ts): /api/platform/channels,
-// /api/platform/tools/<tool>/<version> and /platform/objects/<sha256>.
+// /api/platform/tools/<tool>/<version> and /platform/objects/<sha256>; and the Android app's newest build,
+// /api/platform/android and /platform/android/<name>.apk (2026-10-31).
 
 export interface RelayServerOptions {
   store: RelayStore;
@@ -337,6 +338,20 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         }
       };
       if (path === "/api/platform/channels") return send(res, 200, platform.channels());
+      // The Android app updates itself from here (2026-10-31, the user).
+      if (path === "/api/platform/android") {
+        const latest = platform.androidLatest();
+        if (!latest) throw new RelayError("not_found", "服务器上还没有发布安卓版");
+        return send(res, 200, latest);
+      }
+      const am = /^\/platform\/android\/([^/]+)$/.exec(path);
+      if (am) {
+        const name = part(am[1]!);
+        if (!APK_NAME.test(name)) throw new RelayError("bad_request", `安装包的名字不对：${name}`);
+        const file = platform.apk(name);
+        if (!file) throw new RelayError("not_found", `服务器上没有 ${name}`);
+        return sendFile(res, file, true);
+      }
       const tm = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)$/.exec(path);
       if (tm) {
         const [tool, version] = [part(tm[1]!), part(tm[2]!)];

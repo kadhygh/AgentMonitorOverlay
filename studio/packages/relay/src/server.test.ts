@@ -233,6 +233,34 @@ describe("relay service", () => {
     expect(await zip.text()).toBe("zip");
   });
 
+  it("hands out the Android app's newest build to people signed in (2026-10-31)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    const { url, plannerSettings } = await service(undefined, { platformDir: dir });
+    const key = plannerSettings.key;
+    const get = (p: string, k: string | null = key) => fetch(`${url}${p}`, { headers: k ? { authorization: `Bearer ${k}` } : {} });
+    expect(await (await get("/api/platform/android")).json()).toMatchObject({ error: "not_found", message: "服务器上还没有发布安卓版" });
+
+    mkdirSync(join(dir, "android"));
+    const apk = "PK fake apk";
+    const latest = { version: "0.1.1", versionCode: 2, file: "AMO-Studio-Android-0.1.1.apk", size: apk.length, sha256: createHash("sha256").update(apk).digest("hex"), notes: "- 能自己更新", publishedAt: "2026-10-31T12:00:00.000Z" };
+    writeFileSync(join(dir, "android", latest.file), apk);
+    writeFileSync(join(dir, "android", "latest.json"), JSON.stringify(latest));
+    writeFileSync(join(dir, "channels.json"), "{}");
+    expect((await get("/api/platform/android", null)).status).toBe(401);
+    expect((await get(`/platform/android/${latest.file}`, null)).status).toBe(401);
+    expect(await (await get("/api/platform/android")).json()).toEqual(latest);
+    const res = await get(`/platform/android/${latest.file}?key=${encodeURIComponent(key)}`, null);
+    expect(res.headers.get("content-type")).toBe("application/vnd.android.package-archive");
+    expect(res.headers.get("content-length")).toBe(String(apk.length));
+    expect(await res.text()).toBe(apk);
+    expect((await get("/platform/android/AMO-Studio-Android-0.1.0.apk")).status).toBe(404);
+    for (const p of ["/platform/android/latest.json", "/platform/android/..%2Fchannels.json", "/platform/android/.hidden.apk"]) expect((await get(p)).status, p).toBe(400);
+    // latest.json naming a file that is not there: as if nothing was published.
+    writeFileSync(join(dir, "android", "latest.json"), JSON.stringify({ ...latest, file: "gone.apk" }));
+    expect((await get("/api/platform/android")).status).toBe(404);
+  });
+
   it("sends an object stored gzipped as gzip to a client that takes it, and unpacked to one that does not", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
     closers.push(() => rmSync(dir, { recursive: true, force: true }));

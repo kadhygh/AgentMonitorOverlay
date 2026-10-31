@@ -27,6 +27,8 @@ export interface RemoteContext {
   inbox(): UploadInbox;
   /** A paired device's name and whether the server says it is online. */
   peer(ref: DeviceRef, role?: "owner" | "guest"): { name: string; online: boolean } | null;
+  /** The devices this computer allowed to pair (the owner side). */
+  ownerPeers(): DeviceRef[];
   changed(): void;
 }
 
@@ -179,7 +181,40 @@ export class RemoteGrants {
 
   // ---- granting (the remote page, the task page)
 
+  /**
+   * Granted to one of the own account's devices, the task is granted to all of them (2026-10-31, the user: a phone shows
+   * what the desk computer drives on this one). Each keeps its own grant: one device archiving its copy, or a grant taken
+   * back here, leaves the others'. Another account's devices are granted one by one, as before.
+   */
   grant(taskId: Id, peer: DeviceRef): RemoteGrant {
+    const g = this.grantOne(taskId, peer);
+    for (const other of this.ownSiblings(peer)) this.grantOne(taskId, other);
+    return g;
+  }
+
+  /** The other devices of this computer's own account it allowed to pair; none when `peer` is another account's. */
+  private ownSiblings(peer: DeviceRef): DeviceRef[] {
+    const own = this.ctx.ownAccount();
+    if (!own || peer.account !== own) return [];
+    return this.ctx.ownerPeers().filter((p) => p.account === own && !same(p, peer));
+  }
+
+  /** A device of the own account newly allowed to pair: what is granted to the account's other devices is granted to it too. */
+  shareWith(peer: DeviceRef): void {
+    const own = this.ctx.ownAccount();
+    if (!own || peer.account !== own || !this.ctx.peer(peer, "owner")) return;
+    const tasks = new Set(this.list().filter((g) => g.account === own && !same(g, peer)).map((g) => g.taskId));
+    for (const taskId of tasks) {
+      try {
+        this.grantOne(taskId, peer);
+      } catch (err) {
+        // A task archived or gone since: nothing to share.
+        if (!(err instanceof HostError)) throw err;
+      }
+    }
+  }
+
+  private grantOne(taskId: Id, peer: DeviceRef): RemoteGrant {
     const task = this.store.getTask(taskId);
     if (!task) throw new HostError("not_found", `没有任务 ${taskId}`);
     if (task.remote) throw new HostError("bad_request", "这是别的电脑授权给这台电脑的远程任务，不能再转授权");
