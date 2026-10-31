@@ -40,6 +40,8 @@ npm run release -- promote studio 0.9.17      转正式版（照旧）
 
 `release relay-service`：`relay:release`（外壳版本变了才带 `--shell`）→ 部署（照旧：服务变了才重启，重启前备份）→ 提交并打 `relay-service-v<n>` tag。中转服务也加一个版本号和 CHANGELOG（`packages/relay`），部署时写进服务，`/api/health` 能看到。
 
+**中转服务只从提交过的代码部署**（2026-10-31 补）：服务器上只有一份构建，谁后部署谁的为准。那天上午另一个会话在主工作区直接 `relay:mac deploy` 了「服务器状态」（没提交），下午从值守目录发 0.7.1 就把它冲掉了。所以：改中转不要绕过 `release relay-service` 直接 deploy；`release relay-service` 发之前看主工作区 `packages/relay`、`packages/relay-ui` 有没有没提交的改动，有就停下（先提交进 master；确定不要它们才加 `--main-dirty-ok`）。
+
 **依赖提示**：`status` 列出「改了但没发」的工具时，把打进 Studio 的包（notes、reviewer、relay/light…）的改动也算到 Studio 头上。
 
 旧命令（`package:platform`、`relay:mac publish/deploy`、`relay:release`）保留，`release` 只是把它们串起来；AGENTS.md 和问题页值守模板改成只写 `npm run release -- …`。

@@ -234,6 +234,12 @@ async function release(ids) {
   const service = targets.filter((t) => t.service);
   if (service.length && targets.length > 1) throw new Error("中转服务单独发：npm run release -- relay-service");
   const { w, plan } = preflight(targets);
+  // 2026-10-31: 0.7.1, deployed from the 值守 directory, dropped a feature another session had deployed straight from
+  // the main checkout without committing. The server holds one build: relay changes left uncommitted there would go.
+  if (service.length && w.main && !has("--main-dirty-ok")) {
+    const left = spawnSync("git", ["status", "--porcelain", "--", ...service[0].paths.map((p) => p.replace(/^studio\//, ""))], { cwd: join(w.main, "studio"), encoding: "utf8" }).stdout.split("\n").filter(Boolean);
+    if (left.length) throw new Error(`主工作区有没提交的中转改动，部署会把服务器上它们的效果冲掉（如果已经直接部署过）：\n  ${left.join("\n  ")}\n先提交进 master（或确认没部署过），再发；确定不要它们时加 --main-dirty-ok。`);
+  }
   for (const p of plan) p.to = p.resume ? p.from : bump(p.from, has("--minor"));
   console.log(`\n要发布：${plan.map((p) => `${p.t.label} ${p.to}${p.resume ? "（上次提交了没发出去，这次补发）" : ""}`).join("、")}`);
   for (const p of plan) for (const e of p.entries) console.log(`  ${p.t.label} ${e}`);

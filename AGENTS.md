@@ -41,7 +41,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
   - `npm run verify`：类型检查、单测、构建；
   - `npm run e2e`：e2e 按程序分成几个 Playwright project：`studio`、`notes`、`reviewer`、`relay`；
   - `npm run package:portable`：打 portable 包；
-  - 发布都走 `npm run release`（`scripts/release.mjs` 开头有全部用法）：`status` 看各工具和两个通道；`<工具…>` 或 `auto` 发到平台的测试通道（跑测试、升版本、「下一版」改成版本标题、提交进 master、打包、发布、打 tag `<工具>-v<版本>`）；`relay-service` 部署中转服务（会重启中转几秒）；`promote <工具> <版本>` 转正式版。只从提交过的 master 打包：主工作区有没提交的改动时到值守目录里发。改动说明先写进各包 `CHANGELOG.md` 的「## 下一版」，没写的不发。工具 id 见 `studio/scripts/amo-tools.mjs`。
+  - 发布都走 `npm run release`（`scripts/release.mjs` 开头有全部用法）：`status` 看各工具和两个通道；`<工具…>` 或 `auto` 发到平台的测试通道（跑测试、升版本、「下一版」改成版本标题、提交进 master、打包、发布、打 tag `<工具>-v<版本>`）；`relay-service` 部署中转服务（会重启中转几秒；服务器上只有一份，**不要绕过它直接 deploy 没提交的中转改动**，下一次部署会把它冲掉）；`promote <工具> <版本>` 转正式版。只从提交过的 master 打包：主工作区有没提交的改动时到值守目录里发。改动说明先写进各包 `CHANGELOG.md` 的「## 下一版」，没写的不发。工具 id 见 `studio/scripts/amo-tools.mjs`。
   - `npm run relay:mac -- publish` 之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
