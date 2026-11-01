@@ -42,6 +42,10 @@
 .remote-row:first-child { border-top: none; }
 .remote-row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; overflow-wrap: anywhere; }
 .remote-section > .remote-row { padding: 6px 2px; }
+/* 问题 #5 (2026-11-01): a list of tasks shows at most 10 rows (a row: a small button, 5px above and below, its line on
+   top — none on the first), the rest scroll inside it; the filter sits on the right of 任务's heading. */
+.remote-list { display: flex; flex-direction: column; max-height: calc(10 * (var(--ctl-s) + 11px) - 1px); overflow-y: auto; padding-right: 4px; }
+.remote-filter { width: 220px; }
 
 .remote-peer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
 .remote-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }

@@ -137,6 +137,7 @@ export function RemoteDialog({
   const [unpairing, setUnpairing] = useState<RemotePeer | null>(null);
   const [pairing, setPairing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filter, setFilter] = useState("");
   // 刚失联 turns into 离线 by the clock alone; the next retry counts down while offline.
   const offline = !!remote && ["offline", "unauthorized", "server-old", "replaced"].includes(remote.connection.state);
   const [, setTick] = useState(0);
@@ -219,6 +220,15 @@ export function RemoteDialog({
   const waiting = remote.incoming.length + remote.taskRequests.length;
   const outgoing = remote.outgoing;
   const retryIn = connection.retryAt ? Math.max(0, Math.ceil((Date.parse(connection.retryAt) - Date.now()) / 1000)) : null;
+  // 关键字筛选 (2026-11-01, 问题 #5): narrows the granted tasks and those on other devices (and the requests sent) by
+  // task title or device; what waits here (等你处理) always shows.
+  const q = filter.trim().toLowerCase();
+  const hit = (...texts: string[]) => !q || texts.some((t) => t.toLowerCase().includes(q));
+  const shownGrants = remote.grants.filter((g) => hit(taskTitle(g.taskId), g.name, g.account));
+  const shownCopies = copies.filter((t) => hit(t.title || "未命名任务", t.remote!.name));
+  const shownAsks = remote.asks.filter((r) => hit(r.title, r.name));
+  const listed = remote.grants.length + copies.length + remote.asks.length;
+  const noHit = <span className="settings-hint" data-testid="remote-filter-empty">没有含「{filter.trim()}」的任务。</span>;
 
   return (
     <>
@@ -262,7 +272,13 @@ export function RemoteDialog({
           )}
 
           <section className="remote-section" aria-label="任务" data-testid="remote-tasks">
-            <h2 className="remote-heading">任务</h2>
+            <div className="remote-section-head">
+              <h2 className="remote-heading">任务</h2>
+              <span className="spacer" />
+              {listed > 0 && (
+                <input className="field remote-filter" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="按任务名或设备筛选" aria-label="筛选任务" data-testid="remote-task-filter" />
+              )}
+            </div>
 
             {waiting > 0 && (
               <div className="remote-group" aria-label="等你处理" data-testid="remote-waiting">
@@ -299,27 +315,32 @@ export function RemoteDialog({
                 <span className="settings-hint" data-testid="remote-no-grants">
                   还没有。在任务页右上角的 ⋯ 里点「授权给…」，你的另一台电脑就能远程使用那个任务（会话还在这台电脑上跑）。
                 </span>
+              ) : shownGrants.length === 0 ? (
+                noHit
               ) : (
-                remote.grants.map((g) => {
-                  const peer = remote.peers.find((p) => p.account === g.account && p.device === g.device && p.role === "owner");
-                  return (
-                    <div key={`${g.taskId}\n${g.account}\n${g.device}`} className="remote-row" data-testid="remote-grant">
-                      <span className="remote-row-main">
-                        <span className="remote-card-title">{taskTitle(g.taskId)}</span>
-                        <span className="settings-hint">
-                          给 {g.name}（{g.account}）· {relativeTime(g.grantedAt)}授权
+                // 最多露出 10 行，再多就在框里滚动（问题 #5）.
+                <div className="remote-list" data-testid="remote-grant-list">
+                  {shownGrants.map((g) => {
+                    const peer = remote.peers.find((p) => p.account === g.account && p.device === g.device && p.role === "owner");
+                    return (
+                      <div key={`${g.taskId}\n${g.account}\n${g.device}`} className="remote-row" data-testid="remote-grant">
+                        <span className="remote-row-main">
+                          <span className="remote-card-title">{taskTitle(g.taskId)}</span>
+                          <span className="settings-hint">
+                            给 {g.name}（{g.account}）· {relativeTime(g.grantedAt)}授权
+                          </span>
+                          <Presence peer={peer} />
                         </span>
-                        <Presence peer={peer} />
-                      </span>
-                      <button type="button" className="btn-ghost small" onClick={() => onOpenTask(g.taskId)} disabled={!tasks.some((t) => t.id === g.taskId)} data-testid="remote-grant-open">
-                        打开
-                      </button>
-                      <button type="button" className="btn-ghost small danger" disabled={busy} title="那边保留已经同步的记录（只读），不能再操作这个任务" onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: g.taskId, account: g.account, device: g.device }), `已收回 ${g.name} 对「${taskTitle(g.taskId)}」的授权`)} data-testid="remote-revoke">
-                        收回
-                      </button>
-                    </div>
-                  );
-                })
+                        <button type="button" className="btn-ghost small" onClick={() => onOpenTask(g.taskId)} disabled={!tasks.some((t) => t.id === g.taskId)} data-testid="remote-grant-open">
+                          打开
+                        </button>
+                        <button type="button" className="btn-ghost small danger" disabled={busy} title="那边保留已经同步的记录（只读），不能再操作这个任务" onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: g.taskId, account: g.account, device: g.device }), `已收回 ${g.name} 对「${taskTitle(g.taskId)}」的授权`)} data-testid="remote-revoke">
+                          收回
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
               {remote.grants.length > 0 && <span className="settings-hint">被授权的设备在线时，这些任务的提醒（审批、提问、回复完了）只在它那边出现；它断开 5 分钟后交回这台电脑。</span>}
             </div>
@@ -331,25 +352,30 @@ export function RemoteDialog({
                   还没有。别的设备把任务授权给这台电脑后，它出现在这里和看板上；会话在那台电脑上跑。
                 </span>
               )}
-              {copies.map((t) => {
-                const st = copyStatus(t, remote);
-                return (
-                  <div key={t.id} className="remote-row" data-testid="remote-copy" data-state={st?.state}>
-                    <span className="remote-row-main">
-                      <span className="remote-card-title">{t.title || "未命名任务"}</span>
-                      <span className="settings-hint">在 {t.remote!.name}</span>
-                      <span className={`remote-presence remote-presence-${st?.state === "online" ? "online" : st?.state === "revoked" ? "offline" : "lost"}`}>
-                        <span className="dot" aria-hidden="true" />
-                        {st?.state === "online" ? "在线" : (st?.label ?? "")}
-                      </span>
-                    </span>
-                    <button type="button" className="btn-ghost small" onClick={() => onOpenTask(t.id)} data-testid="remote-copy-open">
-                      打开
-                    </button>
-                  </div>
-                );
-              })}
-              <AskRows asks={remote.asks} peers={remote.peers} busy={busy} onWithdraw={(r) => void run(() => call(link, "DELETE /api/remote/asks/:id", { id: r.id }), r.state === "pending" ? `已撤回「${r.title}」` : undefined)} />
+              {copies.length + remote.asks.length > 0 && shownCopies.length + shownAsks.length === 0 && noHit}
+              {shownCopies.length + shownAsks.length > 0 && (
+                <div className="remote-list" data-testid="remote-copy-list">
+                  {shownCopies.map((t) => {
+                    const st = copyStatus(t, remote);
+                    return (
+                      <div key={t.id} className="remote-row" data-testid="remote-copy" data-state={st?.state}>
+                        <span className="remote-row-main">
+                          <span className="remote-card-title">{t.title || "未命名任务"}</span>
+                          <span className="settings-hint">在 {t.remote!.name}</span>
+                          <span className={`remote-presence remote-presence-${st?.state === "online" ? "online" : st?.state === "revoked" ? "offline" : "lost"}`}>
+                            <span className="dot" aria-hidden="true" />
+                            {st?.state === "online" ? "在线" : (st?.label ?? "")}
+                          </span>
+                        </span>
+                        <button type="button" className="btn-ghost small" onClick={() => onOpenTask(t.id)} data-testid="remote-copy-open">
+                          打开
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <AskRows asks={shownAsks} peers={remote.peers} busy={busy} onWithdraw={(r) => void run(() => call(link, "DELETE /api/remote/asks/:id", { id: r.id }), r.state === "pending" ? `已撤回「${r.title}」` : undefined)} />
+                </div>
+              )}
             </div>
           </section>
 
