@@ -11,6 +11,8 @@ import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 const MAX_MESSAGE_IMAGES = 10;
 /** A session in the middle of a turn: archiving it (closing its process) would cut the turn off (session_archive). */
 const BUSY_STATUSES: ReadonlySet<Session["status"]> = new Set(["running", "awaiting-approval", "awaiting-answer", "awaiting-review"]);
+/** session_send's messages waiting for a session's turn to end: session id → messages. */
+const PEER_QUEUE_KEY = "sessions.peer-queue";
 
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
 export class SessionsFeature extends Feature {
@@ -341,6 +343,58 @@ export class SessionsFeature extends Feature {
   }
 
   /**
+   * 续发 (session_send, 2026-11-01 — a session running a staged test asked for it: 交付 → 复核 → 发下一阶段 without the
+   * person relaying each stage): a session sends another message into one it started with session_start (the same
+   * sessions session_archive may take), unasked, marked as from it. One in a turn — running, or waiting on the person —
+   * gets it once that turn is over (kept in the store, so a restart does not lose it); several waiting go in together.
+   * With report, the turn's report reaches the caller first.
+   */
+  async sendPeer(fromSessionId: Id, input: { sessionId?: unknown; text?: unknown }): Promise<{ session: Session; delivered: boolean; waiting: number }> {
+    const from = this.requireSession(fromSessionId);
+    if (typeof input.sessionId !== "string" || !input.sessionId) throw new HostError("bad_request", "sessionId is required");
+    if (input.sessionId === from.id) throw new HostError("bad_request", "不能发给你自己：只能发给你用 session_start 开的会话。");
+    const s = this.store.getSession(input.sessionId);
+    if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能往里发：只能发给你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
+    if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了：要接着做就用 session_start 开个新的。`);
+    const text = boundedText(input.text, "text", 20_000);
+    const queue = this.peerQueue();
+    queue[s.id] = [...(queue[s.id] ?? []), `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`];
+    this.savePeerQueue(queue);
+    const delivered = await this.flushPeer(s.id);
+    return { session: this.requireSession(s.id), delivered, waiting: delivered ? 0 : (this.peerQueue()[s.id]?.length ?? 0) };
+  }
+
+  private peerQueue(): Record<Id, string[]> {
+    try {
+      return JSON.parse(this.store.getKv(PEER_QUEUE_KEY)?.value ?? "{}") as Record<Id, string[]>;
+    } catch {
+      return {};
+    }
+  }
+
+  private savePeerQueue(queue: Record<Id, string[]>): void {
+    this.store.setKv(PEER_QUEUE_KEY, JSON.stringify(Object.fromEntries(Object.entries(queue).filter(([, list]) => list.length))));
+  }
+
+  /** What waits for a session goes in once it is out of its turn (taken off the queue first: sent once). */
+  private async flushPeer(sessionId: Id): Promise<boolean> {
+    const s = this.store.getSession(sessionId);
+    const queue = this.peerQueue();
+    const waiting = queue[sessionId];
+    if (!waiting?.length) return false;
+    if (!s || s.archivedAt) {
+      delete queue[sessionId];
+      this.savePeerQueue(queue);
+      return false;
+    }
+    if (BUSY_STATUSES.has(s.status)) return false;
+    delete queue[sessionId];
+    this.savePeerQueue(queue);
+    await this.sendMessage(sessionId, waiting.join("\n\n---\n\n"));
+    return true;
+  }
+
+  /**
    * An agent's effort (session_start, task_plan_propose; 2026-10-26): checked against the model the new session will
    * run (`chosen`, else the person's default in 设置 → 模型, else the CLI's), as its CLI names them; unchecked when the
    * list cannot be had.
@@ -433,8 +487,13 @@ export class SessionsFeature extends Feature {
    */
   watchReports(): void {
     this.f.on("event", (e) => {
-      if (e.type === "session.upserted" && e.session.reportTo) this.checkReport(e.session);
+      if (e.type !== "session.upserted") return;
+      if (e.session.reportTo) this.checkReport(e.session);
+      // session_send's waiting messages: after the turn's report, so the caller hears of the turn first.
+      if (this.peerQueue()[e.session.id]) void this.flushPeer(e.session.id).catch(() => undefined);
     });
+    // Left waiting by the last Host.
+    for (const id of Object.keys(this.peerQueue())) void this.flushPeer(id).catch(() => undefined);
   }
 
   private checkReport(s: Session): void {

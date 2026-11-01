@@ -168,6 +168,28 @@ describe("ClaudeRuntime", () => {
     await until(() => agentTexts(s.id).includes("MOCK: after interrupt"), "reply after interrupt");
   }, 180_000);
 
+  it("停止 a CLI does not answer (2026-11-01): Studio closes its process after the grace, says so, and the session goes on", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    // Stuck as the user's was (a command hung on the memory folder): the interrupt is never answered.
+    const internals = runtime as unknown as { live: Map<string, { q: { interrupt(): Promise<void> } }>; options: { stopGraceMs?: number } };
+    internals.live.get(s.id)!.q.interrupt = () => new Promise(() => undefined);
+    internals.options.stopGraceMs = 1500;
+    try {
+      const asked = Date.now();
+      await runtime.interrupt(s.id);
+      // The person's request returns after the grace, not never.
+      expect(Date.now() - asked).toBeLessThan(5000);
+      await until(() => status(s.id) === "idle", "stopped by Studio", 20_000);
+      expect(items(s.id).some((i) => i.type === "notice" && i.message.includes("Studio 关掉了它的进程"))).toBe(true);
+      expect(items(s.id).some((i) => i.type === "error")).toBe(false);
+    } finally {
+      delete internals.options.stopGraceMs;
+    }
+    await runtime.sendMessage(s.id, "after stuck");
+    await until(() => agentTexts(s.id).includes("MOCK: after stuck"), "reply after the forced stop");
+  }, 120_000);
+
   it("sends images as image blocks, with or without text, also when queued", async () => {
     const id = "att-00000000-0000-4000-8000-000000000002";
     const path = join(root, `${id}.png`);

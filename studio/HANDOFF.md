@@ -47,6 +47,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-01 · 停止的兜底；session_send**（用户：project_mining 的会话移 Claude 记忆目录后卡死，停止和停后台命令都没反应，只能重启电脑；另一个会话要求能往自己开的会话里续发）：
+- 停止：`ClaudeRuntime.interrupt` 不再一直等 CLI；`stopGraceMs`（15 秒）内这一轮没结束就 `close` 它的进程并在会话里写一条提示，再过 15 秒进程还没退出就直接按停下处理（`finish` 只做一次，`closing` 清掉，下一条消息开新进程）。`stopBackground` 15 秒没回应就标成已停止并提示可能还在跑。
+- `session_send`（`sessions.sendPeer`，免审批）：范围同 session_archive；会话在一轮里（含等审批、等回答）时排进 kv `sessions.peer-queue`，`session.upserted` 停下后一起送进去（在 report 之后），Host 重启后接着送。guide 和 session_start 的说明提到它。没做那个会话提的另外三条：「允许自动续发」开关、按轮次的用时和 token 统计（session_stats）、单独放宽子会话权限。
+- 验证：`peer.test.ts` 新加 2 条（范围、排队合并）；Claude 集成测试新加 1 条（mock 的 interrupt 永不返回 → 1.5 秒后关进程、会话回到空闲、有提示、能接着对话）；amo-mcp 工具数 51；typecheck 过。「进程关了也不退出」那一支没有测试。
+
 **2026-11-01 · 打包不再开模型；值守项能挂在另一项下面**（用户：「打包真的有必要跑个agent么」「打包值守挂在维护值守下面…停了父值守子的也应该停下」；方案和规则记在 `plans/release.md` 第 9 条）：
 - `scripts/release.mjs`：`auto --if-due [--wait 30] [--max 120]`，没事不输出；该发 = 最后一次改动后 30 分钟没新改动，或最早的改动等了 2 小时，或问题页点了「发布打包」（以前是「最早的改动等 30 分钟」，0.9.24 因此在 #5 修好 5 分钟后就发，#6 没赶上）；发完把「已修好」的问题标已发布（AI 写的提交号在包里且碰了发出去的工具；没写提交号的也标），也清掉「发布打包」；失败了记下那个 master（git 文件夹里的 `amo-release-failed.json`），不自己重试。`due --wait` 用同一条规则。
 - Host：值守项 `parentId`（一层；父关子跟着关；父关着子开不了；删父项子项留下），`duty_save` 认 `parentId`；值守会话检查没给名字时用值守项的名字；`issues.pending` 去掉「该打测试包了」，改报「上一次打测试包没成功（…停在「单测」：…）」，会话名「打包没成功」。界面：设置 → 值守和顶栏值守窗口里子项缩进、标「挂在「…」下」，编辑表单有「挂在」。

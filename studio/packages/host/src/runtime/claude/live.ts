@@ -35,6 +35,8 @@ export interface Live {
   interrupted: boolean;
   /** Closed by Studio (idle, archive, Host shutdown) rather than ended by the CLI. */
   closedByHost: boolean;
+  /** Its end handled (finish): once, also when Studio gave up waiting for a stuck process. */
+  finished?: boolean;
   /** Message types Studio failed to handle in this query (each told once in the conversation). */
   handlerErrors: Set<string>;
   background: Set<string>;

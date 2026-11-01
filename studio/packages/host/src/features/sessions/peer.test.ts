@@ -192,6 +192,47 @@ describe("session_start (开会话)", () => {
 });
 
 // 收会话 (session_archive, 2026-11-01, 问题 #6): what a session started it can archive again; nothing else.
+// 续发 (session_send, 2026-11-01): what a session started it can tell more; one in a turn gets it after the turn.
+describe("session_send (续发)", () => {
+  it("sends into a session the caller started, marked as from it; refuses itself, the person's, another's, forPerson and archived ones", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "阶段 1：只改数值表" });
+    await until(() => store.getSession(s.id)?.status === "idle");
+    const sent = await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2：再加一列" });
+    expect(sent).toMatchObject({ delivered: true, waiting: 0 });
+    await until(() => userTexts(s.id).length === 2);
+    expect(userTexts(s.id)[1]).toContain(`【开启你的会话「主会话」（${caller.id}）发来】`);
+    expect(userTexts(s.id)[1]).toContain("阶段 2：再加一列");
+
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: caller.id, text: "x" })).rejects.toThrow(/不能发给你自己/);
+    const persons = await service.tasks.addSession(task.id, { profileId: "p-ds" });
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: persons.id, text: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    const others = await service.sessions.startPeer(persons.id, { text: "另一个会话开的" });
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: others.id, text: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    const forPerson = await service.sessions.startPeer(caller.id, { text: "人来处理", forPerson: true });
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: forPerson.id, text: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "  " })).rejects.toThrow();
+    await until(() => store.getSession(s.id)?.status === "idle");
+    await service.sessions.archivePeer(caller.id, { sessionId: s.id });
+    await expect(service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "x" })).rejects.toThrow(/已经归档/);
+  });
+
+  it("one in a turn gets it once the turn is over, after its report; several waiting go in together", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]", report: true });
+    await until(() => store.getSession(s.id)?.status === "running");
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2" })).toMatchObject({ delivered: false, waiting: 1 });
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2 补一句" })).toMatchObject({ delivered: false, waiting: 2 });
+    expect(userTexts(s.id)).toHaveLength(1);
+    await until(() => userTexts(s.id).length === 2);
+    const second = userTexts(s.id)[1]!;
+    expect(second).toContain("阶段 2");
+    expect(second).toContain("阶段 2 补一句");
+    // The caller hears of the turn that ended.
+    await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）这一轮做完了`)));
+    await until(() => store.getSession(s.id)?.status === "idle");
+    expect(userTexts(s.id)).toHaveLength(2);
+  });
+});
+
 describe("session_archive (收会话)", () => {
   it("archives a session the caller started, with what hangs under it; refuses itself, the person's, another's and forPerson ones", async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "只改数值表" });

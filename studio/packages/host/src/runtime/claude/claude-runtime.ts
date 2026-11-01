@@ -57,6 +57,8 @@ export interface ClaudeRuntimeOptions {
   now?: () => Date;
   /** An idle query (no turn, no background task) is closed after this long; the next message resumes it. */
   idleCloseMs?: number;
+  /** 停止 not answered by the CLI this long: Studio closes its process (and, as long again later, gives up on it). */
+  stopGraceMs?: number;
   /** Variables the child environment starts from (default: process.env). */
   baseEnv?: NodeJS.ProcessEnv;
   /** The AMO MCP tools, given to every Claude session in-process (no token reaches the CLI). */
@@ -64,6 +66,9 @@ export interface ClaudeRuntimeOptions {
   /** The MCP server's instructions for this session (its role card after the general ones); the general ones when absent. */
   mcpInstructions?: (sessionId: Id) => string;
 }
+
+/** How long 停止 waits on the CLI before Studio closes its process (see interrupt). */
+const STOP_GRACE_MS = 15_000;
 
 /**
  * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
@@ -199,12 +204,33 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return { mode };
   }
 
+  /**
+   * 停止. 2026-11-01 (the user: a session hung after moving its project's Claude memory folder; 停止 left it 正在工作
+   * until the computer was restarted): the CLI is asked to stop, and Studio does not wait on it for long — a process
+   * that has not ended the turn after stopGraceMs is closed, and one that does not even go then is let go.
+   */
   async interrupt(sessionId: Id): Promise<void> {
     const live = this.live.get(sessionId);
     if (!live?.running) return;
     live.interrupted = true;
     this.asks.declineAll(live);
-    await live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`));
+    const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
+    const later = (ms: number, then: () => void) => setTimeout(then, ms).unref?.();
+    later(grace, () => {
+      if (this.live.get(sessionId) !== live || !live.running || live.finished) return;
+      this.emit("log", `${sessionId}: the CLI did not stop the turn within ${grace} ms; closing its process`);
+      this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 Claude 还没停下（它可能卡在某个命令或文件操作上），Studio 关掉了它的进程。发一条消息即可接着对话。` });
+      void this.close(sessionId);
+      later(grace, () => {
+        if (live.finished) return;
+        // The process did not go either: its end is handled here, so the session is not left 正在工作.
+        this.emit("log", `${sessionId}: the CLI process did not exit after close; leaving it`);
+        this.finish(sessionId, live, null);
+        // The next message starts a new process rather than waiting on this one (nor does the Host's shutdown).
+        this.closing.delete(sessionId);
+      });
+    });
+    await Promise.race([live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`)), new Promise((r) => setTimeout(r, grace).unref?.())]);
   }
 
   /** Copies the transcript into a new Claude session (no model call); the branch continues from there. */
@@ -455,7 +481,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (item.state !== "running") return;
     // Without its process the command is gone already.
     if (!live?.bgItems.has(taskId)) return this.turns.settleBackground(item.id, "stopped");
-    await live.q.stopTask(taskId);
+    // Not answered in time (2026-11-01, a CLI stuck on a command): shown as stopped, with what that means.
+    const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
+    const answered = await Promise.race([live.q.stopTask(taskId).then(() => true), new Promise<false>((r) => setTimeout(() => r(false), grace).unref?.())]);
+    if (answered) return;
+    const [still] = this.store.findItems(sessionId, "background", { taskId }, { limit: 1 });
+    if (still?.type !== "background" || still.state !== "running") return;
+    this.turns.settleBackground(still.id, "stopped");
+    this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 Claude 还没回应，Studio 先把这条后台命令标成已停止，它可能还在跑。要彻底停掉，就停止这个会话。` });
   }
 
   /** Prompt suggestions follow the setting in running sessions too (the CLI's own setting of that name). */
@@ -573,6 +606,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   /** The query ended: normally (closed), after an interrupt, or with an error. */
   private finish(sessionId: Id, live: Live, err: unknown): void {
+    if (live.finished) return;
+    live.finished = true;
     if (this.live.get(sessionId) === live) this.live.delete(sessionId);
     this.clearIdle(live);
     for (const id of live.streaming) this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: live.text.get(id) ?? it.markdown, streaming: false } : it));
