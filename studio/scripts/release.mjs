@@ -301,6 +301,9 @@ function lastFailed() {
   }
 }
 
+/** This run's build is on 问题页 (its start reported): a failure before that is reported by auto --if-due itself. */
+let buildShown = false;
+
 async function buildReporter() {
   const a = await account();
   if (!a) {
@@ -356,6 +359,7 @@ async function release(ids) {
   const report = await buildReporter();
   const at = (name) => (steps.indexOf(name) > 0 ? report({ step: steps.indexOf(name) }) : Promise.resolve());
   await report({ start: { label: plan.map((p) => `${p.t.label} ${p.to}`).join("、"), steps } });
+  buildShown = true;
   try {
     await tests(at);
     let sha = git("rev-parse", "HEAD");
@@ -476,6 +480,13 @@ try {
         rmSync(failedFile(), { force: true });
       } catch (err) {
         writeFileSync(failedFile(), JSON.stringify({ sha: tip, at: Date.now() }));
+        // Stopped before its build showed on 问题页 (2026-11-01: one that did was not retried and nobody heard): shown
+        // there now, so 值守's check sees it.
+        if (!buildShown) {
+          const report = await buildReporter();
+          await report({ start: { label: list.map((d) => d.t.label).join("、"), steps: ["准备"] } });
+          await report({ end: { ok: false, message: err.message } });
+        }
         throw err;
       }
       break;
