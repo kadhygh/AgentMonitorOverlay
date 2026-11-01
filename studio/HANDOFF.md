@@ -57,7 +57,7 @@
 - 便签程序：`src/todo.ts`（副本和离线队列，`todo-cache.json` 在便签家目录，按账号分开；窗口开着 10 秒同步一次，不开 2 分钟）；待办是第二个窗口（`#todo`，位置存 `todo-window.json`），托盘右键「显示待办」打开，没有快捷键；设置标题行显示版本号，加「待办」一节（使用待办默认开、账号、已完成保留 7/30/90/一直）。新依赖 `@amo-studio/account`（`amo-tools.mjs` 的 notes 包列表也加了）。界面在 `ui/src/todo/`。
 - 平台：托盘「AMO 便签」下加「显示待办」（读便签 settings.json 的 useTodo）和「便签设置…」（`--amo-todo` / `--amo-settings`）。
 - 验证：vitest `relay/src/todo.test.ts`、`notes/src/todo.test.ts`（真中转服务、断网重连、重启后队列还在、401、已完成保留）、`platform/src/tray.test.ts` 通过；e2e `e2e/notes/notes-todo.spec.ts` 2 条通过，整组 notes e2e 通过；截图 `screenshots/notes/T1`–`T11`。全量 vitest 另有 3 个失败与此无关（Codex server-manager 端口用例、git.test 偶发、未入库的 `scripts/android-fixture.test.mjs` 不是 vitest 格式）；平台 e2e「log in → install」卡在「服务器在线」，撤掉这次改动也一样，是原来就有的。顺手修了 notes e2e 里过时的默认快捷键断言（Ctrl Alt Space → Ctrl Shift F12）；notes e2e 现在给 `AMO_HOME` 一个临时目录，不碰真实登录。
-- 没做：中转服务没部署（`npm run release -- relay-service`，会重启中转几秒，先问）、便签和平台没发版；改动推送（设备通道上的 `todo-changed`）还是靠定时同步；安卓版里显示待办以后再说。
+- 提交 388e6d4；中转服务 0.7.7 11-01 10:39 已部署（值守目录 `release relay-service`，部署前备份 `backup-20261101-103930.db`；`/api/todo` 不带登录回 401）。没做：便签和平台没发版；改动推送（设备通道上的 `todo-changed`）还是靠定时同步；安卓版里显示待办以后再说。
 
 **2026-11-01 · 安卓版 0.2.0：手机上重做一版**（问题和改法 `plans/android-mobile-redesign.md`；`studio/android/` 仍未入库，属于「开发android版apk」任务）：
 - 保留连接、命令、传文件、凭据加密、自更新；重写数据层（`HistoryCache.kt` 按会话分文件、后台写；`rt.items` 从缓存最后一条往后拉；任务同步只在连上 / 回到应用时并行跑；推来的任务和会话变化直接应用）和全部界面（工作台、会话树、对话页的操作折叠、自写 Markdown、底部面板新建、设置里的电脑和配对）。
