@@ -159,6 +159,18 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   await expect(old.getByTestId("mark-delete")).toHaveText("确认删除");
   await old.getByTestId("mark-delete").click();
   await expect(rows).toHaveCount(3);
+
+  // Esc (问题 #7): the file selector's closes only the selector; in a field it leaves the field; then it closes the window.
+  await marks.getByTestId("marks-add").click();
+  await marks.getByTestId("file-picker").getByLabel("找文件").press("Escape");
+  await expect(marks.getByTestId("file-picker")).toHaveCount(0);
+  const note = rows.first().getByTestId("mark-note");
+  await note.focus();
+  await note.press("Escape");
+  await expect(note).not.toBeFocused();
+  expect(marks.isClosed()).toBe(false);
+  // The window can be gone before the key press returns.
+  await Promise.all([marks.waitForEvent("close"), marks.keyboard.press("Escape").catch(() => undefined)]);
 });
 
 test("hands marks to a session: @ 标记的文件, a mark dragged into the composer, and the note read back", async () => {

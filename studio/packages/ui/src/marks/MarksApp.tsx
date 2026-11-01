@@ -196,6 +196,24 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
     return () => window.removeEventListener("paste", onPaste);
   }, [add, current]);
 
+  // Esc closes the window (2026-11-01, 问题 #7). In a text field it first leaves the field (a note saves as it is left),
+  // the next Esc closes; one a dialog or menu took for itself (加书签的说明, the file selector), or pressed while one is
+  // open, does not.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, select, [contenteditable]")) return el.blur();
+      e.preventDefault();
+      const close = window.amo?.windowControls?.close;
+      if (close) close();
+      else window.close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const dropTarget = {
     onDragOver: (e: DragEvent) => {
       if (!dragHasFiles(e)) return;
