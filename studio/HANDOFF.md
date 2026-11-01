@@ -52,6 +52,11 @@
 - 改法：`syncPeer` 先并行（3 个一组）把所有任务和会话拿齐（看板立刻对），再逐任务补记录；一个会话要补的超过 20 条或不止一页时安静写库，结束发一次 `items.reloaded`（`protocol/api.ts`），`useSessionItems` 收到就整段重读。补同步超过 1 秒时 `RemoteState.syncing` 带进度，顶栏「远程 · 同步 n/总数」加进度条，任务页横幅写正在补哪个。被控端不用改，旧版互通。
 - 验证：`remote-tasks.test.ts` 新用例（离开期间写 450 条：没有逐条 appended、只有一次 reloaded、`task.upserted` 在它前面、进度清掉、3 条的照旧逐条来）、`ui/src/remote/remote.test.ts` 新一组；typecheck 过。全量 vitest 里 Codex `server-manager.test.ts` 失败，干净的 master 上一样，与此无关。没截图进度条（要两台电脑实际离线一段）。
 
+**2026-11-01 · 安卓版 0.2.0：手机上重做一版**（问题和改法 `plans/android-mobile-redesign.md`；`studio/android/` 仍未入库，属于「开发android版apk」任务）：
+- 保留连接、命令、传文件、凭据加密、自更新；重写数据层（`HistoryCache.kt` 按会话分文件、后台写；`rt.items` 从缓存最后一条往后拉；任务同步只在连上 / 回到应用时并行跑；推来的任务和会话变化直接应用）和全部界面（工作台、会话树、对话页的操作折叠、自写 Markdown、底部面板新建、设置里的电脑和配对）。
+- 验证：模拟器 FakeNga_UI_API_36 + 夹具 `node scripts/android-fixture.mjs --seed-long`（新加：340 条的模拟长会话、`POST /stream` 模拟流式回复），`android/test.ps1` 6 个测试全过；截图在 `screenshots/android/redesign/`（浅色、深色、横屏、键盘、360 dp + 1.3 倍字体、流式）。流式 4000 字（每 30 ms 一段）时帧时间中位 13 ms、90% 18 ms，模拟器软件渲染下 21% 掉帧。
+- 已发到团队服务器（versionCode 4，`node scripts/relay-mac.mjs android-publish --apk android/out/AMO-Studio-Android-0.2.0-debug.apk`）。没做：真机走 Tailscale 的手感没测。
+
 **2026-10-31 · 提示词模板，删掉扩展包（在 worktree 分支 `studio/prompt-templates` 做完后合进 master，未发布）**
 
 - 用户要「任务模板」：常开的同样任务，存好提示词，在 @ 菜单里和快速提交同一级的位置选，弹窗选中后粘进输入框；模板可以让 AI 通过 AMO 的 MCP 按要求加。用户定的三条都按建议（`plans/prompt-templates.md`）：全局 + 可只在某项目出现；第一版不做变量；AI 新增、修改直接生效，删除要人批准，列表标「AI 写的」。同时用户定**删掉扩展包**（模板比它好用；以后可能做类似 DSH 的插件架构）。
