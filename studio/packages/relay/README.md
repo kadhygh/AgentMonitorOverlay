@@ -217,6 +217,15 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 | `POST /api/devices/unpair` `{device, peerAccount, peerDevice}` | 解除配对（两个方向都删），告诉对方 |
 | `WS /api/devices/ws?device=&name=` | key 放 `Authorization` 头或 `?key=`。推送 `hello` / `pair-request` / `pair-request-closed` / `pair-answered` / `unpaired` / `presence` / `relay` / `relay-error`；收 `relay {to, id, kind, re?, body}`（只转给配对过、在线的设备）和 `name`。服务每 15 秒 ping 一次，60 秒没回应就断开；同一台设备再连上来，旧连接以 4001 关掉 |
 
+### 待办（便签的待办窗口，2026-11-01）
+
+每个账号：每台设备一张表（`device:<设备编号>`）和一张共通的表（`shared`），同账号的设备都能看、能改。便签程序留一份副本和没发出去的改动，连上就补交。格式和冲突规则见 `src/todo-protocol.ts`，方案见 `plans/todo.md`。
+
+| | |
+|---|---|
+| `GET /api/todo?device=&deviceName=&since=` | `{rev, items, devices, full}`：`since` 之后改过的（删掉的带 `deleted`）；`since` 是 0 或早于留着的删除标记时给全部（`full`） |
+| `POST /api/todo/ops` `{device, deviceName, ops}` | 按顺序应用改动：`put` 只写它带的字段（新的要有 `list`、`text`），`delete` 留 30 天标记；删掉的不会被 `put` 救回来。不合规的跳过，在 `rejected` 里按位置说明 |
+
 ## 测试
 
 - 单测：`npx vitest run packages/relay packages/relay-app scripts`（`scripts` 是平台的发布）

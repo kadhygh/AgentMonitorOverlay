@@ -4,6 +4,8 @@ html.notes-settings-mode #root { height: 100%; }
 .ns-root { height: 100%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-strong); color: var(--text); }
 .ns-root > .pad-head { padding-left: 22px; }
 .ns-root > .pad-rule { margin: 0 22px; }
+/* 版本 in the title row (2026-11-01, the user: seen without scrolling). */
+.ns-version { font-family: var(--font-code); font-size: 11px; color: var(--text-dim); white-space: nowrap; -webkit-app-region: no-drag; user-select: text; }
 .ns-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 18px; display: flex; flex-direction: column; font-size: var(--fs-sm); line-height: var(--lh); }
 .ns-section { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--divider); }
 .ns-section.last { border-bottom: none; }

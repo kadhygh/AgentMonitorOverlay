@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { DEFAULT_SCRATCHPAD_SHORTCUT, SCRATCHPAD_MAX_PAGES } from "@amo-studio/protocol";
-import { HostApiError, type HostLink } from "../host/client.js";
+import { DEFAULT_SCRATCHPAD_SHORTCUT, SCRATCHPAD_MAX_PAGES, TODO_KEEP_CHOICES, type TodoView } from "@amo-studio/protocol";
+import { HostApiError, type HostLink, type NotesAbout } from "../host/client.js";
+import { onHostEvent } from "../host/events.js";
 import { useHostState } from "../host/useHostState.js";
 import { ScratchpadIcon } from "../scratchpad/ScratchpadApp.js";
 import { shortcutFromKey, shortcutLabel } from "../scratchpad/logic.js";
 import { useScratchpad } from "../scratchpad/useScratchpad.js";
+import { openPlatform, todoView } from "../todo/api.js";
 import { formatBytes, notesCall, type NotesInfo } from "./api.js";
 
 // 便签设置 (2026-10-23): the 便签 program's own settings window, opened from its tray menu. The shortcut, the page count
 // and 复制's line breaks (as 设置 → 便签 had them in Studio), starting with Windows, the work folder (where it is, what
-// it takes, moving it, clearing its cache) and where the settings file is.
+// it takes, moving it, clearing its cache) and where the settings file is. 2026-11-01 (the user): its version in the title
+// row, and 待办 (使用待办, on unless turned off; the account; 已完成保留).
 
 const NEWLINE_CHOICES = [
   { safe: false, label: "常规换行", hint: "保留原来的分行（去掉行尾空格和末尾空行）。粘贴到输入框、文档、聊天软件都按原样分行。" },
@@ -34,6 +37,13 @@ const message = (err: unknown) => (err instanceof HostApiError ? err.message : S
 
 export function NotesSettingsApp() {
   const host = useHostState();
+  const [about, setAbout] = useState<NotesAbout | null>(null);
+  useEffect(() => {
+    void window.amo?.notes
+      ?.aboutInfo?.()
+      .then(setAbout)
+      .catch(() => undefined);
+  }, []);
   return (
     <div className="ns-root">
       <header className="pad-head">
@@ -42,6 +52,12 @@ export function NotesSettingsApp() {
           便签设置
         </span>
         <span className="spacer" />
+        {about && (
+          <span className="ns-version" data-testid="ns-version" title={about.viaStudio ? `没有单独安装，随 AMO Studio ${about.viaStudio} 运行` : undefined}>
+            {about.version ? `版本 ${about.version}` : "版本读不到"}
+            {about.dev ? " · 开发版" : about.viaStudio ? " · 随 Studio" : ""}
+          </span>
+        )}
         <button type="button" className="pad-icon" aria-label="关闭设置" title="关闭" onClick={() => window.amo?.notes?.closeSettings()}>
           ×
         </button>
@@ -92,6 +108,7 @@ function Settings({ link }: { link: HostLink }) {
   return (
     <div className="ns-body">
       <ShortcutSection info={info} busy={busy} onSave={(shortcut) => void patch({ shortcut })} />
+      <TodoSection link={link} info={info} busy={busy} onPatch={(body) => void patch(body)} />
       <PagesSection link={link} />
 
       <section className="ns-section" aria-label="界面大小">
@@ -294,6 +311,68 @@ function ShortcutSection({ info, busy, onSave }: { info: NotesInfo; busy: boolea
       <p className={line.alert ? "form-error" : "ns-hint"} role={line.alert ? "alert" : "status"} data-testid="ns-shortcut-status">
         点一下输入框再按新的组合键。{line.text}
       </p>
+    </section>
+  );
+}
+
+const KEEP_LABEL = (days: number) => (days ? `${days} 天` : "一直留着");
+
+/** 待办 (2026-11-01): 使用待办 (on unless turned off), who it belongs to, how long done items stay. */
+function TodoSection({ link, info, busy, onPatch }: { link: HostLink; info: NotesInfo; busy: boolean; onPatch(body: Record<string, unknown>): void }) {
+  const s = info.settings;
+  const [todo, setTodo] = useState<TodoView | null>(null);
+  const [platformMissing, setPlatformMissing] = useState(false);
+  useEffect(() => {
+    void todoView(link)
+      .then(setTodo)
+      .catch(() => undefined);
+    return onHostEvent((e) => {
+      const ev = e as unknown as { type: string; todo?: TodoView };
+      if (ev.type === "todo.updated" && ev.todo) setTodo(ev.todo);
+    });
+  }, [link]);
+  const account = todo?.account;
+  return (
+    <section className="ns-section" aria-label="待办">
+      <h2 className="ns-heading">待办</h2>
+      <label className="ns-check">
+        <input type="checkbox" checked={s.useTodo} disabled={busy} onChange={(e) => onPatch({ useTodo: e.target.checked })} data-testid="ns-use-todo" />
+        使用待办
+      </label>
+      <p className="ns-hint">{s.useTodo ? "托盘菜单里有「显示待办」。每台设备一张表，另有一张同账号设备共通的表，都存在团队服务器上。" : "关着：托盘里没有「显示待办」，也不连服务器。服务器上的待办不删，再打开时会同步回来。"}</p>
+      {s.useTodo && (
+        <>
+          <div className="ns-row">
+            <span className="ns-label">账号</span>
+            {account ? (
+              <span className="ns-hint" data-testid="ns-todo-account">
+                {account.name} · {account.server.replace(/^https?:\/\//, "")}（换账号去 AMO 平台）
+              </span>
+            ) : (
+              <>
+                <span className="ns-hint" data-testid="ns-todo-account">
+                  未登录
+                </span>
+                <button type="button" className="link-btn primary" onClick={() => void openPlatform(link).then((ok) => setPlatformMissing(!ok))}>
+                  在 AMO 平台里登录
+                </button>
+              </>
+            )}
+          </div>
+          {platformMissing && <p className="ns-hint">这台电脑上没找到 AMO 平台：先从团队服务器下载安装平台。</p>}
+          <div className="ns-row">
+            <span className="ns-label">已完成保留</span>
+            <div role="radiogroup" aria-label="已完成保留" className="ns-seg">
+              {TODO_KEEP_CHOICES.map((days) => (
+                <button key={days} type="button" role="radio" aria-checked={s.todoKeepDays === days} disabled={busy} onClick={() => s.todoKeepDays !== days && onPatch({ todoKeepDays: days })} data-testid={`ns-keep-${days}`}>
+                  {KEEP_LABEL(days)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="ns-hint">做完超过这么久的自动删掉（所有设备一起）；也可以随时在待办里点「清除已完成」。</p>
+        </>
+      )}
     </section>
   );
 }

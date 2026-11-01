@@ -11,3 +11,5 @@ export * from "./api.js";
 export { createRelayMcp, RELAY_MCP_NAME } from "./mcp.js";
 export * from "./issues-protocol.js";
 export { IssueStore } from "./issues.js";
+export * from "./todo-protocol.js";
+export { TodoStore } from "./todo.js";

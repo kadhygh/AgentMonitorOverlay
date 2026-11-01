@@ -9,6 +9,7 @@ export type TrayClick = "notes" | "studio";
 export type TrayAction =
   | { kind: "open"; tool: string }
   | { kind: "toggle-notes" }
+  | { kind: "notes"; what: "todo" | "settings" }
   | { kind: "quit"; tool: string }
   | { kind: "restart-studio" }
   | { kind: "show-platform" }
@@ -22,6 +23,8 @@ export interface TrayState {
   tools: ReadonlyArray<{ id: string; name: string }>;
   /** 便签 can be had: installed itself, or through Studio (which carries it). */
   notes: boolean;
+  /** 便签's 使用待办 is on (its settings.json; on unless turned off, 2026-11-01): 显示待办 is offered. */
+  notesTodo?: boolean;
   /** Studio's Host is older than the installed Studio and idle: 重启 Studio is offered (platform.ts's studio view). */
   studioRestart: boolean;
   /** The installed Studio's version, for 重启 Studio's label. */
@@ -48,6 +51,9 @@ export function trayMenu(s: TrayState): TrayItem[] {
   if (s.notes)
     part("AMO 便签", [
       { kind: "item", label: "显示 / 隐藏便签", action: { kind: "toggle-notes" } },
+      // 2026-11-01: 便签's 待办 window and its settings, which its own tray menu has (it has none when the platform starts it).
+      ...(s.notesTodo ? [{ kind: "item" as const, label: "显示待办", action: { kind: "notes" as const, what: "todo" as const } }] : []),
+      { kind: "item", label: "便签设置…", action: { kind: "notes", what: "settings" } },
       { kind: "item", label: "退出便签", action: { kind: "quit", tool: "notes" } },
     ]);
   if (has("relay"))
@@ -77,3 +83,5 @@ export function trayClickAction(s: TrayState): TrayAction {
 export const TRAY_ARG = "--amo-tray=platform";
 export const QUIT_ARG = "--amo-quit";
 export const TOGGLE_ARG = "--amo-toggle";
+export const NOTES_TODO_ARG = "--amo-todo";
+export const NOTES_SETTINGS_ARG = "--amo-settings";

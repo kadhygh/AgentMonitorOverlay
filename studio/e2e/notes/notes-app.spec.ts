@@ -19,7 +19,8 @@ const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000
 function cleanEnv(home: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLAUDE|ANTHROPIC_|AMO_)/.test(k)) env[k] = v;
-  return { ...env, AMO_NOTES_TEST: "1", AMO_NOTES_HOME: home };
+  // AMO_HOME too (2026-11-01, 待办): never the person's real login, device or programs.
+  return { ...env, AMO_NOTES_TEST: "1", AMO_NOTES_HOME: home, AMO_HOME: join(home, "amo-home") };
 }
 
 let app: ElectronApplication | undefined;
@@ -85,7 +86,7 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   // An empty page: the keys, with the show / hide shortcut as bound.
   const keys = pad.getByTestId("pad-keys");
   await expect(keys).toContainText("复制这一页并隐藏");
-  await expect(keys).toContainText("Ctrl Alt Space 随时叫回来");
+  await expect(keys).toContainText("Ctrl Shift F12 随时叫回来");
   await expect(pad.getByTestId("pad-status")).toContainText("空白页");
   await expect(pad.getByRole("button", { name: "复制", exact: true })).toBeDisabled();
   await screenshot(app, "notes", "N1-empty", pad, "scratchpad");

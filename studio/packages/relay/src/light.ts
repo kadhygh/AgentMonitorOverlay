@@ -5,3 +5,4 @@ export { RelayClient, RelayClientError, normalizeServer } from "./api.js";
 export { newRepliesText, sessionStateText, sinceLastWord, threadAsText } from "./usage.js";
 export * from "./inbox.js";
 export * from "./issues-protocol.js";
+export * from "./todo-protocol.js";

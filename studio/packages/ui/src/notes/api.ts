@@ -13,6 +13,10 @@ export interface NotesSettings {
   uiScale: number;
   /** 主题 (2026-10-29): the program sets it for all its windows. */
   theme: "light" | "dark" | "system";
+  /** 使用待办 (2026-11-01): on unless turned off. */
+  useTodo: boolean;
+  /** 已完成保留 (days; 0 = 一直留着). */
+  todoKeepDays: number;
 }
 
 export interface NotesInfo {

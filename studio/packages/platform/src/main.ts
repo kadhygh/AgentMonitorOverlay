@@ -232,6 +232,9 @@ function runTray(action: TrayAction): void {
     case "toggle-notes":
       void platform.toggleNotes().then(said("notes"));
       return;
+    case "notes":
+      void platform.openNotes(action.what).then(said("notes"));
+      return;
     case "quit":
       void platform.close(action.tool).then(said(action.tool));
       return;

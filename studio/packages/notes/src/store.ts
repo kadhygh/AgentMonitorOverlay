@@ -10,6 +10,8 @@ import {
   SCRATCHPAD_MAX_IMAGES,
   SCRATCHPAD_MAX_PAGES,
   SCRATCHPAD_MAX_TEXT,
+  TODO_KEEP_CHOICES,
+  TODO_KEEP_DEFAULT,
   visibleScratchpad,
   withPage,
   withPageCount,
@@ -49,6 +51,10 @@ export interface NotesSettings {
   uiScale: number;
   /** 浅色 / 深色 / 跟随系统 (2026-10-29, the user: every tool both): the program sets it for all its windows; 浅色 unless chosen, as Studio. */
   theme: "light" | "dark" | "system";
+  /** 使用待办 (2026-11-01, the user: on unless turned off): the 待办 window, its tray item and its sync. */
+  useTodo: boolean;
+  /** 已完成保留: days a done item stays (0 = 一直留着). */
+  todoKeepDays: number;
 }
 
 export interface FolderUsage {
@@ -60,9 +66,10 @@ export interface FolderUsage {
   cache: number;
 }
 
-const DEFAULTS: NotesSettings = { workFolder: null, shortcut: DEFAULT_SCRATCHPAD_SHORTCUT, safeNewlines: false, openAtLogin: false, importedAt: null, importNoticeSeen: false, uiScale: 1, theme: "light" };
+const DEFAULTS: NotesSettings = { workFolder: null, shortcut: DEFAULT_SCRATCHPAD_SHORTCUT, safeNewlines: false, openAtLogin: false, importedAt: null, importNoticeSeen: false, uiScale: 1, theme: "light", useTodo: true, todoKeepDays: TODO_KEEP_DEFAULT };
 /** The zooms offered (NOTES_SCALES in the settings window). */
 const scaleOk = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0.75 && n <= 1.6;
+const keepOk = (n: unknown): n is number => (TODO_KEEP_CHOICES as readonly unknown[]).includes(n);
 const EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
 const IMAGE_ID = /^att-[0-9a-f-]{36}$/;
 
@@ -116,6 +123,8 @@ export class NotesStore {
       importNoticeSeen: o.importNoticeSeen === true,
       uiScale: scaleOk(o.uiScale) ? o.uiScale : DEFAULTS.uiScale,
       theme: o.theme === "dark" || o.theme === "system" ? o.theme : DEFAULTS.theme,
+      useTodo: o.useTodo !== false,
+      todoKeepDays: keepOk(o.todoKeepDays) ? o.todoKeepDays : DEFAULTS.todoKeepDays,
     };
     return this.settingsCache;
   }
@@ -137,6 +146,11 @@ export class NotesStore {
     if (patch.theme !== undefined) {
       if (patch.theme !== "light" && patch.theme !== "dark" && patch.theme !== "system") throw new NotesError("bad_request", "theme must be light, dark or system");
       next.theme = patch.theme;
+    }
+    if (patch.useTodo !== undefined) next.useTodo = patch.useTodo !== false;
+    if (patch.todoKeepDays !== undefined) {
+      if (!keepOk(patch.todoKeepDays)) throw new NotesError("bad_request", `todoKeepDays must be one of ${TODO_KEEP_CHOICES.join(", ")}`);
+      next.todoKeepDays = patch.todoKeepDays;
     }
     if (patch.importedAt !== undefined) next.importedAt = typeof patch.importedAt === "string" ? patch.importedAt : null;
     if (patch.workFolder !== undefined) next.workFolder = typeof patch.workFolder === "string" && patch.workFolder ? resolve(patch.workFolder) : null;

@@ -1,10 +1,13 @@
+import { spawn } from "node:child_process";
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { centreAt, PAD_MIN, placePad, type Rect } from "./placement.js";
+import { accountFile, ensureDevice, programsFile, readAccount, readAccountInfo, readDevice, readJsonFile } from "@amo-studio/account";
+import { centreAt, PAD_MIN, placePad, TODO_SIZE, type Rect } from "./placement.js";
 import { startNotesServer, type NotesServer, type NotesShell } from "./server.js";
 import { NotesStore } from "./store.js";
+import { TodoSync, type TodoAccount } from "./todo.js";
 
 // AMO 便签 (2026-10-23): the scratchpad as a program of its own, so restarting Studio never closes it. One instance
 // (a second start shows the running one), a tray icon (显示便签 / 设置… / 退出便签), the global shortcut, and a small
@@ -13,7 +16,9 @@ import { NotesStore } from "./store.js";
 //   AMO_NOTES_HOME     its home (default %APPDATA%\AMO Notes): settings.json, running.json, the default work folder
 //   AMO_NOTES_UI_DIR   the UI build (default packages/ui/dist)
 //   AMO_NOTES_TEST=1   test mode: windows off-screen and never focused, no tray, no real global shortcut
+//   AMO_HOME           where the AMO platform keeps account.json, device.json, programs.json (default %APPDATA%\AMO)
 // Args: --hidden  start in the tray only (how Windows starts it at login)
+//       --amo-todo, --amo-settings  (to the running one) show the 待办 window / the settings (AMO 平台's tray)
 
 const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_NOTES_TEST === "1";
@@ -64,31 +69,42 @@ let tray: Tray | null = null;
 /** The tray's menu (2026-10-23): a small window in AMO's look, not Windows' rounded one. Made once, then shown. */
 let trayMenu: BrowserWindow | null = null;
 const TRAY_MENU = { width: 184, height: 124 };
+/** 显示待办's row, there while 使用待办 is on (2026-11-01). */
+const TRAY_MENU_TODO_ROW = 26;
 let quitting = false;
+/** 待办 (2026-11-01, plans/todo.md): a window of its own beside the 便签 one, and the sync of its copy. */
+let todoWin: BrowserWindow | null = null;
+let todoReady = false;
+let todo: TodoSync;
 let status: ShortcutStatus = { wanted: "", active: "", error: null };
 const preload = join(here, "preload.cjs");
 const windowFile = () => join(home, "window.json");
+const todoWindowFile = () => join(home, "todo-window.json");
 const runningFile = () => join(home, "running.json");
 
 function displays() {
   return screen.getAllDisplays().map((d) => ({ workArea: d.workArea }));
 }
 
-function savedBounds(): Rect | null {
+function savedBounds(file = windowFile()): Rect | null {
   try {
-    return existsSync(windowFile()) ? ((JSON.parse(readFileSync(windowFile(), "utf8")) as { bounds?: Rect }).bounds ?? null) : null;
+    return existsSync(file) ? ((JSON.parse(readFileSync(file, "utf8")) as { bounds?: Rect }).bounds ?? null) : null;
   } catch {
     return null;
   }
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function rememberBounds(): void {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    if (!pad || pad.isDestroyed()) return;
-    writeFileSync(windowFile(), JSON.stringify({ bounds: pad.getNormalBounds() }, null, 2));
-  }, 300);
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Each window keeps where it was (便签: window.json, 待办: todo-window.json). */
+function rememberBounds(w: BrowserWindow, file: string): void {
+  clearTimeout(saveTimers.get(file));
+  saveTimers.set(
+    file,
+    setTimeout(() => {
+      if (w.isDestroyed()) return;
+      writeFileSync(file, JSON.stringify({ bounds: w.getNormalBounds() }, null, 2));
+    }, 300),
+  );
 }
 
 /** The zoom in the settings (Studio's 界面大小), on every window of the program. */
@@ -143,8 +159,8 @@ function createPad(): BrowserWindow {
     w.hide();
   });
   if (!testMode) {
-    w.on("moved", rememberBounds);
-    w.on("resized", rememberBounds);
+    w.on("moved", () => rememberBounds(w, windowFile()));
+    w.on("resized", () => rememberBounds(w, windowFile()));
   }
   // 关于 (2026-10-30, the user: in the tray its version could not be seen): right-click on the title bar. The bar is the
   // frameless window's drag region, where Windows shows its own window menu: that one is replaced.
@@ -236,6 +252,122 @@ function showPad(): void {
 function togglePad(): void {
   if (pad && pad.isVisible() && (pad.isFocused() || testMode)) pad.hide();
   else showPad();
+}
+
+/** The 待办 window: like the 便签's (frameless, on top, Esc hides it), its own place and size. */
+function createTodo(): BrowserWindow {
+  const bounds = testMode ? { x: -32000, y: -32000, ...TODO_SIZE } : placePad(savedBounds(todoWindowFile()), screen.getCursorScreenPoint(), displays(), TODO_SIZE);
+  const w = new BrowserWindow({
+    ...bounds,
+    minWidth: PAD_MIN.width,
+    minHeight: PAD_MIN.height,
+    title: "AMO 待办",
+    ...(ICON ? { icon: ICON } : {}),
+    frame: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#181b1f" : "#fbfaf7",
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    paintWhenInitiallyHidden: true,
+    ...(testMode ? { focusable: false } : {}),
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !testMode },
+  });
+  w.setAlwaysOnTop(true, "floating");
+  guard(w);
+  w.on("close", (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    w.hide();
+  });
+  if (!testMode) {
+    w.on("moved", () => rememberBounds(w, todoWindowFile()));
+    w.on("resized", () => rememberBounds(w, todoWindowFile()));
+  }
+  // Windows' own menu on the frameless title bar is not wanted here either.
+  w.on("system-context-menu", (event) => event.preventDefault());
+  // Synced often while it is shown, now and then while not.
+  w.on("show", () => todo.setActive(true));
+  w.on("hide", () => todo.setActive(false));
+  w.once("ready-to-show", () => (todoReady = true));
+  w.on("closed", () => {
+    todoWin = null;
+    todoReady = false;
+  });
+  void w.loadURL(`${server!.url}/notes.html#todo`);
+  return w;
+}
+
+/** 显示待办 (the tray menu, AMO 平台's tray): shows it in front. Turned off in the settings: the settings instead. */
+function showTodo(): void {
+  if (!store.settings().useTodo) return openSettings();
+  todoWin ??= createTodo();
+  const w = todoWin;
+  if (todoReady && !testMode && !w.isVisible()) w.setBounds(placePad(w.getNormalBounds(), screen.getCursorScreenPoint(), displays(), TODO_SIZE));
+  const reveal = () => {
+    if (testMode) w.showInactive();
+    else {
+      w.show();
+      w.focus();
+    }
+  };
+  if (todoReady) reveal();
+  else w.once("ready-to-show", reveal);
+}
+
+/** 使用待办 turned on or off: the sync starts or stops, the window goes. */
+function applyTodo(): void {
+  if (store.settings().useTodo) todo.start();
+  else {
+    todo.stop();
+    todoWin?.hide();
+  }
+  void todo.sync();
+}
+
+/** The account's key, decrypted once per account.json (decrypting starts a PowerShell). */
+let keyCache: { raw: string; account: TodoAccount | null } | null = null;
+async function accountWithKey(): Promise<TodoAccount | null> {
+  let raw: string;
+  try {
+    raw = readFileSync(accountFile(), "utf8");
+  } catch {
+    return null;
+  }
+  if (keyCache?.raw === raw) return keyCache.account;
+  const account = await readAccount();
+  keyCache = { raw, account };
+  return account;
+}
+
+/** This computer as the account's devices know it (device.json, made by whichever AMO tool needs it first). */
+let deviceCache: { at: number; device: { id: string; name: string } } | null = null;
+function thisDevice(): { id: string; name: string } {
+  if (deviceCache && Date.now() - deviceCache.at < 5000) return deviceCache.device;
+  let device: { id: string; name: string };
+  try {
+    device = readDevice() ?? ensureDevice();
+  } catch {
+    device = deviceCache?.device ?? { id: "d_unknown000000", name: "这台电脑" };
+  }
+  deviceCache = { at: Date.now(), device };
+  return device;
+}
+
+/** 在 AMO 平台里登录: the platform's window (its exe from programs.json; a second start shows the running one). */
+function openPlatform(): boolean {
+  const entry = readJsonFile<{ tools?: Record<string, { dir?: string; exe?: string }> }>(programsFile())?.tools?.platform;
+  if (!entry?.dir || !entry.exe) return false;
+  const exe = join(entry.dir, entry.exe);
+  if (!existsSync(exe)) return false;
+  if (testMode) {
+    (globalThis as { __notesOpenedPlatform?: string }).__notesOpenedPlatform = exe;
+    return true;
+  }
+  spawn(exe, [], { detached: true, stdio: "ignore", cwd: entry.dir }).unref();
+  return true;
 }
 
 function openSettings(): void {
@@ -364,7 +496,8 @@ function openTrayMenu(): void {
   trayMenu ??= createTrayMenu();
   const w = trayMenu;
   const zoom = store.settings().uiScale;
-  const size = { width: Math.round(TRAY_MENU.width * zoom), height: Math.round(TRAY_MENU.height * zoom) };
+  const height = TRAY_MENU.height + (store.settings().useTodo ? TRAY_MENU_TODO_ROW : 0);
+  const size = { width: Math.round(TRAY_MENU.width * zoom), height: Math.round(height * zoom) };
   const at = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(at).workArea;
   const x = Math.min(Math.max(at.x - size.width, area.x), area.x + area.width - size.width);
@@ -402,6 +535,12 @@ async function start(): Promise<void> {
     shortcutStatus: () => status,
     setOpenAtLogin,
     applyLook,
+    get todo() {
+      return todo;
+    },
+    showTodo,
+    applyTodo,
+    openPlatform,
     openPath: async (p) => {
       mkdirSync(p, { recursive: true });
       if (testMode) {
@@ -411,6 +550,13 @@ async function start(): Promise<void> {
       await shell.openPath(p);
     },
   };
+  todo = new TodoSync(home, {
+    accountInfo: () => readAccountInfo(),
+    account: accountWithKey,
+    device: thisDevice,
+    settings: () => ({ useTodo: store.settings().useTodo, keepDays: store.settings().todoKeepDays }),
+    changed: (view) => server?.announceTodo(view),
+  });
   server = await startNotesServer({ store, shell: notesShell, uiDir });
   writeFileSync(runningFile(), JSON.stringify({ url: server.url, token: server.token, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));
 
@@ -459,8 +605,12 @@ async function start(): Promise<void> {
   ipcMain.on("amo:notes-tray", (_event, action: unknown) => {
     trayMenu?.hide();
     if (action === "show") showPad();
+    else if (action === "todo") showTodo();
     else if (action === "settings") openSettings();
     else if (action === "quit") quit();
+  });
+  ipcMain.on("amo:todo-hide", (event) => {
+    if (todoWin && event.sender === todoWin.webContents) todoWin.hide();
   });
   ipcMain.on("amo:notes-close-settings", (event) => {
     if (settingsWin && event.sender === settingsWin.webContents) settingsWin.close();
@@ -479,7 +629,8 @@ async function start(): Promise<void> {
   }
   applyShortcut();
   if (store.settings().openAtLogin) setOpenAtLogin(true);
-  if (testMode) Object.assign(globalThis, { __notesToggle: togglePad, __notesOpenSettings: openSettings, __notesTrayMenu: openTrayMenu });
+  if (store.settings().useTodo) todo.start();
+  if (testMode) Object.assign(globalThis, { __notesToggle: togglePad, __notesOpenSettings: openSettings, __notesTrayMenu: openTrayMenu, __notesShowTodo: showTodo });
   if (!startHidden) showPad();
   // Started in the tray (with Windows, or by Studio): the window is made now, out of sight, so the first time it is
   // asked for it appears at once.
@@ -494,6 +645,8 @@ if (!app.requestSingleInstanceLock() || process.argv.includes("--amo-quit")) {
     // From AMO 平台's tray (2026-10-29): 退出便签, 显示 / 隐藏便签.
     if (argv.includes("--amo-quit")) return quit();
     if (argv.includes("--amo-toggle")) return togglePad();
+    if (argv.includes("--amo-todo")) return showTodo();
+    if (argv.includes("--amo-settings")) return openSettings();
     if (!argv.includes("--hidden")) showPad();
   });
   // Every window closed is not the end: it lives in the tray.
@@ -503,6 +656,7 @@ if (!app.requestSingleInstanceLock() || process.argv.includes("--amo-quit")) {
   });
   app.on("will-quit", () => {
     if (status.active) shortcuts.unregister(status.active);
+    todo?.stop();
     try {
       const running = JSON.parse(readFileSync(runningFile(), "utf8")) as { pid?: number };
       if (running.pid === process.pid) rmSync(runningFile(), { force: true });

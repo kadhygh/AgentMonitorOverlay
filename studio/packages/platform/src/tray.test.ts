@@ -24,6 +24,7 @@ describe("the platform's tray menu (2026-10-29)", () => {
       "—",
       "# AMO 便签",
       "显示 / 隐藏便签",
+      "便签设置…",
       "退出便签",
       "—",
       "# AMO 中转",
@@ -39,6 +40,9 @@ describe("the platform's tray menu (2026-10-29)", () => {
       "○ 单击图标：打开 Studio",
       "退出平台",
     ]);
+    // 便签's 使用待办 on (2026-11-01): 显示待办 too.
+    expect(labels(trayMenu({ ...all, notesTodo: true }))).toEqual(expect.arrayContaining(["显示待办", "便签设置…"]));
+    expect(trayMenu({ ...all, notesTodo: true }).find((i) => i.kind === "item" && i.label === "显示待办")).toMatchObject({ action: { kind: "notes", what: "todo" } });
     // 重启 Studio when the Host is older and idle.
     expect(labels(trayMenu({ ...all, studioRestart: true }))).toContain("重启 Studio（换成 0.9.7）");
   });

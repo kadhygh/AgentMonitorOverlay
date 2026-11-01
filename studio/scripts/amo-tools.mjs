@@ -18,7 +18,7 @@ export const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const TOOLS = {
   studio: { name: "AMO Studio", zip: "AMO-Studio", pkg: "app", description: "AMO Studio", platform: true, packages: ["app", "host", "protocol", "locate", "account", "relay", "traymenu", "ui", "reviewer", "notes"] },
   reviewer: { name: "AMO Reviewer", zip: "AMO-Reviewer", pkg: "reviewer", description: "AMO Reviewer", platform: true, packages: ["reviewer", "host", "protocol", "locate", "account", "relay", "ui"] },
-  notes: { name: "AMO Notes", zip: "AMO-Notes", pkg: "notes", description: "AMO 便签", platform: true, packages: ["notes", "protocol", "ui"] },
+  notes: { name: "AMO Notes", zip: "AMO-Notes", pkg: "notes", description: "AMO 便签", platform: true, packages: ["notes", "protocol", "account", "ui"] },
   // The platform publishes itself the same way (2026-10-28); its first download is the zip on the service's page.
   platform: { name: "AMO Platform", zip: "AMO-Platform", pkg: "platform", description: "AMO 平台", platform: true, packages: ["platform", "account", "locate", "traymenu", "ui"] },
   // AMO 中转's desktop client installs and updates through the platform too (the user, 2026-10-28); its content still

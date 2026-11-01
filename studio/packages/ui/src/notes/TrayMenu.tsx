@@ -5,18 +5,23 @@ import { shortcutLabel } from "../scratchpad/logic.js";
 import { notesCall } from "./api.js";
 
 // The 便签 program's tray menu (#notes-tray-menu, 2026-10-23): a small window in AMO's look instead of Windows' rounded
-// menu. 显示便签 (with the shortcut as bound) / 设置… / 退出便签; Esc or a click elsewhere closes it.
+// menu. 显示便签 (with the shortcut as bound) / 显示待办 (2026-11-01, while 使用待办 is on; no shortcut) / 设置… / 退出便签;
+// Esc or a click elsewhere closes it.
 
 export function TrayMenu() {
   const host = useHostState();
   const [shortcut, setShortcut] = useState("");
-  const act = (action: "show" | "settings" | "quit" | "close") => window.amo?.notes?.trayAction?.(action);
+  const [todo, setTodo] = useState(false);
+  const act = (action: "show" | "todo" | "settings" | "quit" | "close") => window.amo?.notes?.trayAction?.(action);
 
   useEffect(() => {
     if (host.kind !== "ready") return;
     const read = () =>
       void notesCall(host.link, "GET", "")
-        .then((info) => setShortcut(info.shortcut.active))
+        .then((info) => {
+          setShortcut(info.shortcut.active);
+          setTodo(info.settings.useTodo);
+        })
         .catch(() => undefined);
     read();
     // The menu window is made once and shown again each time: read the shortcut again when it comes forward.
@@ -42,6 +47,11 @@ export function TrayMenu() {
         显示便签
         {shortcut && <span className="tm-key">{shortcutLabel(shortcut).split(" + ").join("+")}</span>}
       </button>
+      {todo && (
+        <button type="button" role="menuitem" className="tm-item" onClick={() => act("todo")} data-testid="tm-todo">
+          显示待办
+        </button>
+      )}
       <button type="button" role="menuitem" className="tm-item" onClick={() => act("settings")}>
         设置…
       </button>

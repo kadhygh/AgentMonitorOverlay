@@ -15,6 +15,7 @@ import { IssueStore } from "./issues.js";
 import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
+import { checkTodoDevice, TodoStore } from "./todo.js";
 import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js";
 
 // The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
@@ -151,6 +152,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const platform = new PlatformFiles(opts.platformDir);
   // 问题页 (2026-10-31, plans/issues.md): its tables in the same database.
   const issues = new IssueStore(store.db);
+  // 待办 (2026-11-01, plans/todo.md): every account's todo lists, in the same database.
+  const todo = new TodoStore(store.db);
   const sockets = new Map<string, Set<WebSocket>>();
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
@@ -485,6 +488,15 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         return send(res, 200, { ok: true });
       }
       throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
+    // 待办 (todo-protocol.ts): the account's lists, each call naming the calling device.
+    if (method === "GET" && path === "/api/todo") {
+      const device = checkTodoDevice(url.searchParams.get("device"), url.searchParams.get("deviceName"));
+      return send(res, 200, todo.snapshot(me, device, Number(url.searchParams.get("since") ?? 0)));
+    }
+    if (method === "POST" && path === "/api/todo/ops") {
+      const body = await readJson(req);
+      return send(res, 200, todo.apply(me, checkTodoDevice(body.device, body.deviceName), body.ops));
     }
     if (method === "GET" && path === "/api/threads") return send(res, 200, { threads: store.threadsFor(me) });
     if (method === "POST" && path === "/api/threads/direct") {

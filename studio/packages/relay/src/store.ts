@@ -348,6 +348,10 @@ export class RelayStore {
         // 问题页 (2026-10-31).
         ["issues", "author"],
         ["issue_entries", "author"],
+        // 待办 (2026-11-01).
+        ["todo_items", "account"],
+        ["todo_devices", "account"],
+        ["todo_accounts", "account"],
         ["issue_images", "by_name"],
       ];
       for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);

@@ -19,7 +19,9 @@ electron.contextBridge.exposeInMainWorld("amo", {
     closeSettings: (): void => electron.ipcRenderer.send("amo:notes-close-settings"),
     pickFolder: (start?: string | null): Promise<string | null> => electron.ipcRenderer.invoke("amo:notes-pick-folder", start ?? undefined),
     /** The tray menu's choice: show the window, its settings, or quit. */
-    trayAction: (action: "show" | "settings" | "quit" | "close"): void => electron.ipcRenderer.send("amo:notes-tray", action),
+    trayAction: (action: "show" | "todo" | "settings" | "quit" | "close"): void => electron.ipcRenderer.send("amo:notes-tray", action),
+    /** 待办's window (2026-11-01): Esc hides it. */
+    hideTodo: (): void => electron.ipcRenderer.send("amo:todo-hide"),
     /** 关于便签 (2026-10-30): its version, and the Studio that carries it when it has no install of its own. */
     aboutInfo: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-about-info"),
     /** The title bar's right-click menu chose 关于便签. */

@@ -15,6 +15,8 @@ export interface DisplayInfo {
 
 export const PAD_SIZE = { width: 480, height: 320 };
 export const PAD_MIN = { width: 320, height: 200 };
+/** The 待办 window (2026-11-01): a little taller, for two more lines. */
+export const TODO_SIZE = { width: 480, height: 360 };
 const CURSOR_OFFSET = 12;
 
 const overlap = (a: Rect, b: Rect) => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
@@ -47,9 +49,9 @@ export function clampInto(rect: Rect, a: Rect): Rect {
   return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
 }
 
-export function placePad(saved: Rect | null, cursor: Point, displays: readonly DisplayInfo[]): Rect {
+export function placePad(saved: Rect | null, cursor: Point, displays: readonly DisplayInfo[], size: { width: number; height: number } = PAD_SIZE): Rect {
   if (saved && displays.some((d) => overlap(saved, d.workArea) > 0)) return clampInto(saved, displayFor(saved, displays).workArea);
-  const { width, height } = saved ?? PAD_SIZE;
+  const { width, height } = saved ?? size;
   const area = displayFor({ ...cursor, width: 1, height: 1 }, displays).workArea;
   let x = cursor.x + CURSOR_OFFSET;
   let y = cursor.y + CURSOR_OFFSET;

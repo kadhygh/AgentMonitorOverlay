@@ -52,6 +52,13 @@
 - 改法：`syncPeer` 先并行（3 个一组）把所有任务和会话拿齐（看板立刻对），再逐任务补记录；一个会话要补的超过 20 条或不止一页时安静写库，结束发一次 `items.reloaded`（`protocol/api.ts`），`useSessionItems` 收到就整段重读。补同步超过 1 秒时 `RemoteState.syncing` 带进度，顶栏「远程 · 同步 n/总数」加进度条，任务页横幅写正在补哪个。被控端不用改，旧版互通。
 - 验证：`remote-tasks.test.ts` 新用例（离开期间写 450 条：没有逐条 appended、只有一次 reloaded、`task.upserted` 在它前面、进度清掉、3 条的照旧逐条来）、`ui/src/remote/remote.test.ts` 新一组；typecheck 过。全量 vitest 里 Codex `server-manager.test.ts` 失败，干净的 master 上一样，与此无关。没截图进度条（要两台电脑实际离线一段）。
 
+**2026-11-01 · 便签的「待办」窗口，第一版**（方案和用户定的几条在 `plans/todo.md`，示意页 `plans/todo.html`）：
+- 中转服务：`src/todo.ts`、`src/todo-protocol.ts`，`/api/todo`、`/api/todo/ops`；每台设备一张表加共通表，同账号设备都能看能改；按字段后到的赢，删掉的不复活，删除标记留 30 天；管理页改名跟着走。
+- 便签程序：`src/todo.ts`（副本和离线队列，`todo-cache.json` 在便签家目录，按账号分开；窗口开着 10 秒同步一次，不开 2 分钟）；待办是第二个窗口（`#todo`，位置存 `todo-window.json`），托盘右键「显示待办」打开，没有快捷键；设置标题行显示版本号，加「待办」一节（使用待办默认开、账号、已完成保留 7/30/90/一直）。新依赖 `@amo-studio/account`（`amo-tools.mjs` 的 notes 包列表也加了）。界面在 `ui/src/todo/`。
+- 平台：托盘「AMO 便签」下加「显示待办」（读便签 settings.json 的 useTodo）和「便签设置…」（`--amo-todo` / `--amo-settings`）。
+- 验证：vitest `relay/src/todo.test.ts`、`notes/src/todo.test.ts`（真中转服务、断网重连、重启后队列还在、401、已完成保留）、`platform/src/tray.test.ts` 通过；e2e `e2e/notes/notes-todo.spec.ts` 2 条通过，整组 notes e2e 通过；截图 `screenshots/notes/T1`–`T11`。全量 vitest 另有 3 个失败与此无关（Codex server-manager 端口用例、git.test 偶发、未入库的 `scripts/android-fixture.test.mjs` 不是 vitest 格式）；平台 e2e「log in → install」卡在「服务器在线」，撤掉这次改动也一样，是原来就有的。顺手修了 notes e2e 里过时的默认快捷键断言（Ctrl Alt Space → Ctrl Shift F12）；notes e2e 现在给 `AMO_HOME` 一个临时目录，不碰真实登录。
+- 没做：中转服务没部署（`npm run release -- relay-service`，会重启中转几秒，先问）、便签和平台没发版；改动推送（设备通道上的 `todo-changed`）还是靠定时同步；安卓版里显示待办以后再说。
+
 **2026-11-01 · 安卓版 0.2.0：手机上重做一版**（问题和改法 `plans/android-mobile-redesign.md`；`studio/android/` 仍未入库，属于「开发android版apk」任务）：
 - 保留连接、命令、传文件、凭据加密、自更新；重写数据层（`HistoryCache.kt` 按会话分文件、后台写；`rt.items` 从缓存最后一条往后拉；任务同步只在连上 / 回到应用时并行跑；推来的任务和会话变化直接应用）和全部界面（工作台、会话树、对话页的操作折叠、自写 Markdown、底部面板新建、设置里的电脑和配对）。
 - 验证：模拟器 FakeNga_UI_API_36 + 夹具 `node scripts/android-fixture.mjs --seed-long`（新加：340 条的模拟长会话、`POST /stream` 模拟流式回复），`android/test.ps1` 6 个测试全过；截图在 `screenshots/android/redesign/`（浅色、深色、横屏、键盘、360 dp + 1.3 倍字体、流式）。流式 4000 字（每 30 ms 一段）时帧时间中位 13 ms、90% 18 ms，模拟器软件渲染下 21% 掉帧。

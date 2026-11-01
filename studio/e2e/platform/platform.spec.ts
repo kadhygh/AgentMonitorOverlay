@@ -47,7 +47,7 @@ test.afterEach(async () => {
 function cleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLAUDE|ANTHROPIC_|AMO_)/.test(k)) env[k] = v;
-  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9" };
+  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_NOTES_HOME: join(root, "notes"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9" };
 }
 
 /**
@@ -225,7 +225,7 @@ test("log in → install → a new version → update → 回滚 → 卸载; Stu
   // ---- the tray (2026-10-29): one part per installed tool, not folded (便签 through Studio, which carries it); a click
   // opens 便签 or Studio as chosen; closing the window leaves the program running
   const trayNow = () => app.evaluate(() => (globalThis as { __platformTray?: () => string[] }).__platformTray!());
-  expect(await trayNow()).toEqual(["# AMO Studio", "打开 Studio", "完全退出 Studio", "—", "# AMO 便签", "显示 / 隐藏便签", "退出便签", "—", "# AMO 平台", "打开 AMO 平台", "● 单击图标：打开便签", "○ 单击图标：打开 Studio", "退出平台"]);
+  expect(await trayNow()).toEqual(["# AMO Studio", "打开 Studio", "完全退出 Studio", "—", "# AMO 便签", "显示 / 隐藏便签", "显示待办", "便签设置…", "退出便签", "—", "# AMO 平台", "打开 AMO 平台", "● 单击图标：打开便签", "○ 单击图标：打开 Studio", "退出平台"]);
   const studioMark = () => (existsSync(join(root, "launched.studio")) ? readFileSync(join(root, "launched.studio"), "utf8").trim() : "");
   await app.evaluate(() => (globalThis as { __platformTrayIconClick?: () => void }).__platformTrayIconClick!());
   await expect.poll(studioMark).toBe(`studio 0.9.0 ${dataDir} --amo-tray=platform --amo-app=notes --amo-toggle`);

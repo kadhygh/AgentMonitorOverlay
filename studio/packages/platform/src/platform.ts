@@ -6,7 +6,7 @@ import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
-import { QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
+import { NOTES_SETTINGS_ARG, NOTES_TODO_ARG, QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
@@ -590,6 +590,19 @@ export class Platform implements PlatformCalls {
     return this.startNotes([TOGGLE_ARG]);
   }
 
+  /** 便签's 待办 window or its settings (the tray, 2026-11-01). */
+  async openNotes(what: "todo" | "settings"): Promise<OpenResult> {
+    return this.startNotes([what === "todo" ? NOTES_TODO_ARG : NOTES_SETTINGS_ARG]);
+  }
+
+  /** 便签's 使用待办 (2026-11-01): its own settings file (constraint 1), on unless it says false. */
+  notesTodo(): boolean {
+    const env = this.options.env ?? process.env;
+    const home = env.AMO_NOTES_HOME || (env.APPDATA ? join(env.APPDATA, "AMO Notes") : null);
+    if (!home) return true;
+    return readJsonFile<{ useTodo?: unknown }>(join(home, "settings.json"))?.useTodo !== false;
+  }
+
   /** 便签: its own install, else through Studio, which carries it (`AMO Studio.exe --amo-app=notes`). */
   private startNotes(args: string[]): Promise<OpenResult> {
     const programs = this.programs();
@@ -622,6 +635,7 @@ export class Platform implements PlatformCalls {
     return {
       tools: this.installedTools(),
       notes: this.notesAvailable(),
+      notesTodo: this.notesAvailable() && this.notesTodo(),
       studioRestart: studio?.studio?.restart === "ready",
       studioVersion: studio?.installed ?? null,
       click: readSettings(this.options.env).trayClick,

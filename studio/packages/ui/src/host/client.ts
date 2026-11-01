@@ -97,7 +97,8 @@ declare global {
         openSettings(): Promise<void>;
         closeSettings(): void;
         pickFolder(start?: string | null): Promise<string | null>;
-        trayAction?(action: "show" | "settings" | "quit" | "close"): void;
+        trayAction?(action: "show" | "todo" | "settings" | "quit" | "close"): void;
+        hideTodo?(): void;
         aboutInfo?(): Promise<NotesAbout>;
         onAbout?(listener: () => void): () => void;
       };

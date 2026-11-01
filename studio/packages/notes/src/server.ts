@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Scratchpad } from "@amo-studio/protocol";
+import type { Scratchpad, TodoOp, TodoView } from "@amo-studio/protocol";
 import { NotesError, type NotesStore } from "./store.js";
 
 // The 便签 program's own small server (2026-10-23), on 127.0.0.1 with a token. It answers the few Host routes the
@@ -22,6 +22,12 @@ export interface NotesShell {
   /** The windows take the zoom in the settings. */
   applyLook(): void;
   openPath(path: string): Promise<void>;
+  /** 待办 (2026-11-01): its copy and sync (todo.ts), its window, and 使用待办 turned on or off. */
+  todo: { view(): TodoView; change(ops: TodoOp[]): TodoView; sync(): Promise<void> };
+  showTodo(): void;
+  applyTodo(): void;
+  /** 在 AMO 平台里登录: opens the platform (programs.json); false when it is not installed. */
+  openPlatform(): boolean;
 }
 
 export interface NotesServer {
@@ -30,6 +36,8 @@ export interface NotesServer {
   close(): Promise<void>;
   /** Tells every window the document changed (also used after a folder switch). */
   announce(): void;
+  /** Tells every window 待办 changed. */
+  announceTodo(view: TodoView): void;
 }
 
 const MIME: Record<string, string> = {
@@ -154,8 +162,11 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
         ...(body.importNoticeSeen !== undefined ? { importNoticeSeen: body.importNoticeSeen } : {}),
         ...(body.uiScale !== undefined ? { uiScale: body.uiScale } : {}),
         ...(body.theme !== undefined ? { theme: body.theme } : {}),
+        ...(body.useTodo !== undefined ? { useTodo: body.useTodo } : {}),
+        ...(body.todoKeepDays !== undefined ? { todoKeepDays: body.todoKeepDays } : {}),
       });
       const after = store.settings();
+      if (after.useTodo !== before.useTodo || after.todoKeepDays !== before.todoKeepDays) shell.applyTodo();
       if (after.shortcut !== before.shortcut) shell.applyShortcut();
       if (after.openAtLogin !== before.openAtLogin) shell.setOpenAtLogin(after.openAtLogin);
       if (after.uiScale !== before.uiScale || after.theme !== before.theme) shell.applyLook();
@@ -187,6 +198,24 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
       shell.openSettings();
       return send(res, 200, {});
     }
+    // 待办 (2026-11-01): the copy with what is not sent yet, a change, a sync now, its window, the platform to log in.
+    if (m === "GET" && p === "/api/todo") return send(res, 200, shell.todo.view());
+    if (m === "POST" && p === "/api/todo/ops") {
+      const body = await json(req);
+      if (!Array.isArray(body.ops) || !body.ops.length) throw new NotesError("bad_request", "ops must be a list of changes");
+      if (!store.settings().useTodo) throw new NotesError("conflict", "待办已关闭");
+      if (!shell.todo.view().account) throw new NotesError("conflict", "没有登录，待办用不了");
+      return send(res, 200, shell.todo.change(body.ops as TodoOp[]));
+    }
+    if (m === "POST" && p === "/api/todo/sync") {
+      void shell.todo.sync();
+      return send(res, 200, shell.todo.view());
+    }
+    if (m === "POST" && p === "/api/notes/todo-window") {
+      shell.showTodo();
+      return send(res, 200, {});
+    }
+    if (m === "POST" && p === "/api/notes/open-platform") return send(res, 200, { opened: shell.openPlatform() });
     if (m === "POST" && p === "/api/notes/import") {
       const body = await json(req);
       const result = store.importFromStudio(body as never);
@@ -241,6 +270,10 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
         url: `http://127.0.0.1:${port}`,
         token,
         announce: () => announce(),
+        announceTodo: (view) => {
+          const msg = JSON.stringify({ type: "todo.updated", todo: view, seq: ++seq });
+          for (const ws of sockets) ws.send(msg);
+        },
         close: () =>
           new Promise<void>((done) => {
             for (const ws of sockets) ws.terminate();
