@@ -16,6 +16,8 @@ import { sessionMoving } from "../tasks/service.js";
 // A session item can check first (a command, or a feature's check such as 问题页's): the model starts only when the
 // check finds something, with what it found under the prompt; a finding that already started a session is not acted on
 // again (the user, 2026-10-31: "每次都先走脚本，有问题才拉起ai").
+// An item can hang under another (parentId, 2026-11-01: 自动打包 under 日常值守): only the relation is shown, they run
+// apart; the parent turned off turns its children off, and a child is turned on only with its parent on.
 
 const ITEMS_KEY = "duty.items";
 const RUNS_KEY = "duty.runs";
@@ -198,7 +200,10 @@ export class DutyFeature extends Feature {
   /** `by` "agent": saved by an agent (duty_save, which the person approved); the list marks it. */
   create(input: DutyItemInput, by?: "agent", setBy?: Id): DutyState {
     const at = new Date(this.now()).toISOString();
-    const item: DutyItem = { id: newId("duty"), title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), ...(by ? { by } : {}), ...(by && setBy ? { setBy } : {}), createdAt: at, updatedAt: at };
+    const id = newId("duty");
+    const parentId = input.parentId ? this.parentFor(id, input.parentId) : undefined;
+    const item: DutyItem = { id, title: title(input.title), enabled: input.enabled === true, schedule: schedule(input.schedule), action: this.action(input.action), ...(by ? { by } : {}), ...(by && setBy ? { setBy } : {}), ...(parentId ? { parentId } : {}), createdAt: at, updatedAt: at };
+    if (item.enabled) this.parentOn(item);
     this.saveItems([...this.items(), item]);
     this.changed();
     return this.state();
@@ -217,6 +222,11 @@ export class DutyFeature extends Feature {
       ...(input.action !== undefined ? { action: this.action(input.action) } : {}),
       updatedAt: new Date(this.now()).toISOString(),
     };
+    if (input.parentId !== undefined) {
+      if (input.parentId) next.parentId = this.parentFor(id, input.parentId);
+      else delete next.parentId;
+    }
+    if (next.enabled && (!item.enabled || input.parentId !== undefined)) this.parentOn(next);
     // Who saved it last: an agent's change marks it; the person's own edit (not just turning it on or off) clears that.
     if (by) {
       next.by = by;
@@ -225,9 +235,29 @@ export class DutyFeature extends Feature {
       delete next.by;
       delete next.setBy;
     }
-    this.saveItems(items.map((i) => (i.id === id ? next : i)));
+    // The parent off: its children with it (a run going on finishes).
+    const offToo = item.enabled && !next.enabled ? new Set(items.filter((i) => i.parentId === id && i.enabled).map((i) => i.id)) : new Set<Id>();
+    const at = next.updatedAt;
+    this.saveItems(items.map((i) => (i.id === id ? next : offToo.has(i.id) ? { ...i, enabled: false, updatedAt: at } : i)));
     this.changed();
     return this.state();
+  }
+
+  /** The parent `parentId` may be for item `id`: there, not itself, not a child itself, and `id` has no children. */
+  private parentFor(id: Id, parentId: Id): Id {
+    const items = this.items();
+    const parent = items.find((i) => i.id === parentId);
+    if (!parent) throw new HostError("not_found", `父值守项 ${parentId} 不在了`);
+    if (parentId === id) throw new HostError("bad_request", "值守项不能挂在自己下面");
+    if (parent.parentId) throw new HostError("bad_request", `「${parent.title}」自己挂在别的值守项下面，只能挂一层`);
+    if (items.some((i) => i.parentId === id)) throw new HostError("bad_request", "这个值守项下面已经挂着别的，不能再挂到别人下面");
+    return parentId;
+  }
+
+  /** A child turned on needs its parent on. */
+  private parentOn(item: DutyItem): void {
+    const parent = item.parentId ? this.items().find((i) => i.id === item.parentId) : undefined;
+    if (parent && !parent.enabled) throw new HostError("conflict", `它挂在「${parent.title}」下面，「${parent.title}」关着：先开它`);
   }
 
   /** Turns an item off (a run going on finishes); duty_stop and a command's AMO_DUTY_DONE. */
@@ -249,7 +279,8 @@ export class DutyFeature extends Feature {
     if (!item) throw new HostError("not_found", `值守项 ${id} 不在了`);
     if (item.builtin) throw new HostError("bad_request", "Studio 自带的值守项不能删，可以关掉");
     this.running.get(id)?.abort.abort();
-    this.saveItems(this.items().filter((i) => i.id !== id));
+    // Its children stay, on their own.
+    this.saveItems(this.items().filter((i) => i.id !== id).map((i) => (i.parentId === id ? (({ parentId: _, ...rest }) => rest)(i) : i)));
     this.store.setKv(RUNS_KEY, JSON.stringify(this.runs().filter((r) => r.itemId !== id)));
     this.changed();
     return this.state();
@@ -532,7 +563,8 @@ export class DutyFeature extends Feature {
       // "要使用子session的那种方式，挂在值守父任务上"), and named after what it is for.
       const parent = item.setBy ? this.store.getSession(item.setBy) : undefined;
       if (parent && parent.taskId === task.id && parent.kind === "main" && !parent.archivedAt) this.publish({ type: "session.upserted", session: this.store.setSessionStartedBy(session.id, parent.id) });
-      if (sessionTitle) await this.f.sessions.renameSession(session.id, sessionTitle).catch(() => undefined);
+      // Without a name from the check, the item's (2026-11-01: not the prompt's first line, 「（你在项目…」).
+      await this.f.sessions.renameSession(session.id, sessionTitle ?? item.title).catch(() => undefined);
       return started({ ok: true, summary: `在「${task.title}」里开了会话${sessionTitle ? `「${sessionTitle}」` : ""}${note}`, sessionId: session.id, taskId: task.id });
     }
     const stamp = new Date(this.now());

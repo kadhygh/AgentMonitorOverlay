@@ -69,3 +69,13 @@ export function dutyOfSession(duty: DutyState | null, sessionId: Id): { startedB
     set: (duty?.items ?? []).filter((i) => i.setBy === sessionId),
   };
 }
+
+/**
+ * The items in list order, each child right under its parent (2026-11-01: 自动打包 under 日常值守). `first` orders the
+ * top-level ones (the panel: those on first); children keep their saved order.
+ */
+export function dutyTree(items: readonly DutyItem[], first?: (a: DutyItem, b: DutyItem) => number): Array<{ item: DutyItem; parent: DutyItem | null }> {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const top = items.filter((i) => !i.parentId || !byId.has(i.parentId));
+  return (first ? [...top].sort(first) : top).flatMap((p) => [{ item: p, parent: null }, ...items.filter((c) => c.parentId === p.id).map((c) => ({ item: c, parent: p }))]);
+}

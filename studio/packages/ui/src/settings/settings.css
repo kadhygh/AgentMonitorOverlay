@@ -228,6 +228,8 @@
 .duty-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .duty-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .duty-item[data-enabled="false"] .duty-item-head b { color: var(--text-dim); }
+/* A child (2026-11-01): set in under its parent, a line on the left tying them. */
+.duty-item.duty-child { margin-left: 22px; border-left: 3px solid var(--border-strong, var(--border)); }
 .duty-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .duty-item-head .grow { flex: 1; }
 .duty-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }

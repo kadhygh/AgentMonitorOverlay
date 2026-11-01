@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { DutyState, Id, StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { actionText, runMark, scheduleText, when, type DutyCtx } from "../settings/DutyPage.js";
-import { setDuty, useDuty } from "./duty.js";
+import { dutyTree, setDuty, useDuty } from "./duty.js";
 
 // 值守 from the top bar (2026-10-31, the user: 「studio里应该需要一个查看duty的界面」): what is on, what each did last and
 // when it runs next, with the tasks and sessions it opened a click away. Turning an item on or off and 立即运行 are here;
@@ -20,8 +20,8 @@ export function DutyDialog({ link, state, onClose, onOpenTask, onSettings }: { l
     run().then(setDuty, (err: unknown) => setError(err instanceof HostApiError ? err.message : String(err)));
   };
   const live = (id: Id | null | undefined) => !!id && state.tasks.some((t) => t.id === id && !t.archivedAt);
-  // On first, then the rest; each group as saved.
-  const items = [...(duty?.items ?? [])].sort((a, b) => Number(b.enabled) - Number(a.enabled));
+  // On first, then the rest; each group as saved; children right under their parent.
+  const items = dutyTree(duty?.items ?? [], (a, b) => Number(b.enabled) - Number(a.enabled));
 
   return createPortal(
     <div
@@ -50,17 +50,19 @@ export function DutyDialog({ link, state, onClose, onOpenTask, onSettings }: { l
           <span className="settings-hint">还没有值守项。在 设置 → 值守 里建，或者让 AI 用「开始维护」这类模板建。</span>
         ) : (
           <ul className="duty-list">
-            {items.map((item) => {
+            {items.map(({ item, parent }) => {
               const run = duty.runs.find((r) => r.itemId === item.id);
               const running = duty.running.includes(item.id);
               const taskId = item.action.kind === "session" ? item.action.taskId : null;
+              const held = !!parent && !parent.enabled && !item.enabled;
               return (
-                <li key={item.id} className="duty-item" data-testid="duty-dialog-item" data-enabled={item.enabled}>
+                <li key={item.id} className={`duty-item${parent ? " duty-child" : ""}`} data-testid="duty-dialog-item" data-enabled={item.enabled} data-parent={parent?.id}>
                   <div className="duty-item-head">
-                    <label className="duty-toggle">
-                      <input type="checkbox" checked={item.enabled} onChange={(e) => act(() => call(link, "PATCH /api/duty/items/:id", { id: item.id }, { enabled: e.target.checked }))} aria-label={`开启「${item.title}」`} />
+                    <label className="duty-toggle" title={held ? `挂在「${parent!.title}」下面，先开「${parent!.title}」` : undefined}>
+                      <input type="checkbox" checked={item.enabled} disabled={held} onChange={(e) => act(() => call(link, "PATCH /api/duty/items/:id", { id: item.id }, { enabled: e.target.checked }))} aria-label={`开启「${item.title}」`} />
                       <b>{item.title}</b>
                     </label>
+                    {parent && <span className="settings-tag" title="父值守关掉时它也跟着关">挂在「{parent.title}」下</span>}
                     {item.builtin && <span className="settings-tag">Studio 自带</span>}
                     {item.by === "agent" && <span className="settings-tag" title="AI 用 duty_save 建的或最后改的（你批准过）">AI 建的</span>}
                     <span className="settings-hint">{scheduleText(item.schedule)}</span>

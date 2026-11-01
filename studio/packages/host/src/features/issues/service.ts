@@ -37,9 +37,6 @@ export interface IssueLine {
   updatedAt: string;
 }
 
-/** 打包 when this many are fixed and waiting, or the oldest has waited this long, or the person clicked 发布打包. */
-const PACK_AT = 3;
-const PACK_AFTER_MS = 30 * 60_000;
 /** Per issue, the session that wrote on it last. */
 const SESSIONS_KEY = "issues.sessions";
 const SESSIONS_KEPT = 300;
@@ -47,19 +44,18 @@ const SESSIONS_KEPT = 300;
 const TITLE_MAX = 30;
 
 export class IssuesFeature extends Feature {
-  /** Tests: the clock. */
-  now: () => number = Date.now;
-
   /**
    * 值守's check 「问题页」 (2026-10-31): what there is to do on the page, in code, so a model starts only then — new
-   * issues, the person's answers, and a test build when it is due. The lines carry no times, so the same state reads
-   * the same and 值守 does not start a second session for it.
+   * issues, the person's answers, and a test build that did not go through. The lines carry no times, so the same
+   * state reads the same and 值守 does not start a second session for it. 2026-11-01 (the user: 打包真的有必要跑个
+   * agent么): test builds go out by themselves (值守 item 自动打包, `release.mjs auto --if-due`); a model is started
+   * only when one failed.
    */
   dutyCheck(): DutyCheckJob {
     return {
       name: "issues.pending",
       label: "问题页有事要做",
-      description: `有新问题、你在问题下回复了，或者该打测试包了（修好待发的有 ${PACK_AT} 个、最早的等了 30 分钟、你点了「发布打包」）`,
+      description: "有新问题、你在问题下回复了，或者上一次打测试包没成功",
       run: () => this.pendingWork(),
     };
   }
@@ -81,16 +77,17 @@ export class IssuesFeature extends Feature {
     // 去会话讨论 is the person's own, answers on it included (2026-10-31 晚): not 值守's.
     const answered = issues.filter((i) => i.awaitsAi && (i.status === "asking" || i.status === "working" || i.status === "stuck")).sort((a, b) => a.number - b.number);
     if (answered.length) lines.push(`你回复了：${answered.map((i) => `#${i.number} ${i.title}（${ISSUE_STATUS_LABEL[i.status]}，第 ${i.entryCount} 条）`).join("；")}`);
-    const fixed = issues.filter((i) => i.status === "fixed").sort((a, b) => a.number - b.number);
-    const why = !fixed.length ? null : release.requestedAt ? "你点了「发布打包」" : fixed.length >= PACK_AT ? `修好待发布的有 ${fixed.length} 个` : fixed.some((i) => this.now() - i.updatedAt >= PACK_AFTER_MS) ? "最早修好的已经等了 30 分钟" : null;
-    if (why) lines.push(`该打测试包了（${why}）：${fixed.map((i) => `#${i.number}`).join(" ")}`);
+    // The last test build stopped (its step and message are on the page); a newer one going through clears it.
+    const build = release.build;
+    const failed = build && build.endedAt !== null && build.ok === false ? `${build.label}${build.steps[build.step] ? `，停在「${build.steps[build.step]}」` : ""}：${build.message}` : null;
+    if (failed) lines.push(`上一次打测试包没成功（${failed}）`);
     if (!lines.length) return null;
     // The template takes answered ones first, then new ones: the session is named after the first it will take.
     const first = answered[0] ?? fresh[0];
-    const title = first ? `#${first.number} ${oneLine(first.title)}` : "打测试包";
+    const title = first ? `#${first.number} ${oneLine(first.title)}` : "打包没成功";
     const known = this.sessions();
     const took = new Set(answered.map((i) => known[i.number]));
-    const sessionId = answered.length && !fresh.length && !why && took.size === 1 ? [...took][0] : undefined;
+    const sessionId = answered.length && !fresh.length && !failed && took.size === 1 ? [...took][0] : undefined;
     return { text: lines.join("\n"), title, ...(sessionId ? { sessionId } : {}) };
   }
 

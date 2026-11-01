@@ -68,4 +68,5 @@ npm run release -- promote studio 0.9.17      转正式版（照旧）
 5. ✓ 顶栏「值守 N 项开着」和值守窗口；看板卡片、任务头的「值守」，会话列表的「值守开的」「设了值守」。
 6. ✓ 远程任务的模板窗口也列出那台电脑上的模板（`rt.templates`，只读；两台都要是新版）。
 7. ✓ 三份模板的原文在 `studio/docs/prompt-templates/`：`start-maintenance.md`（开始维护）、`issues-duty.md`（问题页值守，改成值守目录 + release）、`maintenance-iterate.md`（维护迭代）；AGENTS.md 的车道例外改了。duty_save 也认 `model`、`permission`（read-only / write / full）、`effort`，不写就用调用它的会话的模型和权限。
-8. 值守目录已建（`G:\PROJECT\AgentMonitorOverlay-duty`）。还要：发 Studio 测试版（带上面 2、3、5、6、7 的改动）；用户更新 Studio 后把三份模板存进 Studio，开第一天的维护任务试一遍。
+8. 值守目录已建（`G:\PROJECT\AgentMonitorOverlay-duty`）。
+9. ✓ 2026-11-01 打包不再开模型（用户：「打包真的有必要跑个agent么」）：值守项「自动打包」是一条命令 `release.mjs auto --if-due`，每分钟看一次，在打包目录 `G:\PROJECT\AgentMonitorOverlay-release`（又一份 master 的 detached worktree，没人在里面改）里发。什么时候发：一个工具最后一次改动后 30 分钟没有新改动，或最早的改动等了 2 小时（`--wait` / `--max`），或者人点了「发布打包」；以前是「最早的改动等了 30 分钟」，一个没写说明的老改动让 0.9.24 在 #5 修好 5 分钟后就发了，#6 没赶上。发完把「已修好」的问题标成已发布（问题里 AI 写的提交号在这个包里、碰了发出去的工具；没写提交号的也标）。失败了记下那个 master（打包目录 git 文件夹里的 `amo-release-failed.json`），不再自己重试，等 master 动了或人点「发布打包」；问题页检查 `issues.pending` 看到「上一次打测试包没成功」才开日常值守的会话去查。值守项能挂在另一项下面（`parentId`，一层）：只表示关系，父的关掉子的跟着关，父的关着时子的开不了。还要：发 Studio 测试版（带上面 2、3、5、6、7 的改动）；用户更新 Studio 后把三份模板存进 Studio，开第一天的维护任务试一遍。

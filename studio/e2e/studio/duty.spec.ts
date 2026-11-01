@@ -109,3 +109,40 @@ test("值守: make a command item and a session item, run them now, edit and rem
   await page.getByTestId("task-duty").click();
   await expect(panel).toBeVisible();
 });
+
+test("值守: an item hangs under another, shown under it; the parent off turns it off (2026-11-01)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "值守" }).click();
+  const make = async (name: string, under?: string) => {
+    await dialog.getByTestId("duty-new").click();
+    const form = dialog.getByTestId("duty-form");
+    await form.getByLabel("值守项名字").fill(name);
+    await form.getByRole("radio", { name: "跑命令" }).click();
+    await form.getByLabel("命令", { exact: true }).fill(`node -e ""`);
+    if (under) await form.getByLabel("挂在哪个值守项下面").selectOption({ label: `「${under}」下面` });
+    await form.getByTestId("duty-save").click();
+    await expect(dialog.getByTestId("duty-form")).toHaveCount(0);
+  };
+  await make("日常值守");
+  await make("别的");
+  await make("自动打包", "日常值守");
+  // Listed right under its parent, marked so.
+  await expect(dialog.getByTestId("duty-item")).toHaveText([/日常值守/, /自动打包/, /别的/]);
+  const child = dialog.getByTestId("duty-item").filter({ hasText: "自动打包" });
+  await expect(child).toContainText("挂在「日常值守」下");
+  await screenshot(app, "studio", "settings-duty-child", page);
+
+  // The parent off: the child goes off with it and cannot be turned on alone.
+  const parent = dialog.getByTestId("duty-item").filter({ hasText: "日常值守" }).first();
+  await parent.getByRole("checkbox").click();
+  await expect(child.getByRole("checkbox")).not.toBeChecked();
+  await expect(child.getByRole("checkbox")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("topbar-duty").click();
+  const panel = page.getByTestId("duty-dialog");
+  await expect(panel.getByTestId("duty-dialog-item").filter({ hasText: "自动打包" })).toContainText("挂在「日常值守」下");
+  await screenshot(app, "studio", "duty-dialog-child", page);
+});

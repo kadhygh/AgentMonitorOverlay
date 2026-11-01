@@ -47,6 +47,13 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-01 · 打包不再开模型；值守项能挂在另一项下面**（用户：「打包真的有必要跑个agent么」「打包值守挂在维护值守下面…停了父值守子的也应该停下」；方案和规则记在 `plans/release.md` 第 9 条）：
+- `scripts/release.mjs`：`auto --if-due [--wait 30] [--max 120]`，没事不输出；该发 = 最后一次改动后 30 分钟没新改动，或最早的改动等了 2 小时，或问题页点了「发布打包」（以前是「最早的改动等 30 分钟」，0.9.24 因此在 #5 修好 5 分钟后就发，#6 没赶上）；发完把「已修好」的问题标已发布（AI 写的提交号在包里且碰了发出去的工具；没写提交号的也标），也清掉「发布打包」；失败了记下那个 master（git 文件夹里的 `amo-release-failed.json`），不自己重试。`due --wait` 用同一条规则。
+- Host：值守项 `parentId`（一层；父关子跟着关；父关着子开不了；删父项子项留下），`duty_save` 认 `parentId`；值守会话检查没给名字时用值守项的名字；`issues.pending` 去掉「该打测试包了」，改报「上一次打测试包没成功（…停在「单测」：…）」，会话名「打包没成功」。界面：设置 → 值守和顶栏值守窗口里子项缩进、标「挂在「…」下」，编辑表单有「挂在」。
+- 打包目录 `G:\PROJECT\AgentMonitorOverlay-release`（master 的 detached worktree，已 `release sync` 装好依赖）。模板原文 `docs/prompt-templates/issues-duty.md`、`start-maintenance.md` 和 AGENTS.md 的车道说明改了。
+- 验证：duty / issues / mcp / ui duty 单测 33 条过（新加父子关系一条、问题检查改了一段）；typecheck 过；e2e `studio/duty.spec.ts` 2 条过，截图 `screenshots/studio/settings-duty-child.png`、`duty-dialog-child.png`；`markReleased` 的挑选规则拿真实问题页只读试过（#1–#6 都按提交号对上）。`auto --if-due` 真正发一次还没跑过。
+- 还要（用户重启 Studio 之后）：把两份模板存进 Studio（`prompt_template_save`）；日常值守的检查改成只有 `issues.pending`；新建「自动打包」挂在它下面：`node G:/PROJECT/AgentMonitorOverlay-release/studio/scripts/release.mjs auto --if-due`，每 60 秒，超时 3600 秒。
+
 **2026-11-01 · 远程：离开很久再连上，一次补齐不再闪**（用户：上午派了一堆任务，下午回来看板没马上刷新、对话「疯狂闪」）：
 - 原因：控制端（`copies.ts`，代码里叫 B）重连后逐个任务 `syncTask`，每个会话补的每一条都发一个 `item.appended`，界面每条都复制排序一次。不需要「离线时间点」：B 本来就知道每个会话补到哪条 seq。
 - 改法：`syncPeer` 先并行（3 个一组）把所有任务和会话拿齐（看板立刻对），再逐任务补记录；一个会话要补的超过 20 条或不止一页时安静写库，结束发一次 `items.reloaded`（`protocol/api.ts`），`useSessionItems` 收到就整段重读。补同步超过 1 秒时 `RemoteState.syncing` 带进度，顶栏「远程 · 同步 n/总数」加进度条，任务页横幅写正在补哪个。被控端不用改，旧版互通。

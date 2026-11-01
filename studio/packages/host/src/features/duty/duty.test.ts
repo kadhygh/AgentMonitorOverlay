@@ -324,6 +324,37 @@ describe("值守", () => {
     expect(await until(() => lastRun(duty.runs(), "duty_issues"), (r) => r?.ok !== null, "the job")).toMatchObject({ ok: true, summary: "看了 1 次" });
   });
 
+  it("an item hangs under another: one level, on only with its parent on, off with it; removing the parent frees it (2026-11-01)", () => {
+    const { duty } = setup();
+    const cmd = { kind: "command" as const, command: `node -e "0"` };
+    const parent = duty.create({ title: "日常值守", enabled: true, schedule: { every: 60 }, action: cmd }).items[0]!.id;
+    const child = duty.create({ title: "自动打包", enabled: true, schedule: { every: 60 }, action: cmd, parentId: parent }).items[1]!.id;
+    const other = duty.create({ title: "别的", enabled: false, schedule: { every: 60 }, action: cmd }).items[2]!.id;
+    const item = (id: string) => duty.items().find((i) => i.id === id)!;
+    expect(item(child)).toMatchObject({ parentId: parent, enabled: true });
+    // One level, not itself.
+    expect(() => duty.update(other, { parentId: child })).toThrow("只能挂一层");
+    expect(() => duty.update(parent, { parentId: other })).toThrow("下面已经挂着别的");
+    expect(() => duty.update(other, { parentId: other })).toThrow("自己下面");
+    expect(() => duty.update(other, { parentId: "duty-gone" })).toThrow("不在了");
+    // The parent off: the child with it (an agent's duty_stop too); the child does not come back on by itself.
+    duty.turnOff(parent);
+    expect(item(child).enabled).toBe(false);
+    expect(() => duty.update(child, { enabled: true })).toThrow("先开它");
+    expect(() => duty.create({ title: "也挂上", enabled: true, schedule: { every: 60 }, action: cmd, parentId: parent })).toThrow("先开它");
+    duty.update(parent, { enabled: true });
+    expect(item(child).enabled).toBe(false);
+    duty.update(child, { enabled: true });
+    expect(item(child).enabled).toBe(true);
+    // Taken off its parent; put back; the parent removed: the child stays, on its own.
+    duty.update(child, { parentId: null });
+    expect(item(child).parentId).toBeUndefined();
+    duty.update(child, { parentId: parent });
+    duty.remove(parent);
+    expect(item(child)).toMatchObject({ enabled: true });
+    expect(item(child).parentId).toBeUndefined();
+  });
+
   it("times: every so many seconds or a daily time; bad ones are refused; a run left going by the last Host is closed", () => {
     const { duty, store } = setup();
     expect(() => duty.create({ title: "太快", schedule: { every: 3 }, action: { kind: "command", command: "x" } })).toThrow("至少 10 秒");

@@ -1,14 +1,22 @@
 // One way to release (2026-10-31, plans/release.md): the platform's tools and AMO 中转's service, from master only.
 //   npm run release -- status                       per tool: version here, last release (tag), what changed since, 「下一版」
 //                                                   entries; then both platform channels (relay-mac platform-status)
-//   npm run release -- due [--wait <min>]           what is waiting to go out — tools changed since their tag with 「下一版」
-//                                                   entries — one line each, nothing when nothing is (值守's check uses it);
-//                                                   --wait: only once the oldest such change is that old
+//   npm run release -- due [--wait <min>] [--max <min>]
+//                                                   what is waiting to go out — tools changed since their tag with 「下一版」
+//                                                   entries — one line each, nothing when nothing is; --wait: only a tool
+//                                                   whose last change is that old (quiet so long), or whose first one is
+//                                                   --max old (120 by default)
 //   npm run release -- <tool…> | auto [--minor] [--skip-tests] [--dry-run]
 //                                                   checks, typecheck + unit tests, version +1, 「下一版」 → `## <version>（date）`,
 //                                                   commit (landed on master), package, publish to the test channel, tag
 //                                                   `<tool>-v<version>`; auto = every tool `due` lists; each step is
-//                                                   shown on 问题页 (with this machine's platform login)
+//                                                   shown on 问题页 (with this machine's platform login), and the issues
+//                                                   it fixed become 已发布 there
+//   npm run release -- auto --if-due [--wait <min>] [--max <min>]
+//                                                   值守 item 自动打包 (2026-11-01): only the tools due by that rule (30 /
+//                                                   120 by default), or every due one when 发布打包 was clicked; silent
+//                                                   when there are none; after a failure, not again on the same master
+//                                                   until 发布打包 is clicked again
 //   npm run release -- relay-service [--skip-tests] [--dry-run]
 //                                                   AMO 中转's service and client content (relay-release, deploy: the service
 //                                                   restarts when it changed), its version in packages/relay
@@ -24,7 +32,7 @@
 // picked up by the next one: a version committed but not tagged is published without another bump.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, setPriority } from "node:os";
 import { join, resolve } from "node:path";
 import { TOOLS, studio } from "./amo-tools.mjs";
@@ -34,7 +42,7 @@ const args = process.argv.slice(2);
 const [cmd = "status", ...rest] = args;
 const has = (f) => rest.includes(f);
 const flag = (f) => (rest.includes(f) ? rest[rest.indexOf(f) + 1] : undefined);
-const positional = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--wait");
+const positional = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--wait" && rest[i - 1] !== "--max");
 try {
   setPriority(constants.priority.PRIORITY_BELOW_NORMAL);
 } catch {
@@ -104,10 +112,21 @@ function due() {
     const ch = changes(t);
     const entries = nextEntries(show("master", rel(changelogFile(t))));
     if (!ch?.length || !entries.length) continue;
-    out.push({ t, changes: ch, entries, oldest: Math.min(...ch.map((c) => c.at)) });
+    out.push({ t, changes: ch, entries, oldest: Math.min(...ch.map((c) => c.at)), latest: Math.max(...ch.map((c) => c.at)) });
   }
   return out;
 }
+
+/**
+ * Due by the clock (2026-11-01, the user: 0.9.24 went out 5 minutes after #5's fix, #6's a few minutes later missed
+ * it): a tool whose last change is `wait` old — master quiet for it so long — or whose first change is `max` old, so a
+ * busy day still ships. Before: the first change `wait` old, which an old change without an entry made true at once.
+ */
+function ready(list, wait, max) {
+  const now = Date.now();
+  return list.filter((d) => now - d.latest >= wait || now - d.oldest >= max);
+}
+const minutes = (f, fallback) => Number(flag(f) ?? fallback) * 60_000;
 
 // ---- where this runs
 
@@ -223,21 +242,74 @@ const KNOWN_FLAKY = [
  * reported to the team server with this machine's platform login. Best effort: no login, or the server out of reach,
  * and the build goes on without it.
  */
-async function buildReporter() {
-  let account;
-  try {
-    const { readAccount } = await import("@amo-studio/account");
-    account = await readAccount();
-  } catch {
-    account = null;
+let signedIn;
+/** This machine's platform login (null without one): 问题页's build bar, 发布打包, the issues a build fixed. */
+async function account() {
+  if (signedIn === undefined) {
+    try {
+      const { readAccount } = await import("@amo-studio/account");
+      signedIn = (await readAccount()) ?? null;
+    } catch {
+      signedIn = null;
+    }
   }
-  if (!account) {
+  return signedIn;
+}
+
+/** 问题页's API with the login; throws when it fails. */
+async function issuesApi(path, body) {
+  const a = await account();
+  if (!a) throw new Error("没登录 AMO 平台");
+  const res = await fetch(`${a.server}${path}`, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${a.key}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`${path}：${res.status}`);
+  return res.json();
+}
+
+/**
+ * The issues this build fixed become 已发布 with its versions (2026-11-01: was the 值守 agent's issue_released): each
+ * 已修好 issue whose AI entries name a commit that is in this build and touches a tool that went out; one naming no
+ * commit Git knows goes too (it was fixed before the build began). Clears 发布打包. Best effort, like the build bar.
+ */
+async function markReleased(done, sha) {
+  if (!done.length || !(await account())) return;
+  try {
+    const { issues, release } = await issuesApi("/api/issues");
+    const paths = done.flatMap((p) => p.t.paths);
+    const numbers = [];
+    for (const i of issues.filter((x) => x.status === "fixed")) {
+      const { issue } = await issuesApi(`/api/issues/${i.number}`);
+      const named = [...new Set((issue.entries ?? []).filter((e) => e.ai).flatMap((e) => e.body.match(/\b[0-9a-f]{7,40}\b/g) ?? []))].filter((c) => gitOk("rev-parse", "-q", "--verify", `${c}^{commit}`));
+      const inBuild = named.filter((c) => gitOk("merge-base", "--is-ancestor", c, sha) && git("diff-tree", "--no-commit-id", "--name-only", "-r", c, "--", ...paths) !== "");
+      if (!named.length || inBuild.length) numbers.push(i.number);
+    }
+    if (!numbers.length && !release.requestedAt) return;
+    const version = done.map((p) => `${p.t.label} ${p.to}`).join("、");
+    await issuesApi("/api/issues/release/done", { version, numbers });
+    if (numbers.length) console.log(`问题页：${numbers.map((n) => `#${n}`).join(" ")} 标成已发布（${version}）`);
+  } catch (err) {
+    console.log(`（问题页没标上已发布：${err.message}）`);
+  }
+}
+
+/** auto --if-due: the master a build failed on (kept in this checkout's git folder), not tried again by itself. */
+const failedFile = () => join(git("rev-parse", "--absolute-git-dir"), "amo-release-failed.json");
+function lastFailed() {
+  try {
+    return JSON.parse(readFileSync(failedFile(), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function buildReporter() {
+  const a = await account();
+  if (!a) {
     console.log("（没登录 AMO 平台：问题页上看不到这次打包的进度）");
     return async () => undefined;
   }
   return async (report) => {
     try {
-      const res = await fetch(`${account.server}/api/issues/release/build`, { method: "POST", headers: { authorization: `Bearer ${account.key}`, "content-type": "application/json" }, body: JSON.stringify(report), signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${a.server}/api/issues/release/build`, { method: "POST", headers: { authorization: `Bearer ${a.key}`, "content-type": "application/json" }, body: JSON.stringify(report), signal: AbortSignal.timeout(5000) });
       if (!res.ok) console.log(`（问题页没收到打包进度：${res.status}）`);
     } catch (err) {
       console.log(`（问题页没收到打包进度：${err.message}）`);
@@ -310,6 +382,7 @@ async function release(ids) {
       }
     }
     console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}`).join("、") || "无"}`);
+    await markReleased(done, sha);
     for (const p of done) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
     if (done.length < plan.length) {
       console.log("没发出去的下次再跑 release 会补发（版本号不再加）。");
@@ -347,9 +420,7 @@ try {
       status();
       break;
     case "due": {
-      const wait = Number(flag("--wait") ?? 0) * 60_000;
-      const list = due();
-      if (!list.length || Date.now() - Math.min(...list.map((d) => d.oldest)) < wait) break;
+      const list = has("--wait") ? ready(due(), minutes("--wait", 0), minutes("--max", 120)) : due();
       // No times in the lines: the same state reads the same (值守 does not act twice on one finding).
       for (const d of list) console.log(`该发布：${d.t.label}（${d.t.id}）上次发布后 ${d.changes.length} 个提交，「下一版」${d.entries.length} 条`);
       break;
@@ -385,9 +456,30 @@ try {
     case "promote":
       run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "promote", ...positional], { shell: false });
       break;
-    case "auto":
-      await release(due().map((d) => d.t.id));
+    case "auto": {
+      if (!has("--if-due")) {
+        await release(due().map((d) => d.t.id));
+        break;
+      }
+      // 值守 item 自动打包 (2026-11-01, the user: 打包真的有必要跑个agent么): runs every minute; says nothing unless it builds.
+      const all = due();
+      if (!all.length) break;
+      const requestedAt = (await account()) ? await issuesApi("/api/issues").then((l) => l.release.requestedAt, () => null) : null;
+      const list = requestedAt ? all : ready(all, minutes("--wait", 30), minutes("--max", 120));
+      if (!list.length) break;
+      const tip = git("rev-parse", "master");
+      const failed = lastFailed();
+      // Failed on this master: not again until it moves (a fix landed) or 发布打包 is clicked after the failure.
+      if (failed?.sha === tip && !(requestedAt && requestedAt > failed.at)) break;
+      try {
+        await release(list.map((d) => d.t.id));
+        rmSync(failedFile(), { force: true });
+      } catch (err) {
+        writeFileSync(failedFile(), JSON.stringify({ sha: tip, at: Date.now() }));
+        throw err;
+      }
       break;
+    }
     default:
       await release([cmd, ...positional]);
   }

@@ -35,6 +35,7 @@ export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
         'action: {"kind":"command","command":"…","workspace"?,"timeoutSec"?} — a command line run in the project folder (yours by default) below normal priority; or {"kind":"session","prompt":"…","check"?,"untilDone"?,"model"?,"permission"?,"effort"?,"taskId"?,"workspace"?} — a session with that prompt (by default in your own task; taskId null: a new task each time, in project workspace). model, permission (read-only, write or full) and effort as session_start takes them; left out: your model and your own permission (nobody is there to approve what it asks). workspace: the name, id or folder path of a project (project_context) — for a session of a task, the folder it works in when that is not the task folder.',
         'check (session only): {"kind":"command","command":"…"} or {"kind":"builtin","name":"…"} (duty_list lists them) runs first; the session starts only when it finds something — a command finds something by printing it and exiting 0 (nothing printed = nothing to do; another exit code = the check failed) — and what it found is put under the prompt; the same finding does not start a second session. Several things to look at for one session (one at a time in one folder): {"kind":"all","checks":[ …up to 5 of the above ]} — what they found together; a command check runs in the session folder unless it names its own workspace.',
         `A command (action or check) that prints a line ${DUTY_DONE_MARK} turns the item off after this run. untilDone: true tells the session it may turn the item off with duty_stop once what it watches for is done.`,
+        "parentId: another item's id to hang this one under (shown as its child; one level; turning the parent off turns its children off, and a child is turned on only with its parent on); \"\" to take it off.",
         "Scripts you write for it: keep them in the project, make them print only what matters, and test them once yourself first.",
       ].join(" "),
       inputSchema: {
@@ -43,6 +44,7 @@ export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
         schedule: z.object({ every: z.number().optional(), daily: z.string().optional() }).optional(),
         action: z.record(z.string(), z.unknown()).optional(),
         enabled: z.boolean().optional(),
+        parentId: z.string().optional(),
       },
       readOnly: false,
       autoApprove: false,
@@ -84,6 +86,7 @@ export function dutyTools({ service, caller }: ToolContext): AmoTool[] {
           if (args.title !== undefined) input.title = args.title as string;
           if (args.schedule !== undefined) input.schedule = args.schedule as DutyItemInput["schedule"];
           if (args.enabled !== undefined) input.enabled = args.enabled as boolean;
+          if (args.parentId !== undefined) input.parentId = (args.parentId as string) || null;
           if (args.action !== undefined) input.action = (await withDefaults(args.action as Record<string, unknown>)) as DutyItemInput["action"];
           const saved = args.id === undefined ? duty.create({ ...input, enabled: input.enabled ?? true }, "agent", c.sessionId).items.at(-1)! : duty.update(String(args.id), input, "agent", c.sessionId).items.find((i) => i.id === args.id)!;
           return { item: shown(saved), note: saved.enabled ? "已保存并开着，到点就运行；人在 设置 → 值守 里能看到它（标着 AI 建的）。" : "已保存，关着。" };

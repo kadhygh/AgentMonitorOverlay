@@ -119,7 +119,7 @@ describe("问题页 tools", () => {
     expect(await page.issue(1)).toMatchObject({ status: "released", fixedIn: "Studio 0.9.17" });
   });
 
-  it("值守's check: new issues, the person's answers, a test build when due — nothing otherwise", async () => {
+  it("值守's check: new issues, the person's answers, a test build that failed — nothing otherwise", async () => {
     const { service, page } = await setup();
     const issues = service.issues;
     expect(await issues.pending()).toBeNull();
@@ -146,16 +146,18 @@ describe("问题页 tools", () => {
     await issues.reply(1, { body: "好", status: "working" });
     expect(await issues.pending()).toBeNull();
 
-    // 发布打包, or the fixed one waiting 30 minutes, or three fixed.
+    // Builds go out by themselves (2026-11-01): fixed ones and 发布打包 are the script's; a failed build is 值守's.
     await page.requestIssueRelease();
-    expect(await issues.pending()).toBe("该打测试包了（你点了「发布打包」）：#2");
-    await page.requestIssueRelease(false);
-    issues.now = () => Date.now() + 31 * 60_000;
-    expect(await issues.pending()).toBe("该打测试包了（最早修好的已经等了 30 分钟）：#2");
-    issues.now = Date.now;
-    await issues.reply(1, { body: "修好了", status: "fixed" });
-    await issues.reply((await page.createIssue({ body: "第三个" })).number, { body: "修好了", status: "fixed" });
-    expect(await issues.pending()).toBe("该打测试包了（修好待发布的有 3 个）：#1 #2 #3");
+    expect(await issues.pending()).toBeNull();
+    await page.reportIssueBuild({ start: { label: "AMO Studio 0.9.25", steps: ["类型检查", "单测", "打包"] } });
+    await page.reportIssueBuild({ step: 1 });
+    expect(await issues.pending()).toBeNull();
+    await page.reportIssueBuild({ end: { ok: false, message: "单测有 1 个没过" } });
+    expect(await issues.pending()).toBe("上一次打测试包没成功（AMO Studio 0.9.25，停在「单测」：单测有 1 个没过）");
+    expect(await issues.pendingWork()).toMatchObject({ title: "打包没成功" });
+    await page.reportIssueBuild({ start: { label: "AMO Studio 0.9.25", steps: ["打包"] } });
+    await page.reportIssueBuild({ end: { ok: true, message: "已发到测试通道" } });
+    expect(await issues.pending()).toBeNull();
     // Registered as 值守's check.
     expect(service.duty.state().checks.map((c) => c.name)).toContain("issues.pending");
   });

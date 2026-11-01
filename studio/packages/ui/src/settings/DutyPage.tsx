@@ -3,6 +3,7 @@ import { DUTY_DONE_MARK, projectWorkspaces, type DutyAction, type DutyCheckOne, 
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { defaultModel, effortLabel, useProfileChoices } from "../lib/choices.js";
+import { dutyTree } from "../duty/duty.js";
 
 // 设置 → 值守 (2026-10-31, plans/issues.md): items that run at set times — start a session with a set prompt, run a
 // command, or one of Studio's own jobs. The list says when each runs next and how its last run went; 立即运行 runs one
@@ -96,16 +97,18 @@ export function DutyPage({ link }: { link: HostLink }) {
       ) : (
         <ul className="duty-list" data-testid="duty-list">
           {state.items.length === 0 && <li className="settings-hint">还没有值守项。</li>}
-          {state.items.map((item) => {
+          {dutyTree(state.items).map(({ item, parent }) => {
             const run = state.runs.find((r) => r.itemId === item.id);
             const running = state.running.includes(item.id);
+            const held = !!parent && !parent.enabled && !item.enabled;
             return (
-              <li key={item.id} className="duty-item" data-testid="duty-item" data-enabled={item.enabled}>
+              <li key={item.id} className={`duty-item${parent ? " duty-child" : ""}`} data-testid="duty-item" data-enabled={item.enabled} data-parent={parent?.id}>
                 <div className="duty-item-head">
-                  <label className="duty-toggle">
-                    <input type="checkbox" checked={item.enabled} onChange={(e) => act(() => call(link, "PATCH /api/duty/items/:id", { id: item.id }, { enabled: e.target.checked }))} aria-label={`开启「${item.title}」`} />
+                  <label className="duty-toggle" title={held ? `挂在「${parent!.title}」下面，先开「${parent!.title}」` : undefined}>
+                    <input type="checkbox" checked={item.enabled} disabled={held} onChange={(e) => act(() => call(link, "PATCH /api/duty/items/:id", { id: item.id }, { enabled: e.target.checked }))} aria-label={`开启「${item.title}」`} />
                     <b>{item.title}</b>
                   </label>
+                  {parent && <span className="settings-tag" title="父值守关掉时它也跟着关">挂在「{parent.title}」下</span>}
                   {item.builtin && <span className="settings-tag">Studio 自带</span>}
                   {item.by === "agent" && <span className="settings-tag" title="AI 用 duty_save 建的或最后改的（你批准过）">AI 建的</span>}
                   <span className="settings-hint">{scheduleText(item.schedule)}</span>
@@ -128,14 +131,14 @@ export function DutyPage({ link }: { link: HostLink }) {
                   {run && <span>{when(run.startedAt)}{run.summary && run.ok !== null ? ` · ${run.summary}` : ""}</span>}
                   {item.enabled && state.next[item.id] && !running && <span className="settings-hint">下次 {when(state.next[item.id])}</span>}
                 </div>
-                {editing !== "new" && editing?.id === item.id && <DutyForm link={link} ctx={ctx} item={item} onDone={(s) => { if (s) setState(s); setEditing(null); }} />}
+                {editing !== "new" && editing?.id === item.id && <DutyForm link={link} ctx={ctx} items={state.items} item={item} onDone={(s) => { if (s) setState(s); setEditing(null); }} />}
               </li>
             );
           })}
         </ul>
       )}
       {editing === "new" ? (
-        <DutyForm link={link} ctx={ctx} item={null} onDone={(s) => { if (s) setState(s); setEditing(null); }} />
+        <DutyForm link={link} ctx={ctx} items={state?.items ?? []} item={null} onDone={(s) => { if (s) setState(s); setEditing(null); }} />
       ) : (
         <div className="settings-row">
           <button type="button" className="btn-primary small" onClick={() => setEditing("new")} data-testid="duty-new">
@@ -148,10 +151,13 @@ export function DutyPage({ link }: { link: HostLink }) {
   );
 }
 
-function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; item: DutyItem | null; onDone(state: DutyState | null): void }) {
+function DutyForm({ link, ctx, items, item, onDone }: { link: HostLink; ctx: DutyCtx; items: readonly DutyItem[]; item: DutyItem | null; onDone(state: DutyState | null): void }) {
   const a = item?.action;
   const builtin = !!item?.builtin;
   const [title, setTitle] = useState(item?.title ?? "");
+  const [parentId, setParentId] = useState(item?.parentId ?? "");
+  // One level: a parent is a top-level item other than this one, and an item with children stays on top.
+  const parents = item && items.some((i) => i.parentId === item.id) ? [] : items.filter((i) => !i.parentId && i.id !== item?.id);
   const [daily, setDaily] = useState(item && "daily" in item.schedule ? item.schedule.daily : "");
   const every = item && "every" in item.schedule ? item.schedule.every : 1800;
   const startUnit = [...UNITS].reverse().find(([, n]) => every % n === 0) ?? UNITS[0];
@@ -186,14 +192,14 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; i
 
   function input(): DutyItemInput {
     const schedule: DutySchedule = mode === "daily" ? { daily } : { every: Math.round(Number(amount) * unit) };
-    if (builtin) return { title, schedule };
+    if (builtin) return { title, schedule, parentId: parentId || null };
     const action: DutyAction =
       kind === "session"
         ? { kind, profileId, prompt, taskId: taskId || null, workspaceId: workspaceId || null, taskTitle, options: { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) }, fallbackProfileId: fallback || null, check: checkKind === "command" ? { kind: "command", command: checkCommand, workspaceId: checkWorkspace || null } : checkKind === "builtin" ? { kind: "builtin", name: checkName } : checkKind === "all" && check?.kind === "all" ? check : null, untilDone }
         : kind === "command"
           ? { kind, command, workspaceId: workspaceId || null, timeoutSec: Math.round(Number(timeoutMin) * 60) }
           : { kind, name };
-    return { title, schedule, action };
+    return { title, schedule, action, parentId: parentId || null };
   }
 
   function save() {
@@ -209,6 +215,20 @@ function DutyForm({ link, ctx, item, onDone }: { link: HostLink; ctx: DutyCtx; i
         名字
         <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如 问题页：修新问题" aria-label="值守项名字" />
       </label>
+      {parents.length > 0 && (
+        <div className="settings-row">
+          <span className="settings-label">挂在</span>
+          <select className="field" value={parentId} onChange={(e) => setParentId(e.target.value)} aria-label="挂在哪个值守项下面">
+            <option value="">不挂，单独一项</option>
+            {parents.map((p) => (
+              <option key={p.id} value={p.id}>
+                「{p.title}」下面
+              </option>
+            ))}
+          </select>
+          <span className="settings-hint">只表示它们是一起的，各自照自己的时间跑；父值守关掉时它也跟着关。</span>
+        </div>
+      )}
       <div className="settings-row">
         <span className="settings-label">多久一次</span>
         <div role="radiogroup" aria-label="多久一次" className="chips">

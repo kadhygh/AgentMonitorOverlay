@@ -58,11 +58,17 @@ export interface DutyItem {
   by?: "agent";
   /** The session that saved it (duty_save): marked 设了值守 in its task's session list. */
   setBy?: Id;
+  /**
+   * The item it hangs under (2026-11-01, the user: 打包值守挂在维护值守下面，只表现关系；停了父的子的也停). One level:
+   * a child has no children. Turning the parent off turns its children off; a child is turned on only with its parent on.
+   */
+  parentId?: Id;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 
-export type DutyItemInput = Partial<Pick<DutyItem, "title" | "enabled" | "schedule" | "action">>;
+/** parentId null: no longer under another item. */
+export type DutyItemInput = Partial<Pick<DutyItem, "title" | "enabled" | "schedule" | "action">> & { parentId?: Id | null };
 
 export interface DutyRun {
   itemId: Id;
