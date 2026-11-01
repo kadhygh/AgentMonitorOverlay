@@ -34,5 +34,20 @@ export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[
           return { sessionId: s.id, title: s.title, model: s.options.model ? `${service.requireProfile(s.profileId).label}/${s.options.model}` : service.requireProfile(s.profileId).label, project: service.store.getWorkspace(s.workspaceId)?.name, permission: s.options.permission ?? "default", effort: s.options.effort ?? "default", report: args.report === true, note: args.forPerson === true ? "已开会话，给人自己推进：它和你平级列在任务的会话列表里，结果不回到你这里。" : args.report === true ? "已开会话；它每一轮做完后，回复会作为消息回到你这里（被人停下或出错也会告诉你）。" : "已开会话；它在任务的会话列表里。", ...(sandbox ? { sandbox } : {}) };
         }),
     },
+    {
+      // 问题 #6 (2026-11-01): what session_start opens, the session can put away again.
+      name: "session_archive",
+      title: "归档会话",
+      description:
+        "Archive a session you started with session_start (its id from session_start or session_tree), at once (no approval), when its work is done — as the person's 归档 in the session list: its branches and subagents go with it, and the person can unarchive it there. Only sessions you started: not yourself, not the person's, not another session's, not one you opened forPerson. One still in a turn (running, or waiting on an approval or an answer) is refused, since archiving cuts the turn off; stop: true stops it first and archives it.",
+      inputSchema: { sessionId: z.string(), stop: z.boolean().optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        writeAsync(caller, async (c) => {
+          const archived = await service.sessions.archivePeer(c.sessionId, args);
+          return { archived: archived.map((s) => ({ sessionId: s.id, title: s.title, kind: s.kind })), note: "已归档；人可以在任务的会话列表里取消归档。" };
+        }),
+    },
   ];
 }

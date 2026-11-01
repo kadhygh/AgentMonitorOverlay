@@ -190,3 +190,36 @@ describe("session_start (开会话)", () => {
     await expect(service.sessions.startPeer(caller.id, { text: "x" })).rejects.toThrow(/归档/);
   });
 });
+
+// 收会话 (session_archive, 2026-11-01, 问题 #6): what a session started it can archive again; nothing else.
+describe("session_archive (收会话)", () => {
+  it("archives a session the caller started, with what hangs under it; refuses itself, the person's, another's and forPerson ones", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "只改数值表" });
+    await until(() => store.getSession(s.id)?.status !== "running");
+    const archived = await service.sessions.archivePeer(caller.id, { sessionId: s.id });
+    expect(archived.map((x) => x.id)).toContain(s.id);
+    expect(store.getSession(s.id)?.archivedAt).not.toBeNull();
+    expect(store.getSession(caller.id)?.archivedAt).toBeNull();
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: s.id })).rejects.toThrow(/已经归档/);
+
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: caller.id })).rejects.toThrow(/不能归档你自己/);
+    const persons = await service.tasks.addSession(task.id, { profileId: "p-ds" });
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: persons.id })).rejects.toThrow(/不是你用 session_start 开的/);
+    const others = await service.sessions.startPeer(persons.id, { text: "另一个会话开的" });
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: others.id })).rejects.toThrow(/不是你用 session_start 开的/);
+    const forPerson = await service.sessions.startPeer(caller.id, { text: "人来处理", forPerson: true });
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: forPerson.id })).rejects.toThrow(/不是你用 session_start 开的/);
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: "nope" })).rejects.toThrow(/不是你用 session_start 开的/);
+    await expect(service.sessions.archivePeer(caller.id, {})).rejects.toThrow(/sessionId/);
+    for (const id of [persons.id, others.id, forPerson.id]) expect(store.getSession(id)?.archivedAt).toBeNull();
+  });
+
+  it("refuses one still in a turn unless stop: true, which stops it and archives it", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]" });
+    await until(() => store.getSession(s.id)?.status === "running");
+    await expect(service.sessions.archivePeer(caller.id, { sessionId: s.id })).rejects.toThrow(/还在跑.*stop: true/);
+    expect(store.getSession(s.id)?.archivedAt).toBeNull();
+    await service.sessions.archivePeer(caller.id, { sessionId: s.id, stop: true });
+    expect(store.getSession(s.id)?.archivedAt).not.toBeNull();
+  });
+});

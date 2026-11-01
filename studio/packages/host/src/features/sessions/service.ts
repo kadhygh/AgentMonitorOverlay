@@ -9,6 +9,8 @@ import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
+/** A session in the middle of a turn: archiving it (closing its process) would cut the turn off (session_archive). */
+const BUSY_STATUSES: ReadonlySet<Session["status"]> = new Set(["running", "awaiting-approval", "awaiting-answer", "awaiting-review"]);
 
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
 export class SessionsFeature extends Feature {
@@ -318,6 +320,24 @@ export class SessionsFeature extends Feature {
     // A quick turn may have ended before the session was marked.
     if (report) this.checkReport(this.requireSession(named.id));
     return named;
+  }
+
+  /**
+   * 收会话 (session_archive, 2026-11-01, 问题 #6 — the person took the suggestions): a session archives one it started
+   * with session_start (startedBy is the caller; one opened forPerson has none, so it stays the person's), unasked, as
+   * the session list's 归档 does — branches and subagents with it, and it can be unarchived there. One still in a turn
+   * is refused unless `stop` is true: archiving closes its process and would cut the turn off.
+   */
+  async archivePeer(fromSessionId: Id, input: { sessionId?: unknown; stop?: unknown }): Promise<Session[]> {
+    const from = this.requireSession(fromSessionId);
+    if (typeof input.sessionId !== "string" || !input.sessionId) throw new HostError("bad_request", "sessionId is required");
+    if (input.sessionId === from.id) throw new HostError("bad_request", "不能归档你自己：只能归档你用 session_start 开的会话。");
+    const s = this.store.getSession(input.sessionId);
+    if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能归档：只能归档你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
+    if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了`);
+    if (BUSY_STATUSES.has(s.status) && input.stop !== true) throw new HostError("conflict", `会话「${s.title || s.id}」还在跑（${s.status}），归档会打断它这一轮：等它做完再归档，或者带 stop: true 停掉它再归档。`);
+    if (BUSY_STATUSES.has(s.status)) await this.interrupt(s.id).catch(() => undefined);
+    return this.archive(s.id);
   }
 
   /**
