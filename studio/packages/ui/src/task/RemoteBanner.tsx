@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useStoredIds } from "../lib/storedIds.js";
+import { FOLLOW_REVIEW_KEY } from "../remote/reviewer.js";
 import type { ModelProfile, Session, Task } from "@amo-studio/protocol";
 import type { CopyStatus } from "../remote/remote.js";
 import { SESSION_LOOK, taskStatus } from "../lib/status.js";
@@ -45,11 +47,14 @@ export function RemoteBanner({ task, copy, sessions, profiles }: { task: Task; c
       ? `${remote.reason && remote.reason !== "授权已收回" ? `${remote.reason}。` : `${copy.name} 收回了这个任务的授权。`}已经同步的记录还能看，不会再连回去。归档会清掉这台电脑上的副本。`
       : copy.state === "offline"
         ? `记录能看；现在不能发消息、不能审批，写好的消息留在输入框里。${copy.self ? "这台电脑连上团队服务器后" : `${copy.name} 回来后`}会自动重连，补齐这段时间的记录。`
-        : `这是 ${remote.account} 的「${copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。对话里的 HTML、Markdown 和图片可以点开看（从那台电脑取过来）；其他文件、Git Review、终端要在那边用。`;
+        : `这是 ${remote.account} 的「${copy.name}」授权给这台电脑的任务：模型调用和命令都在那台电脑上。对话里的 HTML、Markdown 和图片可以点开看（从那台电脑取过来），agent 打开的查看包和 Review 也能在这里看、批注；终端和其他操作要在那边用。`;
   const watch = copy.state === "revoked" ? null : remoteWatch(sessions, profiles);
   const look = watch?.status ? SESSION_LOOK[watch.status] : null;
+  // 「我也关注」 (远程 Reviewer, 2026-11-02): what agents open for the person in turns started on that computer opens here too.
+  const follow = useStoredIds(FOLLOW_REVIEW_KEY);
   return (
     <div className={`remote-banner ${copy.state}${open ? " open" : ""}`} role="status" data-testid="remote-banner" data-state={copy.state}>
+      <div className="remote-banner-row">
       <button type="button" className="remote-banner-head" aria-expanded={open} onClick={() => setOpen(!open)} data-testid="remote-banner-toggle">
         <span className="remote-badge">远程</span>
         <b className="remote-banner-title">{title}</b>
@@ -75,6 +80,13 @@ export function RemoteBanner({ task, copy, sessions, profiles }: { task: Task; c
           ▾
         </span>
       </button>
+      {copy.state !== "revoked" && (
+        <label className="granted-also-mine remote-follow" title={`${copy.name} 上的人发消息引出的那一轮里，agent 打开的查看包和 Review 也在这台电脑上弹出来（只记在这台电脑上）`} data-testid="remote-follow">
+          <input type="checkbox" checked={follow.has(task.id)} onChange={() => follow.toggle(task.id)} />
+          我也关注
+        </label>
+      )}
+      </div>
       {open && (
         <p className="remote-banner-detail" data-testid="remote-banner-detail">
           {detail}

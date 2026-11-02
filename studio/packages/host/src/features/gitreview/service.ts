@@ -117,7 +117,9 @@ export class GitReviewFeature extends Feature {
    * where 发回 sends the comments. The main window opens the review window when it receives the event.
    */
   async openReview(input: Partial<ReviewOpenRequest>): Promise<ReviewOpenResult> {
-    if (!this.host.liveWindows) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
+    // 远程 Reviewer (2026-11-02): a turn a paired device started shows there — no window here is needed then.
+    const asked = typeof input.sessionId === "string" && input.sessionId ? input.sessionId : null;
+    if (!this.host.liveWindows && !this.f.remote.grants.showsElsewhere(asked)) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
     const text = (v: unknown, name: string): string | undefined => {
       if (v === undefined || v === null || v === "") return undefined;
       if (typeof v !== "string" || !v.trim() || v.length > 1000 || /[\0\r\n]/.test(v)) throw new HostError("bad_request", `${name} must be a non-empty string without control characters`);
@@ -190,10 +192,14 @@ export class GitReviewFeature extends Feature {
     // A refused request must not leave a newly registered project behind.
     workspace ??= this.store.findWorkspaceByPath(dir);
     if (workspace?.archivedAt) throw new HostError("conflict", "这个项目已归档，请先恢复它");
+    // Where it shows: here, and/or on the paired device whose message started the turn (only the task's own project).
+    const route = this.f.remote.grants.openRoute(sessionId ?? null, workspace?.id ?? null);
+    if (!this.host.liveWindows && !route.to.some((t) => t.by === "you")) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
     const workspaceAdded = !workspace;
     workspace ??= this.f.projects.addWorkspace({ path: dir });
     const target: ReviewOpenTarget = { workspaceId: workspace.id, ...resolved };
-    this.publish({ type: "review.open", target, at: new Date().toISOString() });
+    this.publish({ type: "review.open", target, at: new Date().toISOString(), ...(route.here === "following" && route.taskId ? { onlyIfFollowing: route.taskId } : {}) });
+    if (sessionId) this.f.remote.grants.pushOpen(route, sessionId, { review: target });
     return { target, workspaceAdded };
   }
 

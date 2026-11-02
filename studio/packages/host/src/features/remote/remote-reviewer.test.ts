@@ -156,4 +156,62 @@ describe("远程 Reviewer through two Hosts", () => {
     await b.service.tasks.archiveTask(task.id);
     expect(existsSync(kept)).toBe(false);
   }, 60_000);
+
+  it("what an agent opens shows on the side that started the turn; the other side only with 「我也关注」 (its window decides)", async () => {
+    const { a, b, task, session, ws, dir } = await grantedWithPack();
+    const opened = (h: typeof a) => {
+      const list: HostEvent[] = [];
+      h.service.on("event", (e: HostEvent) => (e.type === "viewpack.open" || e.type === "review.open") && list.push(e));
+      return list;
+    };
+    const onA = opened(a);
+    const onB = opened(b);
+    // The latest open of a pack each side heard (a quick second view_open joins the pack of a moment ago).
+    const lastPack = (list: HostEvent[]) => list.filter((e) => e.type === "viewpack.open").at(-1);
+    const agentText = (h: typeof a, t: string) => h.store.listItems(session.id).some((i) => i.type === "agent" && !i.streaming && i.markdown === t);
+    await until(() => agentText(a, "FAKE: 第一句"), Boolean, "A's first reply");
+
+    // B's message starts the turn: the pack shows on B; A has no window open and needs none.
+    a.service.liveWindows = 0;
+    await b.service.sessions.sendMessage(session.id, "从 B 来");
+    await until(() => agentText(a, "FAKE: 从 B 来"), Boolean, "A replies to B");
+    const p1 = (await a.service.viewPacks.open({ items: [{ kind: "file", path: "src/drop.ts" }] }, { sessionId: session.id })).pack;
+    const onB1 = await until(() => onB.find((e) => e.type === "viewpack.open" && e.packId === p1.id), Boolean, "B told to open");
+    expect(onB1).toMatchObject({ remote: task.id });
+    expect(onB1).not.toHaveProperty("onlyIfFollowing");
+    expect(onA.find((e) => e.type === "viewpack.open" && e.packId === p1.id)).toMatchObject({ onlyIfFollowing: task.id });
+    // A Review of the task's project, the same way (B reads it through rt.view).
+    await a.service.gitReview.openReview({ workspaceId: ws.id, sessionId: session.id });
+    const r1 = await until(() => onB.find((e) => e.type === "review.open"), Boolean, "B told to open the Review");
+    expect(r1).toMatchObject({ target: { workspaceId: ws.id, remote: task.id } });
+    expect(r1).not.toHaveProperty("onlyIfFollowing");
+    // A Review of another folder is not the task's: not sent to B — and A, without a window, says so.
+    const elsewhere = tempDir("elsewhere");
+    execFileSync("git", ["init", "-q"], { cwd: elsewhere });
+    await expect(a.service.gitReview.openReview({ path: elsewhere, sessionId: session.id })).rejects.toThrow("窗口没有打开");
+    void dir;
+
+    // A's own message starts the next turn: A shows it as always; B only with 「我也关注」.
+    a.service.liveWindows = 1;
+    await a.service.sessions.sendMessage(session.id, "A 自己说");
+    await until(() => agentText(a, "FAKE: A 自己说"), Boolean, "A replies");
+    const heardB = onB.length;
+    await a.service.viewPacks.open({ items: [{ kind: "file", path: "shot.png" }] }, { sessionId: session.id });
+    expect(lastPack(onA)).not.toHaveProperty("onlyIfFollowing");
+    await until(() => onB.length, (n) => n > heardB, "B hears too");
+    expect(lastPack(onB)).toMatchObject({ remote: task.id, onlyIfFollowing: task.id });
+
+    // B's turn, but B went away: shown on A (and A without a window refuses again, as before remote).
+    await b.service.sessions.sendMessage(session.id, "B 最后一句");
+    await until(() => agentText(a, "FAKE: B 最后一句"), Boolean, "A replies to B");
+    b.remote.stop();
+    await until(a.state, (s) => s.peers[0]?.online === false, "A sees B gone");
+    a.service.liveWindows = 0;
+    await expect(a.service.viewPacks.open({ items: [{ kind: "file", path: "src/drop.ts" }] }, { sessionId: session.id })).rejects.toThrow("窗口没有打开");
+    a.service.liveWindows = 1;
+    const heardA = onA.length;
+    await a.service.viewPacks.open({ items: [{ kind: "file", path: "src/drop.ts" }] }, { sessionId: session.id });
+    expect(onA.length).toBe(heardA + 1);
+    expect(lastPack(onA)).not.toHaveProperty("onlyIfFollowing");
+  }, 90_000);
 });

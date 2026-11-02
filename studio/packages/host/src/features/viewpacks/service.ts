@@ -4,6 +4,7 @@ import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { VIEW_KIND_MODULES } from "./kinds/index.js";
 import { kindContext, optionalText, type ViewKindModule } from "./kinds/kind.js";
+import type { RemoteGrants } from "../remote/grants.js";
 
 /**
  * 查看包 (2026-10-23): an agent hands the person files and changes to look at in one go (view_open); the workbench
@@ -29,14 +30,19 @@ export class ViewPacksFeature extends Feature {
    * `sessionId` is the caller's identity when an agent sends it; over HTTP it may be given in the body.
    */
   async open(input: unknown, from: { sessionId?: Id | null } = {}): Promise<ViewOpenResult> {
-    if (!this.host.liveWindows) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再给人看");
     const body = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    // 远程 Reviewer (2026-11-02): a turn a paired device started shows there — no window here is needed then.
+    const asked = from.sessionId ?? (typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null);
+    if (!this.host.liveWindows && !this.f.remote.grants.showsElsewhere(asked)) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再给人看");
     const sessionId = from.sessionId ?? (typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null);
     const session = sessionId ? this.store.getSession(sessionId) : undefined;
     if (sessionId && !session) throw new HostError("not_found", `session ${sessionId} not found`);
     const workspaceId = typeof body.workspaceId === "string" && body.workspaceId ? body.workspaceId : session?.workspaceId;
     if (!workspaceId) throw new HostError("bad_request", "workspaceId is required (a project from project_context)");
     const workspace = this.requireLiveWorkspace(workspaceId);
+    // Where it shows (远程 Reviewer): here, and/or on the paired device whose message started the turn.
+    const route = this.f.remote.grants.openRoute(sessionId, workspace.id);
+    if (!this.host.liveWindows && !route.to.some((t) => t.by === "you")) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再给人看");
     const raw = body.items;
     if (!Array.isArray(raw) || !raw.length || raw.length > MAX_VIEW_ITEMS) throw new HostError("bad_request", `items must be a list of 1 to ${MAX_VIEW_ITEMS}`);
     const ctx = kindContext(workspace);
@@ -70,7 +76,7 @@ export class ViewPacksFeature extends Feature {
       }
       if (list.length > MAX_VIEW_ITEMS) throw new HostError("bad_request", `a pack holds at most ${MAX_VIEW_ITEMS} items`);
       const pack: ViewPack = { ...latest, ...(title ? { title } : {}), items: list, updatedAt: at };
-      return { pack: this.save(pack, first), merged: true };
+      return { pack: this.save(pack, first, route), merged: true };
     }
     const withIds = items.map((item) => ({ ...item, id: newId("vi") }) as ViewItem);
     const pack: ViewPack = {
@@ -82,7 +88,7 @@ export class ViewPacksFeature extends Feature {
       createdAt: at,
       updatedAt: at,
     };
-    return { pack: this.save(pack, withIds[0]!.id), merged: false };
+    return { pack: this.save(pack, withIds[0]!.id, route), merged: false };
   }
 
   /** An item shown as a diff the Host works out (a proposal). */
@@ -96,10 +102,12 @@ export class ViewPacksFeature extends Feature {
   }
 
   /** Stores the pack and asks the workbench to show it at `itemId` (what this open added or joined). */
-  private save(pack: ViewPack, itemId: Id | null): ViewPack {
+  private save(pack: ViewPack, itemId: Id | null, route: ReturnType<RemoteGrants["openRoute"]>): ViewPack {
     this.store.putViewPack(pack);
     this.publish({ type: "viewpack.upserted", pack });
-    this.publish({ type: "viewpack.open", packId: pack.id, at: pack.updatedAt, ...(itemId ? { itemId } : {}) });
+    // A turn a paired device started: here only where 「我也关注」 is ticked (the window decides).
+    this.publish({ type: "viewpack.open", packId: pack.id, at: pack.updatedAt, ...(itemId ? { itemId } : {}), ...(route.here === "following" && route.taskId ? { onlyIfFollowing: route.taskId } : {}) });
+    if (pack.sessionId) this.f.remote.grants.pushOpen(route, pack.sessionId, { packId: pack.id, ...(itemId ? { itemId } : {}) });
     return pack;
   }
 }

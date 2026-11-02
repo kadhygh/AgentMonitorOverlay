@@ -49,7 +49,7 @@
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 1 | `rt.view` + A 上的检查 + B 的转发和缓存；B 对话里的「打开查看包」「打开 Review」能用（文件、改动预览、Git 改动） | ✓ 11-02：`host/src/features/remote/views.ts`（A 的 `answerView` + 分块 `ViewAnswers`；B 的 `RemoteViews`，存在 `remote-views/<task>/`）；B 的窗口走 `/api/remote/view/<task>/…`（`ui/src/remote/reviewer.tsx`）；中转服务不用改（转发任何合规的 kind） |
-| 2 | 推送「打开」，以及谁发起、「我也关注」的判断；A 窗口没开时也不报错 | ○ |
+| 2 | 推送「打开」，以及谁发起、「我也关注」的判断；A 窗口没开时也不报错 | ✓ 11-02：A 记每个会话这一轮是谁发起的（`grants.ts` `turnOf`，委派会话看父会话），`openRoute` 决定推给谁（`open` 推送，`by: you/other`）；「我也关注」只存在各自的界面里（localStorage，和「我也关心」一样），由窗口按事件里的 `onlyIfFollowing` 决定弹不弹；只推任务自己项目的 pack 和 Review |
 | 3 | B 上的批注：存储、复制、发到对话 | ○ |
 | 4 | 测试：单测（A 上的检查，每一类越界都要有）、e2e（两个 Host 走本机中转，参考 `e2e/studio/remote*.spec.ts`），截图放 `screenshots/studio/` | ○ |
 

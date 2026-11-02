@@ -333,6 +333,8 @@ export interface ReviewOpenTarget {
   mode?: "changes" | "file";
   line?: number;
   endLine?: number;
+  /** 远程 Reviewer (2026-11-02), on B: the project is this remote task's, on the computer it runs on. */
+  remote?: string;
 }
 
 /** The open request was validated and sent to the workbench; this is not a human review/approval or window acknowledgement. */

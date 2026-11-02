@@ -9,6 +9,13 @@ import { onHostEvent } from "../host/events.js";
 // computer: a stand-in names it by that computer and 任务文件夹, with that computer's id for it (the routes carry it).
 // What only this computer could do (VS Code, Explorer, 书签) is not offered; files open in the remote viewer.
 
+/**
+ * 「我也关注」 (2026-11-02, the user): tasks for which this computer also opens what an agent shows the person when the
+ * turn was started on the other side — on A a granted task (B's turns), on B a remote copy (A's turns). Per machine
+ * (localStorage, like 「我也关心」), never sent anywhere; off by default.
+ */
+export const FOLLOW_REVIEW_KEY = "amo.remoteReviewFollow";
+
 /** A Reviewer window on a remote task. */
 export interface RemoteReview {
   taskId: string;

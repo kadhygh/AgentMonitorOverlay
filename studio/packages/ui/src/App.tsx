@@ -23,6 +23,8 @@ import { navHistory, useNavHistory } from "./shell/navHistory.js";
 import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { openViewer } from "./viewer/open.js";
+import { readIds } from "./lib/storedIds.js";
+import { FOLLOW_REVIEW_KEY, remoteProjectPath } from "./remote/reviewer.js";
 import { onHostEvent } from "./host/events.js";
 import { setDutyOpener, useDuty, useDutyWatch } from "./duty/duty.js";
 import { DutyDialog } from "./duty/DutyDialog.js";
@@ -139,6 +141,13 @@ export function App() {
     () =>
       onHostEvent((e) => {
         if (e.type !== "review.open" || Date.now() - Date.parse(e.at) > 60_000) return;
+        // 远程 Reviewer (2026-11-02): a turn another device started shows here only with 「我也关注」 ticked for the task.
+        if (e.onlyIfFollowing && !readIds(FOLLOW_REVIEW_KEY).includes(e.onlyIfFollowing)) return;
+        const remote = e.target.remote;
+        if (remote && e.target.mode === "file" && e.target.file) {
+          openViewer({ path: remoteProjectPath(e.target.file), remote, ...(e.target.line ? { line: e.target.line, ...(e.target.endLine ? { endLine: e.target.endLine } : {}) } : {}) });
+          return;
+        }
         if (e.target.mode === "file" && e.target.file) {
           openViewer({ path: e.target.file, workspaceId: e.target.workspaceId, sessionId: e.target.sessionId, line: e.target.line, endLine: e.target.endLine });
           return;
@@ -151,7 +160,9 @@ export function App() {
   useEffect(
     () =>
       onHostEvent((e) => {
-        if (e.type === "viewpack.open" && Date.now() - Date.parse(e.at) <= 60_000) openViewer({ path: "", pack: e.packId, ...(e.itemId ? { item: e.itemId } : {}) });
+        if (e.type !== "viewpack.open" || Date.now() - Date.parse(e.at) > 60_000) return;
+        if (e.onlyIfFollowing && !readIds(FOLLOW_REVIEW_KEY).includes(e.onlyIfFollowing)) return;
+        openViewer({ path: "", pack: e.packId, ...(e.itemId ? { item: e.itemId } : {}), ...(e.remote ? { remote: e.remote } : {}) });
       }),
     [],
   );

@@ -369,7 +369,13 @@ export type RemotePush =
    * 2026-10-30 (the user: B's new-task page kept the old projects after A saved 远端允许的项目): what B may pick creating
    * a task on A changed — sent to a device that asked for it (rt.catalog) since A's Host started. An older B ignores it.
    */
-  | { type: "catalog"; catalog: RemoteCatalog };
+  | { type: "catalog"; catalog: RemoteCatalog }
+  /**
+   * 远程 Reviewer (2026-11-02): an agent of the task opened a 查看包 (`packId`, at `itemId`) or a Review of the task's
+   * project (`review`) for the person. `by`: "you" — this device's message started the turn, it shows here; "other" —
+   * shown only where 「我也关注」 is ticked for the task. An older B ignores it.
+   */
+  | { type: "open"; taskId: Id; sessionId: Id; by: "you" | "other"; packId?: Id; itemId?: Id; review?: import("./gitreview.js").ReviewOpenTarget };
 
 // ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
 // A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under

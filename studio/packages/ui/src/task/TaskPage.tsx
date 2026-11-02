@@ -45,6 +45,7 @@ import { GrantDialog } from "./GrantDialog.js";
 import { RemoteBanner } from "./RemoteBanner.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { ALSO_MINE_KEY } from "../focus/pins.js";
+import { FOLLOW_REVIEW_KEY } from "../remote/reviewer.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -132,6 +133,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const remoteHeld = remoteHeldTasks(remote).has(task.id);
   // 「我也关心」 (2026-11-02, 问题 #8): this computer's Focus keeps listing the granted task as usual (focus/pins.ts).
   const alsoMine = useStoredIds(ALSO_MINE_KEY);
+  const followReview = useStoredIds(FOLLOW_REVIEW_KEY);
   const [granting, setGranting] = useState(false);
   // Git Review: only for a project under git; the branch shows in the line under the title.
   const gitRepo = useIsGitRepo(link, task.workspaceId) && !copy;
@@ -577,6 +579,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           <label className="granted-also-mine" title="勾上后，对方在线时这台电脑的 Focus 也照常显示这个任务的提醒、完成待审核和进行中" data-testid="granted-also-mine">
             <input type="checkbox" checked={alsoMine.has(task.id)} onChange={() => alsoMine.toggle(task.id)} />
             我也关心
+          </label>
+          {/* 「我也关注」 (远程 Reviewer, 2026-11-02): what agents open in turns the device started opens here too. */}
+          <label className="granted-also-mine" title="对方发消息引出的那一轮里，agent 打开的查看包和 Review 也在这台电脑上弹出来（只记在这台电脑上）" data-testid="granted-follow">
+            <input type="checkbox" checked={followReview.has(task.id)} onChange={() => followReview.toggle(task.id)} />
+            我也关注
           </label>
           {granted.map((g) => (
             <button key={`${g.account}\n${g.device}`} type="button" className="btn-ghost small" disabled={busy} onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: task.id, account: g.account, device: g.device }), () => setToast({ text: `已收回 ${g.name} 的授权` }))} data-testid="granted-revoke">

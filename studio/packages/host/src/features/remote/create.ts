@@ -58,7 +58,10 @@ export async function startGrantedTask(ctx: RemoteContext, grants: RemoteGrants,
   const permission = grants.permissionFor(input.profileId);
   const options: SessionOptions | undefined = permission ? { permission } : undefined;
   try {
+    // 远程 Reviewer (2026-11-02): its first turn is the device's — what the agent opens for the person shows there.
+    grants.expectFirst(task.id, to);
     const session = await host.tasks.addSession(task.id, { profileId: input.profileId, text: input.text, ...(input.attachments?.length ? { attachments: input.attachments } : {}), ...(options ? { options } : {}) });
+    grants.markTurn(session.id, to);
     return { task, session };
   } catch (err) {
     return { task, session: null, error: err instanceof Error ? err.message : String(err) };

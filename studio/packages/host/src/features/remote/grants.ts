@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { HostService } from "../../service.js";
 import { HostError, boundedText } from "../../core/shared.js";
@@ -72,6 +72,13 @@ export class RemoteGrants {
   private readonly taskOf = new Map<Id, Id | null>();
   /** 远程 Reviewer (2026-11-02): big answers kept for their later pieces. */
   private readonly views = new ViewAnswers();
+  /**
+   * 远程 Reviewer step 2 (2026-11-02, the user: 谁发的消息引出了这一轮，就在谁那边弹): per session, the device whose
+   * message started its turn — null for this computer. In memory only: after a restart a turn counts as this computer's.
+   */
+  private readonly turnBy = new Map<Id, DeviceRef | null>();
+  /** A device's message on its way into a session (rt.send), or a device's first message of a task's new session. */
+  private readonly sending = new Map<Id, DeviceRef>();
 
   constructor(private readonly ctx: RemoteContext) {}
 
@@ -340,9 +347,12 @@ export class RemoteGrants {
           // Pictures and files B sent first (rt.upload): this computer's attachments now; a DSH session takes no pictures.
           const claimed = this.ctx.inbox().claim(from, b.uploads, { noImages: s.runtime === "dsh" });
           const plain = claimed.images.length || claimed.files.length ? (typeof b.text === "string" ? b.text.slice(0, 100_000) : "") : boundedText(b.text, "text", 100_000);
+          // Its user item (appended as it goes in) marks the turn as this device's (onHostEvent).
+          this.sending.set(s.id, { account: from.account, device: from.device });
           try {
             return ok(await sessions.sendMessage(s.id, claimedText(plain, claimed), claimed.images.map((a) => a.id)));
           } catch (err) {
+            this.sending.delete(s.id);
             this.ctx.inbox().drop(claimed);
             throw err;
           }
@@ -408,7 +418,9 @@ export class RemoteGrants {
           const claimed = this.ctx.inbox().claim(from, b.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });
           const text = claimedText(plain, claimed);
           try {
+            if (text) this.sending.set(taskId, { account: from.account, device: from.device });
             const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}), ...(options ? { options } : {}) });
+            if (text) this.markTurn(session.id, from);
             return ok({ session: this.store.getSession(session.id) ?? session });
           } catch (err) {
             this.ctx.inbox().drop(claimed);
@@ -491,6 +503,8 @@ ${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
         return;
       case "item.appended":
       case "item.updated": {
+        // A message going in starts a turn: whose it is (a device's through rt.send, else this computer's).
+        if (e.type === "item.appended" && e.item.type === "user") this.noteUser(e.item.sessionId);
         const taskId = this.taskIdOf(e.item.sessionId);
         const gs = to(taskId);
         if (!gs.length) return;
@@ -511,6 +525,78 @@ ${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
       default:
         return;
     }
+  }
+
+  // ---- 远程 Reviewer step 2 (2026-11-02): where what an agent opens for the person shows
+
+  /** The device whose message started the session's turn (its own, or its parent's: a delegated session); null: this computer. */
+  turnOf(sessionId: Id): DeviceRef | null {
+    let id: Id | null = sessionId;
+    for (let hops = 0; id && hops < 20; hops++) {
+      if (this.turnBy.has(id)) return this.turnBy.get(id)!;
+      id = this.store.getSession(id)?.parentId ?? null;
+    }
+    return null;
+  }
+
+  /** A device's message started this session's turn (a new session or task it started with a first message). */
+  markTurn(sessionId: Id, from: DeviceRef): void {
+    this.turnBy.set(sessionId, { account: from.account, device: from.device });
+  }
+
+  /** A task's next new session starts with this device's message (startGrantedTask, rt.start). */
+  expectFirst(taskId: Id, from: DeviceRef): void {
+    this.sending.set(taskId, { account: from.account, device: from.device });
+  }
+
+  private noteUser(sessionId: Id): void {
+    const by = this.sending.get(sessionId);
+    if (by) {
+      this.sending.delete(sessionId);
+      this.turnBy.set(sessionId, by);
+      return;
+    }
+    const taskId = this.taskIdOf(sessionId);
+    const first = taskId ? this.sending.get(taskId) : undefined;
+    if (first && taskId) {
+      this.sending.delete(taskId);
+      this.turnBy.set(sessionId, first);
+      return;
+    }
+    this.turnBy.set(sessionId, null);
+  }
+
+  /**
+   * view_open / review_open in a session (the user, 2026-11-02): which paired devices hear of it, and whether it shows
+   * here. Only for a granted task, and only what is of its own project (a device reads nothing else). The device whose
+   * message started the turn gets it (`by: "you"`) when it is online — then this computer shows it only when the person
+   * here ticked 「我也关注」 (`here: "following"`); every other online device it is granted to gets it as `other`
+   * (shown there when ticked there). The turn this computer's, or its device away: shown here as always.
+   */
+  openRoute(sessionId: Id | null, workspaceId: Id | null): { here: "always" | "following"; taskId: Id | null; to: Array<{ grant: RemoteGrant; by: "you" | "other" }> } {
+    const session = sessionId ? this.store.getSession(sessionId) : undefined;
+    const taskId = session?.taskId ?? null;
+    const task = taskId ? this.store.getTask(taskId) : undefined;
+    const gs = taskId ? this.of(taskId) : [];
+    if (!task || !gs.length || !workspaceId || workspaceId !== task.workspaceId) return { here: "always", taskId, to: [] };
+    const link = this.ctx.link();
+    const up = (g: RemoteGrant) => !!link && link.state === "online" && !!this.ctx.peer(g)?.online;
+    const turn = this.turnOf(sessionId!);
+    const starter = turn ? gs.find((g) => same(g, turn) && up(g)) : undefined;
+    const to = gs.filter(up).map((grant) => ({ grant, by: grant === starter ? ("you" as const) : ("other" as const) }));
+    return { here: starter ? "following" : "always", taskId, to };
+  }
+
+  /** Whether what this session's agent opens now shows on a paired device (its turn's) — this computer needs no window. */
+  showsElsewhere(sessionId: Id | null): boolean {
+    const task = sessionId ? this.store.getTask(this.store.getSession(sessionId)?.taskId ?? "") : undefined;
+    return !!task && this.openRoute(sessionId, task.workspaceId).to.some((t) => t.by === "you");
+  }
+
+  /** Tells the devices `openRoute` named what was opened (a pack, or a Review of the task's project). */
+  pushOpen(route: ReturnType<RemoteGrants["openRoute"]>, sessionId: Id, what: { packId: Id; itemId?: Id } | { review: ReviewOpenTarget }): void {
+    if (!route.taskId) return;
+    for (const { grant, by } of route.to) this.push(grant, { type: "open", taskId: route.taskId, sessionId, by, ...what });
   }
 
   /**

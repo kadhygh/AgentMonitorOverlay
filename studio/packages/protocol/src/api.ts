@@ -671,10 +671,29 @@ export type HostEvent = { seq: number } & (
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
-  | { type: "review.open"; target: import("./gitreview.js").ReviewOpenTarget; at: Timestamp }
+  | {
+      type: "review.open";
+      target: import("./gitreview.js").ReviewOpenTarget;
+      at: Timestamp;
+      /**
+       * 远程 Reviewer (2026-11-02): shown only when this computer's 「我也关注」 is ticked for this task — the turn was
+       * started from another device, which shows it (or, on B, the turn was not B's).
+       */
+      onlyIfFollowing?: Id;
+    }
   /** 查看包 (2026-10-23): a pack was made or grew; `open` asks the workbench to show it (new, or sent to again). */
   | { type: "viewpack.upserted"; pack: import("./viewpacks.js").ViewPack }
-  | { type: "viewpack.open"; packId: Id; at: Timestamp; /** The item this open added (or joined): shown first. */ itemId?: Id }
+  | {
+      type: "viewpack.open";
+      packId: Id;
+      at: Timestamp;
+      /** The item this open added (or joined): shown first. */
+      itemId?: Id;
+      /** 远程 Reviewer (2026-11-02), on B: the pack is this remote task's, read from the computer it runs on. */
+      remote?: Id;
+      /** 远程 Reviewer: shown only when 「我也关注」 is ticked here for this task (as review.open). */
+      onlyIfFollowing?: Id;
+    }
   /** Deleted for good from 设置 → 数据管理: drop them from every list. */
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
   /** 远程 (2026-10-29): the connection, the paired devices or the pairing requests changed. Not kept in the log. */
