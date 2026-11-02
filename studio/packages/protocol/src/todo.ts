@@ -43,6 +43,21 @@ export type TodoOp = { op: "put"; id: string; list?: string; text?: string; done
  */
 export type TodoStatus = "off" | "signed-out" | "syncing" | "synced" | "offline" | "error";
 
+/**
+ * An item bound to a Studio task (and maybe one of its sessions), 2026-11-02 (问题 #10): bound from the task's or the
+ * session's ⋯ in Studio, the tag after the item opens it there. Kept on this computer only (the program's copy, not the
+ * server): the task is in this computer's Studio, other devices could not open it anyway.
+ */
+export interface TodoLink {
+  taskId: string;
+  taskTitle: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  boundAt: number;
+  /** Studio said the task (or the session) is not there any more. */
+  gone?: boolean;
+}
+
 /** What the 待办 window shows (GET /api/todo of the 便签 program). */
 export interface TodoView {
   status: TodoStatus;
@@ -62,6 +77,10 @@ export interface TodoView {
   loaded: boolean;
   /** 已完成保留 (days; 0 = 一直留着). */
   keepDays: number;
+  /** Items bound to a Studio task, by item id (only items still there). */
+  links: Record<string, TodoLink>;
+  /** Studio runs on this computer and is linked to the program: a tag can be opened there. */
+  studio: boolean;
 }
 
 /**

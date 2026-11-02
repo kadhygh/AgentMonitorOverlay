@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -35,6 +35,7 @@ import { BackButton } from "../shell/BackButton.js";
 import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
 import { SessionBanners, SessionHead } from "./SessionHead.js";
 import { DescriptionDialog } from "./DescriptionDialog.js";
+import { canBindTodo, loadTodoForBind, TodoBindDialog, type TodoBindTarget } from "./TodoBindDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
@@ -141,6 +142,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [picking, setPicking] = useState<"topic" | null>(null);
   const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
   const [describing, setDescribing] = useState(false);
+  /** 绑定到待办 (问题 #10): the 便签's 待办 to pick from, for the task or one of its sessions. */
+  const [todoBind, setTodoBind] = useState<{ view: TodoView; target: TodoBindTarget } | null>(null);
+  const bindTodo = (target: TodoBindTarget) => void loadTodoForBind().then((view) => view && setTodoBind({ view, target }));
   // 拆任务提案 this task (a 主控) made, while they wait for the person (also on its topic's canvas).
   const plans = useTaskPlans(link).filter((p) => p.fromTaskId === task.id);
   // 传话 to this task, or from it (a 主控), waiting for the person.
@@ -507,6 +511,20 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.description ? "编辑说明…" : "添加说明…"}
             </button>
           )}
+          {!copy && canBindTodo() && (
+            <button
+              type="button"
+              role="menuitem"
+              title="选一条便签里的待办绑定到这个任务：在待办里点它就回到这里"
+              onClick={() => {
+                setTaskMenu(null);
+                bindTodo({ taskId: task.id, taskTitle: task.title });
+              }}
+              data-testid="task-bind-todo"
+            >
+              绑定到待办…
+            </button>
+          )}
           {!task.archivedAt && !copy && (
             <button
               type="button"
@@ -579,6 +597,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         </div>
       )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
+      {todoBind && <TodoBindDialog view={todoBind.view} target={todoBind.target} onClose={() => setTodoBind(null)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
       <RelayBanner link={link} relays={relays} tasks={tasks} />
       <TeamRelayBanner link={link} sends={teamSends} threads={teamThreads} sessions={own} />
@@ -631,6 +650,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onFork={() => void fork(session.id)}
               onArchive={() => void archive(session.id)}
               onError={showError}
+              {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: session.id, sessionTitle: session.title }) } : {})}
             />
           )}
           {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { applyTodoOps, type TodoDevice, type TodoEntry, type TodoOp, type TodoStatus, type TodoView } from "@amo-studio/protocol";
+import { applyTodoOps, type TodoDevice, type TodoEntry, type TodoLink, type TodoOp, type TodoStatus, type TodoView } from "@amo-studio/protocol";
 
 // 待办's copy and its sync (2026-11-01, plans/todo.md). The lists live on the team server (the relay service's
 // /api/todo); this keeps, per account, the server's state as last fetched (`base`, with its `rev`) and the changes made
@@ -27,6 +27,8 @@ export interface TodoSyncDeps {
   settings(): { useTodo: boolean; keepDays: number };
   /** The view changed: tell the windows. */
   changed(view: TodoView): void;
+  /** Studio is linked to the program (its tags can be opened). */
+  studio?(): boolean;
   fetch?: typeof fetch;
   now?: () => number;
 }
@@ -37,6 +39,8 @@ interface Copy {
   items: TodoEntry[];
   devices: TodoDevice[];
   queue: TodoOp[];
+  /** Items bound to a Studio task here (问题 #10): this computer's, never sent. */
+  links?: Record<string, TodoLink>;
 }
 
 interface CacheFile {
@@ -129,6 +133,8 @@ export class TodoSync {
     const copy = this.copy();
     const base = new Map((copy?.items ?? []).map((i) => [i.id, i]));
     const items = copy ? [...applyTodoOps(base, copy.queue, this.me(), this.now).values()].filter((i) => !i.deleted) : [];
+    const ids = new Set(items.map((i) => i.id));
+    const links = Object.fromEntries(Object.entries(copy?.links ?? {}).filter(([id]) => ids.has(id)));
     return {
       status: settings.useTodo ? (info ? this.status : "signed-out") : "off",
       message: settings.useTodo && info ? this.message : null,
@@ -139,11 +145,37 @@ export class TodoSync {
       pending: copy?.queue.length ?? 0,
       loaded: copy?.loaded ?? false,
       keepDays: settings.keepDays,
+      links,
+      studio: this.deps.studio?.() ?? false,
     };
   }
 
   private tell(): void {
     this.deps.changed(this.view());
+  }
+
+  /** Something outside the copy changed (Studio came or went): tell the windows. */
+  notify(): void {
+    this.tell();
+  }
+
+  /**
+   * Binds an item to a Studio task (null: unbinds it), 问题 #10. Only this computer's copy keeps it: deleting the item
+   * (here or on another device) drops it with the item.
+   */
+  link(id: string, link: TodoLink | null): TodoView {
+    const copy = this.copy();
+    if (!copy) throw new Error("没有登录，待办用不了");
+    if (!this.view().items.some((i) => i.id === id)) throw new Error("这条待办已经不在了");
+    const links = { ...(copy.links ?? {}) };
+    if (link) links[id] = link;
+    else delete links[id];
+    // Bindings of items gone meanwhile go too.
+    const ids = new Set(this.view().items.map((i) => i.id));
+    copy.links = Object.fromEntries(Object.entries(links).filter(([k]) => ids.has(k)));
+    this.write();
+    this.tell();
+    return this.view();
   }
 
   /** Changes made in the window: shown at once, sent soon. */

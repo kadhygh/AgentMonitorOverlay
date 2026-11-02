@@ -16,6 +16,8 @@ export interface NotesLinkOptions {
   host: { url: string; token: string };
   testMode: boolean;
   log(line: string): void;
+  /** A 待办's tag was clicked (问题 #10): the workbench shows that task (and session) and comes forward. */
+  openTask(target: { taskId: string; sessionId?: string }): void;
 }
 
 interface Link {
@@ -98,7 +100,12 @@ export function installNotesLink(o: NotesLinkOptions): void {
 
   /** The running program, started (in the tray) when it is not. */
   function ensure(hidden: boolean): Promise<Link | null> {
-    starting ??= (async () => (await running()) ?? (await launch(hidden)))().finally(() => (starting = null));
+    starting ??= (async () => {
+      const link = (await running()) ?? (await launch(hidden));
+      // Linked for 待办's tags (问题 #10).
+      if (link) connect(link);
+      return link;
+    })().finally(() => (starting = null));
     return starting;
   }
 
@@ -143,6 +150,92 @@ export function installNotesLink(o: NotesLinkOptions): void {
     const info = await request<{ shortcut: { active: string; wanted: string; error: string | null } }>(link, "GET", "/api/notes").catch(() => null);
     return { running: true, ...(info ? { active: info.shortcut.active, wanted: info.shortcut.wanted, error: info.shortcut.error } : {}) };
   }
+
+  // 待办 bound to tasks (2026-11-02, 问题 #10, the user: bound from the task's or the session's ⋯ here, not in 便签). The
+  // binding is kept by the program (this computer's copy of 待办, not the server: the task is only in this Studio). Studio
+  // keeps a socket to it (?client=studio): the program then knows Studio is there, and a click on an item's tag comes
+  // back on it as `studio.open`. Lost (便签 quit or restarted): looked for again every 10 s.
+  let socket: WebSocket | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let closing = false;
+  const relink = (ms: number) => {
+    if (closing || retry) return;
+    retry = setTimeout(() => {
+      retry = null;
+      void running().then((link) => (link ? connect(link) : relink(10_000)));
+    }, ms);
+    retry.unref?.();
+  };
+  function connect(link: Link): void {
+    if (closing || (socket && socket.readyState <= 1)) return;
+    const ws = new WebSocket(`${link.url.replace(/^http/, "ws")}/api/events?client=studio&token=${encodeURIComponent(link.token)}`);
+    socket = ws;
+    ws.addEventListener("message", (e) => {
+      try {
+        const m = JSON.parse(String(e.data)) as { type?: string; id?: unknown; taskId?: unknown; sessionId?: unknown };
+        if (m.type === "studio.open" && typeof m.id === "string" && typeof m.taskId === "string") void openBound(link, m.id, m.taskId, typeof m.sessionId === "string" ? m.sessionId : undefined);
+      } catch {
+        // not one of ours
+      }
+    });
+    ws.addEventListener("close", () => {
+      if (socket === ws) socket = null;
+      relink(10_000);
+    });
+  }
+
+  /** A tag clicked in 待办: open the task when it is still here (its name refreshed on the tag), else grey the tag. */
+  async function openBound(link: Link, id: string, taskId: string, sessionId: string | undefined): Promise<void> {
+    try {
+      const state = await request<{ tasks: Array<{ id: string; title: string }>; sessions: Array<{ id: string; taskId?: string | null; title: string }> }>(o.host, "GET", "/api/state");
+      const view = await request<{ links: Record<string, { taskId: string; taskTitle: string; sessionId?: string; sessionTitle?: string; boundAt: number; gone?: boolean }> }>(link, "GET", "/api/todo");
+      const was = view.links[id];
+      const task = state.tasks.find((t) => t.id === taskId);
+      const session = sessionId ? state.sessions.find((s) => s.id === sessionId) : undefined;
+      if (task) o.openTask({ taskId, ...(session ? { sessionId: session.id } : {}) });
+      if (!was) return;
+      const next = { ...was, taskTitle: task?.title || was.taskTitle, ...(was.sessionId ? { sessionTitle: session?.title || was.sessionTitle } : {}), gone: !task || (!!was.sessionId && !session) };
+      if (next.taskTitle !== was.taskTitle || next.sessionTitle !== was.sessionTitle || next.gone !== !!was.gone) {
+        const { gone, ...rest } = next;
+        await request(link, "POST", "/api/todo/link", { id, link: gone ? { ...rest, gone } : rest });
+      }
+    } catch (err) {
+      o.log(`AMO 便签: opening a bound 待办 failed: ${String(err)}`);
+    }
+  }
+
+  /** The program's 待办 for the bind dialog (started in the tray when it is not running). */
+  async function todo(): Promise<unknown> {
+    const link = await ensure(true);
+    if (!link) throw new Error("便签没有启动起来");
+    connect(link);
+    // Just started (or never fetched for this account): a few seconds for the first sync, so the dialog has the items.
+    let view = await request<{ loaded: boolean; status: string }>(link, "GET", "/api/todo");
+    if (!view.loaded && view.status !== "off" && view.status !== "signed-out") {
+      await request(link, "POST", "/api/todo/sync");
+      for (let i = 0; i < 20 && !view.loaded && (view.status === "syncing" || view.status === "synced"); i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        view = await request<{ loaded: boolean; status: string }>(link, "GET", "/api/todo");
+      }
+    }
+    return view;
+  }
+
+  async function bindTodo(input: unknown): Promise<unknown> {
+    const b = (input ?? {}) as { id?: unknown; link?: unknown };
+    const link = await ensure(true);
+    if (!link) throw new Error("便签没有启动起来");
+    connect(link);
+    return request(link, "POST", "/api/todo/link", { id: b.id, link: b.link ?? null });
+  }
+
+  ipcMain.handle("amo:notes-todo", () => todo());
+  ipcMain.handle("amo:notes-todo-link", (_event, input: unknown) => bindTodo(input));
+  app.on("will-quit", () => {
+    closing = true;
+    if (retry) clearTimeout(retry);
+    socket?.close();
+  });
 
   ipcMain.handle("amo:scratchpad-open", () => show());
   ipcMain.handle("amo:notes-status", () => status());

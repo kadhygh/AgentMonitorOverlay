@@ -106,6 +106,9 @@ electron.contextBridge.exposeInMainWorld("amo", {
     notesStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-status"),
     startNotes: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-start"),
     openNotesSettings: (): Promise<void> => electron.ipcRenderer.invoke("amo:notes-settings"),
+    /** 待办 bound to tasks (问题 #10): the program's 待办 (starting it), and binding one of its items (null: unbinding). */
+    todo: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-todo"),
+    bindTodo: (id: string, link: unknown): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-todo-link", { id, link }),
   },
   /**
    * The project's Git Review window (one per project), at a file when `file` is given (stage 13: 用 git diff 看), or a

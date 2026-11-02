@@ -586,7 +586,25 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
           },
         });
       // 便签 is a program of its own (packages/notes, 2026-10-23): started with Studio, brought up from the title bar.
-      installNotesLink({ studioRoot, dataDir, host, testMode, log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
+      installNotesLink({
+        studioRoot,
+        dataDir,
+        host,
+        testMode,
+        log: (line) => console.error(`[${new Date().toISOString()}] ${line}`),
+        // A 待办's tag (问题 #10): as 在工作台打开 from Focus does.
+        openTask: (t) => {
+          if (!mainWindow) return;
+          mainWindow.webContents.send("amo:navigate", t);
+          if (testMode) {
+            const g = globalThis as { __amoMainShown?: number; __amoTodoOpened?: unknown[] };
+            g.__amoMainShown = (g.__amoMainShown ?? 0) + 1;
+            (g.__amoTodoOpened ??= []).push(t);
+            return;
+          }
+          bringForward(mainWindow);
+        },
+      });
       // The file marks window (文件标记).
       installMarksWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       installCanvasWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });

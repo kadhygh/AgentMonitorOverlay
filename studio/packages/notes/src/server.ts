@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Scratchpad, TodoOp, TodoView } from "@amo-studio/protocol";
+import type { Scratchpad, TodoLink, TodoOp, TodoView } from "@amo-studio/protocol";
 import { NotesError, type NotesStore } from "./store.js";
 
 // The 便签 program's own small server (2026-10-23), on 127.0.0.1 with a token. It answers the few Host routes the
@@ -23,7 +23,7 @@ export interface NotesShell {
   applyLook(): void;
   openPath(path: string): Promise<void>;
   /** 待办 (2026-11-01): its copy and sync (todo.ts), its window, and 使用待办 turned on or off. */
-  todo: { view(): TodoView; change(ops: TodoOp[]): TodoView; sync(): Promise<void> };
+  todo: { view(): TodoView; change(ops: TodoOp[]): TodoView; sync(): Promise<void>; link(id: string, link: TodoLink | null): TodoView; notify(): void };
   showTodo(): void;
   applyTodo(): void;
   /** 在 AMO 平台里登录: opens the platform (programs.json); false when it is not installed. */
@@ -38,6 +38,23 @@ export interface NotesServer {
   announce(): void;
   /** Tells every window 待办 changed. */
   announceTodo(view: TodoView): void;
+  /** AMO Studio is linked (its socket, ?client=studio): a 待办's tag can be opened there (问题 #10). */
+  studioLinked(): boolean;
+}
+
+/** A 待办 bound to a task, as Studio sends it (POST /api/todo/link): what is kept of it. */
+function linkOf(v: unknown): TodoLink | null {
+  if (v === null) return null;
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  const str = (x: unknown, max = 200) => (typeof x === "string" ? x.slice(0, max) : "");
+  if (!o || !str(o.taskId)) throw new NotesError("bad_request", "link must name a taskId (or be null)");
+  return {
+    taskId: str(o.taskId),
+    taskTitle: str(o.taskTitle),
+    ...(str(o.sessionId) ? { sessionId: str(o.sessionId), sessionTitle: str(o.sessionTitle) } : {}),
+    boundAt: typeof o.boundAt === "number" ? o.boundAt : Date.now(),
+    ...(o.gone === true ? { gone: true } : {}),
+  };
 }
 
 const MIME: Record<string, string> = {
@@ -95,6 +112,8 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
   const token = randomBytes(24).toString("hex");
   const tokenBuf = Buffer.from(token);
   const sockets = new Set<WebSocket>();
+  /** Studio's own (问题 #10): it is told to open a task, and gets none of the windows' events. */
+  const studios = new Set<WebSocket>();
   let seq = 0;
 
   const authorised = (req: IncomingMessage, url: URL): boolean => {
@@ -211,6 +230,27 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
       void shell.todo.sync();
       return send(res, 200, shell.todo.view());
     }
+    // Bound to a Studio task (问题 #10): Studio binds and unbinds (and marks it gone, renamed); the tag asks Studio to open it.
+    if (m === "POST" && p === "/api/todo/link") {
+      const body = await json(req);
+      if (typeof body.id !== "string" || !body.id) throw new NotesError("bad_request", "id is required");
+      if (!store.settings().useTodo) throw new NotesError("conflict", "待办已关闭");
+      try {
+        return send(res, 200, shell.todo.link(body.id, linkOf(body.link ?? null)));
+      } catch (err) {
+        if (err instanceof NotesError) throw err;
+        throw new NotesError("conflict", err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (m === "POST" && p === "/api/todo/open") {
+      const body = await json(req);
+      const link = typeof body.id === "string" ? shell.todo.view().links[body.id] : undefined;
+      if (!link) throw new NotesError("not_found", "这条待办没有绑定任务");
+      if (!studios.size) throw new NotesError("conflict", "打开 Studio 才能跳过去");
+      const msg = JSON.stringify({ type: "studio.open", id: body.id, taskId: link.taskId, ...(link.sessionId ? { sessionId: link.sessionId } : {}) });
+      for (const ws of studios) ws.send(msg);
+      return send(res, 200, {});
+    }
     if (m === "POST" && p === "/api/notes/todo-window") {
       shell.showTodo();
       return send(res, 200, {});
@@ -257,6 +297,15 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (url.searchParams.get("client") === "studio") {
+        studios.add(ws);
+        if (studios.size === 1) shell.todo.notify();
+        ws.on("close", () => {
+          studios.delete(ws);
+          if (!studios.size) shell.todo.notify();
+        });
+        return;
+      }
       sockets.add(ws);
       ws.on("close", () => sockets.delete(ws));
     });
@@ -274,9 +323,10 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
           const msg = JSON.stringify({ type: "todo.updated", todo: view, seq: ++seq });
           for (const ws of sockets) ws.send(msg);
         },
+        studioLinked: () => studios.size > 0,
         close: () =>
           new Promise<void>((done) => {
-            for (const ws of sockets) ws.terminate();
+            for (const ws of [...sockets, ...studios]) ws.terminate();
             wss.close();
             server.close(() => done());
           }),

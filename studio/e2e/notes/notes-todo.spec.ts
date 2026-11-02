@@ -248,3 +248,47 @@ test("待办: the server away and back, the login gone, 使用待办 off — and
   await settings.getByTestId("ns-use-todo").check();
   await expect.poll(async () => ((await notesApi("GET", "/api/todo")) as { status: string }).status).toBe("synced");
 });
+
+test("待办 bound to a Studio task (问题 #10): its tag, Studio away and there (its socket gets studio.open), 解除绑定", async () => {
+  const { key } = await setUp();
+  const { app, todo, notesApi } = await launch();
+  await phone(key, [
+    { op: "put", id: "t_l00000000000001", list: `device:${DESK}`, text: "按问题 #10 改待办绑定", order: 0 },
+    { op: "put", id: "t_l00000000000002", list: `device:${DESK}`, text: "看一眼测试包", order: 1 },
+  ]);
+  await notesApi("POST", "/api/todo/sync");
+  await expect(todo.getByTestId("todo-item")).toHaveCount(2);
+  // Bound as Studio binds it (its task's ⋯ → 绑定到待办…, e2e/studio/todo-bind.spec.ts).
+  await notesApi("POST", "/api/todo/link", { id: "t_l00000000000001", link: { taskId: "task-x", taskTitle: "日常维护", sessionId: "s-x", sessionTitle: "值守", boundAt: 1 } });
+  const tag = todo.getByTestId("todo-item").first().getByTestId("todo-link");
+  await expect(tag).toHaveText("日常维护 · 值守");
+  await expect(todo.getByTestId("todo-item").last().getByTestId("todo-link")).toHaveCount(0);
+
+  // No Studio linked: the tag says how to get there.
+  await expect(tag).toHaveAttribute("data-off", "");
+  await tag.click();
+  await expect(todo.getByTestId("todo-toast")).toHaveText("打开 Studio 才能跳过去");
+
+  // Studio linked (its socket): the tag asks it to open the task and session.
+  const { url, token } = JSON.parse(require("node:fs").readFileSync(join(root, "notes", "running.json"), "utf8")) as { url: string; token: string };
+  const got: unknown[] = [];
+  const ws = new WebSocket(`${url.replace(/^http/, "ws")}/api/events?client=studio&token=${token}`);
+  ws.addEventListener("message", (e) => got.push(JSON.parse(String(e.data))));
+  await expect(tag).not.toHaveAttribute("data-off", "");
+  await screenshot(app, "notes", "T12-todo-bound", todo, "scratchpad");
+  await tag.click();
+  await expect.poll(() => got).toEqual([{ type: "studio.open", id: "t_l00000000000001", taskId: "task-x", sessionId: "s-x" }]);
+  // Studio said the task is gone: the tag greys, a click says so.
+  await notesApi("POST", "/api/todo/link", { id: "t_l00000000000001", link: { taskId: "task-x", taskTitle: "日常维护", sessionId: "s-x", sessionTitle: "值守", boundAt: 1, gone: true } });
+  await expect(tag).toHaveAttribute("data-gone", "");
+  await tag.click();
+  await expect(todo.getByTestId("todo-toast")).toContainText("已经不在了");
+  expect(got).toHaveLength(1);
+  ws.close();
+
+  // ⋯ → 解除绑定.
+  await todo.getByTestId("todo-item").first().locator(".todo-more").click();
+  await todo.getByTestId("todo-unbind").click();
+  await expect(tag).toHaveCount(0);
+  expect(((await notesApi("GET", "/api/todo")) as { links: object }).links).toEqual({});
+});

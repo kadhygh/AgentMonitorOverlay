@@ -556,6 +556,7 @@ async function start(): Promise<void> {
     device: thisDevice,
     settings: () => ({ useTodo: store.settings().useTodo, keepDays: store.settings().todoKeepDays }),
     changed: (view) => server?.announceTodo(view),
+    studio: () => server?.studioLinked() ?? false,
   });
   server = await startNotesServer({ store, shell: notesShell, uiDir });
   writeFileSync(runningFile(), JSON.stringify({ url: server.url, token: server.token, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));

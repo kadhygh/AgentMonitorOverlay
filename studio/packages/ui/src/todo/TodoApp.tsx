@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { newTodoId, sortTodo, TODO_SHARED_LIST, TODO_TEXT_LIMIT, todoDeviceList, todoOrderBetween, todoOrderOnTop, type TodoEntry, type TodoOp, type TodoView } from "@amo-studio/protocol";
+import { newTodoId, sortTodo, TODO_SHARED_LIST, TODO_TEXT_LIMIT, todoDeviceList, todoOrderBetween, todoOrderOnTop, type TodoEntry, type TodoLink, type TodoOp, type TodoView } from "@amo-studio/protocol";
 import { HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
 import { useHostState } from "../host/useHostState.js";
 import { pageFromKey } from "../scratchpad/logic.js";
-import { openPlatform, todoChange, todoSyncNow, todoView } from "./api.js";
+import { openPlatform, todoChange, todoOpenBound, todoSyncNow, todoUnbind, todoView } from "./api.js";
 
 // The 待办 window (#todo, 2026-11-01, plans/todo.md): a window of the 便签 program beside the 便签 one, in its look. The
 // lists are on the team server; the program keeps the copy and sends the changes (packages/notes/src/todo.ts), this
@@ -117,6 +117,8 @@ function TodoWindow({ link }: { link: HostLink }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const dragId = useRef<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
+  /** The item whose tag was just clicked: Studio may answer that its task is gone (问题 #10). */
+  const opening = useRef<string | null>(null);
 
   const me = view?.device.id ?? "";
   const others = useMemo(() => (view?.devices ?? []).filter((d) => d.device !== me), [view, me]);
@@ -139,6 +141,23 @@ function TodoWindow({ link }: { link: HostLink }) {
     setToast(t);
     if (t) toastTimer.current = setTimeout(() => setToast(null), ms);
   }, []);
+
+  // Studio found the clicked tag's task gone (it greys the tag): say so once.
+  useEffect(() => {
+    const id = opening.current;
+    if (id && view?.links[id]?.gone) {
+      opening.current = null;
+      say({ text: "这个任务在 Studio 里已经不在了，可以在 ⋯ 里解除绑定" }, 4000);
+    }
+  }, [view, say]);
+
+  /** 问题 #10: a click on an item's tag opens its task (or session) in Studio. */
+  function openBound(item: TodoEntry, bound: TodoLink) {
+    if (bound.gone) return say({ text: "这个任务在 Studio 里已经不在了，可以在 ⋯ 里解除绑定" }, 4000);
+    if (!view?.studio) return say({ text: "打开 Studio 才能跳过去" }, 3000);
+    opening.current = item.id;
+    todoOpenBound(link, item.id).catch((err: unknown) => say({ text: message(err) }, 3000));
+  }
 
   // A delete waiting for its 撤销 goes now (another delete, the window hidden or closed).
   const deletingRef = useRef(deleting);
@@ -385,6 +404,7 @@ function TodoWindow({ link }: { link: HostLink }) {
       ) : (
         <span className="todo-text">{item.text}</span>
       )}
+      {view.links[item.id] && editing?.id !== item.id && <BoundTag bound={view.links[item.id]!} studio={view.studio} onOpen={() => openBound(item, view.links[item.id]!)} />}
       {current === "shared" && item.byName && <span className="todo-from">{item.byDevice === me ? "本机" : item.byName}</span>}
       <button
         type="button"
@@ -563,6 +583,20 @@ function TodoWindow({ link }: { link: HostLink }) {
             <span>改字</span>
             <span className="pad-hint">F2</span>
           </button>
+          {view.links[menuItem.id] && (
+            <button
+              type="button"
+              role="menuitem"
+              title="绑定在 Studio 的任务或会话的 ⋯ 里做；这里只能解除"
+              onClick={() => {
+                setMenu(null);
+                todoUnbind(link, menuItem.id).then(() => say({ text: "已解除绑定" }, 2000), (err: unknown) => say({ text: message(err) }, 3000));
+              }}
+              data-testid="todo-unbind"
+            >
+              解除绑定
+            </button>
+          )}
           <div className="todo-menu-rule" />
           <button type="button" role="menuitem" className="danger" onClick={() => remove([menuItem], `已删除「${clip(menuItem.text)}」`)}>
             <span>删除</span>
@@ -595,6 +629,36 @@ function TodoWindow({ link }: { link: HostLink }) {
       </footer>
       {error && <div className="todo-error" role="alert">{error}</div>}
     </div>
+  );
+}
+
+/**
+ * An item bound to a Studio task (问题 #10, bound from the task's or session's ⋯ in Studio): its name, a click opens it
+ * there. Grey when Studio said the task is gone; dim while Studio is not open.
+ */
+function BoundTag({ bound, studio, onOpen }: { bound: TodoLink; studio: boolean; onOpen(): void }) {
+  const name = bound.sessionId ? `${bound.taskTitle || "未命名任务"} · ${bound.sessionTitle || "会话"}` : bound.taskTitle || "未命名任务";
+  const title = bound.gone ? `「${name}」在 Studio 里已经不在了` : studio ? `在 Studio 里打开${bound.sessionId ? "这个会话" : "这个任务"}：${name}` : `绑定了 Studio 的「${name}」：打开 Studio 才能跳过去`;
+  return (
+    <button
+      type="button"
+      className="todo-link"
+      data-gone={bound.gone ? "" : undefined}
+      data-off={!studio && !bound.gone ? "" : undefined}
+      title={title}
+      tabIndex={-1}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      data-testid="todo-link"
+    >
+      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 014.5 9l1-1" />
+      </svg>
+      <span>{name}</span>
+    </button>
   );
 }
 

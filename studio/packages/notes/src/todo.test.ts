@@ -145,4 +145,41 @@ describe("待办's copy and sync (2026-11-01)", () => {
     await desk.sync.sync();
     expect(desk.sync.view().items.map((i) => i.text)).toEqual(["还没做"]);
   });
+
+  it("bound to a Studio task (问题 #10): kept on this computer only, gone with its item", async () => {
+    const { server, store } = await relay();
+    cleanup.push(() => store.close(), () => server.close());
+    const key = (await new RelayClient(server.url).register("老戴", "pw-dai")).key;
+    const account = () => ({ server: server.url, name: "老戴", key });
+    const desk = device("d_desk000000000000000000", "台式机", account);
+    const phone = device("d_phone00000000000000000", "手机", account);
+    desk.sync.change([
+      { op: "put", id: "t_b00000000000001", list: TODO_SHARED_LIST, text: "改问题 #10", order: 0 },
+      { op: "put", id: "t_b00000000000002", list: TODO_SHARED_LIST, text: "发测试包", order: 1 },
+    ]);
+    await desk.sync.sync();
+    expect(() => desk.sync.link("t_nothere00000000", { taskId: "task-1", taskTitle: "维护", boundAt: 1 })).toThrow("这条待办已经不在了");
+
+    const view = desk.sync.link("t_b00000000000001", { taskId: "task-1", taskTitle: "维护", sessionId: "s-1", sessionTitle: "值守", boundAt: 1 });
+    expect(view.links).toEqual({ t_b00000000000001: { taskId: "task-1", taskTitle: "维护", sessionId: "s-1", sessionTitle: "值守", boundAt: 1 } });
+    expect(desk.views.at(-1)?.links.t_b00000000000001?.taskId).toBe("task-1");
+    // Never sent: the phone sees the item without it.
+    await desk.sync.sync();
+    await phone.sync.sync();
+    expect(phone.sync.view().items).toHaveLength(2);
+    expect(phone.sync.view().links).toEqual({});
+    // Kept across a restart (the program's copy).
+    const again = new TodoSync(desk.home, { accountInfo: account, account: async () => account(), device: () => ({ id: "d_desk000000000000000000", name: "台式机" }), settings: () => desk.settings, changed: () => undefined });
+    expect(again.view().links.t_b00000000000001?.sessionTitle).toBe("值守");
+
+    // Deleted on the phone: the binding goes with it.
+    phone.sync.change([{ op: "delete", id: "t_b00000000000001" }]);
+    await phone.sync.sync();
+    await desk.sync.sync();
+    expect(desk.sync.view().links).toEqual({});
+    // Unbinding.
+    desk.sync.link("t_b00000000000002", { taskId: "task-2", taskTitle: "打包", boundAt: 2 });
+    expect(Object.keys(desk.sync.view().links)).toEqual(["t_b00000000000002"]);
+    expect(desk.sync.link("t_b00000000000002", null).links).toEqual({});
+  });
 });

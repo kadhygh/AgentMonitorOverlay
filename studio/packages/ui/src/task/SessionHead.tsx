@@ -30,6 +30,7 @@ export function SessionHead({
   onFork,
   onArchive,
   onError,
+  onBindTodo,
 }: {
   link: HostLink;
   session: Session;
@@ -45,6 +46,8 @@ export function SessionHead({
   onFork(): void;
   onArchive(): void;
   onError(text: string): void;
+  /** 绑定到待办 (问题 #10): absent where it cannot be done (a plain browser, a remote task's copy). */
+  onBindTodo?(): void;
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
@@ -115,7 +118,7 @@ export function SessionHead({
           <span className="bar-label">归档</span>
         </button>
       )}
-      <button type="button" className="bar-btn" aria-label="会话的更多操作" title="更多：书签" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
+      <button type="button" className="bar-btn" aria-label="会话的更多操作" title={onBindTodo ? "更多：书签、绑定到待办" : "更多：书签"} onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
         <svg viewBox="0 0 16 16" aria-hidden="true" className="filled">
           <circle cx="3.5" cy="8" r="1.3" />
           <circle cx="8" cy="8" r="1.3" />
@@ -136,6 +139,20 @@ export function SessionHead({
           >
             书签
           </button>
+          {onBindTodo && (
+            <button
+              type="button"
+              role="menuitem"
+              title="选一条便签里的待办绑定到这个会话：在待办里点它就回到这里"
+              onClick={() => {
+                setSessionMenu(null);
+                onBindTodo();
+              }}
+              data-testid="session-bind-todo"
+            >
+              绑定到待办…
+            </button>
+          )}
         </PopMenu>
       )}
     </div>

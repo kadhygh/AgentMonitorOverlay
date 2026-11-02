@@ -289,5 +289,19 @@
 .description-dialog textarea { min-height: 140px; }
 .description-dialog-actions { display: flex; align-items: center; gap: 8px; }
 .description-dialog-actions .spacer { flex: 1; }
+/* 绑定到待办 (2026-11-02, 问题 #10): the 便签's open 待办 by list, one click binds. */
+.todo-bind-dialog { width: 520px; gap: 10px; }
+.todo-bind-search { padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-sm); outline: none; }
+.todo-bind-search:focus { border-color: var(--primary); }
+.todo-bind-list { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; }
+.todo-bind-label { padding: 0 4px 2px; font-size: var(--fs-cap); color: var(--text-faint); }
+.todo-bind-row { display: flex; align-items: center; gap: 6px; }
+.todo-bind-row[data-bound] { background: var(--selected); border-radius: var(--r-m); }
+.todo-bind-pick { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 5px 6px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.todo-bind-pick:hover:not(:disabled) { background: var(--chip); }
+.todo-bind-pick:disabled { cursor: default; }
+.todo-bind-box { flex: none; width: 14px; height: 14px; margin-top: 3px; display: grid; place-items: center; border: 1.3px solid var(--text-dim); border-radius: 2px; font-size: 10px; line-height: 1; }
+.todo-bind-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.todo-bind-tag { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
 /* Under the task head (stage 16): the description, 拆任务提案 and 传话 keep the archived banner's margins. */
 .taskpage > .task-desc, .taskpage > .plan-banner, .taskpage > .relay-banner { margin: 10px 24px 0; }

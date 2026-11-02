@@ -28,6 +28,13 @@
 .todo-edit { flex: 1; min-width: 0; padding: 0 4px; margin: 0 -4px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--panel); color: var(--text); font: inherit; outline: none; }
 .todo-from { flex: none; margin-top: 2px; font-size: 11px; color: var(--text-faint); opacity: 0; }
 .todo-item:hover .todo-from { opacity: 1; }
+/* Bound to a Studio task (2026-11-02, 问题 #10): a small tag after the text; a click opens it in Studio. */
+.todo-link { flex: none; display: inline-flex; align-items: center; gap: 3px; max-width: 45%; height: 18px; margin-top: 3px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 9px; background: transparent; color: var(--text-dim); font: inherit; font-size: 11px; cursor: pointer; }
+.todo-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-link svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.todo-link:hover { background: var(--selected); color: var(--text); }
+.todo-link[data-off] { border-style: dashed; }
+.todo-link[data-gone] { color: var(--text-faint); border-color: var(--border); text-decoration: line-through; }
 .todo-more { flex: none; width: 22px; height: 22px; padding: 0; border: none; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font-size: 14px; line-height: 1; cursor: pointer; opacity: 0; }
 .todo-item:hover .todo-more, .todo-item:focus-visible .todo-more, .todo-item[data-menu] .todo-more { opacity: 1; }
 .todo-more:hover { background: var(--selected); }
