@@ -21,4 +21,9 @@ describe("停止 right after sending", () => {
     expect(unansweredPrompt([item({ type: "agent", markdown: "你好" })])).toBeNull();
     expect(unansweredPrompt([])).toBeNull();
   });
+
+  it("leaves a message still waiting where it is: it goes to the model after the stop anyway (立即发送, 2026-11-02)", () => {
+    expect(unansweredPrompt([item({ type: "agent", markdown: "在改" }), item({ type: "user", text: "顺便看下日志", delivery: "waiting" })])).toBeNull();
+    expect(unansweredPrompt([item({ type: "user", text: "没送到的", delivery: "unsent" })])).toBe("没送到的");
+  });
 });

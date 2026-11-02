@@ -11,7 +11,8 @@ const QUIET = new Set<SessionItem["type"]>(["turn", "notice", "reasoning", "comp
 export function unansweredPrompt(items: readonly SessionItem[]): string | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]!;
-    if (it.type === "user") return it.text.trim() ? it.text : null;
+    // Still waiting (立即发送, 2026-11-02): it goes to the model after the stop anyway, so it is not taken back.
+    if (it.type === "user") return it.text.trim() && it.delivery !== "waiting" ? it.text : null;
     if (it.type === "agent" ? !!it.markdown.trim() : !QUIET.has(it.type)) return null;
   }
   return null;

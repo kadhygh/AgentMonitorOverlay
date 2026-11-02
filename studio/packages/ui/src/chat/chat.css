@@ -103,7 +103,13 @@
 
 /* ---- the person's message -------------------------------------------------------------------------------------- */
 
-.msg-user-row { display: flex; justify-content: flex-end; }
+.msg-user-row { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+/* 立即发送 (2026-11-02): under a message the model has not read yet (or never will), what it is and what to do. */
+.msg-delivery { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px; color: var(--chat-caption); }
+.msg-delivery.unsent .msg-delivery-state { color: var(--chat-warn); }
+.msg-delivery-btn { padding: 1px 8px; border: 1px solid var(--chat-hairline); border-radius: 999px; background: transparent; color: var(--chat-brand); font: inherit; cursor: pointer; }
+.msg-delivery-btn:hover:not(:disabled) { background: var(--chat-hover); }
+.msg-delivery-btn:disabled { color: var(--chat-caption); cursor: default; }
 .msg-user { max-width: min(calc(var(--chat-width) * 0.702), 82%); padding: 9px 14px; border-radius: var(--r-l); background: var(--chat-bubble); color: var(--chat-label); white-space: pre-wrap; word-break: break-word; }
 .msg-text { white-space: pre-wrap; }
 /* A sent 快速提交 (2026-10-28): the tag in the composer's mention colour; its instructions on hover. */

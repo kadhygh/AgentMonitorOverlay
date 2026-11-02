@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } from "@amo-studio/protocol";
 import { splitAnnotationRefs, splitRoleUpdate } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
@@ -33,12 +33,19 @@ interface TranscriptProps {
   onJump(sessionId: string): void;
   /** A turn the drawn window must include (the place 后退 goes back to). */
   keepTurn?: string;
+  /** 立即发送 a message still waiting, or 重新发送 one never read (2026-11-02); absent: no buttons (read only). */
+  onDelivery?(itemId: string, action: DeliveryAction): void;
 }
+
+export type DeliveryAction = "now" | "resend";
+
+/** onDelivery for the person's messages, however deep in the turns they are drawn. */
+const DeliveryContext = createContext<TranscriptProps["onDelivery"]>(undefined);
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn }: TranscriptProps) {
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery }: TranscriptProps) {
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded (or folded again); finished turns start folded.
@@ -95,7 +102,7 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   const runningTurn = last?.running ? last.turn : null;
 
   return (
-    <>
+    <DeliveryContext.Provider value={onDelivery}>
       {start > 0 && (
         <button ref={earlierRef} type="button" className="turn-earlier" data-testid="turn-earlier" onClick={showEarlier}>
           显示更早的对话（还有 {start} 轮）
@@ -132,7 +139,7 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
           awaiting={session?.status === "awaiting-answer" ? "等你回答" : session?.status === "awaiting-approval" ? "等待你的确认" : null}
         />
       )}
-    </>
+    </DeliveryContext.Provider>
   );
 }
 
@@ -334,6 +341,40 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
           </span>
         )}
       </div>
+      {item.delivery && <DeliveryLine itemId={item.id} delivery={item.delivery} />}
+    </div>
+  );
+}
+
+/**
+ * 立即发送 (2026-11-02): a message sent while the model worked and not read yet (Claude: after its next tool call or at
+ * the turn's end; Codex: at its next step), or one whose process went before reading it.
+ */
+function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]> }) {
+  const onDelivery = useContext(DeliveryContext);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => setAsked(false), [delivery]);
+  const waiting = delivery === "waiting";
+  return (
+    <div className={`msg-delivery ${delivery}`} data-testid="msg-delivery" data-delivery={delivery}>
+      <span className="msg-delivery-state" title={waiting ? "模型还没读到这条：工具调用后或这一轮结束时读到" : "这条消息发出时会话的进程没了，模型没读到它"}>
+        {waiting ? "◐ 等待送达" : "! 没送到"}
+      </span>
+      {onDelivery && (
+        <button
+          type="button"
+          className="msg-delivery-btn"
+          data-testid={waiting ? "send-now" : "resend"}
+          disabled={asked}
+          title={waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
+          onClick={() => {
+            setAsked(true);
+            onDelivery(itemId, waiting ? "now" : "resend");
+          }}
+        >
+          {waiting ? (asked ? "正在发送…" : "立即发送") : asked ? "正在发送…" : "重新发送"}
+        </button>
+      )}
     </div>
   );
 }

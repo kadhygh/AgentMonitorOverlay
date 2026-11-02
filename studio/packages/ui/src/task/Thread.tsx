@@ -7,7 +7,7 @@ import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
 import { navHistory } from "../shell/navHistory.js";
 import { FindBar } from "../gitreview/FindBar.js";
-import { Transcript } from "../chat/Transcript.js";
+import { Transcript, type DeliveryAction } from "../chat/Transcript.js";
 import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
 import { sessionStats, type ApprovalItem } from "../chat/turns.js";
@@ -76,9 +76,11 @@ interface ThreadProps {
   busy: boolean;
   onApprove(item: ApprovalItem, decision: ApprovalDecision): void;
   onJump(sessionId: string): void;
-  /** `attachments`: ids of uploaded images sent along. */
-  onSend(text: string, attachments: string[]): Promise<boolean>;
+  /** `attachments`: ids of uploaded images sent along; `now`: 立即发送 (Ctrl+Enter while it works, 2026-11-02). */
+  onSend(text: string, attachments: string[], now?: boolean): Promise<boolean>;
   onInterrupt(): void;
+  /** 立即发送 a waiting message / 重新发送 one never read (the buttons under it). */
+  onDelivery?(itemId: string, action: DeliveryAction): void;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -102,7 +104,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -331,6 +333,8 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
       : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues, waitsForTurn: session?.runtime === "dsh" });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
+  // 立即发送 (2026-11-02): Claude and Codex (a remote copy's computer says what it can); DSH waits for the turn's end.
+  const sendsNow = generating && !readOnly && !planReview && !isRevising && session?.runtime !== "dsh";
   // Images must finish uploading (or be removed when they failed) before the message can go.
   const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
   const referring = !isRevising && (annotationRefs?.list.length ?? 0) > 0;
@@ -362,7 +366,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     }
   }
 
-  async function send() {
+  async function send(now = false) {
     const text = draft.trim();
     if (!canSend) return;
     if (isRevising) {
@@ -388,7 +392,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     jumpToEnd();
     const message = withFileRefs(text ? mentions.expand(text) : "", sent.refs);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
-    if (await onSend(message, ids)) attach.release(sent);
+    if (await onSend(message, ids, now && sendsNow)) attach.release(sent);
     else {
       setDraft((d) => (d.trim() ? d : text));
       attach.restore(sent);
@@ -519,7 +523,7 @@ ${d}` : back));
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
-                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} />
+                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery } : {})} />
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>
@@ -659,7 +663,8 @@ ${d}` : back));
                   }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    void send();
+                    // Ctrl+Enter while it works: 立即发送, as Claude Code's Send now (otherwise the same as Enter).
+                    void send(e.ctrlKey || e.metaKey);
                   }
                 }}
               />
@@ -689,7 +694,7 @@ ${d}` : back));
                 }}
               />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly || isRemote} />
-              <span className="composer-hint" {...(blocked ? { "data-testid": "remote-blocked" } : {})}>{blocked || attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
+              <span className="composer-hint" {...(blocked ? { "data-testid": "remote-blocked" } : {})}>{blocked || attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && !blocked && (
                 <button type="button" className="round-btn stop" onClick={stop} aria-label="打断" title={unansweredPrompt(items) ? "停止生成：还没有回复，刚发的消息放回输入框" : "停止生成"}>
@@ -702,7 +707,7 @@ ${d}` : back));
                 onClick={() => void send()}
                 disabled={!canSend}
                 aria-label={isRevising ? "发送修改意见" : sendLabel}
-                title={isRevising ? "把修改意见发给 Claude" : generating ? (queues ? "排队发送" : "插话发送") : "发送消息"}
+                title={isRevising ? "把修改意见发给 Claude" : generating ? `${queues ? "排队发送" : "插话发送"}${sendsNow ? "（Ctrl+Enter 立即发送：打断当前这一步）" : ""}` : "发送消息"}
               >
                 <IconArrowUp />
               </button>

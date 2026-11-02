@@ -13,7 +13,7 @@ import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { annotationRange, flashAnnotation, flashRange, highlightsSupported, scrollToBox } from "../review/highlights.js";
-import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
+import { REVEAL_ITEM_EVENT, type DeliveryAction } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { showToast } from "../lib/toast.js";
 import { AnnotationPanel } from "../review/AnnotationPanel.js";
@@ -328,11 +328,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const approve = (approvalId: string, decision: ApprovalDecision) =>
     session ? run(() => call(link, "POST /api/approvals/:approvalId", { approvalId }, { sessionId: session.id, decision })) : Promise.resolve();
   const interrupt = (id: string) => run(() => call(link, "POST /api/sessions/:id/interrupt", { id }));
-  async function send(text: string, attachments: string[]): Promise<boolean> {
+  async function send(text: string, attachments: string[], now = false): Promise<boolean> {
     if (!session) return false;
     try {
       const referred = annotationRefs.list.map((a) => a.id);
-      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}), ...(referred.length ? { annotations: referred } : {}) });
+      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}), ...(referred.length ? { annotations: referred } : {}), ...(now ? { now: true } : {}) });
       annotationRefs.sent();
       return true;
     } catch (err) {
@@ -340,6 +340,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       return false;
     }
   }
+  /** 立即发送 a waiting message, 重新发送 one never read (2026-11-02). */
+  const deliver = (itemId: string, action: DeliveryAction) => {
+    if (!session) return;
+    const id = session.id;
+    void run(async () => {
+      if (action === "now") await call(link, "POST /api/sessions/:id/items/:itemId/send-now", { id, itemId });
+      else await call(link, "POST /api/sessions/:id/items/:itemId/resend", { id, itemId });
+    });
+  };
   const workdir = session ? workspaces.find((w) => w.id === session.workspaceId)?.path : undefined;
   const showError = (text: string) => setToast({ text, error: true });
 
@@ -675,6 +684,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onJump={setSelected}
               onSend={send}
               onInterrupt={() => session && void interrupt(session.id)}
+              onDelivery={deliver}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}

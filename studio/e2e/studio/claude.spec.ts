@@ -44,11 +44,27 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await composer.fill("[[slow]]");
   await composer.press("Enter");
   await expect(page.getByRole("button", { name: "排队" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".composer-hint")).toHaveText("生成中：工具调用后或本轮结束后读到");
+  await expect(page.locator(".composer-hint")).toHaveText("工具调用后或本轮结束后读到 · Ctrl+Enter 立即发送");
   await composer.fill("after the slow one");
   await page.getByRole("button", { name: "排队" }).click();
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after the slow one", { timeout: 60_000 });
+  // 立即发送 (2026-11-02): the queued message says it waits, and its button makes the turn give way to it.
+  const waiting = page.getByTestId("msg-delivery");
+  await expect(waiting).toHaveAttribute("data-delivery", "waiting", { timeout: 10_000 });
+  await expect(waiting).toContainText("等待送达");
+  await screenshot(studio.app, "send-now", "send-now-01-waiting", page);
+  await waiting.getByTestId("send-now").click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after the slow one", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
+  // Ctrl+Enter while it works sends at once as well; the slow reply is cut short.
+  await composer.fill("[[slow]]");
+  await composer.press("Enter");
+  await expect(page.getByRole("button", { name: "排队" })).toBeVisible({ timeout: 30_000 });
+  await composer.fill("right now");
+  await composer.press("Control+Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: right now", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
+  await screenshot(studio.app, "send-now", "send-now-02-after", page);
 
   // Branch: a new Claude session under this one, which carries the context.
   await page.getByRole("button", { name: "分支", exact: true }).click();
