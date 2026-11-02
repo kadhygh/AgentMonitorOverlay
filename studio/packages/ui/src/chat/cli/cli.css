@@ -48,7 +48,12 @@
 /* ---- above the composer: background commands, suggestions ------------------------------------------------------ */
 
 .bg-tasks { width: 100%; max-width: var(--chat-width); display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border: 1px solid var(--chat-hairline); border-radius: var(--r-l); background: var(--chat-panel); }
-.bg-tasks-head { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--chat-dim); }
+.bg-tasks-head { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--chat-dim); text-align: left; cursor: pointer; }
+.bg-tasks-head:hover { color: var(--chat-dim-hover); }
+.bg-tasks-chevron { display: inline-flex; flex: none; color: var(--chat-caption); }
+.bg-tasks-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chat-caption); font-variant-numeric: tabular-nums; }
+/* 问题 #12: open, the list still stops at about a third of the window and scrolls, so it never covers the conversation. */
+.bg-tasks-list { display: flex; flex-direction: column; gap: 2px; max-height: min(34vh, 300px); overflow-y: auto; }
 .bg-tasks-count { padding: 0 6px; border-radius: 999px; background: var(--chat-hover); font-size: 11px; line-height: 17px; font-variant-numeric: tabular-nums; }
 .bg-task { display: flex; flex-direction: column; min-width: 0; }
 .bg-task-row { display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; }

@@ -153,6 +153,14 @@ test("Claude: commands, a background command, retries, notices, images and sugge
   await expect(page.getByTestId("background-output")).toContainText("tick 2", { timeout: 30_000 });
   await idle(page);
   await screenshot(app, "stage-12", "S12-E-background", page);
+  // 问题 #12: the list folds to one line (with how many run) so it does not cover the conversation, and opens again.
+  const bgToggle = page.getByTestId("background-tasks-toggle");
+  await bgToggle.click();
+  await expect(bg).toHaveCount(0);
+  await expect(bgToggle).toContainText("1 个在跑");
+  await screenshot(app, "stage-12", "S12-E-background-folded", page);
+  await bgToggle.click();
+  await expect(bg).toHaveAttribute("data-state", "running");
   await bg.getByRole("button", { name: "停止" }).click();
   await expect(bg).toHaveAttribute("data-state", "stopped", { timeout: 30_000 });
   await expect(bg).toContainText("已停止");
