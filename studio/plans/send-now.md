@@ -63,19 +63,26 @@ Codex：
 界面：
 
 - 等待中的消息：小字「等待送达」+「立即发送」；没送到的：「没送到」+「重新发送」。只读时不给按钮。
-- 生成中提示：Claude「生成中：Enter 排队（工具调用后或本轮结束后读到）· Ctrl+Enter 立即发送」；Codex「生成中：Enter 插话（模型下一步读到）· Ctrl+Enter 立即发送」。
+- 生成中提示：原来的那句后面加「 · Ctrl+Enter 立即发送」，去掉「生成中：」开头（不然输入框下面一行放不下），例如 Claude「工具调用后或本轮结束后读到 · Ctrl+Enter 立即发送」。DSH 不变。
 - 「停止」把刚发的消息放回输入框（`takeBack.ts`）：等待中的那条不放回（它停下后照样会发出，放回会发两次）。
+
+## 做的时候定下的细节
+
+- Claude 立即发送要等 CLI 先收到这条（`command_lifecycle` 的 `queued`，`live.atCli`）：消息刚推进输入流就点，CLI 还不认识这个 uuid，`send_now` 会落空。最多等 3 秒，等不到就照样发请求。
+- Codex 一轮结束后没读到的插话由 `afterTurn`（`turn/completed` 时）接着发：第一条 `turn/start`（同一行，带原来的 `clientId`），其余的插进这新的一轮；新的一轮已经又结束了就再来一次；`turn/start` 失败就把剩下的标「没送到」。`send` 里 steer 失败时先看这一条是不是已经被 `afterTurn` 接走了，接走了就不再自己发。
+- 让位的那一轮在对话里显示成「已停止」（和打断一样），不报错。
+- 停下后等待中的消息接着发：Claude 由 CLI 自己做（`still_queued`），Codex 由上面的 `afterTurn` 做。
 
 ## 分步
 
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 0 | 方案、worktree | ✓ |
-| 1 | 协议 + Claude：uuid、送达状态、立即发送、Ctrl+Enter、没送到、重新发送；集成测试（假模型） | ○ |
-| 2 | Codex：插话马上显示、clientId 对上、没读到的接着发、立即发送、没送到、重新发送；假 app-server 补上「命令跑完才读插话、打断就丢」 | ○ |
-| 3 | 路由 + 远程（`rt.send` 的 `now`、`rt.sendNow`、`rt.resend`） | ○ |
-| 4 | 界面：两个按钮、Ctrl+Enter、提示、takeBack；e2e 截图 | ○ |
-| 5 | CHANGELOG「下一版」、HANDOFF | ○ |
+| 1 | 协议 + Claude：uuid、送达状态、立即发送、Ctrl+Enter、没送到、重新发送；集成测试（假模型） | ✓ |
+| 2 | Codex：插话马上显示、clientId 对上、没读到的接着发、立即发送、没送到、重新发送；假 app-server 补上「命令跑完才读插话、打断就丢」（`[[busy: ms]]`） | ✓ |
+| 3 | 路由 + 远程（`rt.send` 的 `now`、`rt.sendNow`、`rt.resend`） | ✓（单测和类型检查过；两台电脑的远程没有端到端跑） |
+| 4 | 界面：两个按钮、Ctrl+Enter、提示、takeBack；e2e 截图（`screenshots/send-now/`） | ✓ |
+| 5 | CHANGELOG「下一版」、HANDOFF | ✓ |
 
 ## 约束
 

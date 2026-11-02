@@ -49,6 +49,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-02 · 立即发送（分支 `studio/send-now`，没合进 master，等用户点头）**：方案、调查和用户定的 4 条在 `plans/send-now.md`。用户消息加 `delivery: "waiting" | "unsent"`；`messages` 路由加 `now`，新增 `items/:itemId/send-now`、`items/:itemId/resend`，远程 `rt.send` 带 `now`、新增 `rt.sendNow`、`rt.resend`。Claude：每条消息带 uuid，按 `command_lifecycle` 清「等待送达」，立即发送用 CLI 内部的 `interrupt` + `send_now`（init 报 `interrupt_send_now_v1` 才用，否则普通打断），Ctrl+Enter 用 `priority: "now"`；进程结束时还在等的标「没送到」（以前 15 秒兜底会悄悄丢掉）。Codex：插话带 `clientUserMessageId`，马上显示；一轮结束还没读到的由 `afterTurn` 作为下一轮发出（以前打断就丢了）；立即发送 = `turn/interrupt`。假 app-server 加了 `[[busy: ms]]`（命令跑着时插话先压着）。验证：Claude 集成测试 4 条、Codex 单测 5 条、takeBack 单测；e2e `claude.spec.ts` 点「立即发送」和 Ctrl+Enter，截图 `screenshots/send-now/`；完整 vitest 只有已知的 `server-manager.test.ts` 失败。没验证的：真 Claude / Codex 只用假模型和本机实验脚本试过；两台电脑的远程没端到端跑。
+
 **2026-11-02 · 远程任务的 Reviewer（分支 `studio/remote-reviewer`，没合进 master，等审阅和用户点头）**：方案和用户定的都在 `plans/remote-reviewer.md`（A 跑任务，B 控制）。一共 4 步：
 1. B 的查看包、Review 窗口经自己的 Host `/api/remote/view/<task>/…` 走新的 `rt.view` 从 A 读，存在 `remote-views/<task>/`，A 离线时显示旧的并写明。A 上的检查在 `host/src/features/remote/views.ts`：只给这个任务的 pack、任务项目的 git（只读），文件只给 pack 点名的和改动里的，先解析链接和 junction，有大小上限，路径写「任务文件夹/…」。审阅后补了一处（`pointedAt`）：单个文件的 diff 也只给同一范围改动列表里的或 pack 点名的文件，`untracked` 由 A 按列表定；提交的 diff 只给这个提交改了的文件；历史最多 `GIT_LOG_MAX` 条。之前带 `untracked=1` 能整个读走被 gitignore 的文件。
 2. A 记住这一轮是谁发起的（`grants.ts` `turnOf`），用 `open` 只推给发起的 B；A 勾了「我也关心」（`ALSO_MINE_KEY`，和 Focus 的同一个勾）时 B 的轮次 A 也弹，B 没有勾，A 的轮次不推给 B。原来单独的「我也关注」用户当天晚上让并进了「我也关心」。
