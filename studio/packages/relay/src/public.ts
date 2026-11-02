@@ -94,7 +94,10 @@ export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&
  * The page to send people: the AMO platform's download, when it is here. 报问题 sits folded at the bottom under 维护工具
  * (2026-10-31, the user: it is the maintainer's, not what a teammate comes for).
  */
-export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null): string {
+/** The Android app's newest build on the landing page, without signing in (2026-11-02). */
+export const ANDROID_DOWNLOAD = "/downloads/android/latest.apk";
+
+export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null, android: { version: string; size: number } | null = null): string {
   // 2026-10-28, the user: everything goes through AMO 平台 — the page offers only its download. The relay client's zip and
   // the browser client (/app/) are no longer linked; their routes stay (installed clients load /client/ from here).
   void client;
@@ -102,6 +105,9 @@ export function landingPage(service: string, client: ClientManifest | null, file
   const platformLink = platform
     ? `<a class="btn" href="/downloads/AMO-Platform-win.zip">下载 AMO 平台<small>安装和更新团队的 AMO 工具 · ${(platform.size / 1024 / 1024).toFixed(0)} MB</small></a>`
     : `<p class="muted">还没有放 AMO 平台的安装包。</p>`;
+  const androidLink = android
+    ? `<a class="btn alt" href="${ANDROID_DOWNLOAD}" data-testid="landing-android">下载 Android 版 ${escapeHtml(android.version)}<small>在手机上打开这个页面下载 · ${(android.size / 1024 / 1024).toFixed(0)} MB</small></a>`
+    : "";
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(service)} · AMO 中转</title>
 <style>
 :root{--bg:#efede8;--panel:#fbfaf7;--ink:#22201c;--muted:#8d877c;--line:#2a2723;--accent:#23436f;--on:#fbfaf7}
@@ -123,6 +129,7 @@ ${platformLink}
 <li>在「工具」里安装要用的工具；第一次打开 AMO Studio 前，先在「目录」里设好 Studio 数据目录。</li>
 <li>平台会待在托盘里，有新版时在这里更新，正在用的工具不会被打断。</li>
 </ol>
+${androidLink}
 <details class="tools" data-testid="landing-tools"><summary>维护工具</summary>
 <a class="btn alt" href="/issues" data-testid="landing-issues">报问题<small>用 AMO 时遇到的问题写在这里，附上截图</small></a>
 </details>

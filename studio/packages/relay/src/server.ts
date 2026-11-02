@@ -7,7 +7,7 @@ import { pipeline } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { APK_NAME, PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
-import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
+import { ANDROID_DOWNLOAD, PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
 import { issuesPage } from "./issues-page.js";
@@ -391,8 +391,16 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (method === "GET" && !path.startsWith("/api/")) {
       // The platform's own zip: in downloads/ beside the client's, or in the platform dir (which deploy leaves alone).
       const platformZip = files.file("downloads", PLATFORM_ZIP) ?? platform.zip();
-      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads().filter((f) => f.name !== PLATFORM_ZIP), platformZip ? { size: statSync(platformZip).size } : null));
+      // The Android app's newest build, for anyone on the page (2026-11-02, the user: a phone installs it from here without
+      // signing in; it pairs only after signing in). Updates still go through /platform/android/ (signed in).
+      const android = platform.dir ? platform.androidLatest() : null;
+      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads().filter((f) => f.name !== PLATFORM_ZIP), platformZip ? { size: statSync(platformZip).size } : null, android));
       if (path === `/downloads/${PLATFORM_ZIP}` && platformZip) return sendFile(res, platformZip, true);
+      if (path === ANDROID_DOWNLOAD) {
+        const file = android ? platform.apk(android.file) : null;
+        if (!file) throw new RelayError("not_found", "服务器上还没有发布安卓版");
+        return sendFile(res, file, true);
+      }
       if (path === "/app" || path === "/client") {
         res.writeHead(302, { location: `${path}/` });
         res.end();

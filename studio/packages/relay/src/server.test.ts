@@ -233,13 +233,16 @@ describe("relay service", () => {
     expect(await zip.text()).toBe("zip");
   });
 
-  it("hands out the Android app's newest build to people signed in (2026-10-31)", async () => {
+  it("hands out the Android app's newest build to people signed in (2026-10-31), and on the landing page to anyone (2026-11-02)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
     closers.push(() => rmSync(dir, { recursive: true, force: true }));
     const { url, plannerSettings } = await service(undefined, { platformDir: dir });
     const key = plannerSettings.key;
     const get = (p: string, k: string | null = key) => fetch(`${url}${p}`, { headers: k ? { authorization: `Bearer ${k}` } : {} });
     expect(await (await get("/api/platform/android")).json()).toMatchObject({ error: "not_found", message: "服务器上还没有发布安卓版" });
+    // Nothing published: no Android link on the page, its download is not there.
+    expect(await (await get("/", null)).text()).not.toContain("下载 Android 版");
+    expect((await get("/downloads/android/latest.apk", null)).status).toBe(404);
 
     mkdirSync(join(dir, "android"));
     const apk = "PK fake apk";
@@ -254,11 +257,20 @@ describe("relay service", () => {
     expect(res.headers.get("content-type")).toBe("application/vnd.android.package-archive");
     expect(res.headers.get("content-length")).toBe(String(apk.length));
     expect(await res.text()).toBe(apk);
+    // The landing page offers the newest build to anyone (2026-11-02): a phone installs it before signing in.
+    const landing = await (await get("/", null)).text();
+    expect(landing).toContain("下载 Android 版 0.1.1");
+    expect(landing).toContain('href="/downloads/android/latest.apk"');
+    const open = await get("/downloads/android/latest.apk", null);
+    expect(open.status).toBe(200);
+    expect(open.headers.get("content-type")).toBe("application/vnd.android.package-archive");
+    expect(await open.text()).toBe(apk);
     expect((await get("/platform/android/AMO-Studio-Android-0.1.0.apk")).status).toBe(404);
     for (const p of ["/platform/android/latest.json", "/platform/android/..%2Fchannels.json", "/platform/android/.hidden.apk"]) expect((await get(p)).status, p).toBe(400);
     // latest.json naming a file that is not there: as if nothing was published.
     writeFileSync(join(dir, "android", "latest.json"), JSON.stringify({ ...latest, file: "gone.apk" }));
     expect((await get("/api/platform/android")).status).toBe(404);
+    expect((await get("/downloads/android/latest.apk", null)).status).toBe(404);
   });
 
   it("sends an object stored gzipped as gzip to a client that takes it, and unpacked to one that does not", async () => {
