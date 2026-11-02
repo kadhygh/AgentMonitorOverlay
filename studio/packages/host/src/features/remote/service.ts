@@ -856,6 +856,9 @@ export class RemoteFeature extends Feature {
 const COPY_ROUTES = new Set([
   "POST /api/sessions/:id/messages",
   "POST /api/sessions/:id/interrupt",
+  // 立即发送 / 重新发送 (2026-11-02): done on A, like a message.
+  "POST /api/sessions/:id/items/:itemId/send-now",
+  "POST /api/sessions/:id/items/:itemId/resend",
   "POST /api/sessions/:id/questions/:itemId/answer",
   "POST /api/tasks/:id/sessions",
   "POST /api/tasks/:id/archive",

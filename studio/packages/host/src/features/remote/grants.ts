@@ -350,7 +350,7 @@ export class RemoteGrants {
           // Its user item (appended as it goes in) marks the turn as this device's (onHostEvent).
           this.sending.set(s.id, { account: from.account, device: from.device });
           try {
-            return ok(await sessions.sendMessage(s.id, claimedText(plain, claimed), claimed.images.map((a) => a.id)));
+            return ok(await sessions.sendMessage(s.id, claimedText(plain, claimed), claimed.images.map((a) => a.id), [], { now: b.now === true }));
           } catch (err) {
             this.sending.delete(s.id);
             this.ctx.inbox().drop(claimed);
@@ -372,6 +372,19 @@ export class RemoteGrants {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
           await sessions.answerQuestion(s.id, id(b.itemId, "itemId"), b.reply);
           return ok({ ok: true });
+        }
+        case REMOTE_KINDS.sendNow: {
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
+          await sessions.sendNow(s.id, id(b.itemId, "itemId"));
+          // No new user item marks the turn (noteUser): the turn that now runs the message is this device's.
+          this.markTurn(s.id, from);
+          return ok({ ok: true });
+        }
+        case REMOTE_KINDS.resend: {
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
+          const sent = await sessions.resend(s.id, id(b.itemId, "itemId"));
+          this.markTurn(s.id, from);
+          return ok(sent);
         }
         case REMOTE_KINDS.interrupt: {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), false);

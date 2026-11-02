@@ -1,5 +1,5 @@
 import { asyncPrompts, type Id, type Session, type TurnRetry, type TurnState } from "@amo-studio/protocol";
-import { messageImage } from "../items.js";
+import { messageImage, withDelivery } from "../items.js";
 import type { ServerNotification } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
 import type { CodexAsks } from "./asks.js";
@@ -20,6 +20,8 @@ export class CodexEvents {
     private readonly asks: CodexAsks,
     /** account/rateLimits/updated: the profile's quota as the server last told it. */
     private readonly onRateLimits: (profileId: Id, limits: { primary: CodexRateWindow; secondary: CodexRateWindow }) => void,
+    /** A turn ended (completed, interrupted or failed): steered messages it never read go on as the next turn. */
+    private readonly afterTurn: (sessionId: Id) => void = () => undefined,
   ) {}
 
   /** A notice row; the same key again in this turn updates that row (with a count) instead of adding another. */
@@ -122,6 +124,7 @@ export class CodexEvents {
         } else {
           this.core.setStatus(s.id, s.kind !== "sub" ? "idle" : turn.status === "interrupted" ? "interrupted" : "completed");
         }
+        if (s.kind !== "sub") this.afterTurn(s.id);
         return;
       }
       case "item/started":
@@ -352,6 +355,14 @@ export class CodexEvents {
       case "userMessage": {
         // In review mode the message is Codex's own review prompt (the person's /code-review opened the turn).
         if (!done || review) return;
+        // Shown when it was sent (a steer, or a message sent again): the echo settles that row (立即发送, 2026-11-02).
+        const clientId = (item as { clientId?: unknown }).clientId;
+        const sent = typeof clientId === "string" ? st.sent.get(clientId) : undefined;
+        if (sent) {
+          st.sent.delete(clientId as string);
+          this.core.updateItem(sent.itemId, (it) => (it.type === "user" ? withDelivery(it, undefined) : it));
+          return;
+        }
         const content = (item.content ?? []) as Array<{ type?: string; text?: unknown; path?: unknown }>;
         const text = content.map((c) => (c && typeof c === "object" && typeof c.text === "string" ? c.text : "")).join("");
         const images = content.filter((c) => c?.type === "localImage" && typeof c.path === "string").map((c) => messageImage(c.path as string));

@@ -513,8 +513,16 @@ export interface HostRoutes {
    * blocks); `text` may then be empty. Steered and queued messages carry them too.
    */
   /** `annotations`: annotations of this session the message refers to (批注1…); they go after the text, see composeAnnotationRefs. */
-  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[] }; res: { mode: "start" | "steer" | "queue" } };
+  /**
+   * `now` (立即发送, 2026-11-02; Claude and Codex): while a turn runs, the model reads the message at once — the turn's
+   * current step gives way (Ctrl+Enter); `mode` stays what the message would have been without it.
+   */
+  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[]; now?: boolean }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
+  /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
+  "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };
+  /** 重新发送 a message its process never read (delivery `unsent`): the same item goes again. */
+  "POST /api/sessions/:id/items/:itemId/resend": { req: void; res: { mode: "start" | "steer" | "queue" } };
   /** Claude (stage 15): stop the session's loop, or switch going on by itself after a usage limit (Session.wake). */
   "POST /api/sessions/:id/wake": { req: { stopLoop: true } | { autoContinue: boolean }; res: Session };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };

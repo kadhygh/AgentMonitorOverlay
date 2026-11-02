@@ -538,7 +538,7 @@ export class Store extends DocumentStore {
     return (
       this.db
         .prepare(
-          `SELECT * FROM items WHERE session_id = ? AND (json_extract(body, '$.state') IN ('pending', 'running') OR json_extract(body, '$.streaming') = 1 OR json_extract(body, '$.status') = 'running') ORDER BY seq`,
+          `SELECT * FROM items WHERE session_id = ? AND (json_extract(body, '$.state') IN ('pending', 'running') OR json_extract(body, '$.streaming') = 1 OR json_extract(body, '$.status') = 'running' OR json_extract(body, '$.delivery') = 'waiting') ORDER BY seq`,
         )
         .all(sessionId) as Row[]
     ).map(toItem);

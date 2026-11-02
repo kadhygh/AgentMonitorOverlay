@@ -14,8 +14,11 @@ export function sessionsRoutes(service: HostService): Route[] {
       if (!Array.isArray(attachments) || attachments.some((a) => typeof a !== "string")) throw new HostError("bad_request", "attachments must be a list of ids");
       const annotations = b.annotations ?? [];
       if (!Array.isArray(annotations) || annotations.some((a) => typeof a !== "string")) throw new HostError("bad_request", "annotations must be a list of ids");
-      return service.sessions.sendMessage(params.id!, b.text === undefined && (attachments.length || annotations.length) ? "" : str(b.text, "text"), attachments as string[], annotations as string[]);
+      if (b.now !== undefined && typeof b.now !== "boolean") throw new HostError("bad_request", "now must be true or false");
+      return service.sessions.sendMessage(params.id!, b.text === undefined && (attachments.length || annotations.length) ? "" : str(b.text, "text"), attachments as string[], annotations as string[], { now: b.now === true });
     }),
+    route("POST", "/api/sessions/:id/items/:itemId/send-now", async ({ params }) => (await service.sessions.sendNow(params.id!, params.itemId!), { ok: true })),
+    route("POST", "/api/sessions/:id/items/:itemId/resend", ({ params }) => service.sessions.resend(params.id!, params.itemId!)),
     route("POST", "/api/sessions/:id/wake", ({ params, body }) => service.sessions.setWakeChoice(params.id!, body)),
     route("POST", "/api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true })),
     route("POST", "/api/sessions/:id/fork", ({ params, body }) => {

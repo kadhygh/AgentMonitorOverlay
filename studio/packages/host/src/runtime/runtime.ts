@@ -7,6 +7,11 @@ import { newId, type HostEventInput, type SessionItemInput, type Store } from ".
 
 export type SendMode = "start" | "steer" | "queue";
 
+/** `now` (立即发送, 2026-11-02): while a turn runs, the model reads the message at once (the turn's step gives way). */
+export interface SendOptions {
+  now?: boolean;
+}
+
 export interface RuntimeEvents {
   /** Every change, already persisted (except `item.delta`, which carries the last persisted seq). */
   event: [HostEvent];
@@ -28,8 +33,15 @@ export interface SessionRuntimeApi {
    * Starts a turn; while one runs, Codex steers it and Claude queues the message for the next turn. `images` go along
    * (Codex reads them from their path, Claude gets them as image blocks); `text` may be empty when there are some.
    */
-  sendMessage(sessionId: Id, text: string, images?: readonly Attachment[]): Promise<{ mode: SendMode }>;
+  sendMessage(sessionId: Id, text: string, images?: readonly Attachment[], options?: SendOptions): Promise<{ mode: SendMode }>;
   interrupt(sessionId: Id): Promise<void>;
+  /**
+   * 立即发送 (2026-11-02, Claude and Codex): a message still waiting (`delivery: "waiting"`) is read by the model now —
+   * the running turn gives way, as the CLIs' Send now does. Nothing when it is not waiting any more.
+   */
+  sendNow?(sessionId: Id, itemId: Id): Promise<void>;
+  /** 重新发送 a message its process never read (`delivery: "unsent"`): the same item goes again, with its `images`. */
+  resend?(sessionId: Id, itemId: Id, images: readonly Attachment[]): Promise<{ mode: SendMode }>;
   fork(sessionId: Id, profileId?: Id): Promise<Session>;
   archive(sessionId: Id): Promise<Session[]>;
   unarchive(sessionId: Id): Promise<Session[]>;
@@ -90,8 +102,18 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
     if (!profile) throw new Error(`unknown profile ${input.profileId}`);
     return this.byRuntime(profile.runtime).startSession(input);
   }
-  sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []) {
-    return this.forSession(sessionId).sendMessage(sessionId, text, images);
+  sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}) {
+    return this.forSession(sessionId).sendMessage(sessionId, text, images, options);
+  }
+  sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    const r = this.forSession(sessionId);
+    if (!r.sendNow) throw Object.assign(new Error("这种会话不能立即发送：消息会在这一轮结束后发出"), { code: "bad_request" });
+    return r.sendNow(sessionId, itemId);
+  }
+  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+    const r = this.forSession(sessionId);
+    if (!r.resend) throw Object.assign(new Error("这种会话不能重新发送消息"), { code: "bad_request" });
+    return r.resend(sessionId, itemId, images);
   }
   choices(profileId: Id) {
     const profile = this.profiles.find((p) => p.id === profileId);

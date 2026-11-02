@@ -33,6 +33,11 @@ export interface FakeTurn {
   /** User input steered into the running turn. */
   steered: string[];
   interrupted: boolean;
+  /**
+   * Steered input not read yet (立即发送, 2026-11-02): while a turn holds steers (`[[busy: ms]]`, a long command), like
+   * Codex 0.165 it reads them only once the command is done, and drops them when the turn is interrupted first.
+   */
+  held?: Array<{ input: unknown; clientId: string | null }>;
 }
 
 export type ApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel";
@@ -59,6 +64,8 @@ export interface TurnContext {
   notify(method: string, params?: Record<string, unknown>): void;
   /** Emits item/started, then item/completed (with `done` merged in, e.g. a final status). */
   item(item: Record<string, unknown>, done?: Record<string, unknown>): void;
+  /** Steered input waits from now on (`true`), or is read now: echoed as userMessage items and added to `steered`. */
+  holdSteers(on: boolean): void;
   sleep(ms: number): Promise<void>;
 }
 
@@ -81,6 +88,18 @@ export class TurnInterrupted extends Error {}
  * is acknowledged in the reply.
  */
 export const defaultTurnScript: TurnScript = async (ctx) => {
+  // `[[busy: ms]]`: a command runs that long without asking; steered input waits for it (see FakeTurn.held).
+  const busy = /\[\[busy:\s*(\d+)\]\]/.exec(ctx.userText);
+  if (busy) {
+    const id = randomUUID();
+    ctx.holdSteers(true);
+    ctx.notify("item/started", { item: { type: "commandExecution", id, command: "fake-busy", cwd: ctx.thread.cwd, status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null } });
+    await ctx.sleep(Number(busy[1]));
+    ctx.notify("item/completed", { item: { type: "commandExecution", id, command: "fake-busy", cwd: ctx.thread.cwd, status: "completed", commandActions: [], aggregatedOutput: "", exitCode: 0, durationMs: Number(busy[1]) } });
+    ctx.holdSteers(false);
+    await ctx.agentMessage(ctx.turn.steered.length ? `FAKE-STEERED: ${ctx.turn.steered.join(" | ")}` : "FAKE-BUSY-DONE");
+    return;
+  }
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(ctx.userText);
   if (shell) {
     const decision = await ctx.command(shell[1]!.trim(), { output: "fake-output" });
@@ -344,6 +363,18 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(method, params = {}) {
         notify(thread.id, method, { threadId: thread.id, turnId: turn.id, ...params });
       },
+      holdSteers(on) {
+        if (on) {
+          turn.held ??= [];
+          return;
+        }
+        const held = turn.held ?? [];
+        delete turn.held;
+        for (const h of held) {
+          turn.steered.push(textOf(h.input));
+          emitItem(thread, turn, { type: "userMessage", id: randomUUID(), clientId: h.clientId, content: h.input });
+        }
+      },
       item(item, done = {}) {
         notify(thread.id, "item/started", { item, threadId: thread.id, turnId: turn.id, startedAtMs: Date.now() });
         const final = { ...item, ...done };
@@ -557,16 +588,21 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       t.activeTurn = turn;
       notify(t.id, "thread/status/changed", { threadId: t.id, status: { type: "active", activeFlags: [] } });
       notify(t.id, "turn/started", { threadId: t.id, turn: turnView(turn) });
-      emitItem(t, turn, { type: "userMessage", id: randomUUID(), clientId: null, content: params.input });
+      emitItem(t, turn, { type: "userMessage", id: randomUUID(), clientId: (params.clientUserMessageId as string | undefined) ?? null, content: params.input });
       void runTurn(t, turn, userText, imagesOf(params.input), script);
       return { turn: turnView(turn) };
     },
     "turn/steer": (_client, params) => {
       const t = requireThread(params);
       if (!t.activeTurn || t.activeTurn.id !== params.expectedTurnId) throw rpcError(-32600, "expectedTurnId does not match the active turn");
+      const clientId = (params.clientUserMessageId as string | undefined) ?? null;
+      if (t.activeTurn.held) {
+        t.activeTurn.held.push({ input: params.input, clientId });
+        return { turnId: t.activeTurn.id };
+      }
       const text = textOf(params.input);
       t.activeTurn.steered.push(text);
-      emitItem(t, t.activeTurn, { type: "userMessage", id: randomUUID(), clientId: null, content: params.input });
+      emitItem(t, t.activeTurn, { type: "userMessage", id: randomUUID(), clientId, content: params.input });
       return { turnId: t.activeTurn.id };
     },
     // Compaction runs as a turn of its own with a contextCompaction item, then a warning (as Codex 0.162 does).

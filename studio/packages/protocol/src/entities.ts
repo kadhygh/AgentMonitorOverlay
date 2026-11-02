@@ -318,6 +318,9 @@ export interface MessageImage {
   path: string;
 }
 
+/** Where a person's message sent mid-turn stands (立即发送, 2026-11-02; see the `user` item). */
+export type UserDelivery = "waiting" | "unsent";
+
 /**
  * What a notice offers to do (2026-10-23). `folder-access`: DSH's write sandbox cannot be set up on the session's
  * folder for want of the person's full control of it; POST /api/sessions/:id/folder-access gives it. `state` follows
@@ -356,8 +359,12 @@ export interface FolderAccessStatus {
 }
 
 export type SessionItem =
-  /** `images`: pictures sent with the message (stage 11). */
-  | (ItemBase & { type: "user"; text: string; images?: MessageImage[] })
+  /**
+   * `images`: pictures sent with the message (stage 11). `delivery` (立即发送, 2026-11-02): `waiting` — sent while a turn
+   * ran and not read by the model yet (Claude reads it after the next tool call or at the turn's end, Codex at its next
+   * step); `unsent` — its process went before it was read (it can be sent again). Absent: it reached the model.
+   */
+  | (ItemBase & { type: "user"; text: string; images?: MessageImage[]; delivery?: UserDelivery })
   | (ItemBase & { type: "agent"; markdown: string; streaming: boolean })
   /** The model's thinking before or between steps. */
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })

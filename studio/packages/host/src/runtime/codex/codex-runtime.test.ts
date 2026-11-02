@@ -192,6 +192,69 @@ describe("CodexRuntime", () => {
     await until(() => session(s.id).status === "idle", "idle after interrupt");
   });
 
+  // 立即发送 (2026-11-02). `[[busy: ms]]`: a command runs; like Codex 0.165, steered input waits for it to finish and is
+  // dropped when the turn is interrupted first.
+  const userRows = (sessionId: string, text: string) => items(sessionId).filter((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user" && i.text === text);
+  const turnStates = (sessionId: string) => items(sessionId).flatMap((i) => (i.type === "turn" ? [i.state] : []));
+  const busy = async (ms: number) => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: `[[busy: ${ms}]]` });
+    await until(() => items(s.id).some((i) => i.type === "tool" && i.status === "running"), "command running");
+    return s;
+  };
+
+  it("插话 shows at once as waiting, and settles in place when Codex reads it", async () => {
+    const s = await busy(600);
+    expect(await runtime.sendMessage(s.id, "after the command")).toEqual({ mode: "steer" });
+    expect(userRows(s.id, "after the command")).toMatchObject([{ delivery: "waiting" }]);
+    await until(idle(s.id), "idle");
+    expect(lastAgent(s.id)!.markdown).toBe("FAKE-STEERED: after the command");
+    expect(userRows(s.id, "after the command")).toHaveLength(1);
+    expect(userRows(s.id, "after the command")[0]!.delivery).toBeUndefined();
+  });
+
+  it("立即发送 on a waiting message interrupts the turn, and the message runs as the next one", async () => {
+    const s = await busy(10_000);
+    await runtime.sendMessage(s.id, "read this now");
+    const row = userRows(s.id, "read this now")[0]!;
+    await runtime.sendNow(s.id, row.id);
+    await until(() => idle(s.id)() && lastAgent(s.id)?.markdown === "FAKE: read this now", "answered", 4000);
+    expect(turnStates(s.id)).toEqual(["interrupted", "completed"]);
+    expect(userRows(s.id, "read this now")).toHaveLength(1);
+    expect(store.getItem(row.id)).not.toHaveProperty("delivery");
+  });
+
+  it("立即发送 from the composer (now) does the same in one go", async () => {
+    const s = await busy(10_000);
+    expect(await runtime.sendMessage(s.id, "now please", [], { now: true })).toEqual({ mode: "steer" });
+    await until(() => idle(s.id)() && lastAgent(s.id)?.markdown === "FAKE: now please", "answered", 4000);
+    expect(turnStates(s.id)).toEqual(["interrupted", "completed"]);
+    expect(userRows(s.id, "now please")).toHaveLength(1);
+  });
+
+  it("停止 with messages waiting: they are not lost (Codex drops them), they go on as the next turn", async () => {
+    const s = await busy(10_000);
+    await runtime.sendMessage(s.id, "keep one");
+    await runtime.sendMessage(s.id, "keep two");
+    await runtime.interrupt(s.id);
+    // The first opens the turn; the second is steered into it, or (the fake's turn is over at once) opens the next.
+    await until(() => idle(s.id)() && items(s.id).some((i) => i.type === "agent" && /keep two/.test(i.markdown)), "the second answered", 4000);
+    expect(items(s.id).some((i) => i.type === "agent" && i.markdown.startsWith("FAKE: keep one"))).toBe(true);
+    expect(userRows(s.id, "keep one")).toHaveLength(1);
+    expect(userRows(s.id, "keep two")).toHaveLength(1);
+    expect(items(s.id).filter((i) => i.type === "user" && i.delivery)).toEqual([]);
+  });
+
+  it("重新发送 sends a message Codex never read as the same row", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "hello" });
+    await until(idle(s.id), "idle");
+    // As left by an app-server that went away before reading it.
+    const lost = store.appendItem({ id: "i-lost", sessionId: s.id, createdAt: new Date().toISOString(), type: "user", text: "lost words", delivery: "unsent" });
+    expect(await runtime.resend(s.id, lost.id)).toEqual({ mode: "start" });
+    await until(() => idle(s.id)() && lastAgent(s.id)?.markdown === "FAKE: lost words", "sent again");
+    expect(userRows(s.id, "lost words")).toHaveLength(1);
+    expect(store.getItem(lost.id)).not.toHaveProperty("delivery");
+  });
+
   it("sends images as localImage input, also when steering, and keeps them on the person's item", async () => {
     const image = (n: number): Attachment => ({ id: `att-00000000-0000-4000-8000-00000000000${n}`, name: "a.png", mime: "image/png", size: 1, path: `C:/data/attachments/att-00000000-0000-4000-8000-00000000000${n}.png`, createdAt: "" });
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace });

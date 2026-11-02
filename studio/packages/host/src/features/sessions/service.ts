@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
-import type { SendMode } from "../../runtime/runtime.js";
+import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -66,20 +66,46 @@ export class SessionsFeature extends Feature {
    * When the session's place in AMO changed since it was last told (its task joined a topic, was referenced on another
    * canvas, became a 主控…), a short note of what changed goes last (composeRoleUpdate).
    */
-  async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = [], annotations: readonly Id[] = []): Promise<{ mode: SendMode }> {
+  async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = [], annotations: readonly Id[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
     const referenced = annotations.length ? this.f.review.referencedAnnotations(sessionId, annotations) : null;
     if (referenced) {
-      const result = await this.sendMessage(sessionId, composeAnnotationRefs(text ?? "", referenced.refs), attachments);
+      const result = await this.sendMessage(sessionId, composeAnnotationRefs(text ?? "", referenced.refs), attachments, [], options);
       referenced.markSent();
       return result;
     }
     const images = this.images(attachments);
     if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
     const update = this.roleUpdate(sessionId);
-    const result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images));
+    const result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images, options));
     update.told();
     return result;
+  }
+
+  /** 立即发送 (2026-11-02): a message still waiting is read by the model now (see SessionRuntimeApi.sendNow). */
+  async sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    this.requireSession(sessionId);
+    const rt = this.runtime;
+    if (!rt.sendNow) throw new HostError("bad_request", "this Host cannot send a waiting message now");
+    await this.wrap(() => rt.sendNow!(sessionId, itemId));
+  }
+
+  /** 重新发送 a message its process never read, with the pictures it had (those still kept here). */
+  async resend(sessionId: Id, itemId: Id): Promise<{ mode: SendMode }> {
+    this.requireSession(sessionId);
+    const item = this.store.getItem(itemId);
+    if (item?.type !== "user" || item.sessionId !== sessionId) throw new HostError("not_found", `message ${itemId} not found`);
+    const images = (item.images ?? []).flatMap((i) => {
+      if (!i.id) return [];
+      try {
+        return [this.f.attachments.get(i.id)];
+      } catch {
+        return [];
+      }
+    });
+    const rt = this.runtime;
+    if (!rt.resend) throw new HostError("bad_request", "this Host cannot send a message again");
+    return this.wrap(() => rt.resend!(sessionId, itemId, images));
   }
 
   /** The uploaded images a message carries, checked: known ids, at most MAX_MESSAGE_IMAGES. */

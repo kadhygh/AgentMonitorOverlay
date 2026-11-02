@@ -1,6 +1,6 @@
 import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
 import { parseRemoteProfileId } from "@amo-studio/protocol";
-import type { SessionRuntimeApi } from "../../runtime/runtime.js";
+import type { SendMode, SendOptions, SessionRuntimeApi } from "../../runtime/runtime.js";
 import type { Store } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import type { RemoteCopies } from "./copies.js";
@@ -43,9 +43,20 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     if (this.remote(sessionId)) return this.copies().renameSession(sessionId, title);
     return this.inner.rename(sessionId, title);
   }
-  sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []) {
-    if (this.remote(sessionId)) return this.copies().send(sessionId, text, images);
-    return this.inner.sendMessage(sessionId, text, images);
+  sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}) {
+    if (this.remote(sessionId)) return this.copies().send(sessionId, text, images, options);
+    return this.inner.sendMessage(sessionId, text, images, options);
+  }
+  /** 立即发送 and 重新发送 (2026-11-02): on a copy, done on A (the copy's items carry A's ids). */
+  sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    if (this.remote(sessionId)) return this.copies().sendNow(sessionId, itemId);
+    if (!this.inner.sendNow) throw new HostError("bad_request", "这种会话不能立即发送");
+    return this.inner.sendNow(sessionId, itemId);
+  }
+  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+    if (this.remote(sessionId)) return this.copies().resend(sessionId, itemId);
+    if (!this.inner.resend) throw new HostError("bad_request", "这种会话不能重新发送消息");
+    return this.inner.resend(sessionId, itemId, images);
   }
   interrupt(sessionId: Id): Promise<void> {
     if (this.remote(sessionId)) return this.copies().interrupt(sessionId);

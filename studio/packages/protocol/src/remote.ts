@@ -238,8 +238,12 @@ export const REMOTE_KINDS = {
   task: "rt.task",
   /** B → A: a session's items after `since` (its last seq), in pieces. {sessionId, since} → RemoteItemsAnswer */
   items: "rt.items",
-  /** B → A: a message to a session. {sessionId, text} → {mode} */
+  /** B → A: a message to a session; `now`: 立即发送 (2026-11-02; an older A ignores it and queues). {sessionId, text, now?} → {mode} */
   send: "rt.send",
+  /** B → A (立即发送, 2026-11-02): a waiting message of the session goes to the model now. {sessionId, itemId} → {ok} */
+  sendNow: "rt.sendNow",
+  /** B → A (2026-11-02): a message the session's process never read goes again. {sessionId, itemId} → {mode} */
+  resend: "rt.resend",
   /** B → A: an approval answered; the first answer (here or on A) counts. {sessionId, approvalId, decision} → {ok} */
   approve: "rt.approve",
   /** B → A: a question answered. {sessionId, itemId, reply} → {ok} */

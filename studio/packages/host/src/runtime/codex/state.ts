@@ -30,10 +30,17 @@ export interface SessionState {
    * the token usage it reports; the time between, with its output tokens, is the turn's speed (as DSH measures it).
    */
   callFirstAt: number | null;
+  /**
+   * Messages Studio shows already and Codex has not echoed yet (立即发送, 2026-11-02), by the clientUserMessageId they
+   * went with: `steer` — steered into the running turn, not read yet (`waiting`); Codex drops such input when the turn
+   * ends first, so Studio sends it again as the next turn. `start` — a turn 重新发送 started for a message shown before.
+   * The echo (`userMessage` with that clientId) settles the row instead of adding one.
+   */
+  sent: Map<string, { itemId: Id; kind: "steer" | "start"; input: Array<Record<string, unknown>> }>;
 }
 
 export function newSessionState(): SessionState {
-  return { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map(), reviewTurns: new Set(), notices: new Map(), retrying: null, callFirstAt: null };
+  return { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map(), reviewTurns: new Set(), notices: new Map(), retrying: null, callFirstAt: null, sent: new Map() };
 }
 
 export interface PendingApproval {

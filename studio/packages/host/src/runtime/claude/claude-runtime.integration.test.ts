@@ -190,6 +190,69 @@ describe("ClaudeRuntime", () => {
     await until(() => agentTexts(s.id).includes("MOCK: after stuck"), "reply after the forced stop");
   }, 120_000);
 
+  // 立即发送 (2026-11-02). The mock's [[slow]] reply is 40 words over 6 s: a cut one has fewer.
+  const userItem = (sessionId: string, text: string) => items(sessionId).find((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user" && i.text === text);
+  const slowWords = (sessionId: string) => Math.max(0, ...items(sessionId).filter((i): i is Extract<SessionItem, { type: "agent" }> => i.type === "agent" && i.markdown.startsWith("slow")).map((i) => i.markdown.split(" ").length));
+
+  it("立即发送: a message sent mid-turn waits until the CLI reads it, and Send now makes the turn give way to it", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    expect((await runtime.sendMessage(s.id, "read me now")).mode).toBe("queue");
+    await until(() => userItem(s.id, "read me now")?.delivery === "waiting", "shown as waiting", 5000);
+    await runtime.sendNow(s.id, userItem(s.id, "read me now")!.id);
+    await until(() => agentTexts(s.id).includes("MOCK: read me now") && status(s.id) === "idle", "answered at once");
+    expect(userItem(s.id, "read me now")!.delivery).toBeUndefined();
+    expect(slowWords(s.id)).toBeLessThan(40);
+    // The turn that gave way ended as stopped, not as an error.
+    expect(items(s.id).some((i) => i.type === "error")).toBe(false);
+    expect(items(s.id).filter((i) => i.type === "turn").map((i) => (i.type === "turn" ? i.state : ""))).toEqual(["interrupted", "completed"]);
+  }, 120_000);
+
+  it("立即发送 from the composer (now): the running turn gives way at once", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    expect((await runtime.sendMessage(s.id, "right now", [], { now: true })).mode).toBe("queue");
+    await until(() => agentTexts(s.id).includes("MOCK: right now") && status(s.id) === "idle", "answered at once");
+    expect(slowWords(s.id)).toBeLessThan(40);
+    expect(userItem(s.id, "right now")!.delivery).toBeUndefined();
+    expect(items(s.id).some((i) => i.type === "error")).toBe(false);
+  }, 120_000);
+
+  it("停止 with a message waiting: the turn stops and the waiting message runs next (as the CLI's esc does)", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    await runtime.sendMessage(s.id, "still wanted");
+    await until(() => userItem(s.id, "still wanted")?.delivery === "waiting", "shown as waiting", 5000);
+    await runtime.interrupt(s.id);
+    await until(() => agentTexts(s.id).includes("MOCK: still wanted") && status(s.id) === "idle", "the waiting one answered");
+    expect(userItem(s.id, "still wanted")!.delivery).toBeUndefined();
+    expect(items(s.id).some((i) => i.type === "error")).toBe(false);
+  }, 120_000);
+
+  it("a message waiting when Studio closes a stuck process is shown 没送到, and 重新发送 sends that same row", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    await runtime.sendMessage(s.id, "do not lose me");
+    await until(() => userItem(s.id, "do not lose me")?.delivery === "waiting", "shown as waiting", 5000);
+    const internals = runtime as unknown as { live: Map<string, { q: { interrupt(): Promise<void> } }>; options: { stopGraceMs?: number } };
+    internals.live.get(s.id)!.q.interrupt = () => new Promise(() => undefined);
+    internals.options.stopGraceMs = 1500;
+    try {
+      await runtime.interrupt(s.id);
+      await until(() => status(s.id) === "idle" && userItem(s.id, "do not lose me")?.delivery === "unsent", "marked unsent", 20_000);
+    } finally {
+      delete internals.options.stopGraceMs;
+    }
+    // Not sent by itself: the model never got it.
+    expect(agentTexts(s.id)).not.toContain("MOCK: do not lose me");
+    const row = userItem(s.id, "do not lose me")!;
+    expect((await runtime.resend(s.id, row.id)).mode).toBe("start");
+    await until(() => agentTexts(s.id).includes("MOCK: do not lose me") && status(s.id) === "idle", "sent again");
+    expect(store.getItem(row.id)).toMatchObject({ type: "user", text: "do not lose me" });
+    expect((store.getItem(row.id) as { delivery?: string }).delivery).toBeUndefined();
+    expect(items(s.id).filter((i) => i.type === "user" && i.text === "do not lose me")).toHaveLength(1);
+  }, 120_000);
+
   it("sends images as image blocks, with or without text, also when queued", async () => {
     const id = "att-00000000-0000-4000-8000-000000000002";
     const path = join(root, `${id}.png`);

@@ -6,6 +6,7 @@ import type { ClaudeCore } from "./core.js";
 import { QUESTION_TOOLS, type Live } from "./live.js";
 import type { ClaudeSubagents } from "./subagents.js";
 import { firstLine, retryReason, toolResultText } from "./tool-use.js";
+import { withDelivery } from "../items.js";
 import type { ClaudeTurns } from "./turns.js";
 import type { ClaudeWake } from "./wake-control.js";
 import { isUsageLimitText } from "./wake.js";
@@ -37,6 +38,8 @@ export class ClaudeMessages {
     const { turns, subagents, wake } = this.deps;
     const parentToolUse = "parent_tool_use_id" in m ? m.parent_tool_use_id : null;
     if (parentToolUse) return subagents.onMessage(sessionId, live, parentToolUse, m);
+    // Not in the SDK's message types (0.3.304), sent by CLI 2.1.304 for every message with a uuid.
+    if ((m as { type: string }).type === "command_lifecycle") return this.onLifecycle(live, m as { command_uuid?: unknown; state?: unknown });
     switch (m.type) {
       case "rate_limit_event": {
         const info = (m as { rate_limit_info: { status?: string; rateLimitType?: string; utilization?: number; resetsAt?: number } }).rate_limit_info;
@@ -190,6 +193,27 @@ export class ClaudeMessages {
     }
   }
 
+  /**
+   * Where one of Studio's messages is at the CLI (立即发送, 2026-11-02): `started` — the model got it (folded into the
+   * running turn or opening its own), so it is no longer `waiting`; `cancelled` before that — it will not be read.
+   */
+  private onLifecycle(live: Live, m: { command_uuid?: unknown; state?: unknown }): void {
+    const uuid = typeof m.command_uuid === "string" ? m.command_uuid : "";
+    const itemId = live.undelivered.get(uuid);
+    if (!itemId) return;
+    if (m.state === "queued") {
+      live.atCli.add(uuid);
+      live.onAtCli.get(uuid)?.();
+      return;
+    }
+    if (m.state !== "started" && m.state !== "cancelled" && m.state !== "completed") return;
+    live.undelivered.delete(uuid);
+    live.atCli.delete(uuid);
+    live.onAtCli.get(uuid)?.();
+    const delivery = m.state === "cancelled" ? "unsent" : undefined;
+    this.core.updateItem(itemId, (it) => (it.type === "user" && it.delivery ? withDelivery(it, delivery) : it));
+  }
+
   /** The turn's end: settle what still streams, its usage, the session's status, the wake, then the idle close. */
   private onResult(sessionId: Id, live: Live, m: Extract<SDKMessage, { type: "result" }>): void {
     const { turns } = this.deps;
@@ -210,9 +234,12 @@ export class ClaudeMessages {
     // The largest context among the models the turn used (subagents may use smaller ones).
     const windows = Object.values((m as { modelUsage?: Record<string, { contextWindow?: number }> }).modelUsage ?? {}).map((u) => u.contextWindow ?? 0);
     const contextWindow = windows.length ? Math.max(...windows) : 0;
-    turns.end(live, live.interrupted ? "interrupted" : m.is_error ? "failed" : "completed", usage, contextWindow || undefined);
+    // A turn that gave way to 立即发送 ends like a stopped one (the CLI says error_during_execution); the message runs next.
+    const gaveWay = live.givingWay && m.is_error;
+    live.givingWay = false;
+    turns.end(live, live.interrupted || gaveWay ? "interrupted" : m.is_error ? "failed" : "completed", usage, contextWindow || undefined);
     const limited = live.limitText !== null;
-    if (live.interrupted) {
+    if (live.interrupted || gaveWay) {
       live.interrupted = false;
       this.core.setStatus(sessionId, "idle");
     } else if (limited) {
@@ -242,6 +269,7 @@ export class ClaudeMessages {
     const str = (v: unknown) => (typeof v === "string" ? v : "");
     switch (s.subtype) {
       case "init": {
+        if (Array.isArray(s.capabilities)) live.capabilities = new Set((s.capabilities as unknown[]).filter((x): x is string => typeof x === "string"));
         if (Array.isArray(s.skills)) this.deps.noteSkills(sessionId, (s.skills as unknown[]).filter((x): x is string => typeof x === "string"));
         return;
       }

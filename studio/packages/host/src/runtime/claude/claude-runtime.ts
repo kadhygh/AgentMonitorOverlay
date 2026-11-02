@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createSdkMcpServer, forkSession, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
-import { parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage } from "@amo-studio/protocol";
+import { parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
-import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
+import { RuntimeBase, type NewItemBody, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
+import { withDelivery } from "../items.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { claudeAutoCompactEnv } from "../compact.js";
 import { spawnClaudeProcess } from "../priority.js";
@@ -17,7 +18,7 @@ import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tool
 import { ClaudeAsks } from "./asks.js";
 import { BLOCKED_COMMANDS, claudeCommands } from "./commands.js";
 import type { ClaudeCore } from "./core.js";
-import { newLive, type Live } from "./live.js";
+import { newLive, type Live, type LiveInput } from "./live.js";
 import { ClaudeMessages } from "./messages.js";
 import { askCommands, askModels, CLI_SETTING_SOURCES, withTimeout } from "./probe.js";
 import { ClaudeSubagents } from "./subagents.js";
@@ -35,8 +36,11 @@ export { askedQuestions, describeToolUse, retryReason } from "./tool-use.js";
 // - permissionMode is passed as "default" (the CLI otherwise picks "auto", where a classifier approves instead of a
 //   person) and switched to the session's mode once running; "auto" only when the person picks 帮我审批 (10-19);
 //   canUseTool waits for the person and becomes an approval card (asks.ts);
-// - a message sent while a turn runs is queued for the next turn (the SDK does not fold it into the running one);
-// - after interrupt() the SDK ends the query with an error, which is treated as "interrupted";
+// - a message sent while a turn runs waits at the CLI: it is folded into the turn after its next tool call, or runs as
+//   the next turn (CLI 2.1.304; checked 2026-11-02 against the mock). command_lifecycle says when the model got it
+//   (`delivery` on the user item); 立即发送 makes the turn give way to it (sendNow, or `priority: "now"`);
+// - interrupt() ends the turn with error_during_execution, treated as "interrupted"; the query goes on, and messages
+//   still waiting run right after (as the CLI's "esc to interrupt and send");
 // - one query can produce several results (a background subagent's notification starts another turn);
 // - a subagent has no session of its own in Claude: its messages carry parent_tool_use_id (subagents.ts);
 // - forks copy the transcript with forkSession() (no model call).
@@ -181,27 +185,96 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** Images go as base64 image blocks before the text (the CLI keeps them in the transcript). */
-  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
     const slash = parseSlashCommand(text);
     const blocked = slash ? BLOCKED_COMMANDS[slash.name.toLowerCase()] : undefined;
     if (blocked) throw Object.assign(new Error(blocked), { code: "bad_request" });
     if (slash) this.lastCommand.set(sessionId, slash.name);
     // Read the images first: a missing file fails the send before anything is shown or queued.
-    const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
+    const content = messageContent(text, images);
     if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
+    return this.deliver(session, content, options, (mode, delivery) => {
+      const shown = images.map((a) => ({ id: a.id, path: a.path }));
+      return this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}), ...(delivery ? { delivery } : {}) }, { method: mode === "queue" ? "user/queued" : "user" }).id;
+    });
+  }
+
+  /**
+   * One message into the session's process: a turn starts, or it waits at the CLI while one runs (its item `waiting`
+   * until command_lifecycle says the model got it — only when the CLI reports msg_lifecycle_v1, else it would never
+   * clear). `item` makes the message's row (or brings one back, for 重新发送) and returns its id.
+   */
+  private async deliver(session: Session, content: SDKUserMessage["message"]["content"], options: SendOptions, item: (mode: SendMode, delivery: UserDelivery | undefined) => Id): Promise<{ mode: SendMode }> {
+    const sessionId = session.id;
     await this.closing.get(sessionId);
     const live = this.ensureLive(session);
     const mode: SendMode = live.running ? "queue" : "start";
     if (!live.running) this.turns.started(sessionId, live, "person");
-    const shown = images.map((a) => ({ id: a.id, path: a.path }));
-    this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}) }, { method: mode === "queue" ? "user/queued" : "user" });
+    const itemId = item(mode, mode === "queue" && live.capabilities.has("msg_lifecycle_v1") ? "waiting" : undefined);
+    const uuid = randomUUID();
+    live.undelivered.set(uuid, itemId);
     this.clearIdle(live);
+    // 立即发送 from the composer (Ctrl+Enter, 2026-11-02): the running turn gives way to it (CLI 2.1.304 ends the turn
+    // at once, aborting a running tool call).
+    const now = options.now === true && mode === "queue";
+    if (now) live.givingWay = true;
     // Goes in once the permission mode is in force, without waiting for it here: a new session's process takes a few
     // seconds to come up, and the caller (开始, 新会话) is not held for it (2026-10-23). Sends queue up in order on it.
-    const content = blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text;
-    void live.ready.then(() => live.push(content));
+    void live.ready.then(() => live.push({ content, uuid, ...(now ? { priority: "now" as const } : {}) }));
     return { mode };
+  }
+
+  /**
+   * 立即发送 on a waiting message (2026-11-02): the CLI's own Send now (the interrupt request with `send_now`, internal
+   * to the SDK; CLI 2.1.304 advertises interrupt_send_now_v1) — the turn gives way and the message runs at once, nothing
+   * queued is cancelled. A CLI without it (or an SDK without `request`) gets a plain interrupt, which does the same here:
+   * the waiting messages run right after. Not 停止: approvals are left to the turn's end, and there is no 15 s close.
+   */
+  async sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    this.writable(sessionId);
+    const live = this.live.get(sessionId);
+    const uuid = live ? [...live.undelivered].find(([, id]) => id === itemId)?.[0] : undefined;
+    if (!live || !uuid || !live.running) return;
+    // Pressed right after sending: the CLI may still be taking the message in (it would find nothing waiting).
+    if (!live.atCli.has(uuid)) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 3000);
+        live.onAtCli.set(uuid, () => (clearTimeout(timer), resolve()));
+      });
+      live.onAtCli.delete(uuid);
+      if (!live.undelivered.has(uuid) || !live.running || live.finished) return;
+    }
+    live.givingWay = true;
+    const request = (live.q as unknown as { request?: (r: Record<string, unknown>) => Promise<{ response?: { send_now?: unknown } } | undefined> }).request;
+    try {
+      if (live.capabilities.has("interrupt_send_now_v1") && typeof request === "function") {
+        const answer = await request.call(live.q, { subtype: "interrupt", send_now: true, message_uuid: uuid });
+        // "stopped": the turn ends (its result comes after this answer). Anything else (nothing waiting, or the CLI
+        // moved what the turn waited on to the background and the turn takes the message in) ends no turn.
+        if (answer?.response?.send_now !== "stopped") live.givingWay = false;
+        this.emit("log", `${sessionId}: send now -> ${String(answer?.response?.send_now)}`);
+      } else {
+        await live.q.interrupt();
+      }
+    } catch (err) {
+      live.givingWay = false;
+      this.emit("log", `send now failed for ${sessionId}: ${String(err)}`);
+      throw Object.assign(new Error(`没能立即发送：${firstLine(err)}`), { code: "conflict" });
+    }
+  }
+
+  /** 重新发送 (2026-11-02): a message its process never read goes again, as the same row (no second copy of it). */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+    const session = this.writable(sessionId);
+    const item = this.store.getItem(itemId);
+    if (item?.type !== "user" || item.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
+    if (item.delivery !== "unsent") return { mode: this.live.get(sessionId)?.running ? "queue" : "start" };
+    const content = messageContent(item.text, images);
+    return this.deliver(session, content, {}, (_mode, delivery) => {
+      this.updateItem(itemId, (it) => (it.type === "user" ? withDelivery(it, delivery) : it));
+      return itemId;
+    });
   }
 
   /**
@@ -512,12 +585,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     // Before anything is set up: without a Claude Code the person is told so, not a spawn error.
     const exe = requireClaudeCode();
 
-    const queue: Array<SDKUserMessage["message"]["content"]> = [];
+    const queue: LiveInput[] = [];
     let wake: (() => void) | null = null;
     let ended = false;
     async function* input(): AsyncGenerator<SDKUserMessage> {
       for (;;) {
-        while (queue.length) yield { type: "user", message: { role: "user", content: queue.shift()! }, parent_tool_use_id: null, session_id: ref };
+        while (queue.length) {
+          const next = queue.shift()!;
+          yield { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, session_id: ref, uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}`, ...(next.priority ? { priority: next.priority } : {}) };
+        }
         if (ended) return;
         await new Promise<void>((r) => (wake = r));
         wake = null;
@@ -525,8 +601,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
 
     const live = newLive(
-      (content) => {
-        queue.push(content);
+      (next) => {
+        queue.push(next);
         wake?.();
       },
       () => {
@@ -618,6 +694,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     // Background commands end with their Claude Code process.
     for (const id of live.bgItems.values()) this.turns.settleBackground(id, "stopped");
     if (live.compaction) this.updateItem(live.compaction, (it) => (it.type === "compaction" && it.state === "running" ? { ...it, state: "failed" } : it));
+    // Messages still waiting went with the process (2026-11-02: the 15 s close after 停止 lost them unseen): the person
+    // sends them again (重新发送) — not by itself, a process that had to be closed may be stuck.
+    for (const itemId of live.undelivered.values()) this.updateItem(itemId, (it) => (it.type === "user" && it.delivery === "waiting" ? withDelivery(it, "unsent") : it));
+    live.undelivered.clear();
+    live.atCli.clear();
+    for (const settle of live.onAtCli.values()) settle();
     this.subagents.endAll(live, !!err && !live.interrupted);
     if (!this.store.getSession(sessionId)) return;
     // Its CLI's timers went with the process: Studio's own takes over (see studioWakeDue).
@@ -687,6 +769,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
         if (item.type === "background" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "background" ? { ...it, state: "stopped" } : it));
         if (item.type === "compaction" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "compaction" ? { ...it, state: "failed" } : it));
+        if (item.type === "user" && item.delivery === "waiting") this.updateItem(item.id, (it) => (it.type === "user" ? withDelivery(it, "unsent") : it));
       }
       if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
@@ -755,4 +838,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!s.runtimeRef) throw new Error(`session ${id} has no Claude session id`);
     return s;
   }
+}
+
+/** A message for the CLI: image blocks (read now, so a missing file fails the send) before the text. */
+function messageContent(text: string, images: readonly Attachment[]): SDKUserMessage["message"]["content"] {
+  const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
+  return blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text;
 }

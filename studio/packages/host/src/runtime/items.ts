@@ -1,4 +1,4 @@
-import type { FileDiff, MessageImage } from "@amo-studio/protocol";
+import type { FileDiff, MessageImage, SessionItem, UserDelivery } from "@amo-studio/protocol";
 
 // Shared shaping of runtime output into item fields (both runtimes).
 
@@ -108,4 +108,13 @@ export function contentText(content: unknown): string {
     .map((c) => (c && typeof c === "object" && "text" in c && typeof (c as { text: unknown }).text === "string" ? (c as { text: string }).text : ""))
     .filter(Boolean)
     .join("\n");
+}
+
+type UserItem = Extract<SessionItem, { type: "user" }>;
+
+/** A person's message with its delivery set, or taken off (it reached the model). 立即发送, 2026-11-02. */
+export function withDelivery(item: UserItem, delivery: UserDelivery | undefined): UserItem {
+  if (item.delivery === delivery) return item;
+  const { delivery: _old, ...rest } = item;
+  return delivery ? { ...rest, delivery } : rest;
 }

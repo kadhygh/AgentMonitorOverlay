@@ -441,13 +441,13 @@ export class RemoteCopies {
   }
 
   /** A message, its pictures and files sent first (2026-10-29 evening: they were refused before). */
-  async send(sessionId: Id, text: string, images: readonly Attachment[]): Promise<{ mode: SendMode }> {
+  async send(sessionId: Id, text: string, images: readonly Attachment[], options: { now?: boolean } = {}): Promise<{ mode: SendMode }> {
     const { peer } = this.target(sessionId);
     const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, this.ctx.peer(peer)?.name ?? peer.account, text, images);
     // A's copy of the message names its own attachments: this computer's go in their place (copy-images.ts).
     this.images.sent(sessionId, images.map((a) => a.id));
     try {
-      return await this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text: along.text, ...(along.uploads.length ? { uploads: along.uploads } : {}) });
+      return await this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.send, { sessionId, text: along.text, ...(along.uploads.length ? { uploads: along.uploads } : {}), ...(options.now ? { now: true } : {}) });
     } catch (err) {
       this.images.failed(sessionId);
       throw err;
@@ -467,6 +467,18 @@ export class RemoteCopies {
   async interrupt(sessionId: Id): Promise<void> {
     const { peer } = this.target(sessionId);
     await this.ask(peer, REMOTE_KINDS.interrupt, { sessionId });
+  }
+
+  /** 立即发送 (2026-11-02): a waiting message of the session, on A; the item's change comes back with A's push. */
+  async sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    const { peer } = this.target(sessionId);
+    await this.ask(peer, REMOTE_KINDS.sendNow, { sessionId, itemId });
+  }
+
+  /** 重新发送 (2026-11-02): A sends its own copy of the message again (with the pictures A keeps). */
+  async resend(sessionId: Id, itemId: Id): Promise<{ mode: SendMode }> {
+    const { peer } = this.target(sessionId);
+    return this.ask<{ mode: SendMode }>(peer, REMOTE_KINDS.resend, { sessionId, itemId });
   }
 
   /**
