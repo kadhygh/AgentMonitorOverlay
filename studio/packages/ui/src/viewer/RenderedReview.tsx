@@ -83,6 +83,8 @@ export interface RemoteFileContext {
   rel: string;
   /** Serves the task's images: /api/remote/files/<key>/<rel>. */
   key: string;
+  /** This Host, when `link` is a remote Reviewer's (远程 Reviewer, 2026-11-02): the images are served by the Host itself. */
+  host?: HostLink;
 }
 
 /** `/api/remote/files/<key>/<a/b>` for a place in a remote task's folder, each part escaped. */
@@ -190,7 +192,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
 
   // ---- HTML: painted in its frame ----
   // A remote page's own images load from the task's folder there, through this Host (fetched as the page asks).
-  const base = remote ? remoteFileUrl(link, remote.key, `${remote.rel.includes("/") ? remote.rel.slice(0, remote.rel.lastIndexOf("/") + 1) : ""}`) : null;
+  const base = remote ? remoteFileUrl(remote.host ?? link, remote.key, `${remote.rel.includes("/") ? remote.rel.slice(0, remote.rel.lastIndexOf("/") + 1) : ""}`) : null;
   const srcDoc = useMemo(() => (kind === "html" ? frameDoc(text, base) : ""), [kind, text, base]);
   const toFrame = (m: ToFrame) => frame.current?.contentWindow?.postMessage({ amoPassage: m }, "*");
   const anchorOf = (p: PassageAnchor) => ({ quote: p.quote, prefix: p.prefix, suffix: p.suffix });
@@ -237,7 +239,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
       if (remote) {
         const there = remoteLinkPath(remote.rel, src, resolveLink);
         if (!there || remoteFileKind(there.path) !== "image" || !there.path.startsWith(`${REMOTE_TASK_FOLDER}/`)) return null;
-        return remoteFileUrl(link, remote.key, there.path.slice(REMOTE_TASK_FOLDER.length + 1));
+        return remoteFileUrl(remote.host ?? link, remote.key, there.path.slice(REMOTE_TASK_FOLDER.length + 1));
       }
       const to = resolveLink(file.path, src);
       return to?.kind === "file" && remoteFileKind(to.path) === "image" ? rawFileUrl(link, { path: to.path }) : null;

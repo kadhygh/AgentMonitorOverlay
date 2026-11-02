@@ -9,6 +9,7 @@ import { MarkButton } from "../marks/MarkButton.js";
 import type { ViewMark } from "../gitreview/DiffView.js";
 import { FileReview } from "../viewer/FileReview.js";
 import { RenderedReview } from "../viewer/RenderedReview.js";
+import { useRemoteReview } from "../remote/reviewer.js";
 
 // A 查看包's file (2026-10-23): the file as it is now, as the viewer shows one — code drawn with its lines taking
 // comments (sent back to the pack's conversation by default), Markdown rendered — with the agent's 重点: tinted lines,
@@ -16,6 +17,8 @@ import { RenderedReview } from "../viewer/RenderedReview.js";
 
 export function FileItemView({ link, state, pack, workspace, item, nonce, active }: { link: HostLink; state: StateSnapshot; pack: ViewPack; workspace: Workspace; item: FileViewItem; nonce: string; active: boolean }) {
   const file: FileRef = { path: item.path, workspaceId: workspace.id };
+  // 远程 Reviewer (2026-11-02): a remote task's file — read from its computer; nothing of this computer's (Explorer, 书签).
+  const remote = useRemoteReview();
   const [reload, setReload] = useState(0);
   const loaded = useTextFile(link, file, !isImage(item.path), `${reload}:${nonce}`);
   const markdown = isMarkdownText(item.path, loaded);
@@ -71,12 +74,15 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
               VS Code 打开
             </button>
           )}
-          <button type="button" className="btn-ghost small" onClick={() => revealInExplorer(link, file).catch(fail)}>
-            在资源管理器中显示
-          </button>
+          {!remote && (
+            <button type="button" className="btn-ghost small" onClick={() => revealInExplorer(link, file).catch(fail)}>
+              在资源管理器中显示
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost small"
+            title={remote ? `在 ${remote.device} 的任务文件夹里的位置` : undefined}
             onClick={() =>
               void copyText(absolute).then(() => {
                 setCopied(true);
@@ -86,8 +92,8 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
           >
             {copied ? "已复制" : "复制路径"}
           </button>
-          <MarkButton link={link} file={file} line={at?.line ?? null} sessionId={pack.sessionId} />
-          <button type="button" className="btn-ghost small dim" title="重新读取文件（R）" onClick={() => setReload((n) => n + 1)}>
+          {!remote && <MarkButton link={link} file={file} line={at?.line ?? null} sessionId={pack.sessionId} />}
+          <button type="button" className="btn-ghost small dim" title={remote ? `从 ${remote.device} 重新取一次（R）` : "重新读取文件（R）"} onClick={() => setReload((n) => n + 1)}>
             重新载入
             <kbd className="gr-key">R</kbd>
           </button>
@@ -135,7 +141,15 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
             onActiveRow={onActiveRow}
           />
         ) : renderable && rendered && loaded.state === "ok" ? (
-          <RenderedReview key={`${loaded.file.path}#${reload}:${nonce}`} link={link} workspace={workspace} file={loaded.file} kind={html ? "html" : "markdown"} active={active} />
+          <RenderedReview
+            key={`${loaded.file.path}#${reload}:${nonce}`}
+            link={link}
+            workspace={workspace}
+            file={loaded.file}
+            kind={html ? "html" : "markdown"}
+            active={active}
+            {...(remote?.key ? { remote: { taskId: remote.taskId, rel: item.path, key: remote.key, host: remote.host } } : {})}
+          />
         ) : (
           <div className="vw-content">
             <FileContent link={link} file={file} loaded={loaded} rendered={rendered} reload={`${reload}:${nonce}`} />

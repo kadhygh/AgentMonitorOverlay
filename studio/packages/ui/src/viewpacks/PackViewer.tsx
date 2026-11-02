@@ -8,12 +8,13 @@ import { useFitWidth } from "../lib/fitWidth.js";
 import { itemToShow } from "./logic.js";
 import { VIEW_KIND_VIEWS, type ItemViewProps } from "./kinds.js";
 import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
+import { RemoteStaleBar, remoteWorkspace, type RemoteReview } from "../remote/reviewer.js";
 
 // The 查看包 window (2026-10-23): the viewer window showing a pack — its items in a list on the left, the one picked
 // on the right, drawn by its kind (kinds.tsx). The pack is read from the Host and followed: when the agent adds to
 // it, the window shows what was added. Reused for the next pack until 固定, as the viewer is.
 
-export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLink; state: StateSnapshot; packId: string; focus: string | null; nonce: string }) {
+export function PackViewer({ link, state, packId, focus, nonce, remote = null }: { link: HostLink; state: StateSnapshot; packId: string; focus: string | null; nonce: string; /** 远程 Reviewer (2026-11-02): a remote task's pack; `link` goes to its computer. */ remote?: RemoteReview | null }) {
   const [pack, setPack] = useState<ViewPack | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -75,8 +76,9 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
   }, [pack?.title]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <WindowPlaceholder title="查看包">打不开这个查看包：{error}</WindowPlaceholder>;
-  if (!pack) return <WindowPlaceholder title="查看包">正在读取…</WindowPlaceholder>;
-  const workspace = state.workspaces.find((w) => w.id === pack.workspaceId);
+  if (!pack) return <WindowPlaceholder title="查看包">{remote ? `正在从 ${remote.device} 读取…` : "正在读取…"}</WindowPlaceholder>;
+  // A remote task's project is not here: a stand-in named by its computer (paths start at 任务文件夹).
+  const workspace = remote ? remoteWorkspace(pack.workspaceId, remote.device) : state.workspaces.find((w) => w.id === pack.workspaceId);
   if (!workspace) return <WindowPlaceholder title={pack.title}>这个查看包的项目已经不在了。</WindowPlaceholder>;
   const item = pack.items.find((i) => i.id === selected) ?? pack.items[0]!;
   const from = pack.sessionId ? state.sessions.find((s) => s.id === pack.sessionId) : undefined;
@@ -97,8 +99,8 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
           <span className="vw-name" data-testid="viewpack-title">
             {pack.title}
           </span>
-          <span className="vw-dir">
-            {workspace.name}
+          <span className={remote ? "vw-dir vw-dir-remote" : "vw-dir"} data-testid="viewpack-where">
+            {remote && <span className="remote-badge">远程</span>} {workspace.name}
             {from ? ` · 来自「${from.title || "未命名会话"}」` : ""}
           </span>
         </div>
@@ -121,6 +123,7 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
         </div>
         <WindowControls pin />
       </header>
+      {remote && <RemoteStaleBar taskId={remote.taskId} />}
       <main className="vp-body">
         {many && (
           <nav

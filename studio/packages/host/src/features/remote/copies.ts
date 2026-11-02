@@ -7,6 +7,7 @@ import type { HostEventInput } from "../../store/store.js";
 import { CommandError } from "./link.js";
 import type { RemoteContext } from "./grants.js";
 import { RemoteFiles } from "./files.js";
+import { RemoteViews } from "./views.js";
 import { sendAlong } from "./uploads.js";
 import { CopyImages } from "./copy-images.js";
 
@@ -48,6 +49,8 @@ export class RemoteCopies {
 
   /** Step 3: the files fetched from A for the copies (thrown away with a copy). */
   readonly files: RemoteFiles;
+  /** 远程 Reviewer (2026-11-02): the Reviewer's reads from A, kept (thrown away with a copy). */
+  readonly views: RemoteViews;
   /** The pictures in the copies' conversations, as this computer's own attachments (2026-10-30). */
   readonly images: CopyImages;
   /** Step 4: what A's list says besides its grants (this computer's requests to it). */
@@ -58,6 +61,7 @@ export class RemoteCopies {
 
   constructor(private readonly ctx: RemoteContext) {
     this.files = new RemoteFiles(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
+    this.views = new RemoteViews(ctx, (peer, kind, body, timeoutMs, offline) => this.ask(peer, kind, body, timeoutMs, offline));
     this.images = new CopyImages(ctx, this.files, (item) => this.putItem(item));
   }
 
@@ -402,6 +406,7 @@ export class RemoteCopies {
     this.profilesChanged(before);
     // The files fetched for it go too (plans/remote-session.md: 归档时一起清掉).
     this.files.drop(task.id);
+    this.views.drop(task.id);
     this.images.drop(task.id);
   }
 

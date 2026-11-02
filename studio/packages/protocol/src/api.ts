@@ -681,6 +681,11 @@ export type HostEvent = { seq: number } & (
   | { type: "remote.updated"; remote: import("./remote.js").RemoteState }
   /** 远程 step 3: how far a file being fetched from a paired device has come (`fetchId` as POST /api/remote/files was given). Not kept in the log. */
   | { type: "remote.file"; fetchId: string; received: number; total: number }
+  /**
+   * 远程 Reviewer (2026-11-02): what a remote task's Reviewer windows show came from its computer just now (`stale`
+   * null), or is the copy from last time because that computer cannot be reached (`stale` says so). Not kept in the log.
+   */
+  | { type: "remote.view"; taskId: Id; stale: string | null }
   /** 远程 (2026-10-30): a paired device says what may be picked creating a task on it changed (RemoteCatalog). Not kept in the log. */
   | { type: "remote.catalog"; account: string; device: string; catalog: import("./remote.js").RemoteCatalog }
   /** 值守 (2026-10-31): its items, runs or what runs now changed. Not kept in the log. */
@@ -980,6 +985,11 @@ export interface HostRoutes {
   "GET /api/remote/catalog/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
   /** A remote copy's templates as its own computer offers them (rt.templates). */
   "GET /api/remote/tasks/:id/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
+  /**
+   * 远程 Reviewer (2026-11-02): the key a remote copy's pictures are served under (/api/remote/files/<key>/…), for the
+   * Markdown and HTML a 查看包 of it shows rendered.
+   */
+  "GET /api/remote/tasks/:id/files-key": { req: void; res: { key: string } };
   /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
   "POST /api/remote/create": { req: import("./remote.js").RemoteCreateAsk & { account: string; device: string; /** Pictures uploaded here (POST /api/attachments); files go in the text's 引用文件 block. */ attachments?: Id[] }; res: import("./remote.js").RemoteCreateResult };
 }

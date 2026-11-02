@@ -5,6 +5,7 @@ import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, t
 import { LazyChunks } from "./LazyChunks.js";
 import { isWebPage } from "../lib/openin.js";
 import { ActionMenu } from "../lib/ActionMenu.js";
+import { useRemoteReview } from "../remote/reviewer.js";
 import { listOrder, STATUS_GLYPH, STATUS_NAME } from "./logic.js";
 
 // The review window's file list: a flat list of full paths (default, after Fork) or a folder tree (S12-A), each file
@@ -203,6 +204,8 @@ export type FileMenuAction = "viewer" | "vscode" | "browser" | "explorer" | "cop
 export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vscode: boolean; onOpen(action: FileMenuAction): void; onClose(): void }) {
   const gone = at.file.status === "deleted";
   const why = gone ? "文件已删除" : undefined;
+  // 远程 Reviewer (2026-11-02): a remote task's file is on its computer — the viewer fetches it; no browser or Explorer here.
+  const remote = useRemoteReview();
   const act = (action: FileMenuAction, label: string, key: string, title?: string) => ({ label, key, disabled: gone && action !== "copy", title: (action !== "copy" && why) || title, run: () => onOpen(action) });
   return (
     <ActionMenu
@@ -213,9 +216,9 @@ export function FileMenu({ at, vscode, onOpen, onClose }: { at: FileMenuAt; vsco
         [
           act("viewer", "在查看器中打开", "O", "单独的窗口看文件现在的样子；Markdown、HTML 渲染显示，可以批注"),
           vscode && act("vscode", "用 VS Code 打开", "V"),
-          isWebPage(at.file.path) && act("browser", "用浏览器打开", "W", "在系统默认浏览器里打开"),
+          !remote && isWebPage(at.file.path) && act("browser", "用浏览器打开", "W", "在系统默认浏览器里打开"),
         ],
-        [act("explorer", "在资源管理器中显示", "E")],
+        ...(remote ? [] : [[act("explorer", "在资源管理器中显示", "E")]]),
         [act("copy", "复制路径", "C")],
       ]}
     />

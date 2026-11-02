@@ -40,6 +40,8 @@ interface FileLinksValue {
   menu(e: MouseEvent, target: PreviewTarget): void;
   /** 远程 (step 2): the conversation's files are on another computer. */
   remote?: boolean;
+  /** …this remote task's (远程 Reviewer, 2026-11-02: its 查看包 and Review open from there too). */
+  remoteTask?: string;
 }
 
 const Ctx = createContext<FileLinksValue | null>(null);
@@ -126,7 +128,7 @@ export function FileLinks({
   const remote = useMemo<FileLinksValue | null>(() => {
     if (!remoteTask) return null;
     const open = (t: PreviewTarget) => viewRemoteFile(t, remoteTask, sessionId);
-    return { link, workspaceId, sessionId, vscode: false, remote: true, open, preview: open, editor: open, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) };
+    return { link, workspaceId, sessionId, vscode: false, remote: true, remoteTask, open, preview: open, editor: open, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) };
   }, [remoteTask, link, workspaceId, sessionId]);
 
   const fail = useCallback((err: unknown) => onError?.(message(err)), [onError]);

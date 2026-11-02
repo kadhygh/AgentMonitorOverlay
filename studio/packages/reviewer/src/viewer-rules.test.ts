@@ -7,6 +7,9 @@ describe("viewerHash", () => {
     expect(viewerHash({ pack: "bad id!" }, 4)).toBeNull();
     expect(viewerHash({ pack: "vp-1", item: "vi-2" }, 5)).toBe("#viewer?pack=vp-1&item=vi-2&n=5");
     expect(viewerHash({ pack: "vp-1", item: "bad id!" }, 5)).toBe("#viewer?pack=vp-1&n=5");
+    // 远程 Reviewer (2026-11-02): a remote task's pack.
+    expect(viewerHash({ pack: "vp-1", remote: "task-9" }, 6)).toBe("#viewer?pack=vp-1&remote=task-9&n=6");
+    expect(viewerHash({ pack: "vp-1", remote: "bad id!" }, 6)).toBe("#viewer?pack=vp-1&n=6");
   });
 
   it("carries the file, its project, the lines, the mode and a nonce", () => {

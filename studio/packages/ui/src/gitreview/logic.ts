@@ -22,12 +22,15 @@ export interface ReviewTarget {
    */
   base?: string;
   baseLabel?: string;
+  /** 远程 Reviewer (2026-11-02): the project is this remote task's, on the computer it runs on (read from there). */
+  remote?: string;
 }
 
 /** The window's address: `#review?workspace=…&session=…&file=…&n=…`, or `#review?workspace=…&commit=…`. */
 export function reviewHash(t: ReviewTarget): string {
-  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit, ...(t.base ? { base: t.base } : {}), ...(t.file ? { file: t.file, ...(t.nonce ? { n: t.nonce } : {}) } : {}) }).toString()}`;
+  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit, ...(t.base ? { base: t.base } : {}), ...(t.file ? { file: t.file, ...(t.nonce ? { n: t.nonce } : {}) } : {}), ...(t.remote ? { remote: t.remote } : {}) }).toString()}`;
   const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
+  if (t.remote) q.set("remote", t.remote);
   if (t.base) q.set("base", t.base);
   if (t.base && t.baseLabel) q.set("label", t.baseLabel);
   if (t.file) q.set("file", t.file);
@@ -46,9 +49,11 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const sessionId = q.get("session");
   const file = q.get("file");
   const nonce = q.get("n");
-  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit, ...(base ? { base } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}) } : null;
+  const remote = q.get("remote");
+  const r = remote && /^[\w-]{1,80}$/.test(remote) ? { remote } : {};
+  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit, ...(base ? { base } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}), ...r } : null;
   const label = q.get("label");
-  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file } : {}), ...(nonce ? { nonce } : {}), ...(base ? { base, ...(label ? { baseLabel: label } : {}) } : {}) };
+  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file } : {}), ...(nonce ? { nonce } : {}), ...(base ? { base, ...(label ? { baseLabel: label } : {}) } : {}), ...r };
 }
 
 /** The list's status icons, as in Fork: + added, M modified, − deleted, R renamed. */

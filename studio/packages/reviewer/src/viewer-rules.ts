@@ -19,6 +19,8 @@ export function viewerHash(target: unknown, nonce: number): string | null {
     // The item to show first (what the agent just added).
     const q = new URLSearchParams({ pack: t.pack });
     if (typeof t.item === "string" && ID.test(t.item)) q.set("item", t.item);
+    // 远程 Reviewer (2026-11-02): a remote task's pack (its task's id), read from the computer it runs on.
+    if (typeof t.remote === "string" && ID.test(t.remote)) q.set("remote", t.remote);
     q.set("n", String(nonce));
     return `#viewer?${q.toString()}`;
   }

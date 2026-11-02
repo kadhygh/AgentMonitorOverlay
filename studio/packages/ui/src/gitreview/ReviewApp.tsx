@@ -35,6 +35,7 @@ import { CommitPicker, readHistory } from "./CommitPicker.js";
 import { openReview, switchReview } from "./open.js";
 import { FileHead, ReviewHead } from "./ReviewHead.js";
 import { WindowPlaceholder } from "../shell/WindowControls.js";
+import { RemoteReviewScope, RemoteStaleBar, remoteProjectPath, remoteWorkspace, useRemoteReview } from "../remote/reviewer.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message. With `&commit=…`
@@ -51,20 +52,28 @@ export function ReviewApp() {
   }, []);
 
   if (host.kind !== "ready") return <WindowPlaceholder title="Git Review">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
-  const ws = target && host.state.workspaces.find((w) => w.id === target.workspaceId);
-  if (!target || !ws) return <WindowPlaceholder title="Git Review">项目不存在或已移除。</WindowPlaceholder>;
+  if (!target) return <WindowPlaceholder title="Git Review">项目不存在或已移除。</WindowPlaceholder>;
+  // 远程 Reviewer (2026-11-02): a remote task's project (`remote`), read through this Host from the computer it runs on.
   return (
-    <ReviewPage
-      key={`${ws.id}@${target.commit ?? ""}@${target.base ?? ""}`}
-      link={host.link}
-      state={host.state}
-      workspace={ws}
-      sessionId={target.sessionId ?? null}
-      commit={target.commit ?? null}
-      base={target.base ? { sha: target.base, label: target.baseLabel ?? null } : null}
-      select={target.file ? { path: target.file, nonce: target.nonce ?? "" } : null}
-      refresh={target.nonce}
-    />
+    <RemoteReviewScope link={host.link} state={host.state} taskId={target.remote} gone={<WindowPlaceholder title="Git Review">这个远程任务已经不在这台电脑上了。</WindowPlaceholder>}>
+      {(link, remote) => {
+        const ws = remote ? remoteWorkspace(target.workspaceId, remote.device) : host.state.workspaces.find((w) => w.id === target.workspaceId);
+        if (!ws) return <WindowPlaceholder title="Git Review">项目不存在或已移除。</WindowPlaceholder>;
+        return (
+          <ReviewPage
+            key={`${ws.id}@${target.commit ?? ""}@${target.base ?? ""}`}
+            link={link}
+            state={host.state}
+            workspace={ws}
+            sessionId={target.sessionId ?? null}
+            commit={target.commit ?? null}
+            base={target.base ? { sha: target.base, label: target.baseLabel ?? null } : null}
+            select={target.file ? { path: target.file, nonce: target.nonce ?? "" } : null}
+            refresh={target.nonce}
+          />
+        );
+      }}
+    </RemoteReviewScope>
   );
 }
 
@@ -131,6 +140,9 @@ export function ReviewPage({
    */
   fileKeys?: "plain" | "ctrl";
 }) {
+  // 远程 Reviewer (2026-11-02): a remote task's project — its history's commits open in remote windows too.
+  const remote = useRemoteReview();
+  const own = remote ? { remote: remote.taskId } : {};
   // The files a 查看包 asked for, by lower-cased path (a rename counts by either name).
   const onlyKeys = useMemo(() => (only?.length ? new Set(only.map((p) => p.toLowerCase())) : null), [only]);
   const isFocus = useCallback((f: GitChangedFile) => !!onlyKeys && (onlyKeys.has(f.path.toLowerCase()) || (!!f.oldPath && onlyKeys.has(f.oldPath.toLowerCase()))), [onlyKeys]);
@@ -228,6 +240,8 @@ export function ReviewPage({
   }, [link]);
   const openFile = (f: GitChangedFile, app: FileMenuAction, line?: number) => {
     const ref = { path: f.path, workspaceId: workspace.id };
+    // 远程 Reviewer (2026-11-02): a remote task's file opens in the remote viewer, fetched from its computer.
+    if (app === "viewer" && remote) return openViewer({ path: remoteProjectPath(f.path), remote: remote.taskId, ...(line ? { line } : {}) });
     if (app === "viewer") return openViewer({ path: f.path, workspaceId: workspace.id, ...(line ? { line } : {}) });
     if (app === "copy") {
       const sep = workspace.path.includes("\\") ? "\\" : "/";
@@ -565,6 +579,8 @@ export function ReviewPage({
         onRefresh={reread}
         titleBar={!embedded}
       />
+      {/* A remote task's Review, its computer away: the copy from last time (a pack's window says so itself). */}
+      {remote && !embedded && <RemoteStaleBar taskId={remote.taskId} />}
 
       {status && !status.repo ? (
         <div className="placeholder" data-testid="review-not-git">
@@ -720,8 +736,8 @@ export function ReviewPage({
           link={link}
           workspaceId={workspace.id}
           current={sha ?? commit}
-          onPick={(c) => (commit ? switchReview({ workspaceId: workspace.id, commit: c }) : openReview({ workspaceId: workspace.id, commit: c }))}
-          {...(commit ? { onPickNew: (c: string) => openReview({ workspaceId: workspace.id, commit: c }) } : {})}
+          onPick={(c) => (commit ? switchReview({ workspaceId: workspace.id, commit: c, ...own }) : openReview({ workspaceId: workspace.id, commit: c, ...own }))}
+          {...(commit ? { onPickNew: (c: string) => openReview({ workspaceId: workspace.id, commit: c, ...own }) } : {})}
           keys={picking === "keys"}
           onClose={() => setPicking(null)}
         />

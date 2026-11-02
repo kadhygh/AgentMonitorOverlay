@@ -287,6 +287,12 @@ export const REMOTE_KINDS = {
    * only kinds of [a-z0-9._-] (FRAME_KIND_RE).
    */
   createTemplates: "rt.create-templates",
+  /**
+   * B → A (远程 Reviewer, plans/remote-reviewer.md, 2026-11-02): one read of the Reviewer on a granted task — its 查看包,
+   * the Git Review of its project, a file a pack names — as B's Reviewer asked its own Host for it. A checks it against
+   * the grant and the task's folder. RemoteViewAsk → RemoteViewAnswer
+   */
+  view: "rt.view",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -496,6 +502,36 @@ export interface RemoteFetchedFile {
   /** For pages that load the task's images: `/api/remote/files/<key>/<rel>` serves them (fetched from A as asked). */
   key: string;
 }
+
+// ---- 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): B looks at a remote task's 查看包 and Review --------------
+// B's Reviewer windows on a remote task talk to their own Host as usual, through `/api/remote/view/<task>/…` instead of
+// `/api/…`; B's Host passes each read on to A (rt.view) and keeps the answer, shown again (said to be old) while A is
+// away. A answers only what the Reviewer reads — the task's packs, git of the task's project (read only), files a pack
+// names or the changes list — checked against the grant and the task's folder (links and junctions resolved first).
+// Paths in the answers name the task's folder (任务文件夹/…), never A's own. Comments stay on B.
+
+/** B → A: one Reviewer read. */
+export interface RemoteViewAsk {
+  taskId: Id;
+  /** The route as B's Reviewer asked it: `GET` or `POST`, `/api/workspaces/<A's id>/git/status`, its query and body. */
+  method: string;
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+  /** A later piece of a big answer: the id the first piece gave and where to go on. */
+  piece?: { id: string; offset: number };
+}
+
+/** A → B: the answer as JSON (UTF-8, base64), whole or in pieces; `id` with the first piece when more follow. */
+export interface RemoteViewAnswer {
+  size: number;
+  offset: number;
+  data: string;
+  id?: string;
+}
+
+/** Biggest Reviewer answer B takes from A (a big diff). */
+export const REMOTE_VIEW_MAX_BYTES = 20 * 1024 * 1024;
 
 // ---- Step 4 (2026-10-29): B asks A to run a task ------------------------------------------------------------------
 // B writes a title and what to do (the first message); A's person sees it on Focus and on the remote page, picks the

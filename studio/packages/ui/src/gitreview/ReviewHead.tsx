@@ -3,6 +3,7 @@ import type { HostLink } from "../host/client.js";
 import { formatWhen } from "../attach/refs.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { openViewer } from "../viewer/open.js";
+import { remoteProjectPath, useRemoteReview } from "../remote/reviewer.js";
 import { useEffect, useRef, useState } from "react";
 import { useFitWidth } from "../lib/fitWidth.js";
 import { THEME_LABELS, type ThemePref } from "../lib/theme.js";
@@ -177,6 +178,8 @@ export function FileHead({
   lineChosen: boolean;
   onOpen(app: "vscode" | "explorer", line?: number): void;
 }) {
+  // 远程 Reviewer (2026-11-02): a remote task's file opens in the remote viewer (fetched from its computer).
+  const remote = useRemoteReview();
   return (
     <div className="gr-file-head" data-testid="review-file-head">
       <span className="gr-path">{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
@@ -189,7 +192,7 @@ export function FileHead({
           type="button"
           className="btn-ghost small"
           title={`在查看器里看这个文件现在的样子（第 ${openLine} 行）`}
-          onClick={() => openViewer({ path: file.path, workspaceId, line: openLine })}
+          onClick={() => openViewer(remote ? { path: remoteProjectPath(file.path), remote: remote.taskId, line: openLine } : { path: file.path, workspaceId, line: openLine })}
           data-testid="review-open-viewer"
         >
           查看文件
@@ -207,17 +210,19 @@ export function FileHead({
           VS Code 打开
         </button>
       )}
-      <button
-        type="button"
-        className="btn-ghost small"
-        disabled={file.status === "deleted"}
-        title={file.status === "deleted" ? "文件已删除" : "在资源管理器里选中这个文件"}
-        onClick={() => onOpen("explorer")}
-        data-testid="review-reveal"
-      >
-        在资源管理器中显示
-      </button>
-      {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId }} line={lineChosen ? openLine : null} />}
+      {!remote && (
+        <button
+          type="button"
+          className="btn-ghost small"
+          disabled={file.status === "deleted"}
+          title={file.status === "deleted" ? "文件已删除" : "在资源管理器里选中这个文件"}
+          onClick={() => onOpen("explorer")}
+          data-testid="review-reveal"
+        >
+          在资源管理器中显示
+        </button>
+      )}
+      {!remote && file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId }} line={lineChosen ? openLine : null} />}
     </div>
   );
 }

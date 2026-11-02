@@ -18,6 +18,7 @@ import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTar
 import { pinViewer, viewerPinned } from "./open.js";
 import { PackViewer } from "../viewpacks/PackViewer.js";
 import { RemoteViewer, type RemoteShown } from "./RemoteViewer.js";
+import { RemoteReviewScope } from "../remote/reviewer.js";
 import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowControls.js";
 
 // The viewer window (查看器, stage 13; #viewer?path=…): a file opened from a conversation, a mark or a Review, in one
@@ -39,7 +40,13 @@ export function ViewerApp() {
   if (host.kind !== "ready") return <WindowPlaceholder title="查看器">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
   if (!target) return <WindowPlaceholder title="查看器">没有要查看的文件。</WindowPlaceholder>;
   // 查看包 (2026-10-23): the same window, showing a pack.
-  if (target.pack) return <PackViewer link={host.link} state={host.state} packId={target.pack} focus={target.item ?? null} nonce={target.nonce ?? ""} />;
+  // 远程 Reviewer (2026-11-02): a remote task's pack (`remote`), read through this Host from the computer it runs on.
+  if (target.pack)
+    return (
+      <RemoteReviewScope link={host.link} state={host.state} taskId={target.remote} gone={<WindowPlaceholder title="查看包">这个远程任务已经不在这台电脑上了。</WindowPlaceholder>}>
+        {(link, remote) => <PackViewer link={link} state={host.state} packId={target.pack!} focus={target.item ?? null} nonce={target.nonce ?? ""} remote={remote} />}
+      </RemoteReviewScope>
+    );
   // 远程 step 3 (2026-10-29): a remote task's file is fetched from its computer first, then shown as any other.
   if (target.remote) return <RemoteViewer link={host.link} state={host.state} target={target} render={(t, remote) => <ViewerPage link={host.link} state={host.state} target={t} remote={remote} />} />;
   return <ViewerPage link={host.link} state={host.state} target={target} />;

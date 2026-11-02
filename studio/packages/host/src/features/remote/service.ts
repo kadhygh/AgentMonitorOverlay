@@ -1,8 +1,11 @@
 import { statSync } from "node:fs";
-import { REMOTE_KINDS, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { extname, isAbsolute } from "node:path";
+import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
+import { FileReply } from "../../http/route.js";
+import { underTaskFolder } from "./files.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
 import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
@@ -120,6 +123,7 @@ export class RemoteFeature extends Feature {
     this.seenFiles = this.fileStamp();
     // Files fetched for copies that are gone (step 3).
     this.copies.files.sweep();
+    this.copies.views.sweep();
     void this.loadAccount();
     this.watch = setInterval(() => this.checkFiles(), options.watchMs ?? 5000);
     this.watch.unref();
@@ -798,6 +802,26 @@ export class RemoteFeature extends Feature {
   async fetchFile(taskId: Id, path: string, cwd?: string, fetchId?: string): Promise<RemoteFetchedFile> {
     if (!this.store.getTask(taskId)?.remote) throw new HostError("not_found", "这不是远程任务");
     return this.copies.files.fetch(taskId, path, cwd, fetchId);
+  }
+
+  /**
+   * 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): what a remote task's Reviewer window asks its Host for, under
+   * /api/remote/view/<task>/<the route it would ask>. Reads go to the computer the task runs on (rt.view; kept here);
+   * a picture by rt.file as any remote file; tools of this computer (VS Code, Explorer) are not offered.
+   */
+  async view(taskId: Id, method: string, path: string, query: URLSearchParams, body: unknown): Promise<unknown> {
+    const task = this.store.getTask(taskId);
+    if (!task?.remote) throw new HostError("not_found", "这不是远程任务");
+    if (method === "GET" && path === "/api/fs/raw") {
+      const p = query.get("path") ?? "";
+      const f = await this.copies.files.fetch(taskId, underTaskFolder(p) !== null || isAbsolute(p) ? p : `${REMOTE_TASK_FOLDER}/${p.replace(/\\/g, "/")}`);
+      const mime = PREVIEW_IMAGE_TYPES[extname(f.path).toLowerCase()];
+      if (!mime) throw new HostError("bad_request", "only images are served");
+      return new FileReply(f.path, mime, { fresh: true, whole: true });
+    }
+    if (method === "GET" && path === "/api/open-in/apps") return { vscode: false };
+    if (method !== "GET" && method !== "POST") throw new HostError("read_only", `这是 ${task.remote.name} 上的远程任务：这一项不能在这台电脑上做`);
+    return this.copies.views.read(taskId, method, path, Object.fromEntries(query), body);
   }
 
   /** Step 3: an image a remote page loads (GET /api/remote/files/<key>/<rel>). */

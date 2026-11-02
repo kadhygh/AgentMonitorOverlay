@@ -27,7 +27,8 @@ import {
   type ToolItem,
 } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
-import { FileLink } from "../files/FileLinks.js";
+import { FileLink, useFileLinks } from "../files/FileLinks.js";
+import { remoteProjectPath } from "../remote/reviewer.js";
 import { Elapsed, ToolImages } from "./cli/CliRows.js";
 import { parseInlinePath } from "../files/paths.js";
 
@@ -210,17 +211,29 @@ function reopenTarget(item: ToolItem): { pack: string } | { review: NonNullable<
   return review ? { review } : null;
 }
 
+/**
+ * The Review a review_open call opened, again. A remote task's (远程 Reviewer, 2026-11-02): its project there, read
+ * through this Host — a file (mode=file) in the remote viewer.
+ */
+function reopenReview(review: NonNullable<ReturnType<typeof reviewTargetOf>>, remoteTask: string | undefined): void {
+  if (remoteTask && review.mode === "file" && review.file)
+    return openViewer({ path: remoteProjectPath(review.file), remote: remoteTask, ...(review.line ? { line: review.line, ...(review.endLine ? { endLine: review.endLine } : {}) } : {}) });
+  openReview({ ...review, nonce: `again-${Date.now()}`, ...(remoteTask ? { remote: remoteTask } : {}) });
+}
+
 /** Opens again what the agent opened for the person; shown on the call's row, and beside its folded group. */
 function ReopenButton({ item }: { item: ToolItem }) {
   const target = reopenTarget(item);
+  // 远程 Reviewer (2026-11-02): in a remote task's conversation, what the agent opened is on that computer — read from there.
+  const remoteTask = useFileLinks()?.remoteTask;
   if (!target) return null;
   return "pack" in target ? (
-    <button type="button" className="pr-link pr-pack" onClick={() => openViewer({ path: "", pack: target.pack })} title="再打开这个查看包" data-testid="tool-open-pack">
+    <button type="button" className="pr-link pr-pack" onClick={() => openViewer({ path: "", pack: target.pack, ...(remoteTask ? { remote: remoteTask } : {}) })} title="再打开这个查看包" data-testid="tool-open-pack">
       <IconOpenWindow />
       打开查看包
     </button>
   ) : (
-    <button type="button" className="pr-link pr-pack" onClick={() => openReview({ ...target.review, nonce: `again-${Date.now()}` })} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
+    <button type="button" className="pr-link pr-pack" onClick={() => reopenReview(target.review, remoteTask)} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
       <IconOpenWindow />
       打开 Review
     </button>

@@ -13,6 +13,12 @@ describe("the viewer's address", () => {
     expect(parseViewerHash(viewerHash({ path: "README.md" }))).toEqual({ path: "README.md" });
   });
 
+  it("carries a remote task's 查看包 (远程 Reviewer, 2026-11-02)", () => {
+    const t = { path: "", pack: "vp-1", item: "vi-2", remote: "task-9", nonce: "3" };
+    expect(parseViewerHash(viewerHash(t))).toEqual(t);
+    expect(parseViewerHash("#viewer?pack=vp-1")).toEqual({ path: "", pack: "vp-1" });
+  });
+
   it("carries a remote task's file and where its relative name starts (远程 step 3)", () => {
     const t = { path: "docs/a.md", remote: "task-1", cwd: "任务文件夹\\docs", sessionId: "s-1", nonce: "2" };
     expect(parseViewerHash(viewerHash(t))).toEqual(t);

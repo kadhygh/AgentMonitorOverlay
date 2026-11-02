@@ -30,7 +30,7 @@ let opened = 0;
  * again still reaches the page.
  */
 export function reviewHash(target: unknown): { key: string; hash: string } | null {
-  const t = target as { workspaceId?: unknown; sessionId?: unknown; commit?: unknown; file?: unknown; base?: unknown; baseLabel?: unknown } | null;
+  const t = target as { workspaceId?: unknown; sessionId?: unknown; commit?: unknown; file?: unknown; base?: unknown; baseLabel?: unknown; remote?: unknown } | null;
   if (typeof t?.workspaceId !== "string" || !ID.test(t.workspaceId)) return null;
   if (t.commit !== undefined && (typeof t.commit !== "string" || !COMMIT.test(t.commit))) return null;
   // 外部打开 Review: a base (full id) to compare with, and how the caller named it.
@@ -39,6 +39,9 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
   const label = base && typeof t.baseLabel === "string" && t.baseLabel && t.baseLabel.length <= 100 && !/[\0\r\n]/.test(t.baseLabel) ? t.baseLabel : null;
   const commit = typeof t.commit === "string" ? t.commit : null;
   const file = typeof t.file === "string" && t.file && t.file.length <= 1000 && !/[\0\r\n]/.test(t.file) ? t.file : null;
+  // 远程 Reviewer (2026-11-02): a remote task's project (the task's id), read from the computer it runs on — a window of its own.
+  const remote = typeof t.remote === "string" && ID.test(t.remote) ? t.remote : null;
+  const own = remote ? `${remote}:` : "";
   if (commit) {
     const q = new URLSearchParams({ workspace: t.workspaceId, commit });
     if (base) q.set("base", base);
@@ -46,7 +49,8 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
       q.set("file", file);
       q.set("n", String(++opened));
     }
-    return { key: `${t.workspaceId}@${base ? `${base}..` : ""}${commit}`, hash: `#review?${q.toString()}` };
+    if (remote) q.set("remote", remote);
+    return { key: `${own}${t.workspaceId}@${base ? `${base}..` : ""}${commit}`, hash: `#review?${q.toString()}` };
   }
   const session = typeof t.sessionId === "string" && ID.test(t.sessionId) ? t.sessionId : null;
   const q = new URLSearchParams({ workspace: t.workspaceId });
@@ -57,7 +61,8 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
   if (file) {
     q.set("file", file);
   }
-  return { key: t.workspaceId, hash: `#review?${q.toString()}` };
+  if (remote) q.set("remote", remote);
+  return { key: `${own}${t.workspaceId}`, hash: `#review?${q.toString()}` };
 }
 
 /** Handles `amo:open-review` from the pages; returns what the main window needs to close the reviews with it. */

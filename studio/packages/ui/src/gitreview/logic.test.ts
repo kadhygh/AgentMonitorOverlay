@@ -38,6 +38,10 @@ describe("Git Review window logic", () => {
     expect(parseReviewHash("#review?workspace=ws-1&session=s-2")).toEqual({ workspaceId: "ws-1", sessionId: "s-2" });
     expect(parseReviewHash("#review?workspace=ws-1")).toEqual({ workspaceId: "ws-1" });
     expect(parseReviewHash("#focus")).toBeNull();
+    // 远程 Reviewer (2026-11-02): a remote task's project, and its commits.
+    expect(parseReviewHash(reviewHash({ workspaceId: "ws-1", sessionId: "s-2", remote: "task-9" }))).toEqual({ workspaceId: "ws-1", sessionId: "s-2", remote: "task-9" });
+    expect(parseReviewHash(reviewHash({ workspaceId: "ws-1", commit: "abcdef1", remote: "task-9" }))).toEqual({ workspaceId: "ws-1", commit: "abcdef1", remote: "task-9" });
+    expect(parseReviewHash("#review?workspace=ws-1&remote=bad%20id")).toEqual({ workspaceId: "ws-1" });
     expect(parseReviewHash("#review")).toBeNull();
     // Stage 13: 用 git diff 看 opens the review at a file.
     const t = { workspaceId: "ws-1", file: "G:\\game\\src\\a b.cs", nonce: "3" };

@@ -24,7 +24,8 @@ export interface ViewerTarget {
   nonce?: string;
   /**
    * 远程 step 3 (2026-10-29): the file is in this remote task's folder on the computer it runs on — `path` as its
-   * conversation names it (relative to `cwd` when given). The viewer fetches it from there first.
+   * conversation names it (relative to `cwd` when given). The viewer fetches it from there first. With `pack` (远程
+   * Reviewer, 2026-11-02): the pack is that task's, read from there.
    */
   remote?: string;
   cwd?: string;
@@ -37,7 +38,7 @@ const int = (s: string | null): number | undefined => {
 
 /** The window's address: `#viewer?path=…&workspace=…&line=…&end=…&mode=…&session=…&n=…` (as the shell builds it). */
 export function viewerHash(t: ViewerTarget): string {
-  if (t.pack) return `#viewer?${new URLSearchParams({ pack: t.pack, ...(t.item ? { item: t.item } : {}), ...(t.nonce ? { n: t.nonce } : {}) }).toString()}`;
+  if (t.pack) return `#viewer?${new URLSearchParams({ pack: t.pack, ...(t.item ? { item: t.item } : {}), ...(t.remote ? { remote: t.remote } : {}), ...(t.nonce ? { n: t.nonce } : {}) }).toString()}`;
   const q = new URLSearchParams({ path: t.path });
   if (t.workspaceId) q.set("workspace", t.workspaceId);
   if (t.line) {
@@ -58,7 +59,8 @@ export function parseViewerHash(hash: string): ViewerTarget | null {
   if (!hash.startsWith("#viewer")) return null;
   const q = new URLSearchParams(hash.slice("#viewer".length).replace(/^\?/, ""));
   const pack = q.get("pack");
-  if (pack) return { path: "", pack, ...(q.get("item") ? { item: q.get("item")! } : {}), ...(q.get("n") ? { nonce: q.get("n")! } : {}) };
+  // 远程 Reviewer (2026-11-02): a remote task's pack (`remote` its task), read from the computer the task runs on.
+  if (pack) return { path: "", pack, ...(q.get("item") ? { item: q.get("item")! } : {}), ...(q.get("remote") ? { remote: q.get("remote")! } : {}), ...(q.get("n") ? { nonce: q.get("n")! } : {}) };
   const path = q.get("path");
   if (!path) return null;
   const workspaceId = q.get("workspace");

@@ -37,6 +37,10 @@ export function remoteRoutes(service: HostService): Route[] {
     route("PUT", "/api/remote/allowed-projects", ({ body }) => service.remote.setAllowedProjects(body)),
     route("PUT", "/api/remote/security", ({ body }) => service.remote.setSecurity(body)),
     route("GET", "/api/remote/tasks/:id/prompt-templates", ({ params }) => service.remote.copies.templates(service.requireTask(params.id!))),
+    route("GET", "/api/remote/tasks/:id/files-key", ({ params }) => {
+      if (!service.requireTask(params.id!).remote) throw new HostError("not_found", "这不是远程任务");
+      return { key: service.remote.copies.files.key(params.id!) };
+    }),
     route("GET", "/api/remote/catalog", ({ query }) => service.remote.catalog({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") })),
     route("GET", "/api/remote/catalog/prompt-templates", ({ query }) =>
       service.remote.catalogTemplates({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") }, query.get("workspace") || null),
@@ -54,6 +58,23 @@ export function remoteRoutes(service: HostService): Route[] {
     route("DELETE", "/api/remote/asks/:id", ({ params }) => service.remote.withdrawAsk(params.id!)),
     route("POST", "/api/remote/task-requests/:id/accept", ({ params, body }) => service.remote.acceptRequest(params.id!, body)),
     route("POST", "/api/remote/task-requests/:id/refuse", ({ params, body }) => service.remote.refuseRequest(params.id!, obj(body).reason)),
+    // 远程 Reviewer (2026-11-02): a remote task's Reviewer windows ask through here what they would ask under /api/… —
+    // GET with the token in the query too (an <img> of a 查看包's picture).
+    ...["GET", "POST", "PATCH", "DELETE"].map(
+      (method): Route => ({
+        method,
+        path: "/api/remote/view/:id/*",
+        pattern: /^\/api\/remote\/view\/([\w-]{1,80})(\/api\/.+)$/,
+        keys: ["id", "rest"],
+        ...(method === "GET" ? { queryToken: true } : {}),
+        handle: ({ params, query, body }) => {
+          // The Reviewer's own token rides in the query of a picture's address; it is not part of what is asked.
+          const q = new URLSearchParams(query);
+          q.delete("token");
+          return service.remote.view(params.id!, method, params.rest!, q, body);
+        },
+      }),
+    ),
     // Step 3: images a remote task's HTML page loads, by their place in the task's folder (the page gets <base> here).
     // An <img> sends no token and <base> drops a query, so the key in the path (random, per task, per Host run) is it.
     {

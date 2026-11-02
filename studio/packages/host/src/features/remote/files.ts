@@ -41,9 +41,11 @@ const inside = (p: string, folder: string) => {
   return a.startsWith(f);
 };
 const slash = (p: string) => p.replace(/\\/g, "/");
+/** For the Reviewer's reads (views.ts, 2026-11-02): the same checks as a file request. */
+export { inside as insideFolder, slash };
 
 /** `任务文件夹/…` (either slash) → what follows it ("" for the folder itself); null when the path does not start so. */
-function underTaskFolder(p: string): string | null {
+export function underTaskFolder(p: string): string | null {
   if (p === REMOTE_TASK_FOLDER) return "";
   return p.startsWith(`${REMOTE_TASK_FOLDER}/`) || p.startsWith(`${REMOTE_TASK_FOLDER}\\`) ? p.slice(REMOTE_TASK_FOLDER.length + 1) : null;
 }
@@ -72,7 +74,7 @@ export function resolveAsked(roots: FileRoots, pathIn: string, cwd?: string): st
   return normalize(join(base, p));
 }
 
-const real = (p: string): string | null => {
+export const real = (p: string): string | null => {
   try {
     return realpathSync.native(p);
   } catch {

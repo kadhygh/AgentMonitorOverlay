@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { HostService } from "../../service.js";
 import { HostError, boundedText } from "../../core/shared.js";
 import type { DeviceLink } from "./link.js";
 import { attachedPaths, itemForPeer, readRemoteFile, type FileRoots } from "./files.js";
 import { claimedText, type UploadInbox } from "./uploads.js";
+import { answerView, ViewAnswers } from "./views.js";
 
 // 远程, step 2 on A (plans/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
 // a device may ask of them, and what A tells it unasked as they change. The grant is the whole task: every session in
@@ -69,6 +70,8 @@ export function fitItem(item: SessionItem): SessionItem {
 export class RemoteGrants {
   /** Which task a session is in (sessions never change task): items and deltas are looked up per event. */
   private readonly taskOf = new Map<Id, Id | null>();
+  /** 远程 Reviewer (2026-11-02): big answers kept for their later pieces. */
+  private readonly views = new ViewAnswers();
 
   constructor(private readonly ctx: RemoteContext) {}
 
@@ -427,6 +430,18 @@ export class RemoteGrants {
           const taskId = id(b.taskId, "taskId");
           this.grantFor(from, taskId);
           return ok(await readRemoteFile(this.fileRoots(taskId), b as unknown as RemoteFileAsk, this.ctx.deviceName()));
+        }
+        case REMOTE_KINDS.view: {
+          // 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): a read of the task's 查看包 or Review, checked in views.ts.
+          const taskId = id(b.taskId, "taskId");
+          this.grantFor(from, taskId);
+          const task = this.store.getTask(taskId);
+          const root = this.taskRoot(taskId);
+          if (!task || !root) throw new HostError("not_found", "任务的文件夹不在了");
+          const ask = b as unknown as RemoteViewAsk;
+          return ok(await this.views.serve(`${from.account}
+${from.device}
+${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
         }
         default:
           return fail("unknown_kind", `${this.ctx.deviceName()} 的 Studio 不认识「${kind}」，可能版本不同`);
