@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { ClientManifest, ShellBuild } from "./protocol.js";
 
@@ -81,6 +81,29 @@ export function sendFile(res: ServerResponse, file: string, download = false): v
   res.writeHead(200, headers);
   // Streamed: the desktop client's zip is over 100 MB.
   createReadStream(file).pipe(res);
+}
+
+/**
+ * A file that never changes under its name (the Claude Code mirror's .zst, 2026-11-03), with Range: `bytes=a-` or `a-b`
+ * gets 206 and that part, so a download that broke goes on from where it stopped; anything else gets the whole file.
+ */
+export function sendRanged(req: IncomingMessage, res: ServerResponse, file: string, size: number): void {
+  const headers: Record<string, string> = { "content-type": "application/octet-stream", "accept-ranges": "bytes", "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" };
+  const m = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? "").trim());
+  let start = 0;
+  let end = size - 1;
+  if (m) {
+    start = Number(m[1]);
+    end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start >= size || end < start) {
+      res.writeHead(416, { ...headers, "content-range": `bytes */${size}` });
+      res.end();
+      return;
+    }
+    res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": String(end - start + 1) });
+  } else res.writeHead(200, { ...headers, "content-length": String(size) });
+  if (req.method === "HEAD" || size === 0) return void res.end();
+  createReadStream(file, { start, end }).on("error", () => res.destroy()).pipe(res);
 }
 
 export function sendHtml(res: ServerResponse, html: string): void {

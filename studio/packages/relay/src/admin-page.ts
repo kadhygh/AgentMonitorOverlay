@@ -19,7 +19,7 @@ h1{font-size:20px;margin:0 0 2px;font-family:"Noto Serif SC","Songti SC",SimSun,
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--soft);vertical-align:middle}
 th{font-weight:600;color:var(--muted);font-size:12px;white-space:nowrap}#list{overflow-x:auto}
 button{font:inherit;padding:4px 10px;border:1px solid var(--line);border-radius:3px;background:transparent;color:var(--ink);cursor:pointer}
-button.primary{background:var(--accent);color:var(--on);border-color:var(--accent)}button.danger{color:var(--danger);border-color:var(--danger)}
+button.primary{background:var(--accent);color:var(--on);border-color:var(--accent)}button.danger{color:var(--danger);border-color:var(--danger)}button:disabled{opacity:.45;cursor:default}
 input{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:3px;background:var(--panel);color:var(--ink)}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.acts{display:flex;gap:6px;flex-wrap:wrap}
 .on{color:var(--ok)}.off{color:var(--danger)}.msg{margin:10px 0 0;padding:8px 12px;border-radius:4px;background:var(--bg)}.msg.err{color:var(--danger)}
@@ -40,6 +40,11 @@ code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}[hid
 <div id="msg"></div></div>
 <div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>问题页</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
 <p class="muted">改登录名：聊天、会话、任务、文件、批注、设备配对里的名字一起改，他已经登录的设备照样能用；之后请他在 AMO 平台的「账号」里退出，用新名字重新登录一次。重设密码和停用会让他所有设备的登录失效。</p></div>
+<div class="card" id="mir" hidden><div class="row" style="justify-content:space-between"><h2>Claude Code 镜像</h2><div class="row"><span class="muted" id="mirat"></span><button type="button" id="mircheck">现在检查</button></div></div>
+<p class="muted">定时查 Anthropic 的最新版，有新版就在后台下好压缩包、按官方清单校验，断了会接着下。局域网里的 AMO 平台从这里安装、更新 Claude Code；这里没有的，平台从官方下。</p>
+<div class="stats" id="mirstats"></div>
+<form id="mirform" class="row"><label><input type="checkbox" id="miron"> 开着</label><label>每 <input id="mirevery" type="number" min="10" max="1440" style="width:80px"> 分钟查一次</label><span class="muted">平台：</span><label><input type="checkbox" id="mirx64"> win32-x64</label><label><input type="checkbox" id="mirarm"> win32-arm64</label><label>保留最新 <input id="mirkeep" type="number" min="1" max="10" style="width:60px"> 版</label><button class="primary">保存设置</button></form>
+<h3>服务器上已有的版本</h3><div style="overflow-x:auto"><table><thead><tr><th>版本</th><th>平台</th><th class="n">压缩包</th><th class="n">安装后</th><th>备好于</th></tr></thead><tbody id="mirrows"></tbody></table></div></div>
 <div class="card" id="mon" hidden><div class="row" style="justify-content:space-between"><h2>服务器状态</h2><div class="row"><span class="muted" id="monat"></span><button type="button" id="monrefresh">刷新</button></div></div>
 <div class="stats" id="stats"></div><div class="charts" id="charts"></div>
 <details><summary>表格（每 5 分钟一个点，最近 24 小时）</summary><div style="overflow-x:auto"><table><thead><tr><th>时间</th><th class="n">整机 CPU</th><th class="n">中转 CPU</th><th class="n">负载</th><th class="n">整机内存</th><th class="n">中转内存</th><th class="n">在线人</th><th class="n">设备</th></tr></thead><tbody id="monrows"></tbody></table></div></details>
@@ -60,7 +65,7 @@ function cell(text, cls) { var td = document.createElement("td"); td.textContent
 function btn(text, cls, run) { var b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.onclick = run; return b; }
 function load() {
   return call("GET", "/api/admin/members").then(function (data) {
-    loadMon();
+    loadMon(); loadMir(true);
     $("login").hidden = true; $("list").hidden = false; $("adminpw").hidden = false; $("reg").hidden = false;
     $("sub").textContent = data.members.length + " 个账号";
     $("regtext").textContent = "注册：" + (data.invite ? "要邀请口令" : "不要邀请口令（能连上服务器的人都能注册）");
@@ -96,7 +101,7 @@ function load() {
       acts.appendChild(box); tr.appendChild(acts); rows.appendChild(tr);
     });
   }, function (e) {
-    $("list").hidden = true; $("mon").hidden = true; $("login").hidden = false; $("adminpw").hidden = true; $("reg").hidden = true;
+    $("list").hidden = true; $("mon").hidden = true; $("mir").hidden = true; $("login").hidden = false; $("adminpw").hidden = true; $("reg").hidden = true;
     if (e.status === 401) { setPw(""); if (pw() !== "") say(e.message, true); }
     say(e.status === 401 && !$("pw").value ? "" : e.message, e.status !== 401 || !!$("pw").value);
   });
@@ -108,7 +113,7 @@ function span(sec) { var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400
 function hm(t) { var d = new Date(t); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
 function nice(v) { if (!(v > 0)) return 1; var e = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), f = [1, 2, 2.5, 5, 10]; for (var i = 0; i < f.length; i++) if (f[i] * e >= v) return f[i] * e; return 10 * e; }
 function el(tag, attrs, parent) { var e = document.createElementNS(SVGNS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
-function stat(k, v, d) { var s = document.createElement("div"); s.className = "stat"; [["k", k], ["v", v], ["d", d]].forEach(function (x) { var e = document.createElement("div"); e.className = x[0]; e.textContent = x[1]; s.appendChild(e); }); $("stats").appendChild(s); }
+function stat(k, v, d, into) { var s = document.createElement("div"); s.className = "stat"; [["k", k], ["v", v], ["d", d]].forEach(function (x) { var e = document.createElement("div"); e.className = x[0]; e.textContent = x[1]; s.appendChild(e); }); $(into || "stats").appendChild(s); }
 // One chart: one y axis from 0, the last 24 hours across, a line per series broken where the relay wasn't running.
 function chart(title, series, points, opt) {
   var box = document.createElement("div"); box.className = "chart";
@@ -187,6 +192,43 @@ function loadMon() {
   }, function () { $("mon").hidden = true; });
 }
 $("monrefresh").onclick = function () { loadMon(); };
+// ---- Claude Code 镜像 (mirror.ts, 2026-11-03): its settings, how it stands, the versions here; every 3 s while it works,
+// every minute otherwise.
+var mirTimer = null, mirBusy = false;
+var MIR_STATE = { off: "○ 关着", idle: "✓ 空闲", checking: "◐ 正在检查", downloading: "◐ 正在下载", verifying: "◐ 正在校验", waiting: "! 下载断了，稍后接着下" };
+function loadMir(fillForm) {
+  return call("GET", "/api/admin/mirror").then(function (m) {
+    var s = m.status, st = m.settings, p = s.progress, newest = m.versions[0];
+    $("mir").hidden = false;
+    $("mirat").textContent = "上次检查 " + (s.checkedAt ? when(Date.parse(s.checkedAt)) : "—") + (s.nextCheckAt ? " · 下次 " + when(Date.parse(s.nextCheckAt)) : "");
+    $("mirstats").innerHTML = "";
+    stat("状态", MIR_STATE[s.state] || s.state, s.error ? "! " + s.error : "", "mirstats");
+    stat("官方最新", s.official || "—", "Anthropic 的 latest 通道", "mirstats");
+    stat("服务器上最新", newest ? newest.version : "还没有", newest ? (newest.version === s.official ? "和官方一样" : "官方更新的那版还没备好") : "", "mirstats");
+    if (p) stat("正在下 " + p.version + " " + p.platform, bytes(p.done) + (p.total ? " / " + bytes(p.total) : ""), (p.total ? Math.floor(p.done / p.total * 100) + "% · " : "") + bytes(p.bytesPerSec) + "/s", "mirstats");
+    if (fillForm) { $("miron").checked = st.enabled; $("mirevery").value = st.everyMinutes; $("mirx64").checked = st.platforms.indexOf("win32-x64") >= 0; $("mirarm").checked = st.platforms.indexOf("win32-arm64") >= 0; $("mirkeep").value = st.keep; }
+    $("mircheck").disabled = !st.enabled || ["checking", "downloading", "verifying", "waiting"].indexOf(s.state) >= 0;
+    var rows = $("mirrows"); rows.innerHTML = "";
+    m.versions.forEach(function (v) {
+      Object.keys(v.platforms).forEach(function (pf) {
+        var f = v.platforms[pf], tr = document.createElement("tr");
+        [v.version, pf].forEach(function (x) { tr.appendChild(cell(x)); });
+        tr.appendChild(cell(bytes(f.size), "n")); tr.appendChild(cell(bytes(f.exeSize), "n")); tr.appendChild(cell(when(Date.parse(v.readyAt))));
+        rows.appendChild(tr);
+      });
+    });
+    if (!m.versions.length) { var tr = document.createElement("tr"); var td = cell(st.enabled ? "还没有：第一次检查在服务启动半分钟后，也可以点「现在检查」。" : "镜像关着。", "muted"); td.colSpan = 5; tr.appendChild(td); rows.appendChild(tr); }
+    var busy = s.state !== "idle" && s.state !== "off";
+    if (!mirTimer || busy !== mirBusy) { clearInterval(mirTimer); mirBusy = busy; mirTimer = setInterval(function () { if (!document.hidden && !$("mir").hidden) loadMir(false); }, busy ? 3000 : 60000); }
+  }, function () { $("mir").hidden = true; });
+}
+$("mircheck").onclick = function () { call("POST", "/api/admin/mirror/check").then(function () { say("开始检查了。"); loadMir(false); }, function (e) { say(e.message, true); }); };
+$("mirform").onsubmit = function (ev) {
+  ev.preventDefault();
+  var platforms = []; if ($("mirx64").checked) platforms.push("win32-x64"); if ($("mirarm").checked) platforms.push("win32-arm64");
+  call("POST", "/api/admin/mirror/settings", { enabled: $("miron").checked, everyMinutes: Number($("mirevery").value), platforms: platforms, keep: Number($("mirkeep").value) })
+    .then(function () { say("镜像的设置已保存，马上生效。"); loadMir(true); }, function (e) { say(e.message, true); });
+};
 $("adminpw").onclick = function () {
   var a = prompt("新的管理密码：", ""); if (!a) return;
   var b = prompt("再输一遍新的管理密码：", ""); if (b === null) return;

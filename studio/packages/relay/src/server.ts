@@ -1,13 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { APK_NAME, PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
-import { ANDROID_DOWNLOAD, PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
+import { ANDROID_DOWNLOAD, PublicFiles, landingPage, sendFile, sendHtml, sendRanged } from "./public.js";
+import { CLAUDE_CODE, type ClaudeCodeMirror } from "./mirror.js";
 import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
 import { issuesPage } from "./issues-page.js";
@@ -52,6 +53,9 @@ export interface RelayServerOptions {
   dataDir?: string;
   /** How often 服务器状态 takes a point (default 5 min). Tests shorten it. */
   monitorEveryMs?: number;
+  /** Claude Code 镜像 (mirror.ts, 2026-11-03): its admin calls and, for people signed in, its files; none = 404. Started
+   *  and closed by whoever made it (bin.ts). */
+  mirror?: ClaudeCodeMirror;
 }
 
 export interface RelayServer {
@@ -294,6 +298,10 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const online = new Map(members().map((m) => [m.name, m]));
         return send(res, 200, { service: serviceName, invite: inviteNeeded(), members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
       }
+      if (method === "GET" && path === "/api/admin/mirror") {
+        if (!opts.mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
+        return send(res, 200, opts.mirror.adminView());
+      }
       if (method === "GET" && path === "/api/admin/monitor") {
         return send(res, 200, { everyMs: monitor.intervalMs, now: await monitor.now(), history: monitor.history() });
       }
@@ -331,10 +339,45 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         store.setPassphrase(typeof body.passphrase === "string" ? body.passphrase : null);
         return send(res, 200, { invite: inviteNeeded() });
       }
+      // Claude Code 镜像 (mirror.ts): its card on the admin page.
+      if (path.startsWith("/api/admin/mirror")) {
+        const mirror = opts.mirror;
+        if (!mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
+        if (method === "POST" && path === "/api/admin/mirror/settings") {
+          mirror.saveSettings(body);
+          return send(res, 200, mirror.adminView());
+        }
+        if (method === "POST" && path === "/api/admin/mirror/check") {
+          if (!mirror.settings().enabled) throw new RelayError("conflict", "镜像关着：先打开它");
+          // Answered at once; the page follows the check by asking again. A failure is the check's own (status.error).
+          mirror.checkNow().catch(() => undefined);
+          return send(res, 200, mirror.adminView());
+        }
+      }
       throw new RelayError("not_found", "没有这个管理操作");
     }
     // The AMO platform's files (platform.ts, plans/amo-lan-platform.md): for people signed in; objects also take ?key=,
     // so a download can be a plain URL.
+    // Claude Code 镜像 (mirror.ts, 2026-11-03), for people signed in like the platform's files: what is ready, Anthropic's
+    // manifest of a ready version, and its .zst with Range (a broken download goes on).
+    if (method === "GET" && (path.startsWith("/api/platform/mirror/") || path.startsWith("/platform/mirror/"))) {
+      auth(req, url);
+      const mirror = opts.mirror;
+      if (!mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
+      if (path === `/api/platform/mirror/${CLAUDE_CODE}`) return send(res, 200, mirror.platformView());
+      const parts = path.slice(`/platform/mirror/${CLAUDE_CODE}/`.length).split("/");
+      if (path.startsWith(`/platform/mirror/${CLAUDE_CODE}/`) && parts.length === 2 && parts[1] === "manifest.json") {
+        const file = mirror.manifestFile(parts[0]!);
+        if (!file) throw new RelayError("not_found", `镜像里没有 ${parts[0]}`);
+        return sendFile(res, file);
+      }
+      if (path.startsWith(`/platform/mirror/${CLAUDE_CODE}/`) && parts.length === 3) {
+        const got = mirror.file(parts[0]!, parts[1]!);
+        if (!got || basename(got.path) !== parts[2]) throw new RelayError("not_found", `镜像里没有 ${parts.join(" ")}`);
+        return sendRanged(req, res, got.path, got.size);
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
     if (method === "GET" && (path.startsWith("/api/platform/") || path.startsWith("/platform/"))) {
       auth(req, url);
       if (!platform.dir) throw new RelayError("not_found", "这个服务没有放 AMO 平台的文件：启动时用 --platform-dir 或环境变量 AMO_RELAY_PLATFORM_DIR 指定平台目录");

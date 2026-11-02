@@ -9,6 +9,8 @@ export default defineConfig({
       "@amo-studio/protocol": src("protocol"),
       "@amo-studio/testkit": src("testkit"),
       "@amo-studio/account": src("account"),
+      // Before the package itself: an alias matches as a prefix.
+      "@amo-studio/locate/download": fileURLToPath(new URL("./packages/locate/src/download.ts", import.meta.url)),
       "@amo-studio/locate": src("locate"),
       "@amo-studio/traymenu": src("traymenu"),
       "@amo-studio/host": src("host"),

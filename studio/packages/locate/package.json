@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./download": {
+      "types": "./dist/download.d.ts",
+      "default": "./dist/download.js"
     }
   }
 }
