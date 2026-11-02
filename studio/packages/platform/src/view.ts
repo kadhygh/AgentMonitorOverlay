@@ -1,6 +1,6 @@
 // What the platform's window shows, as the main process hands it over (platform:view). Types only: the page
 // (packages/ui/src/platform) imports them too, so nothing here may need Node.
-import type { EnvironmentView, EnvUpdateResult } from "./environment-view.js";
+import type { EnvironmentView, EnvTaskView, EnvUpdateResult } from "./environment-view.js";
 
 export type Channel = "stable" | "test";
 
@@ -130,6 +130,8 @@ export interface PlatformView {
   openAtLogin: boolean;
   /** 设置 → 主题 (2026-10-29): the main process makes every window (and the tray menu) follow it. */
   theme: "light" | "dark" | "system";
+  /** 环境 → 安装 / 更新 Claude Code under way (2026-11-03), or null. */
+  envTask: EnvTaskView | null;
 }
 
 /** What the page can ask the main process to do (platform:call). */

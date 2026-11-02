@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, shell, Tray } from "electron";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { amoLocalHome } from "@amo-studio/account";
@@ -50,7 +50,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformTrayLook?: () => TrayLook & { blinking: boolean }; __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void };
+type TestGlobals = { __platformTrayLook?: () => TrayLook & { blinking: boolean }; __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void; __platformClaudeInstall?: { exe: string; args: string[] }[] };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -124,7 +124,23 @@ async function restart(spec: LaunchSpec): Promise<void> {
   quit();
 }
 
-const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart });
+/**
+ * Test mode with AMO_PLATFORM_TEST_CLAUDE_INSTALL=1: `claude install` is recorded instead of run (the test's "Claude
+ * Code" is some other small program), and its one visible step is done as Claude Code does it — the version's file
+ * copied to %USERPROFILE%\.local\bin\claude.exe — so checking again finds what was downloaded.
+ */
+const claudeRun =
+  testMode && process.env.AMO_PLATFORM_TEST_CLAUDE_INSTALL === "1"
+    ? async (exe: string, args: string[]) => {
+        g.__platformClaudeInstall = [...(g.__platformClaudeInstall ?? []), { exe, args }];
+        const bin = join(process.env.USERPROFILE ?? "", ".local", "bin");
+        mkdirSync(bin, { recursive: true });
+        copyFileSync(exe, join(bin, "claude.exe"));
+        return { ok: true, out: "Claude Code successfully installed!" };
+      }
+    : undefined;
+
+const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart, ...(claudeRun ? { claudeRun } : {}) });
 
 // ---- the window
 

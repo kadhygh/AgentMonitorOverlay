@@ -205,6 +205,28 @@ describe("the checks", () => {
     expect(url).toBe("http://mirror.local/x/latest");
   });
 
+  it("Claude Code from the mirror (2026-11-03): not there or from its own installer — 安装 / 更新 say the version and where from; npm's stays npm's", async () => {
+    const { dirs, env, file } = machine();
+    const latest = async () => "9.9.9";
+    const src = { version: "2.1.316", from: "server" as const, platform: "win32-x64" as const, size: 122_064_664, preparing: "团队服务器正在准备 2.1.317（45%），下好之后从这里装会更快。" };
+    const claudeSource = async () => src;
+    const byId = async (e: typeof env, answers: Record<string, RunResult> = {}, source = claudeSource) => Object.fromEntries((await checkEnvironment({ env: e, run: runner(answers).run, latest, claudeSource: source })).items.map((i) => [i.id, i]));
+    // Not there: 安装 2.1.316 from the server; no 「最新」 (nothing to compare).
+    expect((await byId(env)).claude).toMatchObject({ state: "missing", latest: null, updater: null, install: { version: "2.1.316", from: "server", size: 122_064_664 }, preparing: src.preparing });
+    // From its own installer, older: 「最新」 is the server's version, not npm's.
+    const native = file(join(dirs.home, ".local", "bin", "claude.exe"));
+    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } })).claude).toMatchObject({ state: "ok", version: "2.1.300", latest: "2.1.316", updater: "从团队服务器下载 2.1.316，再运行 claude install", install: { version: "2.1.316" } });
+    // Neither the server nor Anthropic answered: no 「最新」, nothing to install from.
+    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } }, async () => null)).claude).toMatchObject({ latest: null, updater: null, install: null });
+    // npm's: npm's latest and npm install, as before.
+    const npmExe = file(join(dirs.appdata, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"));
+    file(join(dirs.appdata, "npm", "claude.cmd"));
+    file(join(dirs.bin, "npm.cmd"));
+    const npmEnv = { ...env, USERPROFILE: join(root, "elsewhere"), PATH: [join(dirs.appdata, "npm"), dirs.bin].join(delimiter) };
+    const viaNpm = (await byId(npmEnv, { [npmExe]: { ok: true, out: "2.1.300 (Claude Code)" } })).claude;
+    expect(viaNpm).toMatchObject({ version: "2.1.300", latest: "9.9.9", updater: "npm install -g @anthropic-ai/claude-code@latest", install: null });
+  });
+
   it("keeps the last check until asked again; two asks at once share one", async () => {
     const { dirs, env, file } = machine();
     const git = file(join(dirs.bin, "git.exe"));

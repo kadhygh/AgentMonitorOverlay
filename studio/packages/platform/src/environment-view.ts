@@ -24,6 +24,26 @@ export interface EnvItemView {
   /** How 更新 runs here (the command, for the button's title); null when it cannot (not installed, or installed in a way the
    *  platform does not update). */
   updater: string | null;
+  /**
+   * Claude Code not installed, or installed by its own installer (2026-11-03, plans/claude-code-mirror.md): what 安装 /
+   * 更新 fetches — the version, from the team server's mirror or Anthropic, the .zst's size when known. Null for the
+   * others, and for a Claude Code from npm (npm updates it) or another installer.
+   */
+  install: { version: string; from: "server" | "official"; size: number | null } | null;
+  /** The team server is getting a newer version ready (「团队服务器正在准备 2.1.317（45%）…」). */
+  preparing: string | null;
+}
+
+/** 安装 / 更新 Claude Code under way (PlatformView.envTask): what it does now and how far it is. */
+export interface EnvTaskView {
+  id: EnvItemId;
+  version: string;
+  from: "server" | "official";
+  phase: "manifest" | "downloading" | "unpacking" | "installing";
+  done: number;
+  total: number | null;
+  /** Over the last few seconds, while downloading. */
+  bytesPerSec: number;
 }
 
 /** 更新 (2026-10-29, the user: like cc-switch, only on this page, only when clicked). */

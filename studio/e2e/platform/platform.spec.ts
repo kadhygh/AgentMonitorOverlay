@@ -3,7 +3,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,7 +47,7 @@ test.afterEach(async () => {
 function cleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLAUDE|ANTHROPIC_|AMO_)/.test(k)) env[k] = v;
-  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_NOTES_HOME: join(root, "notes"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9" };
+  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_NOTES_HOME: join(root, "notes"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9", AMO_PLATFORM_CLAUDE_BASE: "http://127.0.0.1:9" };
 }
 
 /**
@@ -705,6 +705,58 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   await expect(page.getByTestId("env-codex-progress")).toHaveCount(0);
   await screenshot(app, "platform", "P36-environment-updated", page);
   registry.close();
+});
+
+test("环境: 安装 Claude Code from the team server's mirror (2026-11-03) — the version and where from, the real progress, checked against Anthropic's manifest, put in versions", async () => {
+  // The server has "2.1.316" ready; its .zst comes slowly (20 parts) so the bar is seen. /claude-official/ stands in for
+  // Anthropic (its manifest checks the file). The "Claude Code" is Windows' own curl.exe: a real program that answers
+  // --version, so after the install (recorded; its launcher copy done as Claude Code does it, main.ts) checking again
+  // runs what was downloaded — and finds curl's version, not 2.1.316.
+  const own = await startFakePlatformServer({ users: { 小王: "secret" } });
+  const curl = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "curl.exe");
+  const exe = readFileSync(curl);
+  const curlVersion = /\d+\.\d+\.\d+/.exec(execFileSync(curl, ["--version"], { encoding: "utf8" }))![0];
+  own.mirrorClaude("2.1.316", exe, { slowMs: 150 });
+  try {
+    const { app, page } = await launch([], (r) => {
+      const dirs = { bin: join(r, "bin"), home: join(r, "home"), appdata: join(r, "appdata"), local: join(r, "localappdata") };
+      for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
+      return { PATH: [dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_STUDIO_DSH_REGISTRY: "0", AMO_PLATFORM_CLAUDE_BASE: `${own.url}/claude-official`, AMO_PLATFORM_TEST_CLAUDE_INSTALL: "1" };
+    });
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线", { timeout: 20_000 });
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
+    const envStatus = page.getByTestId("env-claude-status");
+    await expect(envStatus).toHaveText("○ 没装 · 团队服务器上有 2.1.316", { timeout: 30_000 });
+    await expect(page.getByTestId("env-claude-source")).toContainText("从团队服务器下载（局域网，压缩包 ");
+    await expect(page.getByTestId("env-claude-install")).toHaveText("安装 2.1.316");
+    await screenshot(app, "platform", "P38-claude-install-offered", page);
+
+    await page.getByTestId("env-claude-install").click();
+    await expect(page.getByTestId("env-claude-install")).toHaveText("正在安装…");
+    await expect(page.getByTestId("env-claude-progress")).toContainText(/正在从团队服务器下载 2\.1\.316：.+ \/ .+（[1-9]\d*%）/, { timeout: 15_000 });
+    await screenshot(app, "platform", "P39-claude-installing", page);
+    await expect(page.getByTestId("env-claude-result")).toHaveText(`✓ 已安装，现在是 ${curlVersion}（从团队服务器下载）`, { timeout: 60_000 });
+    await expect(envStatus).toHaveText(`✓ 已安装 · ${curlVersion} · 已是最新`);
+    await expect(page.getByTestId("env-claude")).toContainText(join(root, "home", ".local", "bin", "claude.exe"));
+    await expect(page.getByTestId("env-claude-progress")).toHaveCount(0);
+    await screenshot(app, "platform", "P40-claude-installed", page);
+
+    // The unpacked exe where Claude Code keeps its versions, installed from there; the .zst asked of the server only,
+    // the manifest of Anthropic; nothing left in downloads.
+    const versionFile = join(root, "home", ".local", "share", "claude", "versions", "2.1.316");
+    expect(readFileSync(versionFile).equals(exe)).toBe(true);
+    expect(await app.evaluate(() => (globalThis as { __platformClaudeInstall?: unknown }).__platformClaudeInstall)).toEqual([{ exe: versionFile, args: ["install", "2.1.316"] }]);
+    expect(own.requests.filter((r) => r.includes("claude"))).toEqual(expect.arrayContaining(["GET /api/platform/mirror/claude-code", "GET /claude-official/2.1.316/manifest.json", "GET /platform/mirror/claude-code/2.1.316/win32-x64/claude.exe.zst"]));
+    expect(own.requests).not.toContain("GET /claude-official/2.1.316/win32-x64/claude.exe.zst");
+    expect(readdirSync(join(root, "local", "downloads", "claude-code"))).toEqual([]);
+  } finally {
+    await own.close();
+  }
 });
 
 test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO 中转」, installed, opened with the team server's address, updated", async () => {

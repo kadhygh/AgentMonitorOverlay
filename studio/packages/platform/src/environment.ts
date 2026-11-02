@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshRegisteredDirs, firstOnPath, gitOnPath, locateDshDesktop, olderVersion, versionIn } from "@amo-studio/locate";
 import type { EnvironmentView, EnvItemId, EnvItemView } from "./environment-view.js";
+import { SOURCE_NAME, type ClaudeSource } from "./claude-install.js";
 
 // AMO 平台's 环境 page (the user, 2026-10-28): whether what the AMO tools run on is installed here — Claude Code, the
 // DeepSeek Harness desktop app, Codex, git — and, when it is not, a link to its official page. Only looking and linking:
@@ -101,13 +102,19 @@ export interface CheckOptions {
   timeoutMs?: number;
   /** Where the registry says the DSH app is installed (tests stand in for it); default: asked (dshRegisteredDirs). */
   dshRegistry?: (env: Env) => string[];
+  /**
+   * Where 安装 / 更新 Claude Code would fetch from (claude-install.ts's pickClaudeSource: the team server's mirror, else
+   * Anthropic); asked for a Claude Code that is not there or came from its own installer. Absent: the old way (npm's
+   * latest, `claude update`).
+   */
+  claudeSource?: () => Promise<ClaudeSource | null>;
 }
 
 const TIMEOUT_MS = 10_000;
 const why = (r: { reason: "timeout" | "error" }) => (r.reason === "timeout" ? "等了太久没有回应" : "运行出错");
 
 function item(id: EnvItemId, fields: Pick<EnvItemView, "state" | "path" | "version" | "note">): EnvItemView {
-  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, latest: null, updater: null, ...fields };
+  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, latest: null, updater: null, install: null, preparing: null, ...fields };
 }
 
 // ---- 已安装 / 最新 and 更新 (2026-10-29, the user: like cc-switch — the version here, the newest one, 更新 when there is a
@@ -240,6 +247,24 @@ async function checkOnPath(id: "codex" | "git", exe: string | null, o: CheckOpti
 export const checkCodex = (o: CheckOptions) => checkOnPath("codex", codexOnPath(o.env), o);
 export const checkGit = (o: CheckOptions) => checkOnPath("git", gitOnPath(o.env), o);
 
+/** A Claude Code from its own installer (%USERPROFILE%\.local\bin): updated by putting the new version in place. */
+export function isNativeClaude(path: string | null, env: Env): boolean {
+  return !!path && lower(path).startsWith(lower(join(env.USERPROFILE ?? homedir(), ".local", "bin")) + "\\");
+}
+
+/**
+ * Claude Code not there (or not answering), or from its own installer, with a source to fetch from (2026-11-03): 「最新」
+ * is the version 安装 / 更新 would bring (the team server's newest ready, else Anthropic's latest), the button says
+ * where from. Null: not this case (npm's, another installer's, no claudeSource) — the old way goes on.
+ */
+async function withClaudeSource(it: EnvItemView, o: CheckOptions): Promise<EnvItemView | null> {
+  if (!o.claudeSource || !(!it.version || isNativeClaude(it.path, o.env))) return null;
+  const src = await o.claudeSource().catch(() => null);
+  if (!src) return { ...it, latest: null, updater: null };
+  const how = `从${SOURCE_NAME[src.from]}下载 ${src.version}，再运行 claude install`;
+  return { ...it, latest: it.version ? src.version : null, updater: it.version ? how : null, install: { version: src.version, from: src.from, size: src.size }, preparing: src.preparing };
+}
+
 /** All four at once (each `--version` has its own timeout, so the slowest one bounds the wait). */
 export async function checkEnvironment(o: CheckOptions, now: () => Date = () => new Date()): Promise<EnvironmentView> {
   const checks: Record<EnvItemId, (o: CheckOptions) => Promise<EnvItemView>> = { claude: checkClaude, dsh: checkDsh, codex: checkCodex, git: checkGit };
@@ -248,6 +273,10 @@ export async function checkEnvironment(o: CheckOptions, now: () => Date = () => 
     ORDER.map(async (id) => {
       const pkg = NPM_PACKAGES[id];
       const it = await checks[id](o);
+      if (id === "claude") {
+        const sourced = await withClaudeSource(it, o);
+        if (sourced) return sourced;
+      }
       // Asked only for what is installed (nothing to compare otherwise).
       const newest = pkg && it.version ? await latest(pkg) : null;
       return { ...it, latest: it.version ? newest : null, updater: it.version ? (updatePlan(id, it.path, o.env)?.how ?? null) : null };

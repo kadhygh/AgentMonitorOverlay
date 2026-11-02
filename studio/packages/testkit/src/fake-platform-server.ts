@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { gzipSync } from "node:zlib";
+import { gzipSync, zstdCompressSync } from "node:zlib";
 import { listenInStudioRange } from "./ports.js";
 
 // A stand-in for the team server's side of AMO 平台 (plans/amo-lan-platform.md, 「第一版的接口约定」), for the platform's
@@ -48,6 +48,12 @@ export interface FakePlatformServer {
   profile(name: string): { role: string; nick: string; avatar: string | null } | null;
   /** Object downloads so far: the bytes sent on the wire (gzipped or not), the original bytes they carry, how many gzipped. */
   objectTraffic: { sent: number; original: number; gzipped: number };
+  /**
+   * Claude Code 镜像 (relay mirror.ts, 2026-11-03): a version ready on the server for win32-x64 (`exe` the unpacked file,
+   * sent as .zst with Range), and the same at `/claude-official/` standing in for Anthropic (latest, manifest, .zst; no
+   * login). `slowMs`: the .zst comes in 20 parts this far apart (to see the progress on screen).
+   */
+  mirrorClaude(version: string, exe: Buffer, options?: { slowMs?: number }): void;
   close(): Promise<void>;
 }
 
@@ -114,6 +120,27 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     return h?.startsWith("Bearer ") ? h.slice(7) : url.searchParams.get("key");
   };
 
+  let claude: { version: string; exe: Buffer; zst: Buffer; slowMs: number } | null = null;
+  const claudeManifest = () => ({ version: claude!.version, platforms: { "win32-x64": { binary: "claude.exe", checksum: sha256Of(claude!.exe), size: claude!.exe.length } } });
+  const sendZst = (req: IncomingMessage, res: ServerResponse) => {
+    const zst = claude!.zst;
+    const m = /^bytes=(\d+)-$/.exec(req.headers.range ?? "");
+    const start = m ? Math.min(Number(m[1]), zst.length) : 0;
+    const body = zst.subarray(start);
+    res.writeHead(m ? 206 : 200, { "content-type": "application/octet-stream", "accept-ranges": "bytes", "content-length": body.length, ...(m ? { "content-range": `bytes ${start}-${zst.length - 1}/${zst.length}` } : {}) });
+    if (!claude!.slowMs) return void res.end(body);
+    const step = Math.ceil(body.length / 20);
+    let at = 0;
+    const next = () => {
+      if (res.destroyed) return;
+      if (at >= body.length) return void res.end();
+      res.write(body.subarray(at, at + step));
+      at += step;
+      setTimeout(next, claude!.slowMs);
+    };
+    next();
+  };
+
   const server = createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -145,8 +172,28 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         if (!name || members.get(name)?.password !== body.password) return fail(res, 401, "unauthorized", "名字或密码不对");
         return send(res, 200, signIn(name));
       }
+      // Anthropic, standing in (no login).
+      if (req.method === "GET" && path.startsWith("/claude-official/")) {
+        const rest = path.slice("/claude-official/".length).split("/");
+        if (rest[0] === "latest" && claude) return res.end(claude.version);
+        if (claude && rest[0] === claude.version) {
+          if (rest[1] === "manifest.json") return send(res, 200, claudeManifest());
+          if (rest[1] === "win32-x64" && rest[2] === "claude.exe.zst") return sendZst(req, res);
+        }
+        return fail(res, 404, "not_found", "没有");
+      }
       const key = keyOf(req, url);
       if (!key || !keys.has(key)) return fail(res, 401, "unauthorized", "登录已失效，请重新登录");
+      if (req.method === "GET" && path === "/api/platform/mirror/claude-code") {
+        if (!claude) return fail(res, 404, "not_found", "这个服务没有开 Claude Code 镜像");
+        const file = { file: "claude.exe.zst", size: claude.zst.length, sha256: sha256Of(claude.exe), exeSize: claude.exe.length };
+        return send(res, 200, { official: claude.version, checkedAt: new Date().toISOString(), versions: [{ version: claude.version, readyAt: new Date().toISOString(), platforms: { "win32-x64": file } }], preparing: null });
+      }
+      const mirrored = /^\/platform\/mirror\/claude-code\/([^/]+)\/(.+)$/.exec(path);
+      if (req.method === "GET" && mirrored && claude && mirrored[1] === claude.version) {
+        if (mirrored[2] === "manifest.json") return send(res, 200, claudeManifest());
+        if (mirrored[2] === "win32-x64/claude.exe.zst") return sendZst(req, res);
+      }
       if (req.method === "POST" && path === "/api/logout") {
         keys.delete(key);
         return send(res, 200, { ok: true });
@@ -258,6 +305,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     corruptObject: (sha) => void corrupt.add(sha),
     breakObject: (sha) => void broken.add(sha),
     revokeKeys: () => keys.clear(),
+    mirrorClaude: (version, exe, o = {}) => void (claude = { version, exe, zst: zstdCompressSync(exe), slowMs: o.slowMs ?? 0 }),
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

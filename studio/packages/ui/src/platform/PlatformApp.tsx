@@ -74,7 +74,7 @@ export function PlatformApp() {
           </nav>
           <main className="pf-content">
             {page === "tools" && <ToolsPage view={view} onNeedStudioDir={needStudioDir} />}
-            {page === "environment" && <EnvironmentPage />}
+            {page === "environment" && <EnvironmentPage task={view.envTask} />}
             {page === "dirs" && <DirsPage view={view} notice={dirNotice} onNoticeDone={() => setDirNotice(null)} />}
             {page === "settings" && <SettingsPage view={view} />}
             {page === "account" && <AccountPage view={view} />}

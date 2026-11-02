@@ -12,7 +12,8 @@ import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfS
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { foldersInUse, QUIT_SINCE, runningExePaths, runningVersions, stopStudio, studioHealth, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
-import type { EnvironmentView, EnvUpdateResult } from "./environment-view.js";
+import type { EnvironmentView, EnvItemView, EnvTaskView, EnvUpdateResult } from "./environment-view.js";
+import { ClaudeInstallError, claudePlatform, installClaude, pickClaudeSource, SOURCE_NAME, type InstallRunner } from "./claude-install.js";
 import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
@@ -54,6 +55,8 @@ export interface PlatformOptions {
   launch?: (spec: LaunchSpec) => Promise<void>;
   /** 环境's 更新 (tests stand in for npm and claude update). */
   runUpdate?: (plan: UpdatePlan, env: Record<string, string>) => Promise<UpdateRun>;
+  /** 环境's Claude Code 安装 / 更新: what runs `<exe> install <version>` (tests stand in for it). */
+  claudeRun?: InstallRunner;
   /** The running platform's program; null or absent when it runs from the sources (development: no self-updates). */
   selfExe?: string | null;
   /** 重启平台: starts `spec` and ends this process (main.ts; tests record it). */
@@ -203,6 +206,7 @@ export class Platform implements PlatformCalls {
       dirs: { root: this.place.root, apps: this.installer.appsDir, studioData: settings.studioDataDir, settings: amoHome(this.options.env) },
       openAtLogin: settings.openAtLogin,
       theme: settings.theme,
+      envTask: this.envTask ? { ...this.envTask } : null,
     };
   }
 
@@ -863,11 +867,72 @@ export class Platform implements PlatformCalls {
     // Studio's own SDK, when it is installed, tells an outdated Claude Code as Studio's 设置 → 模型 does.
     // AMO_PLATFORM_NPM_REGISTRY: another registry for the newest versions (tests point it nowhere).
     const registry = this.options.env.AMO_PLATFORM_NPM_REGISTRY;
-    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir), ...(registry ? { latest: (pkg: string) => latestVersion(pkg, fetch, 8000, registry) } : {}) }));
+    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir), ...(registry ? { latest: (pkg: string) => latestVersion(pkg, fetch, 8000, registry) } : {}), claudeSource: () => pickClaudeSource(this.claudeOptions()) }));
     return this.envChecker.check(fresh);
   }
 
+  /** Claude Code 安装 / 更新's sources (claude-install.ts): the account's server, Anthropic (AMO_PLATFORM_CLAUDE_BASE in tests). */
+  private claudeOptions() {
+    const base = this.options.env.AMO_PLATFORM_CLAUDE_BASE;
+    return { env: this.options.env, account: this.account ? { server: this.account.server, key: this.account.key } : null, ...(this.options.fetch ? { fetch: this.options.fetch } : {}), ...(base ? { base } : {}) };
+  }
+
   private envUpdating: string | null = null;
+  private envTask: EnvTaskView | null = null;
+  private envTaskSent = 0;
+  private envSpeed: { at: number; done: number }[] = [];
+
+  /** Where the .zst waits between tries: the platform's own folder, as the tools' downloads (2026-10-28). */
+  claudeDownloadsDir(): string {
+    return join(this.place.root, "downloads", "claude-code");
+  }
+
+  /**
+   * 安装 / 更新 Claude Code (2026-11-03, plans/claude-code-mirror.md): from the team server's mirror when it has the
+   * version, else Anthropic; the progress goes out with the view (at most every 300 ms while downloading).
+   */
+  private async installClaudeHere(it: EnvItemView, view: EnvironmentView): Promise<EnvUpdateResult> {
+    const target = it.install!;
+    const source = { version: target.version, from: target.from, platform: claudePlatform(this.options.env), size: target.size, preparing: null };
+    this.envUpdating = it.id;
+    this.envSpeed = [];
+    this.envTask = { id: it.id, version: target.version, from: target.from, phase: "manifest", done: 0, total: null, bytesPerSec: 0 };
+    this.changed();
+    try {
+      const done = await installClaude(source, {
+        ...this.claudeOptions(),
+        downloadsDir: this.claudeDownloadsDir(),
+        runEnv: startEnv(this.options.env),
+        ...(this.options.claudeRun ? { run: this.options.claudeRun } : {}),
+        onProgress: (p) => {
+          const now = Date.now();
+          if (p.phase === "downloading") {
+            this.envSpeed.push({ at: now, done: p.done });
+            while (this.envSpeed.length > 2 && now - this.envSpeed[0]!.at > 5000) this.envSpeed.shift();
+          }
+          const first = this.envSpeed[0];
+          const secs = first ? (now - first.at) / 1000 : 0;
+          const phaseChanged = this.envTask?.phase !== p.phase || this.envTask?.from !== p.from;
+          this.envTask = { id: it.id, version: target.version, from: p.from, phase: p.phase, done: p.done, total: p.total, bytesPerSec: first && secs > 0.5 ? Math.round((p.done - first.done) / secs) : (this.envTask?.bytesPerSec ?? 0) };
+          if (phaseChanged || now - this.envTaskSent >= 300) {
+            this.envTaskSent = now;
+            this.changed();
+          }
+        },
+      });
+      const fresh = await this.environment(true);
+      const now = fresh.items.find((i) => i.id === it.id);
+      const how = `从${SOURCE_NAME[done.from]}下载`;
+      return { ok: true, message: now?.version ? `已${it.version ? "更新" : "安装"}，现在是 ${now.version}（${how}）` : `已装好 ${done.version}（${how}）。还显示没装的话，退出平台再打开（新装的程序要平台重新读 PATH）。`, view: fresh };
+    } catch (err) {
+      const fresh = await this.environment(true).catch(() => view);
+      return { ok: false, message: err instanceof ClaudeInstallError ? err.message : `没装成功：${message(err)}`, view: fresh };
+    } finally {
+      this.envUpdating = null;
+      this.envTask = null;
+      this.changed();
+    }
+  }
 
   /**
    * 更新 on the 环境 page (2026-10-29, the user: like cc-switch; only when clicked): Claude Code or Codex to npm's latest,
@@ -878,6 +943,8 @@ export class Platform implements PlatformCalls {
     if (this.envUpdating) return { ok: false, message: "正在更新另一项，等它做完。", view: null };
     const view = await this.environment();
     const it = view.items.find((i) => i.id === id);
+    // Claude Code not there or from its own installer: the mirror's way (2026-11-03), also to install it.
+    if (it?.install) return this.installClaudeHere(it, view);
     const plan = it ? updatePlan(it.id, it.path, this.options.env) : null;
     if (!it || !plan) return { ok: false, message: "这一项不能在这里更新。", view };
     if (plan.packageDir) {
