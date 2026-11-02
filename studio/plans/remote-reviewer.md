@@ -51,7 +51,7 @@
 | 1 | `rt.view` + A 上的检查 + B 的转发和缓存；B 对话里的「打开查看包」「打开 Review」能用（文件、改动预览、Git 改动） | ✓ 11-02：`host/src/features/remote/views.ts`（A 的 `answerView` + 分块 `ViewAnswers`；B 的 `RemoteViews`，存在 `remote-views/<task>/`）；B 的窗口走 `/api/remote/view/<task>/…`（`ui/src/remote/reviewer.tsx`）；中转服务不用改（转发任何合规的 kind） |
 | 2 | 推送「打开」，以及谁发起、「我也关注」的判断；A 窗口没开时也不报错 | ✓ 11-02：A 记每个会话这一轮是谁发起的（`grants.ts` `turnOf`，委派会话看父会话），`openRoute` 决定推给谁（`open` 推送，`by: you/other`）；「我也关注」只存在各自的界面里（localStorage，和「我也关心」一样），由窗口按事件里的 `onlyIfFollowing` 决定弹不弹；只推任务自己项目的 pack 和 Review |
 | 3 | B 上的批注：存储、复制、发到对话 | ✓ 11-02：B 的 Host 自己回批注的请求（`host/src/features/remote/comments.ts`，按任务存在 kv 里，归档副本时删掉；A 上没有）；复制时路径写「任务文件夹/…」、项目写「<A> 上的任务文件夹」，「发到对话」只发进这个任务自己的对话，路径照会话读的写（相对任务文件夹）；查看包、远程 Review 和对话里链接打开的远程文件都能批注，只有对话附件不能 |
-| 4 | 测试：单测（A 上的检查，每一类越界都要有）、e2e（两个 Host 走本机中转，参考 `e2e/studio/remote*.spec.ts`），截图放 `screenshots/studio/` | ○ |
+| 4 | 测试：单测（A 上的检查，每一类越界都要有）、e2e（两个 Host 走本机中转，参考 `e2e/studio/remote*.spec.ts`），截图放 `screenshots/studio/` | ✓ 11-02：越界单测在 `views.test.ts`（别的任务的 pack、出任务文件夹、链接和 junction、太大、Review 不是任务的项目）；两个 Host 的单测在 `remote-reviewer.test.ts`；e2e `e2e/studio/remote-reviewer.spec.ts`（B 发消息 → A 的 agent 开查看包、Review → B 弹出、从 A 读；B 批注、发到对话、复制；对话里的行再打开），截图 `screenshots/studio/remote-reviewer-*.png` |
 
 ## 约束
 

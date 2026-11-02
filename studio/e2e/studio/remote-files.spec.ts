@@ -143,7 +143,8 @@ test("B opens a remote task's Markdown, HTML and pictures: fetched from A with a
   // What would be this computer's copy is not offered: VS Code, Explorer, 书签; 改动 is off.
   await expect(viewer.getByTestId("viewer-reveal")).toHaveCount(0);
   await expect(viewer.getByTestId("viewer-mode-changes")).toBeDisabled();
-  await expect(viewer.getByTestId("passage-notes")).toContainText("远程任务的文件只能看");
+  // 远程 Reviewer (2026-11-02): a file of the task's folder takes comments here (kept on B).
+  await expect(viewer.getByTestId("passage-notes")).toContainText("选中文字，点「批注」写意见");
   await screenshot(b.app, "studio", "remote-viewer-markdown", viewer, "viewer");
 
   // The big picture: 「正在从 A 台式机 取文件…」 with how far it came, then the picture.
