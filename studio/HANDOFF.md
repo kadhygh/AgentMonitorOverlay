@@ -31,7 +31,8 @@
 
 | 事项 | 状态 |
 |---|---|
-| Android Studio | 首版工程在 `android/`，调试 APK 位于 `android/out/AMO-Studio-Android-0.1.0-debug.apk`；团队服务器真实 Dxx-DS、远程可靠性、标准及 360 dp / 1.3 倍字体 UI 验收通过。范围、证据及未验项见 `plans/android-studio.md`；真实手机和 Tailscale 实网待验 |
+| Android Studio | 工程 11-02 起在 `mobile/`（原 `android/`，为 iOS 改成 KMP：`shared` + `app`，见 `plans/ios.md`），调试 APK 位于 `mobile/out/`；团队服务器真实 Dxx-DS、远程可靠性、标准及 360 dp / 1.3 倍字体 UI 验收通过。范围、证据及未验项见 `plans/android-studio.md`；真实手机和 Tailscale 实网待验 |
+| iOS Studio | `plans/ios.md`：KMP 跟 Android 共用，TestFlight 内部测试。App 记录已建（`com.gorilla.amo`，描述文件 `AMOStudio_AppStore`，还没装到打包机）。第 0、1 步 11-02 做完，没提交；发布流程（`npm run release -- ios`，ssh 驱动打包机）方案已写，第 2 步等用户确认怎么拆 |
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
 | 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`）；10-29 晚改成弹窗、加「安全」、B 能带图片和文件给 A（`plans/remote-page-and-new-task.md` 第 7、8 节，Studio 0.9.10）。等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名、远程权限上限，用户 10-29 定先不做 |
 | 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭。`634b77c` 提交，中转服务 10-30 已部署，Studio 0.9.12 在测试通道（publish 时删了 0.9.9）；试过后 `npm run relay:mac -- promote studio 0.9.12`。终端里的会话、普通聊天、超时提醒以后再说 |
@@ -47,6 +48,17 @@
 - Studio 里 agent 的命令 PATH 去掉了 WindowsApps，用不到应用商店版的 `pwsh`、`python3`、`winget`（本机 `python`、`node`、`git` 不受影响）。
 
 ## 最近的改动（新的在上面）
+
+**2026-11-02 · 移动端改成 KMP：`android/` → `mobile/`（iOS 第 1 步）**（用户：按建议改名，发版值守已停）：
+- `studio/android` 改名为 `studio/mobile`；新加 KMP 模块 `shared`（Kotlin 2.4.10、`com.android.kotlin.multiplatform.library` 9.3.1、Compose Multiplatform 1.11.1），除 `MainActivity` 外的代码和字体都挪进 `shared/src/androidMain`，`app` 只剩外壳。代码改了三处：版本号从安装包读（不用 BuildConfig）、字体用 `dev.amo.studio.shared.R`、`FilePolicyTest` 用到的两个函数改成 public。`scripts/android-publish.mjs`、`relay-mac.mjs` 的注释、`mobile/README.md` 跟着改了路径；`plans/android-*.md` 和下面的旧记录里的 `android/` 没改。
+- 验证：assembleDebug、assembleDebugAndroidTest、lintDebug 都过；模拟器 FakeNga_UI_API_36 + 夹具，`test.ps1` 共 `OK (6 tests)`；设置页截图正常；`android-publish.test.mjs` 3 条过。
+- 还要：把代码挪进 commonMain（第 2 步）；提交（只提交这次的改动）。
+
+**2026-11-02 · iOS 版：方案和第 0 步**（用户：iOS 版走 TestFlight 内部测试，不上架）：
+- 用户定了：代码走 KMP + Compose Multiplatform，跟 Android 共用协议层、数据层和界面；`dev.amo.studio` 的 App ID、App Store 描述文件和 App 记录由 Wu Naiyu 那边在网页上手动建；先只给用户自己的 1–2 台设备。方案、要那边做的清单、平台依赖替换表和步骤都在 `plans/ios.md`。
+- 第 0 步：在打包机的 `~/amo-ios-spike/Hello/` 下用 `nice` 只编不签 archive 了一个空的 SwiftUI 工程，成功（3.3 秒，arm64，没有签名）。没碰证书、描述文件和账号。
+- 查到的：打包机没有 JDK（KMP 要装，先问用户）；SSH 会话里登录钥匙串是锁着的，以后通过 SSH 签名要先解锁，或者在图形会话里签。
+- 还要：跟「开发android版apk」任务对好时间，再把 Android 改成 KMP 结构（目录要不要改名为 `mobile/` 还没定）；等 Wu Naiyu 那边建好 App 记录；上传凭据由用户给。签名、导出、上传都还没验证。
 
 **2026-11-01 · 停止的兜底；session_send**（用户：project_mining 的会话移 Claude 记忆目录后卡死，停止和停后台命令都没反应，只能重启电脑；另一个会话要求能往自己开的会话里续发）：
 - 停止：`ClaudeRuntime.interrupt` 不再一直等 CLI；`stopGraceMs`（15 秒）内这一轮没结束就 `close` 它的进程并在会话里写一条提示，再过 15 秒进程还没退出就直接按停下处理（`finish` 只做一次，`closing` 清掉，下一条消息开新进程）。`stopBackground` 15 秒没回应就标成已停止并提示可能还在跑。

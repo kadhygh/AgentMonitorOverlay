@@ -296,7 +296,7 @@ private fun taskTone(t: RemoteTask): Tone {
 /** 设置 → 更新 (2026-10-31): this app's version, a newer one on the server with its notes, download progress, install. */
 @Composable private fun UpdateSection(u: AppUpdate, repo: StudioRepository) {
     val c = LocalAmoColors.current
-    Text("当前版本 ${BuildConfig.VERSION_NAME}", color = c.dim, style = MaterialTheme.typography.bodySmall)
+    Text("当前版本 ${repo.versionName}", color = c.dim, style = MaterialTheme.typography.bodySmall)
     val latest = u.latest
     if (latest == null) SecondaryButton(if (u.checking) "正在检查…" else "检查更新", "update-check", !u.checking) { repo.checkUpdate() }
     else {

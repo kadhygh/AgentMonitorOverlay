@@ -10,7 +10,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { sectionOf, studio } from "./amo-tools.mjs";
 
-export const ANDROID = join(studio, "android");
+// studio/mobile since 2026-11-02 (was studio/android): the Kotlin Multiplatform project the iOS app shares.
+export const ANDROID = join(studio, "mobile");
 export const APP_ID = "dev.amo.studio";
 /** The APK build.ps1 makes by default. */
 export const DEFAULT_APK = join(ANDROID, "app", "build", "outputs", "apk", "debug", "app-debug.apk");
@@ -22,11 +23,11 @@ export function gradleVersion(root = ANDROID) {
   const text = readFileSync(join(root, "app", "build.gradle.kts"), "utf8");
   const name = /versionName\s*=\s*"([^"]+)"/.exec(text)?.[1];
   const code = Number(/versionCode\s*=\s*(\d+)/.exec(text)?.[1]);
-  if (!name || !code) throw new Error("android/app/build.gradle.kts 里找不到 versionName / versionCode");
+  if (!name || !code) throw new Error("mobile/app/build.gradle.kts 里找不到 versionName / versionCode");
   return { version: name, versionCode: code };
 }
 
-/** The android/CHANGELOG.md section of `version`, or null. */
+/** The mobile/CHANGELOG.md section of `version`, or null. */
 export function androidNotes(version, root = ANDROID) {
   const file = join(root, "CHANGELOG.md");
   return existsSync(file) ? sectionOf(readFileSync(file, "utf8"), version) : null;
@@ -70,7 +71,7 @@ export function androidRelease({ apk = DEFAULT_APK, notes, root = ANDROID, badgi
   if (b.id !== APP_ID) throw new Error(`${apk} 不是 AMO Studio 安卓版（包名 ${b.id}）`);
   if (b.versionCode !== versionCode || b.version !== version) throw new Error(`${apk} 是 ${b.version}（${b.versionCode}）打的，build.gradle.kts 现在是 ${version}（${versionCode}）：先重新 ./build.ps1`);
   const text = (notes ?? androidNotes(version, root))?.trim();
-  if (!text) throw new Error(`android/CHANGELOG.md 里没有 ${version} 这一节：写上再发布，或者用 --notes "…"`);
+  if (!text) throw new Error(`mobile/CHANGELOG.md 里没有 ${version} 这一节：写上再发布，或者用 --notes "…"`);
   const data = readFileSync(apk);
   const latest = { version, versionCode, file: apkName(version), size: data.length, sha256: createHash("sha256").update(data).digest("hex"), notes: text, publishedAt: now.toISOString() };
   return { apk, latest };

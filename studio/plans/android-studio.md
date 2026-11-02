@@ -1,5 +1,7 @@
 # Android 版 AMO Studio：首版实现与验收
 
+> 2026-11-02：工程已从 `studio/android` 改名为 `studio/mobile`，并改成 Kotlin Multiplatform（`shared` + `app`），为了和 iOS 版共用代码，见 `plans/ios.md`。下面的路径是当时的写法。
+
 更新日期：2026-10-31。已完成独立 Android 工程、APK 构建、模拟器登录配对及远程任务流程。以下新增实现记录为当前状态；后面的调查记录保留环境与协议依据，其中“未验证”描述的是开发前状态。
 
 ## 首版实现

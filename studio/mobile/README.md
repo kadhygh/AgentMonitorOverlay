@@ -2,6 +2,14 @@
 
 手机上的 Studio 远程客户端。账号、配对和流量经过团队 Relay，任务、模型调用和命令均在电脑 Host 上执行。创建任务同时启动首个会话，与桌面客户端保持一致。
 
+## 工程结构（2026-11-02 起）
+
+为了出 iOS 版（`../plans/ios.md`），工程从 `studio/android` 改名为 `studio/mobile`，改成 Kotlin Multiplatform：
+
+- `shared/`：协议、数据层和全部 Compose 界面（KMP 模块，Compose Multiplatform 1.11.1；Android 上用的仍是 androidx compose 1.11.x / material3 1.4.0）。现在代码还都在 `src/androidMain`，之后一步步挪进 `commonMain`，再加 iOS。
+- `app/`：Android 外壳，只有 `MainActivity`、Manifest、图标和样式；applicationId、版本号、APK 路径和以前一样。
+- `iosApp/`（以后）：Xcode 工程，在 Mac 上编。
+
 ## 构建
 
 使用 JDK 17、Android SDK API 36 / Build Tools 36.0.0；Gradle Wrapper 固定 9.5.0，AGP 固定 9.3.1。最低支持 Android 9（API 28）。
@@ -30,7 +38,7 @@ Wi-Fi 地址和 Tailscale IP/MagicDNS 地址均可填写。两端必须连接同
 
 ## 测试
 
-构建 app 与 androidTest APK 后，可在 android 目录使用统一入口（自动安装、运行、保存日志并清除临时测试凭据）：
+构建 app 与 androidTest APK 后，可在 mobile 目录使用统一入口（自动安装、运行、保存日志并清除临时测试凭据）：
 
 ```powershell
 ./test.ps1 -FixtureReady '<ready.json路径>'
@@ -50,8 +58,8 @@ node scripts/android-fixture.mjs --server http://172.16.8.85:47120 --port 47972 
 
 ```powershell
 node scripts/android-provision.mjs <ready.json路径> emulator-5580
-adb -s emulator-5580 install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb -s emulator-5580 install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5580 install -r mobile/app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5580 install -r mobile/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb -s emulator-5580 shell am instrument -w -e class dev.amo.studio.RepositoryIntegrationTest dev.amo.studio.test/androidx.test.runner.AndroidJUnitRunner
 adb -s emulator-5580 shell am instrument -w -e class dev.amo.studio.UiFlowTest,dev.amo.studio.FilePolicyTest,dev.amo.studio.ReliabilityIntegrationTest dev.amo.studio.test/androidx.test.runner.AndroidJUnitRunner
 adb -s emulator-5580 shell rm /data/local/tmp/amo-android-test.json

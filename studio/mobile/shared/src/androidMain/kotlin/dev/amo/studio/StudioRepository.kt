@@ -42,6 +42,10 @@ import kotlin.coroutines.coroutineContext
  */
 class StudioRepository(context: Context) {
     private val app = context.applicationContext
+    // The installed build's version, from the package (2026-11-02: the code moved into the shared module, which has no BuildConfig).
+    private val packageInfo = app.packageManager.getPackageInfo(app.packageName, 0)
+    val versionCode: Long = packageInfo.longVersionCode
+    val versionName: String = packageInfo.versionName ?: ""
     private val prefs = app.getSharedPreferences("studio", Context.MODE_PRIVATE)
     private val cacheRoot = File(app.filesDir, "remote-cache").apply { mkdirs() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -129,7 +133,7 @@ class StudioRepository(context: Context) {
             val result = runCatching { withContext(Dispatchers.IO) { AppUpdates.latest(client, a) } }
             if (state.value.account != a) return@launch
             result.onSuccess { latest ->
-                val newer = latest?.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+                val newer = latest?.takeIf { it.versionCode > versionCode }
                 // Nothing newer: an APK downloaded before (now installed, or replaced on the server) is not needed.
                 if (newer == null) withContext(Dispatchers.IO) { AppUpdates.dir(app).deleteRecursively() }
                 setUpdate { u -> u.copy(checking = false, checkedAt = System.currentTimeMillis(), latest = newer, ready = u.ready?.takeIf { newer != null && it.name == newer.file }, note = when { newer != null -> null; latest == null -> "服务器上还没有发布安卓版"; else -> "已是最新版本" }) }

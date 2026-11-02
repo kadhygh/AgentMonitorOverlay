@@ -28,9 +28,9 @@
 //                                                           files no version left uses (2026-10-28, the user);
 //                                                           --dry-run only lists what would go
 //   The Android app (2026-10-31, scripts/android-publish.mjs; not a platform tool):
-//                              android-publish [--apk <file>] [--notes "…"]   the APK (android/app/build/outputs/apk/debug/
+//                              android-publish [--apk <file>] [--notes "…"]   the APK (mobile/app/build/outputs/apk/debug/
 //                                  app-debug.apk by default) as the newest build the app updates itself to; checked
-//                                  against build.gradle.kts, notes from android/CHANGELOG.md; the newest 3 builds kept
+//                                  against build.gradle.kts, notes from mobile/CHANGELOG.md; the newest 3 builds kept
 //                              --target-dir <dir>          any of these on a folder here instead of the Mac (tests,
 //                                                           or a relay service started here with --platform-dir <dir>)
 // SSH_HOST=<alias> to use another machine. Content updates need no restart: the service reads app/client per request.

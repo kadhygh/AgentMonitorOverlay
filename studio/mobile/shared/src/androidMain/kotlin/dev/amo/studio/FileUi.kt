@@ -72,14 +72,15 @@ import java.io.ByteArrayInputStream
     }
 }
 
-internal fun isolatedHtml(source: String): String {
+// Public, not internal (2026-11-02): the app module's FilePolicyTest checks it from another module now.
+fun isolatedHtml(source: String): String {
     val policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'\">"
     // The guard must precede all source nodes, including malformed pre-head scripts.
     // Keep a standards-mode doctype before it so existing report CSS stays faithful.
     return "<!doctype html>" + policy + source.replaceFirst(Regex("(?is)^\\s*<!doctype[^>]*>"), "")
 }
 
-internal fun localFileTarget(target: String, base: String = ""): String? {
+fun localFileTarget(target: String, base: String = ""): String? {
     val clean = Uri.decode(target.substringBefore('#').substringBefore('?'))
     if (clean.isBlank()) return null
     if (clean.startsWith("https://amo.invalid/")) return clean.removePrefix("https://amo.invalid/").takeIf { it.isNotBlank() }?.let { resolveLocal(base, it) }
