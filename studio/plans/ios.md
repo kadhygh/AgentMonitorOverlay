@@ -36,6 +36,8 @@
 
 **第 1 步 · 改名 + KMP 结构（2026-11-02，✓）**：`studio/android` 改名为 `studio/mobile`，新加 `shared` 模块（`org.jetbrains.kotlin.multiplatform` 2.4.10 + `com.android.kotlin.multiplatform.library` 9.3.1 + Compose Multiplatform 1.11.1，material3 1.9.0；在 Android 上用的仍是 androidx compose 1.11.x / material3 1.4.0）。除 `MainActivity` 外的 11 个文件和 3 个字体都挪到 `shared/src/androidMain`，`app` 只剩外壳并依赖 `:shared`。代码只改了三处：`BuildConfig` 改成从安装包读取版本号（`StudioRepository.versionCode/versionName`）；字体改用 `dev.amo.studio.shared.R`；`isolatedHtml`、`localFileTarget` 从 internal 改成 public，因为 `app` 里的 `FilePolicyTest` 跨模块用到它们。验证：`:app:assembleDebug`、`:app:assembleDebugAndroidTest`、`:app:lintDebug` 都通过；APK 解压后 74.8 MB（0.2.0 是 74.9 MB）；模拟器 FakeNga_UI_API_36 + `node scripts/android-fixture.mjs`，`test.ps1` 共 `OK (6 tests)`。第一次跑失败过一次，是模拟器刚启动完，分开跑和重跑都通过。设置页截图里的版本号「0.2.0」和中文字体都正常。`scripts/android-publish.mjs` 改指 `mobile/`，它的单测 3 条通过。没提交。
 
+**第 2a 步 · 数据层进 commonMain（2026-11-02，✓）**：`Models`、`HistoryCache`、`StudioRepository` 挪进 `shared/src/commonMain`。org.json 换成 `Json.kt`：同名的 `JSONObject` / `JSONArray`，照 Android 自带 org.json 的规则（JSON null 的 optString 是 "null"，字符串能转数字和布尔值，put null 就是删掉这个键，2.0 输出成 2，键保持插入顺序，相等按对象本身比较），解析和输出交给 kotlinx.serialization，这样一百多处调用只要删掉 import。OkHttp 换成 Ktor 3.5.2（3.6 带的 okhttp 5.5 要求 compileSdk 37）；java.io/MessageDigest 换成 okio；java.time 换成 kotlinx-datetime。手机相关的东西放在 `Platform` 接口后面（`Platform.kt`），Android 的实现是 `AndroidPlatform.kt`：Keystore 加密原样搬过去，HTTP 用 OkHttp 引擎（ping 15 秒、连接超时 10 秒、读超时 30 秒，跟原来一样），自更新是 `AndroidUpdater`。`StudioRepository(context)` 的写法照旧能用。踩到的坑：服务器地址是 http:// 时，Ktor 的 WebSocket 地址要换成 ws://，不然发出去的是普通 GET，服务器回 404，连接就一直悄悄重试（日志查出来的）。验证：新加 `shared/src/commonTest/JsonTest.kt` 10 条（`:shared:testAndroidHostTest`）；assembleDebug、androidTest、lint 都过；模拟器 + 夹具 `test.ps1` 共 `OK (6 tests)`，对话页截图正常。没验证的：被别的设备挤掉（4001）和登录失效（401）这两条路，没有测试覆盖，靠的是读代码。
+
 ## 工程结构（KMP）
 
 ```
@@ -137,8 +139,9 @@ codesign 要用 `Apple Distribution` 的私钥。SSH 会话里能不能直接用
 |---|---|---|
 | 0 | 打包机上空的 SwiftUI 工程只编不签，确认工具链 | ✓ 2026-11-02 |
 | 1 | `android/` 改名 `mobile/`，改成 KMP 结构（先只有 androidMain），Android 测试不变 | ✓ 2026-11-02 |
-| 2a–2c | 数据层、界面、文件挪进 commonMain（见「第 2 步怎么拆」），Android 每段都过测试 | ○ 等用户确认怎么拆 |
-| 2d | 打包机装 JDK；加 iOS 目标、iosMain、iosApp；在 iOS 模拟器上跑通并截图 | ○ 装 JDK 前先问 |
+| 2a | 数据层进 commonMain | ✓ 2026-11-02 |
+| 2b–2c | 界面、文件查看进 commonMain（用户 11-02 确认了拆法） | ○ 下一步 |
+| 2d | 加 iOS 目标、iosMain、iosApp；在 iOS 模拟器上跑通并截图。JDK 11-02 已装：Temurin 21.0.13，在打包机的 `~/amo-ios-build/jdk`，SHA-256 核对过 | ○ |
 | 3 | 手动验证签名和导出（见上面 1–4） | ○ 等描述文件装到打包机、API Key |
 | 4 | `ios` 接进 `npm run release`：`ios-release.mjs`、`build-on-mac.sh`、TARGETS、CHANGELOG；脚本自己的单测 | ○ 可以跟 2 并行写 |
 | 5 | 问过用户后第一次上传；用户的设备通过 TestFlight 装上，Wi-Fi 下跑一次完整的对话、审批和文件查看 | ○ |

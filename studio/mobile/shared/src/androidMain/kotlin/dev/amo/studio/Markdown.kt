@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import org.json.JSONObject
 import java.util.WeakHashMap
 
 // Markdown for the phone (2026-10-31). The app has no Markdown library offline, and the old renderer went line by

@@ -1,9 +1,26 @@
+@file:OptIn(ExperimentalTime::class, ExperimentalUuidApi::class, ExperimentalEncodingApi::class)
+
 package dev.amo.studio
 
-import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
+import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.url
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.URLProtocol
+import io.ktor.http.content.TextContent
+import io.ktor.http.isSuccess
+import io.ktor.http.parseUrl
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,25 +28,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import okhttp3.*
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.security.KeyStore
-import java.security.MessageDigest
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
+import okio.Buffer
+import okio.ByteString.Companion.toByteString
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * The phone is only a guest device; every operation remains authorized by the remote Host.
@@ -39,21 +49,28 @@ import kotlin.coroutines.coroutineContext
  * ends (re-reading only what can still change: pending approvals and questions, running tools, streaming text), tasks
  * are fetched a few at a time and only on connect or coming back, pushed task and session changes are applied as they
  * come, and the copy is saved per session on a background thread (HistoryCache).
+ *
+ * 2026-11-02 (plans/ios.md 第 2 步): shared with iOS. What differs per phone is behind Platform (preferences, the account
+ * key's encryption, files, the HTTP engine, self-update); the connection is Ktor's instead of OkHttp's (on Android
+ * still OkHttp underneath, with the same ping and timeouts).
  */
-class StudioRepository(context: Context) {
-    private val app = context.applicationContext
-    // The installed build's version, from the package (2026-11-02: the code moved into the shared module, which has no BuildConfig).
-    private val packageInfo = app.packageManager.getPackageInfo(app.packageName, 0)
-    val versionCode: Long = packageInfo.longVersionCode
-    val versionName: String = packageInfo.versionName ?: ""
-    private val prefs = app.getSharedPreferences("studio", Context.MODE_PRIVATE)
-    private val cacheRoot = File(app.filesDir, "remote-cache").apply { mkdirs() }
+class StudioRepository(private val platform: Platform) {
+    /** The installed build (2026-11-02: from the platform, the shared module has no BuildConfig). */
+    val versionCode: Long get() = platform.versionCode
+    val versionName: String get() = platform.versionName
+    /** False where the store updates the app (iOS: TestFlight). */
+    val updatesSupported: Boolean get() = platform.updater != null
+    private val prefs = platform.prefs
+    private val cacheRoot = (platform.filesDir / "remote-cache").also { platform.fileSystem.createDirectories(it) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val client = OkHttpClient.Builder().pingInterval(15, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-    private val device = prefs.getString("device", null) ?: ("d_" + UUID.randomUUID().toString().replace("-", "").take(24)).also { prefs.edit().putString("device", it).apply() }
-    private val mutable = MutableStateFlow(StudioState(theme = prefs.getString("theme", "light") ?: "light", resumeLast = prefs.getBoolean("resume-last", true)))
+    /** Writes when leaving the app; not cancelled with `scope`, so close() does not cut them off. */
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val client: HttpClient = platform.httpClient()
+    private val device = prefs.string("device") ?: ("d_" + Uuid.random().toHexString().take(24)).also { prefs.put("device", it) }
+    private val mutable = MutableStateFlow(StudioState(deviceName = platform.deviceName, theme = prefs.string("theme") ?: "light", resumeLast = prefs.boolean("resume-last", true)))
     val state: StateFlow<StudioState> = mutable.asStateFlow()
-    private var socket: WebSocket? = null
+    private var socket: DefaultClientWebSocketSession? = null
+    private var socketJob: Job? = null
     private var generation = 0
     private var retryJob: Job? = null
     private var attempt = 0
@@ -92,14 +109,14 @@ class StudioRepository(context: Context) {
 
     init {
         runCatching {
-            val saved = prefs.getString("account", null)?.let(::JSONObject)
+            val saved = prefs.string("account")?.let { JSONObject(it) }
             if (saved != null) {
-                val account = Account(saved.getString("server"), saved.getString("name"), decrypt(saved.getString("token")))
+                val account = Account(saved.getString("server"), saved.getString("name"), platform.decrypt(saved.getString("token")))
                 update { it.copy(account = account) }
                 val epoch = generation
                 launch { restoreCache(account); if (epoch == generation && state.value.account == account && !closed) connect() }
             }
-        }.onFailure { prefs.edit().remove("account").apply(); message("保存的登录已失效，请重新登录") }
+        }.onFailure { prefs.remove("account"); message("保存的登录已失效，请重新登录") }
     }
 
     fun login(server: String, name: String, password: String) = launch {
@@ -107,16 +124,17 @@ class StudioRepository(context: Context) {
         update { it.copy(busy = true) }
         try {
             val entered = server.trim().trimEnd('/')
-            val url = (if (entered.contains("://")) entered else "http://$entered").toHttpUrl()
-            require(url.scheme in listOf("http", "https") && url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null) { "服务器地址不正确" }
+            val text = if (entered.contains("://")) entered else "http://$entered"
+            val url = parseUrl(text)
+            require(url != null && text.none { it.isWhitespace() } && !text.contains('?') && !text.contains('#') && url.protocol.name in listOf("http", "https") && url.host.isNotBlank() && url.user == null && url.password == null) { "服务器地址不正确" }
             val base = url.toString().trimEnd('/')
             val answer = http(base, null, "/api/login", JSONObject().put("name", name.trim()).put("password", password))
             if (epoch != generation || closed) return@launch
             val account = Account(base, answer.getString("name"), answer.getString("key"))
-            val encrypted = encrypt(account.key)
+            val encrypted = platform.encrypt(account.key)
             disconnect(); snapshots.clear(); histories.clear(); saveJob?.cancel()
-            prefs.edit().putString("account", JSONObject().put("server", base).put("name", account.name).put("token", encrypted).toString()).apply()
-            update { StudioState(account = account, theme = it.theme, resumeLast = it.resumeLast) }; restoreCache(account); connect()
+            prefs.put("account", JSONObject().put("server", base).put("name", account.name).put("token", encrypted).toString())
+            update { StudioState(account = account, deviceName = it.deviceName, theme = it.theme, resumeLast = it.resumeLast) }; restoreCache(account); connect()
         } finally { update { it.copy(busy = false) } }
     }
 
@@ -126,27 +144,29 @@ class StudioRepository(context: Context) {
     private fun setUpdate(f: (AppUpdate) -> AppUpdate) = update { it.copy(update = f(it.update)) }
     /** Asks the server for a newer build — only when the person taps 检查更新 (2026-10-31, the user: Tailscale on the phone is not steady enough to ask unasked). */
     fun checkUpdate() {
+        val updater = platform.updater ?: return
         val a = state.value.account ?: return
         if (state.value.update.checking || state.value.update.downloading) return
         setUpdate { it.copy(checking = true) }
         scope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) { AppUpdates.latest(client, a) } }
+            val result = runCatching { updater.latest(a) }
             if (state.value.account != a) return@launch
             result.onSuccess { latest ->
                 val newer = latest?.takeIf { it.versionCode > versionCode }
                 // Nothing newer: an APK downloaded before (now installed, or replaced on the server) is not needed.
-                if (newer == null) withContext(Dispatchers.IO) { AppUpdates.dir(app).deleteRecursively() }
-                setUpdate { u -> u.copy(checking = false, checkedAt = System.currentTimeMillis(), latest = newer, ready = u.ready?.takeIf { newer != null && it.name == newer.file }, note = when { newer != null -> null; latest == null -> "服务器上还没有发布安卓版"; else -> "已是最新版本" }) }
-            }.onFailure { e -> setUpdate { it.copy(checking = false, checkedAt = System.currentTimeMillis(), note = e.message ?: "检查更新失败") } }
+                if (newer == null) updater.forget()
+                setUpdate { u -> u.copy(checking = false, checkedAt = now(), latest = newer, ready = u.ready?.takeIf { newer != null && it.substringAfterLast('/') == newer.file }, note = when { newer != null -> null; latest == null -> "服务器上还没有发布安卓版"; else -> "已是最新版本" }) }
+            }.onFailure { e -> setUpdate { it.copy(checking = false, checkedAt = now(), note = e.message ?: "检查更新失败") } }
         }
     }
     fun downloadUpdate() {
+        val updater = platform.updater ?: return
         val a = state.value.account ?: return
         val latest = state.value.update.latest ?: return
         if (state.value.update.downloading) return
         setUpdate { it.copy(downloading = true, downloaded = 0, note = null) }
         updateJob = scope.launch {
-            val result = runCatching { runInterruptible(Dispatchers.IO) { AppUpdates.download(client, app, a, latest) { n -> setUpdate { it.copy(downloaded = n) } } } }
+            val result = runCatching { updater.download(a, latest) { n -> setUpdate { it.copy(downloaded = n) } } }
             setUpdate { it.copy(downloading = false) }
             result.onSuccess { file -> setUpdate { it.copy(ready = file) }; installUpdate() }.onFailure { e -> if (e !is CancellationException) setUpdate { it.copy(note = e.message ?: "下载新版本失败") } }
         }
@@ -154,21 +174,22 @@ class StudioRepository(context: Context) {
     fun cancelUpdate() { updateJob?.cancel(); updateJob = null; setUpdate { it.copy(downloading = false, downloaded = 0) } }
     /** Android's installer for the downloaded APK — or first the page that allows this app to install apps. */
     fun installUpdate() {
+        val updater = platform.updater ?: return
         val file = state.value.update.ready ?: return
-        val allowed = app.packageManager.canRequestPackageInstalls()
+        val allowed = updater.canInstall()
         setUpdate { it.copy(note = if (allowed) null else "请在打开的页面里允许 AMO Studio 安装应用，返回后再点「安装」") }
-        runCatching { app.startActivity(AppUpdates.installIntent(app, file)) }.onFailure { e -> setUpdate { it.copy(note = "打不开安装界面：${e.message}") } }
+        runCatching { updater.openInstaller(file) }.onFailure { e -> setUpdate { it.copy(note = "打不开安装界面：${e.message}") } }
     }
 
-    fun logout() { flushNow(); disconnect(); snapshots.clear(); histories.clear(); cache = null; prefs.edit().remove("account").remove("last").apply(); update { StudioState(theme = it.theme, resumeLast = it.resumeLast) } }
-    fun setTheme(theme: String) { if (theme !in listOf("light", "dark", "system")) return; prefs.edit().putString("theme", theme).apply(); update { it.copy(theme = theme) } }
-    fun setResumeLast(on: Boolean) { prefs.edit().putBoolean("resume-last", on).apply(); update { it.copy(resumeLast = on) } }
+    fun logout() { flushNow(); disconnect(); snapshots.clear(); histories.clear(); cache = null; prefs.remove("account", "last"); update { StudioState(deviceName = it.deviceName, theme = it.theme, resumeLast = it.resumeLast) } }
+    fun setTheme(theme: String) { if (theme !in listOf("light", "dark", "system")) return; prefs.put("theme", theme); update { it.copy(theme = theme) } }
+    fun setResumeLast(on: Boolean) { prefs.put("resume-last", on); update { it.copy(resumeLast = on) } }
     fun clearMessage() = message(null)
     fun retry() { attempt = 0; connect() }
     /** Coming back to the app, or 刷新: devices always, tasks when the last sync is a while ago (or `force`). */
     fun refresh(force: Boolean = false) = launch {
         refreshDevices()
-        if (state.value.connected && (force || System.currentTimeMillis() - lastSync > 15_000)) syncAll()
+        if (state.value.connected && (force || now() - lastSync > 15_000)) syncAll()
     }
     fun requestPair(account: String, device: String? = null) = launch {
         val a = state.value.account ?: error("请先登录")
@@ -183,16 +204,14 @@ class StudioRepository(context: Context) {
         else if (state.value.message == "配对请求已发送，请在电脑上确认") message(null)
     }
 
-    private suspend fun http(server: String, token: String?, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
-        val builder = Request.Builder().url(server + path)
-        if (token != null) builder.header("Authorization", "Bearer $token")
-        if (body != null) builder.post(body.toString().toRequestBody("application/json".toMediaType()))
-        client.newCall(builder.build()).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
-            if (!response.isSuccessful) error(json.str("message", json.optJSONObject("error")?.str("message") ?: "服务器返回 ${response.code}"))
-            json
-        }
+    private suspend fun http(server: String, token: String?, path: String, body: JSONObject? = null): JSONObject {
+        val response: HttpResponse =
+            if (body != null) client.post(server + path) { token?.let { header(HttpHeaders.Authorization, "Bearer $it") }; setBody(TextContent(body.toString(), ContentType.Application.Json)) }
+            else client.get(server + path) { token?.let { header(HttpHeaders.Authorization, "Bearer $it") } }
+        val text = response.bodyAsText()
+        val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+        if (!response.status.isSuccess()) error(json.str("message", json.optJSONObject("error")?.str("message") ?: "服务器返回 ${response.status.value}"))
+        return json
     }
     private suspend fun refreshDevices() {
         val a = state.value.account ?: return
@@ -217,7 +236,7 @@ class StudioRepository(context: Context) {
         if (state.value.catalog == null) state.value.selectedPeer?.takeIf { it.online && state.value.connected }?.let { launch { fetchCatalog(it) } }
     }
     private fun disconnect() {
-        generation++; retryJob?.cancel(); socket?.cancel(); socket = null; syncJob = null
+        generation++; retryJob?.cancel(); socketJob?.cancel(); socketJob = null; socket?.cancel(); socket = null; syncJob = null
         // Completing a deferred can resume its command immediately on Main.immediate; detach before callbacks run.
         val abandoned = pending.values.toList()
         pending.clear()
@@ -229,13 +248,38 @@ class StudioRepository(context: Context) {
         if (closed) return
         disconnect(); val epoch = generation
         update { it.copy(connecting = true) }
-        val url = (a.server + "/api/devices/ws").toHttpUrl().newBuilder().addQueryParameter("device", device).addQueryParameter("name", state.value.deviceName).build()
-        socket = client.newWebSocket(Request.Builder().url(url).header("Authorization", "Bearer ${a.key}").build(), object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) { scope.launch { if (epoch == generation) runCatching { take(JSONObject(text)) }.onFailure { message("收到无法处理的远程消息") } } }
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { scope.launch { lost(epoch, code, null) } }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { scope.launch { lost(epoch, response?.code ?: 0, t.message) } }
-        })
+        // ws:// or wss://: with http:// Ktor sends a plain GET instead of the upgrade (the server answers 404).
+        val url = URLBuilder(a.server + "/api/devices/ws").apply {
+            protocol = if (protocol == URLProtocol.HTTPS) URLProtocol.WSS else URLProtocol.WS
+            parameters.append("device", device); parameters.append("name", state.value.deviceName)
+        }.build()
+        socketJob = scope.launch {
+            var code = 0
+            var reason: String? = null
+            try {
+                val session = client.webSocketSession { url(url); header(HttpHeaders.Authorization, "Bearer ${a.key}") }
+                if (epoch != generation) { session.cancel(); return@launch }
+                socket = session
+                for (frame in session.incoming) {
+                    if (frame !is Frame.Text) continue
+                    val text = frame.readText()
+                    scope.launch { if (epoch == generation) runCatching { take(JSONObject(text)) }.onFailure { message("收到无法处理的远程消息") } }
+                }
+                code = session.closeReason.await()?.code?.toInt() ?: 0
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // A refused upgrade comes back as an exception whose message carries the status (OkHttp: "Expected HTTP
+                // 101 response but was '401 Unauthorized'"; Darwin: "... expected status code 101 but was 401").
+                code = handshakeStatus(e); reason = e.message
+            }
+            lost(epoch, code, reason)
+        }
+    }
+    private fun handshakeStatus(e: Throwable): Int {
+        var t: Throwable? = e
+        while (t != null) { Regex("\\b(401|403)\\b").find(t.message ?: "")?.let { return it.value.toInt() }; t = t.cause }
+        return 0
     }
     private fun lost(epoch: Int, code: Int, reason: String?) {
         if (epoch != generation || closed) return
@@ -244,7 +288,7 @@ class StudioRepository(context: Context) {
         if (code == 401 || code == 403 || code == 4001) { message(if (code == 4001) "此设备连接被替换，请点重新连接" else "登录失效，请退出后重新登录"); return }
         if (unconfirmed) message("连接断开，操作结果未确认；正在重连，请先同步再决定是否重试")
         val wait = (1000L shl attempt.coerceAtMost(5)).coerceAtMost(30000L); attempt++
-        retryJob = scope.launch { delay((wait * (0.8 + Math.random() * 0.4)).toLong()); connect() }
+        retryJob = scope.launch { delay((wait * (0.8 + Random.nextDouble() * 0.4)).toLong()); connect() }
     }
     private suspend fun take(event: JSONObject) {
         when (event.str("type")) {
@@ -275,11 +319,11 @@ class StudioRepository(context: Context) {
         // An onResume refresh can overlap initial connection setup; discard that obsolete read silently.
         if (coroutineContext[OperationEpoch]?.value?.let { it != epoch } == true) throw CancellationException("Obsolete connection operation")
         check(state.value.connected && state.value.peers.any { it.identity == peer.identity && it.online && it.role == "guest" }) { "远端离线或配对已撤回" }
-        val id = "c_" + UUID.randomUUID().toString().replace("-", "")
+        val id = "c_" + Uuid.random().toHexString()
         val result = CompletableDeferred<JSONObject>(); pending[id] = Pending(peer.identity, result)
         val frame = JSONObject().put("type", "relay").put("to", JSONObject().put("account", peer.account).put("device", peer.device)).put("id", id).put("kind", kind).put("body", body)
         try {
-            check(socket?.send(frame.toString()) == true) { "未连接团队服务器" }
+            check(socket?.outgoing?.trySend(Frame.Text(frame.toString()))?.isSuccess == true) { "未连接团队服务器" }
             val answer = withTimeout(30000) { result.await() }
             check(epoch == generation) { "连接已切换，此操作结果未确认" }
             return answer
@@ -296,7 +340,7 @@ class StudioRepository(context: Context) {
     }
     private suspend fun syncOnce() {
         val epoch = generation
-        lastSync = System.currentTimeMillis()
+        lastSync = now()
         for (peer in state.value.peers.filter { it.role == "guest" && it.online }) {
             if (epoch != generation) return
             try {
@@ -362,7 +406,7 @@ class StudioRepository(context: Context) {
         val k = key(task.peer, session.id)
         val known = histories[k]
         update { it.copy(selectedSession = session, items = known ?: emptyList(), loadingItems = known == null) }
-        prefs.edit().putString("last", JSONObject().put("peer", task.peer.identity).put("task", task.id).put("session", session.id).toString()).apply()
+        prefs.put("last", JSONObject().put("peer", task.peer.identity).put("task", task.id).put("session", session.id).toString())
         launch {
             if (known == null) {
                 val saved = cache?.let { c -> withContext(Dispatchers.IO) { c.loadSession(k) } } ?: emptyList()
@@ -374,7 +418,7 @@ class StudioRepository(context: Context) {
     /** Opens a session of the selected task by id (a subagent row, the 等你处理 list). */
     fun openSession(sessionId: String) { state.value.sessions.find { it.id == sessionId }?.let(::selectSession) }
     /** The conversation open last time (peer identity, task id, session id), when there is one. */
-    fun lastLocation(): Triple<String, String, String>? = runCatching { prefs.getString("last", null)?.let(::JSONObject)?.let { Triple(it.str("peer"), it.str("task"), it.str("session")) } }.getOrNull()
+    fun lastLocation(): Triple<String, String, String>? = runCatching { prefs.string("last")?.let { JSONObject(it) }?.let { Triple(it.str("peer"), it.str("task"), it.str("session")) } }.getOrNull()
 
     private fun unsettled(row: JSONObject) = when (row.str("type")) {
         "approval", "question" -> row.str("state") == "pending"
@@ -519,22 +563,23 @@ class StudioRepository(context: Context) {
         update { it.copy(fileLoading = path) }
         try {
         require(path.isNotBlank() && path.length <= 2000) { "文件路径不正确" }
-        val task = active(); val output = ByteArrayOutputStream(); var meta: JSONObject? = null; var hash = ""
+        val task = active(); val output = Buffer(); var meta: JSONObject? = null; var hash = ""
         do {
-            val ask = JSONObject().put("taskId", task.id).put("path", path).put("offset", output.size())
+            val ask = JSONObject().put("taskId", task.id).put("path", path).put("offset", output.size)
             cwd?.takeIf { it.isNotBlank() }?.let { ask.put("cwd", it) }
             meta?.let { ask.put("expect", JSONObject().put("size", it.getLong("size")).put("mtime", it.getLong("mtime"))) }
             val chunk = command(task.peer, "rt.file", ask)
             val size = chunk.getLong("size"); val rel = chunk.getString("rel")
             check(size in 0..(20L * 1024 * 1024) && !rel.startsWith('/') && !rel.contains('\\') && rel.split('/').none { it == ".." || it.contains(':') }) { "远端文件超出允许范围" }
-            check(chunk.optInt("offset", -1) == output.size()) { "远端文件分块顺序不正确" }
+            check(chunk.optLong("offset", -1) == output.size) { "远端文件分块顺序不正确" }
             if (meta == null) { meta = chunk; hash = chunk.str("sha256") }
             else check(size == meta!!.getLong("size") && rel == meta!!.str("rel") && chunk.getLong("mtime") == meta!!.getLong("mtime")) { "传输中文件发生变化，请重新打开" }
-            val bytes = Base64.decode(chunk.getString("data"), Base64.DEFAULT)
-            check(bytes.size <= 512 * 1024 && output.size() + bytes.size <= size && (bytes.isNotEmpty() || size == 0L)) { "远端文件分块不正确" }
+            // Mime: like Android's Base64.DEFAULT it takes line breaks.
+            val bytes = Base64.Mime.decode(chunk.getString("data"))
+            check(bytes.size <= 512 * 1024 && output.size + bytes.size <= size && (bytes.isNotEmpty() || size == 0L)) { "远端文件分块不正确" }
             output.write(bytes)
-        } while (output.size().toLong() < meta!!.getLong("size"))
-        val bytes = output.toByteArray(); val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+        } while (output.size < meta!!.getLong("size"))
+        val bytes = output.readByteArray(); val digest = bytes.toByteString().sha256().hex()
         check(hash == digest) { "文件完整性校验失败" }
         val rel = meta!!.str("rel"); val kind = meta!!.str("kind")
         check(kind in listOf("html", "markdown", "image", "text")) { "不支持这个文件类型" }
@@ -543,7 +588,7 @@ class StudioRepository(context: Context) {
         } finally { if (fileEpoch == fileRequest) update { it.copy(fileLoading = null) } }
     }
     fun closeFile() { fileRequest++; update { it.copy(file = null, fileLoading = null) } }
-    fun close() { flushNow(); closed = true; disconnect(); scope.cancel(); client.dispatcher.executorService.shutdown(); client.connectionPool.evictAll() }
+    fun close() { flushNow(); closed = true; disconnect(); scope.cancel(); client.close() }
 
     // ---- the phone's copy (HistoryCache)
 
@@ -572,7 +617,7 @@ class StudioRepository(context: Context) {
         val (tasksRoot, sessions) = pendingWrites()
         if (tasksRoot == null && sessions.isEmpty()) return
         // Going away: written on a thread of its own, so leaving the app is not held up.
-        Thread { runCatching { tasksRoot?.let(c::saveTasks); sessions.forEach { (k, rows) -> c.saveSession(k, rows) } } }.start()
+        background.launch { runCatching { tasksRoot?.let(c::saveTasks); sessions.forEach { (k, rows) -> c.saveSession(k, rows) } } }
     }
     /** Called when the app goes to the background. */
     fun persist() = flushNow()
@@ -584,7 +629,7 @@ class StudioRepository(context: Context) {
     }
     private suspend fun restoreCache(account: Account) {
         val epoch = generation
-        val c = HistoryCache(cacheRoot, account); cache = c
+        val c = HistoryCache(platform.fileSystem, cacheRoot, account); cache = c
         val root = withContext(Dispatchers.IO) { c.loadTasks() } ?: return
         if (epoch != generation || state.value.account != account || closed) return
         runCatching {
@@ -598,20 +643,5 @@ class StudioRepository(context: Context) {
         }
     }
 
-    private fun secret(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey("amo-studio-token", null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder("amo-studio-token", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-        }.generateKey()
-    }
-    private fun encrypt(text: String): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, secret())
-        return Base64.encodeToString(cipher.iv + cipher.doFinal(text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
-    }
-    private fun decrypt(text: String): String {
-        val bytes = Base64.decode(text, Base64.NO_WRAP); require(bytes.size > 12)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.DECRYPT_MODE, secret(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-        return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-    }
+    private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 }

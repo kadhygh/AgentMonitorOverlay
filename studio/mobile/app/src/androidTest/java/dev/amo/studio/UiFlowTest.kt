@@ -19,7 +19,6 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.json.JSONObject
 import org.json.JSONTokener
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals

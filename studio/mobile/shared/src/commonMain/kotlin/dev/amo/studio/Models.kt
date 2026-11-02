@@ -1,7 +1,13 @@
 package dev.amo.studio
 
 import androidx.compose.runtime.Immutable
-import org.json.JSONObject
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 
 data class Account(val server: String, val name: String, val key: String)
 data class Peer(val account: String, val device: String, val name: String, val online: Boolean, val role: String = "guest") {
@@ -71,7 +77,8 @@ data class ViewedFile(val name: String, val kind: String, val mime: String, val 
     val type: String = json.str("type")
     val seq: Long = json.optLong("seq")
     override fun equals(other: Any?) = other is Entry && other.json === json
-    override fun hashCode() = System.identityHashCode(json)
+    // JSONObject keeps identity equality (Json.kt), so its hashCode is the identity one.
+    override fun hashCode() = json.hashCode()
 }
 
 fun JSONObject.str(key: String, fallback: String = ""): String = if (isNull(key)) fallback else optString(key, fallback)
@@ -122,10 +129,12 @@ fun questionStateLabel(state: String): String = when (state) {
 }
 
 /** "10:42", "昨天 10:42" or "10-29" for an ISO time; "" when there is none. */
-fun shortTime(iso: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): String {
+@OptIn(ExperimentalTime::class)
+fun shortTime(iso: String, now: Instant = Clock.System.now(), zone: TimeZone = TimeZone.currentSystemDefault()): String {
     if (iso.isBlank()) return ""
-    val at = runCatching { java.time.Instant.parse(iso).atZone(now.zone) }.getOrNull() ?: return ""
-    val days = java.time.temporal.ChronoUnit.DAYS.between(at.toLocalDate(), now.toLocalDate())
-    val hm = "%02d:%02d".format(at.hour, at.minute)
-    return when (days) { 0L -> hm; 1L -> "昨天 $hm"; else -> "%02d-%02d".format(at.monthValue, at.dayOfMonth) }
+    val at = runCatching { Instant.parse(iso) }.getOrNull()?.toLocalDateTime(zone) ?: return ""
+    val days = at.date.daysUntil(now.toLocalDateTime(zone).date)
+    fun two(n: Int) = n.toString().padStart(2, '0')
+    val hm = "${two(at.hour)}:${two(at.minute)}"
+    return when (days) { 0 -> hm; 1 -> "昨天 $hm"; else -> "${two(at.month.number)}-${two(at.day)}" }
 }

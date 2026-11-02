@@ -32,7 +32,7 @@
 | 事项 | 状态 |
 |---|---|
 | Android Studio | 工程 11-02 起在 `mobile/`（原 `android/`，为 iOS 改成 KMP：`shared` + `app`，见 `plans/ios.md`），调试 APK 位于 `mobile/out/`；团队服务器真实 Dxx-DS、远程可靠性、标准及 360 dp / 1.3 倍字体 UI 验收通过。范围、证据及未验项见 `plans/android-studio.md`；真实手机和 Tailscale 实网待验 |
-| iOS Studio | `plans/ios.md`：KMP 跟 Android 共用，TestFlight 内部测试。App 记录已建（`com.gorilla.amo`，描述文件 `AMOStudio_AppStore`，还没装到打包机）。第 0、1 步 11-02 做完，没提交；发布流程（`npm run release -- ios`，ssh 驱动打包机）方案已写，第 2 步等用户确认怎么拆 |
+| iOS Studio | `plans/ios.md`：KMP 跟 Android 共用，TestFlight 内部测试，发布接进 `npm run release -- ios`（方案已写，未实现）。App 记录已建（`com.gorilla.amo`，描述文件 `AMOStudio_AppStore`，用户或 wunaiyu 来装到打包机上）。第 0、1、2a 步做完（2a：数据层进 commonMain）；打包机 JDK 已装。下一步 2b 界面 |
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
 | 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`）；10-29 晚改成弹窗、加「安全」、B 能带图片和文件给 A（`plans/remote-page-and-new-task.md` 第 7、8 节，Studio 0.9.10）。等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名、远程权限上限，用户 10-29 定先不做 |
 | 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭。`634b77c` 提交，中转服务 10-30 已部署，Studio 0.9.12 在测试通道（publish 时删了 0.9.9）；试过后 `npm run relay:mac -- promote studio 0.9.12`。终端里的会话、普通聊天、超时提醒以后再说 |
@@ -48,6 +48,8 @@
 - Studio 里 agent 的命令 PATH 去掉了 WindowsApps，用不到应用商店版的 `pwsh`、`python3`、`winget`（本机 `python`、`node`、`git` 不受影响）。
 
 ## 最近的改动（新的在上面）
+
+**2026-11-02 · 移动端数据层进 commonMain（iOS 第 2a 步）**：`StudioRepository`、`HistoryCache`、`Models` 进 `mobile/shared/src/commonMain`；org.json → 同名的 `Json.kt`（照 Android 的规则），OkHttp → Ktor 3.5.2，java.io → okio，java.time → kotlinx-datetime；手机相关的放在 `Platform` 后面（Android：`AndroidPlatform.kt`，Keystore 和 OkHttp 设置照旧）。踩到的坑：Ktor 的 WebSocket 要用 ws://，用 http:// 会变成普通 GET，服务器回 404。验证：`JsonTest` 10 条，Android 编译、lint 都过，模拟器 `test.ps1` 共 6 条过。被挤掉（4001）和登录失效（401）这两条路没有测试。
 
 **2026-11-02 · 移动端改成 KMP：`android/` → `mobile/`（iOS 第 1 步）**（用户：按建议改名，发版值守已停）：
 - `studio/android` 改名为 `studio/mobile`；新加 KMP 模块 `shared`（Kotlin 2.4.10、`com.android.kotlin.multiplatform.library` 9.3.1、Compose Multiplatform 1.11.1），除 `MainActivity` 外的代码和字体都挪进 `shared/src/androidMain`，`app` 只剩外壳。代码改了三处：版本号从安装包读（不用 BuildConfig）、字体用 `dev.amo.studio.shared.R`、`FilePolicyTest` 用到的两个函数改成 public。`scripts/android-publish.mjs`、`relay-mac.mjs` 的注释、`mobile/README.md` 跟着改了路径；`plans/android-*.md` 和下面的旧记录里的 `android/` 没改。

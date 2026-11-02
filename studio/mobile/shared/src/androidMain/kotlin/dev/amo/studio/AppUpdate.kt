@@ -5,9 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -17,20 +19,15 @@ import java.util.concurrent.TimeUnit
 // the APK comes from /platform/android/<file>, is checked by size and sha256, and goes to Android's own installer. An
 // APK signed with another key than the installed app is refused by Android, not by this code.
 
-data class AndroidLatest(val version: String, val versionCode: Int, val file: String, val size: Long, val sha256: String, val notes: String)
-
-data class AppUpdate(
-    val checking: Boolean = false,
-    /** A build newer than this app; null when there is none (or not checked yet). */
-    val latest: AndroidLatest? = null,
-    val checkedAt: Long = 0,
-    /** What the last check said when there is nothing to offer (已是最新, not published, why it failed). */
-    val note: String? = null,
-    val downloading: Boolean = false,
-    val downloaded: Long = 0,
-    /** The checked APK, ready to install. */
-    val ready: File? = null,
-)
+// AndroidLatest and AppUpdate (the state 设置 shows) are in the shared code (Platform.kt); this is how Android does it.
+internal class AndroidUpdater(private val app: Context) : Updater {
+    private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+    override suspend fun latest(account: Account) = withContext(Dispatchers.IO) { AppUpdates.latest(client, account) }
+    override suspend fun download(account: Account, latest: AndroidLatest, progress: (Long) -> Unit): String = runInterruptible(Dispatchers.IO) { AppUpdates.download(client, app, account, latest, progress).path }
+    override suspend fun forget() { withContext(Dispatchers.IO) { AppUpdates.dir(app).deleteRecursively() } }
+    override fun canInstall() = app.packageManager.canRequestPackageInstalls()
+    override fun openInstaller(path: String) = app.startActivity(AppUpdates.installIntent(app, File(path)))
+}
 
 internal object AppUpdates {
     const val MIME = "application/vnd.android.package-archive"

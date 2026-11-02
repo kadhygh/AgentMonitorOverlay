@@ -25,8 +25,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
 import java.security.MessageDigest
 
 // The conversation page (2026-10-31 redesign, plans/android-mobile-redesign.md 第 3 步): a turn's tool calls and thinking
