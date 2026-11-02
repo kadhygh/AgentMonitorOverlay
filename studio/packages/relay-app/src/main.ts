@@ -144,6 +144,12 @@ function createWindow(): BrowserWindow {
     webPreferences: { preload: join(here, "preload.cjs"), sandbox: true, contextIsolation: true },
   });
   w.setMenu(null);
+  // The taskbar button takes its icon from a Start Menu shortcut with the window's AppUserModelID when there is one, over
+  // the window's own icon. Electron writes such a shortcut itself for toasts — named after the exe's ProductName, no icon
+  // — so on the platform's exe (Electron's own, never edited) it is 「Electron.lnk」 with Electron's icon, and the button
+  // showed that (问题 #11, 2026-11-02). The window gets an id no shortcut has, so its own icon shows; toasts keep
+  // AMO.Relay (app.setAppUserModelId above). The portable exe has its own name and icon: left as it was.
+  if (process.platform === "win32" && buildMode !== "portable") w.setAppDetails({ appId: "AMO.Relay.Window" });
   w.once("ready-to-show", () => (testMode ? w.showInactive() : w.show()));
   w.on("close", (e) => {
     if (quitting) return;
