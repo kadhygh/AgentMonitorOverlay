@@ -69,8 +69,19 @@ function EnvItem({ item: it, onView }: { item: EnvItemView; onView: (v: Environm
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // 问题 #9 (2026-11-02): while 更新 runs, a moving bar and the seconds so far under the item, as installing a tool shows
+  // its progress. npm and `claude update` tell no percentage, so the bar only says it is still working.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!updating) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [updating]);
   const canUpdate = !!it.updater && newer(it.latest, it.version);
   const update = () => {
+    setStartedAt(Date.now());
+    setNow(Date.now());
     setUpdating(true);
     setResult(null);
     void (call("updateEnvironment", it.id) as Promise<EnvUpdateResult>)
@@ -121,6 +132,16 @@ function EnvItem({ item: it, onView }: { item: EnvItemView; onView: (v: Environm
         <code className="pf-path" title={it.path}>
           {it.path}
         </code>
+      )}
+      {updating && (
+        <div className="pf-progress" role="status" aria-label={`${it.name} 更新进度`} data-testid={`env-${it.id}-progress`}>
+          <div className="pf-bar" aria-hidden="true">
+            <div className="pf-bar-fill busy" />
+          </div>
+          <span className="pf-hint">
+            ◐ 正在运行 {it.updater}，已 {Math.max(0, Math.floor((now - (startedAt ?? now)) / 1000))} 秒。它不报百分比，通常一两分钟，最多等 5 分钟。
+          </span>
+        </div>
       )}
       {result && (
         <p className={`pf-env-note${result.ok ? "" : " warn"}`} role="status" data-testid={`env-${it.id}-result`} style={{ whiteSpace: "pre-wrap" }}>
