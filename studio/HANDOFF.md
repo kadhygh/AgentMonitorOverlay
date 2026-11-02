@@ -49,6 +49,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-03 · 问题页的维护者和审核（master，没部署）**：用户定的规则写在 `plans/issues.md`「问题页（服务器）」最后一条。账号多了 `members.maintainer`（管理页「设为维护者」，`POST /api/admin/maintainer`），问题多了状态 `review`（待审核）、`rejected`（打回）和 `approved_by`（旧问题迁移时记成作者）。问题服务的每个调用都带上提问的人（`IssueViewer`），由服务端拦，页面只是不显示不能按的按钮；`GET /api/issues` 返回 `me`。Host 的 `issue_reply` / `issue_update` 拒绝这两种状态，默认列表本来就不含它们。验证：relay 单测（含新的审核流程、截图权限、管理接口）和 Host 的 issues / duty 单测都通过；e2e `issues-page.spec.ts` 两条通过（新加一条两个账号走完 待审核 → 打回 → 补充 → 确认制作），截图 `screenshots/relay/I9`～`I11`。**部署后要先在管理页把用户自己设成维护者**，否则值守读不到别人的问题、代 AI 回复会被拒。
+
 **2026-11-02 · 立即发送（分支 `studio/send-now`，没合进 master，等用户点头）**：方案、调查和用户定的 4 条在 `plans/send-now.md`。用户消息加 `delivery: "waiting" | "unsent"`；`messages` 路由加 `now`，新增 `items/:itemId/send-now`、`items/:itemId/resend`，远程 `rt.send` 带 `now`、新增 `rt.sendNow`、`rt.resend`。Claude：每条消息带 uuid，按 `command_lifecycle` 清「等待送达」，立即发送用 CLI 内部的 `interrupt` + `send_now`（init 报 `interrupt_send_now_v1` 才用，否则普通打断），Ctrl+Enter 用 `priority: "now"`；进程结束时还在等的标「没送到」（以前 15 秒兜底会悄悄丢掉）。Codex：插话带 `clientUserMessageId`，马上显示；一轮结束还没读到的由 `afterTurn` 作为下一轮发出（以前打断就丢了）；立即发送 = `turn/interrupt`。假 app-server 加了 `[[busy: ms]]`（命令跑着时插话先压着）。验证：Claude 集成测试 4 条、Codex 单测 5 条、takeBack 单测；e2e `claude.spec.ts` 点「立即发送」和 Ctrl+Enter，截图 `screenshots/send-now/`；完整 vitest 只有已知的 `server-manager.test.ts` 失败。没验证的：真 Claude / Codex 只用假模型和本机实验脚本试过；两台电脑的远程没端到端跑。
 
 **2026-11-02 · 远程任务的 Reviewer（分支 `studio/remote-reviewer`，没合进 master，等审阅和用户点头）**：方案和用户定的都在 `plans/remote-reviewer.md`（A 跑任务，B 控制）。一共 4 步：

@@ -24,7 +24,7 @@ export function issuesTools({ service, caller }: ToolContext): AmoTool[] {
       name: "issue_list",
       title: "问题列表",
       description:
-        "The issues the person reported on the team server's 问题页 (AMO's own problems): open ones by default (new, working, asking, fixed, stuck, discuss), all with all=true; newest change first. awaitsAi: the person wrote last, read it — except on discuss (去会话讨论), which the person took to a session: leave those alone. release.requestedAt: the person clicked 发布打包 (a test build is wanted).",
+        "The issues the person reported on the team server's 问题页 (AMO's own problems): open ones by default (new, working, asking, fixed, stuck, discuss), all with all=true; newest change first. awaitsAi: the person wrote last, read it — except on discuss (去会话讨论), which the person took to a session: leave those alone. review (待审核) and rejected (打回) wait for a maintainer to let them through (someone else reported them): not listed by default; leave them alone too. release.requestedAt: the person clicked 发布打包 (a test build is wanted).",
       inputSchema: { all: z.boolean().optional() },
       readOnly: true,
       autoApprove: true,

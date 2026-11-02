@@ -310,6 +310,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         kick(String(body.name));
         return send(res, 200, { name: body.name, password });
       }
+      // 维护者 (2026-11-03, the user): sees every issue on 问题页 and reviews the others' reports.
+      if (method === "POST" && path === "/api/admin/maintainer") {
+        store.setMaintainer(body.name, body.maintainer !== false);
+        return send(res, 200, { ok: true });
+      }
       if (method === "POST" && path === "/api/admin/disable") {
         store.setDisabled(body.name, body.disabled !== false);
         if (body.disabled !== false) kick(String(body.name));
@@ -433,11 +438,13 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     // 问题页 (2026-10-31, plans/issues.md): issues, their entries and screenshots, 发布打包. Studio's 值守 reads and
     // answers them with the person's account (`ai` marks what its AI wrote).
     if (path === "/api/issues" || path.startsWith("/api/issues/")) {
+      // 维护者 (2026-11-03): who asks decides what they see and may do.
+      const who = { name: me, maintainer: store.isMaintainer(me) };
       if (method === "GET" && path === "/api/issues") {
         const after = Number(url.searchParams.get("after") ?? 0);
-        return send(res, 200, issues.list(Number.isFinite(after) && after > 0 ? after : undefined));
+        return send(res, 200, issues.list(who, Number.isFinite(after) && after > 0 ? after : undefined));
       }
-      if (method === "POST" && path === "/api/issues") return send(res, 200, { issue: issues.create(me, (await readJson(req)) as never) });
+      if (method === "POST" && path === "/api/issues") return send(res, 200, { issue: issues.create(who, (await readJson(req)) as never) });
       if (method === "POST" && path === "/api/issues/images") {
         if (!opts.filesDir) throw new RelayError("bad_request", "这个服务没有开文件存储，不能传截图");
         const data = await readRaw(req, MAX_FILE_BYTES);
@@ -450,7 +457,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       }
       const im = /^\/api\/issues\/images\/(ii_[0-9a-f]{16})$/.exec(path);
       if (im && method === "GET") {
-        const image = issues.image(im[1]!);
+        const image = issues.image(who, im[1]!);
         const where = opts.filesDir ? join(opts.filesDir, image.id) : null;
         if (!where || !existsSync(where)) throw new RelayError("not_found", "图片的内容不在了");
         res.writeHead(200, { "content-type": image.type, "content-length": String(image.size), "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff", "content-security-policy": "sandbox" });
@@ -459,20 +466,20 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       }
       if (method === "POST" && path === "/api/issues/release") {
         const body = await readJson(req);
-        return send(res, 200, { release: issues.requestRelease(me, body.on !== false) });
+        return send(res, 200, { release: issues.requestRelease(who, body.on !== false) });
       }
       if (method === "POST" && path === "/api/issues/release/done") {
         const body = await readJson(req);
-        return send(res, 200, issues.released(me, body.version, body.numbers));
+        return send(res, 200, issues.released(who, body.version, body.numbers));
       }
       // `npm run release` says where its test build is (2026-10-31): the page shows it.
       if (method === "POST" && path === "/api/issues/release/build") return send(res, 200, { release: issues.reportBuild(me, (await readJson(req)) as never) });
       const nm = /^\/api\/issues\/(\d+)(\/entries)?$/.exec(path);
       if (nm) {
         const number = Number(nm[1]);
-        if (method === "GET" && !nm[2]) return send(res, 200, { issue: issues.get(number) });
-        if (method === "POST" && nm[2]) return send(res, 200, { issue: issues.addEntry(me, number, (await readJson(req)) as never) });
-        if (method === "PATCH" && !nm[2]) return send(res, 200, { issue: issues.update(me, number, (await readJson(req)) as never) });
+        if (method === "GET" && !nm[2]) return send(res, 200, { issue: issues.get(who, number) });
+        if (method === "POST" && nm[2]) return send(res, 200, { issue: issues.addEntry(who, number, (await readJson(req)) as never) });
+        if (method === "PATCH" && !nm[2]) return send(res, 200, { issue: issues.update(who, number, (await readJson(req)) as never) });
       }
       throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
     }

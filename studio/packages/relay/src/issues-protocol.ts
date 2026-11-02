@@ -2,10 +2,15 @@
 // two and screenshots); Studio's 值守 fetches them, fixes each in a session, answers on the issue and sets its status;
 // 发布打包 on the page asks for a test build. Shared by the service, the page and Studio's Host.
 
-export const ISSUE_STATUSES = ["new", "working", "asking", "fixed", "released", "stuck", "discuss", "closed"] as const;
+export const ISSUE_STATUSES = ["review", "rejected", "new", "working", "asking", "fixed", "released", "stuck", "discuss", "closed"] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
 export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
+  // 维护者 (2026-11-03, the user): what someone who is not a maintainer reports waits for a maintainer to look at it
+  // first — 确认制作 makes it 新 for 值守, 打回 sends it back with the reason; a word from its author then hands it in
+  // again. 值守 never touches these two.
+  review: "待审核",
+  rejected: "打回",
   new: "新",
   working: "修复中",
   // The AI wants the person's word — it does not understand, or the issue is big and it wrote how it would go: they
@@ -19,6 +24,9 @@ export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
   discuss: "去会话讨论",
   closed: "不修了",
 };
+
+/** What only a maintainer sets: 值守 (the AI) never does, and leaves issues in them alone. */
+export const ISSUE_REVIEW_STATUSES: readonly IssueStatus[] = ["review", "rejected"];
 
 /** The tools an issue can be about (the platform's tool ids); "" = not said. */
 export const ISSUE_TOOLS: Record<string, string> = {
@@ -67,6 +75,8 @@ export interface Issue {
   version: string;
   /** The test build it went out in ("Studio 0.9.17"); "". */
   fixedIn: string;
+  /** The maintainer who let it be worked on (确认制作), or its author when that was a maintainer; "" while it waits. */
+  approvedBy: string;
   /** Who works on it now, as 值守 says ("Opus 5.5 · 任务「问题 #3 …」"); "". */
   worker: string;
   /** The Studio session that wrote on it last, to find it in Studio's search (2026-10-31 晚); "". */
@@ -133,6 +143,14 @@ export interface IssueList {
   issues: Issue[];
   release: IssueRelease;
   rev: number;
+  /** Who asks: a maintainer sees every issue and reviews the others' (2026-11-03); anyone else only their own. */
+  me: IssueViewer;
+}
+
+/** The account asking, as the issue service sees it (members.maintainer, set on the admin page). */
+export interface IssueViewer {
+  name: string;
+  maintainer: boolean;
 }
 
 export interface NewIssue {

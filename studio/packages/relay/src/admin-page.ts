@@ -38,7 +38,7 @@ code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}[hid
 <div class="row" id="reg" hidden><span id="regtext"></span><button type="button" id="setpp"></button><button type="button" id="clearpp" class="danger" hidden>取消口令</button></div>
 <form id="login" class="row" hidden><input id="pw" type="password" placeholder="管理密码" autocomplete="current-password"><button class="primary">进入</button></form>
 <div id="msg"></div></div>
-<div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>问题页</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
 <p class="muted">改登录名：聊天、会话、任务、文件、批注、设备配对里的名字一起改，他已经登录的设备照样能用；之后请他在 AMO 平台的「账号」里退出，用新名字重新登录一次。重设密码和停用会让他所有设备的登录失效。</p></div>
 <div class="card" id="mon" hidden><div class="row" style="justify-content:space-between"><h2>服务器状态</h2><div class="row"><span class="muted" id="monat"></span><button type="button" id="monrefresh">刷新</button></div></div>
 <div class="stats" id="stats"></div><div class="charts" id="charts"></div>
@@ -72,6 +72,8 @@ function load() {
       tr.appendChild(cell(m.name));
       tr.appendChild(cell(m.nick || "—"));
       tr.appendChild(cell(m.role || "—"));
+      // 维护者 (2026-11-03, the user): sees everyone's issues on 问题页 and reviews them before 值守 works on them.
+      var mt = cell(m.maintainer ? "✓ 维护者" : "—", m.maintainer ? "on" : "muted"); mt.setAttribute("data-testid", "admin-maintainer"); tr.appendChild(mt);
       tr.appendChild(cell(m.disabled ? "! 已停用" : m.online ? "● 在线" : "○ 离线", m.disabled ? "off" : m.online ? "on" : "muted"));
       tr.appendChild(cell(String(m.logins)));
       tr.appendChild(cell(when(m.lastMessageAt)));
@@ -84,6 +86,9 @@ function load() {
       box.appendChild(btn("重设密码", "", function () {
         var given = prompt("「" + m.name + "」的新密码（留空就随机生成一个）：", ""); if (given === null) return;
         call("POST", "/api/admin/password", { name: m.name, password: given }).then(function (r) { say("「" + r.name + "」的新密码：" + r.password + "（他所有设备都要重新登录）"); load(); }, function (e) { say(e.message, true); });
+      }));
+      box.appendChild(btn(m.maintainer ? "取消维护者" : "设为维护者", "", function () {
+        call("POST", "/api/admin/maintainer", { name: m.name, maintainer: !m.maintainer }).then(function () { say(m.maintainer ? "「" + m.name + "」不再是维护者：问题页上只看得到自己的问题，提的问题要维护者审核。" : "「" + m.name + "」是维护者了：问题页上看得到所有人的问题，别人提的要他确认制作后值守才处理。"); load(); }, function (e) { say(e.message, true); });
       }));
       box.appendChild(m.disabled
         ? btn("启用", "", function () { call("POST", "/api/admin/disable", { name: m.name, disabled: false }).then(function () { say("已启用「" + m.name + "」。"); load(); }, function (e) { say(e.message, true); }); })

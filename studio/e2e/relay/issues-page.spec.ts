@@ -46,6 +46,8 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   store = new relay.RelayStore(join(root, "relay.db"));
   server = await relay.startRelayServer({ store, filesDir: join(root, "files"), host: "127.0.0.1", port: 0, name: "测试组" });
   const me = await new relay.RelayClient(server.url).register("老戴", "pw-dai");
+  // 维护者 (2026-11-03): set on the admin page; 老戴's 值守 fixes things.
+  store.setMaintainer("老戴", true);
 
   // The system's Edge: e2e does not download a Chromium of its own.
   browser = await chromium.launch({ channel: "msedge" });
@@ -172,4 +174,80 @@ test("问题页: sign in, report with a screenshot, the AI asks, answer, 发布�
   await page.getByTestId("issue-close").click();
   await expect(page.getByTestId("issues-list")).toBeVisible();
   await page.screenshot({ path: join(shots, "I8-narrow-list.png") });
+});
+
+async function signIn(page: Page, name: string, password: string) {
+  await page.goto(`${server!.url}/issues`);
+  await page.getByPlaceholder("登录名").fill(name);
+  await page.getByPlaceholder("密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.getByTestId("issues-list")).toBeVisible();
+}
+
+test("问题页 维护者 (2026-11-03): another's report waits for review, 打回 with a reason, handed in again, 确认制作", async () => {
+  root = mkdtempSync(join(tmpdir(), "amo-issues-"));
+  store = new relay.RelayStore(join(root, "relay.db"));
+  server = await relay.startRelayServer({ store, filesDir: join(root, "files"), host: "127.0.0.1", port: 0, name: "测试组" });
+  const client = new relay.RelayClient(server.url);
+  const me = await client.register("老戴", "pw-dai");
+  await client.register("小吴", "pw-wu");
+  store.setMaintainer("老戴", true);
+  await ai(me.key, "POST", "/api/issues", { body: "老戴自己报的：便签的复制没有图" });
+
+  browser = await chromium.launch({ channel: "msedge" });
+  const wu = await (await browser.newContext({ viewport: { width: 1280, height: 820 }, colorScheme: "light" })).newPage();
+  const dai = await (await browser.newContext({ viewport: { width: 1280, height: 820 }, colorScheme: "light" })).newPage();
+
+  // 小吴 sees only their own, without 发布打包; what they report waits for review.
+  await signIn(wu, "小吴", "pw-wu");
+  await expect(wu.getByTestId("issues-list")).toContainText("还没有问题");
+  await expect(wu.locator("#sub")).toContainText("这里只有你自己提的问题");
+  await expect(wu.locator("#relBtn")).toBeHidden();
+  await wu.getByTestId("issues-new-toggle").click();
+  await wu.locator("#newBody").fill("中转聊天列表里的头像不显示");
+  await wu.locator("#newBody").press("Control+Enter");
+  await expect(wu.getByTestId("issue-row")).toHaveCount(1);
+  await expect(wu.getByTestId("issue-row")).toContainText("待审核");
+  await expect(wu.getByTestId("issue-review-note")).toHaveText("等维护者确认后才会开始处理。");
+  await expect(wu.getByTestId("issue-discuss")).toHaveCount(0);
+  await expect(wu.getByTestId("issue-approve")).toHaveCount(0);
+  await wu.screenshot({ path: join(shots, "I9-review-reporter.png") });
+
+  // 老戴 sees both; 小吴's is 要你看, marked whose it is, with 确认制作 / 打回.
+  await signIn(dai, "老戴", "pw-dai");
+  await expect(dai.locator("#sub")).toContainText("你是维护者");
+  await expect(dai.getByTestId("issue-row")).toHaveCount(2);
+  await expect(dai.getByTestId("issues-tab-you")).toHaveText("要你看1");
+  await dai.getByTestId("issues-tab-you").click();
+  await expect(dai.getByTestId("issue-row")).toContainText("小吴 提的");
+  await dai.getByTestId("issue-row").click();
+  await expect(dai.getByTestId("issue-review-note")).toContainText("这是 小吴 提的问题，等你审核");
+  // 打回 asks for the reason first.
+  await dai.getByTestId("issue-reject").click();
+  await expect(dai.locator("#commentMsg")).toContainText("写一句打回的原因");
+  await dai.locator("#commentText").fill("是哪个聊天？贴一张截图");
+  await dai.screenshot({ path: join(shots, "I10-review-maintainer.png") });
+  await dai.getByTestId("issue-reject").click();
+  await expect(dai.getByTestId("issue-review-note")).toContainText("已打回，等 小吴 补充后重新提交");
+  await expect(dai.getByTestId("issues-tab-you")).toHaveText("要你看");
+
+  // 小吴 reads why (要你看), answers: handed in again.
+  await expect(wu.getByTestId("issues-tab-you")).toHaveText("要你看1", { timeout: 15_000 });
+  await expect(wu.getByTestId("issue-review-note")).toContainText("维护者打回了这个问题", { timeout: 15_000 });
+  await expect(wu.getByTestId("issues-detail")).toContainText("是哪个聊天？贴一张截图");
+  await expect(wu.locator("#commentText")).toHaveAttribute("placeholder", /重新提交审核/);
+  await wu.screenshot({ path: join(shots, "I11-rejected-reporter.png") });
+  await wu.locator("#commentText").fill("和策划的单聊");
+  await wu.locator("#commentText").press("Control+Enter");
+  await expect(wu.getByTestId("issue-row")).toContainText("待审核");
+
+  // 确认制作: 新, for 值守; the page says who let it through.
+  await expect(dai.getByTestId("issues-tab-you")).toHaveText("要你看1", { timeout: 15_000 });
+  await expect(dai.getByTestId("issue-approve")).toBeVisible({ timeout: 15_000 });
+  await dai.getByTestId("issue-approve").click();
+  await expect(dai.getByTestId("issues-detail")).toContainText("老戴 确认制作");
+  await expect(dai.getByTestId("issue-review-note")).toHaveCount(0);
+  await expect(dai.getByTestId("issue-discuss")).toBeVisible();
+  await expect(wu.getByTestId("issue-row")).toContainText("新", { timeout: 15_000 });
+  await expect(wu.getByTestId("issue-review-note")).toHaveCount(0);
 });

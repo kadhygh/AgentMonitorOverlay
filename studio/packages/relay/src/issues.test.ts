@@ -26,14 +26,23 @@ async function service() {
   server = await startRelayServer({ store, filesDir, host: "127.0.0.1", port: 0, name: "测试组" });
   const anon = new RelayClient(server.url);
   const me = await anon.register("老戴", "pw-dai");
+  // 维护者 (2026-11-03): nobody is one until the admin page says so; 老戴 is, as the person whose 值守 fixes things.
+  store.setMaintainer("老戴", true);
   const url = server.url;
-  const call = async <T,>(method: string, path: string, body?: unknown, raw?: { data: Buffer; type: string }): Promise<T> => {
-    const res = await fetch(`${url}${path}`, { method, headers: { authorization: `Bearer ${me.key}`, ...(raw ? { "content-type": raw.type } : { "content-type": "application/json" }) }, body: raw ? new Uint8Array(raw.data) : body === undefined ? undefined : JSON.stringify(body) });
-    const json = (await res.json()) as T & { message?: string };
-    if (!res.ok) throw new Error(json.message ?? String(res.status));
-    return json;
+  const as =
+    (key: string) =>
+    async <T,>(method: string, path: string, body?: unknown, raw?: { data: Buffer; type: string }): Promise<T> => {
+      const res = await fetch(`${url}${path}`, { method, headers: { authorization: `Bearer ${key}`, ...(raw ? { "content-type": raw.type } : { "content-type": "application/json" }) }, body: raw ? new Uint8Array(raw.data) : body === undefined ? undefined : JSON.stringify(body) });
+      const json = (await res.json()) as T & { message?: string };
+      if (!res.ok) throw new Error(json.message ?? String(res.status));
+      return json;
+    };
+  /** Another account, not a maintainer: its calls and its key. */
+  const other = async (name: string) => {
+    const { key } = await anon.register(name, `pw-${name}`);
+    return Object.assign(as(key), { key });
   };
-  return { url, key: me.key, call };
+  return { url, key: me.key, call: as(me.key), other };
 }
 
 describe("问题页 (2026-10-31)", () => {
@@ -145,8 +154,64 @@ describe("问题页 (2026-10-31)", () => {
     await service();
     const { IssueStore } = await import("./issues.js");
     const issues = new IssueStore(store!.db);
-    issues.create("老戴", { body: "便签的复制没有图" });
+    issues.create({ name: "老戴", maintainer: true }, { body: "便签的复制没有图" });
     store!.renameMember("老戴", "戴");
-    expect(issues.get(1).author).toBe("戴");
+    expect(issues.get({ name: "戴", maintainer: true }, 1)).toMatchObject({ author: "戴", approvedBy: "戴" });
+  });
+
+  it("维护者 (2026-11-03): another's report waits for review, is sent back with a reason, handed in again and let through; they see only their own", async () => {
+    const { call, other } = await service();
+    const xiao = await other("小吴");
+    const lin = await other("小林");
+    // A maintainer's own report is 新 at once.
+    expect((await call<{ issue: Issue }>("POST", "/api/issues", { body: "老戴自己的" })).issue).toMatchObject({ number: 1, status: "new", approvedBy: "老戴" });
+    // 小吴's waits for review, and the AI does not see it as something to answer.
+    const { issue } = await xiao<{ issue: Issue }>("POST", "/api/issues", { body: "中转的头像不显示" });
+    expect(issue).toMatchObject({ number: 2, status: "review", approvedBy: "", awaitsAi: false });
+    // Each sees only their own; the maintainer sees all and is told so.
+    const mine = await xiao<IssueList>("GET", "/api/issues");
+    expect([mine.issues.map((i) => i.number), mine.me]).toEqual([[2], { name: "小吴", maintainer: false }]);
+    expect((await lin<IssueList>("GET", "/api/issues")).issues).toEqual([]);
+    await expect(lin("GET", "/api/issues/2")).rejects.toThrow("没有问题 #2");
+    await expect(lin("POST", "/api/issues/2/entries", { body: "我也是" })).rejects.toThrow("没有问题 #2");
+    await expect(xiao("GET", "/api/issues/1")).rejects.toThrow("没有问题 #1");
+    const all = await call<IssueList>("GET", "/api/issues");
+    expect([all.issues.map((i) => i.number), all.me.maintainer]).toEqual([[2, 1], true]);
+    // Not theirs to do: statuses, the AI's words, 发布打包.
+    await expect(xiao("PATCH", "/api/issues/2", { status: "working" })).rejects.toThrow("只有维护者能改问题的状态");
+    await expect(xiao("POST", "/api/issues/2/entries", { body: "好了", status: "fixed" })).rejects.toThrow("只有维护者能改问题的状态");
+    await expect(xiao("POST", "/api/issues/2/entries", { body: "AI", ai: true })).rejects.toThrow("只有维护者能代 AI 回复");
+    await expect(xiao("POST", "/api/issues/release", {})).rejects.toThrow("只有维护者能请求发布打包");
+    // The AI leaves it alone until it is let through.
+    await expect(call("POST", "/api/issues/2/entries", { body: "看看", ai: true })).rejects.toThrow("还在等维护者审核");
+    await expect(call("PATCH", "/api/issues/2", { status: "working", ai: true })).rejects.toThrow("还在等维护者审核");
+    // 打回 says why; 小吴's next word hands it in again (a maintainer's word does not).
+    await expect(call("PATCH", "/api/issues/2", { status: "rejected" })).rejects.toThrow("打回要写一句原因");
+    await expect(call("POST", "/api/issues/2/entries", { status: "rejected" })).rejects.toThrow("打回要写一句原因");
+    expect((await call<{ issue: Issue }>("POST", "/api/issues/2/entries", { body: "哪个页面？贴张截图", status: "rejected" })).issue.status).toBe("rejected");
+    expect((await call<{ issue: Issue }>("POST", "/api/issues/2/entries", { body: "维护者再说一句" })).issue.status).toBe("rejected");
+    expect((await xiao<{ issue: Issue }>("POST", "/api/issues/2/entries", { body: "聊天列表里的" })).issue).toMatchObject({ status: "review", awaitsAi: false });
+    // 确认制作: 新 for 值守, as any other.
+    expect((await call<{ issue: Issue }>("PATCH", "/api/issues/2", { status: "new" })).issue).toMatchObject({ status: "new", approvedBy: "老戴", awaitsAi: true });
+    expect((await call<{ issue: Issue }>("PATCH", "/api/issues/2", { status: "working", ai: true })).issue.status).toBe("working");
+    await expect(call("PATCH", "/api/issues/2", { status: "review", ai: true })).rejects.toThrow("只由维护者在问题页上点");
+    // Fixed and released; 「还不对」 from 小吴 opens it again as 新 (it was let through once).
+    await call("POST", "/api/issues/2/entries", { body: "修好了", ai: true, status: "fixed" });
+    await call("POST", "/api/issues/release/done", { version: "Studio 0.9.30", numbers: [2] });
+    expect((await xiao<{ issue: Issue }>("POST", "/api/issues/2/entries", { body: "还是不显示" })).issue.status).toBe("new");
+    // 小吴 may put their own away and open it again; one never let through goes back to review.
+    const { issue: third } = await xiao<{ issue: Issue }>("POST", "/api/issues", { body: "再一个" });
+    expect((await xiao<{ issue: Issue }>("PATCH", `/api/issues/${third.number}`, { status: "closed" })).issue.status).toBe("closed");
+    expect((await xiao<{ issue: Issue }>("PATCH", `/api/issues/${third.number}`, { status: "new" })).issue.status).toBe("review");
+  });
+
+  it("维护者: a screenshot is for its uploader and those who may see its issue", async () => {
+    const { url, key, other } = await service();
+    const xiao = await other("小吴");
+    const lin = await other("小林");
+    const { image } = await xiao<{ image: { id: string } }>("POST", "/api/issues/images?name=a.png", undefined, { data: PNG, type: "image/png" });
+    await xiao("POST", "/api/issues", { body: "截图", images: [image.id] });
+    const status = async (k: string) => (await fetch(`${url}/api/issues/images/${image.id}?key=${encodeURIComponent(k)}`)).status;
+    expect([await status(xiao.key), await status(key), await status(lin.key)]).toEqual([200, 200, 404]);
   });
 });

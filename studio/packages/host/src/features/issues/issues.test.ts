@@ -51,6 +51,8 @@ async function setup(signedIn = true) {
   cleanups.push(() => relayStore.close());
   cleanups.push(() => relay.close());
   const me = relayStore.register("戴", "pw-aaaa");
+  // 维护者 (2026-11-03): 值守 runs on a maintainer's account.
+  relayStore.setMaintainer("戴", true);
   const home = tempDir("home");
   const env = { AMO_HOME: home, COMPUTERNAME: "DEV-PC" };
   if (signedIn) await saveAccount({ server: relay.url, name: "戴", key: me.key }, { env, protector: fake });

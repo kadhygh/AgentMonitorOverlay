@@ -112,6 +112,15 @@ describe("relay service", () => {
     await expect(new RelayClient(url).login("lee", String(reset.body.password))).rejects.toMatchObject({ status: 403 });
     await admin("POST", "/api/admin/disable", { name: "lee", disabled: false });
     expect((await new RelayClient(url).login("lee", String(reset.body.password))).name).toBe("lee");
+    // 维护者 (2026-11-03): nobody until set here; then 问题页 lets them see everyone's issues.
+    const maintainerOf = async () => ((await admin("GET", "/api/admin/members")).body.members as Array<{ name: string; maintainer: boolean }>).find((m) => m.name === "lee")?.maintainer;
+    expect(await maintainerOf()).toBe(false);
+    expect((await admin("POST", "/api/admin/maintainer", { name: "lee", maintainer: true })).status).toBe(200);
+    expect(await maintainerOf()).toBe(true);
+    expect(store!.isMaintainer("lee")).toBe(true);
+    await admin("POST", "/api/admin/maintainer", { name: "lee", maintainer: false });
+    expect(await maintainerOf()).toBe(false);
+    expect((await admin("POST", "/api/admin/maintainer", { name: "nobody", maintainer: true })).status).toBe(404);
 
     // The admin password itself, changed from the page: too short is refused; then the old one stops working.
     expect((await admin("POST", "/api/admin/admin-password", { password: "ab" })).status).toBe(400);

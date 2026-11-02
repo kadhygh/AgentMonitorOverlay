@@ -195,6 +195,8 @@ export class RelayStore {
     if (!mcols.includes("nick")) this.db.exec("ALTER TABLE members ADD COLUMN nick TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN avatar TEXT;");
     // The admin page (2026-10-29): an account can be turned off; the page's own password lives apart from team settings.
     if (!mcols.includes("disabled")) this.db.exec("ALTER TABLE members ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;");
+    // 维护者 (2026-11-03, the user): set on the admin page; nobody is one until set there.
+    if (!mcols.includes("maintainer")) this.db.exec("ALTER TABLE members ADD COLUMN maintainer INTEGER NOT NULL DEFAULT 0;");
     this.db.exec("CREATE TABLE IF NOT EXISTS admin (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
   }
 
@@ -353,6 +355,7 @@ export class RelayStore {
         ["todo_devices", "account"],
         ["todo_accounts", "account"],
         ["issue_images", "by_name"],
+        ["issues", "approved_by"],
       ];
       for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
       // A direct chat is found by its two names.
@@ -381,15 +384,27 @@ export class RelayStore {
     if (disabled) this.db.prepare("DELETE FROM keys WHERE name = ?").run(name);
   }
 
+  /** 维护者 (2026-11-03): sees every issue on 问题页 and reviews what the others report before 值守 works on it. */
+  setMaintainer(nameValue: unknown, maintainer: boolean): void {
+    const name = typeof nameValue === "string" ? nameValue.trim() : "";
+    this.requireMember(name);
+    this.db.prepare("UPDATE members SET maintainer = ? WHERE name = ?").run(maintainer ? 1 : 0, name);
+  }
+
+  isMaintainer(name: string): boolean {
+    const row = this.db.prepare("SELECT maintainer FROM members WHERE name = ?").get(name) as Row | undefined;
+    return !!row && !!Number(row.maintainer);
+  }
+
   /** Everyone as the admin page lists them. */
-  adminMembers(): Array<{ name: string; nick: string; role: string; createdAt: number; disabled: boolean; logins: number; lastMessageAt: number | null }> {
+  adminMembers(): Array<{ name: string; nick: string; role: string; createdAt: number; disabled: boolean; maintainer: boolean; logins: number; lastMessageAt: number | null }> {
     return (
       this.db
         .prepare(
-          "SELECT m.name, m.nick, m.role, m.created_at, m.disabled, (SELECT COUNT(*) FROM keys k WHERE k.name = m.name) AS logins, (SELECT MAX(created_at) FROM messages x WHERE x.author = m.name) AS last FROM members m ORDER BY m.rowid",
+          "SELECT m.name, m.nick, m.role, m.created_at, m.disabled, m.maintainer, (SELECT COUNT(*) FROM keys k WHERE k.name = m.name) AS logins, (SELECT MAX(created_at) FROM messages x WHERE x.author = m.name) AS last FROM members m ORDER BY m.rowid",
         )
         .all() as Row[]
-    ).map((r) => ({ name: String(r.name), nick: String(r.nick ?? ""), role: String(r.role), createdAt: Number(r.created_at), disabled: !!Number(r.disabled), logins: Number(r.logins), lastMessageAt: r.last == null ? null : Number(r.last) }));
+    ).map((r) => ({ name: String(r.name), nick: String(r.nick ?? ""), role: String(r.role), createdAt: Number(r.created_at), disabled: !!Number(r.disabled), maintainer: !!Number(r.maintainer), logins: Number(r.logins), lastMessageAt: r.last == null ? null : Number(r.last) }));
   }
 
   /** The admin page's password (hashed like members'); set on the service machine with `amo-relay admin-password`. */

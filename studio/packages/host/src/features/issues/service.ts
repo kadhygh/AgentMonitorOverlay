@@ -217,6 +217,8 @@ function issueStatus(value: string): IssueStatus {
   if (!(ISSUE_STATUSES as readonly string[]).includes(value)) throw new HostError("bad_request", `状态只能是 ${ISSUE_STATUSES.join("、")}`);
   // The person's only (前往讨论, 2026-10-31 晚): a big or unclear one is asking, with how the AI would go.
   if (value === "discuss") throw new HostError("bad_request", "「去会话讨论」只由人在问题页上点。要人拍板就写清楚你的想法，状态用 asking（需要确认）。");
+  // 维护者 (2026-11-03): 待审核 and 打回 are a maintainer's, on the page; the AI works only on what was let through.
+  if (value === "review" || value === "rejected") throw new HostError("bad_request", "「待审核」「打回」只由维护者在问题页上点；这两种状态的问题 AI 不处理。");
   return value as IssueStatus;
 }
 

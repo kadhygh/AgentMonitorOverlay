@@ -6,6 +6,7 @@ import {
   ISSUE_BUILDS_KEPT,
   ISSUE_IMAGES_PER_ENTRY,
   ISSUE_IMAGE_TYPES,
+  ISSUE_REVIEW_STATUSES,
   ISSUE_STATUSES,
   ISSUE_STATUS_LABEL,
   ISSUE_TOOLS,
@@ -18,6 +19,7 @@ import {
   type IssuePatch,
   type IssueRelease,
   type IssueStatus,
+  type IssueViewer,
   type NewIssue,
   type NewIssueEntry,
 } from "./issues-protocol.js";
@@ -26,11 +28,21 @@ import {
 // (the report, comments, status changes — the person's and the AI's), the screenshots uploaded for them (the bytes in
 // the service's files folder, like chat files), and a few values (the change counter, 发布打包's request and the last
 // release). Every change takes the counter up and stamps the issue with it, so Studio asks only for what changed.
+//
+// 维护者 (2026-11-03, the user): every call says who asks (IssueViewer). Someone who is not a maintainer sees only their
+// own issues (the list, one issue, its screenshots) and what they report waits in 待审核 until a maintainer 确认制作
+// (then 新, for 值守) or 打回 with a reason (their next word hands it in again). Only maintainers write as the AI, set
+// statuses and ask for or mark test builds; the AI never touches an issue waiting for review.
 
 type Row = Record<string, unknown>;
 
 const LIMITS = { title: 120, body: 50_000, version: 40, fixedIn: 80, worker: 200, session: 80, buildLabel: 200, buildMessage: 2000 };
 const REOPENED = new Set<IssueStatus>(["fixed", "released", "stuck", "closed"]);
+const IN_REVIEW = new Set<IssueStatus>(ISSUE_REVIEW_STATUSES);
+
+function onlyMaintainers(who: IssueViewer, what: string): void {
+  if (!who.maintainer) throw new RelayError("forbidden", `只有维护者能${what}`);
+}
 
 function text(value: unknown, what: string, max: number): string {
   if (value === undefined || value === null) return "";
@@ -79,6 +91,8 @@ export class IssueStore {
     // 0.7.4: the Studio session that wrote on an issue last.
     const cols = (db.prepare("PRAGMA table_info(issues)").all() as Row[]).map((c) => String(c.name));
     if (!cols.includes("session")) db.exec("ALTER TABLE issues ADD COLUMN session TEXT NOT NULL DEFAULT ''");
+    // 0.7.9 (维护者): who let it be worked on; the issues from before were all being worked on already.
+    if (!cols.includes("approved_by")) db.exec("ALTER TABLE issues ADD COLUMN approved_by TEXT NOT NULL DEFAULT ''; UPDATE issues SET approved_by = author;");
   }
 
   private tx<T>(run: () => T): T {
@@ -118,9 +132,10 @@ export class IssueStore {
     this.db.prepare("UPDATE issues SET updated_at = ?, rev = ? WHERE number = ?").run(this.now(), this.bump(), number);
   }
 
-  private row(number: number): Row {
+  /** The issue when `who` may see it: a maintainer any, anyone else their own (another's is as good as missing). */
+  private row(number: number, who: IssueViewer): Row {
     const row = this.db.prepare("SELECT * FROM issues WHERE number = ?").get(number) as Row | undefined;
-    if (!row) throw new RelayError("not_found", `没有问题 #${number}`);
+    if (!row || (!who.maintainer && row.author !== who.name)) throw new RelayError("not_found", `没有问题 #${number}`);
     return row;
   }
 
@@ -137,13 +152,14 @@ export class IssueStore {
       tool: String(row.tool),
       version: String(row.version),
       fixedIn: String(row.fixed_in),
+      approvedBy: String(row.approved_by ?? ""),
       worker: String(row.worker),
       session: String(row.session ?? ""),
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
       rev: Number(row.rev),
       entryCount: Number(count.n),
-      awaitsAi: !!last && !Number(last.ai) && st !== "closed" && st !== "released",
+      awaitsAi: !!last && !Number(last.ai) && st !== "closed" && st !== "released" && !IN_REVIEW.has(st),
     };
     if (entries) issue.entries = this.entries(number);
     return issue;
@@ -166,13 +182,15 @@ export class IssueStore {
   }
 
   /** The issues changed after `after` (every one without it), newest first, and 发布打包's state. */
-  list(after?: number): IssueList {
-    const rows = (after ? this.db.prepare("SELECT * FROM issues WHERE rev > ? ORDER BY number DESC").all(after) : this.db.prepare("SELECT * FROM issues ORDER BY number DESC").all()) as Row[];
-    return { issues: rows.map((r) => this.view(r)), release: this.release(), rev: this.rev() };
+  list(who: IssueViewer, after?: number): IssueList {
+    const mine = who.maintainer ? "" : " AND author = ?";
+    const args = [after ?? 0, ...(who.maintainer ? [] : [who.name])];
+    const rows = this.db.prepare(`SELECT * FROM issues WHERE rev > ?${mine} ORDER BY number DESC`).all(...args) as Row[];
+    return { issues: rows.map((r) => this.view(r)), release: this.release(), rev: this.rev(), me: { name: who.name, maintainer: who.maintainer } };
   }
 
-  get(number: number): Issue {
-    return this.view(this.row(number), true);
+  get(who: IssueViewer, number: number): Issue {
+    return this.view(this.row(number, who), true);
   }
 
   /** A screenshot uploaded before the issue or comment that carries it (the bytes are the service's to keep). */
@@ -185,9 +203,11 @@ export class IssueStore {
     return { id: input.id, name, type, size: input.size };
   }
 
-  image(id: string): IssueImage {
-    const row = this.db.prepare("SELECT * FROM issue_images WHERE id = ?").get(id) as Row | undefined;
-    if (!row) throw new RelayError("not_found", "没有这张图");
+  /** A screenshot, for who uploaded it or may see the issue it is on. */
+  image(who: IssueViewer, id: string): IssueImage {
+    const row = this.db.prepare("SELECT i.*, x.author AS issue_author FROM issue_images i LEFT JOIN issue_entries e ON e.id = i.entry LEFT JOIN issues x ON x.number = e.issue WHERE i.id = ?").get(id) as Row | undefined;
+    const mine = !!row && (row.by_name === who.name || row.issue_author === who.name);
+    if (!row || (!who.maintainer && !mine)) throw new RelayError("not_found", "没有这张图");
     return imageView(row);
   }
 
@@ -209,7 +229,9 @@ export class IssueStore {
     this.attach(by, id, images);
   }
 
-  create(by: string, input: NewIssue): Issue {
+  /** A maintainer's report is 新 at once; anyone else's waits for review (待审核). */
+  create(who: IssueViewer, input: NewIssue): Issue {
+    const by = who.name;
     const body = text(input.body, "问题描述", LIMITS.body);
     const pictures = Array.isArray(input.images) ? input.images.length : 0;
     if (!body && !pictures) throw new RelayError("bad_request", "写一句话或贴一张截图");
@@ -219,37 +241,92 @@ export class IssueStore {
     const version = text(input.version, "版本", LIMITS.version);
     return this.tx(() => {
       const at = this.now();
-      const r = this.db.prepare("INSERT INTO issues (title, author, status, tool, version, created_at, updated_at, rev) VALUES (?, ?, 'new', ?, ?, ?, ?, ?)").run(title, by, tool, version, at, at, this.bump());
+      const r = this.db
+        .prepare("INSERT INTO issues (title, author, status, approved_by, tool, version, created_at, updated_at, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(title, by, who.maintainer ? "new" : "review", who.maintainer ? by : "", tool, version, at, at, this.bump());
       const number = Number(r.lastInsertRowid);
       this.addEntryRow(number, by, "report", body, false, null, input.images);
-      return this.get(number);
+      return this.get(who, number);
+    });
+  }
+
+  /** What the AI (值守, a maintainer's account) may not do: write before a maintainer let the issue be worked on. */
+  private aiAllowed(who: IssueViewer, row: Row): void {
+    onlyMaintainers(who, "代 AI 回复");
+    if (IN_REVIEW.has(String(row.status) as IssueStatus)) throw new RelayError("forbidden", `问题 #${String(row.number)} 还在等维护者审核，AI 先不处理`);
+  }
+
+  /**
+   * The status a word from `who` (not the AI) moves the issue to, if any: on an issue that was put away (修好 / 已发布 /
+   * 卡住 / 不修了) it opens it again — 「还不对」 is something to work on — and its author's word on 打回 hands it in
+   * again. One never let through waits for review again, unless a maintainer writes.
+   */
+  private reopenedBy(who: IssueViewer, row: Row): IssueStatus | null {
+    const st = String(row.status) as IssueStatus;
+    if (st === "rejected") return row.author === who.name ? (who.maintainer ? "new" : "review") : null;
+    const approved = !!String(row.approved_by ?? "") || who.maintainer;
+    return REOPENED.has(st) ? (approved ? "new" : "review") : null;
+  }
+
+  /** Sets the status (a maintainer moving it out of review lets it be worked on: approved_by). */
+  private setStatus(who: IssueViewer, row: Row, st: IssueStatus): void {
+    const number = Number(row.number);
+    this.db.prepare("UPDATE issues SET status = ? WHERE number = ?").run(st, number);
+    if (who.maintainer && !IN_REVIEW.has(st) && st !== "closed" && !String(row.approved_by ?? "")) this.db.prepare("UPDATE issues SET approved_by = ? WHERE number = ?").run(who.name, number);
+  }
+
+  /** Checks a status asked for with a comment: maintainers only, and 打回 says why. */
+  private statusAsked(who: IssueViewer, value: unknown, body: string, ai: boolean): IssueStatus {
+    const st = status(value);
+    onlyMaintainers(who, "改问题的状态");
+    if (ai && IN_REVIEW.has(st)) throw new RelayError("forbidden", "「待审核」「打回」只由维护者在问题页上点");
+    if (st === "rejected" && !body) throw new RelayError("bad_request", "打回要写一句原因");
+    return st;
+  }
+
+  /**
+   * A comment (the person's, or the AI's with `ai`), optionally changing the status with it (maintainers); a word on an
+   * issue put away or sent back moves it on (reopenedBy).
+   */
+  addEntry(who: IssueViewer, number: number, input: NewIssueEntry): Issue {
+    const row = this.row(number, who);
+    const ai = input.ai === true;
+    if (ai) this.aiAllowed(who, row);
+    const body = text(input.body, "内容", LIMITS.body);
+    const st = input.status === undefined ? (ai ? null : this.reopenedBy(who, row)) : this.statusAsked(who, input.status, body, ai);
+    const pictures = Array.isArray(input.images) ? input.images.length : 0;
+    if (!body && !pictures && !st) throw new RelayError("bad_request", "写一句话或贴一张截图");
+    const session = ai ? text(input.session, "会话", LIMITS.session) : "";
+    return this.tx(() => {
+      this.addEntryRow(number, who.name, body || pictures ? "comment" : "status", body, ai, st, input.images);
+      if (st) this.setStatus(who, row, st);
+      if (session) this.db.prepare("UPDATE issues SET session = ? WHERE number = ?").run(session, number);
+      this.touch(number);
+      return this.get(who, number);
     });
   }
 
   /**
-   * A comment (the person's, or the AI's with `ai`), optionally changing the status with it. The person writing on an
-   * issue that was put away (修好 / 已发布 / 卡住 / 不修了) opens it again: 「还不对」 is something to work on.
+   * Status, title, the build it went out in, who works on it. A status change is an entry of its own. Someone who is
+   * not a maintainer may retitle their own issue, put it away (不修了) and open it again (back to review when it was
+   * never let through); the rest is maintainers'. 打回 needs a reason, so it goes with a comment (addEntry).
    */
-  addEntry(by: string, number: number, input: NewIssueEntry): Issue {
-    const row = this.row(number);
-    const body = text(input.body, "内容", LIMITS.body);
-    const reopen = input.ai !== true && input.status === undefined && REOPENED.has(String(row.status) as IssueStatus);
-    const st = input.status === undefined ? (reopen ? "new" : null) : status(input.status);
-    const pictures = Array.isArray(input.images) ? input.images.length : 0;
-    if (!body && !pictures && !st) throw new RelayError("bad_request", "写一句话或贴一张截图");
-    const session = input.ai === true ? text(input.session, "会话", LIMITS.session) : "";
-    return this.tx(() => {
-      this.addEntryRow(number, by, body || pictures ? "comment" : "status", body, input.ai === true, st, input.images);
-      if (st) this.db.prepare("UPDATE issues SET status = ? WHERE number = ?").run(st, number);
-      if (session) this.db.prepare("UPDATE issues SET session = ? WHERE number = ?").run(session, number);
-      this.touch(number);
-      return this.get(number);
-    });
-  }
-
-  /** Status, title, the build it went out in, who works on it. A status change is an entry of its own. */
-  update(by: string, number: number, patch: IssuePatch & { ai?: boolean }): Issue {
-    const row = this.row(number);
+  update(who: IssueViewer, number: number, patch: IssuePatch & { ai?: boolean }): Issue {
+    const by = who.name;
+    const row = this.row(number, who);
+    if (patch.ai === true) this.aiAllowed(who, row);
+    if (patch.fixedIn !== undefined || patch.worker !== undefined || patch.session) onlyMaintainers(who, "改处理者、会话和发布版本");
+    let asked: IssueStatus | undefined;
+    if (patch.status !== undefined) {
+      asked = status(patch.status);
+      if (asked === "rejected") throw new RelayError("bad_request", "打回要写一句原因：写在回复里再点「打回」");
+      if (asked === "review" && patch.ai === true) throw new RelayError("forbidden", "「待审核」「打回」只由维护者在问题页上点");
+      if (!who.maintainer) {
+        if (asked !== "closed" && asked !== "new") onlyMaintainers(who, "改问题的状态");
+        // 重新打开 by its author: back to review unless it was let through before.
+        if (asked === "new") asked = this.reopenedBy(who, { ...row, status: row.status === "rejected" ? "rejected" : "closed" }) ?? undefined;
+      }
+    }
     return this.tx(() => {
       if (patch.title !== undefined) {
         const title = text(patch.title, "标题", LIMITS.title);
@@ -259,15 +336,12 @@ export class IssueStore {
       if (patch.fixedIn !== undefined) this.db.prepare("UPDATE issues SET fixed_in = ? WHERE number = ?").run(text(patch.fixedIn, "发布版本", LIMITS.fixedIn), number);
       if (patch.worker !== undefined) this.db.prepare("UPDATE issues SET worker = ? WHERE number = ?").run(text(patch.worker, "处理者", LIMITS.worker), number);
       if (patch.session && patch.ai === true) this.db.prepare("UPDATE issues SET session = ? WHERE number = ?").run(text(patch.session, "会话", LIMITS.session), number);
-      if (patch.status !== undefined) {
-        const st = status(patch.status);
-        if (st !== row.status) {
-          this.db.prepare("UPDATE issues SET status = ? WHERE number = ?").run(st, number);
-          this.addEntryRow(number, by, "status", `状态改为「${ISSUE_STATUS_LABEL[st]}」`, patch.ai === true, st, undefined);
-        }
+      if (asked !== undefined && asked !== row.status) {
+        this.setStatus(who, row, asked);
+        this.addEntryRow(number, by, "status", `状态改为「${ISSUE_STATUS_LABEL[asked]}」`, patch.ai === true, asked, undefined);
       }
       this.touch(number);
-      return this.get(number);
+      return this.get(who, number);
     });
   }
 
@@ -326,7 +400,9 @@ export class IssueStore {
   }
 
   /** 发布打包 clicked: kept until Studio says the build is out (or the person takes it back). */
-  requestRelease(by: string, on = true): IssueRelease {
+  requestRelease(who: IssueViewer, on = true): IssueRelease {
+    onlyMaintainers(who, "请求发布打包");
+    const by = who.name;
     this.tx(() => {
       this.setMeta("release.requestedAt", on ? String(this.now()) : null);
       this.setMeta("release.requestedBy", on ? by : null);
@@ -336,7 +412,9 @@ export class IssueStore {
   }
 
   /** Studio published a test build: the request is done, and the issues it fixed are 已发布 in it. */
-  released(by: string, version: unknown, numbers: unknown): IssueList {
+  released(who: IssueViewer, version: unknown, numbers: unknown): IssueList {
+    onlyMaintainers(who, "标记已发布");
+    const by = who.name;
     const v = text(version, "版本", LIMITS.fixedIn);
     if (!v) throw new RelayError("bad_request", "要写发布的版本");
     const list = Array.isArray(numbers) ? numbers.filter((n): n is number => Number.isInteger(n)) : [];
@@ -353,7 +431,7 @@ export class IssueStore {
       }
       this.bump();
     });
-    return this.list();
+    return this.list(who);
   }
 }
 

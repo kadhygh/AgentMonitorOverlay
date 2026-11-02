@@ -11,6 +11,9 @@ import { ISSUE_BUILD_QUIET_MS, ISSUE_STATUS_LABEL, ISSUE_TOOLS } from "./issues-
 // place on a narrow window) and closes again, its older entries folded.
 // 2026-10-31 晚: each step of the build its own bar (against the same step's median in the last builds) and a table of
 // the last builds like Jenkins' stage view; 前往讨论 hands an issue to the person's own session, whose id shows to copy.
+// 2026-11-03 维护者 (the user): someone who is not a maintainer sees only their own issues, and what they report waits
+// in 待审核; a maintainer sees everyone's, reviews the others' (确认制作 / 打回 with the reason written below) and alone
+// has 发布打包 and 前往讨论. The service enforces it; the page only leaves out what is not theirs to press.
 
 export function issuesPage(service: string): string {
   const labels = JSON.stringify(ISSUE_STATUS_LABEL);
@@ -80,7 +83,7 @@ textarea{width:100%;resize:vertical;min-height:72px}
 .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{grid-column:2/4;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .st{display:inline-block;padding:0 6px;border-radius:3px;border:1px solid currentColor;font-size:12px;line-height:18px;white-space:nowrap}
-.st-new{color:var(--accent)}.st-working,.st-asking{color:var(--warn)}.st-fixed,.st-released{color:var(--ok)}.st-stuck{color:var(--danger)}.st-discuss{color:var(--accent)}.st-closed{color:var(--muted)}
+.st-review{color:var(--warn)}.st-rejected{color:var(--danger)}.st-new{color:var(--accent)}.st-working,.st-asking{color:var(--warn)}.st-fixed,.st-released{color:var(--ok)}.st-stuck{color:var(--danger)}.st-discuss{color:var(--accent)}.st-closed{color:var(--muted)}
 #detail .top{display:flex;gap:8px;align-items:center}
 #detail .top h2{margin:0;flex:1;min-width:0}
 .narrow{display:none}@media (max-width:860px){.narrow{display:inline}.wide{display:none}}
@@ -99,12 +102,12 @@ textarea{width:100%;resize:vertical;min-height:72px}
 <header><h1>${escapeHtml(service)} · 问题</h1><span class="muted grow" id="sub">遇到 AMO 的问题写在这里，附上截图；AI 会接着修，修好的攒够了就发测试版。</span><span id="me" class="muted"></span><button type="button" id="logout" hidden>退出</button></header>
 <form id="login" class="card" style="max-width:420px;margin:32px auto" hidden><h2>用团队服务器的账号登录</h2><div class="row"><input id="name" placeholder="登录名" autocomplete="username"><input id="pw" type="password" placeholder="密码" autocomplete="current-password"><button class="primary">登录</button></div><div id="loginMsg"></div></form>
 <div id="app" hidden>
-<div class="card bar" data-testid="issues-release"><div class="bar-top"><div class="state"><div id="buildNow" class="now" data-testid="issues-build"></div><div id="relText" class="sub"></div></div><button type="button" id="relBtn" class="primary">发布打包</button></div>
+<div class="card bar" data-testid="issues-release"><div class="bar-top"><div class="state"><div id="buildNow" class="now" data-testid="issues-build"></div><div id="relText" class="sub"></div></div><button type="button" id="relBtn" class="primary" hidden>发布打包</button></div>
 <div id="stages" class="stages" data-testid="issues-stages"></div>
 <details id="history" data-testid="issues-builds" hidden><summary id="historySum"></summary><div class="hist-wrap"><table class="hist" id="histTable"></table></div></details></div>
 <div class="wrap closed" id="wrap">
 <section id="side" class="card">
-<div class="head"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="等你回答、卡住了、建议单开讨论，而且最后一条是 AI 写的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><span class="grow"></span><button type="button" id="newToggle" class="primary" data-testid="issues-new-toggle" aria-expanded="false">报问题</button></div>
+<div class="head"><div class="tabs"><button type="button" data-filter="you" aria-pressed="false" data-testid="issues-tab-you" title="AI 等你回答或卡住了；被打回、要你补充的；你是维护者时还有等你审核的">要你看<span class="n" id="youN"></span></button><button type="button" data-filter="open" aria-pressed="true">进行中</button><button type="button" data-filter="all" aria-pressed="false">全部</button></div><span class="grow"></span><button type="button" id="newToggle" class="primary" data-testid="issues-new-toggle" aria-expanded="false">报问题</button></div>
 <form id="newForm" data-testid="issues-new" hidden>
 <textarea id="newBody" placeholder="哪里不对：在哪个界面、做了什么、看到了什么。截图直接粘贴（Ctrl+V）或拖进来。Ctrl+Enter 提交。"></textarea>
 <div class="thumbs" id="newThumbs"></div>
@@ -118,12 +121,12 @@ textarea{width:100%;resize:vertical;min-height:72px}
 <div id="viewer" hidden><img alt=""></div>
 <script>
 var LABELS = ${labels}, TOOLS = ${tools}, QUIET_MS = ${ISSUE_BUILD_QUIET_MS};
-var SYMBOL = { new: "○", working: "◐", asking: "?", fixed: "✓", released: "✓", stuck: "!", discuss: "◇", closed: "–" };
+var SYMBOL = { review: "…", rejected: "↩", new: "○", working: "◐", asking: "?", fixed: "✓", released: "✓", stuck: "!", discuss: "◇", closed: "–" };
 /** Entries shown of a long issue: the report, and this many of the last. */
 var LAST_SHOWN = 3;
 var KEY = "amo-issues-key", NAME = "amo-issues-name";
 var $ = function (id) { return document.getElementById(id); };
-var state = { key: "", name: "", issues: {}, rev: 0, release: null, selected: null, filter: "open", detail: null, versions: {}, unfolded: {} };
+var state = { key: "", name: "", maintainer: false, issues: {}, rev: 0, release: null, selected: null, filter: "open", detail: null, versions: {}, unfolded: {} };
 function store(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
 function say(where, text, err) { var el = $(where); el.innerHTML = ""; if (!text) return; var d = document.createElement("div"); d.className = "msg" + (err ? " err" : ""); d.textContent = text; el.appendChild(d); }
@@ -213,7 +216,8 @@ function open(i) { return i.status !== "released" && i.status !== "closed"; }
 // 要你看 (2026-10-31): what waits for the person — the AI asked, got stuck or suggests talking it over, and has not
 // been answered yet.
 // 去会话讨论 is the person's own (2026-10-31 晚): not listed.
-function forYou(i) { return (i.status === "asking" || i.status === "stuck") && !i.awaitsAi; }
+// 维护者 (2026-11-03): also what waits for a maintainer's review, and one sent back to its author.
+function forYou(i) { return ((i.status === "asking" || i.status === "stuck") && !i.awaitsAi) || (state.maintainer && i.status === "review" && i.author !== state.name) || (i.status === "rejected" && i.author === state.name); }
 function drawList() {
   var ul = $("list"); ul.innerHTML = "";
   var all = Object.keys(state.issues).map(function (k) { return state.issues[k]; }).sort(function (a, b) { return b.number - a.number; });
@@ -223,7 +227,7 @@ function drawList() {
   shown.forEach(function (i) {
     var li = el("li"); li.setAttribute("aria-current", String(i.number === state.selected)); li.setAttribute("data-testid", "issue-row");
     li.appendChild(el("span", "num", "#" + i.number)); li.appendChild(el("span", "t", i.title)); li.appendChild(badge(i.status));
-    li.appendChild(el("span", "meta", [i.tool ? TOOLS[i.tool] : "", when(i.updatedAt), i.worker].filter(Boolean).join(" · ")));
+    li.appendChild(el("span", "meta", [i.author !== state.name ? i.author + " 提的" : "", i.tool ? TOOLS[i.tool] : "", when(i.updatedAt), i.worker].filter(Boolean).join(" · ")));
     li.onclick = function () { if (state.selected === i.number) close(); else select(i.number); }; ul.appendChild(li);
   });
 }
@@ -285,6 +289,7 @@ function drawRelease() {
   if (r.last) parts.push("上次发布：" + r.last.version + "（" + when(r.last.at) + "）");
   if (r.requestedAt) parts.push("已请求发布（" + when(r.requestedAt) + "），等 Studio 打包…");
   $("relText").textContent = parts.join(" · ");
+  $("relBtn").hidden = !state.maintainer;
   $("relBtn").textContent = r.requestedAt ? "取消发布请求" : "发布打包";
   $("relBtn").className = r.requestedAt ? "" : "primary";
 }
@@ -336,17 +341,40 @@ function drawDetail() {
   head.appendChild(el("span", "num", "#" + i.number)); head.appendChild(el("h2", "", i.title)); head.appendChild(badge(i.status));
   var act = open(i) ? el("button", "", "不修了") : el("button", "", "重新打开"); act.type = "button"; act.setAttribute("data-testid", "issue-toggle");
   act.onclick = function () { patch(i.number, { status: open(i) ? "closed" : "new" }); };
-  // 前往讨论 (2026-10-31 晚): the person takes it to the session in Studio; 值守 leaves it alone until 交回值守.
-  if (open(i)) {
+  // 审核 (2026-11-03): a maintainer lets another's report be worked on, or sends it back with the reason written below.
+  var reviewing = state.maintainer && i.status === "review";
+  if (reviewing) {
+    var ok = el("button", "primary", "确认制作"); ok.type = "button"; ok.setAttribute("data-testid", "issue-approve"); ok.title = "让值守开始处理它";
+    ok.onclick = function () { patch(i.number, { status: "new" }); };
+    var no = el("button", "", "打回"); no.type = "button"; no.setAttribute("data-testid", "issue-reject"); no.title = "退给 " + i.author + "，原因写在下面的回复框里";
+    no.onclick = function () {
+      var ta = $("commentText"), why = ta ? ta.value.trim() : "";
+      if (!why) { say("commentMsg", "在下面写一句打回的原因，再点「打回」", true); if (ta) ta.focus(); return; }
+      call("POST", "/api/issues/" + i.number + "/entries", { body: why, images: commentPics ? commentPics.ids() : [], status: "rejected" })
+        .then(function (j) { ta.value = ""; if (commentPics) commentPics.clear(); say("commentMsg", ""); put(j.issue); state.detail = j.issue; drawList(); drawDetail(); })
+        .catch(function (e) { say("commentMsg", e.message, true); });
+    };
+    head.appendChild(ok); head.appendChild(no);
+  }
+  // 前往讨论 (2026-10-31 晚): the person takes it to the session in Studio; 值守 leaves it alone until 交回值守. A
+  // maintainer's (2026-11-03), on an issue let through.
+  if (open(i) && state.maintainer && i.status !== "review" && i.status !== "rejected") {
     var talk = el("button", "", i.status === "discuss" ? "交回值守" : "前往讨论"); talk.type = "button"; talk.setAttribute("data-testid", "issue-discuss");
     talk.title = i.status === "discuss" ? "值守接着处理它（当成新问题看）" : "到 Studio 里和处理它的会话讨论；值守不再处理这个问题";
     talk.onclick = function () { patch(i.number, { status: i.status === "discuss" ? "new" : "discuss" }); };
     head.appendChild(talk);
   }
   head.appendChild(act); head.appendChild(back); top.appendChild(head);
-  var meta = el("div", "muted"); meta.textContent = [i.tool ? TOOLS[i.tool] : "", i.version ? "版本 " + i.version : "", i.fixedIn ? "发布在 " + i.fixedIn : "", i.worker ? "处理：" + i.worker : ""].filter(Boolean).join(" · ");
+  var meta = el("div", "muted"); meta.textContent = [i.author !== state.name ? i.author + " 提的" : "", i.approvedBy && i.approvedBy !== i.author ? i.approvedBy + " 确认制作" : "", i.tool ? TOOLS[i.tool] : "", i.version ? "版本 " + i.version : "", i.fixedIn ? "发布在 " + i.fixedIn : "", i.worker ? "处理：" + i.worker : ""].filter(Boolean).join(" · ");
   if (i.session) meta.appendChild(sessionChip(i.session, meta.textContent ? " · 会话 " : "会话 "));
   if (meta.childNodes.length) top.appendChild(meta);
+  if (i.status === "review" || i.status === "rejected") {
+    var rn = el("div", "note"); rn.setAttribute("data-testid", "issue-review-note");
+    rn.textContent = i.status === "review"
+      ? (reviewing ? "这是 " + i.author + " 提的问题，等你审核：「确认制作」后值守才会处理；要打回就在下面写一句原因再点「打回」。" : "等维护者确认后才会开始处理。")
+      : (i.author === state.name ? "维护者打回了这个问题，原因在下面。补充说明后发送，就会重新提交审核。" : "已打回，等 " + i.author + " 补充后重新提交。");
+    top.appendChild(rn);
+  }
   if (i.status === "discuss") {
     var note = el("div", "note"); note.setAttribute("data-testid", "issue-discuss-note");
     note.appendChild(document.createTextNode(i.session ? "已转到会话里讨论，值守不再处理它。在 Studio 顶上的搜索框（Ctrl K）粘贴会话 id 就能打开：" : "已转到会话里讨论，值守不再处理它。还没有 AI 会话处理过这个问题，在 Studio 里新开一个会话讨论吧。"));
@@ -365,7 +393,7 @@ function drawDetail() {
     if (e.images.length) { var th = el("div", "thumbs"); e.images.forEach(function (im) { var t = el("div", "thumb"); var img = document.createElement("img"); img.src = imgUrl(im.id); img.alt = im.name; img.onclick = function () { view(im.id); }; t.appendChild(img); th.appendChild(t); }); d.appendChild(th); }
     top.appendChild(d);
   });
-  var ta = $("commentText"); if (ta) ta.placeholder = i.status === "discuss" ? "在这里记一笔也行；值守不会看，要它接着做就点「交回值守」。" : i.status === "asking" ? "回复 AI：确认、补充或者改主意都行（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
+  var ta = $("commentText"); if (ta) ta.placeholder = reviewing ? "要打回的话，在这里写原因（提问题的人会看到），再点上面的「打回」；也可以只回一句。" : i.status === "rejected" && i.author === state.name ? "补充说明（截图可以粘贴或拖进来），发送后重新提交审核。Ctrl+Enter 发送" : i.status === "review" ? "补充点什么…Ctrl+Enter 发送" : i.status === "discuss" ? "在这里记一笔也行；值守不会看，要它接着做就点「交回值守」。" : i.status === "asking" ? "回复 AI：确认、补充或者改主意都行（截图可以粘贴或拖进来）Ctrl+Enter 发送" : open(i) ? "补充点什么…Ctrl+Enter 发送" : "还不对？写在这里，问题会重新打开。";
 }
 // A session id to copy: the page is plain http, where navigator.clipboard is missing — a hidden box and execCommand then.
 function sessionChip(id, lead) {
@@ -410,6 +438,7 @@ document.addEventListener("keydown", function (e) {
 // --- keeping up: what changed since the last look, every few seconds while the page is in front
 function refresh(all) {
   return call("GET", "/api/issues" + (all || !state.rev ? "" : "?after=" + state.rev)).then(function (j) {
+    if (j.me) { state.maintainer = !!j.me.maintainer; $("sub").textContent = state.maintainer ? "你是维护者：能看到所有人的问题，别人提的要你确认制作后值守才处理。" : "遇到 AMO 的问题写在这里，附上截图；维护者确认后 AI 会接着修。这里只有你自己提的问题。"; }
     j.issues.forEach(put); state.rev = j.rev; state.release = j.release; drawList(); drawRelease();
     if (state.selected && j.issues.some(function (x) { return x.number === state.selected; })) select(state.selected);
   }).catch(function () {});
