@@ -1,0 +1,12 @@
+<!-- Geometry and colours from studio/design/icon/tools/studio.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp" android:viewportWidth="464" android:viewportHeight="464">
+    <group android:translateX="-24" android:translateY="-24">
+        <path android:strokeColor="#fbfaf7" android:strokeAlpha="0.9" android:strokeWidth="44" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M80,168V96Q80,80 96,80H168M344,80H416Q432,80 432,96V168M432,344V416Q432,432 416,432H344M168,432H96Q80,432 80,416V344" />
+        <path android:strokeColor="#22201c" android:strokeWidth="28" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M80,168V96Q80,80 96,80H168M344,80H416Q432,80 432,96V168M432,344V416Q432,432 416,432H344M168,432H96Q80,432 80,416V344" />
+        <path android:fillColor="#2f5a92" android:pathData="M202,140H310Q372,140 372,202V310Q372,372 310,372H202Q140,372 140,310V202Q140,140 202,140Z" />
+        <group android:translateX="256" android:translateY="256" android:scaleX="0.78" android:scaleY="0.78">
+            <path android:fillColor="#fbfaf7" android:pathData="M-84.3,-22a32.3,32.3 0,1 0,64.6 0a32.3,32.3 0,1 0,-64.6 0M19.7,-22a32.3,32.3 0,1 0,64.6 0a32.3,32.3 0,1 0,-64.6 0" />
+            <path android:strokeColor="#fbfaf7" android:strokeWidth="34" android:strokeLineCap="round" android:pathData="M-62,46Q0,92 62,46" />
+        </group>
+    </group>
+</vector>

@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 45
+      "used": 50
     },
     "glm": {
       "limit": 5000,
@@ -417,6 +417,31 @@
       "at": "2026-10-22T17:01:55.510Z",
       "provider": "deepseek",
       "note": "S22 real DSH: escalation granted"
+    },
+    {
+      "at": "2026-10-30T16:58:04.647Z",
+      "provider": "deepseek",
+      "note": "Android fixture Dxx-DS isolated remote smoke"
+    },
+    {
+      "at": "2026-10-30T17:11:45.390Z",
+      "provider": "deepseek",
+      "note": "Android fixture Dxx-DS isolated remote smoke"
+    },
+    {
+      "at": "2026-10-30T17:14:47.803Z",
+      "provider": "deepseek",
+      "note": "Android fixture Dxx-DS isolated remote smoke"
+    },
+    {
+      "at": "2026-10-30T17:14:51.455Z",
+      "provider": "deepseek",
+      "note": "Android fixture Dxx-DS isolated remote smoke"
+    },
+    {
+      "at": "2026-10-30T17:14:55.828Z",
+      "provider": "deepseek",
+      "note": "Android fixture Dxx-DS isolated remote smoke"
     }
   ]
 }
