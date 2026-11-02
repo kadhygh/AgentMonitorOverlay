@@ -148,6 +148,7 @@ export function FileItemView({ link, state, pack, workspace, item, nonce, active
             file={loaded.file}
             kind={html ? "html" : "markdown"}
             active={active}
+            sessionId={pack.sessionId}
             {...(remote?.key ? { remote: { taskId: remote.taskId, rel: item.path, key: remote.key, host: remote.host } } : {})}
           />
         ) : (

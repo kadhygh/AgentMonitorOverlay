@@ -719,7 +719,7 @@ export function ReviewPage({
           只读：{given ? `对比 ${short(given.sha)} 的改动` : `这个提交的改动，对比它的${shownCommit?.commit.parents.length ? "第一个父提交" : "空仓库"}`}。批注请在工作区改动里写。
         </footer>
       ) : (
-        <SendBar link={link} workspace={workspace} comments={comments} busy={busy} run={run}>
+        <SendBar link={link} workspace={workspace} comments={comments} busy={busy} run={run} sessionId={sessionId ?? null}>
           {sentCount > 0 && (
             <label className="gr-check">
               <input type="checkbox" checked={showSent} onChange={(e) => setShowSent(e.target.checked)} />

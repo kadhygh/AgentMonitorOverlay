@@ -586,4 +586,8 @@ export class Store extends DocumentStore {
       .run(key, value, updatedAt);
     return { value, updatedAt };
   }
+
+  deleteKv(key: string): void {
+    this.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
+  }
 }

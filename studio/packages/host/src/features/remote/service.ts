@@ -820,6 +820,8 @@ export class RemoteFeature extends Feature {
       return new FileReply(f.path, mime, { fresh: true, whole: true });
     }
     if (method === "GET" && path === "/api/open-in/apps") return { vscode: false };
+    // Comments stay on this computer (step 3): written, copied and sent from the copy's own list.
+    if (this.copies.comments.handles(method, path)) return this.copies.comments.answer(task, method, path, body);
     if (method !== "GET" && method !== "POST") throw new HostError("read_only", `这是 ${task.remote.name} 上的远程任务：这一项不能在这台电脑上做`);
     return this.copies.views.read(taskId, method, path, Object.fromEntries(query), body);
   }

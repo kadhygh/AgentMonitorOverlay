@@ -5,6 +5,7 @@
 import type { ApprovalDecision } from "./api.js";
 import type { Id, Session, SessionItem, TaskColumn, Timestamp } from "./entities.js";
 import type { QuestionReply } from "./questions.js";
+import { composeGitReviewMessage } from "./gitreview.js";
 
 /**
  * off: the Host was started without remote (tests, the Reviewer); no-account: nobody logged in in the AMO platform;
@@ -697,4 +698,19 @@ export function remoteQuitNote(inUse: ReadonlyArray<{ name: string; tasks: numbe
   if (!inUse.length) return null;
   const n = inUse.reduce((sum, x) => sum + x.tasks, 0);
   return `有 ${n} 个任务正被 ${inUse.map((x) => x.name).join("、")} 远程使用，退出后那边会暂停。`;
+}
+
+/**
+ * 远程 Reviewer 的批注 (2026-11-02, the user): what the controlling computer wrote on a remote task's files and changes
+ * (kept there, never sent to the task's computer as comments). Copied out (`copy`), the paths start at 任务文件夹/ —
+ * never that computer's own folder, which has its user's name in it — and the project is named by that computer;
+ * sent to the task's conversation (发到对话), they are as its session reads them, relative to the task's folder.
+ */
+export function composeRemoteReviewMessage(comments: Parameters<typeof composeGitReviewMessage>[0], device: string, copy: boolean): string {
+  if (!copy) return composeGitReviewMessage(comments, REMOTE_TASK_FOLDER);
+  const under = (p: string) => (p === REMOTE_TASK_FOLDER || p.startsWith(`${REMOTE_TASK_FOLDER}/`) ? p : `${REMOTE_TASK_FOLDER}/${p.replace(/\\/g, "/").replace(/^\.?\//, "")}`);
+  return composeGitReviewMessage(
+    comments.map((c) => ({ ...c, path: under(c.path), ...(c.passage?.source ? { passage: { ...c.passage, source: under(c.passage.source) } } : {}) })),
+    device ? `${device} 上的${REMOTE_TASK_FOLDER}` : REMOTE_TASK_FOLDER,
+  );
 }

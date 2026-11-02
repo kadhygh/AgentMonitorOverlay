@@ -32,6 +32,9 @@ const Ctx = createContext<RemoteReview | null>(null);
 /** The remote task a Reviewer window shows, or null for this computer's own projects. */
 export const useRemoteReview = () => useContext(Ctx);
 
+/** Says which remote task a part of a window is about (the viewer's own remote file, whose comments are this computer's). */
+export const RemoteReviewProvider = Ctx.Provider;
+
 /** The Host link a remote task's Reviewer window uses: the same Host, its reads passed on to the task's computer. */
 export function remoteViewLink(link: HostLink, taskId: string): HostLink {
   return { url: `${link.url}/api/remote/view/${encodeURIComponent(taskId)}`, token: link.token };

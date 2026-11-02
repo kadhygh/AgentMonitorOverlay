@@ -90,7 +90,7 @@ export interface RemoteFileContext {
 /** `/api/remote/files/<key>/<a/b>` for a place in a remote task's folder, each part escaped. */
 export const remoteFileUrl = (link: HostLink, key: string, rel: string) => `${link.url}/api/remote/files/${key}/${rel.split("/").map(encodeURIComponent).join("/")}`;
 
-export function RenderedReview({ link, workspace, file, kind, active, remote }: { link: HostLink; workspace: Workspace | null; file: TextFile; kind: "markdown" | "html"; active: boolean; remote?: RemoteFileContext }) {
+export function RenderedReview({ link, workspace, file, kind, active, remote, sessionId }: { link: HostLink; workspace: Workspace | null; file: TextFile; kind: "markdown" | "html"; active: boolean; remote?: RemoteFileContext; /** A remote task's: where 发到对话 sends the comments. */ sessionId?: string | null }) {
   const text = file.text ?? "";
   const rel = workspace ? relativeIn(file.path, workspace.path) : null;
   const ws = rel !== null ? workspace : null;
@@ -218,7 +218,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
       // A remote file's links are files of the task's folder over there: fetched as this one was.
       const there = remoteLinkPath(remote.rel, href, resolveLink);
       if (!there) return showToast({ text: `这个链接在查看器里打不开：${href}`, error: true });
-      return viewRemoteFile({ file: { path: there.path }, ...(there.line ? { line: there.line } : {}) }, remote.taskId);
+      return viewRemoteFile({ file: { path: there.path }, ...(there.line ? { line: there.line } : {}) }, remote.taskId, sessionId ?? null);
     }
     if (to.kind === "file") return openViewer({ path: to.path, ...(to.line ? { line: to.line } : {}) });
     const root = doc.current;
@@ -425,7 +425,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
             )}
           </div>
           <div className="vw-notes-list" ref={list}>
-            {!ws && <p className="vw-notes-empty">{remote ? "远程任务的文件只能看，不能批注（批注写回以后再做）。" : "这个文件不在任何项目里，不能批注。"}</p>}
+            {!ws && <p className="vw-notes-empty">{remote ? "这个文件不在任务文件夹里（对话里的附件），不能批注。" : "这个文件不在任何项目里，不能批注。"}</p>}
             {mine.map((c) => (
               <NoteCard key={c.id} comment={c} n={placeNo.get(c.id)} busy={busy} hot={hot === c.id} lost={!!c.passage && found !== null && !found.has(c.id)} onGo={() => c.passage && goTo(c.id, true)} onEdit={edit} onDelete={remove} />
             ))}
@@ -437,7 +437,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote }: 
           </div>
         </aside>
       </div>
-      {ws && (projectDrafts.length > 0 || draft) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} />}
+      {ws && (projectDrafts.length > 0 || draft) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} sessionId={sessionId ?? null} />}
     </div>
   );
 }

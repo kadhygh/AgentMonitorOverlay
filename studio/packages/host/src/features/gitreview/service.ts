@@ -219,7 +219,18 @@ export class GitReviewFeature extends Feature {
 
   addComment(workspaceId: Id, input: NewGitReviewComment): GitReviewComment {
     this.requireWorkspace(workspaceId);
-    const range = this.commentRange(input?.range);
+    const comment = this.draftComment(workspaceId, input);
+    this.store.putReviewComment(comment);
+    return comment;
+  }
+
+  /**
+   * A new draft from what a window sent, checked, not kept anywhere yet: this computer's comments keep it in the store,
+   * a remote task's comments (远程 Reviewer, 2026-11-02) beside that task's copy.
+   */
+  draftComment(workspaceId: Id, input: NewGitReviewComment): GitReviewComment {
+    if (!input || typeof input !== "object") throw new HostError("bad_request", "a comment is an object");
+    const range = this.commentRange(input.range);
     const path = typeof input.path === "string" ? input.path.trim() : "";
     if (!path || path.length > 1000) throw new HostError("bad_request", "path is required");
     if (input.side !== "new" && input.side !== "old") throw new HostError("bad_request", "side must be new or old");
@@ -246,16 +257,19 @@ export class GitReviewFeature extends Feature {
       sentAt: null,
       ...(passage ? { passage } : {}),
     };
-    this.store.putReviewComment(comment);
     return comment;
   }
 
   updateComment(id: Id, note: unknown): GitReviewComment {
-    const current = this.requireComment(id);
-    if (current.state === "sent") throw new HostError("conflict", "sent comments cannot be edited");
-    const next = { ...current, note: this.note(note), updatedAt: new Date().toISOString() };
+    const next = this.editedComment(this.requireComment(id), note);
     this.store.putReviewComment(next);
     return next;
+  }
+
+  /** A draft with its note changed (409 once sent), not kept yet. */
+  editedComment(current: GitReviewComment, note: unknown): GitReviewComment {
+    if (current.state === "sent") throw new HostError("conflict", "sent comments cannot be edited");
+    return { ...current, note: this.note(note), updatedAt: new Date().toISOString() };
   }
 
   deleteComment(id: Id): void {

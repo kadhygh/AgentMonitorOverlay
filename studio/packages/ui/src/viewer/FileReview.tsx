@@ -250,7 +250,7 @@ export function FileReview({
         </span>
       </div>
       {/* The project's drafts (written here or in Review) go out from here too; shown once there are some. */}
-      {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} />}
+      {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} sessionId={defaultSession ?? null} />}
     </div>
   );
 }

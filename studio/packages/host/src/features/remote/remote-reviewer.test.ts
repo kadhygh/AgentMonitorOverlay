@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { GitStatus, HostEvent, ModelProfile, RemoteState, TextFile, ViewPack } from "@amo-studio/protocol";
+import type { GitReviewComment, GitStatus, HostEvent, ModelProfile, RemoteState, TextFile, ViewPack } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -214,4 +214,55 @@ describe("远程 Reviewer through two Hosts", () => {
     expect(onA.length).toBe(heardA + 1);
     expect(lastPack(onA)).not.toHaveProperty("onlyIfFollowing");
   }, 90_000);
+  it("B's comments stay on B: written, copied with 任务文件夹/ paths, sent into the task's conversation as a message", async () => {
+    const { a, b, task, session, ws } = await grantedWithPack();
+    const none = new URLSearchParams();
+    const base = `/api/workspaces/${ws.id}/review-comments`;
+    const view = (method: string, path: string, body?: unknown) => b.remote.view(task.id, method, path, none, body);
+    const agentText = (t: string) => a.store.listItems(session.id).some((i) => i.type === "agent" && !i.streaming && i.markdown === t);
+    await until(() => agentText("FAKE: 第一句"), Boolean, "A's first reply");
+
+    const first = (await view("POST", base, { range: "file", path: "src/drop.ts", side: "new", line: 1, lineText: "export const a = 2;", note: "改回 1" })) as GitReviewComment;
+    const second = (await view("POST", base, { range: "working", path: "src/drop.ts", side: "new", line: 1, lineText: "export const a = 2;", note: "这一行不对" })) as GitReviewComment;
+    const scrap = (await view("POST", base, { range: "file", path: "README.md", side: "new", line: 3, lineText: "x", note: "删掉" })) as GitReviewComment;
+    // Checked as this computer's own comments are.
+    await expect(view("POST", base, { range: "file", path: "src/drop.ts", side: "old", line: 1, lineText: "", note: "x" })).rejects.toThrow("new side");
+    await expect(view("POST", base, { range: "file", path: "src/drop.ts", side: "new", line: 1, lineText: "", note: "  " })).rejects.toThrow("note is required");
+    expect(((await view("PATCH", `/api/review-comments/${first.id}`, { note: "改回 1，别动别的" })) as GitReviewComment).note).toBe("改回 1，别动别的");
+    expect(await view("DELETE", `/api/review-comments/${scrap.id}`)).toEqual({ ok: true });
+    await expect(view("DELETE", `/api/review-comments/${scrap.id}`)).rejects.toThrow("not found");
+    expect(((await view("GET", base)) as GitReviewComment[]).map((c) => c.id)).toEqual([first.id, second.id]);
+    // Never on A: neither its comments nor the project's.
+    expect(a.store.listReviewComments(ws.id)).toEqual([]);
+
+    // 复制: the paths start at 任务文件夹/, the project is named by A; A's own folder never shows.
+    const copied = (await view("POST", `${base}/copy`, { ids: [first.id] })) as { text: string; sent: GitReviewComment[] };
+    expect(copied.text).toContain("「A-PC 上的任务文件夹」");
+    expect(copied.text).toContain("### 任务文件夹/src/drop.ts");
+    expect(copied.text).not.toContain(ws.path);
+    expect(copied.sent).toMatchObject([{ id: first.id, state: "sent", sessionId: null }]);
+    await expect(view("PATCH", `/api/review-comments/${first.id}`, { note: "again" })).rejects.toThrow("cannot be edited");
+
+    // 发到对话: only into a conversation of this task; it reaches A as B's message (rt.send), paths as the session reads them.
+    const other = (await b.service.tasks.createTask({ title: "B 自己的", workspaceId: b.service.tasks.commonWorkspace().id, firstSession: { profileId: "p", text: "B 这边" } })).session!;
+    await expect(view("POST", `${base}/send`, { sessionId: other.id })).rejects.toThrow("只能发到这个远程任务自己的对话里");
+    await expect(view("POST", `${base}/send`, { sessionId: "s-nope" })).rejects.toThrow("只能发到这个远程任务自己的对话里");
+    const sent = (await view("POST", `${base}/send`, { sessionId: session.id })) as { mode: string; sent: GitReviewComment[] };
+    expect(sent.sent).toMatchObject([{ id: second.id, state: "sent", sessionId: session.id }]);
+    const msg = await until(() => a.store.listItems(session.id).find((i) => i.type === "user" && i.text.startsWith("Git Review 批注")), Boolean, "A got the comments");
+    expect(msg).toMatchObject({ type: "user" });
+    const text = (msg as { text: string }).text;
+    expect(text).toContain("「任务文件夹」的改动");
+    expect(text).toContain("### src/drop.ts");
+    expect(text).toContain("这一行不对");
+    expect(text).not.toContain("任务文件夹/src");
+    await expect(view("POST", `${base}/copy`, {})).rejects.toThrow("no comments to copy");
+
+    // Away from A, the comments are still B's to read; archiving the copy throws them away.
+    a.remote.stop();
+    await until(b.state, (s) => s.peers[0]?.online === false, "B sees A gone");
+    expect(((await view("GET", base)) as GitReviewComment[]).length).toBe(2);
+    await b.service.tasks.archiveTask(task.id);
+    expect(b.service.remote.copies.comments.list(task.id)).toEqual([]);
+  }, 60_000);
 });
