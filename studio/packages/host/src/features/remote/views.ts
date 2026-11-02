@@ -4,12 +4,14 @@ import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import {
+  GIT_LOG_MAX,
   MAX_EXISTS_PATHS,
   REMOTE_FILE_CHUNK,
   REMOTE_KINDS,
   REMOTE_TASK_FOLDER,
   REMOTE_VIEW_MAX_BYTES,
   type ExistingPath,
+  type GitChangedFile,
   type GitChanges,
   type GitStatus,
   type Id,
@@ -112,6 +114,30 @@ function namedFiles(scope: ViewScope): Set<string> {
   return out;
 }
 
+const NOT_POINTED = "远程只能看查看包里点名的文件和改动里的文件";
+
+/**
+ * Review 2026-11-02: a file B reads (as text or as a diff) must be one somebody pointed at — in `list` (the changes of
+ * the range or the commit it is read in), or, when `packsToo`, named by a pack of the task. Otherwise refused: a diff of
+ * a file git ignores (`.env`, keys) or of an unchanged one is the whole file. Its entry in the list, null when only a
+ * pack names it.
+ */
+async function pointedAt(scope: ViewScope, rel: string, list: () => Promise<readonly GitChangedFile[]>, packsToo: boolean): Promise<GitChangedFile | null> {
+  const key = fold(rel);
+  const hit = (await list().catch(() => [] as GitChangedFile[])).find((f) => fold(f.path) === key);
+  if (hit) return hit;
+  if (packsToo && namedFiles(scope).has(key)) return null;
+  throw new HostError("read_only", NOT_POINTED);
+}
+
+/** `oldPath` of a diff: only the one its entry in the list gives (a rename's), as B named it. */
+function oldPathOf(root: string, asked: string | null, hit: GitChangedFile | null): string | undefined {
+  if (!asked) return undefined;
+  const o = placeInFolder(root, asked, false)!;
+  if (!hit?.oldPath || fold(hit.oldPath) !== fold(o.rel)) throw new HostError("read_only", NOT_POINTED);
+  return hit.oldPath;
+}
+
 /** A GitStatus without A's folder in it. */
 function scrubStatus(s: GitStatus, root: string): GitStatus {
   if (!s.root) return s;
@@ -141,10 +167,8 @@ export async function answerView(scope: ViewScope, ask: RemoteViewAsk): Promise<
     case "git": {
       if (m[1] !== task.workspaceId) throw new HostError("read_only", "这个 Review 不是这个任务的项目，远程只能看任务自己项目的改动");
       const ws = m[1]!;
-      const pathOk = (k: string) => {
-        const v = q(ask, k);
-        if (v) placeInFolder(root, v, false);
-      };
+      /** The asked file's place in the folder (a deleted one is checked as written). */
+      const asked = () => placeInFolder(root, q(ask, "path"), false)!;
       switch (m[2]) {
         case "status":
           return scrubStatus(await host.gitReview.status(ws), root);
@@ -152,18 +176,31 @@ export async function answerView(scope: ViewScope, ask: RemoteViewAsk): Promise<
           const c: GitChanges = await host.gitReview.changes(ws, q(ask, "range"), q(ask, "base"), q(ask, "label"));
           return { ...c, status: scrubStatus(c.status, root) };
         }
-        case "diff":
-          pathOk("path");
-          pathOk("oldPath");
-          return host.gitReview.diff(ws, q(ask, "range"), q(ask, "path"), q(ask, "oldPath"), { base: q(ask, "base"), untracked: q(ask, "untracked") });
+        case "diff": {
+          // Only a file of this range's changes, or one a pack names; whether it is untracked is the list's, not B's.
+          const at = asked();
+          const range = q(ask, "range");
+          const base = q(ask, "base");
+          const hit = await pointedAt(scope, at.rel, () => host.gitReview.changes(ws, range, range === "branch" && base ? base : undefined).then((c) => c.files), true);
+          const oldPath = oldPathOf(root, q(ask, "oldPath"), hit);
+          return host.gitReview.diff(ws, range, hit?.path ?? at.rel, oldPath, { base, untracked: hit ? (hit.untracked ? "1" : "0") : null });
+        }
         case "commit":
           return host.gitReview.commit(ws, q(ask, "sha"), q(ask, "base"));
-        case "commit-diff":
-          pathOk("path");
-          pathOk("oldPath");
-          return host.gitReview.commitDiff(ws, q(ask, "sha"), q(ask, "base"), q(ask, "path"), q(ask, "oldPath"));
-        default:
-          return host.gitReview.log(ws, q(ask, "limit"));
+        case "commit-diff": {
+          // Only a file the commit changed.
+          const at = asked();
+          const sha = q(ask, "sha");
+          const base = q(ask, "base");
+          const hit = await pointedAt(scope, at.rel, () => host.gitReview.commit(ws, sha, base).then((c) => c.files), false);
+          return host.gitReview.commitDiff(ws, sha, base, hit!.path, oldPathOf(root, q(ask, "oldPath"), hit));
+        }
+        default: {
+          // At most GIT_LOG_MAX commits for a remote window (the limit is otherwise the window's to choose).
+          const limit = q(ask, "limit");
+          const n = limit === null || limit === "" ? NaN : Number(limit);
+          return host.gitReview.log(ws, Number.isFinite(n) && n > GIT_LOG_MAX ? GIT_LOG_MAX : limit);
+        }
       }
     }
     case "text": {
@@ -171,12 +208,8 @@ export async function answerView(scope: ViewScope, ask: RemoteViewAsk): Promise<
       if (ws && ws !== task.workspaceId) throw new HostError("read_only", "这个文件不在这个任务的项目里");
       const at = placeInFolder(root, q(ask, "path"));
       if (!at) throw new HostError("not_found", `找不到这个文件：${slash(q(ask, "path") ?? "")}`);
-      const key = fold(at.rel);
-      if (!namedFiles(scope).has(key)) {
-        // Not named by a pack: the uncommitted changes may list it (a Review's file).
-        const listed = await host.gitReview.changes(task.workspaceId, "working").then((c) => c.files.some((f) => fold(f.path) === key || (!!f.oldPath && fold(f.oldPath) === key)), () => false);
-        if (!listed) throw new HostError("read_only", "远程只能看查看包里点名的文件和改动里的文件");
-      }
+      // Named by a pack, or (a Review's file) in the uncommitted changes.
+      if (!namedFiles(scope).has(fold(at.rel))) await pointedAt(scope, at.rel, () => host.gitReview.changes(task.workspaceId, "working").then((c) => c.files), false);
       const info = await stat(at.abs);
       if (info.isDirectory()) throw new HostError("bad_request", "这是一个文件夹，不是文件");
       const file: TextFile = await host.openIn.readText(at.abs, null);

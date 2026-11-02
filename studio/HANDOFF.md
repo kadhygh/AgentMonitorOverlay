@@ -50,7 +50,7 @@
 ## 最近的改动（新的在上面）
 
 **2026-11-02 · 远程任务的 Reviewer（分支 `studio/remote-reviewer`，没合进 master，等审阅和用户点头）**：方案和用户定的都在 `plans/remote-reviewer.md`（A 跑任务，B 控制）。一共 4 步：
-1. B 的查看包、Review 窗口经自己的 Host `/api/remote/view/<task>/…` 走新的 `rt.view` 从 A 读，存在 `remote-views/<task>/`，A 离线时显示旧的并写明。A 上的检查在 `host/src/features/remote/views.ts`：只给这个任务的 pack、任务项目的 git（只读），文件只给 pack 点名的和改动里的，先解析链接和 junction，有大小上限，路径写「任务文件夹/…」。
+1. B 的查看包、Review 窗口经自己的 Host `/api/remote/view/<task>/…` 走新的 `rt.view` 从 A 读，存在 `remote-views/<task>/`，A 离线时显示旧的并写明。A 上的检查在 `host/src/features/remote/views.ts`：只给这个任务的 pack、任务项目的 git（只读），文件只给 pack 点名的和改动里的，先解析链接和 junction，有大小上限，路径写「任务文件夹/…」。审阅后补了一处（`pointedAt`）：单个文件的 diff 也只给同一范围改动列表里的或 pack 点名的文件，`untracked` 由 A 按列表定；提交的 diff 只给这个提交改了的文件；历史最多 `GIT_LOG_MAX` 条。之前带 `untracked=1` 能整个读走被 gitignore 的文件。
 2. A 记住这一轮是谁发起的（`grants.ts` `turnOf`），用 `open` 只推给发起的 B；A 勾了「我也关心」（`ALSO_MINE_KEY`，和 Focus 的同一个勾）时 B 的轮次 A 也弹，B 没有勾，A 的轮次不推给 B。原来单独的「我也关注」用户当天晚上让并进了「我也关心」。
 3. B 的批注由 B 自己的 Host 回（`remote/comments.ts`，存在 kv 里，归档副本时删掉），「复制注释」的路径写「任务文件夹/…」，「发到对话」走 `rt.send`。
 4. e2e 在 `e2e/studio/remote-reviewer.spec.ts`。

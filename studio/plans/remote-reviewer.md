@@ -33,7 +33,7 @@
 - B 上 Reviewer 读数据都是 `call(link, "GET /api/…")`，一共十来个：`/api/viewpacks/:id`、`…/items/:itemId/diff`，`/api/workspaces/:id/git/{status,changes,diff,commit,commit-diff,log}`，`POST /api/fs/exists`，还有读文件。给远程 pack 的窗口换一个 link，把这些请求经 B 的 Host 用 `rt.view` 转给 A，界面组件尽量不改。
 - A 上的检查要严：
   - pack 必须是这个被授权任务里某个会话的；Review 的目标必须是这个任务的项目文件夹；
-  - git 只在任务文件夹里跑，只读；
+  - git 只在任务文件夹里跑，只读；单个文件的 diff 只给同一个范围的改动列表里有的文件、或查看包点名的文件，提交的 diff 只给这个提交改了的文件，`untracked` 由 A 按列表定（审阅 11-02：不然带 `untracked=1` 能整个读走被 gitignore 的 `.env`，没改动的文件 diff 出来也是整个文件）；历史最多 `GIT_LOG_MAX` 条；
   - 文件不能出任务文件夹（和 `files.ts` 一样先解析链接和 junction），有大小上限；
   - 文件条目放开到文本和代码文件，但只限查看包里点名的文件，以及 diff 里出现的文件。普通的 `rt.file` 范围不变。
 - 结果按 `RemoteFiles` 的做法存在 B 的数据目录（`remote-files/<task>/…` 旁边），A 离线时显示上一次取到的，并说明是旧的。

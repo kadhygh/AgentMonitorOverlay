@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MAX_TEXT_FILE_BYTES, REMOTE_FILE_CHUNK, type GitChanges, type GitFileDiff, type GitStatus, type ModelProfile, type RemoteViewAsk, type Session, type Task, type TextFile, type ViewPack, type Workspace } from "@amo-studio/protocol";
+import { GIT_LOG_MAX, MAX_TEXT_FILE_BYTES, REMOTE_FILE_CHUNK, type GitChanges, type GitFileDiff, type GitStatus, type ModelProfile, type RemoteViewAsk, type Session, type Task, type TextFile, type ViewPack, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -130,6 +130,52 @@ describe("远程 Reviewer on A: git", () => {
     await expect(view(ask("GET", `/api/workspaces/${repo.id}/git/diff`, { range: "working", path: "../outside.txt", untracked: "1" }))).rejects.toThrow("不在任务的文件夹里");
     await expect(view(ask("GET", `/api/workspaces/${repo.id}/git/diff`, { range: "working", path: "out/keys.txt", untracked: "1" }))).rejects.toThrow("junction");
     await expect(view(ask("GET", `/api/workspaces/${repo.id}/git/commit-diff`, { sha: "a".repeat(40), base: "b".repeat(40), path: "../outside.txt" }))).rejects.toThrow("不在任务的文件夹里");
+  });
+
+  // Review 2026-11-02: a diff of a file nobody pointed at is the whole file (an ignored one read as untracked, an
+  // unchanged one as it is) — only files of the changes it is read in, or named by a pack, and A decides untracked.
+  it("diffs only files of the range's changes or named by a pack; untracked is A's to say", async () => {
+    const dir = scope.root;
+    writeFileSync(join(dir, ".gitignore"), ".env\n");
+    writeFileSync(join(dir, ".env"), "TOKEN=secret\n");
+    const diff = (query: Record<string, string>) => view<GitFileDiff>(ask("GET", `/api/workspaces/${repo.id}/git/diff`, { range: "working", ...query }));
+    // An ignored file, even said to be untracked: refused.
+    await expect(diff({ path: ".env", untracked: "1" })).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    await expect(diff({ path: "任务文件夹/.env" })).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    // A committed file without changes: refused (its diff would be the whole file).
+    await expect(diff({ path: "src/quiet.ts" })).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    // Another range's list decides there: nothing is staged.
+    await expect(view(ask("GET", `/api/workspaces/${repo.id}/git/diff`, { range: "staged", path: "src/drop.ts" }))).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    // Files of the changes read as always; what B says of untracked does not count.
+    expect((await diff({ path: "src/drop.ts", untracked: "1" })).lines.some((l) => l.kind === "add" && l.text.includes("a = 2"))).toBe(true);
+    expect((await diff({ path: "new.md", untracked: "0" })).lines.map((l) => l.kind)).toEqual(["add"]);
+    // A rename's old path only as the list has it.
+    await expect(diff({ path: "src/drop.ts", oldPath: "README.md" })).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    // A pack names the unchanged file: then it may be read.
+    await pack(session.id, [{ kind: "file", path: "src/quiet.ts" }]);
+    expect((await diff({ path: "src/quiet.ts" })).lines.map((l) => l.text)).toEqual(["export const q = 1;"]);
+  });
+
+  it("diffs a commit's files only, and caps the history a remote window asks for", async () => {
+    const dir = scope.root;
+    git(dir, "add", "src/drop.ts");
+    git(dir, "commit", "-q", "-m", "second");
+    const sha = git(dir, "rev-parse", "HEAD");
+    const base = git(dir, "rev-parse", "HEAD~1");
+    const commitDiff = (path: string) => view<GitFileDiff>(ask("GET", `/api/workspaces/${repo.id}/git/commit-diff`, { sha, base, path }));
+    expect((await commitDiff("src/drop.ts")).lines.some((l) => l.kind === "add" && l.text.includes("a = 2"))).toBe(true);
+    await expect(commitDiff("README.md")).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    await expect(commitDiff("src/quiet.ts")).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+    // A pack naming a file does not open it in a commit that did not change it.
+    await pack(session.id, [{ kind: "file", path: "README.md" }]);
+    await expect(commitDiff("README.md")).rejects.toThrow("只能看查看包里点名的文件和改动里的文件");
+
+    const asked: unknown[] = [];
+    const log = service.gitReview.log.bind(service.gitReview);
+    service.gitReview.log = (ws, limit) => (asked.push(limit), log(ws, limit));
+    await view(ask("GET", `/api/workspaces/${repo.id}/git/log`, { limit: "1000000" }));
+    await view(ask("GET", `/api/workspaces/${repo.id}/git/log`, { limit: "20" }));
+    expect(asked).toEqual([GIT_LOG_MAX, "20"]);
   });
 });
 
