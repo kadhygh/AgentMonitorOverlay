@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
-import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshDesktopIn, firstOnPath, gitOnPath, olderVersion, versionIn } from "@amo-studio/locate";
+import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshRegisteredDirs, firstOnPath, gitOnPath, locateDshDesktop, olderVersion, versionIn } from "@amo-studio/locate";
 import type { EnvironmentView, EnvItemId, EnvItemView } from "./environment-view.js";
 
 // AMO 平台's 环境 page (the user, 2026-10-28): whether what the AMO tools run on is installed here — Claude Code, the
@@ -99,6 +99,8 @@ export interface CheckOptions {
   sdkClaudeCodeVersion?: string | null;
   /** Per `--version`; the DSH app gets twice this (it starts Electron as Node). */
   timeoutMs?: number;
+  /** Where the registry says the DSH app is installed (tests stand in for it); default: asked (dshRegisteredDirs). */
+  dshRegistry?: (env: Env) => string[];
 }
 
 const TIMEOUT_MS = 10_000;
@@ -213,10 +215,12 @@ export async function checkClaude(o: CheckOptions): Promise<EnvItemView> {
 
 /** The DeepSeek Harness desktop app, where Studio looks for it; its version as Studio asks it. */
 export async function checkDsh(o: CheckOptions): Promise<EnvItemView> {
+  // The usual folder, then where the registry says it was installed (2026-11-02: its installer lets a person pick
+  // another folder). A folder chosen in Studio's 设置 is Studio's own: not seen here.
   const dir = dshDesktopDir(o.env);
-  const app = dir ? dshDesktopIn(dir) : null;
+  const app = locateDshDesktop(o.env, null, o.dshRegistry ?? dshRegisteredDirs);
   const clone = "用 DSH 源码克隆的话，这一项可以不管。";
-  if (!dir || !app) return item("dsh", { state: "missing", path: null, version: null, note: `没找到${dir ? `（在 ${dir} 找过）` : ""}。推荐装桌面版，它会自己更新。${clone}` });
+  if (!app) return item("dsh", { state: "missing", path: null, version: null, note: `没找到${dir ? `（在 ${dir} 和安装记录里找过）` : ""}。推荐装桌面版，它会自己更新；装在别处、这里找不到的，可以在 Studio 的 设置 → 模型 → DeepSeek Harness 里选它的文件夹。${clone}` });
   const r = await (o.run ?? runProgram)(app.exe, [...DSH_DESKTOP_ARGS, app.cli, "--version"], { env: { ...o.env, ELECTRON_RUN_AS_NODE: "1" }, timeoutMs: 2 * (o.timeoutMs ?? TIMEOUT_MS) });
   const version = r.ok ? r.out.trim() || null : null;
   if (!version) return item("dsh", { state: "attention", path: app.exe, version: null, note: `装了，但问不出版本（${r.ok ? "没有输出" : why(r)}）。Studio 照样会用它；DeepSeek 会话开不起来的话，重新装一下桌面版。` });

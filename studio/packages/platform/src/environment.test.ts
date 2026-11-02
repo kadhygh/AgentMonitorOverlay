@@ -20,7 +20,8 @@ function machine() {
   root = mkdtempSync(join(tmpdir(), "amo-env-"));
   const dirs = { bin: join(root, "bin"), empty: join(root, "empty"), home: join(root, "home"), appdata: join(root, "roaming"), local: join(root, "local") };
   for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
-  const env = { PATH: [dirs.empty, dirs.bin].join(delimiter), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local };
+  // AMO_STUDIO_DSH_REGISTRY=0: not this computer's own registry (it may name a real DSH app).
+  const env = { PATH: [dirs.empty, dirs.bin].join(delimiter), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_STUDIO_DSH_REGISTRY: "0" };
   const file = (path: string, text = "exe") => {
     mkdirSync(join(path, ".."), { recursive: true });
     writeFileSync(path, text);
@@ -122,6 +123,27 @@ describe("the checks", () => {
     const late = await checkDsh({ env, run: runner({ [exe]: { ok: false, reason: "timeout" } }).run });
     expect(late).toMatchObject({ state: "attention", path: exe, version: null });
     expect(late.note).toContain("等了太久没有回应");
+  });
+
+  it("DSH desktop installed in another folder (2026-11-02): found where the registry says, the usual folder first", async () => {
+    const { dirs, env, file } = machine();
+    const elsewhere = join(dirs.home, "Apps", "深度 Harness");
+    const exe = file(join(elsewhere, "DeepSeek Harness.exe"));
+    file(join(elsewhere, "resources", "app.asar"), "asar");
+    const asked: unknown[] = [];
+    const registry = (e: unknown) => (asked.push(e), [join(dirs.home, "gone"), elsewhere]);
+    const r = runner({ [exe]: { ok: true, out: "0.5.0" } });
+    expect(await checkDsh({ env, run: r.run, dshRegistry: registry })).toMatchObject({ state: "ok", path: exe, version: "0.5.0" });
+    expect(asked).toHaveLength(1);
+    // Not there either: says it looked in the install records too.
+    expect((await checkDsh({ env, run: r.run, dshRegistry: () => [join(dirs.home, "gone")] })).note).toContain("安装记录");
+    // The usual folder wins, without asking the registry.
+    const usual = join(dirs.local, "Programs", "DeepSeek Harness");
+    const usualExe = file(join(usual, "DeepSeek Harness.exe"));
+    file(join(usual, "resources", "app.asar"), "asar");
+    asked.length = 0;
+    expect(await checkDsh({ env, run: runner({ [usualExe]: { ok: true, out: "0.4.2" } }).run, dshRegistry: registry })).toMatchObject({ state: "ok", path: usualExe });
+    expect(asked).toHaveLength(0);
   });
 
   it("Codex and git: not on PATH, there with a version, there without one", async () => {

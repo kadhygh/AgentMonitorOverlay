@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile, type Workspace } from "@amo-studio/protocol";
-import { DSH_OPTIONS_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
+import { dshDesktopIn } from "@amo-studio/locate";
+import { DSH_DESKTOP_PATH_KEY, DSH_OPTIONS_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import type { DshRuntime } from "../../runtime/dsh/dsh-runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -15,8 +16,15 @@ export class DshFeature extends Feature {
     return dshStatus(this.store);
   }
 
-  /** 设置's changes: `source` ("auto": the desktop app when installed; "clone") and/or `path` (the clone's folder). */
-  update(body: { source?: unknown; path?: unknown }): DshStatus {
+  /**
+   * 设置's changes: `source` ("auto": the desktop app when installed; "clone"), `desktopPath` (the desktop app's folder
+   * when it is installed somewhere else, null: look for it) and/or `path` (the clone's folder).
+   */
+  update(body: { source?: unknown; path?: unknown; desktopPath?: unknown }): DshStatus {
+    if (body.desktopPath !== undefined) {
+      this.setDesktopPath(body.desktopPath);
+      if (body.source === undefined && body.path === undefined) return this.status();
+    }
     if (body.source !== undefined) {
       if (body.source !== "auto" && body.source !== "clone") throw new HostError("bad_request", 'source must be "auto" or "clone"');
       this.store.setKv(DSH_SOURCE_KEY, body.source);
@@ -27,6 +35,22 @@ export class DshFeature extends Feature {
       }
     }
     return this.setPath(body.path);
+  }
+
+  /** The desktop app's folder (2026-11-02, the user: people install it elsewhere); null or "" goes back to looking for it. */
+  private setDesktopPath(value: unknown): void {
+    if (value === null || value === "") {
+      this.store.setKv(DSH_DESKTOP_PATH_KEY, "");
+    } else {
+      if (typeof value !== "string" || value.length > 1000) throw new HostError("bad_request", "desktopPath must be a folder path or null");
+      const path = resolve(value.trim());
+      if (!existsSync(path) || !statSync(path).isDirectory()) throw new HostError("bad_request", `找不到文件夹 ${path}`);
+      if (!dshDesktopIn(path)) throw new HostError("bad_request", `${path} 里没有 DeepSeek Harness 桌面版（要有 DeepSeek Harness.exe 和 resources\\app.asar）`);
+      this.store.setKv(DSH_DESKTOP_PATH_KEY, path);
+    }
+    // Another install may offer other models: the next 「检查」 or session tells them again.
+    this.store.setKv(DSH_OPTIONS_KEY, "null");
+    this.profilesChanged();
   }
 
   /** Sets the clone's folder (null clears it). The DSH profile shows in the pickers once the clone is built. */

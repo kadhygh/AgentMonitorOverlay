@@ -51,6 +51,20 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(page.getByText("停止后，排队的 1 条消息没有发出")).toBeVisible();
 });
 
+
+/** An asar archive with no files (its header pickles, as @electron/asar writes them). */
+function emptyAsar(): Buffer {
+  const json = Buffer.from(JSON.stringify({ files: {} }));
+  const header = Buffer.alloc(8 + json.length + ((4 - (json.length % 4)) % 4));
+  header.writeUInt32LE(header.length - 4, 0);
+  header.writeInt32LE(json.length, 4);
+  json.copy(header, 8);
+  const size = Buffer.alloc(8);
+  size.writeUInt32LE(4, 0);
+  size.writeUInt32LE(header.length, 4);
+  return Buffer.concat([size, header]);
+}
+
 test("设置 → 模型: the DSH clone's place, its version and 「检查」 (stage 17)", async () => {
   studio = await launchStudio({ dsh: true });
   const { page } = studio;
@@ -84,4 +98,22 @@ test("设置 → 模型: the DSH clone's place, its version and 「检查」 (st
   expect(state.profiles.find((p) => p.id === "dsh-mock")?.runtime).toBe("dsh");
   const choices = await studio.api<{ models: Array<{ id: string }> }>("GET", "/api/profiles/dsh-mock/choices");
   expect(choices.models.map((m) => m.id)).toEqual(["deepseek-official/deepseek-v4-flash", "deepseek-official/deepseek-flash", "deepseek-official/deepseek-v4-pro"]);
+
+  // The desktop app installed in another folder (2026-11-02): chosen here, then back to looking for it.
+  const app = studio.workspace("D-Apps-DeepSeek Harness");
+  mkdirSync(join(app, "resources"), { recursive: true });
+  writeFileSync(join(app, "DeepSeek Harness.exe"), "");
+  // A real (empty) archive: the Host runs on Electron, whose fs takes a broken .asar for missing.
+  writeFileSync(join(app, "resources", "app.asar"), emptyAsar());
+  await section.getByTestId("dsh-desktop-path").fill(join(studio.workspace("nowhere")));
+  await section.getByTestId("dsh-desktop-save").click();
+  await expect(dialog.getByText(/里没有 DeepSeek Harness 桌面版/)).toBeVisible();
+  await section.getByTestId("dsh-desktop-path").fill(app);
+  await section.getByTestId("dsh-desktop-save").click();
+  await expect(section.getByTestId("dsh-desktop")).toContainText(`${app}，你选的文件夹`);
+  await expect(section.getByText("现在用的是桌面版")).toBeVisible();
+  await screenshot(studio.app, "studio", "dsh-desktop-chosen", page);
+  await section.getByTestId("dsh-desktop-clear").click();
+  await expect(section.getByTestId("dsh-desktop")).toContainText("没找到 DeepSeek Harness 桌面版");
+  await expect(section.getByText("现在用的是源码克隆")).toBeVisible();
 });

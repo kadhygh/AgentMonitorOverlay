@@ -7,9 +7,13 @@ import { pickFolder } from "../lib/profiles.js";
 // installed (2026-10-26: it updates itself), or a source clone the person builds and pulls. 「检查」 tells whether Studio
 // works with it (it starts DSH and opens a session, no model call). plans/done/stage-17-dsh.md lists what Studio relies on.
 
+/** Said after the desktop app's folder: how it was found. */
+const DESKTOP_FROM: Record<NonNullable<DshStatus["desktop"]>["from"], string> = { env: "，AMO_STUDIO_DSH_DESKTOP 指定的", chosen: "，你选的文件夹", default: "", registry: "，按安装记录找到的" };
+
 export function DshSection({ link }: { link: HostLink }) {
   const [status, setStatus] = useState<DshStatus | null>(null);
   const [text, setText] = useState("");
+  const [desktopText, setDesktopText] = useState("");
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
 
@@ -18,17 +22,19 @@ export function DshSection({ link }: { link: HostLink }) {
       .then((s) => {
         setStatus(s);
         setText(s.path ?? "");
+        setDesktopText(s.desktopChosen ?? "");
       })
       .catch(() => undefined);
   }, [link]);
 
-  async function put(body: { path?: string | null; source?: "auto" | "clone" }, done: (s: DshStatus) => string | null) {
+  async function put(body: { path?: string | null; source?: "auto" | "clone"; desktopPath?: string | null }, done: (s: DshStatus) => string | null) {
     setBusy("save");
     setMessage(null);
     try {
       const s = await call(link, "PUT /api/dsh", {}, body);
       setStatus(s);
       setText(s.path ?? "");
+      setDesktopText(s.desktopChosen ?? "");
       const note = done(s);
       if (note) setMessage({ text: note });
     } catch (err) {
@@ -40,6 +46,16 @@ export function DshSection({ link }: { link: HostLink }) {
 
   const save = (path: string | null) =>
     put({ path }, (s) => (path ? (s.built ? "已保存。点「检查」确认能用" : "已保存，但还没有构建") : "已清除源码位置"));
+
+  const saveDesktop = (desktopPath: string | null) => put({ desktopPath }, () => (desktopPath ? "已保存。点「检查」确认能用" : "改回自动找了"));
+
+  async function browseDesktop() {
+    const dir = await pickFolder();
+    if (dir) {
+      setDesktopText(dir);
+      void saveDesktop(dir);
+    }
+  }
 
   async function check() {
     setBusy("check");
@@ -87,9 +103,47 @@ export function DshSection({ link }: { link: HostLink }) {
       {status && source === "auto" && (
         <span className={status.desktop ? "settings-hint" : "form-error"} data-testid="dsh-desktop">
           {status.desktop
-            ? `✓ 用 DeepSeek Harness 桌面版${status.desktop.version ? ` ${status.desktop.version}` : ""}（${status.desktop.path}）。桌面版会自己更新，之后新开或恢复的 DSH 会话用新版本。`
-            : `没找到 DeepSeek Harness 桌面版（在 ${status.desktopDir ?? "%LOCALAPPDATA%\\Programs\\DeepSeek Harness"} 找过）。装好桌面版后回到这里就会用上；也可以改用下面的源码克隆${status.path ? "，现在先用它" : ""}。`}
+            ? `✓ 用 DeepSeek Harness 桌面版${status.desktop.version ? ` ${status.desktop.version}` : ""}（${status.desktop.path}${DESKTOP_FROM[status.desktop.from]}）。桌面版会自己更新，之后新开或恢复的 DSH 会话用新版本。`
+            : `没找到 DeepSeek Harness 桌面版（在 ${status.desktopDir ?? "%LOCALAPPDATA%\\Programs\\DeepSeek Harness"} 和安装记录里找过）。装在别的文件夹的话，在下面选它的文件夹；装好桌面版后回到这里就会用上；也可以改用下面的源码克隆${status.path ? "，现在先用它" : ""}。`}
         </span>
+      )}
+      {/* 2026-11-02, the user: people install the desktop app in another folder. Chosen here when it is not found, or to
+          change the one chosen; a chosen folder that no longer has it says so. */}
+      {status && source === "auto" && status.desktop?.from !== "env" && (!status.desktop || status.desktopChosen) && (
+        <>
+          {status.desktopChosen && status.desktop?.from !== "chosen" && (
+            <span className="form-error" data-testid="dsh-desktop-chosen-gone">
+              选的文件夹 {status.desktopChosen} 里没有桌面版了{status.desktop ? "，现在用的是上面找到的" : ""}。
+            </span>
+          )}
+          <div className="settings-row">
+            <input
+              className="field"
+              aria-label="DeepSeek Harness 桌面版的文件夹"
+              placeholder="桌面版装在哪个文件夹，例如 D:\Apps\DeepSeek Harness"
+              value={desktopText}
+              disabled={!!busy}
+              onChange={(e) => setDesktopText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && desktopText.trim()) void saveDesktop(desktopText.trim());
+              }}
+              data-testid="dsh-desktop-path"
+            />
+            {window.amo?.pickDirectory && (
+              <button type="button" className="btn-ghost small" disabled={!!busy} onClick={() => void browseDesktop()}>
+                选择文件夹…
+              </button>
+            )}
+            <button type="button" className="btn-primary small" disabled={!!busy || !desktopText.trim() || desktopText.trim() === status.desktopChosen} onClick={() => void saveDesktop(desktopText.trim())} data-testid="dsh-desktop-save">
+              保存
+            </button>
+            {status.desktopChosen && (
+              <button type="button" className="btn-ghost small" disabled={!!busy} onClick={() => void saveDesktop(null)} data-testid="dsh-desktop-clear">
+                改回自动找
+              </button>
+            )}
+          </div>
+        </>
       )}
       {usesClone && (
         <>

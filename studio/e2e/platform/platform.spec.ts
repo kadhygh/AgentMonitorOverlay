@@ -642,7 +642,7 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
     mkdirSync(join(dirs.home, ".local", "bin"), { recursive: true });
     writeFileSync(join(dirs.home, ".local", "bin", "claude.exe"), "not a program");
     mkdirSync(join(dirs.appdata, "npm"), { recursive: true });
-    return { PATH: [join(dirs.appdata, "npm"), dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_PLATFORM_NPM_REGISTRY: registryUrl };
+    return { PATH: [join(dirs.appdata, "npm"), dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_PLATFORM_NPM_REGISTRY: registryUrl, AMO_STUDIO_DSH_REGISTRY: "0" };
   });
   const form = page.getByRole("form", { name: "登录" });
   await form.getByLabel("服务器地址").fill(server.url.replace("http://", ""));

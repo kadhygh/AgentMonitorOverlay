@@ -316,10 +316,15 @@ export interface ClaudeCodeStatus {
 export interface DshStatus {
   /** Where DSH comes from (2026-10-26): "auto" = the desktop app when installed, else the clone; "clone" = the clone. */
   source: "auto" | "clone";
-  /** The installed desktop app, if any. */
-  desktop: { path: string; version: string | null } | null;
-  /** Where the desktop app is looked for. */
+  /**
+   * The installed desktop app, if any, and where it was found (2026-11-02): AMO_STUDIO_DSH_DESKTOP, the folder chosen
+   * in 设置, the usual folder, or where the registry says it was installed.
+   */
+  desktop: { path: string; version: string | null; from: "env" | "chosen" | "default" | "registry" } | null;
+  /** The usual folder of the desktop app (or AMO_STUDIO_DSH_DESKTOP's). */
   desktopDir: string | null;
+  /** The desktop app's folder chosen in 设置 (installed somewhere else), or null: looked for. */
+  desktopChosen: string | null;
   /** What sessions run on now; null when nothing usable (`unavailable` says why). */
   active: { kind: "desktop" | "clone"; version: string | null } | null;
   unavailable: string | null;
@@ -422,7 +427,7 @@ export interface HostRoutes {
   /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
   "GET /api/dsh": { req: void; res: DshStatus };
   /** Sets (or with null clears) the clone's folder; it must hold a DSH checkout (`apps/cli`). */
-  "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone" }; res: DshStatus };
+  "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone"; desktopPath?: string | null }; res: DshStatus };
   /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
   "POST /api/dsh/check": { req: void; res: DshStatus };
   /**

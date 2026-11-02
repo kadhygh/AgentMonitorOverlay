@@ -1,9 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
 // @amo-studio/locate: where AMO looks for the programs it runs on — Claude Code, the DeepSeek Harness desktop app, Codex,
-// git. Only file checks, nothing started. Moved out of the Host (2026-10-28) so AMO 平台's 环境 page looks in exactly the
+// git. File checks, nothing started (but for the registry lookup of the DSH app, dshRegisteredDirs). Moved out of the Host (2026-10-28) so AMO 平台's 环境 page looks in exactly the
 // places Studio does without pulling in the Host and its SDKs; the Host imports these and behaves as before. Starting the
 // programs (for `--version`) stays with each side: the Host asks synchronously, the platform asynchronously with a timeout.
 
@@ -77,6 +78,69 @@ export const DSH_DESKTOP_ARGS = ["--expose-internals"] as const;
 export function dshDesktopDir(env: Env = process.env): string | null {
   if (env.AMO_STUDIO_DSH_DESKTOP !== undefined) return env.AMO_STUDIO_DSH_DESKTOP || null;
   return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs", "DeepSeek Harness") : null;
+}
+
+/** The uninstall entries Windows keeps (per user, per machine, 32-bit per machine). */
+const UNINSTALL_KEYS = ["HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*", "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*", "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*"];
+const REGISTRY_FRESH_MS = 60_000;
+let registered: { at: number; dirs: string[] } | null = null;
+
+/**
+ * Where Windows says the desktop app is installed (2026-11-02, the user: its installer lets a person pick another
+ * folder): the InstallLocation (else the DisplayIcon's folder) of each uninstall entry named 「DeepSeek Harness …」.
+ * Through PowerShell, which prints UTF-8 (reg.exe prints the console's code page, which garbles a Chinese folder name);
+ * the one place here that starts a program, so it is asked only when the usual folder has no app, and kept a minute.
+ * AMO_STUDIO_DSH_REGISTRY=0 leaves it out (the tests' pretend machines).
+ */
+export function dshRegisteredDirs(env: Env = process.env): string[] {
+  if (process.platform !== "win32" || env.AMO_STUDIO_DSH_REGISTRY === "0") return [];
+  if (registered && Date.now() - registered.at < REGISTRY_FRESH_MS) return registered.dirs;
+  const script =
+    "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " +
+    `Get-ItemProperty ${UNINSTALL_KEYS.map((k) => `'${k}'`).join(", ")} -ErrorAction SilentlyContinue | ` +
+    "Where-Object { $_.DisplayName -like 'DeepSeek Harness*' } | " +
+    "ForEach-Object { if ($_.InstallLocation) { $_.InstallLocation } elseif ($_.DisplayIcon) { Split-Path (($_.DisplayIcon -replace ',\\d+$', '') -replace '\"', '') } }";
+  let dirs: string[] = [];
+  try {
+    const shell = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const out = execFileSync(shell, ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"] });
+    dirs = [...new Set(out.split(/\r?\n/).map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean))];
+  } catch {
+    dirs = [];
+  }
+  registered = { at: Date.now(), dirs };
+  return dirs;
+}
+
+/** The desktop app found, and where: AMO_STUDIO_DSH_DESKTOP, the folder the person chose, the usual one, or the registry's. */
+export interface DshDesktopFound {
+  dir: string;
+  exe: string;
+  cli: string;
+  from: "env" | "chosen" | "default" | "registry";
+}
+
+/**
+ * The installed desktop app (2026-11-02), the first place that has it: the folder the person chose in Studio's 设置
+ * (`chosen`); then AMO_STUDIO_DSH_DESKTOP alone when it is set ("" = nowhere: the tests' Studios); else the usual folder
+ * and the folders the registry names.
+ */
+export function locateDshDesktop(env: Env = process.env, chosen?: string | null, registry: (env: Env) => string[] = dshRegisteredDirs): DshDesktopFound | null {
+  const mine = chosen ? dshDesktopIn(chosen) : null;
+  if (mine && chosen) return { dir: chosen, ...mine, from: "chosen" };
+  if (env.AMO_STUDIO_DSH_DESKTOP !== undefined) {
+    const dir = env.AMO_STUDIO_DSH_DESKTOP;
+    const app = dir ? dshDesktopIn(dir) : null;
+    return app && dir ? { dir, ...app, from: "env" } : null;
+  }
+  const usual = dshDesktopDir(env);
+  const app = usual ? dshDesktopIn(usual) : null;
+  if (app && usual) return { dir: usual, ...app, from: "default" };
+  for (const dir of registry(env)) {
+    const app = dshDesktopIn(dir);
+    if (app) return { dir, ...app, from: "registry" };
+  }
+  return null;
 }
 
 /**

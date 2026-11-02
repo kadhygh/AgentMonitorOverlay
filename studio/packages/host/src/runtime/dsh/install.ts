@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { DSH_DESKTOP_ARGS, dshDesktopDir, dshDesktopIn } from "@amo-studio/locate";
+import { DSH_DESKTOP_ARGS, dshDesktopDir, locateDshDesktop, type DshDesktopFound } from "@amo-studio/locate";
 import type { DshCheck, DshStatus } from "@amo-studio/protocol";
 
 // Everything Studio relies on in DeepSeek Harness (stage 17, plans/done/stage-17-dsh.md; spikes s17-00/01): the desktop app
@@ -11,6 +11,8 @@ import type { DshCheck, DshStatus } from "@amo-studio/protocol";
 
 /** kv: the clone's folder (设置 → 模型 → DeepSeek Harness). */
 export const DSH_PATH_KEY = "settings:dsh-path";
+/** kv: the desktop app's folder the person chose (2026-11-02: installed somewhere else than usual); "" = look for it. */
+export const DSH_DESKTOP_PATH_KEY = "settings:dsh-desktop-path";
 /** kv: where DSH comes from — "auto" (the desktop app when installed, else the clone) or "clone" (always the clone). */
 export const DSH_SOURCE_KEY = "settings:dsh-source";
 export type DshSource = "auto" | "clone";
@@ -94,6 +96,10 @@ export function readDshPath(kv: KvStore): string | null {
   return kv.getKv(DSH_PATH_KEY)?.value || null;
 }
 
+export function readDshDesktopPath(kv: KvStore): string | null {
+  return kv.getKv(DSH_DESKTOP_PATH_KEY)?.value || null;
+}
+
 export function readDshSource(kv: KvStore): DshSource {
   return kv.getKv(DSH_SOURCE_KEY)?.value === "clone" ? "clone" : "auto";
 }
@@ -110,18 +116,21 @@ export interface DshDesktop {
   exe: string;
   cli: string;
   version: string | null;
+  /** Where it was found (locateDshDesktop). */
+  from: DshDesktopFound["from"];
 }
 
 /** The version the app last said, by its exe's time (an update replaces the exe). */
 const desktopVersions = new Map<string, { mtime: number; version: string | null }>();
 
-/** The installed desktop app, or null. Its version is asked once per installed build (a second or two). */
-export function findDesktopDsh(env: NodeJS.ProcessEnv = process.env): DshDesktop | null {
-  const dir = dshDesktopDir(env);
-  if (!dir) return null;
-  const app = dshDesktopIn(dir);
+/**
+ * The installed desktop app, or null: in the folder the person chose (`chosen`), the usual one, or where the registry
+ * says (2026-11-02). Its version is asked once per installed build (a second or two).
+ */
+export function findDesktopDsh(env: NodeJS.ProcessEnv = process.env, chosen: string | null = null): DshDesktop | null {
+  const app = locateDshDesktop(env, chosen);
   if (!app) return null;
-  const { exe, cli } = app;
+  const { dir, exe, cli, from } = app;
   let mtime: number;
   try {
     mtime = statSync(exe).mtimeMs;
@@ -138,7 +147,7 @@ export function findDesktopDsh(env: NodeJS.ProcessEnv = process.env): DshDesktop
     }
     desktopVersions.set(exe, { mtime, version });
   }
-  return { dir, exe, cli, version };
+  return { dir, exe, cli, version, from };
 }
 
 // ---- which one runs -----------------------------------------------------------------------------------------------
@@ -160,7 +169,7 @@ export interface DshLaunch {
 export function resolveDsh(kv: KvStore, env: NodeJS.ProcessEnv = process.env): DshLaunch | { error: string } {
   const source = readDshSource(kv);
   if (source === "auto") {
-    const desktop = findDesktopDsh(env);
+    const desktop = findDesktopDsh(env, readDshDesktopPath(kv));
     if (desktop) return { kind: "desktop", path: desktop.dir, command: desktop.exe, args: [...DESKTOP_ARGS, desktop.cli], env: { ELECTRON_RUN_AS_NODE: "1" }, version: desktop.version, commit: null };
   }
   const path = readDshPath(kv);
@@ -233,12 +242,14 @@ export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env): Ds
   const path = readDshPath(kv);
   const install = path ? describeDsh(path) : null;
   const node = resolveNode(env);
-  const desktop = findDesktopDsh(env);
+  const desktopChosen = readDshDesktopPath(kv);
+  const desktop = findDesktopDsh(env, desktopChosen);
   const launch = resolveDsh(kv, env);
   return {
     source: readDshSource(kv),
-    desktop: desktop ? { path: desktop.dir, version: desktop.version } : null,
+    desktop: desktop ? { path: desktop.dir, version: desktop.version, from: desktop.from } : null,
     desktopDir: dshDesktopDir(env),
+    desktopChosen,
     active: "error" in launch ? null : { kind: launch.kind, version: launch.version },
     unavailable: "error" in launch ? launch.error : null,
     path,
