@@ -20,6 +20,12 @@
 //   npm run release -- relay-service [--skip-tests] [--dry-run]
 //                                                   AMO 中转's service and client content (relay-release, deploy: the service
 //                                                   restarts when it changed), its version in packages/relay
+//   npm run release -- ios [--minor] [--skip-tests] [--dry-run]
+//                                                   the iOS app to TestFlight (2026-11-02, plans/ios.md): like a tool —
+//                                                   its version in mobile/iosApp/Version.xcconfig, its CHANGELOG.md beside
+//                                                   it, tag ios-v<version>, part of auto — but tested by the shared Kotlin
+//                                                   tests and the Android build, and built and uploaded on the build Mac
+//                                                   (ios-release.mjs); no test or stable channel of ours: TestFlight is it
 //   npm run release -- promote <tool> <version>     the stable channel (relay-mac promote)
 //   npm run release -- sync                         值守 directory: to master's tip, dependencies when the lock changed
 //   npm run release -- land                         值守 directory: its commits onto master (a fast-forward of the main
@@ -36,6 +42,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, setPriority } from "node:os";
 import { join, resolve } from "node:path";
 import { TOOLS, studio } from "./amo-tools.mjs";
+import { marketingVersion, releaseIos, withMarketingVersion } from "./ios-release.mjs";
 
 const repo = resolve(studio, "..");
 const args = process.argv.slice(2);
@@ -58,6 +65,8 @@ try {
 const TARGETS = {
   ...Object.fromEntries(Object.entries(TOOLS).filter(([, t]) => t.platform).map(([id, t]) => [id, { id, label: t.description, pkg: t.pkg, paths: t.packages.map((p) => `studio/packages/${p}`) }])),
   "relay-service": { id: "relay-service", label: "中转服务", pkg: "relay", paths: ["studio/packages/relay", "studio/packages/relay-ui"], service: true },
+  // Not a platform tool: TestFlight installs it (plans/ios.md). Its paths: what goes into the iOS app.
+  ios: { id: "ios", label: "iOS 版", ios: true, versionFile: join(studio, "mobile", "iosApp", "Version.xcconfig"), changelog: join(studio, "mobile", "iosApp", "CHANGELOG.md"), paths: ["studio/mobile/shared", "studio/mobile/iosApp", "studio/mobile/build.gradle.kts", "studio/mobile/settings.gradle.kts", "studio/mobile/gradle.properties", "studio/mobile/gradle"] },
 };
 const NEXT = "## 下一版";
 
@@ -73,9 +82,9 @@ function run(command, argv, opts = {}) {
 // each other at "0.0.0", and a different version there sends npm ci to the registry (404).
 const PROTOCOL = join(studio, "packages", "relay", "src", "protocol.ts");
 const VERSION_RE = /export const RELAY_VERSION = "([^"]+)";/;
-const pkgFile = (t) => (t.service ? PROTOCOL : join(studio, "packages", t.pkg, "package.json"));
-const changelogFile = (t) => join(studio, "packages", t.pkg, "CHANGELOG.md");
-const versionOf = (t, text = readFileSync(pkgFile(t), "utf8")) => (t.service ? VERSION_RE.exec(text)[1] : JSON.parse(text).version);
+const pkgFile = (t) => t.versionFile ?? (t.service ? PROTOCOL : join(studio, "packages", t.pkg, "package.json"));
+const changelogFile = (t) => t.changelog ?? join(studio, "packages", t.pkg, "CHANGELOG.md");
+const versionOf = (t, text = readFileSync(pkgFile(t), "utf8")) => (t.ios ? marketingVersion(text) : t.service ? VERSION_RE.exec(text)[1] : JSON.parse(text).version);
 const tagOf = (t, v) => `${t.id}-v${v}`;
 const lastTag = (t) => git("tag", "--list", `${t.id}-v*`, "--sort=-v:refname").split("\n").filter(Boolean)[0] ?? null;
 /** At a ref (master) when given, else as on disk. */
@@ -110,8 +119,10 @@ function due() {
   for (const t of Object.values(TARGETS)) {
     if (t.service) continue;
     const ch = changes(t);
+    // Not released yet (no tag: iOS until its first release by hand) or unchanged: its CHANGELOG need not exist.
+    if (!ch?.length) continue;
     const entries = nextEntries(show("master", rel(changelogFile(t))));
-    if (!ch?.length || !entries.length) continue;
+    if (!entries.length) continue;
     out.push({ t, changes: ch, entries, oldest: Math.min(...ch.map((c) => c.at)), latest: Math.max(...ch.map((c) => c.at)) });
   }
   return out;
@@ -138,8 +149,9 @@ function where() {
   return { branch, detached: branch === "HEAD", main };
 }
 
-function dirty() {
-  return git("status", "--porcelain", "--", "studio/packages", "studio/scripts", "studio/package.json", "studio/package-lock.json").split("\n").filter(Boolean);
+/** `more`: other paths that must be committed (the iOS app's when it goes out). */
+function dirty(more = []) {
+  return git("status", "--porcelain", "--", "studio/packages", "studio/scripts", "studio/package.json", "studio/package-lock.json", ...more).split("\n").filter(Boolean);
 }
 
 /** The dependencies match package-lock.json (installed once in the 值守 directory, again only when the lock changed). */
@@ -156,7 +168,7 @@ function ensureDeps() {
 function preflight(targets) {
   const w = where();
   if (!w.detached && w.branch !== "master") throw new Error(`在分支 ${w.branch} 上：只从 master 发布（主工作区的 master，或值守目录）`);
-  const d = dirty();
+  const d = dirty(targets.some((t) => t.ios) ? ["studio/mobile"] : []);
   if (d.length) throw new Error(`有没提交的改动，不打包（包只从提交过的 master 打）：\n  ${d.join("\n  ")}\n主工作区有人在改时，到值守目录 ${join(repo + "-duty")} 里发布。`);
   if (w.detached) {
     git("checkout", "--detach", "master");
@@ -170,7 +182,7 @@ function preflight(targets) {
     const entries = nextEntries(text);
     // A run that committed this version and failed before publishing it: publish it now, no new version.
     const resume = !gitOk("rev-parse", "-q", "--verify", `refs/tags/${tagOf(t, version)}`) && text.includes(`\n## ${version}（`) && !entries.length;
-    if (!resume && !entries.length) throw new Error(`${t.label}：CHANGELOG.md 的「${NEXT.slice(3)}」里还没写改动说明（packages/${t.pkg}/CHANGELOG.md）`);
+    if (!resume && !entries.length) throw new Error(`${t.label}：CHANGELOG.md 的「${NEXT.slice(3)}」里还没写改动说明（${rel(changelogFile(t)).replace(/^studio\//, "")}）`);
     plan.push({ t, from: version, resume, entries });
   }
   return { w, plan };
@@ -196,7 +208,7 @@ function writeVersion(t, version) {
   if (!next.test(log)) throw new Error(`${t.label}：CHANGELOG.md 里找不到「${NEXT.slice(3)}」这一节`);
   const pj = pkgFile(t);
   const text = readFileSync(pj, "utf8");
-  writeFileSync(pj, t.service ? text.replace(VERSION_RE, `export const RELAY_VERSION = "${version}";`) : text.replace(/"version": "[^"]+"/, `"version": "${version}"`));
+  writeFileSync(pj, t.ios ? withMarketingVersion(text, version) : t.service ? text.replace(VERSION_RE, `export const RELAY_VERSION = "${version}";`) : text.replace(/"version": "[^"]+"/, `"version": "${version}"`));
   // An empty 「下一版」 stays on top for the next change.
   writeFileSync(cl, log.replace(next, `${eol}${NEXT}${eol}${eol}## ${version}（${today()}）${eol}`));
   return [pj, cl];
@@ -218,9 +230,19 @@ function commit(w, files, message) {
   return sha;
 }
 
-/** `at`: says which step begins (类型检查, 单测) to 问题页. */
-async function tests(at = async () => undefined) {
+/** The steps tests() goes through for these targets. */
+const testSteps = (targets) => (has("--skip-tests") ? [] : [...(targets.some((t) => !t.ios) ? ["类型检查", "单测"] : []), ...(targets.some((t) => t.ios) ? ["移动端测试"] : [])]);
+
+/** `at`: says which step begins (类型检查, 单测, 移动端测试) to 问题页. */
+async function tests(at = async () => undefined, targets = []) {
   if (has("--skip-tests")) return console.log("跳过了测试（--skip-tests）");
+  if (targets.some((t) => t.ios)) {
+    await at("移动端测试");
+    // The iOS app's code is the shared Kotlin: its tests and the Android build here; the iOS build itself is checked
+    // on the build Mac, where it is made.
+    run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `& '${join(studio, "mobile", "build.ps1")}' -Tasks ':shared:testAndroidHostTest',':app:assembleDebug'; exit $LASTEXITCODE`], { shell: false });
+    if (targets.every((t) => t.ios)) return;
+  }
   await at("类型检查");
   run("npm", ["run", "typecheck"]);
   await at("单测");
@@ -355,13 +377,14 @@ async function release(ids) {
 
   const fresh = plan.filter((p) => !p.resume);
   // Each its own bar on 问题页, timed against the same step of the last builds (2026-10-31 晚).
-  const steps = [...(has("--skip-tests") ? [] : ["类型检查", "单测"]), ...(fresh.length ? ["提交版本"] : []), "打包", "发布"];
+  const tools = plan.filter((p) => !p.t.ios);
+  const steps = [...testSteps(plan.map((p) => p.t)), ...(fresh.length ? ["提交版本"] : []), ...(tools.length ? ["打包"] : []), "发布"];
   const report = await buildReporter();
   const at = (name) => (steps.indexOf(name) > 0 ? report({ step: steps.indexOf(name) }) : Promise.resolve());
   await report({ start: { label: plan.map((p) => `${p.t.label} ${p.to}`).join("、"), steps } });
   buildShown = true;
   try {
-    await tests(at);
+    await tests(at, plan.map((p) => p.t));
     let sha = git("rev-parse", "HEAD");
     if (fresh.length) {
       await at("提交版本");
@@ -370,14 +393,18 @@ async function release(ids) {
       sha = commit(w, files, `chore(release): test channel — ${names}${has("--skip-tests") ? "（没跑测试）" : ""}`);
       console.log(`\n已提交 ${sha.slice(0, 7)}，在 master 上`);
     }
-    await at("打包");
-    run("npm", ["run", "package:platform", "--", "--only", plan.map((p) => p.t.id).join(",")]);
+    if (tools.length) {
+      await at("打包");
+      run("npm", ["run", "package:platform", "--", "--only", tools.map((p) => p.t.id).join(",")]);
+    }
     await at("发布");
     const done = [];
     const failed = [];
     for (const p of plan) {
       try {
-        run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "publish", p.t.id], { shell: false });
+        // iOS: built and uploaded on the build Mac from this commit (its build number is the commit's count).
+        if (p.t.ios) await releaseIos(sha);
+        else run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "publish", p.t.id], { shell: false });
         git("tag", tagOf(p.t, p.to), sha);
         done.push(p);
       } catch (err) {
@@ -385,9 +412,9 @@ async function release(ids) {
         failed.push(`${p.t.label} ${p.to}`);
       }
     }
-    console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}`).join("、") || "无"}`);
+    console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}${p.t.ios ? "（TestFlight）" : ""}`).join("、") || "无"}`);
     await markReleased(done, sha);
-    for (const p of done) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
+    for (const p of done.filter((d) => !d.t.ios)) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
     if (done.length < plan.length) {
       console.log("没发出去的下次再跑 release 会补发（版本号不再加）。");
       process.exitCode = 1;

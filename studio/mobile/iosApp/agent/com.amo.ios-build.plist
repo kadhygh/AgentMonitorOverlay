@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- The iOS builds in the build Mac's desktop session (2026-11-02, the user's pick; plans/ios.md「钥匙串」): codesign
+     needs the login keychain, which an ssh session cannot use (errSecInternalComponent) — Jenkins (Unity's builds) runs
+     as an agent like this for the same reason. ssh only queues a job (submit-build.sh); launchd starts runner.sh while
+     the queue has one. Installed by node scripts/ios-release.mjs --install-agent; HOME is filled in then. -->
+<dict>
+	<key>Label</key>
+	<string>com.amo.ios-build</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>HOME/amo-ios-build/agent/runner.sh</string>
+	</array>
+	<key>QueueDirectories</key>
+	<array>
+		<string>HOME/amo-ios-build/queue</string>
+	</array>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<!-- Below the desktop and Unity's builds. -->
+	<key>Nice</key>
+	<integer>10</integer>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>HOME/amo-ios-build/agent/agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>HOME/amo-ios-build/agent/agent.log</string>
+</dict>
+</plist>
