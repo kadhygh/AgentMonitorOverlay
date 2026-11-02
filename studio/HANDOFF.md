@@ -31,6 +31,7 @@
 
 | 事项 | 状态 |
 |---|---|
+| Android Studio | 首版工程在 `android/`，调试 APK 位于 `android/out/AMO-Studio-Android-0.1.0-debug.apk`；团队服务器真实 Dxx-DS、远程可靠性、标准及 360 dp / 1.3 倍字体 UI 验收通过。范围、证据及未验项见 `plans/android-studio.md`；真实手机和 Tailscale 实网待验 |
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
 | 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`）；10-29 晚改成弹窗、加「安全」、B 能带图片和文件给 A（`plans/remote-page-and-new-task.md` 第 7、8 节，Studio 0.9.10）。等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名、远程权限上限，用户 10-29 定先不做 |
 | 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭。`634b77c` 提交，中转服务 10-30 已部署，Studio 0.9.12 在测试通道（publish 时删了 0.9.9）；试过后 `npm run relay:mac -- promote studio 0.9.12`。终端里的会话、普通聊天、超时提醒以后再说 |
@@ -75,6 +76,47 @@
 - 保留连接、命令、传文件、凭据加密、自更新；重写数据层（`HistoryCache.kt` 按会话分文件、后台写；`rt.items` 从缓存最后一条往后拉；任务同步只在连上 / 回到应用时并行跑；推来的任务和会话变化直接应用）和全部界面（工作台、会话树、对话页的操作折叠、自写 Markdown、底部面板新建、设置里的电脑和配对）。
 - 验证：模拟器 FakeNga_UI_API_36 + 夹具 `node scripts/android-fixture.mjs --seed-long`（新加：340 条的模拟长会话、`POST /stream` 模拟流式回复），`android/test.ps1` 6 个测试全过；截图在 `screenshots/android/redesign/`（浅色、深色、横屏、键盘、360 dp + 1.3 倍字体、流式）。流式 4000 字（每 30 ms 一段）时帧时间中位 13 ms、90% 18 ms，模拟器软件渲染下 21% 掉帧。
 - 已发到团队服务器（versionCode 4，`node scripts/relay-mac.mjs android-publish --apk android/out/AMO-Studio-Android-0.2.0-debug.apk`）。没做：真机走 Tailscale 的手感没测。
+
+**2026-10-31 · 发布流程整理和维护节奏**（方案和进度 `plans/release.md`，都已合进 master）：
+- `npm run release`（`scripts/release.mjs`）：`status`、`due`、`<工具…>` / `auto`、`relay-service`、`promote`，以及值守目录用的 `sync`、`land`。只从提交过的 master 打包；跑 typecheck + 单测；升版本；把「下一版」改成版本标题；提交进 master；打包、发布；打 tag `<工具>-v<版本>`。
+- 中转服务的版本记在 `RELAY_VERSION` 和 `packages/relay/CHANGELOG.md`。`packages/relay/package.json` 要保持 0.0.0：改了会让 npm ci 去 registry 找，报 404（ef3abe6）。
+- 值守目录 `G:\PROJECT\AgentMonitorOverlay-duty` 已建好，是 master 的 detached worktree。值守在这里修问题、打包，不碰主工作区。
+- 问题页：
+  - 新状态「建议单开讨论」；
+  - 新页签「要你看」；
+  - 中转服务 0.7.1 已部署（10-31 10:54，部署前备份了 `backup-20261031-105409.db`）。
+  - 中转服务 0.7.2：恢复管理页「服务器状态」，下载页的「报问题」收进折叠的「维护工具」；`release relay-service` 发之前查主工作区有没有没提交的中转改动（规则写进 `plans/release.md` 和 AGENTS.md）。
+- 值守：
+  - 顶栏「值守 N 项开着」，点开是值守窗口；
+  - 任务卡片、任务头、会话列表上有标记；
+  - 选了任务的会话项可以跑在别的项目文件夹里；
+  - 「先检查」可以几样一起查（`kind: all`）；
+  - duty_save 认 model、permission、effort，不写时用调用者自己的。
+- 远程任务的模板窗口会列出那台电脑上的模板（`rt.templates`）。
+- 三份模板的原文在 `docs/prompt-templates/`：开始维护、问题页值守、维护迭代。AGENTS.md 的车道例外改成两条：值守目录、维护迭代。
+- 验证：
+  - duty、issues、remote、sessions、mcp 的单测；
+  - e2e：`studio/duty.spec.ts`、`studio/remote-tasks.spec.ts`、`studio/prompt-templates.spec.ts`、`relay/issues-page.spec.ts`；
+  - 截图看过：`screenshots/studio/duty-dialog.png`、`duty-marks.png`、`remote-b-templates.png`、`screenshots/relay/I4-discuss.png`。
+- **Studio 0.9.18 已发测试通道**：在值守目录用 `npm run release -- studio` 发的，release 提交是 d60c7f1，tag 是 `studio-v0.9.18`。typecheck 通过；单测 1041 条通过、4 条跳过；publish 时删掉了 0.9.15。
+- 还剩：
+  - 用户更新 Studio 后，把三份模板存进 Studio；
+  - 开第一天的「MM-DD 维护」任务，试一遍「开始维护」；
+  - Studio 0.9.17 和 0.9.18 试过后再 promote。
+
+**2026-10-31 · 中转管理页的「服务器状态」**：用户担心中转占用 Mac mini 资源，要能在页面上看，并要求带曲线。实测负载很低：整机负载约 1（15 核）；内存 48 GB，空闲 88%；中转进程 CPU 0%、内存 89 MB；`data/` 2.6 MB，`platform/` 367 MB。机器上占资源最多的是 Jenkins（1.3 GB）。新增 `packages/relay/src/monitor.ts`，每 5 分钟记一个点（整机 CPU、内存，中转进程 CPU、内存，在线人数和设备数），最近 24 小时存在数据目录的 `monitor.json` 里。`/api/admin/monitor` 需要管理密码；文件夹大小、磁盘、占内存最多的程序（按 app 归并）在打开页面时现算，并做了缓存。`/admin` 加了一张卡片：6 个数字、4 张曲线（只有一个纵轴、末端直接标数值、悬停看具体数值、中转停过的地方曲线断开）、可展开的表格和程序列表，页面开着时每分钟刷新一次。`monitor.test.ts` 有 3 条测试，relay 全部 52 条测试通过，tsc 通过；用假数据截了浅色、深色两张图检查过（`screenshots/relay/admin-monitor-*.png`）。10-31 09:48 已部署到团队服务器（用户确认后；部署前自动备份了 `backup-20261031-094821.db`），`/api/admin/monitor` 不带密码时返回 401，`/admin` 页面里有新卡片，错误日志是空的。用真实管理密码打开页面看 macOS 上的数（vm_stat、ps）**还没验证**。24 小时曲线从部署那时开始攒。**后续**：10-31 10:54 从值守目录发的 0.7.1 是按 master 打的，没带这批（当时没提交），把服务器上的卡片冲掉了；用户同意后提交为 48e9bdfe，随中转服务 0.7.2 重新部署（`monitor.json` 在数据目录里，之前攒的点没丢）。以后 `release relay-service` 看到主工作区有没提交的中转改动会停下（0337b5b）。
+
+**2026-10-31 · AMO 文件快传首轮调查（尚未实现）**：调查平台安装发布、共用账号、Relay 附件/权限、托盘及 AMO 浅深主题；建议独立工具经团队服务器暂存并按人投递。现有附件为 20 MiB 整包缓存和同步落盘，不适合直接扩成大文件工具；需新增续传、收件权限/回执、配额与过期清理。只读实测团队服务可达、磁盘 Available 为 3398408732 个 1024 字节块、网口为 1000baseT；实际吞吐未验证。范围及待定默认值见 `plans/lan-file-transfer.md`，阅读版 `plans/lan-file-transfer.html` 已检查浅深及窄屏排版。未改产品代码、未部署、未重启、未提交；等待用户确定首版范围。
+
+**2026-10-31 · Android Studio 首版实现**：新增独立 Kotlin/Compose 工程 `android/` 和隔离联调脚本 `scripts/android-{fixture,fixture.test,provision}.mjs`。手机通过现有 Relay devices / Host rt.* 协议完成登录、配对、任务与会话、对话/审批/提问/中断和文件查看；创建任务同时启动首会话。沿用 AMO 色值、字体、图标和浅深主题。Keystore 保护凭据，历史缓存与草稿按账号隔离，断线不自动重发命令。构建与 Lint 通过（0 errors、22 warnings、1 hint）；本地可靠性及团队服务器 5 项协议/可靠性测试通过，团队服务器真实 Dxx-DS 三轮完整回复及缓存恢复通过（本轮共 5 次真实调用含准备/重测）。标准 UI、360 dp / 1.3 倍字体 UI、横竖屏草稿、软键盘及 HTML 内联交互验收通过，截图已检查；真机、Tailscale 实网、旧版 Android 尚未验证。调试 APK 在 `android/out/AMO-Studio-Android-0.1.0-debug.apk`。未改生产 Host / Relay、未部署、未重启用户 Studio、未提交。详见 `plans/android-studio.md`、阅读版 `plans/android-studio.html` 与 `android/README.md`。
+
+**2026-10-31 · Android Studio 首版调查（尚未实现）**：范围见 `plans/android-studio.md`，阅读版 `plans/android-studio.html`。用户定：仅远程登录配对、任务、会话、对话与查看，操作以桌面客户端为准；不做批注、书签、Focus，严格沿用 Studio 美术并支持浅深主题。现有远程协议可作为基础，链路仍经团队服务器，Tailscale 需确保服务器可达。实测 JDK 17、隔离缓存下 Gradle 9.5.0 启动、ADB/AVD 枚举、团队服务器健康接口；未编译 APK、未做手机或 Tailscale 联调。下一步是独立 Android 工程和基础闭环，未修改应用代码、未重启或部署服务。
+
+**2026-10-31 · 问题页上线（阶段 1）**：`studio/issues` 快进合回 master（e483ca7），`relay:release` + `relay:mac -- deploy` 部署（中转重启，部署前备份 `backup-20261031-003043.db`）。`http://172.16.8.85:47120/issues` 能打开，下载页有「报问题」。做了什么见 `plans/issues.md`「进度」。
+
+**2026-10-31 · 值守（阶段 2）合回 master**（5847650）：Host 的 `features/duty/`，设置里一页「值守」（开会话 / 跑命令 / Studio 自带，每 N 秒或每天定时，同一项同时只跑一个，开会话前看额度）。验证：duty 单测 5 条 + remote 相关单测全过，e2e `studio/duty.spec.ts` 过，截图 `screenshots/studio/settings-duty.png`。没整套跑 verify，也没发版（CHANGELOG 记在「下一版」）。
+
+**2026-10-31 · 问题页阶段 3（改成模板）合回 master**（73e13dd）：用户定不做内置值守任务和打包脚本，改成 AMO MCP 的 `issue_*` 工具 + 提示词模板「问题页值守」（原文 `docs/prompt-templates/issues-duty.md`），值守项的会话能指定型号、思考强度、权限。验证：issues 单测 2 条（本机中转服务）、duty / amo-mcp 单测、e2e `studio/duty.spec.ts`。还没发版；装上带提示词模板的 Studio 后，要把模板原文存进 Studio（`prompt_template_save`），再建值守项。随后（ac897d3）值守的会话项可以「先检查」：检查命令或 Studio 自带检查（问题页的 `issues.pending`，代码写），有事才开模型，同样的发现不重复开；建议的值守项改成每 30 秒、先检查「问题页有事要做」（见 `plans/issues.md`「阶段 3 改了做法」）。再随后（9bd43e7）值守给 AI 用：`duty_list` / `duty_save`（每次要人批准）/ `duty_stop`，脚本输出 `AMO_DUTY_DONE` 关掉值守项，会话项可勾「做完了 AI 可以关掉」（见同一文件「值守给 AI 用」）。**Studio 0.9.17 已发测试通道**（a2f6198，从 worktree 打包，主工作区当时有别的会话没提交的 relay 改动；publish 删了 0.9.14）。worktree `G:\PROJECT\AgentMonitorOverlay-issues` 还留着。
 
 **2026-10-31 · 提示词模板，删掉扩展包（在 worktree 分支 `studio/prompt-templates` 做完后合进 master，未发布）**
 

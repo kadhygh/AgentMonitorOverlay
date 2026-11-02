@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 24 464 464" width="512" height="512">
+  <!-- AMO 平台 候选 C「叠层」(2026-10-28): three stacked layers inside the 取景框 — the tools sit on one shared base.
+       Lower layers in Studio's two blues, the top one in clay; paper gaps keep the layers apart at tray size. -->
+  <defs>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#22201c" flood-opacity="0.26"/></filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#fbfaf7" stroke-width="44" opacity="0.9">
+      <path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/>
+      <path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/>
+    </g>
+    <g stroke="#22201c" stroke-width="28">
+      <path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/>
+      <path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/>
+    </g>
+  </g>
+  <g filter="url(#sh)" stroke="#fbfaf7" stroke-width="16" stroke-linejoin="round">
+    <path d="M136 290 L256 350 L376 290 L256 230 Z" fill="#1b3557"/>
+    <path d="M136 236 L256 296 L376 236 L256 176 Z" fill="#2f5a92"/>
+    <path d="M136 182 L256 242 L376 182 L256 122 Z" fill="#D97757"/>
+  </g>
+</svg>

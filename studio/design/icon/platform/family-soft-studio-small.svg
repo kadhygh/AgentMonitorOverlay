@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO 图标家族 方砖·柔光 AMO Studio, 16–24 px cut (draft 2026-10-28): gradient only, no shadows. -->
+  <defs><linearGradient id="face" x1="0" y1="16" x2="0" y2="496" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#486e9f"/><stop offset="1" stop-color="#2a5183"/></linearGradient></defs>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#face)"/>
+  <g transform="translate(256 256) scale(1.3)"><circle cx="-52" cy="-22" r="38" fill="#fbfaf7"/><circle cx="52" cy="-22" r="38" fill="#fbfaf7"/><path d="M-62 46 Q0 92 62 46" fill="none" stroke="#fbfaf7" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

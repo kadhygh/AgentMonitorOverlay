@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO 图标家族 卡通·深底 AMO 平台, 16–24 px cut: no thickness, fewer details, glyph larger (draft 2026-10-28) -->
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="#362c2a"/>
+  <g transform="translate(256 256) scale(1.25) translate(-256 -260)">
+  <path d="M200 200 V172 Q200 154 218 154 H294 Q312 154 312 172 V200" fill="none" stroke="#c2522a" stroke-width="30" stroke-linecap="round"/>
+  <g fill="#ee7a3c"><rect x="132" y="196" width="248" height="160" rx="36"/></g>
+  <rect x="132" y="226" width="248" height="18" fill="#c2522a"/>
+  <g transform="translate(258 300) rotate(-30) scale(0.86)" fill="#fbfaf7"><circle cx="50" cy="0" r="40"/><rect x="-80" y="-16" width="130" height="32" rx="14"/><rect x="58" y="-14" width="44" height="28" fill="#ee7a3c"/></g>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO 图标家族 方砖·实体 AMO 平台, 16–24 px cut (draft 2026-10-28): keeps the darker bottom edge, glyph flat. -->
+  <rect x="16" y="56" width="480" height="440" rx="104" fill="#7d3e29"/>
+  <rect x="16" y="16" width="480" height="440" rx="104" fill="#c96442"/>
+  <g transform="translate(256 236) scale(1.26)"><rect x="-104" y="-104" width="90" height="90" rx="22" fill="#fbfaf7"/><rect x="-104" y="14" width="90" height="90" rx="22" fill="#fbfaf7"/><rect x="14" y="14" width="90" height="90" rx="22" fill="#fbfaf7"/><path d="M59 -100 V-18 M18 -59 H100" fill="none" stroke="#fbfaf7" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

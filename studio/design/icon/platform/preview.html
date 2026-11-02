@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMO 图标家族草稿</title>
+<style>
+/* Claude 风格 · 单文件 HTML 基础样式
+   用法：整段内联进 <style>，之后只追加本页专用样式。
+   来源：2026-10-26 AIWork HTML 展示（推进总览 / 方案图解）。图表系列色 --s1..--s3 已过色盲与对比度校验（浅 / 深两套）。
+   深色切换：<button class="theme" onclick="toggleTheme()">切换深浅色</button>
+   function toggleTheme(){const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=d?'light':'dark'} */
+
+/* ---------- 变量 ---------- */
+:root{color-scheme:light;--bg:#faf9f5;--surface:#ffffff;--surface-2:#f0eee6;--line:#e8e6dc;--text:#141413;--text-2:#5e5d59;--text-3:#87867f;--accent:#c96442;--accent-fill:#d97757;--accent-soft:#f6e9e1;--good:#2e7d5b;--good-soft:#e5efe8;--warn:#c28a1e;--warn-soft:#f6ecd6;--crit:#b5443a;--crit-soft:#f5e1dd;--neutral:#b0aea5;--code:#f0eee6;--s1:#d97757;--s2:#4a86c8;--s3:#5e8c3a;--lane-v:#f5f3ec;--lane-l:#f8eee8;--tip-bg:#141413;--tip-fg:#faf9f5;--shadow:0 1px 2px rgba(20,20,19,.04),0 6px 18px rgba(20,20,19,.04);--serif:"Tiempos Text","Noto Serif SC","Source Han Serif SC",Georgia,serif;--sans:"Styrene B",Inter,"Noto Sans SC","Microsoft YaHei UI",system-ui,sans-serif;--mono:"Cascadia Mono","JetBrains Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}
+
+/* ---------- 基础 ---------- */
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+button{font-family:var(--sans);cursor:pointer}
+.wrap{max-width:1060px;margin:0 auto;padding:30px 28px 80px}
+nav.top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--text-3);margin-bottom:30px}
+nav.top a{color:var(--text-2);text-decoration:none}
+nav.top a:hover{color:var(--accent)}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--text-2);border-radius:8px;padding:5px 12px;font-size:13px}
+.theme:hover{border-color:var(--accent-fill)}
+h1{font:500 31px/1.3 var(--serif);letter-spacing:-.01em;margin:0 0 10px}
+h1 code{font-size:.66em;vertical-align:4px}
+h2{font:500 22px/1.4 var(--serif);margin:52px 0 14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h2 small{font:400 13px var(--sans);color:var(--text-3)}
+h3{font:500 17px/1.4 var(--serif);margin:0 0 8px}
+.lead{color:var(--text-2);margin:0 0 16px;font:15.5px/1.75 var(--serif)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code);padding:1px 6px;border-radius:5px;color:var(--text);word-break:break-word}
+a{color:var(--accent)}
+footer{margin-top:56px;font-size:12.5px;color:var(--text-3);border-top:1px solid var(--line);padding-top:16px}
+
+/* ---------- 容器 ---------- */
+.card,.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow)}
+.card p,.prose{font-family:var(--serif)}
+.prose{font-size:15px;line-height:1.8;color:var(--text-2)}
+.prose li::marker{color:var(--accent-fill)}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:820px){.twocol{grid-template-columns:1fr}}
+
+/* 一句话结论：<div class="tldr"><b class="h">一句话结论</b><ul><li>…</li></ul></div> */
+.tldr{margin:28px 0 0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 26px;box-shadow:var(--shadow);font:16px/1.8 var(--serif)}
+.tldr b.h{display:block;font:600 12px var(--sans);letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+.tldr ul{margin:0;padding-left:20px}
+.tldr li{margin:5px 0}
+.tldr li::marker{color:var(--accent-fill)}
+.tldr code{font-size:.78em}
+
+/* 标签：<span class="pill good"><span class="dot" style="background:var(--good)"></span>✓ 已完成</span> */
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 11px;border-radius:999px;background:var(--surface-2);color:var(--text-2)}
+.pill.good{background:var(--good-soft);color:var(--text)}
+.pill.warn{background:var(--warn-soft);color:var(--text)}
+.pill.crit{background:var(--crit-soft);color:var(--text)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+
+/* 数字卡片：<div class="tiles"><div class="tile"><div class="k">标签</div><div class="v">68<small> 项</small></div><div class="d">说明</div></div></div> */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 18px;box-shadow:var(--shadow)}
+.tile .k{font-size:12.5px;color:var(--text-3)}
+.tile .v{font:500 34px/1.15 var(--serif);margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.tile .v small{font:400 14px var(--sans);color:var(--text-3);margin-left:2px}
+.tile .d{font-size:12px;color:var(--text-3);line-height:1.5}
+
+/* 时间线：<ol class="tl"><li><span class="node">✓</span><details class="stage"><summary><div class="sname">P1 标题<span>副标题</span></div><div class="sone">一句话</div><div><span class="commit">abc1234</span><span class="chev">▸</span></div></summary><div class="sbody">…</div></details></li></ol>
+   节点：.node（完成）/ .node.warn（停过或待处理）/ .node.todo（未开始） */
+.tl{position:relative;margin:0;padding:0;list-style:none}
+.tl::before{content:"";position:absolute;left:13px;top:18px;bottom:18px;width:1.5px;background:var(--line)}
+.tl li{position:relative;padding-left:42px;margin-bottom:10px}
+.tl .node{position:absolute;left:3px;top:15px;width:22px;height:22px;border-radius:50%;background:var(--good);display:grid;place-items:center;font-size:11px;color:#fff;font-weight:700;box-shadow:0 0 0 4px var(--bg)}
+.tl .node.warn{background:var(--warn)}
+.tl .node.todo{background:var(--surface);border:1.5px solid var(--neutral);color:var(--text-3)}
+details.stage{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+details.stage>summary{list-style:none;cursor:pointer;padding:12px 18px;display:grid;grid-template-columns:130px 1fr auto;gap:14px;align-items:center}
+details.stage>summary::-webkit-details-marker{display:none}
+details.stage>summary:hover .sname{color:var(--accent)}
+details.stage[open]>summary{border-bottom:1px solid var(--line)}
+@media (max-width:820px){details.stage>summary{grid-template-columns:1fr}}
+.sname{font:500 16px/1.35 var(--serif)}
+.sname span{display:block;font:400 12px var(--sans);color:var(--text-3);margin-top:2px}
+.sone{color:var(--text-2);font-size:14px;line-height:1.6}
+.commit{font-family:var(--mono);font-size:12px;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:6px;white-space:nowrap}
+.commit.none{color:var(--text-3);background:var(--surface-2)}
+.chev{display:inline-block;transition:transform .15s;color:var(--text-3);margin-left:8px}
+details[open] .chev{transform:rotate(90deg)}
+.sbody{padding:12px 22px 16px;font:15px/1.75 var(--serif);color:var(--text-2)}
+.sbody ul{margin:0;padding-left:18px}
+.sbody li{margin:4px 0}
+.sbody li::marker{color:var(--accent-fill)}
+.sbody b{color:var(--text);font-weight:600}
+.sbody code{font-size:.8em}
+
+/* 折叠块：<details class="fold"><summary>展开 8 条</summary>…</details> */
+details.fold>summary{cursor:pointer;color:var(--accent);font-size:14px}
+
+/* ---------- 表格 / 图例 / 提示 ---------- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text-3);font-weight:500;font-size:12.5px}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.s-ico{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-2);margin-bottom:12px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.hatch{background:repeating-linear-gradient(45deg,var(--neutral) 0 2px,transparent 2px 6px);border:1px solid var(--neutral)}
+.tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-size:12.5px;line-height:1.55;padding:8px 11px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:9;max-width:290px}
+
+/* ---------- 控件 ---------- */
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:6px 13px;font-size:13.5px}
+.btn.pri{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 13px;color:var(--text-2);font-size:13.5px}
+.chips button.on{border-color:var(--accent-fill);background:var(--accent-soft);color:var(--text)}
+
+/* ---------- 流程图（内联 SVG） ---------- */
+svg text{font-family:var(--sans)}
+.node-g{cursor:pointer}
+.node-g rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;transition:stroke .15s}
+.node-g:hover rect,.node-g.sel rect{stroke:var(--accent-fill);stroke-width:2.2}
+.node-g .t{font-size:13px;font-weight:600;fill:var(--text)}
+.node-g .s{font-size:11px;fill:var(--text-3)}
+.node-g.bad rect{stroke:var(--crit);stroke-dasharray:5 4;fill:var(--crit-soft)}
+.edge{fill:none;stroke:var(--text-3);stroke-width:1.5}
+.elab{font-size:11px;fill:var(--text-2)}
+
+/* 风险卡：<div class="risks"><div class="risk"><b>标题</b><p>说明</p><div class="m">缓解</div></div></div> */
+.risks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.risk{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px 16px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.risk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warn)}
+.risk b{display:block;margin-bottom:6px;font:500 16px var(--serif)}
+.risk p{margin:0;font:14.5px/1.75 var(--serif);color:var(--text-2)}
+.risk .m{font-size:12.5px;color:var(--text-3);margin-top:8px}
+/* ---------- 本页 ---------- */
+.wrap{max-width:1240px}
+.grp{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px 22px;margin-top:18px}
+.grp-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.grp-head h3{margin:0}
+.grp-head .rec{font:600 12px var(--sans);background:var(--accent-soft);color:var(--text);padding:2px 10px;border-radius:999px}
+.grp .why{font:14.5px/1.7 var(--serif);color:var(--text-2);margin:0 0 14px}
+.items{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.item{display:flex;flex-direction:column;gap:8px;min-width:0}
+.item b{font:500 15px var(--serif)}
+.item p{margin:0;font-size:12.5px;line-height:1.55;color:var(--text-3)}
+.bg{border-radius:10px;padding:8px 10px;display:flex;gap:9px;align-items:flex-end;flex-wrap:wrap}
+.bg.light{background:#faf9f5;border:1px solid #e8e6dc}
+.bg.dark{background:#202020;border:1px solid #333}
+.bg img{display:block}
+canvas.px{image-rendering:pixelated;display:block}
+.tray{border-radius:10px;padding:10px 14px;display:grid;grid-template-columns:170px auto auto;gap:8px 16px;align-items:center;font:12.5px var(--sans);justify-content:start}
+.tray.dark{background:#1c1c1c;color:#d0d0d0}
+.tray.light{background:#eeeeee;color:#333;border:1px solid #ddd}
+.tray .icons{display:flex;gap:14px;align-items:center;padding:6px 10px;border-radius:6px}
+.tray.dark .icons{background:#2a2a2a}
+.tray.light .icons{background:#f8f8f8}
+.k{font:12px var(--sans);color:var(--text-3);margin:10px 0 6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="top"><span>AMO · design/icon/platform</span><button class="theme" onclick="toggleTheme()">切换深浅色</button></nav>
+<h1>AMO 工具图标定稿：取景框</h1>
+<p class="lead">平台、Studio、Reviewer、便签、中转五个工具的定稿在最前面；后面是这一路试过的方向（方砖、卡通、平台单独候选），留作记录。每个图标给 128 px 大图、64 / 32 / 24 / 16 px，和 16 px 放大 4 倍看实际像素。</p>
+
+<div class="tldr"><b class="h">一句话</b><ul>
+<li>用户定了方向一「取景框」：四个深色角不动，中间换成各工具的颜色和图形。卡通、方砖、立体都不用了，留在下面作记录。</li>
+<li>每个工具两张图：完整版用在 32 px 以上，简化版用在 16–24 px。<code>scripts/make-icons.mjs</code> 按尺寸挑着用，生成各程序的 png / ico / 托盘图。</li>
+</ul></div>
+
+<h2>托盘里排在一起 <small>Windows 11 任务栏右下角，100% 缩放 16 px，150% 约 24 px</small></h2>
+<div id="trays" style="display:grid;gap:10px"></div>
+
+<div id="groups"></div>
+
+<footer>取材：<code>studio/design/icon/tools/*.svg</code>（定稿）、<code>studio/design/icon/platform/family-toon-*.svg</code>、<code>family-tile-*.svg</code>、<code>family-frame-*.svg</code>、<code>platform-a.svg</code> … <code>platform-d.svg</code>；对照 <code>studio/design/icon/viewfinder.svg</code>、<code>relay.svg</code>、<code>studio/packages/notes/assets/icon-*.png</code>。2026-10-28 定稿。</footer>
+</div>
+<script>
+function toggleTheme(){const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=d?'light':'dark'}
+const T=[["platform","AMO 平台","工具箱：工具都从这里装、更新"],["studio","AMO Studio","小机器人"],["reviewer","AMO Reviewer","放大镜里一个对勾"],["notes","AMO 便签","折角的纸，两条横线"],["relay","AMO 中转","两个对话气泡"]];
+const T0=[["platform","AMO 平台","工具格加一个空位"],["studio","AMO Studio","家族的那张脸"],["reviewer","AMO Reviewer","放大镜"],["notes","AMO 便签","折角的纸"],["relay","AMO 中转","一来一回的箭头"]];
+const G=[
+  {title:"定稿：取景框",rec:true,why:"用户 10-28 定的方向一。32 px 以上用完整版（design/icon/tools/<工具>.svg）；16–24 px 用简化版（<工具>-small.svg）：四个角推到最边上、变短加粗，外面一圈更宽的纸白描边，深色任务栏上也看得见；中间的色块和图形放大，去掉小细节（便签只留一条线）。",
+   items:T0.map(([id,n,w])=>({name:n,why:w,big:`../tools/${id}.svg`,small:`../tools/${id}-small.svg`}))},
+  {title:"卡通·浅底（第三轮，不用了）",why:"参照用户拿来的参考图：无描边的色块插画，每个图形一个主色加一个深一档的暗部，主体下方统一 16 单位的厚度，小细节一律纸白（只有 Studio 天线球是红的）。底板是图形自己色相的浅色。",
+   items:T.map(([id,n,w])=>({name:n,why:w,big:`family-toon-light-${id}.svg`,small:`family-toon-light-${id}-small.svg`}))},
+  {title:"卡通·深底（第三轮，不用了）",why:"同样的图形放在统一的深墨底上，只带一点各自的色相，五块是一套。可以跟系统深浅色切换托盘图标。",
+   items:T.map(([id,n,w])=>({name:n,why:w,big:`family-toon-dark-${id}.svg`,small:`family-toon-dark-${id}-small.svg`}))},
+  {title:"方向二「方砖」扁平版（上一轮）",why:"每个工具一块自己颜色的圆角方砖，颜色先分工具，图形再说是什么。大尺寸左上、右下各留一道浅色角，是取景框的影子；16–24 px 换简化版（去掉角、图形加粗）。",
+   items:T0.map(([id,n,w])=>({name:n,why:w,big:`family-tile-${id}.svg`,small:`family-tile-${id}-small.svg`}))},
+  {title:"方向一「取景框」第一稿（只有完整版）",why:"四个墨色角不动，中间换成各工具的颜色和图形。最像现在，但 16 px 时中间只剩六七个像素，深色任务栏上墨色角只剩浅色描边。",
+   items:T0.map(([id,n,w])=>({name:n,why:w,big:`family-frame-${id}.svg`,small:`family-frame-${id}.svg`}))},
+  {title:"只换平台时的四个候选",why:"第一版只给平台画的，沿用现在 Studio 的取景框和渐变。家族整体换掉的话，这一组就不用了。",
+   items:[["a","A 工具架","2×2 工具格，三蓝一橙"],["b","B 装进来","蓝块里一个落进托盘的箭头，橙点表示有新版"],["c","C 叠层","三层板子：工具放在同一个底座上"],["d","D 站台","Studio 的脸站在橙色台子上"]].map(([id,n,w])=>({name:n,why:w,big:`platform-${id}.svg`,small:`platform-${id}.svg`}))},
+  {title:"换掉之前的图标",why:"Studio 和中转原来的源文件还在 design/icon/ 下；便签原来的 png 已被定稿覆盖，这里不再列。",
+   items:[{name:"AMO Studio",why:"design/icon/viewfinder.svg",big:"../viewfinder.svg",small:"../viewfinder.svg"},{name:"AMO 中转",why:"design/icon/relay.svg",big:"../relay.svg",small:"../relay.svg"}]},
+];
+const trays=document.getElementById("trays");
+for(const theme of ["dark","light"]){
+  const t=document.createElement("div");t.className="tray "+theme;
+  t.innerHTML=[G[0],G[4],G[6]].map(g=>`<div>${g.title}</div>`+[16,24].map(s=>`<div class="icons">${g.items.map(i=>`<img src="${s<=24?i.small:i.big}" width="${s}" height="${s}" alt="">`).join("")}</div>`).join("")).join("");
+  trays.appendChild(t);
+}
+const root=document.getElementById("groups");
+for(const g of G){
+  const el=document.createElement("section");el.className="grp";
+  const strip=(i,theme)=>`<div class="bg ${theme}">`+[[64,i.big],[32,i.big],[24,i.small],[16,i.small]].map(([s,src])=>`<img src="${src}" width="${s}" height="${s}" alt="">`).join("")+
+    `<canvas class="px" width="16" height="16" style="width:64px;height:64px" data-src="${i.small}" data-bg="${theme==="dark"?"#202020":"#faf9f5"}"></canvas></div>`;
+  el.innerHTML=`<div class="grp-head"><h3>${g.title}</h3>${g.rec?'<span class="rec">推荐</span>':""}</div><p class="why">${g.why}</p>
+  <div class="items">${g.items.map(i=>`<div class="item"><img src="${i.big}" width="128" height="128" alt=""><b>${i.name}</b><p>${i.why}</p>${strip(i,"light")}${strip(i,"dark")}</div>`).join("")}</div>`;
+  root.appendChild(el);
+}
+// 16 px 的实际像素：把图画进 16×16 的画布，再用 pixelated 放大 4 倍。
+for(const cv of document.querySelectorAll("canvas.px")){
+  const img=new Image();img.onload=()=>{const g=cv.getContext("2d");g.fillStyle=cv.dataset.bg;g.fillRect(0,0,16,16);g.drawImage(img,0,0,16,16)};img.src=cv.dataset.src;
+}
+</script>
+</body>
+</html>

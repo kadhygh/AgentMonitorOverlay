@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO 图标家族 方向二「方砖」 AMO Reviewer (draft 2026-10-28): the tool's colour fills the tile; two corner marks keep the 取景框 sign. -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="#2e7d5b"/>
+  <g fill="none" stroke="#fbfaf7" stroke-width="22" stroke-linecap="round" opacity="0.5"><path d="M84 148 V100 Q84 84 100 84 H148"/><path d="M428 364 V412 Q428 428 412 428 H364"/></g>
+  <g transform="translate(256 256) scale(1.05)"><circle cx="-22" cy="-22" r="70" fill="none" stroke="#fbfaf7" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 30 L92 92" fill="none" stroke="#fbfaf7" stroke-width="45" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

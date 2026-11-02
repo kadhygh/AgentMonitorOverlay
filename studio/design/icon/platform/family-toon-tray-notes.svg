@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- AMO 图标家族 卡通·托盘 AMO 便签 (draft 2026-10-28): glyph only, for the 16–24 px tray icon. -->
+  <g transform="translate(256 256) scale(1.6) translate(-256 -260)">
+  <g fill="#f5ad32"><path d="M182 128 H292 L362 198 V342 Q362 374 330 374 H182 Q150 374 150 342 V160 Q150 128 182 128 Z"/></g>
+  <path d="M292 128 V172 Q292 198 318 198 H362 Z" fill="#d47e22"/>
+  <rect x="186" y="232" width="140" height="36" rx="15" fill="#fbfaf7"/><rect x="186" y="290" width="104" height="36" rx="15" fill="#fbfaf7"/>
+  </g>
+</svg>
