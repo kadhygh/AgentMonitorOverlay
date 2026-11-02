@@ -30,6 +30,8 @@ class SharedUiTest {
         assertEquals("1.0", megabytes(1048576))
         assertEquals("12.3", megabytes(12_900_000))
         assertEquals("1.5", megabytes(1572864))
+        assertEquals("2.3", oneDecimal(2.25))
+        assertEquals("12.0", oneDecimal(11.96))
     }
 
     @Test fun markdownParsedOncePerText() {

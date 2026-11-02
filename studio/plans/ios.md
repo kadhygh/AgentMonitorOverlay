@@ -26,8 +26,10 @@
 - macOS 27.0.1，arm64，Xcode 27.2（27B52），iOS SDK 27.2 和模拟器 SDK 27.2 都有；数据盘还剩 3.1 TiB；git 2.54。
 - 签名身份：`Apple Distribution: Wu Naiyu (D39JR23NC7)`、`Apple Development: Wu Naiyu (333GJH539J)`。Xcode 里登录了 1 个账号。
 - **`AMOStudio_AppStore` 已装好**（2026-11-02，用户通过 RustDesk 在 Xcode 里下载）：App ID `D39JR23NC7.com.gorilla.amo`；App Store 类型（没有登记设备，`get-task-allow` false，`beta-reports-active` true，可以走 TestFlight）；里面的证书是 `Apple Distribution: Wu Naiyu (D39JR23NC7)`，打包机上有它的私钥；2027-06-10 到期。远程桌面用 RustDesk 直连 `172.16.8.85`（端口 21118），没有开 macOS 自带的屏幕共享。
-- **没有 JDK**（`/usr/libexec/java_home` 找不到），也没有 xcodegen 和 tuist。
-- 在 SSH 会话里读登录钥匙串的设置会报 `User interaction is not allowed`。自动打包时 codesign 能不能在 SSH 下拿到私钥，要在手动验证时试出来，见「发布流程 · 钥匙串」。
+- 原来没有 JDK；11-02 装了 Temurin 21.0.13 在 `~/amo-ios-build/jdk`（用户级）。没有 xcodegen 和 tuist（工程是手写的 pbxproj）。
+- 11-02 装了 iOS 27.2 模拟器运行时（`xcodebuild -downloadPlatform iOS`，用户同意），有 iPhone 18 Pro 等设备。
+- **钥匙串**：搜索列表是 `jenkins-build.keychain-db` + `login.keychain-db`。分发证书和私钥在 **jenkins-build** 里（不在 login 里），这个钥匙串平时锁着，Jenkins（`homebrew.mxcl.jenkins-lts`，LaunchAgent，跑在桌面会话里）打包时自己解锁；私钥**导不出来**（用户 11-02 试过）。详见「发布流程 · 钥匙串」。
+- 48 GB 内存、15 核。
 - 检查时 Unity Hub 和 accelerator 开着，但没有在出包（load 约 1.0）。
 
 ## 验证记录
@@ -39,6 +41,15 @@
 **第 2a 步 · 数据层进 commonMain（2026-11-02，✓）**：`Models`、`HistoryCache`、`StudioRepository` 挪进 `shared/src/commonMain`。org.json 换成 `Json.kt`：同名的 `JSONObject` / `JSONArray`，照 Android 自带 org.json 的规则（JSON null 的 optString 是 "null"，字符串能转数字和布尔值，put null 就是删掉这个键，2.0 输出成 2，键保持插入顺序，相等按对象本身比较），解析和输出交给 kotlinx.serialization，这样一百多处调用只要删掉 import。OkHttp 换成 Ktor 3.5.2（3.6 带的 okhttp 5.5 要求 compileSdk 37）；java.io/MessageDigest 换成 okio；java.time 换成 kotlinx-datetime。手机相关的东西放在 `Platform` 接口后面（`Platform.kt`），Android 的实现是 `AndroidPlatform.kt`：Keystore 加密原样搬过去，HTTP 用 OkHttp 引擎（ping 15 秒、连接超时 10 秒、读超时 30 秒，跟原来一样），自更新是 `AndroidUpdater`。`StudioRepository(context)` 的写法照旧能用。踩到的坑：服务器地址是 http:// 时，Ktor 的 WebSocket 地址要换成 ws://，不然发出去的是普通 GET，服务器回 404，连接就一直悄悄重试（日志查出来的）。验证：新加 `shared/src/commonTest/JsonTest.kt` 10 条（`:shared:testAndroidHostTest`）；assembleDebug、androidTest、lint 都过；模拟器 + 夹具 `test.ps1` 共 `OK (6 tests)`，对话页截图正常。没验证的：被别的设备挤掉（4001）和登录失效（401）这两条路，没有测试覆盖，靠的是读代码。
 
 **第 2b–2c 步 · 界面和文件查看进 commonMain（2026-11-02，✓）**：两步并成一次做，因为 `StudioUi`、`ChatUi` 都要用 `FileViewer`。`AmoTheme`、`AmoControls`、`Icons`、`Markdown`、`ChatUi`、`StudioUi`、`FileUi` 和三个字体都挪进 `shared/src/commonMain`，`androidMain` 只剩 `AndroidPlatform.kt`、`AppUpdate.kt` 和新的 `FileViews.android.kt`。改的地方：字体从 `res/font` 换成 Compose 资源（`compose.resources`，`Res` 在 `dev.amo.studio.res`）；`BackHandler` 换成 CMP 的 `ui-backhandler`（1.11 里标了过时、建议 NavigationEventHandler，先用着，能用）；对话草稿原来直接开 SharedPreferences「chat-drafts」，现在走 `Platform.drafts`，`Prefs` 加了 long 值和 `edit(now = true)`（发送前同步写盘，和原来的 commit() 一样）；草稿键的 SHA-256 换成 okio，结果和原来一样，已有草稿不丢；`"%.1f"` 换成 `megabytes()`；Markdown 的解析缓存从 WeakHashMap 换成挂在 JSONObject 上的 `memo`；`Uri.decode` 换成 `percentDecode()`（照 Android 的规则：`+` 不变，坏的转义变 U+FFFD）。HTML 预览和图片解码用 `expect/actual`：`HtmlView`、`decodeImage`，Android 那份就是原来的 WebView 和 BitmapFactory 代码原样搬过去。设置页的「更新」只在能自更新的平台显示，iOS 显示成「版本」和当前版本号（TestFlight 管更新）。验证：新加 `commonTest/SharedUiTest.kt` 4 条，加上 JsonTest 共 14 条通过；assembleDebug、androidTest、lint（0 错误，12 条都是版本提示）都过；模拟器 + 夹具 `test.ps1` 一次 `OK (6 tests)`；截图看过对话页、设置页、HTML 和 Markdown 查看，字体和以前一样。
+
+**第 2d 步 · iOS 目标和 iosApp（2026-11-02，写完、模拟器里能启动；没提交前的验证见下）**：
+- `shared` 加了 `iosArm64`、`iosSimulatorArm64`，静态框架 `Shared`；Windows 上这两个目标自动跳过（`gradle.properties` 的 `kotlin.native.ignoreDisabledTargets=true`）。iosMain：`IosPlatform.kt`（版本号读 Info.plist；文件放 Application Support；设置用 NSUserDefaults，草稿用 suite `chat-drafts`；Ktor Darwin 引擎，WebSocket 每 15 秒 ping；**账号密钥加密**：钥匙串里一把 EC 私钥（`dev.amo.studio.token`，`AfterFirstUnlockThisDeviceOnly`），ECIES + AES-GCM 加解密，设置里只存密文，跟 Android 的 Keystore 一个意思；没有自更新）、`FileViews.ios.kt`（WKWebView：非持久的数据存储，只放行页面本身和它的 #锚点，别的链接一律取消、交给 `localFileTarget`；没有 viewport 的报告补一个；图片用 Skia 解码，超大的缩小，规则跟 Android 一样）、`MainViewController.kt`（回到前台 refresh，进后台 persist）。
+- 共用代码里又清掉三处 JVM 专有的：`"%.1f".format` → `oneDecimal()`（四舍五入跟 Java 一样是 half-up），`Math.toRadians/cos/sin` → `kotlin.math`；`JSONObject.NULL` 在 Objective-C 头文件里叫 `NULL` 会撞 C 的宏，加了 `@ObjCName("jsonNull")`。
+- `mobile/iosApp/`：手写的 `iosApp.xcodeproj`（objectVersion 77、文件夹同步组、共享 scheme `iosApp`），`iosApp/iOSApp.swift`（SwiftUI 只是外壳）、`Assets.xcassets`（1024 图标由 `make-icon.py` 按 `design/icon/tools/studio.svg` 画）、`Info.plist`（只放 ATS `NSAllowsLocalNetworking`、本地网络说明、`ITSAppUsesNonExemptEncryption=NO`、高刷）、`Config.xcconfig`（Bundle ID、Team、手动签名）、`Version.xcconfig`（`MARKETING_VERSION = 0.0.0`，第一次发布用 `--minor` 得到 0.1.0）。构建阶段「Compile Kotlin」跑 `:shared:embedAndSignAppleFrameworkForXcode`，JAVA_HOME 从打包机的 `~/.amo-ios/config` 读。只支持 iPhone、iOS 16 起。
+- Kotlin/Native 的 release 链接 2 GB 堆不够（GC 抖死），Mac 上的 Gradle 都在命令行带 `-Dorg.gradle.jvmargs=-Xmx6g`，不改 `gradle.properties`（Windows 不受影响），也不碰打包机的 `~/.gradle`（Unity 的 Gradle 在用）。
+- 验证：打包机上 `:shared:linkDebugFrameworkIosSimulatorArm64`、`linkReleaseFrameworkIosArm64` 通过；`xcodebuild` 模拟器 Debug 构建 `BUILD SUCCEEDED`，装进 iPhone 18 Pro 模拟器启动，登录页截图（`studio/screenshots/ios/login.png`）字体、安全区都对。Windows 上 Android assembleDebug、androidTest、lint、`:shared` 共用测试 14 条都过（最后一次在 11-02 晚）。**没验证**：登录之后的页面（模拟器连不到这台电脑上的测试夹具，要么在 Mac 上跑夹具，要么等 TestFlight 装到真机上用自己的账号看）；WKWebView 的拦截、钥匙串加解密、Darwin 的 WebSocket ping 都没在运行时试过；改了共用代码之后没有再跑模拟器 `test.ps1`。
+
+**第 3 步 · 签名（2026-11-02，卡住，等用户定方案）**：`build-on-mac.sh --no-upload` 在打包机上跑到第 4 步：Kotlin、Swift 都编过、链接过，xcodebuild 选对了身份 `Apple Distribution: Wu Naiyu (D39JR23NC7)` 和描述文件 `AMOStudio_AppStore`，停在 codesign：SSH 下报 `errSecInternalComponent`；改到桌面会话里跑（LaunchAgent）后，弹窗要 jenkins-build 钥匙串的密码。用户不想动 jenkins-build，想要 iOS 自己的钥匙串，但私钥导不出 p12。现在三条路，见「发布流程 · 钥匙串」。
 
 ## 工程结构（KMP）
 
@@ -52,12 +63,14 @@ studio/mobile/
     src/commonTest/             ← 不依赖平台的逻辑测试（从 androidTest 里挑出来）
   app/                          ← Android 外壳（applicationId dev.amo.studio，APK 路径不变）
   iosApp/                       ← iOS 外壳
-    AMOStudio.xcodeproj         ← 一个 target，Bundle ID com.gorilla.amo；链接 shared 的 XCFramework
-    AMOStudio/                  ← SwiftUI 入口（放 ComposeUIViewController）、Info.plist、AppIcon
+    iosApp.xcodeproj            ← 一个 target（产物 AMOStudio.app），Bundle ID com.gorilla.amo；链接静态框架 Shared；共享 scheme iosApp
+    iosApp/                     ← iOSApp.swift（SwiftUI 外壳）、Assets.xcassets（AppIcon）
+    Info.plist、Config.xcconfig ← 合进生成的 Info.plist 的几项；Bundle ID、Team、手动签名
     Version.xcconfig            ← MARKETING_VERSION（release.mjs 改它）
     CHANGELOG.md                ← iOS 的改动说明，「## 下一版」
-    ExportOptions.plist         ← method app-store-connect、teamID、signingStyle manual、com.gorilla.amo → AMOStudio_AppStore
     build-on-mac.sh             ← 在打包机上跑的那一段（见「发布流程」）
+    submit-build.sh、agent/     ← 经 LaunchAgent 在桌面会话里跑 build-on-mac.sh；setup-keychain.sh（iOS 自己的钥匙串，见「钥匙串」）
+    make-icon.py                ← 画 AppIcon
 ```
 
 ### 第 2 步怎么拆（开工前跟用户确认）
@@ -89,15 +102,15 @@ studio/mobile/
 
 ### Windows 这边（`scripts/release.mjs` + 新的 `scripts/ios-release.mjs`）
 
-1. `amo-tools.mjs` 加一行 `ios`（不是平台工具，`platform: false`），`release.mjs` 的 TARGETS 认它：
+1. `release.mjs` 的 TARGETS 加 `ios`（没放进 `amo-tools.mjs`：那里是平台工具，别的脚本会遍历它）：
    - 版本号：`mobile/iosApp/Version.xcconfig` 里的 `MARKETING_VERSION`；改动说明：`mobile/iosApp/CHANGELOG.md`；
    - 算作它的改动：`studio/mobile/shared`、`studio/mobile/iosApp`、`studio/mobile/*.gradle.kts`、`studio/mobile/gradle`；
    - tag：`ios-v<版本>`。
-2. 跟其他工具一样：检查（在 master 上、要打包的部分没有未提交的改动，「下一版」有内容）→ 测试 → 版本号 +1，「下一版」改成 `## <版本>（日期）` → 提交进 master → **打包上传**（下面）→ tag → 问题页标已发布。测试这一步跑 Windows 上的 `:shared` 测试和 Android 编译；iOS 编译放在打包机上，那一步就是检查。
+2. 跟其他工具一样：检查（在 master 上、要打包的部分没有未提交的改动——发 ios 时 `studio/mobile` 也算，「下一版」有内容）→ 测试 → 版本号 +1，「下一版」改成 `## <版本>（日期）` → 提交进 master → **打包上传**（下面）→ tag → 问题页标已发布。测试这一步叫「移动端测试」：`mobile/build.ps1 -Tasks :shared:testAndroidHostTest,:app:assembleDebug`；只发 ios 时不跑 npm 的类型检查和单测。iOS 编译放在打包机上，那一步就是检查。没有 tag 之前 `due` 不会列它，所以第一次要手动 `npm run release -- ios --minor`（问过用户）。打包机正忙时这次算「没发出去」，不写失败记录，下次 `release ios` 补发（版本号不再加）。
 3. 打包上传（`ios-release.mjs`）：
    - **构建号**（CFBundleVersion）自动生成：这次提交在 master 上的提交数（`git rev-list --count <提交>`），只增不减，也能反查是哪个提交。不用手填。
    - **把代码送到打包机**：`git archive <提交> studio/mobile` 通过 ssh 直接解到 `~/amo-ios-build/src/<短提交号>/`。用的是提交里的内容，不是磁盘上的，也不依赖打包机能访问 GitHub。
-   - 通过 ssh 跑 `nice -n 10 bash build-on-mac.sh <源码目录> <版本> <构建号>`，实时打印每一步的进度。
+   - 通过 ssh 跑 `submit-build.sh <源码目录> <版本> <构建号>`：把任务放进 `~/amo-ios-build/queue`，由 LaunchAgent `com.amo.ios-build`（桌面会话里、nice 10）跑 `build-on-mac.sh`，ssh 这边实时打印它的输出，退出码照传（9 = 代理没装或没接任务，11 = 打包机正忙，10+N = 停在第 N 步）。如果签名方案定成「iOS 自己的钥匙串」，SSH 下直接跑可能就够了，那时可以去掉代理，见「钥匙串」。
    - 打包机上的日志拷回本机 `studio/release/ios/<版本>-<构建号>/`（`release/` 已被 gitignore 忽略），失败时打印「iOS 打包停在第 N 步「…」」和日志的最后 40 行。
 
 ### 打包机这边（`mobile/iosApp/build-on-mac.sh`，跟着仓库走）
@@ -108,24 +121,32 @@ studio/mobile/
 |---|---|---|
 | 1 忙不忙 | 有 Unity 在跑 `-batchmode`，或者有别的 `xcodebuild` 在跑，就不开始 | 「打包机正忙」，退出；`auto` 下次再试 |
 | 2 配置 | 读 `~/.amo-ios/config`（`ASC_KEY_ID`、`ASC_ISSUER_ID`、`JAVA_HOME`），检查 `.p8` 文件、描述文件、签名身份都在 | 写清缺哪一样 |
-| 3 KMP | `./gradlew :shared:assembleSharedReleaseXCFramework`（Gradle 用 `--no-daemon`、最多 2 个 worker） | Gradle 日志 |
-| 4 archive | `xcodebuild archive`：手动签名（`CODE_SIGN_STYLE=Manual`、`DEVELOPMENT_TEAM=D39JR23NC7`、`PROVISIONING_PROFILE_SPECIFIER=AMOStudio_AppStore`、`CODE_SIGN_IDENTITY="Apple Distribution"`），`MARKETING_VERSION`、`CURRENT_PROJECT_VERSION` 由参数传入，DerivedData 放在这次的目录里 | xcodebuild 日志 |
-| 5 导出 | `xcodebuild -exportArchive -exportOptionsPlist ExportOptions.plist` → `.ipa` | 同上 |
+| 3 KMP | `./gradlew :shared:linkReleaseFrameworkIosArm64`（`--no-daemon`、最多 2 个 worker、`-Xmx6g`）；archive 里的构建阶段再跑一次时是 up-to-date | Gradle 日志 |
+| 4 archive | `xcodebuild archive … CODE_SIGNING_ALLOWED=NO`（先不签），`MARKETING_VERSION`、`CURRENT_PROJECT_VERSION` 由参数传入，DerivedData 放在这次的目录里 | xcodebuild 日志 |
+| 5 签名、打 ipa | 自己做 Xcode 导出做的事：拷出 `.app`，放进描述文件，按描述文件写 entitlements（application-identifier、team-identifier、get-task-allow=false、beta-reports-active=true），`codesign --keychain <钥匙串> --sign <SHA1>`，`codesign --verify --strict`，zip 成 `Payload/` 的 `.ipa`。不用 `-exportArchive`：它只认搜索列表里的钥匙串 | codesign 日志 |
 | 6 校验 | `xcrun altool --validate-app -f <ipa> -t ios --apiKey … --apiIssuer …` | 苹果返回的错误 |
 | 7 上传 | `xcrun altool --upload-app`（同样的参数）；altool 在 Xcode 27 里不能用时改用 `iTMSTransporter`，手动验证时确定用哪个 | 同上 |
 | 8 清理 | 源码和 DerivedData 只留最近 3 次，日志留 20 次 | 不算失败 |
 
 Mac 上的配置文件 `~/.amo-ios/config`（权限 600，不进仓库）只放 Key ID、Issuer ID 和 JDK 路径。`.p8` 放在 altool 默认会去找的 `~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8`。altool 的命令行只带 Key ID 和 Issuer ID，不带 key 的内容。
 
-### 钥匙串
+### 钥匙串（2026-11-02 试出来的，**方案待用户定**）
 
-codesign 要用 `Apple Distribution` 的私钥。SSH 会话里能不能直接用登录钥匙串，在手动验证时试三种情况，按顺序选：
+试过的：
+1. SSH 下直接签：`errSecInternalComponent`（SSH 的会话用不了钥匙串）。
+2. 用户同意后加了 LaunchAgent `com.amo.ios-build`（`~/Library/LaunchAgents/`，runner 在 `~/amo-ios-build/agent/`，`node scripts/ios-release.mjs --install-agent` 装），在桌面会话里跑：codesign 弹窗要 **jenkins-build** 钥匙串的密码（证书和私钥在那里，平时锁着）。用户不想让 iOS 打包用 jenkins-build，怕影响 Jenkins，弹窗没点，构建停了。
+3. 用户想给 iOS 新建一个钥匙串：写了 `agent/setup-keychain.sh`（建 `~/amo-ios-build/signing.keychain-db`，随机密码存 `~/.amo-ios/keychain-password`，导入 p12，设 partition list，**不留在搜索列表里**，免得 Jenkins 看到两份同名身份），`build-on-mac.sh` 也已改成用它签（第 5 步）。但 **jenkins-build 里的私钥导不出 p12**（用户试过），这条路走不通，除非换证书。
 
-1. 打包机的桌面会话已经登录、钥匙串已经解锁，SSH 下直接能签名：什么都不用加（Unity 出包如果也是通过 SSH 签的，多半就是这样）。
-2. 报 `errSecInternalComponent` 之类的错误：在 Mac 上放一个只有当前用户能读的密码文件（权限 600），脚本签名前先 `security unlock-keychain`。这样做要用户同意，因为等于把登录密码存在了打包机上。
-3. 以上都不行：用 launchd 在桌面会话里跑打包那一段，SSH 只负责启动它、看日志。
+剩下的选择（用户 11-02 晚在比较，还没定）：
 
-不建单独的打包钥匙串，因为那要把证书导进去，等于动了证书。
+| | 只解锁 jenkins-build | 新建一张分发证书 |
+|---|---|---|
+| 做法 | 用户把 jenkins-build 的密码放进 `~/.amo-ios/jenkins-keychain-password`（600）；打包时 `security unlock-keychain` 它，`codesign --keychain jenkins-build.keychain-db` 签 | 用户或 wunaiyu（Account Holder / Admin）在开发者网站新建 Apple Distribution 证书，CSR 用我写的脚本在打包机上生成（私钥直接进 iOS 自己的钥匙串）；`AMOStudio_AppStore` 换成新证书重新生成、重新装（删掉旧文件） |
+| 账号 | 不动 | 新证书 + 改一个描述文件；**先数一下现有分发证书**，到上限（一般 3 张）就不要做（吊销旧的会断游戏签名） |
+| Jenkins | 钥匙串内容、搜索列表都不变；只是多一个人解锁它 | 完全分开 |
+| 要改的代码 | `build-on-mac.sh` 第 2、5 步换成 jenkins-build 和它的密码文件；`setup-keychain.sh` 删掉 | 加生成 CSR、导入 .cer 的脚本；其余已经写好 |
+
+定了之后：用户想要的话，试一下 SSH 下直接签（解锁过的钥匙串一般可以）；能签就卸掉 LaunchAgent（`launchctl bootout gui/$(id -u)/com.amo.ios-build`，删 plist 和 `~/amo-ios-build/agent`、`queue`、`jobs`），`ios-release.mjs` 改回直接 ssh 跑 `build-on-mac.sh`（`plan().build`、单测、`submit-build.sh` 跟着改）。
 
 ### 第一次跑通之前（手动验证）
 
@@ -143,9 +164,9 @@ codesign 要用 `Apple Distribution` 的私钥。SSH 会话里能不能直接用
 | 1 | `android/` 改名 `mobile/`，改成 KMP 结构（先只有 androidMain），Android 测试不变 | ✓ 2026-11-02 |
 | 2a | 数据层进 commonMain | ✓ 2026-11-02 |
 | 2b–2c | 界面、文件查看进 commonMain（用户 11-02 确认了拆法） | ✓ 2026-11-02 |
-| 2d | 加 iOS 目标、iosMain、iosApp；在 iOS 模拟器上跑通并截图。JDK 11-02 已装：Temurin 21.0.13，在打包机的 `~/amo-ios-build/jdk`，SHA-256 核对过 | ○ |
-| 3 | 手动验证签名和导出（见上面 1–4） | ○ 描述文件已装（11-02）；validate 那一步等 API Key |
-| 4 | `ios` 接进 `npm run release`：`ios-release.mjs`、`build-on-mac.sh`、TARGETS、CHANGELOG；脚本自己的单测 | ○ 可以跟 2 并行写 |
+| 2d | 加 iOS 目标、iosMain、iosApp；在 iOS 模拟器上跑通并截图。JDK 11-02 已装：Temurin 21.0.13，在打包机的 `~/amo-ios-build/jdk`，SHA-256 核对过 | ◐ 11-02 模拟器里能启动、登录页正常；登录后的页面没看 |
+| 3 | 手动验证签名和导出（见上面 1–4） | ! 卡在签名，等用户在「钥匙串」两条路里选；validate 那一步等 API Key（Mac 上的 config 两个 ID 还空着） |
+| 4 | `ios` 接进 `npm run release`：`ios-release.mjs`（+ `--install-agent`）、`build-on-mac.sh`、`submit-build.sh`、TARGETS、CHANGELOG；脚本自己的单测 6 条 | ◐ 写完、单测过、`due` 和 dry-run 试过；签名定了以后整条跑一次 |
 | 5 | 问过用户后第一次上传；用户的设备通过 TestFlight 装上，Wi-Fi 下跑一次完整的对话、审批和文件查看 | ○ |
 | 6 | 外网（Tailscale）实测；`auto --if-due` 带上 ios | ○ |
 
@@ -155,6 +176,6 @@ codesign 要用 `Apple Distribution` 的私钥。SSH 会话里能不能直接用
 
 ## 待定
 
-- 钥匙串用哪种方式（手动验证时定）。
+- 钥匙串：只解锁 jenkins-build，还是新建一张分发证书（见「钥匙串」）。
 - altool 还是 iTMSTransporter（手动验证时定）。
 - Android 要不要也接进 `npm run release`（现在走 `relay-mac.mjs android-publish`）。不在这次的范围里。

@@ -1,0 +1,9 @@
+// The App Store Connect record (plans/ios.md): AMOStudio, made by Wu Naiyu's team on 2026-11-02.
+#include "Version.xcconfig"
+PRODUCT_BUNDLE_IDENTIFIER = com.gorilla.amo
+DEVELOPMENT_TEAM = D39JR23NC7
+// Signed by hand with the existing distribution certificate and profile; Xcode never makes or changes either (they
+// also sign the team's games). Simulator builds are not signed.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution
+PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = AMOStudio_AppStore

@@ -206,7 +206,7 @@ private fun pending(e: Entry) = (e.type == "approval" || e.type == "question") &
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(item.str("name", "工具"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 val st = item.str("status")
-                Text(listOfNotNull(toolStatusLabel(st), item.optInt("exitCode", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "退出码 $it" }, item.optLong("durationMs").takeIf { it > 0 }?.let { "%.1f 秒".format(it / 1000.0) }).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = if (st == "failed") c.error else c.dim)
+                Text(listOfNotNull(toolStatusLabel(st), item.optInt("exitCode", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "退出码 $it" }, item.optLong("durationMs").takeIf { it > 0 }?.let { "${oneDecimal(it / 1000.0)} 秒" }).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = if (st == "failed") c.error else c.dim)
             }
             if (item.str("summary").isNotBlank()) SelectionContainer { Text(item.str("summary"), fontFamily = codeFont, fontSize = 13.sp) }
             val input = remember(item) { prettyInput(item.str("input")) }

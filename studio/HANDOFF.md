@@ -32,7 +32,7 @@
 | 事项 | 状态 |
 |---|---|
 | Android Studio | 工程 11-02 起在 `mobile/`（原 `android/`，为 iOS 改成 KMP：`shared` + `app`，见 `plans/ios.md`），调试 APK 位于 `mobile/out/`；团队服务器真实 Dxx-DS、远程可靠性、标准及 360 dp / 1.3 倍字体 UI 验收通过。范围、证据及未验项见 `plans/android-studio.md`；真实手机和 Tailscale 实网待验 |
-| iOS Studio | `plans/ios.md`：KMP 跟 Android 共用，TestFlight 内部测试，发布接进 `npm run release -- ios`（方案已写，未实现）。App 记录已建（`com.gorilla.amo`，描述文件 `AMOStudio_AppStore`，用户或 wunaiyu 来装到打包机上）。第 0、1、2a、2b–2c 步做完（数据层、界面、文件查看都进了 commonMain，Android 只剩平台相关的三个文件）；打包机 JDK 已装，用户在准备上传用的 API Key。下一步 2d：iOS 目标和 iosApp |
+| iOS Studio | `plans/ios.md`：KMP 跟 Android 共用，TestFlight 内部测试，发布走 `npm run release -- ios`（已接上，还没整条跑通）。App 记录 `com.gorilla.amo`，描述文件 `AMOStudio_AppStore` 已装在打包机上。第 0–2c 步做完；2d：iOS 版在打包机的模拟器里能启动（只看了登录页）。**卡在签名**：分发私钥在 Jenkins 的 jenkins-build 钥匙串里、导不出来，用户在「只解锁 jenkins-build」和「新建一张分发证书」之间选（`plans/ios.md`「钥匙串」）。API Key 还没放（打包机 `~/.amo-ios/config` 两个 ID 空着）。打包机上装了 LaunchAgent `com.amo.ios-build`（定了签名方案后可能卸掉） |
 | AMO 平台 | 方案 `plans/amo-lan-platform.md`，界面原型 https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9 。整理已做完；第一版（第 1、2 步）10-28 晚合进 master，见下面那条。下一步：部署到 Mac 并第一次真实发布（先问用户），然后第 3 步 |
 | 远程会话（在我另一台设备上接着用本机会话） | 第 1–4 步和收尾 10-29 做完（`plans/remote-session.md`）；10-29 晚改成弹窗、加「安全」、B 能带图片和文件给 A（`plans/remote-page-and-new-task.md` 第 7、8 节，Studio 0.9.10）。等用户用两台真电脑验收；会话级授权、模型细到型号、HTML 的 CSS / JS、正文路径去用户名、远程权限上限，用户 10-29 定先不做 |
 | 会话里直接用中转（回复自动回到会话） | 10-30 第一版做完（`plans/relay-in-sessions.md`，用户定的 5 条在里面），同天加了「不用确认直接发」的设置和远程默认关闭。`634b77c` 提交，中转服务 10-30 已部署，Studio 0.9.12 在测试通道（publish 时删了 0.9.9）；试过后 `npm run relay:mac -- promote studio 0.9.12`。终端里的会话、普通聊天、超时提醒以后再说 |
@@ -58,6 +58,8 @@
 4. e2e 在 `e2e/studio/remote-reviewer.spec.ts`。
 
 中转服务没改（它转发任何合规的 kind）。验证：`npm run verify` 过（完整跑时 server-manager 偶发失败，是已知问题，单独跑通过）；e2e `remote-reviewer`、`remote-files`、各个 `remote*`、`view-packs`、`review-open`、`review`、`gitreview`、`chat-files`、`task-head` 共 29 条都过，reviewer 项目 1 条也过；并进「我也关心」之后重跑了单测全部和 `remote-reviewer`、`remote-files`、`remote-tasks`、`view-packs`、`review-open` 12 条 e2e。截图在 `screenshots/studio/remote-reviewer-*.png`。还剩：没在两台真电脑上走过；A 离线时界面上的「旧内容」提示只有单测，没有 e2e。
+
+**2026-11-02 晚 · iOS 第 2d 步和发布脚本（签名没定）**：`mobile/shared` 加 iOS 目标和 iosMain（钥匙串里的 EC 密钥加密账号、NSUserDefaults、Ktor Darwin、WKWebView、Skia 解码图片），`mobile/iosApp` 手写 Xcode 工程和图标；共用代码清掉 `String.format`、`Math`，`JSONObject.NULL` 在 iOS 头文件里改名。发布：`scripts/ios-release.mjs`（git archive 送代码到打包机、跑、拷回日志；`--install-agent`）、`mobile/iosApp/build-on-mac.sh`（8 步，每步一份日志，退出码 10+N）、`submit-build.sh` + LaunchAgent，`release.mjs` 认 `ios`（测试是「移动端测试」；`due` 不再先读没有 tag 的工具的 CHANGELOG）。打包机：JDK、iOS 模拟器运行时、LaunchAgent（都是用户同意的）。验证：打包机上 Kotlin/Swift 编译链接都过，模拟器里启动、登录页截图正常；Windows 上 Android 编译、lint、共用测试 14 条、`ios-release` 单测 6 条都过。没做：签名（见上一行）、validate 和上传、登录后的 iOS 页面、改共用代码后的 Android 模拟器 `test.ps1`。
 
 **2026-11-02 · 移动端界面和文件查看进 commonMain（iOS 第 2b–2c 步）**：`AmoTheme`、`AmoControls`、`Icons`、`Markdown`、`ChatUi`、`StudioUi`、`FileUi` 和字体进 `mobile/shared/src/commonMain`。字体改用 Compose 资源，`BackHandler` 用 CMP 的，草稿走 `Platform.drafts`（发送前同步写盘照旧，已有草稿不丢），HTML 预览和图片解码是 `expect/actual`（Android 那份就是原来的 WebView / BitmapFactory 代码），`Uri.decode` 换成照 Android 规则写的 `percentDecode()`。iOS 上设置页的「更新」换成只显示版本。细节见 `plans/ios.md`。验证：共用单测 14 条（新加 `SharedUiTest` 4 条），Android 编译、lint 都过，模拟器 `test.ps1` 6 条一次过，截图看过对话、设置、HTML 和 Markdown 查看。
 

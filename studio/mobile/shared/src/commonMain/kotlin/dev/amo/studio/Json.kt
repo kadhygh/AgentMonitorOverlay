@@ -63,6 +63,9 @@ class JSONObject() {
 
     companion object {
         /** JSON's null as a value (Android: JSONObject.NULL; equal to null). */
+        // Another name in the iOS framework's header: NULL there is C's macro and broke the Swift build (2026-11-02).
+        @OptIn(kotlin.experimental.ExperimentalObjCName::class)
+        @kotlin.native.ObjCName("jsonNull")
         val NULL: Any = object {
             override fun equals(other: Any?) = other == null || other === this
             override fun hashCode() = 0

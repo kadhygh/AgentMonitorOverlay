@@ -16,6 +16,12 @@ kotlin {
         // commonTest on the JVM (:shared:testAndroidHostTest): the shared logic without an emulator.
         withHostTest {}
     }
+    // iOS (plans/ios.md 第 2d 步): a static framework "Shared" for iosApp; it builds only on the Mac (Kotlin/Native
+    // skips these targets on Windows, kotlin.native.ignoreDisabledTargets). Xcode's build phase runs
+    // :shared:embedAndSignAppleFrameworkForXcode, which also copies the fonts (Compose resources) into the app.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework { baseName = "Shared"; isStatic = true }
+    }
     sourceSets {
         commonMain.dependencies {
             // Compose Multiplatform 1.11.1 = androidx compose ui 1.11.2 / material3 1.4.0 on Android.
@@ -44,6 +50,9 @@ kotlin {
             implementation("io.ktor:ktor-client-okhttp:3.5.2")
             // Self-update downloads (AppUpdate.kt) still use OkHttp directly.
             implementation("com.squareup.okhttp3:okhttp:5.3.0")
+        }
+        iosMain.dependencies {
+            implementation("io.ktor:ktor-client-darwin:3.5.2")
         }
     }
 }

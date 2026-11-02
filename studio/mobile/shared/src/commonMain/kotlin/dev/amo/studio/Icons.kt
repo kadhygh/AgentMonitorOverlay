@@ -32,8 +32,8 @@ internal object AmoIcons {
         circle(12f, 12f, 3f)
         // Eight short spokes around the hub: a plain cog that reads at 20 dp.
         for (i in 0 until 8) {
-            val a = Math.toRadians(i * 45.0)
-            moveTo(12f + 6f * Math.cos(a).toFloat(), 12f + 6f * Math.sin(a).toFloat()); lineTo(12f + 8.5f * Math.cos(a).toFloat(), 12f + 8.5f * Math.sin(a).toFloat())
+            val a = i * 45.0 * kotlin.math.PI / 180
+            moveTo(12f + 6f * kotlin.math.cos(a).toFloat(), 12f + 6f * kotlin.math.sin(a).toFloat()); lineTo(12f + 8.5f * kotlin.math.cos(a).toFloat(), 12f + 8.5f * kotlin.math.sin(a).toFloat())
         }
     }
     val Computer = icon("computer") { moveTo(4f, 5f); lineTo(20f, 5f); lineTo(20f, 15f); lineTo(4f, 15f); close(); moveTo(9f, 19f); lineTo(15f, 19f); moveTo(12f, 15f); lineTo(12f, 19f) }

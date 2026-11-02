@@ -338,8 +338,11 @@ private fun taskTone(t: RemoteTask): Tone {
     }
 }
 
-/** "12.3": bytes as MB with one decimal (String.format is JVM-only). */
-internal fun megabytes(bytes: Long): String {
-    val tenths = kotlin.math.round(bytes / 104857.6).toLong()
+/** "12.3": bytes as MB with one decimal. */
+internal fun megabytes(bytes: Long): String = oneDecimal(bytes / 1048576.0)
+
+/** As "%.1f".format (JVM-only) for the numbers shown here (not negative): one decimal, half up. */
+internal fun oneDecimal(value: Double): String {
+    val tenths = kotlin.math.floor(value * 10 + 0.5).toLong()
     return "${tenths / 10}.${tenths % 10}"
 }

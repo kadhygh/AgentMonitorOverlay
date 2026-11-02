@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Merged into the generated Info.plist (GENERATE_INFOPLIST_FILE): only what build settings cannot say. -->
+<dict>
+	<!-- The team server and the computers are on the LAN or Tailscale, over http:// to an IP address. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接局域网里的 AMO 服务器和你的电脑。</string>
+	<!-- Only the system's HTTPS/TLS: exempt, so TestFlight does not ask about export compliance every build. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- Compose Multiplatform: draw at the screen's full refresh rate (ProMotion). -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+</dict>
+</plist>

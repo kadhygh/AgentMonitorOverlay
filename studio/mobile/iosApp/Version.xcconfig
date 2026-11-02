@@ -1,0 +1,4 @@
+// The version TestFlight shows (CFBundleShortVersionString); npm run release -- ios raises it (0.0.0 = never released:
+// the first release, with --minor, is 0.1.0). The build number (CFBundleVersion) is the commit count, given at archive time.
+MARKETING_VERSION = 0.0.0
+CURRENT_PROJECT_VERSION = 1
