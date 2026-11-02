@@ -157,7 +157,7 @@ describe("远程 Reviewer through two Hosts", () => {
     expect(existsSync(kept)).toBe(false);
   }, 60_000);
 
-  it("what an agent opens shows on the side that started the turn; the other side only with 「我也关注」 (its window decides)", async () => {
+  it("what an agent opens shows on the side that started the turn; A also with 「我也关心」 (its window decides), B never for A's turns", async () => {
     const { a, b, task, session, ws, dir } = await grantedWithPack();
     const opened = (h: typeof a) => {
       const list: HostEvent[] = [];
@@ -178,28 +178,29 @@ describe("远程 Reviewer through two Hosts", () => {
     const p1 = (await a.service.viewPacks.open({ items: [{ kind: "file", path: "src/drop.ts" }] }, { sessionId: session.id })).pack;
     const onB1 = await until(() => onB.find((e) => e.type === "viewpack.open" && e.packId === p1.id), Boolean, "B told to open");
     expect(onB1).toMatchObject({ remote: task.id });
-    expect(onB1).not.toHaveProperty("onlyIfFollowing");
-    expect(onA.find((e) => e.type === "viewpack.open" && e.packId === p1.id)).toMatchObject({ onlyIfFollowing: task.id });
+    expect(onB1).not.toHaveProperty("onlyIfAlsoMine");
+    expect(onA.find((e) => e.type === "viewpack.open" && e.packId === p1.id)).toMatchObject({ onlyIfAlsoMine: task.id });
     // A Review of the task's project, the same way (B reads it through rt.view).
     await a.service.gitReview.openReview({ workspaceId: ws.id, sessionId: session.id });
     const r1 = await until(() => onB.find((e) => e.type === "review.open"), Boolean, "B told to open the Review");
     expect(r1).toMatchObject({ target: { workspaceId: ws.id, remote: task.id } });
-    expect(r1).not.toHaveProperty("onlyIfFollowing");
+    expect(r1).not.toHaveProperty("onlyIfAlsoMine");
     // A Review of another folder is not the task's: not sent to B — and A, without a window, says so.
     const elsewhere = tempDir("elsewhere");
     execFileSync("git", ["init", "-q"], { cwd: elsewhere });
     await expect(a.service.gitReview.openReview({ path: elsewhere, sessionId: session.id })).rejects.toThrow("窗口没有打开");
     void dir;
 
-    // A's own message starts the next turn: A shows it as always; B only with 「我也关注」.
+    // A's own message starts the next turn: A shows it as always; B is not told (its conversation's rows open it).
     a.service.liveWindows = 1;
     await a.service.sessions.sendMessage(session.id, "A 自己说");
     await until(() => agentText(a, "FAKE: A 自己说"), Boolean, "A replies");
     const heardB = onB.length;
     await a.service.viewPacks.open({ items: [{ kind: "file", path: "shot.png" }] }, { sessionId: session.id });
-    expect(lastPack(onA)).not.toHaveProperty("onlyIfFollowing");
-    await until(() => onB.length, (n) => n > heardB, "B hears too");
-    expect(lastPack(onB)).toMatchObject({ remote: task.id, onlyIfFollowing: task.id });
+    expect(lastPack(onA)).not.toHaveProperty("onlyIfAlsoMine");
+    await a.service.gitReview.openReview({ workspaceId: ws.id, sessionId: session.id });
+    await new Promise((r) => setTimeout(r, 500));
+    expect(onB.length).toBe(heardB);
 
     // B's turn, but B went away: shown on A (and A without a window refuses again, as before remote).
     await b.service.sessions.sendMessage(session.id, "B 最后一句");
@@ -212,7 +213,7 @@ describe("远程 Reviewer through two Hosts", () => {
     const heardA = onA.length;
     await a.service.viewPacks.open({ items: [{ kind: "file", path: "src/drop.ts" }] }, { sessionId: session.id });
     expect(onA.length).toBe(heardA + 1);
-    expect(lastPack(onA)).not.toHaveProperty("onlyIfFollowing");
+    expect(lastPack(onA)).not.toHaveProperty("onlyIfAlsoMine");
   }, 90_000);
   it("B's comments stay on B: written, copied with 任务文件夹/ paths, sent into the task's conversation as a message", async () => {
     const { a, b, task, session, ws } = await grantedWithPack();

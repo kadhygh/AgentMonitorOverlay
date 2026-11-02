@@ -676,10 +676,10 @@ export type HostEvent = { seq: number } & (
       target: import("./gitreview.js").ReviewOpenTarget;
       at: Timestamp;
       /**
-       * 远程 Reviewer (2026-11-02): shown only when this computer's 「我也关注」 is ticked for this task — the turn was
-       * started from another device, which shows it (or, on B, the turn was not B's).
+       * 远程 Reviewer (2026-11-02), on the computer a granted task runs on: the turn was started from the device it is
+       * granted to, which shows it; shown here too only when 「我也关心」 is ticked for this task.
        */
-      onlyIfFollowing?: Id;
+      onlyIfAlsoMine?: Id;
     }
   /** 查看包 (2026-10-23): a pack was made or grew; `open` asks the workbench to show it (new, or sent to again). */
   | { type: "viewpack.upserted"; pack: import("./viewpacks.js").ViewPack }
@@ -691,8 +691,8 @@ export type HostEvent = { seq: number } & (
       itemId?: Id;
       /** 远程 Reviewer (2026-11-02), on B: the pack is this remote task's, read from the computer it runs on. */
       remote?: Id;
-      /** 远程 Reviewer: shown only when 「我也关注」 is ticked here for this task (as review.open). */
-      onlyIfFollowing?: Id;
+      /** 远程 Reviewer: shown only when 「我也关心」 is ticked here for this task (as review.open). */
+      onlyIfAlsoMine?: Id;
     }
   /** Deleted for good from 设置 → 数据管理: drop them from every list. */
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }

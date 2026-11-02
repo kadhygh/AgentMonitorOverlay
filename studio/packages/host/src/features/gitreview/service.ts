@@ -194,11 +194,11 @@ export class GitReviewFeature extends Feature {
     if (workspace?.archivedAt) throw new HostError("conflict", "这个项目已归档，请先恢复它");
     // Where it shows: here, and/or on the paired device whose message started the turn (only the task's own project).
     const route = this.f.remote.grants.openRoute(sessionId ?? null, workspace?.id ?? null);
-    if (!this.host.liveWindows && !route.to.some((t) => t.by === "you")) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
+    if (!this.host.liveWindows && !route.to) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
     const workspaceAdded = !workspace;
     workspace ??= this.f.projects.addWorkspace({ path: dir });
     const target: ReviewOpenTarget = { workspaceId: workspace.id, ...resolved };
-    this.publish({ type: "review.open", target, at: new Date().toISOString(), ...(route.here === "following" && route.taskId ? { onlyIfFollowing: route.taskId } : {}) });
+    this.publish({ type: "review.open", target, at: new Date().toISOString(), ...(route.here === "alsoMine" && route.taskId ? { onlyIfAlsoMine: route.taskId } : {}) });
     if (sessionId) this.f.remote.grants.pushOpen(route, sessionId, { review: target });
     return { target, workspaceAdded };
   }

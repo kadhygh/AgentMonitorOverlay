@@ -51,11 +51,11 @@
 
 **2026-11-02 · 远程任务的 Reviewer（分支 `studio/remote-reviewer`，没合进 master，等审阅和用户点头）**：方案和用户定的都在 `plans/remote-reviewer.md`（A 跑任务，B 控制）。一共 4 步：
 1. B 的查看包、Review 窗口经自己的 Host `/api/remote/view/<task>/…` 走新的 `rt.view` 从 A 读，存在 `remote-views/<task>/`，A 离线时显示旧的并写明。A 上的检查在 `host/src/features/remote/views.ts`：只给这个任务的 pack、任务项目的 git（只读），文件只给 pack 点名的和改动里的，先解析链接和 junction，有大小上限，路径写「任务文件夹/…」。
-2. A 记住这一轮是谁发起的（`grants.ts` `turnOf`），用 `open` 推给 B；另一边勾了「我也关注」也弹，这个勾只存在各自界面的 localStorage 里。
+2. A 记住这一轮是谁发起的（`grants.ts` `turnOf`），用 `open` 只推给发起的 B；A 勾了「我也关心」（`ALSO_MINE_KEY`，和 Focus 的同一个勾）时 B 的轮次 A 也弹，B 没有勾，A 的轮次不推给 B。原来单独的「我也关注」用户当天晚上让并进了「我也关心」。
 3. B 的批注由 B 自己的 Host 回（`remote/comments.ts`，存在 kv 里，归档副本时删掉），「复制注释」的路径写「任务文件夹/…」，「发到对话」走 `rt.send`。
 4. e2e 在 `e2e/studio/remote-reviewer.spec.ts`。
 
-中转服务没改（它转发任何合规的 kind）。验证：`npm run verify` 过（完整跑时 server-manager 偶发失败，是已知问题，单独跑通过）；e2e `remote-reviewer`、`remote-files`、各个 `remote*`、`view-packs`、`review-open`、`review`、`gitreview`、`chat-files`、`task-head` 共 29 条都过，reviewer 项目 1 条也过。截图在 `screenshots/studio/remote-reviewer-*.png`。还剩：没在两台真电脑上走过；A 离线时界面上的「旧内容」提示只有单测，没有 e2e。
+中转服务没改（它转发任何合规的 kind）。验证：`npm run verify` 过（完整跑时 server-manager 偶发失败，是已知问题，单独跑通过）；e2e `remote-reviewer`、`remote-files`、各个 `remote*`、`view-packs`、`review-open`、`review`、`gitreview`、`chat-files`、`task-head` 共 29 条都过，reviewer 项目 1 条也过；并进「我也关心」之后重跑了单测全部和 `remote-reviewer`、`remote-files`、`remote-tasks`、`view-packs`、`review-open` 12 条 e2e。截图在 `screenshots/studio/remote-reviewer-*.png`。还剩：没在两台真电脑上走过；A 离线时界面上的「旧内容」提示只有单测，没有 e2e。
 
 **2026-11-02 · 移动端界面和文件查看进 commonMain（iOS 第 2b–2c 步）**：`AmoTheme`、`AmoControls`、`Icons`、`Markdown`、`ChatUi`、`StudioUi`、`FileUi` 和字体进 `mobile/shared/src/commonMain`。字体改用 Compose 资源，`BackHandler` 用 CMP 的，草稿走 `Platform.drafts`（发送前同步写盘照旧，已有草稿不丢），HTML 预览和图片解码是 `expect/actual`（Android 那份就是原来的 WebView / BitmapFactory 代码），`Uri.decode` 换成照 Android 规则写的 `percentDecode()`。iOS 上设置页的「更新」换成只显示版本。细节见 `plans/ios.md`。验证：共用单测 14 条（新加 `SharedUiTest` 4 条），Android 编译、lint 都过，模拟器 `test.ps1` 6 条一次过，截图看过对话、设置、HTML 和 Markdown 查看。
 

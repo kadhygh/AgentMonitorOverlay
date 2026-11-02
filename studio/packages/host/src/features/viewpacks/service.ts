@@ -42,7 +42,7 @@ export class ViewPacksFeature extends Feature {
     const workspace = this.requireLiveWorkspace(workspaceId);
     // Where it shows (远程 Reviewer): here, and/or on the paired device whose message started the turn.
     const route = this.f.remote.grants.openRoute(sessionId, workspace.id);
-    if (!this.host.liveWindows && !route.to.some((t) => t.by === "you")) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再给人看");
+    if (!this.host.liveWindows && !route.to) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再给人看");
     const raw = body.items;
     if (!Array.isArray(raw) || !raw.length || raw.length > MAX_VIEW_ITEMS) throw new HostError("bad_request", `items must be a list of 1 to ${MAX_VIEW_ITEMS}`);
     const ctx = kindContext(workspace);
@@ -105,8 +105,8 @@ export class ViewPacksFeature extends Feature {
   private save(pack: ViewPack, itemId: Id | null, route: ReturnType<RemoteGrants["openRoute"]>): ViewPack {
     this.store.putViewPack(pack);
     this.publish({ type: "viewpack.upserted", pack });
-    // A turn a paired device started: here only where 「我也关注」 is ticked (the window decides).
-    this.publish({ type: "viewpack.open", packId: pack.id, at: pack.updatedAt, ...(itemId ? { itemId } : {}), ...(route.here === "following" && route.taskId ? { onlyIfFollowing: route.taskId } : {}) });
+    // A turn a paired device started: here only where 「我也关心」 is ticked (the window decides).
+    this.publish({ type: "viewpack.open", packId: pack.id, at: pack.updatedAt, ...(itemId ? { itemId } : {}), ...(route.here === "alsoMine" && route.taskId ? { onlyIfAlsoMine: route.taskId } : {}) });
     if (pack.sessionId) this.f.remote.grants.pushOpen(route, pack.sessionId, { packId: pack.id, ...(itemId ? { itemId } : {}) });
     return pack;
   }

@@ -55,10 +55,6 @@
    out under the title (the mark has a fixed width, so the text below starts where the title does). */
 .remote-banner[data-state] { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
 .remote-banner-head { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 7px 14px; border: none; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-/* 远程 Reviewer (2026-11-02): 「我也关注」 beside the copy's head, outside its button. */
-.remote-banner-row { display: flex; align-items: center; min-width: 0; }
-.remote-banner-row .remote-banner-head { flex: 1; }
-.remote-follow { padding-right: 14px; }
 .remote-banner-head .remote-badge { width: 36px; box-sizing: border-box; text-align: center; }
 .remote-banner-title { flex: none; font-weight: 700; white-space: nowrap; }
 .remote-banner-watch { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-dim); font-size: 12px; }

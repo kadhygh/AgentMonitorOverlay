@@ -24,7 +24,8 @@ import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { openViewer } from "./viewer/open.js";
 import { readIds } from "./lib/storedIds.js";
-import { FOLLOW_REVIEW_KEY, remoteProjectPath } from "./remote/reviewer.js";
+import { remoteProjectPath } from "./remote/reviewer.js";
+import { ALSO_MINE_KEY } from "./focus/pins.js";
 import { onHostEvent } from "./host/events.js";
 import { setDutyOpener, useDuty, useDutyWatch } from "./duty/duty.js";
 import { DutyDialog } from "./duty/DutyDialog.js";
@@ -141,8 +142,8 @@ export function App() {
     () =>
       onHostEvent((e) => {
         if (e.type !== "review.open" || Date.now() - Date.parse(e.at) > 60_000) return;
-        // 远程 Reviewer (2026-11-02): a turn another device started shows here only with 「我也关注」 ticked for the task.
-        if (e.onlyIfFollowing && !readIds(FOLLOW_REVIEW_KEY).includes(e.onlyIfFollowing)) return;
+        // 远程 Reviewer (2026-11-02): a turn the device a task is granted to started shows here only with 「我也关心」 ticked.
+        if (e.onlyIfAlsoMine && !readIds(ALSO_MINE_KEY).includes(e.onlyIfAlsoMine)) return;
         const remote = e.target.remote;
         if (remote && e.target.mode === "file" && e.target.file) {
           openViewer({ path: remoteProjectPath(e.target.file), remote, ...(e.target.line ? { line: e.target.line, ...(e.target.endLine ? { endLine: e.target.endLine } : {}) } : {}) });
@@ -161,7 +162,7 @@ export function App() {
     () =>
       onHostEvent((e) => {
         if (e.type !== "viewpack.open" || Date.now() - Date.parse(e.at) > 60_000) return;
-        if (e.onlyIfFollowing && !readIds(FOLLOW_REVIEW_KEY).includes(e.onlyIfFollowing)) return;
+        if (e.onlyIfAlsoMine && !readIds(ALSO_MINE_KEY).includes(e.onlyIfAlsoMine)) return;
         openViewer({ path: "", pack: e.packId, ...(e.itemId ? { item: e.itemId } : {}), ...(e.remote ? { remote: e.remote } : {}) });
       }),
     [],

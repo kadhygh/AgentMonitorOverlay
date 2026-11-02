@@ -12,7 +12,7 @@ import { launchStudio, screenshot, studioRoot, type Studio } from "../support/st
 // the mock model), paired through a relay service started here on a free port — never the team server. A grants B a
 // task in a git project. B's message makes A's agent open a 查看包 and a Review: they pop up on B (the turn is B's),
 // read from A; B writes comments there, which stay on B — copied with 任务文件夹/ paths, or sent into the task's
-// conversation (发到对话), which reaches A as B's message. 「我也关注」 sits by the remote markers on both sides.
+// conversation (发到对话), which reaches A as B's message. With 「我也关心」 ticked on A, B's turns pop up on A too; A's own turns never on B.
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
 const account = (await import(pathToFileURL(join(studioRoot, "packages", "account", "dist", "index.js")).href)) as typeof import("../../packages/account/src/index.js");
@@ -99,20 +99,20 @@ test("B's turn opens A's 查看包 and Review on B, read from A; B's comments st
   await expect(a.page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 60_000 });
   await a.api("POST", "/api/remote/grants", { taskId: task.id, account: "笔记本的我", device: (await b.api<RemoteState>("GET", "/api/remote")).device!.id });
 
-  // 「我也关注」 on A's 已授权 banner, beside 我也关心; off by default.
-  await expect(a.page.getByTestId("granted-follow")).toBeVisible({ timeout: 30_000 });
-  await expect(a.page.getByTestId("granted-follow").locator("input")).not.toBeChecked();
-  await screenshot(a.app, "studio", "remote-reviewer-granted-follow", a.page);
+  // 「我也关心」 on A's 已授权 banner (2026-11-02: one tick for Focus and for what agents open); off by default.
+  const alsoMine = a.page.getByTestId("granted-also-mine");
+  await expect(alsoMine).toBeVisible({ timeout: 30_000 });
+  await expect(alsoMine.locator("input")).not.toBeChecked();
+  await expect(alsoMine).toHaveAttribute("title", /查看包和 Review 也在这台电脑上弹/);
 
   const card = b.page.getByTestId("task-card").filter({ hasText: "远程看改动" });
   await expect(card).toHaveAttribute("data-remote", "online", { timeout: 30_000 });
   await card.click();
   await expect(b.page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 30_000 });
-  await expect(b.page.getByTestId("remote-follow")).toBeVisible();
-  await expect(b.page.getByTestId("remote-follow").locator("input")).not.toBeChecked();
-  await screenshot(b.app, "studio", "remote-reviewer-banner-follow", b.page);
+  // No tick of its own on B: it shows what its own turns open.
+  await expect(b.page.getByTestId("remote-banner").locator("input[type=checkbox]")).toHaveCount(0);
 
-  // B's message: A's agent opens a pack — on B (the turn is B's), not on A (「我也关注」 is off there).
+  // B's message: A's agent opens a pack — on B (the turn is B's), not on A (「我也关心」 is off there).
   const aWindows = a.app.windows().length;
   const items = [
     { kind: "file", path: "drop.lua", highlights: [{ line: 1, note: "0.1 → 0.25" }] },
@@ -187,4 +187,25 @@ test("B's turn opens A's 查看包 and Review on B, read from A; B's comments st
   await expect(reopenReview).toBeVisible({ timeout: 30_000 });
   const review2 = await nextWindow(b.app, () => reopenReview.click());
   await expect(review2.getByTestId("review-file")).toHaveCount(1, { timeout: 30_000 });
+  await review2.close();
+
+  // 「我也关心」 ticked on A: what B's turns open pops up on A too.
+  await alsoMine.locator("input").check();
+  await expect(alsoMine.locator("input")).toBeChecked();
+  await screenshot(a.app, "studio", "remote-reviewer-also-mine", a.page);
+  const onA = a.app.waitForEvent("window");
+  const onB = b.app.waitForEvent("window");
+  await b.api("POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: view_open ${JSON.stringify({ title: "两边都看", items: [{ kind: "file", path: "notes.md" }] })}]]` });
+  const [packA, packB] = await Promise.all([onA, onB]);
+  await expect(packA.getByTestId("viewpack-file")).toContainText("先改概率", { timeout: 30_000 });
+  await expect(packB.getByTestId("viewpack-file")).toContainText("先改概率", { timeout: 30_000 });
+  await packB.close();
+
+  // A's own turn: shown on A as always; B is not told (its conversation's row opens it when wanted).
+  const bWindows = b.app.windows().length;
+  const rows = await b.page.getByTestId("tool-open-pack").count();
+  await a.api("POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: view_open ${JSON.stringify({ title: "A 自己看", items: [{ kind: "file", path: "drop.lua" }] })}]]` });
+  await expect(packA.locator('.gr-line[data-line="new:1"]')).toContainText("rate = 0.25", { timeout: 30_000 });
+  await expect(b.page.getByTestId("tool-open-pack")).toHaveCount(rows + 1, { timeout: 30_000 });
+  expect(b.app.windows().length).toBe(bWindows);
 });

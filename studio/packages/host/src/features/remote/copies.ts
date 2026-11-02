@@ -353,14 +353,13 @@ export class RemoteCopies {
         return;
       }
       case "open": {
-        // 远程 Reviewer (2026-11-02): an agent of the task opened a 查看包 or a Review for the person — shown here when
-        // this computer started the turn, else only where 「我也关注」 is ticked (the window decides: onlyIfFollowing).
+        // 远程 Reviewer (2026-11-02): an agent of the task opened a 查看包 or a Review for the person in a turn this
+        // computer started — shown here (A tells only the device whose turn it was).
         const t = this.store.getTask(p.taskId);
         if (!t?.remote || !same(t.remote, peer) || t.remote.state !== "active" || t.archivedAt) return;
         const at = new Date().toISOString();
-        const follow = p.by === "you" ? {} : { onlyIfFollowing: t.id };
-        if (typeof p.packId === "string") this.publish({ type: "viewpack.open", packId: p.packId, at, ...(typeof p.itemId === "string" ? { itemId: p.itemId } : {}), remote: t.id, ...follow });
-        else if (p.review && typeof p.review.workspaceId === "string") this.publish({ type: "review.open", target: { ...p.review, remote: t.id }, at, ...follow });
+        if (typeof p.packId === "string") this.publish({ type: "viewpack.open", packId: p.packId, at, ...(typeof p.itemId === "string" ? { itemId: p.itemId } : {}), remote: t.id });
+        else if (p.review && typeof p.review.workspaceId === "string") this.publish({ type: "review.open", target: { ...p.review, remote: t.id }, at });
         return;
       }
       case "delta":

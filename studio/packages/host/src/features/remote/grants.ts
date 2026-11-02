@@ -567,36 +567,34 @@ ${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
   }
 
   /**
-   * view_open / review_open in a session (the user, 2026-11-02): which paired devices hear of it, and whether it shows
+   * view_open / review_open in a session (the user, 2026-11-02): which paired device hears of it, and whether it shows
    * here. Only for a granted task, and only what is of its own project (a device reads nothing else). The device whose
-   * message started the turn gets it (`by: "you"`) when it is online — then this computer shows it only when the person
-   * here ticked 「我也关注」 (`here: "following"`); every other online device it is granted to gets it as `other`
-   * (shown there when ticked there). The turn this computer's, or its device away: shown here as always.
+   * message started the turn gets it (`to`) when it is online — then this computer shows it only when the person here
+   * ticked 「我也关心」 for the task (`here: "alsoMine"`, the same tick that keeps it in Focus). The turn this computer's,
+   * or its device away: shown here as always, and no device hears of it (its conversation's rows still open it there).
    */
-  openRoute(sessionId: Id | null, workspaceId: Id | null): { here: "always" | "following"; taskId: Id | null; to: Array<{ grant: RemoteGrant; by: "you" | "other" }> } {
+  openRoute(sessionId: Id | null, workspaceId: Id | null): { here: "always" | "alsoMine"; taskId: Id | null; to: RemoteGrant | null } {
     const session = sessionId ? this.store.getSession(sessionId) : undefined;
     const taskId = session?.taskId ?? null;
     const task = taskId ? this.store.getTask(taskId) : undefined;
     const gs = taskId ? this.of(taskId) : [];
-    if (!task || !gs.length || !workspaceId || workspaceId !== task.workspaceId) return { here: "always", taskId, to: [] };
+    if (!task || !gs.length || !workspaceId || workspaceId !== task.workspaceId) return { here: "always", taskId, to: null };
     const link = this.ctx.link();
     const up = (g: RemoteGrant) => !!link && link.state === "online" && !!this.ctx.peer(g)?.online;
     const turn = this.turnOf(sessionId!);
     const starter = turn ? gs.find((g) => same(g, turn) && up(g)) : undefined;
-    const to = gs.filter(up).map((grant) => ({ grant, by: grant === starter ? ("you" as const) : ("other" as const) }));
-    return { here: starter ? "following" : "always", taskId, to };
+    return starter ? { here: "alsoMine", taskId, to: starter } : { here: "always", taskId, to: null };
   }
 
   /** Whether what this session's agent opens now shows on a paired device (its turn's) — this computer needs no window. */
   showsElsewhere(sessionId: Id | null): boolean {
     const task = sessionId ? this.store.getTask(this.store.getSession(sessionId)?.taskId ?? "") : undefined;
-    return !!task && this.openRoute(sessionId, task.workspaceId).to.some((t) => t.by === "you");
+    return !!task && !!this.openRoute(sessionId, task.workspaceId).to;
   }
 
-  /** Tells the devices `openRoute` named what was opened (a pack, or a Review of the task's project). */
+  /** Tells the device `openRoute` named what was opened (a pack, or a Review of the task's project). */
   pushOpen(route: ReturnType<RemoteGrants["openRoute"]>, sessionId: Id, what: { packId: Id; itemId?: Id } | { review: ReviewOpenTarget }): void {
-    if (!route.taskId) return;
-    for (const { grant, by } of route.to) this.push(grant, { type: "open", taskId: route.taskId, sessionId, by, ...what });
+    if (route.taskId && route.to) this.push(route.to, { type: "open", taskId: route.taskId, sessionId, ...what });
   }
 
   /**
