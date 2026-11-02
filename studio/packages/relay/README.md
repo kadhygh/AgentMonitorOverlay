@@ -128,6 +128,17 @@ npm run relay:mac -- platform-prune [--dry-run] [--keep 3]   # 删各工具的�
 - 这几个命令都可以加 `--target-dir <本机目录>`：不走 SSH，直接发布到这个目录。用来测试，也可以在本机起一个带平台目录的服务做联调：`node release/relay/amo-relay.mjs serve --port 47130 --data <临时目录> --platform-dir <同一个目录>`。
 - 核心逻辑在 `scripts/platform-publish.mjs`（测试 `scripts/platform-publish.test.mjs`），工具表在 `scripts/amo-tools.mjs`。
 
+## Claude Code 镜像（2026-11-03 起）
+
+服务定时从 Anthropic 下好 Claude Code，AMO 平台的「环境」页从这里安装、更新（方案 `plans/claude-code-mirror.md`，代码 `src/mirror.ts`）。
+
+- 带 `--platform-dir` 启动的服务默认开（团队服务器就是）；`--mirror` 强制开，`--no-mirror` 关。第一次检查在启动 30 秒后。
+- 设置和状态在管理页 `/admin` 的「Claude Code 镜像」卡片：开关、检查间隔（默认 60 分钟）、平台（默认只要 win32-x64）、保留几版（默认 3），改了马上生效；「现在检查」立刻查一次。
+- 每次检查 GET `https://downloads.claude.ai/claude-code-releases/latest`；有新版就拿它的 `manifest.json`，下 `<版本>/<平台>/claude.exe.zst`（约 120 MB），断了用 Range 接着下（60 秒没数据算卡住，一轮最多 6 次），解压后 sha256 和大小对上清单才算备好。
+- 文件在 `<数据目录>/mirror/`：`settings.json`、`claude-code/index.json`、`claude-code/<版本>/manifest.json`、`claude-code/<版本>/<平台>/claude.exe.zst`（下载中是 `.part`）。Mac 上就是 `~/Services/amo-relay/data/mirror/`。
+- 接口（要登录，和平台的文件一样）：`GET /api/platform/mirror/claude-code`（备好的版本、官方最新、正在准备的进度），`GET /platform/mirror/claude-code/<版本>/manifest.json`，`GET /platform/mirror/claude-code/<版本>/<平台>/claude.exe.zst`（支持 Range）。管理页用 `GET /api/admin/mirror`、`POST /api/admin/mirror/settings`、`POST /api/admin/mirror/check`。
+- 日志里以 `[镜像]` 开头：备好、断了重试、删旧版本、检查失败。
+
 ## 给同事用
 
 把 `http://<服务机器的 IP>:47120/` 发给他们。这个页面 10-28 起只给 **AMO 平台** 的下载：装好平台、登录后，在「工具」里安装 AMO 中转，从平台打开（服务器地址已经填好），然后在中转里登录或注册。客户端会记住账号和密码（用系统加密保存），关掉窗口后留在托盘里，来新消息会提醒。服务器连不上时，登录页和对话上方会显示离线和下次重试的时间，服务恢复后会自己连上。

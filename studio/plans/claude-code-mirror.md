@@ -52,7 +52,7 @@
 - **安装 / 更新**（没装，或官方安装的有新版）：
   1. 定版本和来源：服务器备好的 → 从服务器下；否则官方 latest → 从官方下。
   2. 清单先直接找官方拿（10 秒超时），拿不到用服务器那份；取 `platforms.<win32-x64|win32-arm64>`（按 `PROCESSOR_ARCHITECTURE`）。
-  3. 下 zst 到 `%APPDATA%\AMO\downloads\claude-code\<版本>-<平台>.exe.zst.part`，续传（Range）、30 秒没数据算卡住、断了重试 3 次。别的版本留下的 `.part` 先删掉。
+  3. 下 zst 到平台文件夹的 `downloads\claude-code\claude-<版本>-<平台>.exe.zst.part`，续传（Range）、30 秒没数据算卡住、断了重试 3 次。别的版本留下的 `.part` 先删掉。
   4. 解压到 `versions\<版本>.amo-tmp`，边解边算 sha256，对上清单才改名成 `versions\<版本>`（已经有且 sha256 对的就跳过）。
   5. 运行 `versions\<版本> install <版本>`（5 分钟上限），再重新检测。
 - npm 装的照旧 `npm install -g`；别的方式装的不在这里更新。
@@ -63,12 +63,27 @@
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 0 | 方案 | ✓ |
-| 1 | 中转：`mirror.ts`（检测、续传下载、校验、保留、设置）+ 单测（假的官方服务器：断流、Range、校验失败） | ○ |
-| 2 | 中转：接口（平台的要登录、zst 支持 Range）+ 管理页卡片 + 服务启动时带上 | ○ |
-| 3 | 平台：`claude-install.ts`（选来源、续传、校验、放进 versions、`install`）+ 单测 | ○ |
-| 4 | 平台：环境页（安装按钮、真实进度、来源和服务器准备中的提示）+ e2e 截图 | ○ |
+| 1 | 中转：`mirror.ts`（检测、续传下载、校验、保留、设置）+ 单测（假的官方服务器：断流、Range、校验失败） | ✓ `3b9a3622` |
+| 2 | 中转：接口（平台的要登录、zst 支持 Range）+ 管理页卡片 + 服务启动时带上 | ✓ `3b9a3622` |
+| 3 | 平台：`claude-install.ts`（选来源、续传、校验、放进 versions、`install`）+ 单测 | ✓ `f2f42560` |
+| 4 | 平台：环境页（安装按钮、真实进度、来源和服务器准备中的提示）+ e2e 截图 | ✓ `f2f42560` |
 | 5 | 收尾：CHANGELOG、HANDOFF、中转 README；告诉用户部署中转 | ○ |
 | 6 | Codex 镜像（先调查，和用户谈定再做） | ○ |
+
+## 做的时候定下的细节（2026-11-03）
+
+- 续传和 zst 校验是共用模块 `@amo-studio/locate/download`（服务器和平台都用）。
+- 服务器只在带平台目录启动时（也就是团队服务器）默认开镜像；`--mirror` 强制开、`--no-mirror` 关。本机试服务、e2e 都不会自己去下 122 MB。第一次检查在服务启动 30 秒后。
+- 平台的半截下载放在平台自己的文件夹 `downloads\claude-code\`（和工具的 `apps\` 一样在平台文件夹里），不放 `%APPDATA%`。
+- 从服务器下时：401/403/404 或断两次，就接着从官方下（服务器存的就是官方的 zst 原样，同一个 `.part` 能接着续）。
+- `versions\<版本>` 已经有且 sha256 对（比如 Claude Code 自己的后台更新先下好了），就不下载，只跑 `install`。
+
+## 验证（2026-11-03）
+
+- 单测：`mirror.test.ts` 10 条（断流续传、卡住续传、校验失败、保留 N 版、设置、官方连不上、接口的 Range / 416 / 401 / 404），`claude-install.test.ts` 5 条，`environment.test.ts` 新加 1 条；relay、platform、locate、testkit 共 177 条全过。
+- 真实流程：本机起打包后的服务（`--mirror`），从官方真实下了 2.1.316 的 zst（122,064,664 字节）并按官方清单校验通过；平台的 `installClaude` 从这个服务装进临时用户目录，共 10.1 秒，`claude install` 时给了坏代理也装好了，`claude --version` 是 2.1.316。
+- e2e：平台的两条「环境」用例通过（新加的用 testkit 的假镜像，curl.exe 当 Claude Code），截图 `screenshots/platform/P38–P40`。整组平台 e2e 里另有 6 条登录后「正在连接」超过 5 秒失败，master 上同一条也失败，和这次改动无关（机器忙时的超时，没再查）。
+- 管理页卡片：浅色、深色截图看过（下载中、进度、设置表单）。
 
 ## 约束
 
