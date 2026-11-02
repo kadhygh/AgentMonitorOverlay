@@ -6,6 +6,7 @@ import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/th
 import { ModelsPage } from "./ModelsPage.js";
 import { SubsessionPage } from "./SubsessionPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
+import { ExperimentalSection } from "./ExperimentalSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
@@ -49,6 +50,7 @@ const PAGES = [
   { id: "stats", label: "统计" },
   { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
+  { id: "experimental", label: "测试功能" },
   { id: "duty", label: "值守" },
   { id: "scratchpad", label: "便签" },
   { id: "data", label: "数据管理" },
@@ -278,6 +280,7 @@ export function SettingsDialog({ link, settings, page: startPage, onClose, onOpe
             )}
             {page === "common" && <FolderAccessSection link={link} />}
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} />}
+            {page === "experimental" && <ExperimentalSection link={link} on={settings?.experimentalFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
             {page === "duty" && <DutyPage link={link} />}

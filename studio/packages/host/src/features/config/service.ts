@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, TEAM_AUTO_SEND_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY, TOPIC_GROUPS_KEY, SUBSESSION_NOTES_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, EXPERIMENTAL_FEATURES_KEY, TEAM_AUTO_SEND_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY, TOPIC_GROUPS_KEY, SUBSESSION_NOTES_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -17,6 +17,7 @@ export class ConfigFeature extends Feature {
       commonWorkspace: this.commonWorkspace(),
       presets: this.presets(),
       disabledFeatures: this.disabledFeatures(),
+      experimentalFeatures: this.experimentalFeatures(),
       teamAutoSend: this.teamAutoSend(),
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
@@ -153,6 +154,18 @@ export class ConfigFeature extends Feature {
     }
   }
 
+  /** Features still being tried out that the person turned on (设置 → 测试功能); none by default. Unknown ids are dropped. */
+  experimentalFeatures(): ExperimentalFeature[] {
+    const raw = this.store.getKv(EXPERIMENTAL_FEATURES_KEY)?.value;
+    if (!raw) return [];
+    try {
+      const ids = JSON.parse(raw) as unknown;
+      return Array.isArray(ids) ? EXPERIMENTAL_FEATURES.map((f) => f.id).filter((id) => ids.includes(id)) : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** 中转: sessions' asks go without waiting for the person (设置 → 功能). */
   teamAutoSend(): boolean {
     return this.store.getKv(TEAM_AUTO_SEND_KEY)?.value === "1";
@@ -176,7 +189,7 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; teamAutoSend?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; experimentalFeatures?: unknown; teamAutoSend?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
     if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.topicGroups !== undefined) this.store.setKv(TOPIC_GROUPS_KEY, JSON.stringify(this.checkTopicGroups(input.topicGroups)));
@@ -235,6 +248,12 @@ export class ConfigFeature extends Feature {
       const ids = input.disabledFeatures;
       if (!Array.isArray(ids) || ids.some((id) => !known.includes(id as OptionalFeature))) throw new HostError("bad_request", `disabledFeatures must list some of: ${known.join(", ")}`);
       this.store.setKv(DISABLED_FEATURES_KEY, JSON.stringify(known.filter((id) => ids.includes(id))));
+    }
+    if (input.experimentalFeatures !== undefined) {
+      const known = EXPERIMENTAL_FEATURES.map((f) => f.id);
+      const ids = input.experimentalFeatures;
+      if (!Array.isArray(ids) || ids.some((id) => !known.includes(id as ExperimentalFeature))) throw new HostError("bad_request", `experimentalFeatures must list some of: ${known.join(", ")}`);
+      this.store.setKv(EXPERIMENTAL_FEATURES_KEY, JSON.stringify(known.filter((id) => ids.includes(id))));
     }
     if (input.presets !== undefined) {
       if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);

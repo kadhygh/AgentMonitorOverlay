@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ChecklistItem, DecisionRequest, MailMessage, OptionalFeature, ScheduleProposal, StateSnapshot, TodoItem } from "@amo-studio/protocol";
+import type { ChecklistItem, DecisionRequest, ExperimentalFeature, MailMessage, OptionalFeature, ScheduleProposal, StateSnapshot, TodoItem } from "@amo-studio/protocol";
 import type { HostLink, Passage } from "../host/client.js";
 import type { Scope } from "../board/Board.js";
 import type { ReadPlace } from "../task/readPlace.js";
@@ -13,6 +13,8 @@ export type View =
   | { kind: "board" }
   /** `callout`: a question on the canvas to open (from Focus, 画布审阅 2026-10-27); `nav` changes with each ask. */
   | { kind: "canvas"; callout?: string; nav?: number }
+  /** 全景 (设置 → 测试功能, 2026-11-01): the topic in scope as a tilted map, one lane per task. */
+  | { kind: "panorama" }
   /** `remote` (远程创建, 2026-10-29): opened in 「在别的设备上」 with that device picked. */
   | { kind: "new"; topicId?: string; back?: View; remote?: { account: string; device: string } }
   /**
@@ -21,9 +23,9 @@ export type View =
    */
   | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: ReadPlace };
 
-const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
+const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布", panorama: "全景" };
 
-/** Where a page's "←" goes and what it says: the page it came from when that is the board or a canvas, else the board. */
+/** Where a page's "←" goes and what it says: the page it came from when that is the board, a canvas or 全景, else the board. */
 export function backTo(back: View | undefined): { view: View; label: string } {
   return back && BACK_LABEL[back.kind] ? { view: back, label: BACK_LABEL[back.kind]! } : { view: { kind: "board" }, label: "看板" };
 }
@@ -34,7 +36,7 @@ export function backTo(back: View | undefined): { view: View; label: string } {
  */
 export function withOrigin(next: View, current: View): View {
   if ((next.kind !== "task" && next.kind !== "new") || next.back) return next;
-  const origin = current.kind === "board" || current.kind === "canvas" ? current : current.kind === "task" || current.kind === "new" ? current.back : undefined;
+  const origin = current.kind === "board" || current.kind === "canvas" || current.kind === "panorama" ? current : current.kind === "task" || current.kind === "new" ? current.back : undefined;
   return origin ? { ...next, back: origin } : next;
 }
 
@@ -56,6 +58,8 @@ export interface ViewContext {
   data: AppData;
   /** Optional features turned off (设置 → 功能). */
   disabled: readonly OptionalFeature[];
+  /** Features being tried out that are turned on (设置 → 测试功能). */
+  experimental: readonly ExperimentalFeature[];
   setView(view: View): void;
 }
 
@@ -63,6 +67,8 @@ export interface ViewDef<K extends View["kind"] = View["kind"]> {
   kind: K;
   /** The optional feature it belongs to: gone while that is turned off. */
   feature?: OptionalFeature;
+  /** The feature being tried out it belongs to: there only while that is turned on (设置 → 测试功能). */
+  experimental?: ExperimentalFeature;
   /** A tab in the top bar: the view it opens in this scope, or null when it does not apply there. */
   tab?: { label: string; open(scope: Scope): View | null; /** Other views during which the tab shows as current. */ alsoFor?: View["kind"][] };
   render(view: Extract<View, { kind: K }>, ctx: ViewContext): ReactNode;

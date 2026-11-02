@@ -1,0 +1,3951 @@
+{
+ "takenAt": "2026-11-01T16:22:36.358Z",
+ "topic": {
+  "id": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+  "title": "AMO迭代",
+  "workspaceIds": [],
+  "createdAt": "2026-10-30T13:25:56.140Z",
+  "updatedAt": "2026-10-30T13:26:14.425Z",
+  "archivedAt": null
+ },
+ "tasks": [
+  {
+   "id": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "title": "AMO迭代",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "review",
+   "createdAt": "2026-10-30T13:28:12.527Z",
+   "updatedAt": "2026-10-31T05:34:30.171Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "title": "开发android版apk",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "review",
+   "createdAt": "2026-10-30T16:23:32.193Z",
+   "updatedAt": "2026-10-31T11:31:13.458Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "title": "日常维护",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "review",
+   "createdAt": "2026-10-31T09:47:02.417Z",
+   "updatedAt": "2026-11-01T12:24:06.682Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-0ed8be5d-90e5-4945-badd-25867647ada8",
+   "title": "讨论自动化流程调整",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "done",
+   "createdAt": "2026-10-31T10:10:20.667Z",
+   "updatedAt": "2026-10-31T10:10:57.866Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-1577a974-011c-470b-8a03-5e664f499d13",
+   "title": "给al20那个设备也加下tailscale转发。 现在应该转发了一个szk的设备",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "review",
+   "createdAt": "2026-10-31T11:25:45.252Z",
+   "updatedAt": "2026-11-01T09:31:32.035Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "title": "amo-flowmaptest",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "doing",
+   "createdAt": "2026-10-31T17:11:23.027Z",
+   "updatedAt": "2026-11-01T15:42:10.628Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40",
+   "title": "长任务演示",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "doing",
+   "createdAt": "2026-10-27T16:02:36.358Z",
+   "updatedAt": "2026-11-01T16:02:36.358Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100",
+   "title": "百轮演示",
+   "workspaceId": "",
+   "topicId": "tp-ccf5a65d-a29e-49e0-8014-9253902387a5",
+   "column": "doing",
+   "createdAt": "2026-10-20T04:02:36.358Z",
+   "updatedAt": "2026-11-01T16:02:36.358Z",
+   "archivedAt": null
+  }
+ ],
+ "sessions": [
+  {
+   "id": "s-2ff670cd-a175-4410-8e83-af45fa8ad9cd",
+   "taskId": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "刚刚尝试了远程对接，现在成功了，接下来我计划用安装好的amo来迭代amo。因为不准备用dsh来迭代amo，所以我将amo",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T13:28:12.573Z",
+   "updatedAt": "2026-10-31T03:49:32.247Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-0c69632f-0f88-42d8-975e-b543c2f6591a",
+   "taskId": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "接下来开发一个比较大的功能，就是在新建任务里找个位置加个按钮，这个按钮功能就是resume一个没和task关联的任务。 ",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T14:14:17.247Z",
+   "updatedAt": "2026-10-30T15:31:22.723Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-2b2e21ed-2312-4834-85d5-a3ec236a3c11",
+   "taskId": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "feature: 任务模板，  有时我会经常开同样的任务，所以需要加一个任务模板功能，然后我可以让ai 根据amo的mc",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T16:05:13.460Z",
+   "updatedAt": "2026-10-30T16:59:49.610Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-f6014e6c-f7b0-46e4-a6db-e7f66a3dabeb",
+   "taskId": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "codex",
+   "profileId": "codex-default",
+   "workspaceId": "",
+   "title": "现在需要开发一个android版的 amo studio，只需要studio功能，只需要能够登录 同局域网下配对然后用远",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "gpt-6-astra"
+   },
+   "createdAt": "2026-10-30T16:23:33.329Z",
+   "updatedAt": "2026-10-31T11:31:09.453Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-04cea443-9285-4610-963a-e3cc718b33bc",
+   "taskId": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "topicId": null,
+   "parentId": "s-f6014e6c-f7b0-46e4-a6db-e7f66a3dabeb",
+   "kind": "sub",
+   "runtime": "codex",
+   "profileId": "codex-default",
+   "workspaceId": "",
+   "title": "android_core",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "gpt-6-astra"
+   },
+   "createdAt": "2026-10-30T16:52:19.828Z",
+   "updatedAt": "2026-10-30T17:13:45.752Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-9d1e220b-a06c-4282-a6c8-fefa7f5120cd",
+   "taskId": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "topicId": null,
+   "parentId": "s-f6014e6c-f7b0-46e4-a6db-e7f66a3dabeb",
+   "kind": "sub",
+   "runtime": "codex",
+   "profileId": "codex-default",
+   "workspaceId": "",
+   "title": "android_ui",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "gpt-6-astra"
+   },
+   "createdAt": "2026-10-30T16:52:35.976Z",
+   "updatedAt": "2026-10-30T17:31:43.012Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-6e6c5b36-cd36-4a8c-8565-34c31b0b7b91",
+   "taskId": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "topicId": null,
+   "parentId": "s-f6014e6c-f7b0-46e4-a6db-e7f66a3dabeb",
+   "kind": "sub",
+   "runtime": "codex",
+   "profileId": "codex-default",
+   "workspaceId": "",
+   "title": "android_fixture",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "gpt-6-astra"
+   },
+   "createdAt": "2026-10-30T16:52:49.763Z",
+   "updatedAt": "2026-10-30T17:13:23.011Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-90b10e5e-7f1f-4501-9b22-175c8df54a15",
+   "taskId": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "codex",
+   "profileId": "codex-default",
+   "workspaceId": "",
+   "title": "给amo platform里加一个新的工具，就是可以用这个工具用服务器给不同的人在局域网发送文件，就当做局域网快速文件转",
+   "status": "awaiting-approval",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {},
+   "createdAt": "2026-10-30T17:38:03.885Z",
+   "updatedAt": "2026-10-30T17:43:59.145Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-284b7507-16a5-4239-a474-355e6b88e548",
+   "taskId": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "amo服务器现在的负载如何，我比较担心他是否会占用太多资源。 是否要写一些监控，方便在对应页面查看",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T17:40:05.886Z",
+   "updatedAt": "2026-10-31T01:48:42.321Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-68a92e60-2505-4362-a58b-609ea8338da3",
+   "taskId": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "claude说移除了5小时用量限制，确认一下是不是，如果是我们要更新版",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T05:32:53.992Z",
+   "updatedAt": "2026-10-31T05:34:26.165Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "你在今天的 AMO 维护任务里。照下面把今天的值守设好，然后结束。别的什么都不改。\n\n## 1. 值守目录\n\n值守目录是",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T09:47:02.461Z",
+   "updatedAt": "2026-11-01T12:24:02.678Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-3a665306-3e14-425f-8bc4-e52ae057be8d",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T09:49:25.998Z",
+   "updatedAt": "2026-10-31T10:27:15.291Z",
+   "archivedAt": "2026-10-31T10:27:15.291Z"
+  },
+  {
+   "id": "s-31bf810f-9280-457c-8d42-286bcb72be90",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T09:53:09.356Z",
+   "updatedAt": "2026-10-31T10:27:17.646Z",
+   "archivedAt": "2026-10-31T10:27:17.646Z"
+  },
+  {
+   "id": "s-fb4cfa70-5658-4300-a016-350cc0343d61",
+   "taskId": "task-0ed8be5d-90e5-4945-badd-25867647ada8",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "现在远端任务，在对话中途，开放给控制端这个功能有了么",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:10:20.710Z",
+   "updatedAt": "2026-10-31T10:10:53.862Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-01f547d3-7b2b-471d-9dab-54d16bfb0fc3",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "#2 reviewer 批注的标记最好是弹个小窗在选择批注的位置旁…",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:29:51.972Z",
+   "updatedAt": "2026-10-31T10:54:28.458Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-91c180e2-7de1-4370-a4b0-6b488465e53f",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "#3 reviewer窗口的固定 改名叫 锁定，reviewer窗…",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:31:00.045Z",
+   "updatedAt": "2026-10-31T10:37:13.240Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-7e1fccd7-49e5-4ae9-97a5-46db07cc0af3",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "#4 studio的置顶按钮可以去掉了，感觉不存在需要悬浮的场景。",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:37:14.485Z",
+   "updatedAt": "2026-10-31T10:43:22.566Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-70371635-7415-425e-8e2c-918efae562c6",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "现在想给amo服务器加个功能，我可以通过服务器快速传输文件或者文件夹，从studio的控制设备和被控设备互通。这个好做吗",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T11:14:08.512Z",
+   "updatedAt": "2026-10-31T23:28:05.140Z",
+   "archivedAt": "2026-10-31T23:28:05.140Z"
+  },
+  {
+   "id": "s-7c670f2e-afc2-48bf-9646-3d4b687a0962",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T11:24:12.458Z",
+   "updatedAt": "2026-10-31T11:34:41.516Z",
+   "archivedAt": "2026-10-31T11:34:41.516Z"
+  },
+  {
+   "id": "s-e1396d63-3987-4882-a28a-457266332907",
+   "taskId": "task-1577a974-011c-470b-8a03-5e664f499d13",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "给al20那个设备也加下tailscale转发。 现在应该转发了一个szk的设备",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T11:25:45.257Z",
+   "updatedAt": "2026-11-01T09:31:28.030Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-3ea76c4b-9c2f-4aff-8328-ded1341bf8de",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T12:16:35.883Z",
+   "updatedAt": "2026-10-31T12:19:18.986Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-23a3d02c-6cf1-435e-81f8-152374dc4db0",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "想给amo加个类似便签的todo list功能，核心重点， 登录才能使用 数据存在server上， 每个设备都有自己的t",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T16:54:17.170Z",
+   "updatedAt": "2026-11-01T02:40:02.487Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "我们之前讨论过一个，canvas的扩展，就是作为人类经常因为上下文不够，导致任务审核的时候，会丢失细节当时我们讨论的结果",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T17:11:23.125Z",
+   "updatedAt": "2026-11-01T16:14:29.987Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-f68d33e1-51a2-4754-9f60-33220c2044ce",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "表达示例 A：书房 / 书桌 / 地图",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T17:42:02.008Z",
+   "updatedAt": "2026-11-01T09:29:56.094Z",
+   "archivedAt": "2026-11-01T09:29:56.094Z"
+  },
+  {
+   "id": "s-d4cbabf1-00cb-4acb-8499-31f050af682b",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "表达示例 B：简报 / 报纸 / 日记",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T17:42:21.317Z",
+   "updatedAt": "2026-11-01T09:29:56.740Z",
+   "archivedAt": "2026-11-01T09:29:56.740Z"
+  },
+  {
+   "id": "s-911d6075-6488-4e5e-b9cc-f091bc858d8c",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "表达示例 C：消息 / 刷卡片 / 办公室",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T17:42:42.650Z",
+   "updatedAt": "2026-11-01T09:29:57.538Z",
+   "archivedAt": "2026-11-01T09:29:57.538Z"
+  },
+  {
+   "id": "s-d8c69083-0523-40f1-9cc5-813a33beeb26",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "lane 地图：3D 倾斜 + 4 种方向",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T05:26:18.421Z",
+   "updatedAt": "2026-11-01T09:29:58.188Z",
+   "archivedAt": "2026-11-01T09:29:58.188Z"
+  },
+  {
+   "id": "s-77a2eed7-c003-4131-a105-35d092664ea0",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T06:22:44.483Z",
+   "updatedAt": "2026-11-01T06:25:32.236Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-d586fe74-350e-480a-8b93-a95a29df7fc8",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "deck.gl 科幻星图",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T06:36:46.688Z",
+   "updatedAt": "2026-11-01T09:30:09.894Z",
+   "archivedAt": "2026-11-01T09:30:09.894Z"
+  },
+  {
+   "id": "s-c1fe7f38-9767-4294-a5b0-6d0e1fd71744",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "#5 远程界面的task列表限制一下高度，最多显示10个，后面就要…",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T06:43:34.776Z",
+   "updatedAt": "2026-11-01T07:00:32.363Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-5f24feab-1a2d-4023-b031-165c2fa3db36",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "（你在项目「AgentMonitorOverlay-duty」的文件夹 G:\\PROJECT\\AgentMonitorO",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T06:50:44.993Z",
+   "updatedAt": "2026-11-01T06:55:36.590Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-a6689ca4-4fa2-4f73-91e7-a74736111c0c",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "amo现在有办法会话之间传消息吗？",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:18:32.501Z",
+   "updatedAt": "2026-11-01T07:19:04.041Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-9027a125-2891-44dc-8a08-5d191895c9d2",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "#7 书签页面按esc现在不能关闭，加一下吧",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:25:35.177Z",
+   "updatedAt": "2026-11-01T07:32:03.860Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-e4bea0dc-221d-41a9-a7cc-06cf2bb46c22",
+   "taskId": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-3173af00-39e8-4f99-8393-8b95d32e5704",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "打测试包",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:32:05.377Z",
+   "updatedAt": "2026-11-01T07:34:36.163Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-76bc18a9-cee0-4fb0-952a-a28829b2a5e7",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "星图：极简内容 + 3 种风格 + 性能",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:38:38.248Z",
+   "updatedAt": "2026-11-01T09:29:58.822Z",
+   "archivedAt": "2026-11-01T09:29:58.822Z"
+  },
+  {
+   "id": "s-f78d057e-689e-4931-9a63-cae66ab1fb5b",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "星图：4 种美术风格（基于第一版）",
+   "status": "idle",
+   "writer": "archived",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T08:10:16.388Z",
+   "updatedAt": "2026-11-01T09:54:33.322Z",
+   "archivedAt": "2026-11-01T09:54:33.322Z"
+  },
+  {
+   "id": "s-82e9fc6a-8aad-4b3c-82b3-7c5e6cfd02bd",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "startedBy": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "全景：测试功能开关 + 选项卡（第一版）",
+   "status": "running",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T15:42:10.564Z",
+   "updatedAt": "2026-11-01T16:08:53.884Z",
+   "archivedAt": null
+  },
+  {
+   "id": "s-c58dd589-77b5-4496-9902-359eff3480fc",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "topicId": null,
+   "parentId": "s-32f6ad41-93a1-41ae-ba5c-592d48be7b42",
+   "kind": "sub",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "研究 DeepSeek super-agent 框架",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T15:42:51.111Z",
+   "updatedAt": "2026-11-01T15:47:43.761Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r1",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 1 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T16:40:22.407Z",
+   "updatedAt": "2026-10-27T21:02:13.099Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r2",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 2 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T19:39:44.437Z",
+   "updatedAt": "2026-10-27T22:57:13.966Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r3",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 3 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T22:39:57.094Z",
+   "updatedAt": "2026-10-28T03:10:27.310Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r4",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 4 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T01:39:19.124Z",
+   "updatedAt": "2026-10-28T06:09:45.881Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r5",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 5 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T04:39:31.781Z",
+   "updatedAt": "2026-10-28T09:01:17.937Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r6",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 6 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T07:38:53.811Z",
+   "updatedAt": "2026-10-28T12:00:35.770Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r7",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 7 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T10:39:06.468Z",
+   "updatedAt": "2026-10-28T14:04:04.456Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r8",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 8 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T13:38:28.498Z",
+   "updatedAt": "2026-10-28T18:08:49.833Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r9",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 9 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T16:38:41.154Z",
+   "updatedAt": "2026-10-28T19:56:05.098Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r9-b0",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long40-r9",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：修小问题",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-28T17:23:41.154Z",
+   "updatedAt": "2026-10-28T18:03:41.154Z",
+   "archivedAt": "2026-10-28T18:13:41.154Z"
+  },
+  {
+   "id": "task-demo-long40-r9-b1",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long40-r9",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：对一下文档",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-28T18:08:41.154Z",
+   "updatedAt": "2026-10-28T18:48:41.154Z",
+   "archivedAt": "2026-10-28T18:58:41.154Z"
+  },
+  {
+   "id": "task-demo-long40-r10",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 10 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T19:11:08.766Z",
+   "updatedAt": "2026-10-28T19:21:23.024Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r11",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 11 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T22:10:56.110Z",
+   "updatedAt": "2026-10-29T02:47:14.436Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r12",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 12 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T01:11:34.079Z",
+   "updatedAt": "2026-10-29T01:21:04.326Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r13",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 13 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T04:11:21.423Z",
+   "updatedAt": "2026-10-29T08:56:38.484Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r14",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 14 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T07:10:18.140Z",
+   "updatedAt": "2026-10-29T11:55:28.444Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r15",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 15 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T10:10:05.484Z",
+   "updatedAt": "2026-10-29T10:19:35.059Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r16",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 16 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T13:10:43.453Z",
+   "updatedAt": "2026-10-29T13:20:13.350Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r17",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 17 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T16:10:30.797Z",
+   "updatedAt": "2026-10-29T16:20:44.661Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r17-b0",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": "task-demo-long40-r17",
+   "kind": "fork",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "分支：换个做法试试",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-29T16:55:30.797Z",
+   "updatedAt": "2026-10-29T17:35:30.797Z",
+   "archivedAt": "2026-10-29T17:45:30.797Z"
+  },
+  {
+   "id": "task-demo-long40-r18",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 18 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T19:09:27.514Z",
+   "updatedAt": "2026-10-29T19:19:40.847Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r19",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 19 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T22:09:14.857Z",
+   "updatedAt": "2026-10-30T02:45:23.039Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r20",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 20 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T01:07:20.615Z",
+   "updatedAt": "2026-10-30T04:26:28.500Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r21",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 21 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T04:07:33.272Z",
+   "updatedAt": "2026-10-30T06:37:54.406Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r22",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 22 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T07:07:45.929Z",
+   "updatedAt": "2026-10-30T09:38:07.912Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r23",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 23 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T10:07:58.585Z",
+   "updatedAt": "2026-10-30T13:27:09.422Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r24",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 24 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T13:06:29.989Z",
+   "updatedAt": "2026-10-30T16:25:33.247Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r25",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 25 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T16:06:42.646Z",
+   "updatedAt": "2026-10-30T18:36:59.787Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r26",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 26 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T19:06:55.302Z",
+   "updatedAt": "2026-10-30T22:33:33.863Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r26-b0",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long40-r26",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：对一下文档",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-30T19:51:55.302Z",
+   "updatedAt": "2026-10-30T20:31:55.302Z",
+   "archivedAt": "2026-10-30T20:41:55.302Z"
+  },
+  {
+   "id": "task-demo-long40-r26-b1",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long40-r26",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：跑一遍 e2e",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-30T20:36:55.302Z",
+   "updatedAt": "2026-10-30T21:16:55.302Z",
+   "archivedAt": "2026-10-30T21:26:55.302Z"
+  },
+  {
+   "id": "task-demo-long40-r27",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 27 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T22:07:07.959Z",
+   "updatedAt": "2026-10-31T00:31:04.343Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r28",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 28 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T01:09:01.868Z",
+   "updatedAt": "2026-10-31T04:28:18.317Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r29",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 29 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T04:09:14.524Z",
+   "updatedAt": "2026-10-31T06:39:43.050Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r30",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 30 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T07:08:36.666Z",
+   "updatedAt": "2026-10-31T07:19:27.318Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r31",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 31 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:08:24.009Z",
+   "updatedAt": "2026-10-31T10:33:23.284Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r32",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 32 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T13:08:11.353Z",
+   "updatedAt": "2026-10-31T13:33:10.128Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r33",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 33 轮：补测试",
+   "status": "awaiting-answer",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T16:07:58.696Z",
+   "updatedAt": "2026-10-31T16:18:48.905Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r34",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 34 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T19:07:46.040Z",
+   "updatedAt": "2026-10-31T19:30:34.837Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r35",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 35 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T22:07:33.383Z",
+   "updatedAt": "2026-10-31T22:19:22.408Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r36",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 36 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T01:07:20.726Z",
+   "updatedAt": "2026-11-01T01:32:18.329Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r37",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 37 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T04:07:08.070Z",
+   "updatedAt": "2026-11-01T04:17:57.799Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r38",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 38 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:10:17.918Z",
+   "updatedAt": "2026-11-01T07:33:10.392Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r39",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 39 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T10:10:05.262Z",
+   "updatedAt": "2026-11-01T10:21:56.154Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long40-r40",
+   "taskId": "task-demo-long40",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 40 轮：整理接口",
+   "status": "running",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T13:38:33.486Z",
+   "updatedAt": "2026-11-01T16:22:36.358Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r1",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 1 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T04:31:34.586Z",
+   "updatedAt": "2026-10-20T06:42:09.048Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r2",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 2 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T07:31:21.930Z",
+   "updatedAt": "2026-10-20T09:41:55.051Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r3",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 3 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T10:31:09.273Z",
+   "updatedAt": "2026-10-20T13:27:13.509Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r4",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 4 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T13:30:56.616Z",
+   "updatedAt": "2026-10-20T15:35:33.067Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r5",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 5 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T16:30:43.960Z",
+   "updatedAt": "2026-10-20T19:33:51.742Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r6",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 6 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T19:30:31.303Z",
+   "updatedAt": "2026-10-20T21:41:01.273Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r7",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 7 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-20T22:30:18.647Z",
+   "updatedAt": "2026-10-21T01:26:19.192Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r8",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 8 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T01:33:28.495Z",
+   "updatedAt": "2026-10-21T03:38:15.252Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r9",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 9 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T04:33:15.839Z",
+   "updatedAt": "2026-10-21T07:36:36.250Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r10",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 10 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T07:24:15.327Z",
+   "updatedAt": "2026-10-21T08:26:24.582Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r11",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 11 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T10:24:27.984Z",
+   "updatedAt": "2026-10-21T10:56:42.609Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r12",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 12 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T13:23:50.014Z",
+   "updatedAt": "2026-10-21T14:22:03.660Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r13",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 13 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T16:24:02.671Z",
+   "updatedAt": "2026-10-21T16:59:00.860Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r14",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 14 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T19:25:05.954Z",
+   "updatedAt": "2026-10-21T20:00:06.252Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r15",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 15 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-21T22:25:18.610Z",
+   "updatedAt": "2026-10-21T23:23:36.142Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r16",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 16 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T01:24:40.640Z",
+   "updatedAt": "2026-10-22T02:22:56.304Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r17",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 17 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T04:24:53.297Z",
+   "updatedAt": "2026-10-22T04:59:52.966Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r18",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 18 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T07:25:56.580Z",
+   "updatedAt": "2026-10-22T08:00:58.358Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r19",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 19 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T10:26:09.236Z",
+   "updatedAt": "2026-10-22T10:58:26.913Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r20",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 20 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T13:02:44.248Z",
+   "updatedAt": "2026-10-22T16:50:46.861Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r21",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 21 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T16:56:31.591Z",
+   "updatedAt": "2026-10-22T22:02:43.887Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r21-b0",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": "task-demo-long100-r21",
+   "kind": "fork",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "分支：换个做法试试",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-22T17:41:31.591Z",
+   "updatedAt": "2026-10-22T18:21:31.591Z",
+   "archivedAt": "2026-10-22T18:31:31.591Z"
+  },
+  {
+   "id": "task-demo-long100-r22",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 22 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T19:56:18.935Z",
+   "updatedAt": "2026-10-22T23:52:24.794Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r23",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 23 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-22T22:56:06.278Z",
+   "updatedAt": "2026-10-23T03:52:59.720Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r24",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 24 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T01:55:53.622Z",
+   "updatedAt": "2026-10-23T05:43:51.271Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r25",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 25 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T04:55:40.965Z",
+   "updatedAt": "2026-10-23T08:51:43.599Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r26",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 26 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T07:55:28.309Z",
+   "updatedAt": "2026-10-23T13:01:34.458Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r27",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 27 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T10:55:15.652Z",
+   "updatedAt": "2026-10-23T14:43:10.135Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r28",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 28 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T13:55:02.995Z",
+   "updatedAt": "2026-10-23T18:51:49.540Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r29",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 29 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T16:54:50.339Z",
+   "updatedAt": "2026-10-23T20:50:47.920Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r30",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 30 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T19:55:28.198Z",
+   "updatedAt": "2026-10-23T20:59:31.321Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r31",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 31 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-23T22:55:40.854Z",
+   "updatedAt": "2026-10-24T00:42:08.977Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r32",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 32 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T01:55:53.511Z",
+   "updatedAt": "2026-10-24T03:04:05.280Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r33",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 33 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T04:56:06.167Z",
+   "updatedAt": "2026-10-24T06:37:17.788Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r34",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 34 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T07:54:37.571Z",
+   "updatedAt": "2026-10-24T09:35:43.901Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r35",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 35 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T10:54:50.228Z",
+   "updatedAt": "2026-10-24T12:02:58.849Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r36",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 36 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T13:55:02.884Z",
+   "updatedAt": "2026-10-24T15:41:28.393Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r37",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 37 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T16:55:15.541Z",
+   "updatedAt": "2026-10-24T18:36:23.931Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r38",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 38 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T19:53:46.945Z",
+   "updatedAt": "2026-10-24T20:57:45.059Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r39",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 39 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-24T22:53:59.602Z",
+   "updatedAt": "2026-10-25T00:40:21.084Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r40",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 40 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T01:54:12.147Z",
+   "updatedAt": "2026-10-25T02:08:50.003Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r41",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 41 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T04:53:59.491Z",
+   "updatedAt": "2026-10-25T05:02:00.645Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r42",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 42 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T07:54:37.460Z",
+   "updatedAt": "2026-10-25T08:02:38.652Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r43",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 43 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T10:54:24.804Z",
+   "updatedAt": "2026-10-25T11:02:34.937Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r44",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 44 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T13:55:02.774Z",
+   "updatedAt": "2026-10-25T14:03:12.994Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r45",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 45 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T16:54:50.117Z",
+   "updatedAt": "2026-10-25T17:08:09.345Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r46",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 46 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T19:55:28.087Z",
+   "updatedAt": "2026-10-25T20:03:29.318Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r47",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 47 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-25T22:55:15.430Z",
+   "updatedAt": "2026-10-25T23:09:54.331Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r48",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 48 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T01:52:30.895Z",
+   "updatedAt": "2026-10-26T02:00:40.726Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r49",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 49 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T04:52:18.238Z",
+   "updatedAt": "2026-10-26T05:05:35.269Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r50",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 50 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T07:25:56.058Z",
+   "updatedAt": "2026-10-26T10:09:18.120Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r51",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 51 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T10:26:08.715Z",
+   "updatedAt": "2026-10-26T12:14:44.663Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r52",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 52 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T13:25:30.745Z",
+   "updatedAt": "2026-10-26T15:14:04.051Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r53",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 53 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T16:25:43.402Z",
+   "updatedAt": "2026-10-26T19:09:04.576Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r54",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 54 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T19:25:05.432Z",
+   "updatedAt": "2026-10-26T21:19:07.334Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r55",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 55 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-26T22:25:18.088Z",
+   "updatedAt": "2026-10-27T01:01:57.130Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r56",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 56 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T01:24:40.119Z",
+   "updatedAt": "2026-10-27T03:13:10.570Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r57",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 57 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T04:24:52.775Z",
+   "updatedAt": "2026-10-27T07:08:10.401Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r58",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 58 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T07:27:37.311Z",
+   "updatedAt": "2026-10-27T09:21:49.041Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r58-b0",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long100-r58",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：对一下文档",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-27T08:12:37.311Z",
+   "updatedAt": "2026-10-27T08:52:37.311Z",
+   "archivedAt": "2026-10-27T09:02:37.311Z"
+  },
+  {
+   "id": "task-demo-long100-r58-b1",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "startedBy": "task-demo-long100-r58",
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "并行：跑一遍 e2e",
+   "status": "completed",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "sonnet"
+   },
+   "createdAt": "2026-10-27T08:57:37.311Z",
+   "updatedAt": "2026-10-27T09:37:37.311Z",
+   "archivedAt": "2026-10-27T09:47:37.311Z"
+  },
+  {
+   "id": "task-demo-long100-r59",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 59 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T10:27:49.967Z",
+   "updatedAt": "2026-10-27T13:04:40.644Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r60",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 60 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T13:24:40.008Z",
+   "updatedAt": "2026-10-27T13:39:51.540Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r61",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 61 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T16:24:27.351Z",
+   "updatedAt": "2026-10-27T16:58:38.367Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r62",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 62 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T19:24:14.695Z",
+   "updatedAt": "2026-10-27T19:40:57.299Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r63",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 63 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-27T22:24:02.038Z",
+   "updatedAt": "2026-10-27T22:55:30.576Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r64",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 64 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T01:25:30.634Z",
+   "updatedAt": "2026-10-28T01:57:01.829Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r65",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 65 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T04:25:17.977Z",
+   "updatedAt": "2026-10-28T04:42:01.780Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r66",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 66 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T07:25:05.321Z",
+   "updatedAt": "2026-10-28T07:41:48.913Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r67",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 67 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T10:24:52.664Z",
+   "updatedAt": "2026-10-28T10:56:22.582Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r68",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 68 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T13:26:21.260Z",
+   "updatedAt": "2026-10-28T13:41:34.590Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r69",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 69 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T16:26:08.604Z",
+   "updatedAt": "2026-10-28T16:42:53.248Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r70",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 70 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T19:23:23.958Z",
+   "updatedAt": "2026-10-28T22:11:33.301Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r71",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 71 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-28T22:23:36.614Z",
+   "updatedAt": "2026-10-29T02:19:22.020Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r72",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 72 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T01:23:49.271Z",
+   "updatedAt": "2026-10-29T04:18:56.496Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r73",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 73 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T04:24:01.927Z",
+   "updatedAt": "2026-10-29T08:11:44.452Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r74",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 74 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T07:24:14.584Z",
+   "updatedAt": "2026-10-29T10:12:28.162Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r75",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 75 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T10:24:27.240Z",
+   "updatedAt": "2026-10-29T14:20:17.698Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r76",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 76 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T13:24:39.897Z",
+   "updatedAt": "2026-10-29T17:20:31.429Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r77",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 77 轮：对一下文档",
+   "status": "awaiting-answer",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T16:24:52.553Z",
+   "updatedAt": "2026-10-29T19:13:08.835Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r78",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 78 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T19:25:05.210Z",
+   "updatedAt": "2026-10-29T23:12:53.011Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r79",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 79 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-29T22:25:17.867Z",
+   "updatedAt": "2026-10-30T01:20:32.180Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r80",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 80 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T01:28:54.848Z",
+   "updatedAt": "2026-10-30T01:41:40.644Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r81",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 81 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T04:28:42.191Z",
+   "updatedAt": "2026-10-30T04:53:19.201Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r82",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 82 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T07:29:20.161Z",
+   "updatedAt": "2026-10-30T07:40:59.744Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r83",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 83 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T10:29:07.505Z",
+   "updatedAt": "2026-10-30T10:56:01.915Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r84",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 84 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T13:28:04.222Z",
+   "updatedAt": "2026-10-30T13:54:56.868Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r85",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 85 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T16:27:51.565Z",
+   "updatedAt": "2026-10-30T16:39:30.101Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r86",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 86 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T19:28:29.535Z",
+   "updatedAt": "2026-10-30T19:40:08.573Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r87",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 87 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-30T22:28:16.878Z",
+   "updatedAt": "2026-10-30T22:41:02.100Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r88",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 88 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T01:27:13.596Z",
+   "updatedAt": "2026-10-31T01:39:58.041Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r89",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 89 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T04:27:00.939Z",
+   "updatedAt": "2026-10-31T04:51:35.222Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r90",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 90 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T07:27:38.798Z",
+   "updatedAt": "2026-10-31T11:00:44.331Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r91",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 91 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T10:27:51.454Z",
+   "updatedAt": "2026-10-31T13:53:17.282Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r92",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 92 轮：修小问题",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T13:27:13.485Z",
+   "updatedAt": "2026-10-31T16:52:35.611Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r93",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 93 轮：对一下文档",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T16:27:26.141Z",
+   "updatedAt": "2026-10-31T19:03:11.268Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r94",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 94 轮：跑一遍 e2e",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T19:28:29.424Z",
+   "updatedAt": "2026-10-31T22:04:18.878Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r95",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 95 轮：收尾",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-10-31T22:28:42.081Z",
+   "updatedAt": "2026-11-01T01:54:11.910Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r96",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 96 轮：整理接口",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T01:28:04.111Z",
+   "updatedAt": "2026-11-01T03:57:21.405Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r97",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 97 轮：补测试",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T04:28:16.767Z",
+   "updatedAt": "2026-11-01T08:01:25.359Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r98",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 98 轮：改布局",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T07:25:57.545Z",
+   "updatedAt": "2026-11-01T10:01:36.010Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r99",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 99 轮：查卡顿",
+   "status": "idle",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T10:26:10.202Z",
+   "updatedAt": "2026-11-01T13:51:27.328Z",
+   "archivedAt": null
+  },
+  {
+   "id": "task-demo-long100-r100",
+   "taskId": "task-demo-long100",
+   "topicId": null,
+   "parentId": null,
+   "kind": "main",
+   "runtime": "claude",
+   "profileId": "claude-subscription",
+   "workspaceId": "",
+   "title": "第 100 轮：修小问题",
+   "status": "running",
+   "writer": "workbench",
+   "runtimeRef": null,
+   "options": {
+    "model": "opus"
+   },
+   "createdAt": "2026-11-01T13:07:37.128Z",
+   "updatedAt": "2026-11-01T16:22:36.358Z",
+   "archivedAt": null
+  }
+ ],
+ "profiles": [
+  {
+   "id": "codex-default",
+   "label": "GPT",
+   "runtime": "codex",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "codex-deepseek-flash",
+   "label": "DeepSeek",
+   "runtime": "codex",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "claude-glm",
+   "label": "GLM",
+   "runtime": "claude",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "claude-subscription",
+   "label": "Claude",
+   "runtime": "claude",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "dsh-deepseek",
+   "label": "DeepSeek",
+   "runtime": "dsh",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "ch-3a95246a",
+   "label": "GPT-Dxx",
+   "runtime": "codex",
+   "provider": null,
+   "model": null
+  },
+  {
+   "id": "ch-f28afeea",
+   "label": "Dxx-DS",
+   "runtime": "dsh",
+   "provider": null,
+   "model": null
+  }
+ ],
+ "checklist": [
+  {
+   "id": "demo-c0",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "position": 0,
+   "text": "",
+   "done": true,
+   "doneBySessionId": null,
+   "doneAt": "2026-11-01T16:22:36.358Z",
+   "source": "demo"
+  },
+  {
+   "id": "demo-c1",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "position": 1,
+   "text": "",
+   "done": true,
+   "doneBySessionId": null,
+   "doneAt": "2026-11-01T16:22:36.358Z",
+   "source": "demo"
+  },
+  {
+   "id": "demo-c2",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "position": 2,
+   "text": "",
+   "done": false,
+   "doneBySessionId": null,
+   "doneAt": null,
+   "source": "demo"
+  },
+  {
+   "id": "demo-c3",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "position": 3,
+   "text": "",
+   "done": false,
+   "doneBySessionId": null,
+   "doneAt": null,
+   "source": "demo"
+  },
+  {
+   "id": "demo-c4",
+   "taskId": "task-194b2d66-f529-4d56-a77e-5ac5018d0453",
+   "position": 4,
+   "text": "",
+   "done": false,
+   "doneBySessionId": null,
+   "doneAt": null,
+   "source": "demo"
+  }
+ ],
+ "dependencies": [
+  {
+   "from": "task-3ac0e5a6-de3a-4256-bc31-9263f7a61748",
+   "to": "task-0e21f451-a23f-4a7c-9942-e514d8ebf70e"
+  },
+  {
+   "from": "task-a36fbfe6-f964-4f8d-a8ba-74c444f9d76d",
+   "to": "task-194b2d66-f529-4d56-a77e-5ac5018d0453"
+  }
+ ],
+ "demo": "演示：在真实快照上加了 2 条依赖、amo-flowmaptest 的 5 步清单（勾了 2 步）、开发android版apk 一个等你批准、讨论自动化流程调整 移到完成；加了两个虚构的长任务：「长任务演示」40 轮（第 9、17、26 轮开过会话，第 33 轮等你），「百轮演示」100 轮（第 21、58 轮开过会话，第 77 轮等你）"
+}

@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const src = (name: string) => fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url));
 
@@ -21,5 +21,7 @@ export default defineConfig({
   test: {
     // scripts/: the release scripts' testable parts (platform-publish.mjs).
     include: ["packages/*/src/**/*.test.ts", "scripts/**/*.test.mjs"],
+    // A node:test smoke against a running android-fixture.mjs (node --test), not a vitest suite: vitest finds none in it and fails the run.
+    exclude: [...configDefaults.exclude, "scripts/android-fixture.test.mjs"],
   },
 });

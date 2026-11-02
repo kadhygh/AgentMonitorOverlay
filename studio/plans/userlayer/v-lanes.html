@@ -1,0 +1,1806 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lane 地图 · userlayer 原型</title>
+<style>
+/*@amo-style*/
+/* Claude 风格 · 单文件 HTML 基础样式
+   用法：整段内联进 <style>，之后只追加本页专用样式。
+   来源：2026-10-26 AIWork HTML 展示（推进总览 / 方案图解）。图表系列色 --s1..--s3 已过色盲与对比度校验（浅 / 深两套）。
+   深色切换：<button class="theme" onclick="toggleTheme()">切换深浅色</button>
+   function toggleTheme(){const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=d?'light':'dark'} */
+
+/* ---------- 变量 ---------- */
+:root{color-scheme:light;--bg:#faf9f5;--surface:#ffffff;--surface-2:#f0eee6;--line:#e8e6dc;--text:#141413;--text-2:#5e5d59;--text-3:#87867f;--accent:#c96442;--accent-fill:#d97757;--accent-soft:#f6e9e1;--good:#2e7d5b;--good-soft:#e5efe8;--warn:#c28a1e;--warn-soft:#f6ecd6;--crit:#b5443a;--crit-soft:#f5e1dd;--neutral:#b0aea5;--code:#f0eee6;--s1:#d97757;--s2:#4a86c8;--s3:#5e8c3a;--lane-v:#f5f3ec;--lane-l:#f8eee8;--tip-bg:#141413;--tip-fg:#faf9f5;--shadow:0 1px 2px rgba(20,20,19,.04),0 6px 18px rgba(20,20,19,.04);--serif:"Tiempos Text","Noto Serif SC","Source Han Serif SC",Georgia,serif;--sans:"Styrene B",Inter,"Noto Sans SC","Microsoft YaHei UI",system-ui,sans-serif;--mono:"Cascadia Mono","JetBrains Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}
+
+/* ---------- 基础 ---------- */
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+button{font-family:var(--sans);cursor:pointer}
+.wrap{max-width:1060px;margin:0 auto;padding:30px 28px 80px}
+nav.top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--text-3);margin-bottom:30px}
+nav.top a{color:var(--text-2);text-decoration:none}
+nav.top a:hover{color:var(--accent)}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--text-2);border-radius:8px;padding:5px 12px;font-size:13px}
+.theme:hover{border-color:var(--accent-fill)}
+h1{font:500 31px/1.3 var(--serif);letter-spacing:-.01em;margin:0 0 10px}
+h1 code{font-size:.66em;vertical-align:4px}
+h2{font:500 22px/1.4 var(--serif);margin:52px 0 14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h2 small{font:400 13px var(--sans);color:var(--text-3)}
+h3{font:500 17px/1.4 var(--serif);margin:0 0 8px}
+.lead{color:var(--text-2);margin:0 0 16px;font:15.5px/1.75 var(--serif)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code);padding:1px 6px;border-radius:5px;color:var(--text);word-break:break-word}
+a{color:var(--accent)}
+footer{margin-top:56px;font-size:12.5px;color:var(--text-3);border-top:1px solid var(--line);padding-top:16px}
+
+/* ---------- 容器 ---------- */
+.card,.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow)}
+.card p,.prose{font-family:var(--serif)}
+.prose{font-size:15px;line-height:1.8;color:var(--text-2)}
+.prose li::marker{color:var(--accent-fill)}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:820px){.twocol{grid-template-columns:1fr}}
+
+/* 一句话结论：<div class="tldr"><b class="h">一句话结论</b><ul><li>…</li></ul></div> */
+.tldr{margin:28px 0 0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 26px;box-shadow:var(--shadow);font:16px/1.8 var(--serif)}
+.tldr b.h{display:block;font:600 12px var(--sans);letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+.tldr ul{margin:0;padding-left:20px}
+.tldr li{margin:5px 0}
+.tldr li::marker{color:var(--accent-fill)}
+.tldr code{font-size:.78em}
+
+/* 标签：<span class="pill good"><span class="dot" style="background:var(--good)"></span>✓ 已完成</span> */
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 11px;border-radius:999px;background:var(--surface-2);color:var(--text-2)}
+.pill.good{background:var(--good-soft);color:var(--text)}
+.pill.warn{background:var(--warn-soft);color:var(--text)}
+.pill.crit{background:var(--crit-soft);color:var(--text)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+
+/* 数字卡片：<div class="tiles"><div class="tile"><div class="k">标签</div><div class="v">68<small> 项</small></div><div class="d">说明</div></div></div> */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 18px;box-shadow:var(--shadow)}
+.tile .k{font-size:12.5px;color:var(--text-3)}
+.tile .v{font:500 34px/1.15 var(--serif);margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.tile .v small{font:400 14px var(--sans);color:var(--text-3);margin-left:2px}
+.tile .d{font-size:12px;color:var(--text-3);line-height:1.5}
+
+/* 时间线：<ol class="tl"><li><span class="node">✓</span><details class="stage"><summary><div class="sname">P1 标题<span>副标题</span></div><div class="sone">一句话</div><div><span class="commit">abc1234</span><span class="chev">▸</span></div></summary><div class="sbody">…</div></details></li></ol>
+   节点：.node（完成）/ .node.warn（停过或待处理）/ .node.todo（未开始） */
+.tl{position:relative;margin:0;padding:0;list-style:none}
+.tl::before{content:"";position:absolute;left:13px;top:18px;bottom:18px;width:1.5px;background:var(--line)}
+.tl li{position:relative;padding-left:42px;margin-bottom:10px}
+.tl .node{position:absolute;left:3px;top:15px;width:22px;height:22px;border-radius:50%;background:var(--good);display:grid;place-items:center;font-size:11px;color:#fff;font-weight:700;box-shadow:0 0 0 4px var(--bg)}
+.tl .node.warn{background:var(--warn)}
+.tl .node.todo{background:var(--surface);border:1.5px solid var(--neutral);color:var(--text-3)}
+details.stage{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+details.stage>summary{list-style:none;cursor:pointer;padding:12px 18px;display:grid;grid-template-columns:130px 1fr auto;gap:14px;align-items:center}
+details.stage>summary::-webkit-details-marker{display:none}
+details.stage>summary:hover .sname{color:var(--accent)}
+details.stage[open]>summary{border-bottom:1px solid var(--line)}
+@media (max-width:820px){details.stage>summary{grid-template-columns:1fr}}
+.sname{font:500 16px/1.35 var(--serif)}
+.sname span{display:block;font:400 12px var(--sans);color:var(--text-3);margin-top:2px}
+.sone{color:var(--text-2);font-size:14px;line-height:1.6}
+.commit{font-family:var(--mono);font-size:12px;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:6px;white-space:nowrap}
+.commit.none{color:var(--text-3);background:var(--surface-2)}
+.chev{display:inline-block;transition:transform .15s;color:var(--text-3);margin-left:8px}
+details[open] .chev{transform:rotate(90deg)}
+.sbody{padding:12px 22px 16px;font:15px/1.75 var(--serif);color:var(--text-2)}
+.sbody ul{margin:0;padding-left:18px}
+.sbody li{margin:4px 0}
+.sbody li::marker{color:var(--accent-fill)}
+.sbody b{color:var(--text);font-weight:600}
+.sbody code{font-size:.8em}
+
+/* 折叠块：<details class="fold"><summary>展开 8 条</summary>…</details> */
+details.fold>summary{cursor:pointer;color:var(--accent);font-size:14px}
+
+/* ---------- 表格 / 图例 / 提示 ---------- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text-3);font-weight:500;font-size:12.5px}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.s-ico{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-2);margin-bottom:12px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.hatch{background:repeating-linear-gradient(45deg,var(--neutral) 0 2px,transparent 2px 6px);border:1px solid var(--neutral)}
+.tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-size:12.5px;line-height:1.55;padding:8px 11px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:9;max-width:290px}
+
+/* ---------- 控件 ---------- */
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:6px 13px;font-size:13.5px}
+.btn.pri{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 13px;color:var(--text-2);font-size:13.5px}
+.chips button.on{border-color:var(--accent-fill);background:var(--accent-soft);color:var(--text)}
+
+/* ---------- 流程图（内联 SVG） ---------- */
+svg text{font-family:var(--sans)}
+.node-g{cursor:pointer}
+.node-g rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;transition:stroke .15s}
+.node-g:hover rect,.node-g.sel rect{stroke:var(--accent-fill);stroke-width:2.2}
+.node-g .t{font-size:13px;font-weight:600;fill:var(--text)}
+.node-g .s{font-size:11px;fill:var(--text-3)}
+.node-g.bad rect{stroke:var(--crit);stroke-dasharray:5 4;fill:var(--crit-soft)}
+.edge{fill:none;stroke:var(--text-3);stroke-width:1.5}
+.elab{font-size:11px;fill:var(--text-2)}
+
+/* 风险卡：<div class="risks"><div class="risk"><b>标题</b><p>说明</p><div class="m">缓解</div></div></div> */
+.risks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.risk{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px 16px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.risk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warn)}
+.risk b{display:block;margin-bottom:6px;font:500 16px var(--serif)}
+.risk p{margin:0;font:14.5px/1.75 var(--serif);color:var(--text-2)}
+.risk .m{font-size:12.5px;color:var(--text-3);margin-top:8px}
+
+/*@/amo-style*/
+/* ---- 本页：3D 倾斜视角的 lane 地图 ---- */
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);user-select:none}
+#cv{position:fixed;inset:0;width:100vw;height:100vh;display:block;touch-action:none;cursor:grab}
+#cv.drag{cursor:grabbing}
+#cv.hot{cursor:pointer}
+.hud{position:fixed;z-index:5;font-family:var(--sans)}
+#crumb{left:16px;top:14px;display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 6px;box-shadow:var(--shadow);font-size:13.5px}
+#crumb button{border:0;background:none;color:var(--text-2);padding:3px 8px;border-radius:6px;font-size:13.5px}
+#crumb button:hover{background:var(--surface-2);color:var(--text)}
+#crumb button.cur{color:var(--text);font-weight:600;cursor:default}
+#crumb button.cur:hover{background:none}
+#crumb .sep{color:var(--text-3);font-size:12px}
+#modes{left:50%;top:14px;transform:translateX(-50%);display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:3px;box-shadow:var(--shadow)}
+#modes button{border:0;background:none;color:var(--text-2);padding:4px 13px 5px;border-radius:9px;display:flex;flex-direction:column;align-items:center;line-height:1.25}
+#modes button b{font:500 13.5px var(--sans)}
+#modes button small{font-size:11px;color:var(--text-3)}
+#modes button:hover{background:var(--surface-2)}
+#modes button.on{background:var(--text);color:var(--bg)}
+#modes button.on small{color:var(--bg);opacity:.75}
+#tr{right:14px;top:14px;display:flex;gap:8px;align-items:center}
+#tr .theme,#tr .btn{font-size:13px;padding:5px 11px}
+#tr a.back{font-size:13px;color:var(--text-2);text-decoration:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 11px}
+#tr a.back:hover{border-color:var(--accent-fill)}
+#need{border:1px solid var(--accent-fill);background:var(--accent-fill);color:#fff;border-radius:8px;padding:5px 12px;font:600 13.5px var(--sans)}
+#need:hover{filter:brightness(1.06)}
+#need.none{background:var(--surface);color:var(--text-2);border-color:var(--line);font-weight:400}
+#legend{left:16px;bottom:14px;background:color-mix(in srgb,var(--surface) 92%,transparent);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--text-2);display:flex;flex-direction:column;gap:4px;max-width:520px}
+#legend .row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+#legend .k{display:inline-flex;align-items:center;gap:5px}
+#legend svg{width:13px;height:13px;flex:none}
+#legend .sw{width:22px;height:8px;border-radius:3px;display:inline-block;border:1px solid var(--line);margin:0}
+#legend .src{color:var(--text-3);font-size:11.5px}
+#legend button{border:0;background:none;color:var(--accent);padding:0;font-size:12px}
+#zoom{right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px}
+#zoom button{width:34px;height:32px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;font:500 16px var(--sans);box-shadow:var(--shadow)}
+#zoom button.all{font-size:12px;width:auto;padding:0 6px}
+#zoom button:hover{border-color:var(--accent-fill)}
+#reset{right:58px;bottom:14px;border:0;background:none;color:var(--text-3);font-size:12px;padding:4px}
+#reset:hover{color:var(--accent)}
+body.winopen #zoom{right:432px}
+body.winopen #reset{right:476px}
+/* 弹出窗口：普通的 2D 窗口，在右侧 */
+#win{position:fixed;z-index:8;right:14px;top:66px;width:404px;max-height:calc(100vh - 150px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 40px rgba(20,20,19,.16),0 1px 3px rgba(20,20,19,.08);padding:16px 18px 18px;font-family:var(--sans);opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s;pointer-events:none}
+#win.open{opacity:1;transform:none;pointer-events:auto}
+#win .wh{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+#win .wh .x{margin-left:auto;border:1px solid var(--line);background:var(--surface);color:var(--text-2);border-radius:7px;padding:2px 9px;font-size:12px}
+#win .wh .x:hover{border-color:var(--accent-fill);color:var(--text)}
+#win h2{font:500 19px/1.4 var(--serif);margin:2px 0 8px;display:block}
+#win .num{color:var(--text-3);font:13px var(--sans);margin-right:6px}
+#win .meta2{font-size:12.5px;color:var(--text-2);line-height:1.75;margin:0 0 10px}
+#win .meta2 b{font-weight:500;color:var(--text)}
+#win .meta2 a{cursor:pointer}
+#win .sum{font:15px/1.7 var(--serif);color:var(--text);margin:8px 0}
+#win .body{font:14px/1.75 var(--serif);color:var(--text-2)}
+#win .body p{margin:6px 0}
+#win .sec{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+#win .sec>.h{font:600 11.5px var(--sans);letter-spacing:.08em;color:var(--text-3);margin-bottom:6px}
+#win .concl{background:var(--good-soft);border-radius:10px;padding:9px 12px;font:14px/1.7 var(--serif);margin-top:10px}
+#win .concl b{font:600 12px var(--sans);color:var(--good);margin-right:6px}
+#win .ask .q{font:500 15.5px/1.55 var(--serif);margin-bottom:8px}
+#win .opt{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:8px 11px;margin:6px 0;font-size:14px;line-height:1.45}
+#win .opt:hover{border-color:var(--accent-fill)}
+#win .opt.sel{border-color:var(--accent-fill);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent-fill) inset}
+#win .opt .d{display:block;font-size:12.5px;color:var(--text-2)}
+#win .opt .rec{float:right;font-size:11.5px;color:var(--accent);border:1px solid var(--accent-fill);border-radius:999px;padding:0 7px;margin-left:8px}
+#win .why{font-size:12.5px;color:var(--text-2);margin:4px 0 8px}
+#win .why b{color:var(--accent);font-weight:500}
+#win input.note{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;padding:7px 10px;font:13.5px var(--sans);margin:4px 0 8px}
+#win input.note:focus{outline:none;border-color:var(--accent-fill)}
+#win .acts{display:flex;gap:8px;flex-wrap:wrap}
+#win .acts .btn{font-size:13.5px}
+#win .acts .btn.pri:disabled{opacity:.45;cursor:default}
+#win .answered{background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:13.5px;color:var(--text)}
+#win .ev{font-size:13px;color:var(--text-2);margin:4px 0;display:flex;gap:8px;align-items:baseline}
+#win .ev .k{font-size:11.5px;color:var(--text-3);flex:none;width:30px}
+#win .ev code{font-size:12px}
+#win .lk{display:flex;gap:8px;align-items:baseline;width:100%;text-align:left;border:0;background:none;padding:5px 6px;margin:0 -6px;border-radius:7px;color:var(--text);font-size:13.5px}
+#win .lk:hover{background:var(--surface-2)}
+#win .lk .r{color:var(--text-3);font-size:12.5px;flex:none}
+#win .lk .n{color:var(--text-2);font-size:12.5px}
+#win .lk .st{margin-left:auto;font-size:12px;color:var(--text-3);flex:none}
+#win .next{margin-top:12px;display:flex;justify-content:flex-end}
+#foot{position:fixed;z-index:4;left:50%;bottom:6px;transform:translateX(-50%);font-size:11px;color:var(--text-3);font-family:var(--sans);pointer-events:none;white-space:nowrap}
+@media (max-width:1320px){#modes button small{display:none}#legend{max-width:440px}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="crumb" class="hud"></div>
+<div id="modes" class="hud"></div>
+<div id="tr" class="hud">
+  <button id="need" title="依次飞到每道闸门">! 0 件等你</button>
+  <a class="back" href="index.html">← 全部表达</a>
+  <button class="theme" onclick="AMO.toggleTheme()">切换深浅色</button>
+</div>
+<div id="legend" class="hud"></div>
+<div id="zoom" class="hud"><button data-z="in" title="放大">+</button><button data-z="out" title="缩小">−</button><button class="all" data-z="all" title="看全部任务">全部</button></div>
+<button id="reset" class="hud" onclick="AMO.reset()">恢复假数据</button>
+<div id="win" role="dialog" aria-label="条目详情"></div>
+<script id="amo-data" type="application/json">{"spec":"amo.datalayer/0.2","note":"假数据：照「AMO迭代」专题的 6 个任务和 10-30～11-01 的提交编的，细节有虚构。0.2 比 0.1 多了 lanes（任务、子车道、支线）和条目上的 lane / at。","context":{"id":"ctx-amo-iter","title":"AMO迭代","goal":"AMO 这几天的迭代：维护、安卓版、远程、新方向的试验。","updatedAt":"2026-11-01T10:40:00+08:00"},"viewer":{"name":"你","lastSeenAt":"2026-10-31T21:00:00+08:00"},"now":"2026-11-01T10:40:00+08:00","agents":[{"id":"me","name":"flowmap 主会话","model":"Opus 5.5","status":"running","item":"f9","doing":"出几版 lane 方向的原型"},{"id":"duty","name":"值守","model":"Opus 5.5","status":"running","item":"d4","doing":"修管理页曲线在重启那段断开"},{"id":"iter","name":"维护迭代","model":"Opus 5.5","status":"idle","doing":"11-01 早上做完，等你看"},{"id":"android","name":"安卓任务","model":"Codex","status":"waiting","item":"a8","doing":"等你回答：安装包留几个"},{"id":"curator","name":"整理员","model":"Sonnet 5.5","status":"idle","doing":"08:12 整理完中转审核"},{"id":"sa","name":"示例 A","model":"Opus 5.5","status":"idle","doing":"书房 / 书桌 / 地图 做完"},{"id":"sb","name":"示例 B","model":"Opus 5.5","status":"idle","doing":"简报 / 报纸 / 日记 做完"},{"id":"sc","name":"示例 C","model":"Opus 5.5","status":"idle","doing":"消息 / 刷卡片 / 办公室 做完"}],"lanes":[{"id":"L-iter","kind":"task","title":"AMO迭代","short":"AMO迭代","status":"done","column":"review","startAt":"2026-10-29T20:00:00+08:00","endAt":"2026-10-31T05:34:00+08:00"},{"id":"L-auto","kind":"task","title":"讨论自动化流程调整","short":"自动化流程","status":"done","column":"review","startAt":"2026-10-31T08:40:00+08:00","endAt":"2026-10-31T10:10:00+08:00"},{"id":"L-maint","kind":"task","title":"10-31维护","short":"10-31维护","status":"running","column":"review","startAt":"2026-10-31T09:40:00+08:00"},{"id":"L-duty","kind":"sub","parent":"L-maint","title":"值守 · 问题页","short":"值守","status":"running","agent":"duty","startAt":"2026-10-31T10:30:00+08:00"},{"id":"L-rel","kind":"sub","parent":"L-maint","title":"打包和发布流程","short":"打包流程","status":"done","agent":"iter","startAt":"2026-10-31T10:40:00+08:00","endAt":"2026-10-31T19:40:00+08:00"},{"id":"L-rev","kind":"sub","parent":"L-maint","title":"中转 0.7.x 审核","short":"中转审核","status":"waiting","agent":"curator","startAt":"2026-11-01T07:55:00+08:00"},{"id":"L-ts","kind":"task","title":"给 al20 那个设备也加下 tailscale 转发","short":"al20 转发","status":"waiting","column":"review","startAt":"2026-10-31T11:00:00+08:00","endAt":"2026-10-31T11:27:00+08:00"},{"id":"L-and","kind":"task","title":"开发 android 版 apk","short":"安卓版","status":"waiting","column":"review","agent":"android","startAt":"2026-10-30T14:00:00+08:00"},{"id":"L-and-web","kind":"branch","branchKind":"idea","parent":"L-and","forkFrom":"a2","end":"dropped","title":"试 WebView 套壳","short":"WebView 套壳","status":"done","startAt":"2026-10-30T16:00:00+08:00","endAt":"2026-10-30T19:00:00+08:00"},{"id":"L-flow","kind":"task","title":"amo-flowmaptest","short":"flowmap 试验","status":"running","column":"doing","agent":"me","startAt":"2026-11-01T08:50:00+08:00"},{"id":"L-flow-a","kind":"branch","branchKind":"session","parent":"L-flow","forkFrom":"f4","mergeInto":"f5","end":"merged","title":"表达示例 A：书房 / 书桌 / 地图","short":"示例 A","status":"done","agent":"sa","startAt":"2026-11-01T09:40:00+08:00","endAt":"2026-11-01T10:12:00+08:00"},{"id":"L-flow-b","kind":"branch","branchKind":"session","parent":"L-flow","forkFrom":"f4","mergeInto":"f5","end":"merged","title":"表达示例 B：简报 / 报纸 / 日记","short":"示例 B","status":"done","agent":"sb","startAt":"2026-11-01T09:40:00+08:00","endAt":"2026-11-01T10:02:00+08:00"},{"id":"L-flow-c","kind":"branch","branchKind":"session","parent":"L-flow","forkFrom":"f4","mergeInto":"f5","end":"merged","title":"表达示例 C：消息 / 刷卡片 / 办公室","short":"示例 C","status":"done","agent":"sc","startAt":"2026-11-01T09:40:00+08:00","endAt":"2026-11-01T10:06:00+08:00"},{"id":"L-flow-swipe","kind":"branch","branchKind":"idea","parent":"L-flow","forkFrom":"f6","end":"parked","title":"刷卡片做拍板入口","short":"刷卡片","status":"parked","startAt":"2026-11-01T10:20:00+08:00","endAt":"2026-11-01T10:30:00+08:00"}],"items":[{"id":"i1","num":1,"lane":"L-iter","at":"2026-10-29T20:00:00+08:00","type":"milestone","status":"settled","short":"开题","title":"开「AMO迭代」专题","summary":"把这几天 AMO 的迭代放进一个专题。"},{"id":"i2","num":2,"lane":"L-iter","at":"2026-10-30T15:00:00+08:00","type":"conclusion","status":"settled","short":"白板就是记忆","title":"canvasflow 方向：白板就是记忆","summary":"人和所有会话读写同一块板；不做常驻看板员（费 token）。","conclusion":"写进 studio/plans/canvas-workflow.md，只是方向，没开工。","evidence":[{"kind":"file","ref":"studio/plans/canvas-workflow.md","note":"10-30 的讨论总结"}]},{"id":"i3","num":3,"lane":"L-iter","at":"2026-10-30T19:30:00+08:00","type":"decision","status":"settled","short":"画布只在被要求时用","title":"agent 不主动用画布","summary":"主动铺画布的效果不好。","conclusion":"只有人要求时才用，用就用足。","ask":{"question":"agent 还要不要自己判断何时用画布？","options":[{"id":"ask","label":"只在人要求时"},{"id":"auto","label":"合适就用"}],"recommend":"ask","why":"主动用的几次都不对路。","answer":{"option":"ask","note":"","at":"2026-10-30T19:40:00+08:00"}}},{"id":"i4","num":4,"lane":"L-iter","at":"2026-10-31T05:34:00+08:00","type":"milestone","status":"settled","short":"交接","title":"交接，移到待审核","summary":"主线的事分到各个任务里了。"},{"id":"u1","num":5,"lane":"L-auto","at":"2026-10-31T08:50:00+08:00","type":"question","status":"settled","short":"维护节奏","title":"一个人快速迭代，维护节奏怎么定？","summary":"每天改很多，打包发布容易乱。","conclusion":"只从提交过的 master 打包，走 npm run release；值守在单独的目录里修小问题。"},{"id":"u2","num":6,"lane":"L-auto","at":"2026-10-31T09:40:00+08:00","type":"conclusion","status":"settled","short":"每天一个维护任务","title":"每天一个维护任务 + 3 个提示词模板","summary":"开始维护、问题页值守、维护迭代。","conclusion":"写进 studio/plans/release.md。","evidence":[{"kind":"file","ref":"studio/plans/release.md","note":"维护节奏"}]},{"id":"m1","num":7,"lane":"L-maint","at":"2026-10-31T09:47:00+08:00","type":"milestone","status":"settled","short":"Studio 0.9.17","title":"测试通道：Studio 0.9.17","summary":"值守：时间、先检查再开会话。","evidence":[{"kind":"commit","ref":"a2f61989","note":"chore(studio): test channel — Studio 0.9.17"}]},{"id":"m2","num":8,"lane":"L-maint","at":"2026-10-31T11:15:00+08:00","type":"milestone","status":"settled","short":"三个模板","title":"开始维护 / 问题页值守 / 维护迭代 三个模板","evidence":[{"kind":"commit","ref":"76426012","note":"feat(maintenance): the three prompt templates"}]},{"id":"m3","num":9,"lane":"L-maint","at":"2026-10-31T18:42:00+08:00","type":"milestone","status":"settled","short":"Studio 0.9.20","title":"测试通道：Studio 0.9.20、Reviewer 0.9.9","evidence":[{"kind":"commit","ref":"ef3ac796","note":"chore(release)"}]},{"id":"m4","num":10,"lane":"L-maint","at":"2026-11-01T10:31:00+08:00","type":"milestone","status":"settled","short":"Studio 0.9.23","title":"测试通道：Studio 0.9.23","evidence":[{"kind":"commit","ref":"a3d4af97","note":"chore(release): test channel — AMO Studio 0.9.23"}]},{"id":"m5","num":11,"lane":"L-maint","at":"2026-11-01T10:35:00+08:00","type":"decision","status":"needs_you","owner":"human","source":"iter","short":"验收 10-31 维护","title":"10-31 的维护可以收尾了吗？","summary":"值守还在修一个曲线问题，其它都发了。","ask":{"question":"10-31 维护任务怎么收？","options":[{"id":"close","label":"收尾，剩下的进 11-01 维护","detail":"曲线问题挪到明天的任务"},{"id":"wait","label":"等曲线修完再收","detail":""}],"recommend":"close","why":"剩下的只有一个小问题，挂在旧任务上容易忘。"}},{"id":"d1","num":12,"lane":"L-duty","at":"2026-10-31T10:51:00+08:00","type":"conclusion","status":"settled","short":"建议单开讨论","title":"问题页新状态「建议单开讨论」","summary":"AI 觉得太大、不是顺手能修的就标这个。","evidence":[{"kind":"commit","ref":"a3a71205","note":"feat(issues)"}]},{"id":"d2","num":13,"lane":"L-duty","at":"2026-10-31T18:01:00+08:00","type":"bug","status":"settled","short":"回答进原会话","title":"人在问题上的回答要回到原来那个会话","summary":"之前会新开一个会话，接不上。","conclusion":"Studio 记住最后处理它的会话。","evidence":[{"kind":"commit","ref":"ab0c603f","note":"fix(duty)"}]},{"id":"d3","num":14,"lane":"L-duty","at":"2026-10-31T19:14:00+08:00","type":"decision","status":"settled","short":"改叫需要确认","title":"「建议单开讨论」改成「需要确认」","summary":"AI 在问题里和人一轮一轮谈，不再要求单开。","evidence":[{"kind":"commit","ref":"42fb08c7","note":"feat(issues)"}]},{"id":"d4","num":15,"lane":"L-duty","at":"2026-11-01T08:20:00+08:00","type":"bug","status":"working","owner":"duty","short":"曲线连直线","title":"管理页曲线在中转重启那段连成直线","summary":"重启几秒没有数据，曲线把前后两个点连起来，看着很平稳。","eta":"今天上午"},{"id":"p1","num":16,"lane":"L-rel","at":"2026-10-31T10:46:00+08:00","type":"conclusion","status":"settled","short":"npm run release","title":"发布都走 npm run release","summary":"status、auto、relay-service、promote，只从 master 的提交打包。","evidence":[{"kind":"commit","ref":"a8c55c13","note":"feat(release)"}]},{"id":"p2","num":17,"lane":"L-rel","at":"2026-10-31T11:47:00+08:00","type":"bug","status":"settled","short":"脏工作区不部署","title":"主工作区有没提交的中转改动时，部署停下","summary":"上午一次没提交的部署被下一次冲掉了。","conclusion":"relay-service 发现没提交的改动就停，要继续得加 --main-dirty-ok。","evidence":[{"kind":"commit","ref":"0337b5b9","note":"relay-service stops when the main checkout has uncommitted relay changes"}]},{"id":"p3","num":18,"lane":"L-rel","at":"2026-10-31T18:14:00+08:00","type":"conclusion","status":"settled","short":"打包进度上问题页","title":"问题页显示正在打的包","summary":"测试 → 提交版本 → 打包 → 发布，每步多久。","evidence":[{"kind":"commit","ref":"c98b64eb","note":"feat(relay)"}]},{"id":"p4","num":19,"lane":"L-rel","at":"2026-10-31T19:20:00+08:00","type":"bug","status":"settled","short":"NaN 秒","title":"打包记录显示 NaN 秒","conclusion":"没有分步时间的旧记录显示「—」。","evidence":[{"kind":"commit","ref":"8f34363b","note":"fix(relay)"}]},{"id":"r1","num":20,"lane":"L-rev","at":"2026-11-01T08:00:00+08:00","type":"finding","status":"working","owner":"iter","short":"页签数字不刷新","title":"点了「前往讨论」，「要你看」的数字要刷新才减","summary":"页签数字只在加载时算一次。"},{"id":"r2","num":21,"lane":"L-rev","at":"2026-11-01T08:12:00+08:00","type":"conclusion","status":"settled","short":"整理完","title":"整理员整理完中转 0.7.x","summary":"新增 3 条，补了 4 条关联。"},{"id":"r3","num":22,"lane":"L-rev","at":"2026-11-01T08:10:00+08:00","type":"decision","status":"needs_you","owner":"human","source":"curator","short":"何时部署","title":"今天什么时候再部署一次中转？","summary":"修复上午能好，部署会让中转重启几秒。","ask":{"question":"修好之后什么时候部署？","options":[{"id":"now","label":"修好就部署","detail":"最快，可能打断正在聊天的人"},{"id":"noon","label":"午饭时间部署","detail":"在线的人最少"},{"id":"night","label":"攒到晚上","detail":""}],"recommend":"noon","why":"两个修复都不急，午饭时间断线影响最小。"}},{"id":"r4","num":23,"lane":"L-rev","at":"2026-11-01T08:15:00+08:00","type":"decision","status":"needs_you","owner":"human","source":"iter","short":"中断怎么记","title":"打包中途断了（电脑关了），记失败还是单独记「中断」？","summary":"现在一律记失败，失败率虚高，中位数也被拉偏。","ask":{"question":"断掉的打包怎么记？","options":[{"id":"fail","label":"维持记失败"},{"id":"interrupted","label":"新增「中断」","detail":"不算进失败率和中位数"}],"recommend":"interrupted","why":"关机不是打包的问题。"}},{"id":"t1","num":24,"lane":"L-ts","at":"2026-10-31T11:05:00+08:00","type":"finding","status":"settled","short":"查 szk 的规则","title":"现有转发：100.107.87.64:47120 → 172.16.8.85:47120","summary":"szk 一条 portproxy 加一条防火墙规则。"},{"id":"t2","num":25,"lane":"L-ts","at":"2026-10-31T11:20:00+08:00","type":"conclusion","status":"settled","short":"加 al20 规则","title":"al20 加了一条防火墙规则","summary":"portproxy 共用，一台设备一条防火墙规则。","conclusion":"重启后转发不通就重启 iphlpsvc。"},{"id":"t3","num":26,"lane":"L-ts","at":"2026-10-31T11:27:00+08:00","type":"question","status":"waiting","owner":"team:al20 手机","short":"等 al20 试","title":"等 al20 手机打开服务器确认","summary":"电脑这边通了，手机那边还没人试。"},{"id":"a1","num":27,"lane":"L-and","at":"2026-10-30T14:00:00+08:00","type":"milestone","status":"settled","short":"开工","title":"安卓版开工","summary":"方案 studio/plans/android-studio.md。"},{"id":"a2","num":28,"lane":"L-and","at":"2026-10-30T15:30:00+08:00","type":"question","status":"settled","short":"原生还是套壳","title":"原生写，还是 WebView 套 Studio 的界面？","summary":"套壳快，但手机上不好用。","conclusion":"试了套壳（支线），手势和键盘都别扭，改原生。"},{"id":"aw1","num":29,"lane":"L-and-web","at":"2026-10-30T17:00:00+08:00","type":"finding","status":"settled","short":"套壳很别扭","title":"WebView 套壳：滚动和输入法都别扭","summary":"Studio 的界面是给鼠标设计的。"},{"id":"a3","num":30,"lane":"L-and","at":"2026-10-31T16:00:00+08:00","type":"milestone","status":"settled","short":"provision 脚本","title":"android-provision：一键装开发环境","evidence":[{"kind":"file","ref":"studio/scripts/android-provision.mjs","note":""}]},{"id":"a4","num":31,"lane":"L-and","at":"2026-10-31T20:15:00+08:00","type":"milestone","status":"settled","short":"发到团队服务器","title":"安装包发到团队服务器","summary":"relay-mac.mjs android-publish，登录的人能下载。","evidence":[{"kind":"commit","ref":"1c84390c","note":"android-publish"}]},{"id":"a5","num":32,"lane":"L-and","at":"2026-11-01T10:29:00+08:00","type":"milestone","status":"settled","short":"0.2.0 手机重做","title":"安卓 0.2.0：为手机重写，已发布","evidence":[{"kind":"commit","ref":"f6283a74","note":"docs(handoff): the Android app 0.2.0"}]},{"id":"a8","num":33,"lane":"L-and","at":"2026-11-01T10:33:00+08:00","type":"question","status":"needs_you","owner":"human","source":"android","short":"安装包留几个","title":"服务器上的安卓安装包只留最新 3 个，够不够回滚？","summary":"连发 3 个测试包，正式版那个就被删了。","ask":{"question":"安卓安装包保留几个？","options":[{"id":"keep3","label":"维持最新 3 个"},{"id":"channel","label":"最新 3 个 + 通道指向的","detail":"和桌面工具一样"}],"recommend":"channel","why":"和桌面工具的规则一样，不用记两套。"}},{"id":"a9","num":34,"lane":"L-and","at":"2026-11-01T10:36:00+08:00","type":"task","status":"needs_you","owner":"human","source":"android","short":"装上试一下","title":"在手机上装 0.2.0 试一下","summary":"要你在真手机上装一次，看看登录和任务列表。"},{"id":"f1","num":35,"lane":"L-flow","at":"2026-11-01T08:55:00+08:00","type":"finding","status":"settled","short":"找回 10-30 讨论","title":"找回 10-30 的 canvasflow 讨论总结","summary":"白板就是记忆、不做常驻看板员。","evidence":[{"kind":"file","ref":"studio/plans/canvas-workflow.md","note":""}]},{"id":"f2","num":36,"lane":"L-flow","at":"2026-11-01T09:05:00+08:00","type":"decision","status":"settled","short":"三层架构","title":"换个角度：userlayer / datalayer / agentlayer","summary":"数据只为 AI 设计，表达只为人设计，表达随便换。","conclusion":"agentlayer 分整理、表达、推进三种 agent。"},{"id":"f3","num":37,"lane":"L-flow","at":"2026-11-01T09:25:00+08:00","type":"conclusion","status":"settled","short":"规范 0.1","title":"datalayer 规范 0.1 + 假数据","evidence":[{"kind":"file","ref":"studio/plans/userlayer/README.md","note":""}]},{"id":"f4","num":38,"lane":"L-flow","at":"2026-11-01T09:40:00+08:00","type":"milestone","status":"settled","short":"开 3 个会话","title":"开 3 个会话并行做 9 种表达"},{"id":"fa1","num":39,"lane":"L-flow-a","at":"2026-11-01T10:12:00+08:00","type":"conclusion","status":"settled","short":"书房/书桌/地图","title":"示例 A 做完","summary":"地图：条目多了也撑得住。"},{"id":"fb1","num":40,"lane":"L-flow-b","at":"2026-11-01T10:02:00+08:00","type":"conclusion","status":"settled","short":"简报/报纸/日记","title":"示例 B 做完","summary":"日记最能找回上下文。"},{"id":"fc1","num":41,"lane":"L-flow-c","at":"2026-11-01T10:06:00+08:00","type":"conclusion","status":"settled","short":"消息/刷卡/办公室","title":"示例 C 做完","summary":"刷卡片拍板最快。"},{"id":"f5","num":42,"lane":"L-flow","at":"2026-11-01T10:14:00+08:00","type":"milestone","status":"settled","short":"9 种到齐","title":"9 种表达到齐，一处回答处处可见"},{"id":"f6","num":43,"lane":"L-flow","at":"2026-11-01T10:20:00+08:00","type":"decision","status":"settled","short":"选刷卡 + 地图","title":"刷卡片和地图更合理","summary":"地图管全局，刷卡片管拍板。"},{"id":"fs1","num":44,"lane":"L-flow-swipe","at":"2026-11-01T10:30:00+08:00","type":"decision","status":"parked","short":"刷卡延后","title":"刷卡片先不做","conclusion":"延后，先做地图。"},{"id":"f7","num":45,"lane":"L-flow","at":"2026-11-01T10:30:00+08:00","type":"decision","status":"settled","short":"倾斜视角 + lane","title":"地图用倾斜视角，每个任务一条 lane","summary":"lane 能分支、长出节点，节点旁出内容；大地图 ↔ 单任务 ↔ 层级丝滑缩放。","conclusion":"节点上立 billboard 牌子，点了弹出常规窗口。"},{"id":"f9","num":46,"lane":"L-flow","at":"2026-11-01T10:40:00+08:00","type":"task","status":"working","owner":"me","short":"lane 方向出几版","title":"lane 的方向出几版看看","summary":"向右、往远处、放射、自由蜿蜒……"}],"links":[{"from":"a9","to":"t3","rel":"depends","note":"手机要先能通过 tailscale 连上服务器"},{"from":"f2","to":"i2","rel":"supersedes","note":"从「白板就是记忆」换成三层架构"},{"from":"f1","to":"i2","rel":"answers"},{"from":"r4","to":"p3","rel":"affects","note":"中位数算法要跟着改"},{"from":"m5","to":"d4","rel":"depends","note":"或者把它挪到明天"},{"from":"r3","to":"d4","rel":"depends","note":"修好才值得部署"},{"from":"r3","to":"r1","rel":"depends","note":"修好才值得部署"},{"from":"a8","to":"p1","rel":"affects","note":"和桌面工具的清理规则对齐"}]}</script>
+<script>
+/*@amo-lib*/
+// userlayer 各表达共用的读写层（2026-11-01 原型）。
+// 读 <script id="amo-data"> 里的 datalayer；人的操作记在 localStorage，所有表达共用一份，
+// 所以在一种表达里回答了，换一种表达打开也能看到——这正是「表现随便换」要验证的。
+window.AMO = (() => {
+  const raw = JSON.parse(document.getElementById("amo-data").textContent);
+  const KEY = "amo-userlayer:" + raw.context.id;
+  const NOW = raw.now || "2026-11-01T08:30:00+08:00"; // 假数据的「现在」，让各表达的相对时间一致
+  const subs = [];
+  // 人的操作按假数据的「现在」往后排（第 n 次操作 = NOW + n 分钟），写成和数据一样的 +08:00 格式，
+  // 这样字符串比较、排序、「上次以来」都和假数据对得上（B、C 组 11-01 的建议）
+  function fakeNow(n) {
+    const d = new Date(new Date(NOW).getTime() + n * 60000 + 8 * 3600000);
+    return d.toISOString().slice(0, 19) + "+08:00";
+  }
+
+  const TYPE = {
+    decision: { label: "决定", hint: "要你拍板" },
+    question: { label: "问题", hint: "要你回答" },
+    bug: { label: "bug", hint: "出错的地方" },
+    finding: { label: "发现", hint: "值得注意" },
+    task: { label: "事项", hint: "要做的事" },
+    conclusion: { label: "结论", hint: "已经定了" },
+    milestone: { label: "节点", hint: "发布、开工、交接" },
+  };
+  // 状态不能只靠颜色：每个都带符号和文字
+  const STATUS = {
+    needs_you: { label: "等你", sym: "!", color: "var(--accent-fill)", soft: "var(--accent-soft)" },
+    working: { label: "进行中", sym: "◐", color: "var(--s2)", soft: "var(--surface-2)" },
+    waiting: { label: "等别人", sym: "○", color: "var(--warn)", soft: "var(--warn-soft)" },
+    settled: { label: "已定", sym: "✓", color: "var(--good)", soft: "var(--good-soft)" },
+    parked: { label: "搁置", sym: "–", color: "var(--neutral)", soft: "var(--surface-2)" },
+  };
+  const REL = {
+    depends: { out: "要等", in: "被它卡住的" },
+    affects: { out: "会影响", in: "受它影响" },
+    answers: { out: "回答了", in: "被回答" },
+    supersedes: { out: "取代了", in: "被取代" },
+    part_of: { out: "属于", in: "包含" },
+  };
+  const EVIDENCE = { file: "文件", commit: "提交", session: "会话", url: "网址", log: "记录" };
+  const IMPORTANCE = { high: 3, normal: 2, low: 1 };
+
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { ops: [], seenAt: null }; } catch { return { ops: [], seenAt: null }; } };
+  const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+  let state = load();
+  let data;
+
+  function build() {
+    data = JSON.parse(JSON.stringify(raw));
+    // 0.2 的条目只写 at：补齐 0.1 的时间和重要程度字段，各表达不用分两套
+    for (const i of data.items) { i.createdAt ||= i.at; i.updatedAt ||= i.at; i.importance ||= "normal"; i.evidence ||= []; }
+    data.events ||= []; data.areas ||= []; data.links ||= [];
+    if (state.seenAt) data.viewer.lastSeenAt = state.seenAt;
+    for (const op of state.ops) applyOp(op);
+  }
+  function applyOp(op) {
+    const it = data.items.find((i) => i.id === op.item);
+    if (!it) return;
+    const ev = { at: op.at, item: it.id, actor: "human", kind: op.kind, text: "" };
+    if (op.kind === "answered") {
+      const opt = it.ask.options.find((o) => o.id === op.option);
+      it.ask.answer = { option: op.option, note: op.note || "", at: op.at };
+      it.status = "working";
+      it.owner = it.source;
+      // 球交回提问的 agent：它的状态和在做的事跟着变
+      const ag = data.agents.find((a) => a.id === it.source);
+      if (ag) { ag.status = "running"; ag.item = it.id; ag.doing = `按你选的「${opt ? opt.label : op.option}」处理 #${it.num}`; }
+      ev.text = `你选了「${opt ? opt.label : op.option}」${op.note ? "：" + op.note : ""}，交回${ownerName(it.source)}`;
+    } else if (op.kind === "parked") {
+      it.status = "parked"; it.owner = "human";
+      ev.kind = "status"; ev.text = "你搁置了" + (op.note ? "：" + op.note : "");
+    } else if (op.kind === "reopened") {
+      const orig = raw.items.find((i) => i.id === it.id);
+      it.status = orig.status === "parked" ? "needs_you" : orig.status; it.owner = orig.status === "parked" ? "human" : orig.owner;
+      if (it.ask && orig.ask && !orig.ask.answer) { delete it.ask.answer; it.status = "needs_you"; it.owner = "human"; }
+      ev.kind = "status"; ev.text = "你重新打开了";
+    } else if (op.kind === "comment") {
+      ev.text = "你批注：" + op.note;
+    }
+    it.updatedAt = op.at;
+    data.events.push(ev);
+  }
+  function commit(op) {
+    op.at = fakeNow(state.ops.length + 1);
+    state.ops.push(op); save(); build(); emit();
+  }
+  const emit = () => subs.forEach((f) => f(data));
+
+  // ---------- 查询 ----------
+  const items = (pred) => data.items.filter(pred || (() => true));
+  const item = (key) => data.items.find((i) => i.id === key || i.num === key || "#" + i.num === key);
+  const agent = (id) => data.agents.find((a) => a.id === id);
+  const area = (id) => data.areas.find((a) => a.id === id);
+  function ownerName(owner) {
+    if (!owner) return "";
+    if (owner === "human") return "你";
+    if (owner.startsWith("team:")) return owner.slice(5);
+    const a = agent(owner); return a ? a.name : owner;
+  }
+  // 站在当前这一条说话：「要先等 #5」「#10 在等这条」，比 label 的「被它卡住的」好懂（A 组 11-01 的建议）
+  const SAY = {
+    depends: { out: (n) => `要先等 #${n}`, in: (n) => `#${n} 在等这条` },
+    affects: { out: (n) => `会影响 #${n}`, in: (n) => `#${n} 会影响这条` },
+    answers: { out: (n) => `回答了 #${n}`, in: (n) => `#${n} 回答了这条` },
+    supersedes: { out: (n) => `取代了 #${n}`, in: (n) => `#${n} 取代了这条` },
+    part_of: { out: (n) => `属于 #${n}`, in: (n) => `#${n} 是这条的一部分` },
+  };
+  function links(id) {
+    return {
+      out: data.links.filter((l) => l.from === id).map((l) => ({ ...l, item: item(l.to), label: REL[l.rel].out, say: SAY[l.rel].out(item(l.to).num) })),
+      in: data.links.filter((l) => l.to === id).map((l) => ({ ...l, item: item(l.from), label: REL[l.rel].in, say: SAY[l.rel].in(item(l.from).num) })),
+    };
+  }
+  const lastSeen = () => data.viewer.lastSeenAt;
+  // 「上次以来」只算 agent 那边的变化，人自己的操作不算
+  const isNew = (it) => { const r = raw.items.find((i) => i.id === it.id) || it; return (r.updatedAt || r.at) > lastSeen(); };
+  const changesSince = (t) => data.events.filter((e) => e.at > (t || lastSeen())).sort((a, b) => a.at.localeCompare(b.at));
+  const byWeight = (a, b) => IMPORTANCE[b.importance] - IMPORTANCE[a.importance] || a.createdAt.localeCompare(b.createdAt);
+  const needsYou = () => items((i) => i.status === "needs_you").sort(byWeight);
+  function counts() {
+    const c = { total: data.items.length };
+    for (const s of Object.keys(STATUS)) c[s] = data.items.filter((i) => i.status === s).length;
+    return c;
+  }
+
+  // ---------- 文字 ----------
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function inline(s) {
+    return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/#(\d+)/g, '<a href="#" class="amo-ref" data-num="$1">#$1</a>');
+  }
+  function md(text) {
+    if (!text) return "";
+    return text.split(/\n{2,}/).map((p) => {
+      const lines = p.split("\n");
+      if (lines.every((l) => /^\s*[-*] /.test(l))) return "<ul>" + lines.map((l) => "<li>" + inline(l.replace(/^\s*[-*] /, "")) + "</li>").join("") + "</ul>";
+      return "<p>" + lines.map(inline).join("<br>") + "</p>";
+    }).join("");
+  }
+  function fmtTime(iso) {
+    const d = new Date(iso), now = new Date(NOW);
+    const hm = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Shanghai" });
+    const day = (x) => x.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
+    if (day(d) === day(now)) return "今天 " + hm;
+    if (day(new Date(d.getTime() + 864e5)) === day(now)) return "昨天 " + hm;
+    return d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", timeZone: "Asia/Shanghai" }) + " " + hm;
+  }
+  function ago(iso) {
+    const m = Math.round((new Date(NOW) - new Date(iso)) / 60000);
+    if (m < 1) return "刚才"; if (m < 60) return m + " 分钟前";
+    const h = Math.round(m / 60); return h < 24 ? h + " 小时前" : Math.round(h / 24) + " 天前";
+  }
+
+  // ---------- 外观 ----------
+  function applyTheme() { const t = localStorage.getItem("amo-userlayer:theme"); if (t) document.documentElement.dataset.theme = t; }
+  function toggleTheme() {
+    const r = document.documentElement;
+    const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    r.dataset.theme = dark ? "light" : "dark";
+    localStorage.setItem("amo-userlayer:theme", r.dataset.theme);
+  }
+  function toast(msg) {
+    let el = document.getElementById("amo-toast");
+    if (!el) {
+      el = document.createElement("div"); el.id = "amo-toast";
+      el.style.cssText = "position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--tip-bg);color:var(--tip-fg);padding:9px 16px;border-radius:10px;font:13.5px var(--sans);z-index:99;opacity:0;transition:opacity .2s;pointer-events:none";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.opacity = 1;
+    clearTimeout(el._t); el._t = setTimeout(() => (el.style.opacity = 0), 2200);
+  }
+
+  applyTheme();
+  build();
+  addEventListener("storage", (e) => { if (e.key === KEY) { state = load(); build(); emit(); } });
+
+  return {
+    raw, get data() { return data; }, NOW, TYPE, STATUS, REL, EVIDENCE, IMPORTANCE,
+    items, item, agent, area, ownerName, links, lastSeen, isNew, changesSince, needsYou, counts, byWeight,
+    esc, md, inline, fmtTime, ago, toggleTheme, toast,
+    now: () => fakeNow(state.ops.length),
+    // 各表达自己的布局（纸摆在哪、区画在哪），按表达分开存，人摆过的位置不会被别的表达改掉
+    layout: (view, value) => { const k = "amo-userlayer:layout:" + view; if (value === undefined) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } } localStorage.setItem(k, JSON.stringify(value)); },
+    on: (f) => { subs.push(f); return () => subs.splice(subs.indexOf(f), 1); },
+    // 人的操作：都写成事件，球交回提问的 agent
+    answer: (id, option, note) => { commit({ kind: "answered", item: id, option, note }); toast("已发回" + ownerName(item(id).source)); },
+    park: (id, note) => { commit({ kind: "parked", item: id, note }); toast("已搁置 #" + item(id).num); },
+    reopen: (id) => { commit({ kind: "reopened", item: id }); toast("已重新打开 #" + item(id).num); },
+    comment: (id, note) => { commit({ kind: "comment", item: id, note }); toast("批注已记下，整理员会归档"); },
+    markSeen: () => { state.seenAt = fakeNow(state.ops.length + 1); save(); build(); emit(); toast("已标为看过"); },
+    reset: () => { state = { ops: [], seenAt: null }; save(); build(); emit(); toast("已恢复成初始假数据"); },
+  };
+})();
+
+/*@/amo-lib*/
+</script>
+<script>
+// lane 地图（2026-11-01）：canvas 2D + 自己写的透视投影。地面是 y=0 的平面，x 向右，z 往远处。
+// 一份引擎，4 种布局：每种布局只回答「某个任务的 lane 在时间 u、横向偏移 off 处落在地面哪一点」，
+// 路、节点、闸门、支线、桥都由这一个函数算出来，所以切换布局时逐点插值就能平滑变形过去。
+const $ = (s) => document.querySelector(s);
+const cv = $("#cv"), ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+const HOUR = 3600e3, MIN = 60e3;
+const T = (iso) => new Date(iso).getTime();
+const NOWT = T(AMO.NOW);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const sstep = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const smooth = (x, a, b) => sstep((x - a) / (b - a));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - clamp(t), 3);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- 数据（lane 结构是静态的，条目状态随人的操作变） ----------
+const RAW = AMO.raw;
+const LANES = RAW.lanes, LANE = {}, KIDS = {};
+for (const l of LANES) { LANE[l.id] = l; if (l.parent) (KIDS[l.parent] ||= []).push(l); }
+const FAMS = LANES.filter((l) => l.kind === "task");
+const famOf = (l) => (l.kind === "task" ? l : LANE[l.parent]);
+const RITEM = {}; for (const it of RAW.items) RITEM[it.id] = it;
+const RITEMS_BY_LANE = {};
+for (const it of RAW.items) (RITEMS_BY_LANE[it.lane] ||= []).push(it);
+for (const k in RITEMS_BY_LANE) RITEMS_BY_LANE[k].sort((a, b) => T(a.at) - T(b.at));
+// 闸门的位置按初始数据定：回答之后闸门抬起，但位置不动，路从它下面修过去
+const SLOTS = {};
+for (const k in RITEMS_BY_LANE) SLOTS[k] = RITEMS_BY_LANE[k].filter((i) => i.status === "needs_you" || i.status === "waiting");
+const isSlot = (id) => { const r = RITEM[id]; return r && (r.status === "needs_you" || r.status === "waiting"); };
+const kidStart = (k) => (k.kind === "branch" ? T(RITEM[k.forkFrom].at) : T(k.startAt));
+const kidEnd = (k) => (k.mergeInto ? T(RITEM[k.mergeInto].at) : k.endAt ? T(k.endAt) : Infinity);
+
+// ---------- 时间压缩 ----------
+// 相邻两个事件之间的距离：短的按时长，几个小时没动的压成对数长度，并记下折痕。
+// 每个事件至少占一小段，免得同一时刻挤在一起的节点叠成一团。
+const gapLen = (g) => (g <= 0 ? 0 : g <= 1.5 ? 0.26 + g * 1.1 : 0.26 + 1.65 + 0.7 * Math.log2(g / 1.5));
+const RATE = 1.1; // 最后一个事件之后（计划中的路）按每小时 1.1
+function makeWarp(times) {
+  const ts = [...new Set(times)].sort((a, b) => a - b);
+  const us = [0], folds = [];
+  for (let i = 1; i < ts.length; i++) {
+    const g = (ts[i] - ts[i - 1]) / HOUR;
+    us.push(us[i - 1] + gapLen(g));
+    if (g > 2.5) folds.push({ t0: ts[i - 1], t1: ts[i], hours: g });
+  }
+  const n = ts.length;
+  const f = (t) => {
+    if (t <= ts[0]) return ((t - ts[0]) / HOUR) * RATE;
+    if (t >= ts[n - 1]) return us[n - 1] + ((t - ts[n - 1]) / HOUR) * RATE;
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= t) lo = m; else hi = m; }
+    return us[lo] + ((t - ts[lo]) / (ts[hi] - ts[lo])) * (us[hi] - us[lo]);
+  };
+  f.folds = folds; f.max = us[n - 1];
+  return f;
+}
+const famTimes = (f) => {
+  const ls = [f, ...(KIDS[f.id] || [])], out = [NOWT];
+  for (const l of ls) { out.push(T(l.startAt)); if (l.endAt) out.push(T(l.endAt)); for (const it of RITEMS_BY_LANE[l.id] || []) out.push(T(it.at)); }
+  return out;
+};
+const GW = makeWarp([NOWT, ...LANES.flatMap((l) => [T(l.startAt), ...(l.endAt ? [T(l.endAt)] : [])]), ...RAW.items.map((i) => T(i.at))]);
+const FW = {}; for (const f of FAMS) FW[f.id] = makeWarp(famTimes(f));
+
+// ---------- 子车道和支线的槽位 ----------
+// 子车道各占一条；支线在时间上不重叠就共用一条，按 +1 -1 +2 -2 的顺序找
+const SLOT = 0.7;
+for (const f of FAMS) {
+  const kids = (KIDS[f.id] || []).slice().sort((a, b) => kidStart(a) - kidStart(b));
+  const busy = {};
+  for (const k of kids) {
+    const a = kidStart(k), b = kidEnd(k);
+    for (const s of [1, -1, 2, -2, 3, -3, 4, -4]) {
+      const iv = busy[s] || [];
+      if (iv.some(([x, y]) => a < y + 5 * MIN && x < b + 5 * MIN)) continue;
+      k._slot = s;
+      (busy[s] ||= []).push(k.kind === "sub" ? [-Infinity, Infinity] : [a, b]);
+      break;
+    }
+  }
+  const ss = kids.map((k) => k._slot);
+  f._band = [Math.min(0, ...ss), Math.max(0, ...ss)];
+}
+
+// ---------- 4 种布局 ----------
+const DEG = Math.PI / 180;
+const famEndT = (f) => Math.max(NOWT, ...[f, ...(KIDS[f.id] || [])].map((l) => (l.endAt ? T(l.endAt) : NOWT)));
+const LAYOUT = {};
+{ // right：时间从左到右，lane 一条条平行排开；新开的任务离人近
+  const KX = 0.62, GAP = 0.7, Z = {};
+  let zc = 0;
+  for (const f of FAMS.slice().sort((a, b) => T(b.startAt) - T(a.startAt))) {
+    Z[f.id] = zc - f._band[0] * SLOT + 0.35;
+    zc = Z[f.id] + f._band[1] * SLOT + 0.35 + GAP;
+  }
+  LAYOUT.right = { id: "right", label: "向右", sub: "时间从左到右", yaw: -13 * DEG, pitch: 42 * DEG,
+    u: (fid, t) => GW(t), c: (fid, u, off) => [u * KX, Z[fid] + off], folds: () => GW.folds, labelAt: "start" };
+}
+{ // away：现在在眼前（近处、画面下方），越旧越远
+  const KZ = 0.66, GAP = 0.9, X = {}, UN = GW(NOWT);
+  let xc = 0;
+  for (const f of FAMS.slice().sort((a, b) => T(a.startAt) - T(b.startAt))) {
+    X[f.id] = xc - f._band[0] * SLOT + 0.35;
+    xc = X[f.id] + f._band[1] * SLOT + 0.35 + GAP;
+  }
+  LAYOUT.away = { id: "away", label: "往远处退", sub: "现在在眼前", yaw: 0, pitch: 34 * DEG,
+    u: (fid, t) => GW(t), c: (fid, u, off) => [X[fid] + off, (UN - u) * KZ], folds: () => GW.folds, labelAt: "front" };
+}
+{ // radial：专题是中心广场，任务从中心往外长，越往外越新
+  const R0 = 2.6, PW = 1.35, KR = 10.4 / Math.pow(GW(NOWT), PW), A = {};
+  const order = ["L-flow", "L-iter", "L-auto", "L-maint", "L-ts", "L-and"].filter((id) => LANE[id]);
+  for (const f of FAMS) if (!order.includes(f.id)) order.push(f.id);
+  const wts = order.map((id) => LANE[id]._band[1] - LANE[id]._band[0] + 2.2);
+  const sum = wts.reduce((a, b) => a + b, 0);
+  let acc = -90 * DEG - (wts[0] / sum) * Math.PI;
+  order.forEach((id, i) => { A[id] = acc + (wts[i] / sum) * Math.PI; acc += (wts[i] / sum) * 2 * Math.PI; });
+  LAYOUT.radial = { id: "radial", label: "放射生长", sub: "从中心往外长", yaw: 0, pitch: 58 * DEG, R0, KR, A,
+    u: (fid, t) => GW(t), r: (u) => R0 + Math.pow(Math.max(0, u), PW) * KR,
+    c: (fid, u, off) => { const a = A[fid], r = R0 + Math.pow(Math.max(0, u), PW) * KR; return [r * Math.cos(a) - off * Math.sin(a), r * Math.sin(a) + off * Math.cos(a)]; },
+    folds: () => GW.folds, labelAt: "front" };
+}
+{ // free：没有统一的时间轴，每条路按自己的节奏往前走、弯曲。
+  // 用固定的种子试 60 种摆法，挑交叉少、有关联的路靠得近、整体紧凑的一种：每次打开都一样
+  const KF = 0.62, DS = 0.1;
+  const rng = (seed) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const segX = (a, b, c, d) => { const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])); return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b); };
+  let best = null;
+  for (let seed = 1; seed <= 60; seed++) {
+    const R = rng(seed * 7919), PL = {};
+    for (const f of FAMS) {
+      const len = (FW[f.id](famEndT(f)) + 3) * KF;
+      const th0 = R() * Math.PI * 2, a1 = 0.25 + R() * 0.3, f1 = 0.1 + R() * 0.1, p1 = R() * 6.28, a2 = 0.08 + R() * 0.12, f2 = 0.28 + R() * 0.18, p2 = R() * 6.28;
+      const ax = (R() - 0.5) * 18, az = (R() - 0.5) * 11;
+      const pts = [[0, 0]];
+      let x = 0, z = 0;
+      for (let s = DS; s <= len + 0.5; s += DS) { const th = th0 + a1 * Math.sin(f1 * s + p1) + a2 * Math.sin(f2 * s + p2); x += Math.cos(th) * DS; z += Math.sin(th) * DS; pts.push([x, z]); }
+      const [mx, mz] = pts[Math.floor(pts.length / 2)];
+      for (const p of pts) { p[0] += ax - mx; p[1] += az - mz; }
+      PL[f.id] = pts;
+    }
+    const ids = Object.keys(PL), coarse = ids.map((id) => PL[id].filter((_, i) => i % 8 === 0));
+    let score = 0, minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
+    for (let i = 0; i < ids.length; i++) {
+      for (const p of coarse[i]) { minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]); }
+      const bi = LANE[ids[i]]._band;
+      for (let j = i + 1; j < ids.length; j++) {
+        const bj = LANE[ids[j]]._band, need = ((bi[1] - bi[0]) + (bj[1] - bj[0])) * SLOT * 0.5 + 1.4;
+        const A = coarse[i], B = coarse[j];
+        for (let a = 0; a < A.length; a++) for (let b = 0; b < B.length; b++) {
+          const dx = A[a][0] - B[b][0], dz = A[a][1] - B[b][1];
+          if (dx * dx + dz * dz < need * need) score += 2;
+          if (a && b && segX(A[a - 1], A[a], B[b - 1], B[b])) score += 25;
+        }
+      }
+    }
+    const at = (fid, t) => { const pl = PL[fid]; return pl[clamp(Math.round((FW[fid](t) * KF) / DS), 0, pl.length - 1)]; };
+    for (const lk of RAW.links) {
+      const fa = famOf(LANE[RITEM[lk.from].lane]), fb = famOf(LANE[RITEM[lk.to].lane]);
+      if (fa === fb) continue;
+      const p = at(fa.id, T(RITEM[lk.from].at)), q = at(fb.id, T(RITEM[lk.to].at));
+      score += Math.hypot(p[0] - q[0], p[1] - q[1]) * 1.2;
+    }
+    const w = maxx - minx, h = maxz - minz;
+    score += (w + h) * 0.6 + Math.abs(Math.log(w / h / 1.5)) * 12;
+    if (!best || score < best.score) best = { score, PL, seed };
+  }
+  const PL = best.PL;
+  LAYOUT.free = { id: "free", label: "自由蜿蜒", sub: "每条路自己的节奏", yaw: 0, pitch: 55 * DEG, seed: best.seed,
+    u: (fid, t) => FW[fid](t),
+    c: (fid, u, off) => {
+      const pl = PL[fid], n = pl.length, s = (u * KF) / DS;
+      let i = Math.floor(s);
+      if (i < 0) i = 0; else if (i > n - 2) i = n - 2;
+      const a = pl[i], b = pl[i + 1], t = s - i;
+      const dx = (b[0] - a[0]) / DS, dz = (b[1] - a[1]) / DS;
+      return [a[0] + dx * t * DS - dz * off, a[1] + dz * t * DS + dx * off];
+    },
+    folds: (fid) => FW[fid].folds, labelAt: "start" };
+}
+const MODES = ["right", "away", "radial", "free"];
+
+// ---------- lane 空间 → 地面 ----------
+// 子车道、支线都画在任务 lane 的空间里：横向偏移 = 槽位 × 渐变（分出去、并回来）× 展开程度
+const famU = (L, l, t) => L.u(famOf(l).id, t);
+const cache = new Map(); // 每种布局下的静态量（起点、终点、闸门位置），布局和数据结构不变就不用重算
+function memo(L, key, fn) { const k = L.id + "|" + key; let v = cache.get(k); if (v === undefined) { v = fn(); cache.set(k, v); } return v; }
+const startU = (L, l) => memo(L, "s" + l.id, () => famU(L, l, kidStart(l)));
+function staticEndU(L, l) {
+  return memo(L, "e" + l.id, () => {
+    if (l.kind === "branch") return l.mergeInto ? famU(L, l, T(RITEM[l.mergeInto].at)) : famU(L, l, T(l.endAt));
+    if (l.kind === "sub" && l.endAt) return famU(L, l, T(l.endAt)) + rampLen(L, l);
+    return l.endAt ? famU(L, l, T(l.endAt)) : famU(L, l, NOWT);
+  });
+}
+const rampLen = (L, l) => memo(L, "r" + l.id, () => {
+  if (l.kind === "branch") { const span = (l.mergeInto ? famU(L, l, T(RITEM[l.mergeInto].at)) : famU(L, l, T(l.endAt))) - startU(L, l); return clamp(span / 3, 0.3, 0.9); }
+  return 0.8;
+});
+function ramp(L, l, u) {
+  const r = rampLen(L, l), a = startU(L, l);
+  let k = sstep((u - a) / r);
+  if (l.kind === "branch" && l.mergeInto) k = Math.min(k, sstep((staticEndU(L, l) - u) / r));
+  if (l.kind === "sub" && l.endAt) k = Math.min(k, sstep((staticEndU(L, l) - u) / r));
+  return k;
+}
+// 返回 [x, z, nx, nz]：中心点和单位横向（偏移 +1 的方向）
+function cn(L, l, u, X) {
+  const f = famOf(l);
+  let off = 0;
+  if (l !== f) off = l._slot * SLOT * ramp(L, l, u) * (l.kind === "sub" ? X.split : X.expand);
+  const a = L.c(f.id, u, off), b = L.c(f.id, u, off + 1);
+  return [a[0], a[1], b[0] - a[0], b[1] - a[1]];
+}
+const lastItemU = (L, l) => memo(L, "li" + l.id, () => { const its = (RITEMS_BY_LANE[l.id] || []).filter((i) => !isSlot(i.id)); return its.length ? Math.max(...its.map((i) => famU(L, l, T(i.at)))) : startU(L, l); });
+function gateU(L, it) {
+  return memo(L, "g" + it.id, () => {
+    const l = LANE[it.lane], slots = SLOTS[l.id];
+    let prev = lastItemU(L, l) + 0.25, out = null;
+    for (const g of slots) { const u = Math.max(famU(L, l, T(g.at)), prev + 0.5); if (g.id === it.id) out = u; prev = u; }
+    return out;
+  });
+}
+const itemU = (L, it) => (isSlot(it.id) ? gateU(L, it) : famU(L, LANE[it.lane], T(it.at)));
+// 路修到哪：第一道还关着的闸门前；没有闸门、有 agent 在跑就修到现在；做完的到结束
+function frontU(L, l, S) {
+  const slots = SLOTS[l.id] || [];
+  const closed = slots.find((g) => S.closed.has(g.id));
+  if (closed) return gateU(L, closed) - 0.12;
+  const lastSlot = slots.length ? gateU(L, slots[slots.length - 1]) + 0.4 : -Infinity;
+  if (l.status === "running" || S.run.has(l.id)) return Math.max(L.u(famOf(l).id, NOWT), lastSlot);
+  if (l.status === "done" || l.status === "parked") return staticEndU(L, l);
+  return Math.max(lastItemU(L, l), lastSlot);
+}
+const isOpenLane = (l, S) => l.status === "running" || l.status === "waiting" || S.run.has(l.id) || (SLOTS[l.id] || []).some((g) => S.closed.has(g.id));
+const lastSlotOrFront = (L, l) => { const sl = SLOTS[l.id] || []; return Math.max(frontU(L, l, S), sl.length ? gateU(L, sl[sl.length - 1]) : -Infinity); };
+function planEndU(L, l) {
+  const slots = SLOTS[l.id] || [];
+  const lastSlot = slots.length ? gateU(L, slots[slots.length - 1]) : -Infinity;
+  return Math.max(lastSlot + 1.0, L.u(famOf(l).id, NOWT) + 1.8);
+}
+
+// ---------- 当前状态：哪些闸门关着、哪些 lane 有 agent 在跑 ----------
+function agentPlaces() {
+  const out = [], used = new Set();
+  for (const l of LANES) {
+    const a = l.agent && AMO.agent(l.agent);
+    if (a && a.status === "running" && l.status === "running") { out.push({ agent: a, lane: l.id }); used.add(a.id); }
+  }
+  for (const a of AMO.data.agents) {
+    if (a.status !== "running" || used.has(a.id) || !a.item) continue;
+    const it = AMO.item(a.item); if (it && LANE[it.lane]) { out.push({ agent: a, lane: it.lane }); used.add(a.id); }
+  }
+  return out;
+}
+function computeState() {
+  const closed = new Set(AMO.items((i) => isSlot(i.id) && (i.status === "needs_you" || i.status === "waiting")).map((i) => i.id));
+  const places = agentPlaces();
+  return { closed, places, run: new Set(places.map((p) => p.lane)) };
+}
+
+// ---------- 相机：透视投影 ----------
+const FOV = 46 * DEG;
+const cam = { tx: 0, tz: 0, d: 30, yaw: 0, pitch: 54 * DEG, F: 800 };
+function view(c) {
+  const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch), F = c.F, d = c.d, tx = c.tx, tz = c.tz;
+  const cx0 = c.cx ?? W / 2, cy0 = c.cy ?? H / 2;
+  return {
+    F, c,
+    p(x, y, z) {
+      const px = x - tx, pz = z - tz;
+      const x1 = px * cy - pz * sy, z1 = px * sy + pz * cy;
+      let dep = -y * sp + z1 * cp + d; if (dep < 0.25) dep = 0.25;
+      const k = F / dep;
+      return [cx0 + x1 * k, cy0 - (y * cp + z1 * sp) * k, dep];
+    },
+    ground(sx, sy2) {
+      const a = (sx - cx0) / F, b = -(sy2 - cy0) / F;
+      let den = sp - b * cp; if (den < 0.03) den = 0.03;
+      const z1 = (b * d) / den, x1 = a * (z1 * cp + d);
+      return [x1 * cy + z1 * sy + tx, -x1 * sy + z1 * cy + tz];
+    },
+  };
+}
+const scaleOf = (c) => c.F / c.d;
+
+// ---------- 状态 ----------
+let mode = MODES.includes(location.hash.slice(1)) ? location.hash.slice(1) : "right";
+let LA = LAYOUT[mode], LB = LA, morph = 1, morphT0 = 0, em = 1;
+let S = computeState(), Sprev = S, frontT0 = -1e9;
+const openAnim = {}; // 闸门抬起的动画开始时间
+let PAL = null, SANS = "sans-serif", SERIF = "serif";
+let S0 = { right: 40, away: 40, radial: 40, free: 40 };
+let X = { mid: 0, near: 0, split: 0, expand: 0 };
+let fly = null, zoomImp = 0, zoomAt = [0, 0], panV = [0, 0], drag = null;
+let hits = [], hover = null, sel = null, roadsCache = [];
+let tourIdx = -1, crumbKey = null;
+const rel = () => scaleOf(cam) / lerp(S0[LA.id], S0[LB.id], em);
+
+function lerpA(a, b, t) { const o = new Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] + (b[i] - a[i]) * t; return o; }
+// 在两种布局之间插值：morph 结束后只算一种
+function bl(fn) { const b = fn(LB); if (em >= 1) return b; return lerpA(fn(LA), b, em); }
+
+// ---------- 颜色 ----------
+function hex(c) { c = c.trim(); if (c.startsWith("#")) { if (c.length === 4) c = "#" + [...c.slice(1)].map((x) => x + x).join(""); return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; } const m = c.match(/[\d.]+/g); return m ? m.slice(0, 3).map(Number) : [128, 128, 128]; }
+const rgba = (c, a) => { const [r, g, b] = Array.isArray(c) ? c : hex(c); return `rgba(${r},${g},${b},${a})`; };
+const mix = (a, b, t) => { const x = hex(a), y = hex(b); return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`; };
+function readPal() {
+  const cs = getComputedStyle(document.documentElement), v = (k) => cs.getPropertyValue(k).trim();
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  SANS = v("--sans") || "sans-serif"; SERIF = v("--serif") || "serif";
+  const P = { dark, bg: v("--bg"), surface: v("--surface"), surface2: v("--surface-2"), line: v("--line"), text: v("--text"), text2: v("--text-2"), text3: v("--text-3"),
+    accent: v("--accent"), accentFill: v("--accent-fill"), accentSoft: v("--accent-soft"), good: v("--good"), warn: v("--warn"), warnSoft: v("--warn-soft"), crit: v("--crit"), neutral: v("--neutral"), s2: v("--s2"), s3: v("--s3") };
+  if (dark) Object.assign(P, { // 夜晚的地图：地面很暗，路面微微发光
+    ground: "#1a1a18", ground2: "#20201e", grid: "rgba(250,249,245,.045)", road: "#3a3935", roadNew: "#26252a", glow: "rgba(255,214,170,.07)", shoulder: "#4b4943", edge: "rgba(255,226,196,.5)", edgeNew: "rgba(236,160,120,.7)", center: "rgba(255,236,210,.28)", plan: "rgba(220,214,200,.32)",
+    nodeTop: "#4a4944", nodeSide: "#2c2b28", board: "#2f2f2c", boardLine: "#4d4c47", pole: "rgba(250,249,245,.35)", bridge: "#8a8170", bridgeHi: "#c9bea6", fog: "rgba(26,26,24,.85)", wall: [224, 139, 107] });
+  else Object.assign(P, {
+    ground: "#ebe7dc", ground2: "#e5e0d3", grid: "rgba(110,100,80,.09)", road: "#fbfaf6", roadNew: "#cec6b4", glow: "rgba(0,0,0,0)", shoulder: "#c9c1ad", edge: "rgba(255,255,255,.95)", edgeNew: "rgba(255,255,255,.9)", center: "rgba(190,180,160,.7)", plan: "rgba(150,140,120,.55)",
+    nodeTop: "#ffffff", nodeSide: "#d4cdbd", board: "#ffffff", boardLine: "#ddd8cb", pole: "rgba(60,55,45,.45)", bridge: "#b9ad95", bridgeHi: "#e6dcc6", fog: "rgba(235,231,220,.9)", wall: [217, 119, 87] });
+  P.st = { needs_you: P.accentFill, working: P.s2, waiting: P.warn, settled: P.good, parked: P.neutral };
+  PAL = P; MC.clear();
+}
+
+// ---------- 文字 ----------
+const MC = new Map();
+function tw(font, s) { const k = font + "|" + s; let v = MC.get(k); if (v === undefined) { ctx.font = font; v = ctx.measureText(s).width; MC.set(k, v); } return v; }
+function fitText(font, s, maxW) {
+  if (tw(font, s) <= maxW) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (tw(font, s.slice(0, m) + "…") <= maxW) lo = m; else hi = m - 1; }
+  return s.slice(0, lo) + "…";
+}
+const STSYM = { running: "◐", waiting: "○", done: "✓", parked: "–" };
+const RELSAY = { depends: "要先等", affects: "会影响", answers: "回答了", supersedes: "取代了", part_of: "属于" };
+
+// ---------- 画面 ----------
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cam.F = H / 2 / Math.tan(FOV / 2);
+  for (const m of MODES) S0[m] = scaleOf(fitCam(LAYOUT[m], allPts(LAYOUT[m]), box(false)));
+  invalidate();
+}
+const winOpen = () => !!sel;
+const box = (popup = winOpen()) => ({ l: 40, t: 104, r: W - (popup ? 450 : 50), b: H - (W < 1360 ? 120 : 96) });
+
+// 路的取样：同一个参数 p∈[0,1] 在两种布局里各取一点，插值
+function samp(l, f0, f1, step = 0.12) {
+  const a0 = f0(LB), a1 = f1(LB);
+  let b0 = a0, b1 = a1;
+  if (em < 1) { b0 = f0(LA); b1 = f1(LA); }
+  const span = Math.max(a1 - a0, b1 - b0);
+  if (!(span > 0.001)) return [];
+  const n = Math.max(2, Math.ceil(span / step) + 1), out = [];
+  for (let i = 0; i < n; i++) {
+    const p = i / (n - 1);
+    const b = cn(LB, l, lerp(a0, a1, p), X);
+    out.push(em < 1 ? lerpA(cn(LA, l, lerp(b0, b1, p), X), b, em) : b);
+  }
+  return out;
+}
+// 不插值、给定布局和展开程度的取样（相机取景用）
+function sampL(L, l, u0, u1, XX, step = 0.4) {
+  const n = Math.max(2, Math.ceil((u1 - u0) / step) + 1), out = [];
+  for (let i = 0; i < n; i++) out.push(cn(L, l, lerp(u0, u1, i / (n - 1)), XX));
+  return out;
+}
+const roadW = (l) => (l.kind === "task" ? 0.44 + 0.08 * X.mid : l.kind === "sub" ? 0.32 : l.branchKind === "idea" ? 0.12 : 0.28);
+const frontNow = (L, l) => { const e = easeOut((performance.now() - frontT0) / 1100); return e >= 1 ? frontU(L, l, S) : lerp(frontU(L, l, Sprev), frontU(L, l, S), e); };
+const builtEnd = (L, l) => (isOpenLane(l, S) || isOpenLane(l, Sprev) ? frontNow(L, l) : staticEndU(L, l));
+const seenU = (L, l) => famU(L, l, T(AMO.lastSeen()));
+const laneAlpha = (l) => (l.kind === "task" ? 1 : l.kind === "sub" ? clamp(X.split * 2.2) : clamp(X.expand * 1.6));
+
+function poly(V, pts) { ctx.beginPath(); for (let i = 0; i < pts.length; i++) { const p = pts[i]; i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } }
+function stripPts(V, sm, lo, hi) {
+  const out = [];
+  for (const s of sm) out.push(V.p(s[0] + s[2] * lo, 0, s[1] + s[3] * lo));
+  for (let i = sm.length - 1; i >= 0; i--) { const s = sm[i]; out.push(V.p(s[0] + s[2] * hi, 0, s[1] + s[3] * hi)); }
+  return out;
+}
+function linePts(V, sm, lat, y = 0) { return sm.map((s) => V.p(s[0] + s[2] * lat, y, s[1] + s[3] * lat)); }
+function fillStrip(V, sm, lo, hi, color) { if (sm.length < 2) return; poly(V, stripPts(V, sm, lo, hi)); ctx.closePath(); ctx.fillStyle = color; ctx.fill(); }
+function strokeLine(V, sm, lat, color, w, dash) { if (sm.length < 2) return; poly(V, linePts(V, sm, lat)); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]); }
+
+function buildRoads() {
+  const out = [];
+  for (const l of LANES) {
+    const a = laneAlpha(l);
+    if (a <= 0.01) continue;
+    const w = roadW(l), open = isOpenLane(l, S);
+    const u0 = (L) => startU(L, l), u1 = (L) => Math.max(startU(L, l), builtEnd(L, l));
+    const built = samp(l, u0, u1);
+    const sN = (L) => clamp(seenU(L, l), startU(L, l), u1(L));
+    const old = samp(l, u0, sN), nw = samp(l, sN, u1);
+    const plan = open ? samp(l, u1, (L) => planEndU(L, l), 0.2) : [];
+    out.push({ l, w, a, built, old, nw, plan });
+  }
+  return out;
+}
+
+// 地面、网格、雾
+function drawGround(V) {
+  ctx.fillStyle = PAL.ground; ctx.fillRect(0, 0, W, H);
+  const g = [V.ground(0, 0), V.ground(W, 0), V.ground(0, H), V.ground(W, H)];
+  const xs = g.map((p) => p[0]), zs = g.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const sc = scaleOf(cam);
+  let step = 1; for (const s of [1, 2, 4, 8, 16]) { step = s; if (s * sc > 46) break; }
+  if ((x1 - x0) / step > 400 || (z1 - z0) / step > 400) return;
+  ctx.strokeStyle = PAL.grid; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) { const a = V.p(x, 0, z0), b = V.p(x, 0, z1); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+  for (let z = Math.floor(z0 / step) * step; z <= z1; z += step) { const a = V.p(x0, 0, z), b = V.p(x1, 0, z); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+  ctx.stroke();
+}
+function drawFog() {
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.32);
+  g.addColorStop(0, PAL.fog); g.addColorStop(1, rgba(PAL.ground, 0));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H * 0.32);
+}
+
+function drawRoads(V, roads) {
+  // 先画所有路肩，再画路面，再画标线：交汇处像真的路口一样连在一起
+  for (const r of roads) {
+    ctx.globalAlpha = r.a;
+    const sh = r.l.kind === "task" ? 0.06 : 0.04;
+    if (r.l.branchKind === "idea") continue;
+    if (PAL.dark) fillStrip(V, r.built, -r.w / 2 - sh - 0.12, r.w / 2 + sh + 0.12, PAL.glow);
+    fillStrip(V, r.built, -r.w / 2 - sh, r.w / 2 + sh, PAL.shoulder);
+    if (r.plan.length) fillStrip(V, r.plan, -r.w / 2, r.w / 2, rgba(PAL.shoulder, PAL.dark ? 0.1 : 0.13));
+  }
+  for (const r of roads) {
+    ctx.globalAlpha = r.a;
+    if (r.l.branchKind === "idea") continue;
+    const parked = r.l.end === "parked" || r.l.status === "parked";
+    fillStrip(V, r.old, -r.w / 2, r.w / 2, PAL.road);
+    fillStrip(V, r.nw, -r.w / 2, r.w / 2, PAL.roadNew);
+    if (parked) fadeTail(V, r);
+  }
+  for (const r of roads) {
+    ctx.globalAlpha = r.a;
+    const sc = scaleOf(cam);
+    if (r.l.branchKind === "idea") { // 思路上的分叉：窄的虚线小路
+      const d = Math.max(3, 0.12 * sc);
+      strokeLine(V, r.built, 0, PAL.dark ? "rgba(230,220,200,.55)" : "rgba(120,110,90,.6)", Math.max(1.5, r.w * sc * 0.5), [d, d * 0.8]);
+      if (r.l.end === "parked") fadeTail(V, r);
+      continue;
+    }
+    const lw = clamp(0.022 * sc, 1, 2.6);
+    strokeLine(V, r.old, -r.w / 2 + 0.035, PAL.edge, lw); strokeLine(V, r.old, r.w / 2 - 0.035, PAL.edge, lw);
+    strokeLine(V, r.nw, -r.w / 2 + 0.035, PAL.edgeNew, lw); strokeLine(V, r.nw, r.w / 2 - 0.035, PAL.edgeNew, lw);
+    if (r.l.kind === "task" && X.mid > 0.1) { ctx.globalAlpha = r.a * X.mid; const d = 0.16 * sc; strokeLine(V, r.built, 0, PAL.center, clamp(0.02 * sc, 1, 2.4), [d, d]); ctx.globalAlpha = r.a; }
+    if (r.plan.length) { // 计划中的路：虚线，淡淡的
+      const d = Math.max(4, 0.1 * sc);
+      strokeLine(V, r.plan, -r.w / 2, PAL.plan, 1.2, [d, d * 0.9]); strokeLine(V, r.plan, r.w / 2, PAL.plan, 1.2, [d, d * 0.9]);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// 搁置的支线：末端渐渐淡进地面
+function fadeTail(V, r) {
+  const sm = r.built, n = sm.length; if (n < 4) return;
+  const k0 = Math.floor(n * 0.45);
+  for (let i = k0; i < n - 1; i++) {
+    const t = (i - k0) / (n - 1 - k0);
+    ctx.globalAlpha = r.a * t * 0.95;
+    fillStrip(V, sm.slice(i, i + 2), -r.w / 2 - 0.1, r.w / 2 + 0.1, PAL.ground);
+  }
+  ctx.globalAlpha = r.a;
+}
+
+// 时间轴上的装饰：日界线、「现在」、折痕、广场、工地
+const DAYS = (() => { const out = []; const d = new Date(T(LANES.reduce((a, l) => (l.startAt < a ? l.startAt : a), RAW.now))); d.setUTCHours(16, 0, 0, 0); for (let t = d.getTime(); t <= NOWT; t += 24 * HOUR) if (t > T("2026-10-29T00:00:00+08:00")) out.push(t); return out; })();
+const dayLabel = (t) => { const d = new Date(t + 8 * HOUR); return `${d.getUTCMonth() + 1}-${String(d.getUTCDate()).padStart(2, "0")}`; };
+function bandRange(L, axis) { // right 布局的 z 范围 / away 的 x 范围
+  return memo(L, "band", () => { let a = 1e9, b = -1e9; for (const f of FAMS) { for (const s of [f._band[0] * SLOT - 0.6, f._band[1] * SLOT + 0.6]) { const p = L.c(f.id, 0, s); a = Math.min(a, p[axis]); b = Math.max(b, p[axis]); } } return [a, b]; });
+}
+function decorWeights() { const w = {}; for (const m of MODES) w[m] = 0; w[LB.id] += em; w[LA.id] += 1 - em; return w; }
+function drawDecorUnder(V, wts) {
+  const sc = scaleOf(cam);
+  // 日界线
+  for (const m of ["right", "away"]) {
+    const a = wts[m]; if (a < 0.02) continue;
+    const L = LAYOUT[m];
+    ctx.globalAlpha = a;
+    for (const t of DAYS) {
+      const u = GW(t);
+      let p0, p1;
+      if (m === "right") { const [z0, z1] = bandRange(L, 1); p0 = V.p(L.c("L-flow", u, 0)[0], 0, z0); p1 = V.p(L.c("L-flow", u, 0)[0], 0, z1); }
+      else { const [x0, x1] = bandRange(L, 0); const z = L.c("L-flow", u, 0)[1]; p0 = V.p(x0 - 1.4, 0, z); p1 = V.p(x1, 0, z); }
+      ctx.strokeStyle = PAL.dark ? "rgba(250,249,245,.14)" : "rgba(90,80,60,.18)"; ctx.lineWidth = 1; ctx.setLineDash([5, 6]);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = `500 12px ${SANS}`; ctx.fillStyle = PAL.text3; ctx.textAlign = "center";
+      ctx.fillText(dayLabel(t), p0[0], p0[1] + 16);
+    }
+  }
+  // 放射：广场、日环、生长环
+  if (wts.radial > 0.02) {
+    const L = LAYOUT.radial; ctx.globalAlpha = wts.radial;
+    const ring = (r, style, lw, dash) => { ctx.beginPath(); for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2, p = V.p(r * Math.cos(a), 0, r * Math.sin(a)); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.strokeStyle = style; ctx.lineWidth = lw; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]); };
+    for (const t of DAYS) { const r = L.r(GW(t)); ring(r, PAL.dark ? "rgba(250,249,245,.12)" : "rgba(90,80,60,.16)", 1, [5, 6]); const p = V.p(0, 0, -r); ctx.font = `500 12px ${SANS}`; ctx.fillStyle = PAL.text3; ctx.textAlign = "center"; ctx.fillText(dayLabel(t), p[0], p[1] + 15); }
+    // 广场
+    ctx.beginPath(); for (let i = 0; i <= 48; i++) { const a = (i / 48) * Math.PI * 2, p = V.p((L.R0 - 0.6) * Math.cos(a), 0, (L.R0 - 0.6) * Math.sin(a)); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+    ctx.fillStyle = PAL.dark ? "#2a2926" : "#f6f3ea"; ctx.fill(); ctx.strokeStyle = PAL.shoulder; ctx.lineWidth = 1.5; ctx.stroke();
+    // 广场到每条路起点的引道
+    for (const f of FAMS) {
+      const r1 = L.r(startU(L, f));
+      const a = V.p(...xz(L.c(f.id, 0, 0), L.R0 - 0.6)), b = V.p(...xz(L.c(f.id, startU(L, f), 0)));
+      ctx.strokeStyle = PAL.plan; ctx.lineWidth = 1.2; ctx.setLineDash([2, 5]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+const xz = (p, r) => { if (r === undefined) return [p[0], 0, p[1]]; const k = r / Math.hypot(p[0], p[1]); return [p[0] * k, 0, p[1] * k]; };
+function drawDecorOver(V, wts, roads) {
+  const sc = scaleOf(cam), t = performance.now();
+  // right：一道竖直的「现在」光墙横穿所有 lane
+  if (wts.right > 0.02) {
+    const L = LAYOUT.right, x = L.c("L-flow", GW(NOWT), 0)[0], [z0, z1] = bandRange(L, 1), h = 1.1;
+    ctx.globalAlpha = wts.right * lerp(1, 0.5, X.mid);
+    const q = [V.p(x, 0, z0), V.p(x, 0, z1), V.p(x, h, z1), V.p(x, h, z0)];
+    const g = ctx.createLinearGradient(0, (q[0][1] + q[1][1]) / 2, 0, (q[2][1] + q[3][1]) / 2);
+    g.addColorStop(0, rgba(PAL.wall, PAL.dark ? 0.34 : 0.24)); g.addColorStop(1, rgba(PAL.wall, 0));
+    poly(V, q); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = rgba(PAL.wall, 0.9); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); ctx.lineTo(q[1][0], q[1][1]); ctx.stroke();
+    labelPill(q[0][0], q[0][1] + 18, "现在 " + AMO.fmtTime(AMO.NOW).replace("今天 ", ""), PAL.accent, true);
+  }
+  // away：「现在」是眼前的一道发光的线
+  if (wts.away > 0.02) {
+    const L = LAYOUT.away, z = L.c("L-flow", GW(NOWT), 0)[1], [x0, x1] = bandRange(L, 0);
+    ctx.globalAlpha = wts.away;
+    const a = V.p(x0, 0, z), b = V.p(x1, 0, z), a2 = V.p(x0, 0.5, z), b2 = V.p(x1, 0.5, z);
+    const g = ctx.createLinearGradient(0, a[1], 0, a2[1]); g.addColorStop(0, rgba(PAL.wall, PAL.dark ? 0.3 : 0.2)); g.addColorStop(1, rgba(PAL.wall, 0));
+    poly(V, [a, b, b2, a2]); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = rgba(PAL.wall, 0.9); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    labelPill(a[0] - 8, a[1], "现在 " + AMO.fmtTime(AMO.NOW).replace("今天 ", ""), PAL.accent, true, "right");
+  }
+  // radial：「现在」是最外圈的生长环，像年轮
+  if (wts.radial > 0.02) {
+    const L = LAYOUT.radial, r = L.r(GW(NOWT));
+    ctx.globalAlpha = wts.radial;
+    ctx.beginPath(); for (let i = 0; i <= 120; i++) { const a = (i / 120) * Math.PI * 2, p = V.p(r * Math.cos(a), 0, r * Math.sin(a)); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+    ctx.globalAlpha = wts.radial * lerp(1, 0.55, X.mid);
+    ctx.strokeStyle = rgba(PAL.wall, PAL.dark ? 0.75 : 0.65); ctx.lineWidth = clamp(0.06 * sc, 2, 3.5); ctx.stroke();
+    ctx.strokeStyle = rgba(PAL.wall, 0.14); ctx.lineWidth = clamp(0.35 * sc, 6, 14); ctx.stroke();
+    const p = V.p(0, 0, -r); labelPill(p[0], p[1] + 20, "现在 " + AMO.fmtTime(AMO.NOW).replace("今天 ", ""), PAL.accent, true);
+    const c = V.p(0, 0.05, 0); labelPill(c[0], c[1], "专题 · " + AMO.data.context.title, PAL.text, false, "center", 14);
+  }
+  // free：现在 = 每条还在修的路尽头的工地
+  if (wts.free > 0.02) {
+    ctx.globalAlpha = wts.free;
+    for (const r of roads) {
+      if (!isOpenLane(r.l, S) || r.l.kind === "branch" || !r.built.length || r.a < 0.5) continue;
+      const e = r.built[r.built.length - 1];
+      for (const k of [-1, 0, 1]) { const lat = k * r.w * 0.32; cone(V, e[0] + e[2] * lat, e[1] + e[3] * lat, sc); }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+function cone(V, x, z, sc) {
+  const b = V.p(x, 0, z), top = V.p(x, 0.2, z), w = Math.max(3, 0.05 * sc);
+  ctx.beginPath(); ctx.moveTo(b[0] - w, b[1]); ctx.lineTo(b[0] + w, b[1]); ctx.lineTo(top[0], top[1]); ctx.closePath();
+  ctx.fillStyle = PAL.accentFill; ctx.fill();
+  const m = [(b[0] + top[0]) / 2, (b[1] + top[1]) / 2];
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1, w * 0.35); ctx.beginPath(); ctx.moveTo(m[0] - w * 0.5, m[1]); ctx.lineTo(m[0] + w * 0.5, m[1]); ctx.stroke();
+}
+function labelPill(x, y, s, color, strong, align = "center", size = 12) {
+  const font = `${strong ? 600 : 500} ${size}px ${SANS}`, w = tw(font, s) + 14, h = size + 9;
+  const x0 = align === "center" ? x - w / 2 : align === "right" ? x - w : x;
+  ctx.fillStyle = PAL.dark ? "rgba(38,38,36,.88)" : "rgba(255,255,255,.88)"; ctx.strokeStyle = strong ? rgba(color, 0.6) : PAL.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x0, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = color; ctx.font = font; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(s, x0 + 7, y + 0.5); ctx.textBaseline = "alphabetic";
+  return [x0, y - h / 2, w, h];
+}
+
+// 折痕：几个小时没动的那段压短了，在路上画一道小折线
+function foldsFor(l) {
+  const f = famOf(l), out = [];
+  const add = (fold, m) => { const tc = (fold.t0 + fold.t1) / 2; const ex = out.find((o) => Math.abs(o.tc - tc) < HOUR); if (ex) ex.w[m] = 1; else out.push({ tc, hours: fold.hours, w: { [m]: 1 } }); };
+  for (const m of new Set([LA.id, LB.id])) for (const fold of LAYOUT[m].folds(f.id)) add(fold, m);
+  return out;
+}
+function drawFolds(V, roads) {
+  const sc = scaleOf(cam);
+  for (const r of roads) {
+    if (r.l.kind === "branch" || r.a < 0.3) continue;
+    for (const fd of foldsFor(r.l)) {
+      const a = (fd.w[LA.id] || 0) * (1 - em) + (fd.w[LB.id] || 0) * em; if (a < 0.05) continue;
+      const lo = (L) => startU(L, r.l), hi = (L) => builtEnd(L, r.l);
+      const s0 = kidStart(r.l), s1 = r.l.endAt && !isOpenLane(r.l, S) ? T(r.l.endAt) : NOWT;
+      if (fd.tc < s0 || fd.tc > s1) continue;
+      const c = bl((L) => cn(L, r.l, famU(L, r.l, fd.tc), X));
+      const zig = [];
+      const k = 7;
+      for (let i = 0; i <= k; i++) { const lat = -r.w / 2 - 0.05 + ((r.w + 0.1) * i) / k, du = i % 2 ? 0.07 : -0.07; zig.push(V.p(c[0] + c[2] * lat + du * c[3], 0, c[1] + c[3] * lat - du * c[2])); }
+      ctx.globalAlpha = a * r.a; poly(V, zig); ctx.strokeStyle = PAL.dark ? "rgba(250,249,245,.5)" : "rgba(80,70,55,.55)"; ctx.lineWidth = Math.max(1.2, 0.022 * sc); ctx.stroke();
+      if (X.mid > 0.4 && r.l.kind === "task") { const p = V.p(c[0] + c[2] * (r.w / 2 + 0.22), 0, c[1] + c[3] * (r.w / 2 + 0.22)); ctx.globalAlpha = a * X.mid; ctx.font = `11px ${SANS}`; ctx.fillStyle = PAL.text3; ctx.textAlign = "center"; ctx.fillText(`压缩了 ${Math.round(fd.hours)} 小时`, p[0], p[1] + 4); }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- 节点、闸门、支线末端 ----------
+const SHAPE = { milestone: [4, Math.PI / 4, 0.22], decision: [4, 0, 0.08], conclusion: [16, 0, 0.07], question: [16, 0, 0.07], finding: [3, -Math.PI / 2, 0.08], bug: [6, 0, 0.08], task: [4, Math.PI / 4, 0.08] };
+function prism(V, x, z, r, h, sides, rot, top, side) {
+  const b = [], t = [];
+  for (let i = 0; i < sides; i++) { const a = rot + (i * 2 * Math.PI) / sides; b.push(V.p(x + r * Math.cos(a), 0, z + r * Math.sin(a))); t.push(V.p(x + r * Math.cos(a), h, z + r * Math.sin(a))); }
+  ctx.fillStyle = side;
+  for (let i = 0; i < sides; i++) { const j = (i + 1) % sides; ctx.beginPath(); ctx.moveTo(b[i][0], b[i][1]); ctx.lineTo(b[j][0], b[j][1]); ctx.lineTo(t[j][0], t[j][1]); ctx.lineTo(t[i][0], t[i][1]); ctx.closePath(); ctx.fill(); }
+  poly(V, t); ctx.closePath(); ctx.fillStyle = top; ctx.fill();
+  return t;
+}
+function nodeList() {
+  const out = [];
+  for (const it of AMO.data.items) {
+    const l = LANE[it.lane]; if (!l) continue;
+    let a = l.kind === "task" ? X.mid : l.kind === "sub" ? Math.max(X.mid * 0.75, X.split) : clamp(X.expand * 1.5) * X.mid;
+    const slot = isSlot(it.id), closed = S.closed.has(it.id);
+    if (slot) a = 1;
+    if (a < 0.03) continue;
+    const c = bl((L) => cn(L, l, itemU(L, it), X));
+    out.push({ it, l, c, a, slot, closed });
+  }
+  return out;
+}
+function drawNodes(V, nodes, now) {
+  const sc = scaleOf(cam);
+  const P = nodes.map((n) => ({ n, p: V.p(n.c[0], 0, n.c[1]) })).filter((o) => o.p[0] > -80 && o.p[0] < W + 80 && o.p[1] > -80 && o.p[1] < H + 120);
+  P.sort((a, b) => b.p[2] - a.p[2]);
+  for (const { n } of P) {
+    const { it, l, c } = n;
+    const w = roadW(l);
+    ctx.globalAlpha = n.a;
+    if (n.slot) { drawGate(V, n, w, now, sc); continue; }
+    const [sides, rot, hh] = SHAPE[it.type] || SHAPE.task;
+    const r = w * 0.24 * (it.type === "milestone" ? 0.75 : 1);
+    const col = PAL.st[it.status] || PAL.neutral;
+    // 落在地面的影子
+    const sh = V.p(c[0] + 0.03, 0, c[1] - 0.03);
+    ctx.fillStyle = PAL.dark ? "rgba(0,0,0,.35)" : "rgba(60,50,30,.12)"; ctx.beginPath(); ctx.ellipse(sh[0], sh[1], r * 1.3 * (V.F / sh[2]), r * 0.8 * (V.F / sh[2]), 0, 0, Math.PI * 2); ctx.fill();
+    const base = it.status === "settled" ? mix(col, PAL.dark ? "#3a3935" : "#ffffff", PAL.dark ? 0.35 : 0.45) : col;
+    const top = prism(V, c[0], c[1], r, hh, sides, rot, mix(base, PAL.dark ? "#000" : "#fff", PAL.dark ? 0.05 : 0.3), mix(base, "#000", PAL.dark ? 0.35 : 0.18));
+    n.top = V.p(c[0], hh, c[1]);
+    if (sel && sel === it.id) { ctx.strokeStyle = PAL.text; ctx.lineWidth = 2; poly(V, top); ctx.closePath(); ctx.stroke(); }
+    n.hitR = Math.max(7, r * 1.4 * (V.F / n.top[2]));
+    hits.push({ kind: "item", id: it.id, cx: n.top[0], cy: n.top[1], r: n.hitR, pr: 1 });
+  }
+  ctx.globalAlpha = 1;
+}
+// 闸门：两根桩，中间一根横杆。关着就横在路上；回答之后横杆抬起
+function drawGate(V, n, w, now, sc) {
+  const { it, c } = n;
+  const col = it.status === "waiting" || (RITEM[it.id].status === "waiting" && n.closed) ? PAL.warn : PAL.accentFill;
+  let open = n.closed ? 0 : openAnim[it.id] ? easeOut((now - openAnim[it.id]) / 800) : 1;
+  const half = w / 2 + 0.05, ph = 0.24, bh = 0.2;
+  const L0 = [c[0] - c[2] * half, c[1] - c[3] * half], R0 = [c[0] + c[2] * half, c[1] + c[3] * half];
+  const post = (p) => { const a = V.p(p[0], 0, p[1]), b = V.p(p[0], ph, p[1]); ctx.strokeStyle = PAL.dark ? "#d8d2c4" : "#6c665a"; ctx.lineWidth = clamp(0.03 * sc, 2, 4.5); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); return b; };
+  post(L0); post(R0);
+  const ang = open * 80 * DEG, len = half * 2;
+  const end = [L0[0] + c[2] * len * Math.cos(ang), bh + len * Math.sin(ang), L0[1] + c[3] * len * Math.cos(ang)];
+  const a = V.p(L0[0], bh, L0[1]), b = V.p(end[0], end[1], end[2]);
+  const lw = clamp(0.04 * sc, 3, 7);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = lw * 0.6; ctx.setLineDash([lw * 1.1, lw * 1.3]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.lineCap = "butt";
+  if (open > 0) { // 抬起后，节点从闸门下面出来
+    ctx.globalAlpha = n.a * open;
+    const [sides, rot, hh] = SHAPE[it.type] || SHAPE.task;
+    prism(V, c[0], c[1], 0.085, hh, sides, rot, mix(PAL.st[it.status] || PAL.neutral, "#fff", 0.2), mix(PAL.st[it.status] || PAL.neutral, "#000", 0.3));
+    ctx.globalAlpha = n.a;
+  }
+  n.top = V.p(c[0], ph + 0.02, c[1]);
+  const m = V.p(c[0], bh, c[1]);
+  hits.push({ kind: "item", id: it.id, cx: m[0], cy: m[1], r: Math.max(10, half * (V.F / m[2])), pr: 2 });
+}
+// 支线末端：断掉的画 ✕ 路障，搁置的写「– 搁置」
+function drawBranchEnds(V, roads) {
+  const sc = scaleOf(cam);
+  for (const r of roads) {
+    const l = r.l; if (l.kind !== "branch" || r.a < 0.2 || !r.built.length) continue;
+    const e = r.built[r.built.length - 1];
+    ctx.globalAlpha = r.a;
+    if (l.end === "dropped") {
+      const hw = Math.max(r.w, 0.16) / 2 + 0.06, h = 0.18;
+      const p = (lat, y) => V.p(e[0] + e[2] * lat, y, e[1] + e[3] * lat);
+      ctx.strokeStyle = PAL.crit; ctx.lineWidth = Math.max(2.5, 0.05 * sc); ctx.lineCap = "round";
+      const a = p(-hw, 0), b = p(hw, h), c2 = p(hw, 0), d = p(-hw, h);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.moveTo(c2[0], c2[1]); ctx.lineTo(d[0], d[1]); ctx.stroke(); ctx.lineCap = "butt";
+      if (X.expand > 0.5) { const q = p(0, h); ctx.font = `500 11.5px ${SANS}`; ctx.fillStyle = PAL.crit; ctx.textAlign = "center"; ctx.fillText("✕ 断了", q[0], q[1] - 8); }
+    } else if (l.end === "parked" && X.expand > 0.4) {
+      const q = V.p(e[0], 0, e[1]); ctx.font = `500 11.5px ${SANS}`; ctx.fillStyle = PAL.text3; ctx.textAlign = "center"; ctx.fillText("– 搁置", q[0], q[1] + 4);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+// 远看时支线收起来，只在分叉处留一个小记号
+function drawForkMarks(V) {
+  const a = 1 - clamp(X.expand * 1.6); if (a < 0.05) return;
+  const forks = {};
+  for (const l of LANES) if (l.kind === "branch") (forks[l.forkFrom] ||= []).push(l);
+  ctx.globalAlpha = a;
+  for (const id in forks) {
+    const it = RITEM[id], l = LANE[it.lane];
+    const c = bl((L) => cn(L, l, itemU(L, it), X)), p = V.p(c[0], 0, c[1]);
+    const dir = V.p(c[0] + c[2] * 0.6, 0, c[1] + c[3] * 0.6), dx = dir[0] - p[0], dy = dir[1] - p[1], k = 10 / (Math.hypot(dx, dy) || 1);
+    ctx.strokeStyle = PAL.dark ? "rgba(250,249,245,.6)" : "rgba(80,70,55,.6)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + dx * k + 4, p[1] + dy * k); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + dx * k - 4, p[1] + dy * k); ctx.stroke();
+    if (forks[id].length > 1) { ctx.font = `500 10.5px ${SANS}`; ctx.fillStyle = PAL.text3; ctx.textAlign = "left"; ctx.fillText("分 " + forks[id].length, p[0] + dx * k + 6, p[1] + dy * k + 3); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- 跨 lane 的关联：架在两个节点之间的拱桥 ----------
+function drawBridges(V, nodes) {
+  const a0 = smooth(X.mid, 0.35, 0.85); if (a0 < 0.03) return [];
+  const byId = {}; for (const n of nodes) byId[n.it.id] = n;
+  const sc = scaleOf(cam), labels = [];
+  for (const lk of AMO.data.links) {
+    const A = byId[lk.from], B = byId[lk.to]; if (!A || !B) continue;
+    let a = a0 * Math.min(A.a, B.a);
+    const pa = V.p(A.c[0], 0, A.c[1]), pb = V.p(B.c[0], 0, B.c[1]), slen = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+    const off = (p) => p[0] < -150 || p[0] > W + 150 || p[1] < -150 || p[1] > H + 150;
+    const focus = [sel, hover].includes(lk.from) || [sel, hover].includes(lk.to);
+    if (!focus) { a *= 1 - smooth(slen, W * 0.5, W * 0.9); if (off(pa) || off(pb)) a *= 0.25; }
+    if (a < 0.03) continue;
+    const dx = B.c[0] - A.c[0], dz = B.c[1] - A.c[1], dist = Math.hypot(dx, dz), h = 0.3 + dist * 0.22;
+    const pts = [];
+    for (let i = 0; i <= 28; i++) { const t = i / 28; pts.push(V.p(A.c[0] + dx * t, Math.sin(Math.PI * t) * h + 0.08, A.c[1] + dz * t)); }
+    const gs = [V.p(A.c[0], 0, A.c[1]), V.p(B.c[0], 0, B.c[1])];
+    ctx.globalAlpha = a * 0.6; ctx.strokeStyle = PAL.dark ? "rgba(0,0,0,.55)" : "rgba(60,50,30,.2)"; ctx.lineWidth = 1.2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(gs[0][0], gs[0][1]); ctx.lineTo(gs[1][0], gs[1][1]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = a; const lw = clamp(0.055 * sc, 2, 6);
+    poly(V, pts); ctx.strokeStyle = PAL.bridge; ctx.lineWidth = lw; ctx.stroke();
+    poly(V, pts); ctx.strokeStyle = PAL.bridgeHi; ctx.lineWidth = Math.max(1, lw * 0.35); ctx.stroke();
+    // 方向：箭头指向被关联的那一条
+    const e = pts[24], f = pts[27], ang = Math.atan2(f[1] - e[1], f[0] - e[0]), s = Math.max(5, lw * 1.6);
+    ctx.fillStyle = PAL.bridge; ctx.beginPath(); ctx.moveTo(f[0] + Math.cos(ang) * s * 0.4, f[1] + Math.sin(ang) * s * 0.4); ctx.lineTo(f[0] - Math.cos(ang - 0.5) * s, f[1] - Math.sin(ang - 0.5) * s); ctx.lineTo(f[0] - Math.cos(ang + 0.5) * s, f[1] - Math.sin(ang + 0.5) * s); ctx.closePath(); ctx.fill();
+    const top = pts[14];
+    labels.push({ x: top[0], y: top[1] - 4, text: RELSAY[lk.rel] || lk.rel, a, lk });
+  }
+  ctx.globalAlpha = 1;
+  return labels;
+}
+
+// ---------- agent：正在跑的 lane 前端有一个发光的小点 ----------
+function drawAgents(V, now) {
+  const sc = scaleOf(cam), out = [];
+  for (const pl of S.places) {
+    const l = LANE[pl.lane]; if (!l) continue;
+    const vis = l.kind === "task" ? 1 : l.kind === "sub" ? 1 : clamp(X.expand * 1.6);
+    if (vis < 0.05) continue;
+    const ph = reduced ? 0.5 : ((now / 6500) + hash01(pl.agent.id)) % 1;
+    const creep = 0.32 * ph, env = Math.min(1, ph / 0.12, (1 - ph) / 0.15);
+    const f = (L) => cn(L, l, frontNow(L, l) + creep, X);
+    const c = bl(f), base = bl((L) => cn(L, l, frontNow(L, l), X));
+    const p = V.p(c[0], 0.06, c[1]), p0 = V.p(base[0], 0.03, base[1]);
+    const r = clamp(0.07 * sc, 3.5, 8);
+    if (p[0] < -20 || p[0] > W + 20 || p[1] < -20 || p[1] > H + 20) continue;
+    ctx.globalAlpha = vis;
+    // 身后一小段亮的轨迹：它在往前铺路
+    const g0 = ctx.createLinearGradient(p0[0], p0[1], p[0], p[1]); g0.addColorStop(0, rgba(PAL.s2, 0)); g0.addColorStop(1, rgba(PAL.s2, 0.5 * env));
+    ctx.strokeStyle = g0; ctx.lineWidth = r * 0.9; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); ctx.lineCap = "butt";
+    const g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r * 3.4);
+    g.addColorStop(0, rgba(PAL.s2, 0.55)); g.addColorStop(1, rgba(PAL.s2, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p[0], p[1], r * 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = PAL.dark ? "#cfe2ff" : "#fff"; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = PAL.s2; ctx.lineWidth = 2; ctx.stroke();
+    out.push({ x: p[0], y: p[1], r, agent: pl.agent, lane: l, vis });
+  }
+  ctx.globalAlpha = 1;
+  return out;
+}
+function hash01(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
+
+// ---------- 牌子：屏幕空间，永远正对人，有一根细线连到节点；互相避让 ----------
+const occupied = [];
+const overlaps = (r) => occupied.some((o) => r[0] < o[0] + o[2] + 4 && o[0] < r[0] + r[2] + 4 && r[1] < o[1] + o[3] + 3 && o[1] < r[1] + r[3] + 3);
+const inView = (r) => r[0] > 6 && r[1] > 62 && r[0] + r[2] < (winOpen() ? W - 430 : W - 6) && r[1] + r[3] < H - 6;
+function boardSpec(n) {
+  const it = n.it, st = AMO.STATUS[it.status];
+  const gateClosed = n.slot && n.closed;
+  let kind = "normal", l1;
+  if (gateClosed && it.status === "needs_you") { kind = "gate"; l1 = "! 等你：" + it.short; }
+  else if (gateClosed && it.status === "waiting") { kind = "wait"; l1 = "○ 等" + AMO.ownerName(it.owner) + "：" + it.short; }
+  else l1 = st.sym + " " + it.short;
+  const near = X.near > 0.5 && (n.l.kind !== "sub" || X.split > 0.8);
+  let l2 = null;
+  if (near) l2 = AMO.TYPE[it.type].label + " · " + (it.status === "working" && it.owner ? AMO.ownerName(it.owner) + "在做 · " : "") + (it.summary || it.title);
+  let pr = gateClosed ? 1000 : it.status === "working" ? 600 : it.status === "parked" ? 260 : 320;
+  if (AMO.isNew(it)) pr += 110;
+  if (it.type === "milestone") pr += 40;
+  if (it.type === "decision" || it.type === "conclusion") pr += 20;
+  if (n.l.kind === "sub" && X.split < 0.5 && !gateClosed) pr -= 200;
+  if (sel === it.id || hover === it.id) pr += 5000;
+  return { kind, l1, l2, pr, isNew: AMO.isNew(it) };
+}
+function placeBoards(V, nodes, now) {
+  const far = X.mid < 0.45;
+  const cand = [];
+  for (const n of nodes) {
+    if (!n.top) continue;
+    const gateClosed = n.slot && n.closed;
+    if (far && !gateClosed) continue;
+    if (!gateClosed && n.l.kind === "sub" && X.split < 0.45) continue;
+    const sp = boardSpec(n);
+    sp.pr += Math.min(80, (V.F / n.top[2]) * 0.4);
+    cand.push({ n, ...sp });
+  }
+  cand.sort((a, b) => b.pr - a.pr);
+  const placed = [];
+  const maxBoards = far ? 12 : 60;
+  for (const b of cand) {
+    if (placed.length >= maxBoards) break;
+    const f1 = `${b.kind === "normal" ? 500 : 600} ${far ? 12 : 12.5}px ${SANS}`, f2 = `11.5px ${SANS}`;
+    const maxW = b.l2 ? 230 : 190;
+    const t1 = fitText(f1, b.l1, maxW - 18), t2 = b.l2 ? fitText(f2, b.l2, maxW - 18) : null;
+    const w = Math.ceil(Math.max(tw(f1, t1), t2 ? tw(f2, t2) : 0)) + 18 + (b.isNew ? 10 : 0), h = t2 ? 40 : 23;
+    const ax = b.n.top[0], ay = b.n.top[1];
+    const tries = [[0, 16], [0, 16 + h + 6], [0, 16 + 2 * (h + 6)], [w / 2 + 12, 4], [-w / 2 - 12, 4], [w / 2 + 12, 16 + h + 6], [-w / 2 - 12, 16 + h + 6], [0, 16 + 3 * (h + 6)]];
+    let rect = null;
+    for (const [dx, lift] of tries) {
+      const r = [ax - w / 2 + dx, ay - lift - h, w, h];
+      if (!inView(r) || overlaps(r)) continue;
+      rect = r; break;
+    }
+    if (!rect) continue;
+    occupied.push(rect);
+    placed.push({ ...b, rect, t1, t2, f1, f2, ax, ay });
+  }
+  return placed;
+}
+function drawBoards(placed, now) {
+  const breathe = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(now / 520);
+  for (const b of placed) {
+    const [x, y, w, h] = b.rect, it = b.n.it;
+    const a = b.kind === "normal" ? clamp(b.n.a * 1.2) : 1;
+    ctx.globalAlpha = a;
+    // 细线
+    const bx = clamp(b.ax, x + 6, x + w - 6);
+    ctx.strokeStyle = b.kind === "gate" ? rgba(PAL.accentFill, 0.8) : PAL.pole; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(b.ax, b.ay); ctx.lineTo(bx, y + h); ctx.stroke();
+    ctx.fillStyle = b.kind === "gate" ? PAL.accentFill : PAL.text3; ctx.beginPath(); ctx.arc(b.ax, b.ay, 1.8, 0, Math.PI * 2); ctx.fill();
+    // 牌子
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 6);
+    if (b.kind === "gate") {
+      ctx.save(); ctx.shadowColor = rgba(PAL.accentFill, 0.35 + 0.4 * breathe); ctx.shadowBlur = 6 + 10 * breathe;
+      ctx.fillStyle = PAL.accentFill; ctx.fill(); ctx.restore();
+    } else if (b.kind === "wait") {
+      ctx.fillStyle = PAL.dark ? "#3d3426" : PAL.warnSoft; ctx.fill(); ctx.strokeStyle = PAL.warn; ctx.lineWidth = 1.2; ctx.stroke();
+    } else {
+      ctx.fillStyle = PAL.board; ctx.fill(); ctx.strokeStyle = sel === it.id || hover === it.id ? PAL.accentFill : PAL.boardLine; ctx.lineWidth = sel === it.id ? 2 : 1; ctx.stroke();
+    }
+    ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    const ty = b.t2 ? y + 13 : y + h / 2 + 0.5;
+    ctx.font = b.f1;
+    if (b.kind === "gate") { ctx.fillStyle = "#fff"; ctx.fillText(b.t1, x + 9, ty); }
+    else if (b.kind === "wait") { ctx.fillStyle = PAL.text; ctx.fillText(b.t1, x + 9, ty); }
+    else {
+      const sym = b.t1.slice(0, 1), rest = b.t1.slice(1);
+      ctx.fillStyle = PAL.st[it.status] || PAL.text3; ctx.fillText(sym, x + 9, ty);
+      ctx.fillStyle = PAL.text; ctx.fillText(rest, x + 9 + tw(b.f1, sym), ty);
+    }
+    if (b.t2) { ctx.font = b.f2; ctx.fillStyle = b.kind === "gate" ? "rgba(255,255,255,.88)" : PAL.text2; ctx.fillText(b.t2, x + 9, y + 29); }
+    if (b.isNew) { ctx.fillStyle = b.kind === "gate" ? "#fff" : PAL.accentFill; ctx.beginPath(); ctx.arc(x + w - 8, y + 7, 2.6, 0, Math.PI * 2); ctx.fill(); }
+    ctx.textBaseline = "alphabetic";
+    hits.push({ kind: "item", id: it.id, rect: b.rect, pr: 5 });
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- lane 名：远看时最重要的字 ----------
+function laneLabels(V, roads) {
+  const rects = [], out = [];
+  const pref = em >= 0.5 ? LB.labelAt : LA.labelAt;
+  for (const r of roads) {
+    const l = r.l;
+    if (l.kind === "branch" && X.expand < 0.55) continue;
+    if (l.kind === "sub" && X.split < 0.6) continue;
+    const sm = r.built.length ? r.built : r.plan; if (!sm.length) continue;
+    const pts = sm.map((s) => V.p(s[0], 0, s[1]));
+    const inside = (p) => p[0] > 30 && p[0] < (winOpen() ? W - 450 : W - 30) && p[1] > 80 && p[1] < H - 70;
+    let idx = -1;
+    if (pref === "start") { for (let i = 0; i < pts.length; i++) if (inside(pts[i])) { idx = i; break; } }
+    else { for (let i = pts.length - 1; i >= 0; i--) if (inside(pts[i])) { idx = i; break; } }
+    if (idx < 0) continue;
+    const p = pts[idx];
+    const sym = STSYM[l.status] || "";
+    const name = l.kind === "task" ? l.title.length > 14 ? l.short : l.title : l.short;
+    const text = l.kind === "branch" ? name + (l.branchKind === "idea" ? "（思路）" : "") : `${sym} ${name}`;
+    const big = l.kind === "task";
+    const font = `${big ? 600 : 500} ${big ? 13.5 : 12}px ${big ? SERIF : SANS}`;
+    const w = tw(font, text) + (big ? 18 : 12), h = big ? 25 : 20;
+    // 起点：放在路头的外侧；前端：放在路尾外侧
+    let dx = 0, dy = 0;
+    const q = pts[Math.min(pts.length - 1, idx + (pref === "start" ? 2 : -2))] || p;
+    const vx = p[0] - q[0], vy = p[1] - q[1], vl = Math.hypot(vx, vy) || 1;
+    if (idx === 0 || idx === pts.length - 1) { dx = (vx / vl) * (w / 2 + 10); dy = (vy / vl) * (h / 2 + 8); }
+    else { dy = -h; }
+    let rect = null;
+    for (const [ox, oy] of [[0, 0], [0, -(h + 4)], [0, h + 4], [-(w / 2 + 8), 0], [w / 2 + 8, 0], [0, -2 * (h + 4)]]) {
+      const r = [p[0] + dx + ox - w / 2, p[1] + dy + oy - h / 2, w, h];
+      if (!overlaps(r)) { rect = r; break; }
+    }
+    if (!rect) rect = [p[0] + dx - w / 2, p[1] + dy - h / 2, w, h];
+    rects.push(rect); occupied.push(rect);
+    out.push({ l, rect, text, font, big, a: r.a });
+  }
+  return { rects, out };
+}
+function drawLaneLabels(lbls) {
+  for (const L of lbls.out) {
+    const [x, y, w, h] = L.rect;
+    ctx.globalAlpha = L.a;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 7);
+    ctx.fillStyle = L.big ? (PAL.dark ? "rgba(48,48,46,.94)" : "rgba(255,255,255,.95)") : (PAL.dark ? "rgba(48,48,46,.8)" : "rgba(255,255,255,.8)");
+    ctx.fill(); ctx.strokeStyle = hover === "lane:" + L.l.id ? PAL.accentFill : PAL.line; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = L.font; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+    ctx.fillStyle = L.l.branchKind === "idea" ? PAL.text2 : PAL.text; ctx.fillText(L.text, x + w / 2, y + h / 2 + 0.5);
+    ctx.textBaseline = "alphabetic";
+    hits.push({ kind: "lane", id: L.l.id, rect: L.rect, pr: 4 });
+  }
+  ctx.globalAlpha = 1;
+}
+function drawBridgeLabels(labels) {
+  for (const b of labels) {
+    const font = `500 11px ${SANS}`, w = tw(font, b.text) + 12, h = 17, r = [b.x - w / 2, b.y - h, w, h];
+    if (overlaps(r)) continue; occupied.push(r);
+    ctx.globalAlpha = b.a; ctx.beginPath(); ctx.roundRect(r[0], r[1], w, h, 8); ctx.fillStyle = PAL.dark ? "#3a3833" : "#f3eee2"; ctx.fill(); ctx.strokeStyle = PAL.bridge; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = font; ctx.fillStyle = PAL.text2; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(b.text, b.x, r[1] + h / 2 + 0.5); ctx.textBaseline = "alphabetic";
+  }
+  ctx.globalAlpha = 1;
+}
+function placeAgentLabels(ags) {
+  const maxX = winOpen() ? W - 440 : W - 8;
+  for (const a of ags) {
+    const font = `500 11.5px ${SANS}`, text = a.agent.name, w = tw(font, text) + 12, h = 18;
+    occupied.push([a.x - a.r - 2, a.y - a.r - 2, 2 * a.r + 4, 2 * a.r + 4]);
+    let r = null;
+    for (const c of [[a.x + a.r + 6, a.y - h / 2], [a.x - a.r - 6 - w, a.y - h / 2], [a.x - w / 2, a.y + a.r + 5], [a.x + a.r + 2, a.y - a.r - h - 2], [a.x - w / 2, a.y - a.r - h - 6]]) {
+      const q = [c[0], c[1], w, h];
+      if (q[0] < 6 || q[0] + w > maxX || q[1] < 60 || q[1] + h > H - 6 || overlaps(q)) continue;
+      r = q; break;
+    }
+    if (!r) r = [clamp(a.x + a.r + 6, 6, maxX - w), a.y - h / 2, w, h];
+    occupied.push(r); a.rect = r; a.font = font; a.text = text;
+  }
+}
+function drawAgentLabels(ags) {
+  for (const a of ags) {
+    const r = a.rect, font = a.font, text = a.text, w = r[2], h = r[3];
+    ctx.globalAlpha = a.vis; ctx.beginPath(); ctx.roundRect(r[0], r[1], w, h, 9); ctx.fillStyle = PAL.dark ? "rgba(30,40,56,.92)" : "rgba(235,242,252,.95)"; ctx.fill(); ctx.strokeStyle = rgba(PAL.s2, 0.6); ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = font; ctx.fillStyle = PAL.dark ? "#cfe2ff" : "#24527f"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(text, r[0] + 6, r[1] + h / 2 + 0.5); ctx.textBaseline = "alphabetic";
+    hits.push({ kind: "agent", id: a.agent.id, lane: a.lane.id, rect: r, pr: 3 });
+  }
+  ctx.globalAlpha = 1;
+}
+
+// 牌子不要钻到图例、缩放按钮这些浮在上面的东西下面
+let hudRects = [];
+function measureHud() { hudRects = ["#legend", "#zoom", "#crumb", "#modes", "#tr", "#reset"].map((q) => { const b = $(q).getBoundingClientRect(); return [b.left - 4, b.top - 4, b.width + 8, b.height + 8]; }); }
+// ---------- 一帧 ----------
+let raf = 0, idleTimer = 0, lastFrame = 0;
+function invalidate() { if (!raf) { clearTimeout(idleTimer); idleTimer = 0; raf = requestAnimationFrame(frame); } }
+function frame(now) {
+  raf = 0;
+  const dt = Math.min(50, now - (lastFrame || now)); lastFrame = now;
+  let busy = false;
+  // 布局变形
+  if (morph < 1) { morph = clamp((now - morphT0) / 900); em = ease(morph); busy = true; if (morph >= 1) { LA = LB; em = 1; } }
+  // 相机飞行
+  if (fly) {
+    const t = clamp((now - fly.t0) / fly.dur), e = ease(t), a = fly.from, b = fly.to;
+    cam.tx = lerp(a.tx, b.tx, e); cam.tz = lerp(a.tz, b.tz, e); cam.d = Math.exp(lerp(Math.log(a.d), Math.log(b.d), e)); cam.yaw = lerp(a.yaw, b.yaw, e); cam.pitch = lerp(a.pitch, b.pitch, e);
+    busy = true; if (t >= 1) { fly = null; if (pendingOpen) { const id = pendingOpen; pendingOpen = null; openWin(id); } }
+  }
+  // 滚轮缩放（带惯性，以鼠标为中心）
+  if (Math.abs(zoomImp) > 1e-4) {
+    const step = zoomImp * Math.min(1, 0.2 * (dt / 16.7));
+    zoomImp -= step;
+    const V0 = view(cam), g0 = V0.ground(zoomAt[0], zoomAt[1]);
+    const lo = 0.55 * lerp(S0[LA.id], S0[LB.id], em), hi = 16 * lerp(S0[LA.id], S0[LB.id], em);
+    cam.d = clamp(cam.d * Math.exp(-step), cam.F / hi, cam.F / lo);
+    const g1 = view(cam).ground(zoomAt[0], zoomAt[1]);
+    cam.tx += g0[0] - g1[0]; cam.tz += g0[1] - g1[1];
+    busy = true;
+  } else zoomImp = 0;
+  // 拖动后的惯性
+  if (!drag && (Math.abs(panV[0]) + Math.abs(panV[1]) > 1e-5)) {
+    cam.tx += panV[0] * dt; cam.tz += panV[1] * dt;
+    const k = Math.pow(0.9, dt / 16.7); panV[0] *= k; panV[1] *= k; busy = true;
+    if (Math.abs(panV[0]) + Math.abs(panV[1]) < 2e-5) panV = [0, 0];
+  }
+  if (drag) busy = true;
+  if (now - frontT0 < 1300) busy = true;
+  for (const id in openAnim) if (now - openAnim[id] < 900) busy = true;
+  clampCam();
+
+  // 语义缩放：远（大地图）→ 中（单个任务）→ 近（层级）
+  const rr = rel();
+  X = { mid: smooth(rr, 1.2, 1.6), near: smooth(rr, 1.9, 2.5) };
+  X.split = X.near; X.expand = X.mid;
+
+  render(now);
+  updateCrumb();
+  if (busy) invalidate();
+  else if (!reduced && !document.hidden) idleTimer = setTimeout(() => { idleTimer = 0; invalidate(); }, 70); // 只剩呼吸和 agent 慢慢挪：降到约 14 帧
+}
+function render(now) {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  hits = [];
+  const V = view(cam), wts = decorWeights();
+  drawGround(V);
+  drawDecorUnder(V, wts);
+  const roads = buildRoads(); roadsCache = roads;
+  drawRoads(V, roads);
+  drawFolds(V, roads);
+  drawForkMarks(V);
+  drawDecorOver(V, wts, roads);
+  const nodes = nodeList();
+  drawNodes(V, nodes, now);
+  drawBranchEnds(V, roads);
+  const bridgeLabels = drawBridges(V, nodes);
+  const ags = drawAgents(V, now);
+  drawFog();
+  // 占位的先后：agent 的名字、lane 名、闸门的牌子、其它牌子、桥上的字
+  occupied.length = 0;
+  for (const r of hudRects) occupied.push(r);
+  placeAgentLabels(ags);
+  const lbl = laneLabels(V, roads);
+  const placed = placeBoards(V, nodes, now);
+  drawLaneLabels(lbl);
+  drawBoards(placed.slice().reverse(), now);
+  drawBridgeLabels(bridgeLabels);
+  drawAgentLabels(ags);
+  if (window.__fps) window.__fps.push(now);
+}
+function clampCam() {
+  const L = em >= 0.5 ? LB : LA, bb = memo(L, "bbox", () => { let a = 1e9, b = -1e9, c = 1e9, d = -1e9; for (const p of allPts(L)) { a = Math.min(a, p[0]); b = Math.max(b, p[0]); c = Math.min(c, p[1]); d = Math.max(d, p[1]); } return [a - 3, b + 3, c - 3, d + 3]; });
+  cam.tx = clamp(cam.tx, bb[0], bb[1]); cam.tz = clamp(cam.tz, bb[2], bb[3]);
+}
+
+// ---------- 取景 ----------
+const XFULL = { mid: 1, near: 1, split: 1, expand: 1 }, XFAR = { mid: 0, near: 0, split: 0, expand: 1 };
+function lanePts(L, l, XX) {
+  const u0 = startU(L, l), u1 = Math.max(u0 + 0.1, isOpenLane(l, S) ? planEndU(L, l) - 0.6 : staticEndU(L, l));
+  const out = [];
+  for (const s of sampL(L, l, u0, u1, XX)) for (const lat of [-0.45, 0.45]) out.push([s[0] + s[2] * lat, s[1] + s[3] * lat]);
+  // 给 lane 名留地方：名字放在路头（或路尾）外侧
+  if (l.kind === "task") { const s = cn(L, l, L.labelAt === "start" ? u0 - 3.2 : u1 + 1.6, XX); out.push([s[0], s[1]]); }
+  return out;
+}
+function allPts(L) { return memo(L, "all", () => LANES.flatMap((l) => lanePts(L, l, XFAR))); }
+function fitCam(L, pts, bx, minScale, maxScale) {
+  const c = { tx: 0, tz: 0, d: 30, yaw: L.yaw, pitch: L.pitch, F: cam.F };
+  let a = 1e9, b = -1e9, e = 1e9, f = -1e9;
+  for (const p of pts) { a = Math.min(a, p[0]); b = Math.max(b, p[0]); e = Math.min(e, p[1]); f = Math.max(f, p[1]); }
+  c.tx = (a + b) / 2; c.tz = (e + f) / 2;
+  const fits = () => { const V = view(c); for (const p of pts) { const q = V.p(p[0], 0, p[1]); if (q[0] < bx.l || q[0] > bx.r || q[1] < bx.t || q[1] > bx.b) return false; } return true; };
+  for (let it = 0; it < 4; it++) {
+    let lo = 0.5, hi = 4000;
+    for (let k = 0; k < 28; k++) { const m = Math.sqrt(lo * hi); c.d = m; if (fits()) hi = m; else lo = m; }
+    c.d = hi;
+    const V = view(c); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const p of pts) { const q = V.p(p[0], 0, p[1]); x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+    const g1 = V.ground((x0 + x1) / 2, (y0 + y1) / 2), g2 = V.ground((bx.l + bx.r) / 2, (bx.t + bx.b) / 2);
+    c.tx += g1[0] - g2[0]; c.tz += g1[1] - g2[1];
+  }
+  if (minScale && scaleOf(c) < minScale) c.d = c.F / minScale;
+  if (maxScale && scaleOf(c) > maxScale) c.d = c.F / maxScale;
+  return c;
+}
+function flyTo(c, dur = 650) { fly = { from: { ...cam }, to: c, t0: performance.now(), dur }; zoomImp = 0; panV = [0, 0]; invalidate(); }
+function fitAllCam(L = LB) { return fitCam(L, allPts(L), box()); }
+function flyAll() { flyTo(fitAllCam()); }
+// 框住一条 lane：任务框到「中」，子车道和支线框到「近」；太长的 lane 就对准前端（最新的进展）
+function laneCam(id, L = LB) {
+  const l = LANE[id], XX = XFULL;
+  const ls = l.kind === "task" ? [l, ...(KIDS[l.id] || [])] : [l];
+  const ptsFrom = (u0) => ls.flatMap((x) => {
+    const a = Math.max(startU(L, x), u0), b = Math.max(a + 0.1, isOpenLane(x, S) ? lastSlotOrFront(L, x) + 0.6 : staticEndU(L, x));
+    if (b < u0) return [];
+    return sampL(L, x, a, b, XX, 0.3).flatMap((s) => [[s[0] - s[2] * 0.5, s[1] - s[3] * 0.5], [s[0] + s[2] * 0.5, s[1] + s[3] * 0.5]]);
+  });
+  const want = (l.kind === "task" ? 1.7 : 2.65) * S0[L.id];
+  // 短的 lane 也不要贴得太近：最多比「中」（子车道比「近」）再近一点
+  let c = fitCam(L, ptsFrom(-Infinity), box(), 0, want * (l.kind === "task" ? 1.5 : 1.2));
+  if (scaleOf(c) >= want) return c;
+  // lane 太长：只框住前端（最新的进展）那一段，让比例刚好到「中」（子车道到「近」）
+  let lo = startU(L, l), hi = Math.max(lo, (isOpenLane(l, S) ? frontU(L, l, S) : staticEndU(L, l)) - 0.4);
+  for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (scaleOf(fitCam(L, ptsFrom(m), box())) < want) lo = m; else hi = m; }
+  return fitCam(L, ptsFrom(hi), box());
+}
+function flyToLane(id) { flyTo(laneCam(id)); }
+// 飞到一个条目：框住它和它附近，留出右边的窗口
+let pendingOpen = null;
+function itemCam(id, L = LB) {
+  const it = AMO.item(id), l = LANE[it.lane];
+  const p0 = cn(L, l, itemU(L, it), XFULL);
+  const rel = l.kind === "sub" ? 2.8 : 2.2;
+  const c = { tx: p0[0], tz: p0[1], d: cam.F / (rel * S0[L.id]), yaw: L.yaw, pitch: L.pitch, F: cam.F };
+  // 条目放在左边空出来的地方的中间偏下，牌子在它上面，右边是窗口
+  const bx = box(true), V = view(c), p = V.p(p0[0], 0, p0[1]);
+  const g1 = V.ground(p[0], p[1]), g2 = V.ground((bx.l + bx.r) / 2, (bx.t + bx.b) / 2 + 70);
+  c.tx += g1[0] - g2[0]; c.tz += g1[1] - g2[1];
+  return c;
+}
+function flyToItem(id, open = true) { const c = itemCam(id); flyTo(c, 700); pendingOpen = open ? id : null; if (open) { sel = id; } }
+
+// ---------- 面包屑：跟着镜头对准的东西变 ----------
+function focusChain() {
+  if (X.mid < 0.5 || !roadsCache.length) return [];
+  const V = view(cam), g = V.ground(winOpen() ? (W - 420) / 2 : W / 2, H / 2);
+  let best = null;
+  for (const r of roadsCache) {
+    if (r.a < 0.5) continue;
+    for (const s of r.built.concat(r.plan)) { const d = Math.hypot(s[0] - g[0], s[1] - g[1]); if (!best || d < best.d) best = { d, l: r.l }; }
+  }
+  if (!best || best.d > 3.2) return [];
+  const f = famOf(best.l);
+  if (best.l !== f && ((best.l.kind === "sub" && X.split > 0.5) || (best.l.kind === "branch" && X.expand > 0.6)) && best.d < 0.6) return [f, best.l];
+  return [f];
+}
+function updateCrumb() {
+  const ch = focusChain(), key = ch.map((l) => l.id).join(">");
+  if (key === crumbKey) return; crumbKey = key;
+  const parts = [`<button data-c="" class="${ch.length ? "" : "cur"}">全部</button>`];
+  ch.forEach((l, i) => parts.push(`<span class="sep">›</span><button data-c="${l.id}" class="${i === ch.length - 1 ? "cur" : ""}">${AMO.esc(l.kind === "task" && l.title.length > 14 ? l.short : l.kind === "task" ? l.title : l.short)}</button>`));
+  $("#crumb").innerHTML = parts.join("");
+}
+$("#crumb").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b || b.classList.contains("cur")) return;
+  b.dataset.c ? flyToLane(b.dataset.c) : flyAll();
+});
+
+// ---------- 切换布局 ----------
+function setMode(m, animate = true) {
+  if (!LAYOUT[m]) return;
+  const chain = focusChain();
+  if (morph < 1) { LA = LB; }
+  const from = LB; LB = LAYOUT[m]; mode = m;
+  if (animate && from !== LB) { LA = from; morph = 0; morphT0 = performance.now(); em = 0; }
+  else { LA = LB; morph = 1; em = 1; }
+  if (location.hash.slice(1) !== m) history.replaceState(null, "", "#" + m);
+  renderModes();
+  // 正对着某条 lane 的，换了布局还对着它
+  const c = sel ? itemCam(sel, LB) : chain.length ? laneCam(chain[chain.length - 1].id, LB) : fitAllCam(LB);
+  if (animate) flyTo(c, 900); else { Object.assign(cam, c); invalidate(); }
+}
+function renderModes() {
+  $("#modes").innerHTML = MODES.map((m) => `<button data-m="${m}" class="${m === mode ? "on" : ""}"><b>${LAYOUT[m].label}</b><small>${LAYOUT[m].sub}</small></button>`).join("");
+}
+$("#modes").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setMode(b.dataset.m); });
+addEventListener("hashchange", () => { const m = location.hash.slice(1); if (m !== mode && LAYOUT[m]) setMode(m); });
+
+// ---------- 交互：拖动、滚轮、点击 ----------
+function hitAt(x, y) {
+  let best = null;
+  for (const h of hits) {
+    let ok = false;
+    if (h.rect) ok = x >= h.rect[0] && x <= h.rect[0] + h.rect[2] && y >= h.rect[1] && y <= h.rect[1] + h.rect[3];
+    else ok = Math.hypot(x - h.cx, y - h.cy) <= h.r;
+    if (ok && (!best || h.pr > best.pr || (h.pr === best.pr))) best = h;
+  }
+  return best;
+}
+function roadAt(x, y) {
+  const V = view(cam); let best = null;
+  for (const r of roadsCache) {
+    if (r.a < 0.5) continue;
+    for (const s of r.built) { const p = V.p(s[0], 0, s[1]), d = Math.hypot(p[0] - x, p[1] - y), lim = Math.max(10, (r.w / 2) * (V.F / p[2]) + 6); if (d < lim && (!best || d < best.d)) best = { d, l: r.l }; }
+  }
+  return best && best.l;
+}
+cv.addEventListener("pointerdown", (e) => {
+  cv.setPointerCapture(e.pointerId);
+  fly = null; pendingOpen = null; zoomImp = 0; panV = [0, 0];
+  const g = view(cam).ground(e.clientX, e.clientY);
+  drag = { x0: e.clientX, y0: e.clientY, g, moved: false, t: performance.now(), hist: [] };
+  invalidate();
+});
+cv.addEventListener("pointermove", (e) => {
+  if (drag) {
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 4) { drag.moved = true; cv.classList.add("drag"); }
+    if (drag.moved) {
+      const g = view(cam).ground(e.clientX, e.clientY);
+      const dx = drag.g[0] - g[0], dz = drag.g[1] - g[1];
+      cam.tx += dx; cam.tz += dz;
+      const t = performance.now(); drag.hist.push([t, dx, dz]); while (drag.hist.length && t - drag.hist[0][0] > 90) drag.hist.shift();
+      invalidate();
+    }
+    return;
+  }
+  const h = hitAt(e.clientX, e.clientY);
+  const key = h ? (h.kind === "item" ? h.id : h.kind === "lane" ? "lane:" + h.id : "agent:" + h.id) : null;
+  cv.classList.toggle("hot", !!h);
+  if (key !== hover) { hover = key; invalidate(); }
+});
+cv.addEventListener("pointerup", (e) => {
+  if (!drag) return;
+  const d = drag; drag = null; cv.classList.remove("drag");
+  if (d.moved) {
+    const t = performance.now(), hs = d.hist.filter((h) => t - h[0] < 90);
+    if (hs.length > 1) { const span = Math.max(16, t - hs[0][0]); panV = [hs.reduce((a, h) => a + h[1], 0) / span, hs.reduce((a, h) => a + h[2], 0) / span]; }
+    invalidate(); return;
+  }
+  const h = hitAt(e.clientX, e.clientY);
+  if (!h) { if (sel) closeWin(); return; }
+  if (h.kind === "item") openWin(h.id);
+  else if (h.kind === "lane") flyToLane(h.id);
+  else if (h.kind === "agent") flyToLane(h.lane);
+});
+cv.addEventListener("dblclick", (e) => {
+  const l = roadAt(e.clientX, e.clientY);
+  if (l) { const f = famOf(l); flyToLane(l.kind !== "task" && (X.split > 0.5 || X.expand > 0.6) ? l.id : f.id); return; }
+  zoomAt = [e.clientX, e.clientY]; zoomImp += 0.9; invalidate();
+});
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  fly = null; pendingOpen = null;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  zoomAt = [e.clientX, e.clientY]; zoomImp += clamp(-dy * 0.0016, -0.6, 0.6); invalidate();
+}, { passive: false });
+$("#zoom").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.z === "all") return flyAll();
+  zoomAt = [winOpen() ? (W - 420) / 2 : W / 2, H / 2]; zoomImp += b.dataset.z === "in" ? 0.7 : -0.7; invalidate();
+});
+addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input,textarea")) { if (e.key === "Escape") e.target.blur(); return; }
+  if (e.key === "Escape") closeWin();
+  else if (e.key === "+" || e.key === "=") { zoomAt = [W / 2, H / 2]; zoomImp += 0.6; invalidate(); }
+  else if (e.key === "-") { zoomAt = [W / 2, H / 2]; zoomImp -= 0.6; invalidate(); }
+  else if (e.key === "0") flyAll();
+});
+
+// ---------- 弹出窗口 ----------
+let choice = null;
+function openWin(id) {
+  const it = AMO.item(id); if (!it) return;
+  if (sel !== id) choice = null;
+  sel = id; renderWin(); $("#win").classList.add("open"); document.body.classList.add("winopen"); measureHud();
+  // 节点被窗口挡住时，把镜头往左挪一点
+  const n = nodeList().find((x) => x.it.id === id);
+  if (n && !fly) { const p = view(cam).p(n.c[0], 0, n.c[1]); if (p[0] > W - 450 || p[0] < 20 || p[1] < 80 || p[1] > H - 60) { const c = { ...cam }, V = view(cam), g1 = V.ground(p[0], p[1]), g2 = V.ground((W - 420) / 2, H / 2); c.tx += g1[0] - g2[0]; c.tz += g1[1] - g2[1]; flyTo(c, 380); } }
+  invalidate();
+}
+function closeWin() { sel = null; choice = null; $("#win").classList.remove("open"); document.body.classList.remove("winopen"); measureHud(); invalidate(); }
+function laneName(l) { return l.kind === "task" ? l.title : `${l.title}（${famOf(l).short}）`; }
+function renderWin() {
+  const it = AMO.item(sel); if (!it) return closeWin();
+  const st = AMO.STATUS[it.status], l = LANE[it.lane], ask = it.ask, lk = AMO.links(it.id);
+  const pill = (txt, c) => `<span class="pill" style="background:${c.soft};color:var(--text)"><span class="dot" style="background:${c.color}"></span>${txt}</span>`;
+  const who = [];
+  who.push(`在 <a class="amo-lane" data-l="${l.id}">${AMO.esc(laneName(l))}</a>`);
+  if (it.source) who.push(`谁提的：<b>${AMO.esc(AMO.ownerName(it.source))}</b>`);
+  const ownerTxt = it.owner ? AMO.ownerName(it.owner) : it.status === "settled" ? "已经定了" : "—";
+  who.push(`现在在：<b>${AMO.esc(ownerTxt)}</b>${it.status === "waiting" && it.owner ? "（等他回）" : ""}`);
+  who.push(`${AMO.fmtTime(it.at)}（${AMO.ago(it.at)}）${it.eta ? " · 预计 " + AMO.esc(it.eta) : ""}${AMO.isNew(it) ? ' · <b style="color:var(--accent)">上次看过之后新的</b>' : ""}`);
+  let h = `<div class="wh">${pill(st.sym + " " + st.label, st)}<span class="pill">${AMO.TYPE[it.type].label}</span><button class="x" data-act="close">关闭 Esc</button></div>`;
+  h += `<h2><span class="num">#${it.num}</span>${AMO.esc(it.title)}</h2><div class="meta2">${who.join("<br>")}</div>`;
+  if (it.summary) h += `<p class="sum">${AMO.inline(it.summary)}</p>`;
+  if (it.body) h += `<div class="body">${AMO.md(it.body)}</div>`;
+  if (it.conclusion) h += `<div class="concl"><b>结论</b>${AMO.inline(it.conclusion)}</div>`;
+  const src = it.source ? AMO.ownerName(it.source) : "agent";
+  if (ask) {
+    h += `<div class="sec ask"><div class="h">${ask.answer ? "你的回答" : "要你拍板"}</div><div class="q">${AMO.esc(ask.question)}</div>`;
+    if (ask.answer) {
+      const o = ask.options.find((x) => x.id === ask.answer.option);
+      h += `<div class="answered">你选了「${AMO.esc(o ? o.label : ask.answer.option)}」${ask.answer.note ? "：" + AMO.esc(ask.answer.note) : ""}<br><span style="color:var(--text-2)">${it.status === "working" ? `已交回${AMO.esc(src)}，◐ 进行中` : AMO.STATUS[it.status].sym + " " + AMO.STATUS[it.status].label}</span></div>`;
+    } else if (it.status === "needs_you") {
+      for (const o of ask.options) h += `<button class="opt ${choice === o.id ? "sel" : ""}" data-opt="${o.id}">${ask.recommend === o.id ? '<span class="rec">推荐</span>' : ""}${AMO.esc(o.label)}${o.detail ? `<span class="d">${AMO.esc(o.detail)}</span>` : ""}</button>`;
+      if (ask.why) h += `<div class="why"><b>为什么推荐：</b>${AMO.esc(ask.why)}</div>`;
+      h += `<input class="note" placeholder="附一句话（可以不填）" value="${AMO.esc(noteDraft[it.id] || "")}"><div class="acts"><button class="btn pri" data-act="send" ${choice ? "" : "disabled"}>${choice ? `发回${AMO.esc(src)}` : "先选一个"}</button><button class="btn" data-act="park">搁置</button></div>`;
+    }
+    h += `</div>`;
+  } else if (it.status === "needs_you") {
+    h += `<div class="sec ask"><div class="h">要你做的</div><input class="note" placeholder="写一句给${AMO.esc(src)}（比如：装好了，登录正常）" value="${AMO.esc(noteDraft[it.id] || "")}"><div class="acts"><button class="btn pri" data-act="comment">发给${AMO.esc(src)}</button><button class="btn" data-act="park">搁置</button></div></div>`;
+  }
+  if (it.status === "parked") h += `<div class="sec"><div class="acts"><button class="btn" data-act="reopen">重新打开</button></div></div>`;
+  if (it.evidence && it.evidence.length) {
+    h += `<div class="sec"><div class="h">证据</div>${it.evidence.map((e) => `<div class="ev"><span class="k">${AMO.EVIDENCE[e.kind] || e.kind}</span><span><code>${AMO.esc(e.ref)}</code>${e.note ? " " + AMO.esc(e.note) : ""}</span></div>`).join("")}</div>`;
+  }
+  const all = [...lk.out, ...lk.in];
+  if (all.length) {
+    h += `<div class="sec"><div class="h">关联（点了飞过去）</div>${all.map((x) => { const s2 = AMO.STATUS[x.item.status]; return `<button class="lk" data-go="${x.item.id}"><span class="r">${AMO.esc(x.say)}</span><span>${AMO.esc(x.item.short)}${x.note ? `<span class="n"> · ${AMO.esc(x.note)}</span>` : ""}</span><span class="st">${s2.sym} ${s2.label}</span></button>`; }).join("")}</div>`;
+  }
+  const ny = AMO.needsYou();
+  if (ny.length && !(ny.length === 1 && ny[0].id === it.id)) h += `<div class="next"><button class="btn" data-act="next">下一件等你的 →</button></div>`;
+  $("#win").innerHTML = h;
+}
+const noteDraft = {};
+$("#win").addEventListener("input", (e) => { if (e.target.classList.contains("note") && sel) noteDraft[sel] = e.target.value; });
+$("#win").addEventListener("click", (e) => {
+  const ref = e.target.closest(".amo-ref"); if (ref) { e.preventDefault(); const it = AMO.item(+ref.dataset.num); if (it) flyToItem(it.id); return; }
+  const ln = e.target.closest(".amo-lane"); if (ln) { flyToLane(ln.dataset.l); return; }
+  const o = e.target.closest("[data-opt]"); if (o) { choice = o.dataset.opt; renderWin(); return; }
+  const g = e.target.closest("[data-go]"); if (g) { flyToItem(g.dataset.go); return; }
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const id = sel, note = (noteDraft[id] || "").trim();
+  if (b.dataset.act === "close") closeWin();
+  else if (b.dataset.act === "send" && choice) { AMO.answer(id, choice, note); delete noteDraft[id]; choice = null; }
+  else if (b.dataset.act === "park") { AMO.park(id, note); delete noteDraft[id]; }
+  else if (b.dataset.act === "comment") { if (!note) { AMO.toast("先写一句"); return; } AMO.comment(id, note); delete noteDraft[id]; renderWin(); }
+  else if (b.dataset.act === "reopen") AMO.reopen(id);
+  else if (b.dataset.act === "next") tour(id);
+});
+// 「! 5 件等你」：依次飞到每道闸门并弹出窗口
+function tour(fromId) {
+  const ny = AMO.needsYou(); if (!ny.length) { AMO.toast("没有等你的了"); return; }
+  let i = fromId ? ny.findIndex((x) => x.id === fromId) + 1 : tourIdx + 1;
+  if (i >= ny.length || i < 0) i = 0;
+  tourIdx = i; flyToItem(ny[i].id);
+}
+$("#need").addEventListener("click", () => tour(sel && AMO.item(sel).status === "needs_you" ? sel : null));
+
+// ---------- 图例 ----------
+function shapeSvg(type) {
+  const [n, rot] = SHAPE[type];
+  if (n > 8) return `<svg viewBox="-7 -7 14 14"><circle r="5" fill="var(--text-3)"/></svg>`;
+  const pts = []; for (let i = 0; i < n; i++) { const a = rot + (i * 2 * Math.PI) / n; pts.push((5.6 * Math.cos(a)).toFixed(1) + "," + (5.6 * Math.sin(a)).toFixed(1)); }
+  return `<svg viewBox="-7 -7 14 14"><polygon points="${pts.join(" ")}" fill="var(--text-3)"/></svg>`;
+}
+function renderLegend() {
+  const types = ["milestone", "decision", "conclusion", "finding", "bug", "task"];
+  $("#legend").innerHTML = `<div class="row">${types.map((t) => `<span class="k">${shapeSvg(t)}${AMO.TYPE[t].label}</span>`).join("")}<span class="k"><svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--accent-fill)" stroke-width="3"/><line x1="1" y1="5" x2="21" y2="5" stroke="#fff" stroke-width="1.6" stroke-dasharray="3 3"/></svg>闸门：等你拍板</span></div>
+  <div class="row"><span class="k"><span class="sw" style="background:${PAL.road}"></span>路面</span><span class="k"><span class="sw" style="background:${PAL.roadNew}"></span>上次看过（${AMO.fmtTime(AMO.lastSeen())}）之后新铺的</span><span class="k"><span class="sw" style="background:none;border-style:dashed"></span>计划中</span><button onclick="AMO.markSeen()">标为看过</button></div>
+  <div class="row src">数据：studio/plans/userlayer/sample-lanes.json（假数据）· 规范 0.2：README.md</div>`;
+}
+
+// ---------- 数据变了（自己或别的表达里回答了） ----------
+function onData() {
+  const before = S;
+  S = computeState();
+  const now = performance.now();
+  let changed = false;
+  for (const id of before.closed) if (!S.closed.has(id)) { openAnim[id] = now; changed = true; }
+  for (const id of S.closed) if (!before.closed.has(id)) { delete openAnim[id]; changed = true; }
+  if (changed || before.run.size !== S.run.size || [...S.run].some((x) => !before.run.has(x))) { Sprev = before; frontT0 = now + 420; }
+  const n = AMO.needsYou().length;
+  $("#need").textContent = n ? `! ${n} 件等你` : "✓ 没有等你的";
+  $("#need").classList.toggle("none", !n);
+  if (sel) renderWin();
+  renderLegend(); measureHud();
+  invalidate();
+}
+AMO.on(onData);
+new MutationObserver(() => { readPal(); renderLegend(); invalidate(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readPal(); renderLegend(); invalidate(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) invalidate(); });
+addEventListener("resize", () => { resize(); measureHud(); });
+
+// ---------- 开始 ----------
+readPal();
+// 已经在别的表达里回答过的闸门，打开时就是抬起的
+resize();
+Object.assign(cam, fitAllCam(LB));
+renderModes(); onData();
+// 给截图脚本用
+window.__lanes = { setMode, flyToLane, flyToItem, flyAll, openWin, closeWin, tour, cam, get X() { return X; }, get busy() { return !!fly || morph < 1 || Math.abs(zoomImp) > 1e-4; }, zoomBy: (k, x, y) => { zoomAt = [x ?? W / 2, y ?? H / 2]; zoomImp += k; invalidate(); }, S0, LAYOUT };
+</script>
+</body>
+</html>

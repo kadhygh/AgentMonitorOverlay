@@ -17,7 +17,7 @@ import { readPlace, savePlace } from "./shell/lastPlace.js";
 import { SearchBox } from "./shell/SearchBox.js";
 import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
-import { featureOn, FeaturesProvider } from "./lib/features.js";
+import { experimentalOn, featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
 import { navHistory, useNavHistory } from "./shell/navHistory.js";
 import type { MarksTarget } from "./marks/logic.js";
@@ -210,7 +210,7 @@ export function App() {
     return (
       <div className="app">
         <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} />
-        <ViewBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} search={<SearchBox state={null} onOpen={() => undefined} disabled />} disabled />
+        <ViewBar views={VIEWS.filter((d) => !d.experimental)} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} search={<SearchBox state={null} onOpen={() => undefined} disabled />} disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
         </div>
@@ -222,7 +222,9 @@ export function App() {
   const disabled = settings?.disabledFeatures ?? [];
   // 设置 → 模型 → 快速选择, for every model row of this window.
   setQuickModels(settings?.quickModels);
-  const views = VIEWS.filter((d) => featureOn(disabled, d.feature));
+  // 测试功能 (2026-11-01): their tabs and pages are there only while turned on; until the settings arrive, none are.
+  const experimental = settings?.experimentalFeatures ?? [];
+  const views = VIEWS.filter((d) => featureOn(disabled, d.feature) && experimentalOn(experimental, d.experimental));
   const planning = featureOn(disabled, "planning");
   const decisionsByTask = new Map<string, number>();
   for (const d of openDecisions) if (d.taskId) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
@@ -239,6 +241,7 @@ export function App() {
     scope,
     data: { unreadMail, openDecisions, decisionsByTask, checklist, proposals, todos },
     disabled,
+    experimental,
     setView,
   };
   // A page of a feature that was just turned off falls back to the board.

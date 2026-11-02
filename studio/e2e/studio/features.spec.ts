@@ -24,7 +24,7 @@ test("turn planning off and on again", async () => {
   // Off: it goes away; the dialog lists it.
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
-  await dialog.getByRole("tab", { name: "功能" }).click();
+  await dialog.getByRole("tab", { name: "功能", exact: true }).click();
   // 扩展包 was removed (2026-10-31).
   await expect(dialog.getByTestId("feature-packs")).toHaveCount(0);
   await dialog.getByTestId("feature-planning").uncheck();

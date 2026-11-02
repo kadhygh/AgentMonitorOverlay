@@ -1,0 +1,258 @@
+{
+  "spec": "amo.datalayer/0.1",
+  "note": "假数据：取材于 studio/packages/relay/CHANGELOG.md 的 0.7.0–0.7.6，条目内容是编的，用来试表达方式。",
+  "context": {
+    "id": "ctx-relay-07x",
+    "title": "中转 0.7.x 审核",
+    "goal": "10-31 中转一天部署了 7 次（0.7.0–0.7.6）。把这批改动过一遍：哪些要你拍板，哪些还在修，哪些已经定了。",
+    "updatedAt": "2026-11-01T08:20:00+08:00"
+  },
+  "viewer": { "name": "你", "lastSeenAt": "2026-10-31T21:00:00+08:00" },
+  "areas": [
+    { "id": "progress", "name": "打包进度", "summary": "问题页顶上的打包进度条和打包记录（0.7.3–0.7.5）" },
+    { "id": "issues", "name": "问题页", "summary": "状态改名、要你看、去会话讨论、窄窗口布局（0.7.1、0.7.3、0.7.4）" },
+    { "id": "admin", "name": "管理页", "summary": "服务器状态卡片和 24 小时曲线（0.7.2）" },
+    { "id": "deploy", "name": "部署", "summary": "中转服务怎么部署、什么时候部署" },
+    { "id": "android", "name": "安卓发布", "summary": "服务器上的安卓安装包和下载（0.7.6）" }
+  ],
+  "agents": [
+    { "id": "duty", "item": "i9", "name": "值守", "role": "worker", "model": "Opus 5.5", "status": "running", "doing": "修 #9：曲线在重启那段断开显示" },
+    { "id": "iter", "item": "i5", "name": "维护迭代", "role": "worker", "model": "Opus 5.5", "status": "running", "doing": "改 #5：「要你看」的数字不刷新" },
+    { "id": "android", "item": "i8", "name": "安卓任务", "role": "worker", "model": "Codex", "status": "waiting", "doing": "等你回答 #8，再改清理规则" },
+    { "id": "curator", "name": "整理员", "role": "curator", "model": "Sonnet 5.5", "status": "idle", "doing": "08:12 整理完：新增 #1、#3，补了 4 条关联" },
+    { "id": "presenter", "name": "表达员", "role": "presenter", "model": "Sonnet 5.5", "status": "idle", "doing": "按需生成讲解页" }
+  ],
+  "items": [
+    {
+      "id": "i1", "num": 1, "short": "今天何时部署", "type": "decision", "importance": "high", "area": "deploy", "status": "needs_you", "owner": "human", "source": "curator",
+      "title": "今天什么时候再部署一次中转？",
+      "summary": "#5 和 #9 的修复上午能好。部署会让中转重启几秒，在线的人会断一下线。",
+      "body": "现在服务器上是 0.7.6。上午值守在修 #9（曲线），维护迭代在修 #5（页签数字），两个都改中转服务，要再部署一次才生效。\n\n部署走 `npm run release -- relay-service`，会重启中转几秒：正在聊天的人会断线重连，正在打包的进度上报会丢一次。",
+      "ask": {
+        "question": "#5、#9 修好之后，什么时候部署？",
+        "options": [
+          { "id": "now", "label": "修好就部署", "detail": "最快生效，可能打断正在聊天的人" },
+          { "id": "noon", "label": "午饭时间部署", "detail": "12:00–13:00 在线的人最少" },
+          { "id": "night", "label": "攒到晚上一起", "detail": "白天再有修复也一起带上" }
+        ],
+        "recommend": "noon",
+        "why": "两个修复都不急（只影响管理页和一个页签数字），午饭时间在线的人最少，断线影响最小。",
+        "deep": false
+      },
+      "evidence": [
+        { "kind": "commit", "ref": "3a19b035", "note": "chore(release): 中转服务 0.7.6，现在线上的版本" },
+        { "kind": "file", "ref": "AGENTS.md", "note": "relay-service 会重启中转几秒" }
+      ],
+      "createdAt": "2026-11-01T08:10:00+08:00", "updatedAt": "2026-11-01T08:10:00+08:00"
+    },
+    {
+      "id": "i2", "num": 2, "short": "断掉的打包怎么记", "type": "decision", "importance": "normal", "area": "progress", "status": "needs_you", "owner": "human", "source": "iter",
+      "title": "打包中途断了（电脑关了），记「失败」还是单独记「中断」？",
+      "summary": "现在没报结束就又开始新一次的，一律记成失败。失败率会虚高，中位数也会被拉偏。",
+      "body": "0.7.4 的规则：一次打包没报结束，下一次就开始了，就把上一次记成失败。\n\n10-31 有 2 次是晚上关机断的，现在打包记录里显示成两个红色的失败，「提交版本」这一步的中位数也被拉长了。",
+      "ask": {
+        "question": "断掉的打包怎么记？",
+        "options": [
+          { "id": "fail", "label": "维持记失败", "detail": "不用改" },
+          { "id": "interrupted", "label": "新增「中断」", "detail": "灰色显示，不算进失败率和中位数" },
+          { "id": "drop", "label": "直接不记", "detail": "记录里看不到这次" }
+        ],
+        "recommend": "interrupted",
+        "why": "打包记录是用来估时间、看哪一步常出问题的。关机不是打包的问题，混进失败里会误导。",
+        "deep": false
+      },
+      "evidence": [
+        { "kind": "file", "ref": "studio/packages/relay/CHANGELOG.md", "note": "0.7.4 节：没报结束就又开始了新一次的，记成失败" },
+        { "kind": "file", "ref": "studio/scripts/release.mjs", "note": "打包进度从这里上报" },
+        { "kind": "session", "ref": "维护迭代 · 10-31", "note": "讨论过这条，没定" }
+      ],
+      "createdAt": "2026-10-31T18:40:00+08:00", "updatedAt": "2026-10-31T18:40:00+08:00"
+    },
+    {
+      "id": "i3", "num": 3, "short": "脏工作区拒绝部署？", "type": "question", "importance": "high", "area": "deploy", "status": "needs_you", "owner": "human", "source": "curator",
+      "title": "部署中转时工作区有没提交的改动，要不要直接拒绝？",
+      "summary": "10-31 上午有一次部署没提交，下午 0.7.1 部署时把它冲掉了，到 0.7.2 才补回来。",
+      "body": "整理员在 0.7.2 的改动说明里看到这句：「10-31 上午部署过一次（没提交），被 0.7.1 覆盖掉了，这一版恢复。」\n\n`AGENTS.md` 已经写了「不要绕过 release 直接 deploy 没提交的中转改动」，但这次还是发生了。",
+      "ask": {
+        "question": "部署脚本发现有没提交的改动时怎么办？",
+        "options": [
+          { "id": "refuse", "label": "拒绝部署", "detail": "提示先提交，再部署" },
+          { "id": "warn", "label": "只警告", "detail": "列出没提交的文件，问一句还要不要继续" },
+          { "id": "none", "label": "不管", "detail": "维持现状" }
+        ],
+        "recommend": "refuse",
+        "why": "规矩靠人和 AI 记，总有记不住的时候，交给脚本就不会再发生。",
+        "deep": false
+      },
+      "evidence": [
+        { "kind": "file", "ref": "studio/packages/relay/CHANGELOG.md", "note": "0.7.2 节：上午那次部署被 0.7.1 覆盖" },
+        { "kind": "file", "ref": "AGENTS.md", "note": "常用命令 → relay-service 那条" }
+      ],
+      "createdAt": "2026-11-01T08:05:00+08:00", "updatedAt": "2026-11-01T08:05:00+08:00"
+    },
+    {
+      "id": "i4", "num": 4, "short": "NaN 秒", "type": "bug", "importance": "normal", "area": "progress", "status": "settled", "owner": "duty", "source": "duty",
+      "title": "打包记录里 0.7.3 那次显示「NaN 秒」",
+      "summary": "0.7.3 时记下的打包没有每一步的时间，表格里算出来是 NaN。",
+      "body": "0.7.4 才开始记每一步的时间，之前那次只有总时长。",
+      "conclusion": "0.7.5 修了：没有分步时间的旧记录，那几格显示「—」。",
+      "evidence": [
+        { "kind": "commit", "ref": "ad9fb171", "note": "chore(release): 中转服务 0.7.5" }
+      ],
+      "createdAt": "2026-10-31T16:20:00+08:00", "updatedAt": "2026-10-31T19:30:00+08:00"
+    },
+    {
+      "id": "i5", "num": 5, "short": "页签数字不刷新", "type": "bug", "importance": "normal", "area": "issues", "status": "working", "owner": "iter", "source": "curator", "eta": "今天上午",
+      "title": "点了「前往讨论」，「要你看」页签上的数字要刷新页面才减",
+      "summary": "问题已经不在「要你看」列表里了，但页签上的数字还是旧的。",
+      "body": "页签数字只在页面加载时算一次，状态改成「去会话讨论」后没有重算。维护迭代在改，改完要再部署（见 #1）。",
+      "evidence": [
+        { "kind": "file", "ref": "studio/packages/relay/CHANGELOG.md", "note": "0.7.4 节：「要你看」不再列「去会话讨论」的问题" }
+      ],
+      "createdAt": "2026-11-01T08:00:00+08:00", "updatedAt": "2026-11-01T08:15:00+08:00"
+    },
+    {
+      "id": "i6", "num": 6, "short": "回列表被输入法挡", "type": "finding", "importance": "low", "area": "issues", "status": "waiting", "owner": "team:测试同事", "source": "duty",
+      "title": "手机竖屏上，「← 回列表」被输入法挡住",
+      "summary": "点进一个问题再弹出键盘，顶上的「← 回列表」被挤出屏幕。电脑上的窄窗口没问题。",
+      "body": "值守在模拟器里复现了一次，不稳定。请测试同事用真手机试一下。",
+      "evidence": [
+        { "kind": "log", "ref": "值守 10-31 17:02", "note": "模拟器里复现 1 次 / 试了 5 次" }
+      ],
+      "createdAt": "2026-10-31T17:05:00+08:00", "updatedAt": "2026-10-31T17:05:00+08:00"
+    },
+    {
+      "id": "i7", "num": 7, "short": "去会话讨论不管", "type": "decision", "importance": "normal", "area": "issues", "status": "settled", "owner": "human", "source": "duty",
+      "title": "「去会话讨论」的问题，值守还要不要管？",
+      "summary": "人点了「前往讨论」，说明想自己在会话里谈。",
+      "ask": {
+        "question": "人点了「前往讨论」之后，值守怎么做？",
+        "options": [
+          { "id": "keep", "label": "照常处理", "detail": "" },
+          { "id": "handoff", "label": "不再碰，等人交回", "detail": "页面上放「交回值守」按钮" }
+        ],
+        "recommend": "handoff",
+        "why": "人已经接手，值守再改会和人的会话冲突。",
+        "deep": false,
+        "answer": { "option": "handoff", "note": "对，还要显示处理过它的会话 id", "at": "2026-10-31T15:10:00+08:00" }
+      },
+      "conclusion": "值守不再碰；「要你看」也不列它。想交回就点「交回值守」。页面显示处理过它的会话 id，可以复制。",
+      "evidence": [
+        { "kind": "file", "ref": "studio/packages/relay/CHANGELOG.md", "note": "0.7.4 节" }
+      ],
+      "createdAt": "2026-10-31T14:30:00+08:00", "updatedAt": "2026-10-31T16:00:00+08:00"
+    },
+    {
+      "id": "i8", "num": 8, "short": "安卓包留几个", "type": "question", "importance": "normal", "area": "android", "status": "needs_you", "owner": "human", "source": "android",
+      "title": "服务器上的安卓安装包只留最新 3 个，够不够回滚？",
+      "summary": "android-publish 每次发布后删旧包。连发 3 个测试包，正式版那个就被删了。",
+      "body": "桌面工具的清理规则是：留最新 3 个，**再加上两个通道指向的版本**。安卓现在只有前半句。",
+      "ask": {
+        "question": "安卓安装包保留几个？",
+        "options": [
+          { "id": "keep3", "label": "维持最新 3 个", "detail": "" },
+          { "id": "keep5", "label": "改成最新 5 个", "detail": "" },
+          { "id": "channel", "label": "最新 3 个 + 通道指向的", "detail": "和桌面工具一样" }
+        ],
+        "recommend": "channel",
+        "why": "桌面工具已经是这个规则，安卓跟着一样，不用记两套。",
+        "deep": false
+      },
+      "evidence": [
+        { "kind": "commit", "ref": "1c84390c", "note": "android-publish：newest 3 kept" },
+        { "kind": "file", "ref": "studio/scripts/relay-mac.mjs", "note": "android-publish 和 platform-prune" }
+      ],
+      "createdAt": "2026-11-01T07:50:00+08:00", "updatedAt": "2026-11-01T07:50:00+08:00"
+    },
+    {
+      "id": "i9", "num": 9, "short": "重启段曲线连直线", "type": "bug", "importance": "normal", "area": "admin", "status": "working", "owner": "duty", "source": "duty", "eta": "今天上午",
+      "title": "管理页 24 小时曲线在中转重启那段连成了一条直线",
+      "summary": "每次部署中转会重启几秒，这段没有数据，曲线把前后两个点直接连起来，看着像那段时间很平稳。",
+      "body": "应该断开，或者画成虚线并标「重启」。值守在改，估计上午好；改完要再部署（见 #1）。",
+      "evidence": [
+        { "kind": "log", "ref": "/admin 10-31 曲线", "note": "10-31 共 7 段直线，对应 7 次部署" }
+      ],
+      "createdAt": "2026-10-31T23:10:00+08:00", "updatedAt": "2026-11-01T08:20:00+08:00"
+    },
+    {
+      "id": "i10", "num": 10, "short": "补打包进度截图", "type": "task", "importance": "low", "area": "progress", "status": "working", "owner": "iter", "source": "iter", "eta": "#2 定了之后",
+      "title": "给打包进度补 e2e 截图（浅色 + 深色）",
+      "summary": "0.7.3、0.7.4 改了问题页顶上的进度条，还没有截图对照。",
+      "body": "等 #2 定了再截：如果加「中断」状态，打包记录的样子会变。",
+      "evidence": [],
+      "createdAt": "2026-10-31T19:00:00+08:00", "updatedAt": "2026-10-31T19:00:00+08:00"
+    },
+    {
+      "id": "i11", "num": 11, "short": "界面照旧热更新", "type": "conclusion", "importance": "normal", "area": "deploy", "status": "settled", "owner": "curator", "source": "curator",
+      "title": "中转客户端的界面内容照旧由服务器热更新，不经过平台",
+      "summary": "平台只装和更新中转的外壳。",
+      "conclusion": "平台只装、更新外壳；界面内容（relay-ui）还是部署中转时一起更新。",
+      "evidence": [
+        { "kind": "file", "ref": "AGENTS.md", "note": "架构约束第 3 条（2026-10-28 晚改）" }
+      ],
+      "createdAt": "2026-10-31T10:00:00+08:00", "updatedAt": "2026-10-31T10:00:00+08:00"
+    },
+    {
+      "id": "i12", "num": 12, "short": "宽屏右边空", "type": "finding", "importance": "low", "area": "progress", "status": "parked", "owner": "human", "source": "iter",
+      "title": "打包记录在宽屏下右边空了一大片",
+      "summary": "30 次记录 × 5 步，宽屏时表格只占左边一半。",
+      "conclusion": "先放着，等打包步骤多了再说。",
+      "evidence": [],
+      "createdAt": "2026-10-31T19:20:00+08:00", "updatedAt": "2026-10-31T20:10:00+08:00"
+    },
+    {
+      "id": "i13", "num": 13, "short": "al20 能看到吗", "type": "question", "importance": "normal", "area": "android", "status": "waiting", "owner": "team:测试同事", "source": "android",
+      "title": "al20 那台手机能看到下载页的安卓入口吗？",
+      "summary": "下载页加了安卓安装包，只有登录的人能看到。al20 走 Tailscale 转发进来，不确定登录状态。",
+      "body": "已经通过中转问了测试同事，等回复。",
+      "evidence": [
+        { "kind": "session", "ref": "中转 · 问测试同事", "note": "10-31 21:30 发出" }
+      ],
+      "createdAt": "2026-10-31T21:30:00+08:00", "updatedAt": "2026-10-31T21:30:00+08:00"
+    },
+    {
+      "id": "i14", "num": 14, "short": "中位数估时间", "type": "conclusion", "importance": "normal", "area": "progress", "status": "settled", "owner": "curator", "source": "curator",
+      "title": "打包进度按前几次同一步用时的中位数估「约多久」",
+      "summary": "每一步一条进度条，没有历史的步骤显示滚动条。",
+      "conclusion": "0.7.4 起：每一步（类型检查、单测、提交版本、打包、发布）一条进度条，按中位数估时间；顶上写预计还要多久。",
+      "evidence": [
+        { "kind": "file", "ref": "studio/packages/relay/CHANGELOG.md", "note": "0.7.4 节" }
+      ],
+      "createdAt": "2026-10-31T15:00:00+08:00", "updatedAt": "2026-10-31T15:00:00+08:00"
+    }
+  ],
+  "links": [
+    { "from": "i1", "to": "i5", "rel": "depends", "note": "修好了才值得部署" },
+    { "from": "i1", "to": "i9", "rel": "depends", "note": "修好了才值得部署" },
+    { "from": "i3", "to": "i1", "rel": "affects", "note": "如果拒绝，部署前要先提交" },
+    { "from": "i2", "to": "i14", "rel": "affects", "note": "中位数的算法要跟着改" },
+    { "from": "i10", "to": "i2", "rel": "depends", "note": "定了再截图" },
+    { "from": "i4", "to": "i14", "rel": "part_of" },
+    { "from": "i12", "to": "i14", "rel": "part_of" },
+    { "from": "i5", "to": "i7", "rel": "part_of", "note": "实现 #7 时漏的" },
+    { "from": "i13", "to": "i8", "rel": "affects", "note": "同一批安卓下载改动" }
+  ],
+  "events": [
+    { "at": "2026-10-31T10:00:00+08:00", "item": "i11", "actor": "curator", "kind": "created", "text": "记下结论：界面内容照旧热更新" },
+    { "at": "2026-10-31T14:30:00+08:00", "item": "i7", "actor": "duty", "kind": "created", "text": "问：去会话讨论的问题还要不要管" },
+    { "at": "2026-10-31T15:00:00+08:00", "item": "i14", "actor": "curator", "kind": "created", "text": "记下结论：打包进度按中位数估时间" },
+    { "at": "2026-10-31T15:10:00+08:00", "item": "i7", "actor": "human", "kind": "answered", "text": "你选了「不再碰，等人交回」：还要显示处理过它的会话 id" },
+    { "at": "2026-10-31T16:00:00+08:00", "item": "i7", "actor": "duty", "kind": "concluded", "text": "做完，随 0.7.4 部署" },
+    { "at": "2026-10-31T16:20:00+08:00", "item": "i4", "actor": "duty", "kind": "created", "text": "发现：打包记录显示 NaN 秒" },
+    { "at": "2026-10-31T17:05:00+08:00", "item": "i6", "actor": "duty", "kind": "created", "text": "发现：手机竖屏「← 回列表」被挡，请测试同事确认" },
+    { "at": "2026-10-31T18:40:00+08:00", "item": "i2", "actor": "iter", "kind": "created", "text": "问：断掉的打包记失败还是中断" },
+    { "at": "2026-10-31T19:00:00+08:00", "item": "i10", "actor": "iter", "kind": "created", "text": "待办：补打包进度的截图，等 #2" },
+    { "at": "2026-10-31T19:20:00+08:00", "item": "i12", "actor": "iter", "kind": "created", "text": "发现：宽屏下打包记录右边空" },
+    { "at": "2026-10-31T19:30:00+08:00", "item": "i4", "actor": "duty", "kind": "concluded", "text": "0.7.5 修了，显示「—」" },
+    { "at": "2026-10-31T20:10:00+08:00", "item": "i12", "actor": "human", "kind": "status", "text": "你搁置了：等打包步骤多了再说" },
+    { "at": "2026-10-31T21:30:00+08:00", "item": "i13", "actor": "android", "kind": "created", "text": "通过中转问测试同事 al20 能不能看到安卓入口" },
+    { "at": "2026-10-31T23:10:00+08:00", "item": "i9", "actor": "duty", "kind": "created", "text": "发现：管理页曲线在重启那段连成直线" },
+    { "at": "2026-11-01T07:50:00+08:00", "item": "i8", "actor": "android", "kind": "created", "text": "问：安卓安装包只留 3 个够不够" },
+    { "at": "2026-11-01T08:00:00+08:00", "item": "i5", "actor": "curator", "kind": "created", "text": "整理时发现：「要你看」的数字不刷新" },
+    { "at": "2026-11-01T08:05:00+08:00", "item": "i3", "actor": "curator", "kind": "created", "text": "整理时发现：0.7.2 那次部署被冲掉，问要不要拦" },
+    { "at": "2026-11-01T08:10:00+08:00", "item": "i1", "actor": "curator", "kind": "created", "text": "问：今天什么时候再部署" },
+    { "at": "2026-11-01T08:12:00+08:00", "actor": "curator", "kind": "comment", "text": "整理完：新增 #1、#3、#5，补了 4 条关联（#1→#5、#1→#9、#3→#1、#5→#7）" },
+    { "at": "2026-11-01T08:15:00+08:00", "item": "i5", "actor": "iter", "kind": "status", "text": "维护迭代接手，在改" },
+    { "at": "2026-11-01T08:20:00+08:00", "item": "i9", "actor": "duty", "kind": "status", "text": "值守在改：重启那段断开显示，估计上午好" }
+  ]
+}

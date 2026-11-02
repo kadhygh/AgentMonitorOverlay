@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { OptionalFeature } from "@amo-studio/protocol";
+import type { ExperimentalFeature, OptionalFeature } from "@amo-studio/protocol";
 
 // Optional features the person turned off in 设置 → 功能 (kept by the Host, so both windows and the agents' tools
 // agree). Until the settings arrive everything counts as on, so nothing blinks away on a normal start.
@@ -18,4 +18,9 @@ export function useFeature(id: OptionalFeature): boolean {
 /** Whether a feature-tagged item (a view, a panel) shows. */
 export function featureOn(disabled: readonly OptionalFeature[] | undefined, id: OptionalFeature | undefined): boolean {
   return !id || !(disabled ?? []).includes(id);
+}
+
+/** Whether a view or panel of a feature being tried out shows: only while it is turned on (设置 → 测试功能, off by default). */
+export function experimentalOn(on: readonly ExperimentalFeature[] | undefined, id: ExperimentalFeature | undefined): boolean {
+  return !id || (on ?? []).includes(id);
 }

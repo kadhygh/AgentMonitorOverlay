@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@amo-studio/protocol": "0.0.0",
+    "@deck.gl/core": "9.4.1",
+    "@deck.gl/layers": "9.4.1",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/noto-sans-sc": "^5.3.1",
     "@fontsource-variable/noto-serif-sc": "^5.3.1",

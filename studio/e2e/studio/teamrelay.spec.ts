@@ -96,7 +96,7 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
   // 设置 → 功能 → 中转 (2026-10-30): asks can go without the person's 发送; off by default.
   await page.getByRole("button", { name: "设置" }).first().click();
   const settings = page.getByRole("dialog", { name: "设置" });
-  await settings.getByRole("tab", { name: "功能" }).click();
+  await settings.getByRole("tab", { name: "功能", exact: true }).click();
   const auto = settings.getByTestId("team-auto-send");
   await expect(auto).not.toBeChecked();
   await auto.check();

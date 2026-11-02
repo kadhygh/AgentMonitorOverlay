@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>地图 · userlayer 原型</title>
+<style>
+/*@amo-style*/
+/* Claude 风格 · 单文件 HTML 基础样式
+   用法：整段内联进 <style>，之后只追加本页专用样式。
+   来源：2026-10-26 AIWork HTML 展示（推进总览 / 方案图解）。图表系列色 --s1..--s3 已过色盲与对比度校验（浅 / 深两套）。
+   深色切换：<button class="theme" onclick="toggleTheme()">切换深浅色</button>
+   function toggleTheme(){const r=document.documentElement;const d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=d?'light':'dark'} */
+
+/* ---------- 变量 ---------- */
+:root{color-scheme:light;--bg:#faf9f5;--surface:#ffffff;--surface-2:#f0eee6;--line:#e8e6dc;--text:#141413;--text-2:#5e5d59;--text-3:#87867f;--accent:#c96442;--accent-fill:#d97757;--accent-soft:#f6e9e1;--good:#2e7d5b;--good-soft:#e5efe8;--warn:#c28a1e;--warn-soft:#f6ecd6;--crit:#b5443a;--crit-soft:#f5e1dd;--neutral:#b0aea5;--code:#f0eee6;--s1:#d97757;--s2:#4a86c8;--s3:#5e8c3a;--lane-v:#f5f3ec;--lane-l:#f8eee8;--tip-bg:#141413;--tip-fg:#faf9f5;--shadow:0 1px 2px rgba(20,20,19,.04),0 6px 18px rgba(20,20,19,.04);--serif:"Tiempos Text","Noto Serif SC","Source Han Serif SC",Georgia,serif;--sans:"Styrene B",Inter,"Noto Sans SC","Microsoft YaHei UI",system-ui,sans-serif;--mono:"Cascadia Mono","JetBrains Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#262624;--surface:#30302e;--surface-2:#3a3a37;--line:#44433f;--text:#faf9f5;--text-2:#c2c0b6;--text-3:#9a988f;--accent:#e08b6b;--accent-fill:#c96442;--accent-soft:#46332b;--good:#5aa37e;--good-soft:#283b31;--warn:#d9a441;--warn-soft:#41372a;--crit:#d4675c;--crit-soft:#452b28;--neutral:#6b6a64;--code:#262624;--s1:#c96442;--s2:#4f86c6;--s3:#62903c;--lane-v:#353533;--lane-l:#3b322d;--tip-bg:#faf9f5;--tip-fg:#141413;--shadow:none}
+
+/* ---------- 基础 ---------- */
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+button{font-family:var(--sans);cursor:pointer}
+.wrap{max-width:1060px;margin:0 auto;padding:30px 28px 80px}
+nav.top{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--text-3);margin-bottom:30px}
+nav.top a{color:var(--text-2);text-decoration:none}
+nav.top a:hover{color:var(--accent)}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--text-2);border-radius:8px;padding:5px 12px;font-size:13px}
+.theme:hover{border-color:var(--accent-fill)}
+h1{font:500 31px/1.3 var(--serif);letter-spacing:-.01em;margin:0 0 10px}
+h1 code{font-size:.66em;vertical-align:4px}
+h2{font:500 22px/1.4 var(--serif);margin:52px 0 14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h2 small{font:400 13px var(--sans);color:var(--text-3)}
+h3{font:500 17px/1.4 var(--serif);margin:0 0 8px}
+.lead{color:var(--text-2);margin:0 0 16px;font:15.5px/1.75 var(--serif)}
+code{font-family:var(--mono);font-size:.84em;background:var(--code);padding:1px 6px;border-radius:5px;color:var(--text);word-break:break-word}
+a{color:var(--accent)}
+footer{margin-top:56px;font-size:12.5px;color:var(--text-3);border-top:1px solid var(--line);padding-top:16px}
+
+/* ---------- 容器 ---------- */
+.card,.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow)}
+.card p,.prose{font-family:var(--serif)}
+.prose{font-size:15px;line-height:1.8;color:var(--text-2)}
+.prose li::marker{color:var(--accent-fill)}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:820px){.twocol{grid-template-columns:1fr}}
+
+/* 一句话结论：<div class="tldr"><b class="h">一句话结论</b><ul><li>…</li></ul></div> */
+.tldr{margin:28px 0 0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 26px;box-shadow:var(--shadow);font:16px/1.8 var(--serif)}
+.tldr b.h{display:block;font:600 12px var(--sans);letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+.tldr ul{margin:0;padding-left:20px}
+.tldr li{margin:5px 0}
+.tldr li::marker{color:var(--accent-fill)}
+.tldr code{font-size:.78em}
+
+/* 标签：<span class="pill good"><span class="dot" style="background:var(--good)"></span>✓ 已完成</span> */
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 11px;border-radius:999px;background:var(--surface-2);color:var(--text-2)}
+.pill.good{background:var(--good-soft);color:var(--text)}
+.pill.warn{background:var(--warn-soft);color:var(--text)}
+.pill.crit{background:var(--crit-soft);color:var(--text)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+
+/* 数字卡片：<div class="tiles"><div class="tile"><div class="k">标签</div><div class="v">68<small> 项</small></div><div class="d">说明</div></div></div> */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 18px;box-shadow:var(--shadow)}
+.tile .k{font-size:12.5px;color:var(--text-3)}
+.tile .v{font:500 34px/1.15 var(--serif);margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.tile .v small{font:400 14px var(--sans);color:var(--text-3);margin-left:2px}
+.tile .d{font-size:12px;color:var(--text-3);line-height:1.5}
+
+/* 时间线：<ol class="tl"><li><span class="node">✓</span><details class="stage"><summary><div class="sname">P1 标题<span>副标题</span></div><div class="sone">一句话</div><div><span class="commit">abc1234</span><span class="chev">▸</span></div></summary><div class="sbody">…</div></details></li></ol>
+   节点：.node（完成）/ .node.warn（停过或待处理）/ .node.todo（未开始） */
+.tl{position:relative;margin:0;padding:0;list-style:none}
+.tl::before{content:"";position:absolute;left:13px;top:18px;bottom:18px;width:1.5px;background:var(--line)}
+.tl li{position:relative;padding-left:42px;margin-bottom:10px}
+.tl .node{position:absolute;left:3px;top:15px;width:22px;height:22px;border-radius:50%;background:var(--good);display:grid;place-items:center;font-size:11px;color:#fff;font-weight:700;box-shadow:0 0 0 4px var(--bg)}
+.tl .node.warn{background:var(--warn)}
+.tl .node.todo{background:var(--surface);border:1.5px solid var(--neutral);color:var(--text-3)}
+details.stage{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+details.stage>summary{list-style:none;cursor:pointer;padding:12px 18px;display:grid;grid-template-columns:130px 1fr auto;gap:14px;align-items:center}
+details.stage>summary::-webkit-details-marker{display:none}
+details.stage>summary:hover .sname{color:var(--accent)}
+details.stage[open]>summary{border-bottom:1px solid var(--line)}
+@media (max-width:820px){details.stage>summary{grid-template-columns:1fr}}
+.sname{font:500 16px/1.35 var(--serif)}
+.sname span{display:block;font:400 12px var(--sans);color:var(--text-3);margin-top:2px}
+.sone{color:var(--text-2);font-size:14px;line-height:1.6}
+.commit{font-family:var(--mono);font-size:12px;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:6px;white-space:nowrap}
+.commit.none{color:var(--text-3);background:var(--surface-2)}
+.chev{display:inline-block;transition:transform .15s;color:var(--text-3);margin-left:8px}
+details[open] .chev{transform:rotate(90deg)}
+.sbody{padding:12px 22px 16px;font:15px/1.75 var(--serif);color:var(--text-2)}
+.sbody ul{margin:0;padding-left:18px}
+.sbody li{margin:4px 0}
+.sbody li::marker{color:var(--accent-fill)}
+.sbody b{color:var(--text);font-weight:600}
+.sbody code{font-size:.8em}
+
+/* 折叠块：<details class="fold"><summary>展开 8 条</summary>…</details> */
+details.fold>summary{cursor:pointer;color:var(--accent);font-size:14px}
+
+/* ---------- 表格 / 图例 / 提示 ---------- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text-3);font-weight:500;font-size:12.5px}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.s-ico{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-2);margin-bottom:12px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.hatch{background:repeating-linear-gradient(45deg,var(--neutral) 0 2px,transparent 2px 6px);border:1px solid var(--neutral)}
+.tip{position:fixed;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-size:12.5px;line-height:1.55;padding:8px 11px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:9;max-width:290px}
+
+/* ---------- 控件 ---------- */
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:6px 13px;font-size:13.5px}
+.btn.pri{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 13px;color:var(--text-2);font-size:13.5px}
+.chips button.on{border-color:var(--accent-fill);background:var(--accent-soft);color:var(--text)}
+
+/* ---------- 流程图（内联 SVG） ---------- */
+svg text{font-family:var(--sans)}
+.node-g{cursor:pointer}
+.node-g rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;transition:stroke .15s}
+.node-g:hover rect,.node-g.sel rect{stroke:var(--accent-fill);stroke-width:2.2}
+.node-g .t{font-size:13px;font-weight:600;fill:var(--text)}
+.node-g .s{font-size:11px;fill:var(--text-3)}
+.node-g.bad rect{stroke:var(--crit);stroke-dasharray:5 4;fill:var(--crit-soft)}
+.edge{fill:none;stroke:var(--text-3);stroke-width:1.5}
+.elab{font-size:11px;fill:var(--text-2)}
+
+/* 风险卡：<div class="risks"><div class="risk"><b>标题</b><p>说明</p><div class="m">缓解</div></div></div> */
+.risks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.risk{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px 16px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.risk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warn)}
+.risk b{display:block;margin-bottom:6px;font:500 16px var(--serif)}
+.risk p{margin:0;font:14.5px/1.75 var(--serif);color:var(--text-2)}
+.risk .m{font-size:12.5px;color:var(--text-3);margin-top:8px}
+
+/*@/amo-style*/
+/* ---- 本页专用样式：像手机地图 ---- */
+:root{--land:#f3f0e8;--land-dot:rgba(120,110,90,.07);--road:#ffffff;--road-case:#d9cfbd;--path:#a99f8c;--block:rgba(255,255,255,.55);--a1:#f4e2d1;--a1l:#e3c3a6;--a2:#dfe9f4;--a2l:#b9cde3;--a3:#e3eedb;--a3l:#bdd4ac;--a4:#f2e7c8;--a4l:#dccb98;--a5:#ebe2f0;--a5l:#cfbedb;--label:#6f675a;--panel-w:430px;--float:0 2px 6px rgba(20,20,19,.12),0 8px 24px rgba(20,20,19,.10)}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){--land:#22221f;--land-dot:rgba(255,255,255,.035);--road:#55534c;--road-case:#1a1a18;--path:#7b776c;--block:rgba(255,255,255,.04);--a1:#3c3129;--a1l:#5a4637;--a2:#2a3340;--a2l:#3d4b5e;--a3:#2c3628;--a3l:#41513a;--a4:#383223;--a4l:#544a31;--a5:#332d39;--a5l:#4b4154;--label:#b8b2a4;--float:0 2px 8px rgba(0,0,0,.45)}}
+:root[data-theme="dark"]{--land:#22221f;--land-dot:rgba(255,255,255,.035);--road:#55534c;--road-case:#1a1a18;--path:#7b776c;--block:rgba(255,255,255,.04);--a1:#3c3129;--a1l:#5a4637;--a2:#2a3340;--a2l:#3d4b5e;--a3:#2c3628;--a3l:#41513a;--a4:#383223;--a4l:#544a31;--a5:#332d39;--a5l:#4b4154;--label:#b8b2a4;--float:0 2px 8px rgba(0,0,0,.45)}
+html,body{height:100%;margin:0;overflow:hidden}
+.bar{position:fixed;top:12px;right:14px;display:flex;gap:8px;z-index:50}
+.bar .btn,.bar .theme{box-shadow:var(--float)}
+#map{position:fixed;inset:0;background:radial-gradient(circle,var(--land-dot) 1px,transparent 1.5px) 0 0/22px 22px,var(--land);cursor:grab;touch-action:none;user-select:none;overflow:hidden}
+#map.panning{cursor:grabbing}
+#geo{position:absolute;inset:0;width:100%;height:100%}
+.area-shape{stroke-width:2;vector-effect:non-scaling-stroke}
+.road-case{fill:none;stroke:var(--road-case);stroke-width:11;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.road{fill:none;stroke:var(--road);stroke-width:7;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.lane{fill:none;stroke:var(--path);stroke-width:2;stroke-dasharray:2 6;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.road-g.hot .road{stroke:var(--accent-fill)}
+.lane.hot{stroke:var(--accent-fill);stroke-width:3}
+#ov{position:absolute;inset:0;pointer-events:none}
+#ov>*{position:absolute;left:0;top:0;pointer-events:auto;will-change:transform}
+
+/* 区名、徽标 */
+.aname{pointer-events:none!important;font:600 13px var(--sans);letter-spacing:.32em;color:var(--label);white-space:nowrap;transform-origin:0 0;text-shadow:0 0 3px var(--land),0 0 6px var(--land)}
+.far .aname{font:600 26px var(--serif);letter-spacing:.12em;color:var(--text)}
+.abadge{display:none;flex-direction:column;align-items:center;gap:5px;cursor:pointer}
+.far .abadge{display:flex}
+.abadge b{font:700 17px var(--sans);padding:5px 14px;border-radius:999px;box-shadow:var(--float);white-space:nowrap}
+.abadge b.ny{background:var(--accent-fill);color:#fff}
+.abadge b.other{background:var(--surface);color:var(--text)}
+.abadge span{font:12.5px var(--sans);color:var(--text-2);background:var(--surface);border-radius:999px;padding:1px 9px;white-space:nowrap}
+
+/* 大头针 */
+.pin{width:0;height:0;cursor:pointer}
+.far .pin,.far .rlabel{display:none}
+.pin .drop{position:absolute;left:-14px;top:-38px;width:28px;height:38px;transition:transform .15s;transform-origin:50% 100%}
+.pin:hover .drop,.pin.sel .drop{transform:scale(1.18)}
+.pin .drop svg{display:block;overflow:visible}
+.pin .sym{position:absolute;left:0;right:0;top:5px;text-align:center;font:700 14px/18px var(--sans);color:#fff}
+.pin.st-waiting .sym{color:#3a2a00}
+.pin .num{position:absolute;left:15px;top:-31px;font:700 12px var(--sans);color:var(--text);background:var(--surface);border-radius:6px;padding:0 5px;box-shadow:var(--float);white-space:nowrap}
+.pin .dot0{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,.25);filter:blur(1px)}
+.pin.st-needs_you .ring{position:absolute;left:-15px;top:-15px;width:30px;height:30px;border-radius:50%;border:2.5px solid var(--accent-fill);animation:pulse 1.6s ease-out infinite;pointer-events:none}
+@keyframes pulse{0%{transform:scale(.4);opacity:.9}100%{transform:scale(2.1);opacity:0}}
+.badge-new{position:absolute;left:6px;top:-46px;background:var(--crit);color:#fff;font:700 10.5px/17px var(--sans);width:17px;height:17px;border-radius:50%;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.pin .card{display:none}
+.near .pin .drop,.near .pin .num{display:none}
+.near .pin .card{display:block;position:absolute;left:-118px;bottom:10px;width:236px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 11px 9px;box-shadow:var(--float);border-top:4px solid var(--c)}
+.near .pin .card::after{content:"";position:absolute;left:50%;bottom:-7px;margin-left:-6px;width:12px;height:12px;background:var(--surface);border-right:1px solid var(--line);border-bottom:1px solid var(--line);transform:rotate(45deg)}
+.near .pin:hover .card,.near .pin.sel .card{border-color:var(--c);border-top-color:var(--c)}
+.near .pin .badge-new{left:104px;top:auto;bottom:calc(100% + 0px);display:none}
+.card .ch{display:flex;gap:7px;align-items:center;font:600 12px var(--sans);color:var(--text-2)}
+.card .ch .s{color:var(--text);padding:0 7px;border-radius:999px;background:var(--soft)}
+.card .ch .nw{margin-left:auto;background:var(--crit);color:#fff;border-radius:999px;padding:0 7px}
+.card .ct{font:600 14px/1.4 var(--serif);color:var(--text);margin:3px 0 2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .cs{font:12.5px/1.45 var(--sans);color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.near .pin .ring{left:-15px;top:-15px}
+.near .pin .loc{position:absolute;left:-6px;top:-6px;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px var(--surface)}
+.pin .loc{display:none}.near .pin .loc{display:block}
+.pin.dim{opacity:.22}
+.rlabel{pointer-events:none!important;font:600 11.5px var(--sans);color:var(--text-2);background:var(--surface);border:1px solid var(--line);padding:0 7px;border-radius:999px;white-space:nowrap;transform-origin:0 0}
+
+/* agent：路上移动的小点 */
+.agent{pointer-events:none!important;z-index:3}
+.agent .ad{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--surface);border:3.5px solid var(--neutral);box-shadow:var(--float)}
+.agent.running .ad{border-color:var(--s2)}
+.agent.waiting .ad{border-color:var(--warn)}
+.agent.running .ad::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--s2);animation:pulse 2s ease-out infinite}
+.agent .al{position:absolute;left:11px;top:-10px;font:600 11.5px var(--sans);color:var(--text);background:var(--surface);border-radius:6px;padding:1px 7px;box-shadow:var(--float);white-space:nowrap}
+.agent .al small{font-weight:400;color:var(--text-3);margin-left:4px}
+.far .agent{display:none}
+.far .lane{display:none}
+.far .road-g{opacity:.45}
+.agent .al small{display:none}.near .agent .al small{display:inline}
+
+/* 搜索 */
+.search{position:fixed;left:16px;top:14px;width:calc(var(--panel-w) - 32px);z-index:46}
+.sbox{display:flex;align-items:center;background:var(--surface);border-radius:12px;box-shadow:var(--float);border:1px solid var(--line);padding:0 6px 0 14px;height:46px}
+.sbox input{flex:1;border:0;outline:0;background:transparent;font:15px var(--sans);color:var(--text);height:100%}
+.sbox input::placeholder{color:var(--text-3)}
+.sbox button{border:0;background:none;color:var(--text-3);font:13px var(--sans);padding:6px 8px;border-radius:8px}
+.sbox button:hover{background:var(--surface-2)}
+.results{margin-top:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--float);overflow:hidden;display:none;max-height:60vh;overflow-y:auto}
+.results.show{display:block}
+.results button{display:grid;grid-template-columns:30px 1fr;gap:2px 8px;width:100%;text-align:left;border:0;background:none;padding:8px 12px;color:var(--text);font:14px var(--serif);border-bottom:1px solid var(--line)}
+.results button:last-child{border-bottom:0}
+.results button:hover,.results button.on{background:var(--surface-2)}
+.results .rs{grid-row:1/3;font:700 13px var(--sans);text-align:center;border-radius:8px;padding-top:4px}
+.results .rm{font:12px var(--sans);color:var(--text-3)}
+.results .none{padding:12px;color:var(--text-3);font:13px var(--sans)}
+.chips2{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips2 button{border:1px solid var(--line);background:var(--surface);color:var(--text-2);border-radius:999px;padding:3px 9px;font:12.5px var(--sans);box-shadow:var(--float);white-space:nowrap}
+.chips2{flex-wrap:nowrap}
+.chips2 button.ny{color:var(--text);font-weight:600}
+.chips2 button.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.top1{margin-top:8px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent-fill);border-radius:10px;padding:8px 12px;box-shadow:var(--float);cursor:pointer;font:14px/1.5 var(--serif);color:var(--text)}
+.top1 small{display:block;font:600 12px var(--sans);color:var(--accent)}
+.top1:hover{border-color:var(--accent-fill)}
+.panel-open .chips2,.panel-open .top1{display:none}
+
+/* 地点详情面板 */
+#panel{position:fixed;left:0;top:0;bottom:0;width:var(--panel-w);background:var(--surface);z-index:45;box-shadow:4px 0 20px rgba(0,0,0,.12);transform:translateX(-102%);transition:transform .35s cubic-bezier(.3,.1,.2,1);display:flex;flex-direction:column}
+#panel.open{transform:none}
+#panel{padding-top:70px}
+#panel .pscroll{flex:1;overflow:auto;padding:6px 24px 30px}
+.p-band{margin:-6px -24px 14px;padding:12px 24px;background:var(--soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap;font:600 13px var(--sans);color:var(--text-2)}
+.p-band .s{color:var(--text);font-weight:700}
+.p-band .nw{background:var(--crit);color:#fff;border-radius:999px;padding:0 8px}
+.p-band .x{margin-left:auto;border:1px solid var(--line);background:var(--surface);border-radius:8px;color:var(--text-2);padding:2px 10px;font:13px var(--sans)}
+.p-title{font:600 23px/1.38 var(--serif);margin:0 0 6px}
+.p-who{font:13px/1.6 var(--sans);color:var(--text-3);margin-bottom:12px}
+.p-who b{color:var(--text);font-weight:600}
+.p-sum{font:15.5px/1.75 var(--serif);color:var(--text);margin:0 0 10px}
+.p-body{font:15px/1.8 var(--serif);color:var(--text-2)}
+.p-body p{margin:0 0 10px}
+.p-sec{margin-top:20px;padding-top:14px;border-top:1px solid var(--line)}
+.p-sec>h4{font:600 12.5px var(--sans);letter-spacing:.1em;color:var(--text-3);margin:0 0 9px}
+.p-q{font:600 17px/1.5 var(--serif);margin:0 0 10px}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:9px 12px;font:inherit}
+.opt:hover{border-color:var(--accent-fill)}
+.opt .ol{font:600 15.5px var(--serif)}
+.opt .od{grid-column:1;font:13px var(--sans);color:var(--text-3)}
+.opt .go{grid-row:1/3;grid-column:2;font:600 12.5px var(--sans);color:var(--accent)}
+.opt.rec{border-color:var(--accent-fill);background:var(--accent-soft)}
+.rec-tag{display:inline-block;margin-left:7px;font:700 11.5px var(--sans);color:#fff;background:var(--accent-fill);border-radius:999px;padding:0 8px;vertical-align:2px}
+.why{font:14px/1.7 var(--serif);background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin-top:8px}
+.why b{font:700 12px var(--sans);color:var(--accent);margin-right:6px}
+.p-note{width:100%;margin:0 0 10px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:10px;padding:8px 11px;font:14px var(--serif);resize:vertical;min-height:40px}
+.answered,.concl{font:15px/1.7 var(--serif);background:var(--good-soft);border-radius:10px;padding:9px 13px}
+.concl{font-weight:600}
+.deep{font:13px var(--sans);color:var(--text-3);margin-top:6px}
+.ev{display:grid;grid-template-columns:44px 1fr;gap:2px 10px;font:13.5px/1.6 var(--sans);margin-bottom:8px}
+.ev .k{font:600 12px var(--sans);color:var(--text-3);padding-top:2px}
+.ev code{justify-self:start;font-size:12.5px}
+.ev .n{grid-column:2;color:var(--text-2);font-family:var(--serif)}
+.lk{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--text);padding:8px 11px;border-radius:10px;margin-bottom:7px;font:14px/1.5 var(--serif)}
+.lk:hover{border-color:var(--accent-fill)}
+.lk .r{grid-row:1/3;font:700 12px var(--sans);color:var(--accent);padding-top:2px;min-width:74px}
+.lk .ln{font:12.5px var(--sans);color:var(--text-3)}
+.lk .ls{font-family:var(--sans);font-size:12px;color:var(--text-3)}
+.hist{font:12.5px/1.6 var(--sans);color:var(--text-3);margin:0;padding:0;list-style:none}
+.hist li{display:grid;grid-template-columns:84px 1fr;gap:8px;padding:2px 0}
+.hist b{color:var(--text);font-weight:600}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.pbtn{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:9px;padding:5px 13px;font:13px var(--sans)}
+.pbtn:hover{border-color:var(--accent-fill)}
+#panel a.amo-ref{font-weight:600}
+
+/* 右下：缩放和图例 */
+.zoomc{position:fixed;right:16px;bottom:236px;transition:bottom .2s;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--float);overflow:hidden;z-index:40}
+.zoomc button{border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);width:44px;height:40px;font:500 21px var(--sans)}
+.zoomc button:last-child{border-bottom:0;font-size:12px}
+.zoomc button:hover{background:var(--surface-2)}
+.legend2{position:fixed;right:16px;bottom:30px;width:236px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--float);padding:10px 13px;z-index:40;font:12.5px/1.5 var(--sans);color:var(--text-2)}
+.legend2 h5{margin:0 0 5px;font:600 12px var(--sans);color:var(--text-3);display:flex;justify-content:space-between;align-items:center}
+.legend2 h5 button{border:0;background:none;color:var(--accent);font:12px var(--sans);padding:0}
+.legend2.fold{width:auto}
+body:has(.legend2.fold) .zoomc{bottom:76px}.legend2.fold h5{margin:0;gap:14px}.legend2.fold .lg,.legend2.fold .row3{display:none}
+.legend2 .lg{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px}
+.legend2 .li{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.legend2 .pd{width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;flex:none}
+.legend2 .pd i{transform:rotate(45deg);font:700 10px var(--sans);font-style:normal;color:#fff}
+.legend2 .row3{display:flex;flex-direction:column;gap:3px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.legend2 svg{flex:none}
+.zlevel{position:fixed;right:16px;bottom:6px;font:11.5px var(--sans);color:var(--text-3);z-index:40}
+.attr{position:fixed;left:calc(var(--panel-w) + 10px);bottom:6px;font:11.5px var(--sans);color:var(--text-3);z-index:40;display:flex;gap:10px;background:color-mix(in srgb,var(--land) 80%,transparent);padding:2px 8px;border-radius:6px}
+body:not(.panel-open) .attr{left:12px}
+.attr button{border:0;background:none;color:var(--text-3);font-size:11.5px;text-decoration:underline;padding:0}
+</style>
+</head>
+<body>
+<div class="bar"><a class="btn" href="index.html">← 全部表达</a><button class="theme" onclick="AMO.toggleTheme()">切换深浅色</button></div>
+<div id="map"><svg id="geo"><defs><pattern id="blocks" patternUnits="userSpaceOnUse" width="56" height="56" patternTransform="rotate(18)"><path d="M0 0H56M0 0V56" stroke="var(--block)" stroke-width="3" fill="none"/></pattern></defs><g id="world"></g></svg><div id="ov"></div></div>
+<div class="search" id="search">
+  <div class="sbox"><input id="q" placeholder="搜标题或编号，比如 #8 或「部署」" autocomplete="off"><button id="qx" title="清空">清空</button></div>
+  <div class="results" id="results"></div>
+  <div class="chips2" id="chips"></div>
+  <div class="top1" id="top1"></div>
+</div>
+<aside id="panel"><div class="pscroll" id="pbody"></div></aside>
+<div class="zoomc"><button id="zin" title="放大">+</button><button id="zout" title="缩小">−</button><button id="zfit" title="看全图">全图</button></div>
+<div class="legend2" id="legend"></div>
+<div class="zlevel" id="zlevel"></div>
+<div class="attr"><span>数据：studio/plans/userlayer/sample.json（假数据）</span><button onclick="AMO.reset()">恢复假数据</button></div>
+<script id="amo-data" type="application/json">{"spec":"amo.datalayer/0.1","note":"假数据：取材于 studio/packages/relay/CHANGELOG.md 的 0.7.0–0.7.6，条目内容是编的，用来试表达方式。","context":{"id":"ctx-relay-07x","title":"中转 0.7.x 审核","goal":"10-31 中转一天部署了 7 次（0.7.0–0.7.6）。把这批改动过一遍：哪些要你拍板，哪些还在修，哪些已经定了。","updatedAt":"2026-11-01T08:20:00+08:00"},"viewer":{"name":"你","lastSeenAt":"2026-10-31T21:00:00+08:00"},"areas":[{"id":"progress","name":"打包进度","summary":"问题页顶上的打包进度条和打包记录（0.7.3–0.7.5）"},{"id":"issues","name":"问题页","summary":"状态改名、要你看、去会话讨论、窄窗口布局（0.7.1、0.7.3、0.7.4）"},{"id":"admin","name":"管理页","summary":"服务器状态卡片和 24 小时曲线（0.7.2）"},{"id":"deploy","name":"部署","summary":"中转服务怎么部署、什么时候部署"},{"id":"android","name":"安卓发布","summary":"服务器上的安卓安装包和下载（0.7.6）"}],"agents":[{"id":"duty","item":"i9","name":"值守","role":"worker","model":"Opus 5.5","status":"running","doing":"修 #9：曲线在重启那段断开显示"},{"id":"iter","item":"i5","name":"维护迭代","role":"worker","model":"Opus 5.5","status":"running","doing":"改 #5：「要你看」的数字不刷新"},{"id":"android","item":"i8","name":"安卓任务","role":"worker","model":"Codex","status":"waiting","doing":"等你回答 #8，再改清理规则"},{"id":"curator","name":"整理员","role":"curator","model":"Sonnet 5.5","status":"idle","doing":"08:12 整理完：新增 #1、#3，补了 4 条关联"},{"id":"presenter","name":"表达员","role":"presenter","model":"Sonnet 5.5","status":"idle","doing":"按需生成讲解页"}],"items":[{"id":"i1","num":1,"short":"今天何时部署","type":"decision","importance":"high","area":"deploy","status":"needs_you","owner":"human","source":"curator","title":"今天什么时候再部署一次中转？","summary":"#5 和 #9 的修复上午能好。部署会让中转重启几秒，在线的人会断一下线。","body":"现在服务器上是 0.7.6。上午值守在修 #9（曲线），维护迭代在修 #5（页签数字），两个都改中转服务，要再部署一次才生效。\n\n部署走 `npm run release -- relay-service`，会重启中转几秒：正在聊天的人会断线重连，正在打包的进度上报会丢一次。","ask":{"question":"#5、#9 修好之后，什么时候部署？","options":[{"id":"now","label":"修好就部署","detail":"最快生效，可能打断正在聊天的人"},{"id":"noon","label":"午饭时间部署","detail":"12:00–13:00 在线的人最少"},{"id":"night","label":"攒到晚上一起","detail":"白天再有修复也一起带上"}],"recommend":"noon","why":"两个修复都不急（只影响管理页和一个页签数字），午饭时间在线的人最少，断线影响最小。","deep":false},"evidence":[{"kind":"commit","ref":"3a19b035","note":"chore(release): 中转服务 0.7.6，现在线上的版本"},{"kind":"file","ref":"AGENTS.md","note":"relay-service 会重启中转几秒"}],"createdAt":"2026-11-01T08:10:00+08:00","updatedAt":"2026-11-01T08:10:00+08:00"},{"id":"i2","num":2,"short":"断掉的打包怎么记","type":"decision","importance":"normal","area":"progress","status":"needs_you","owner":"human","source":"iter","title":"打包中途断了（电脑关了），记「失败」还是单独记「中断」？","summary":"现在没报结束就又开始新一次的，一律记成失败。失败率会虚高，中位数也会被拉偏。","body":"0.7.4 的规则：一次打包没报结束，下一次就开始了，就把上一次记成失败。\n\n10-31 有 2 次是晚上关机断的，现在打包记录里显示成两个红色的失败，「提交版本」这一步的中位数也被拉长了。","ask":{"question":"断掉的打包怎么记？","options":[{"id":"fail","label":"维持记失败","detail":"不用改"},{"id":"interrupted","label":"新增「中断」","detail":"灰色显示，不算进失败率和中位数"},{"id":"drop","label":"直接不记","detail":"记录里看不到这次"}],"recommend":"interrupted","why":"打包记录是用来估时间、看哪一步常出问题的。关机不是打包的问题，混进失败里会误导。","deep":false},"evidence":[{"kind":"file","ref":"studio/packages/relay/CHANGELOG.md","note":"0.7.4 节：没报结束就又开始了新一次的，记成失败"},{"kind":"file","ref":"studio/scripts/release.mjs","note":"打包进度从这里上报"},{"kind":"session","ref":"维护迭代 · 10-31","note":"讨论过这条，没定"}],"createdAt":"2026-10-31T18:40:00+08:00","updatedAt":"2026-10-31T18:40:00+08:00"},{"id":"i3","num":3,"short":"脏工作区拒绝部署？","type":"question","importance":"high","area":"deploy","status":"needs_you","owner":"human","source":"curator","title":"部署中转时工作区有没提交的改动，要不要直接拒绝？","summary":"10-31 上午有一次部署没提交，下午 0.7.1 部署时把它冲掉了，到 0.7.2 才补回来。","body":"整理员在 0.7.2 的改动说明里看到这句：「10-31 上午部署过一次（没提交），被 0.7.1 覆盖掉了，这一版恢复。」\n\n`AGENTS.md` 已经写了「不要绕过 release 直接 deploy 没提交的中转改动」，但这次还是发生了。","ask":{"question":"部署脚本发现有没提交的改动时怎么办？","options":[{"id":"refuse","label":"拒绝部署","detail":"提示先提交，再部署"},{"id":"warn","label":"只警告","detail":"列出没提交的文件，问一句还要不要继续"},{"id":"none","label":"不管","detail":"维持现状"}],"recommend":"refuse","why":"规矩靠人和 AI 记，总有记不住的时候，交给脚本就不会再发生。","deep":false},"evidence":[{"kind":"file","ref":"studio/packages/relay/CHANGELOG.md","note":"0.7.2 节：上午那次部署被 0.7.1 覆盖"},{"kind":"file","ref":"AGENTS.md","note":"常用命令 → relay-service 那条"}],"createdAt":"2026-11-01T08:05:00+08:00","updatedAt":"2026-11-01T08:05:00+08:00"},{"id":"i4","num":4,"short":"NaN 秒","type":"bug","importance":"normal","area":"progress","status":"settled","owner":"duty","source":"duty","title":"打包记录里 0.7.3 那次显示「NaN 秒」","summary":"0.7.3 时记下的打包没有每一步的时间，表格里算出来是 NaN。","body":"0.7.4 才开始记每一步的时间，之前那次只有总时长。","conclusion":"0.7.5 修了：没有分步时间的旧记录，那几格显示「—」。","evidence":[{"kind":"commit","ref":"ad9fb171","note":"chore(release): 中转服务 0.7.5"}],"createdAt":"2026-10-31T16:20:00+08:00","updatedAt":"2026-10-31T19:30:00+08:00"},{"id":"i5","num":5,"short":"页签数字不刷新","type":"bug","importance":"normal","area":"issues","status":"working","owner":"iter","source":"curator","eta":"今天上午","title":"点了「前往讨论」，「要你看」页签上的数字要刷新页面才减","summary":"问题已经不在「要你看」列表里了，但页签上的数字还是旧的。","body":"页签数字只在页面加载时算一次，状态改成「去会话讨论」后没有重算。维护迭代在改，改完要再部署（见 #1）。","evidence":[{"kind":"file","ref":"studio/packages/relay/CHANGELOG.md","note":"0.7.4 节：「要你看」不再列「去会话讨论」的问题"}],"createdAt":"2026-11-01T08:00:00+08:00","updatedAt":"2026-11-01T08:15:00+08:00"},{"id":"i6","num":6,"short":"回列表被输入法挡","type":"finding","importance":"low","area":"issues","status":"waiting","owner":"team:测试同事","source":"duty","title":"手机竖屏上，「← 回列表」被输入法挡住","summary":"点进一个问题再弹出键盘，顶上的「← 回列表」被挤出屏幕。电脑上的窄窗口没问题。","body":"值守在模拟器里复现了一次，不稳定。请测试同事用真手机试一下。","evidence":[{"kind":"log","ref":"值守 10-31 17:02","note":"模拟器里复现 1 次 / 试了 5 次"}],"createdAt":"2026-10-31T17:05:00+08:00","updatedAt":"2026-10-31T17:05:00+08:00"},{"id":"i7","num":7,"short":"去会话讨论不管","type":"decision","importance":"normal","area":"issues","status":"settled","owner":"human","source":"duty","title":"「去会话讨论」的问题，值守还要不要管？","summary":"人点了「前往讨论」，说明想自己在会话里谈。","ask":{"question":"人点了「前往讨论」之后，值守怎么做？","options":[{"id":"keep","label":"照常处理","detail":""},{"id":"handoff","label":"不再碰，等人交回","detail":"页面上放「交回值守」按钮"}],"recommend":"handoff","why":"人已经接手，值守再改会和人的会话冲突。","deep":false,"answer":{"option":"handoff","note":"对，还要显示处理过它的会话 id","at":"2026-10-31T15:10:00+08:00"}},"conclusion":"值守不再碰；「要你看」也不列它。想交回就点「交回值守」。页面显示处理过它的会话 id，可以复制。","evidence":[{"kind":"file","ref":"studio/packages/relay/CHANGELOG.md","note":"0.7.4 节"}],"createdAt":"2026-10-31T14:30:00+08:00","updatedAt":"2026-10-31T16:00:00+08:00"},{"id":"i8","num":8,"short":"安卓包留几个","type":"question","importance":"normal","area":"android","status":"needs_you","owner":"human","source":"android","title":"服务器上的安卓安装包只留最新 3 个，够不够回滚？","summary":"android-publish 每次发布后删旧包。连发 3 个测试包，正式版那个就被删了。","body":"桌面工具的清理规则是：留最新 3 个，**再加上两个通道指向的版本**。安卓现在只有前半句。","ask":{"question":"安卓安装包保留几个？","options":[{"id":"keep3","label":"维持最新 3 个","detail":""},{"id":"keep5","label":"改成最新 5 个","detail":""},{"id":"channel","label":"最新 3 个 + 通道指向的","detail":"和桌面工具一样"}],"recommend":"channel","why":"桌面工具已经是这个规则，安卓跟着一样，不用记两套。","deep":false},"evidence":[{"kind":"commit","ref":"1c84390c","note":"android-publish：newest 3 kept"},{"kind":"file","ref":"studio/scripts/relay-mac.mjs","note":"android-publish 和 platform-prune"}],"createdAt":"2026-11-01T07:50:00+08:00","updatedAt":"2026-11-01T07:50:00+08:00"},{"id":"i9","num":9,"short":"重启段曲线连直线","type":"bug","importance":"normal","area":"admin","status":"working","owner":"duty","source":"duty","eta":"今天上午","title":"管理页 24 小时曲线在中转重启那段连成了一条直线","summary":"每次部署中转会重启几秒，这段没有数据，曲线把前后两个点直接连起来，看着像那段时间很平稳。","body":"应该断开，或者画成虚线并标「重启」。值守在改，估计上午好；改完要再部署（见 #1）。","evidence":[{"kind":"log","ref":"/admin 10-31 曲线","note":"10-31 共 7 段直线，对应 7 次部署"}],"createdAt":"2026-10-31T23:10:00+08:00","updatedAt":"2026-11-01T08:20:00+08:00"},{"id":"i10","num":10,"short":"补打包进度截图","type":"task","importance":"low","area":"progress","status":"working","owner":"iter","source":"iter","eta":"#2 定了之后","title":"给打包进度补 e2e 截图（浅色 + 深色）","summary":"0.7.3、0.7.4 改了问题页顶上的进度条，还没有截图对照。","body":"等 #2 定了再截：如果加「中断」状态，打包记录的样子会变。","evidence":[],"createdAt":"2026-10-31T19:00:00+08:00","updatedAt":"2026-10-31T19:00:00+08:00"},{"id":"i11","num":11,"short":"界面照旧热更新","type":"conclusion","importance":"normal","area":"deploy","status":"settled","owner":"curator","source":"curator","title":"中转客户端的界面内容照旧由服务器热更新，不经过平台","summary":"平台只装和更新中转的外壳。","conclusion":"平台只装、更新外壳；界面内容（relay-ui）还是部署中转时一起更新。","evidence":[{"kind":"file","ref":"AGENTS.md","note":"架构约束第 3 条（2026-10-28 晚改）"}],"createdAt":"2026-10-31T10:00:00+08:00","updatedAt":"2026-10-31T10:00:00+08:00"},{"id":"i12","num":12,"short":"宽屏右边空","type":"finding","importance":"low","area":"progress","status":"parked","owner":"human","source":"iter","title":"打包记录在宽屏下右边空了一大片","summary":"30 次记录 × 5 步，宽屏时表格只占左边一半。","conclusion":"先放着，等打包步骤多了再说。","evidence":[],"createdAt":"2026-10-31T19:20:00+08:00","updatedAt":"2026-10-31T20:10:00+08:00"},{"id":"i13","num":13,"short":"al20 能看到吗","type":"question","importance":"normal","area":"android","status":"waiting","owner":"team:测试同事","source":"android","title":"al20 那台手机能看到下载页的安卓入口吗？","summary":"下载页加了安卓安装包，只有登录的人能看到。al20 走 Tailscale 转发进来，不确定登录状态。","body":"已经通过中转问了测试同事，等回复。","evidence":[{"kind":"session","ref":"中转 · 问测试同事","note":"10-31 21:30 发出"}],"createdAt":"2026-10-31T21:30:00+08:00","updatedAt":"2026-10-31T21:30:00+08:00"},{"id":"i14","num":14,"short":"中位数估时间","type":"conclusion","importance":"normal","area":"progress","status":"settled","owner":"curator","source":"curator","title":"打包进度按前几次同一步用时的中位数估「约多久」","summary":"每一步一条进度条，没有历史的步骤显示滚动条。","conclusion":"0.7.4 起：每一步（类型检查、单测、提交版本、打包、发布）一条进度条，按中位数估时间；顶上写预计还要多久。","evidence":[{"kind":"file","ref":"studio/packages/relay/CHANGELOG.md","note":"0.7.4 节"}],"createdAt":"2026-10-31T15:00:00+08:00","updatedAt":"2026-10-31T15:00:00+08:00"}],"links":[{"from":"i1","to":"i5","rel":"depends","note":"修好了才值得部署"},{"from":"i1","to":"i9","rel":"depends","note":"修好了才值得部署"},{"from":"i3","to":"i1","rel":"affects","note":"如果拒绝，部署前要先提交"},{"from":"i2","to":"i14","rel":"affects","note":"中位数的算法要跟着改"},{"from":"i10","to":"i2","rel":"depends","note":"定了再截图"},{"from":"i4","to":"i14","rel":"part_of"},{"from":"i12","to":"i14","rel":"part_of"},{"from":"i5","to":"i7","rel":"part_of","note":"实现 #7 时漏的"},{"from":"i13","to":"i8","rel":"affects","note":"同一批安卓下载改动"}],"events":[{"at":"2026-10-31T10:00:00+08:00","item":"i11","actor":"curator","kind":"created","text":"记下结论：界面内容照旧热更新"},{"at":"2026-10-31T14:30:00+08:00","item":"i7","actor":"duty","kind":"created","text":"问：去会话讨论的问题还要不要管"},{"at":"2026-10-31T15:00:00+08:00","item":"i14","actor":"curator","kind":"created","text":"记下结论：打包进度按中位数估时间"},{"at":"2026-10-31T15:10:00+08:00","item":"i7","actor":"human","kind":"answered","text":"你选了「不再碰，等人交回」：还要显示处理过它的会话 id"},{"at":"2026-10-31T16:00:00+08:00","item":"i7","actor":"duty","kind":"concluded","text":"做完，随 0.7.4 部署"},{"at":"2026-10-31T16:20:00+08:00","item":"i4","actor":"duty","kind":"created","text":"发现：打包记录显示 NaN 秒"},{"at":"2026-10-31T17:05:00+08:00","item":"i6","actor":"duty","kind":"created","text":"发现：手机竖屏「← 回列表」被挡，请测试同事确认"},{"at":"2026-10-31T18:40:00+08:00","item":"i2","actor":"iter","kind":"created","text":"问：断掉的打包记失败还是中断"},{"at":"2026-10-31T19:00:00+08:00","item":"i10","actor":"iter","kind":"created","text":"待办：补打包进度的截图，等 #2"},{"at":"2026-10-31T19:20:00+08:00","item":"i12","actor":"iter","kind":"created","text":"发现：宽屏下打包记录右边空"},{"at":"2026-10-31T19:30:00+08:00","item":"i4","actor":"duty","kind":"concluded","text":"0.7.5 修了，显示「—」"},{"at":"2026-10-31T20:10:00+08:00","item":"i12","actor":"human","kind":"status","text":"你搁置了：等打包步骤多了再说"},{"at":"2026-10-31T21:30:00+08:00","item":"i13","actor":"android","kind":"created","text":"通过中转问测试同事 al20 能不能看到安卓入口"},{"at":"2026-10-31T23:10:00+08:00","item":"i9","actor":"duty","kind":"created","text":"发现：管理页曲线在重启那段连成直线"},{"at":"2026-11-01T07:50:00+08:00","item":"i8","actor":"android","kind":"created","text":"问：安卓安装包只留 3 个够不够"},{"at":"2026-11-01T08:00:00+08:00","item":"i5","actor":"curator","kind":"created","text":"整理时发现：「要你看」的数字不刷新"},{"at":"2026-11-01T08:05:00+08:00","item":"i3","actor":"curator","kind":"created","text":"整理时发现：0.7.2 那次部署被冲掉，问要不要拦"},{"at":"2026-11-01T08:10:00+08:00","item":"i1","actor":"curator","kind":"created","text":"问：今天什么时候再部署"},{"at":"2026-11-01T08:12:00+08:00","actor":"curator","kind":"comment","text":"整理完：新增 #1、#3、#5，补了 4 条关联（#1→#5、#1→#9、#3→#1、#5→#7）"},{"at":"2026-11-01T08:15:00+08:00","item":"i5","actor":"iter","kind":"status","text":"维护迭代接手，在改"},{"at":"2026-11-01T08:20:00+08:00","item":"i9","actor":"duty","kind":"status","text":"值守在改：重启那段断开显示，估计上午好"}]}</script>
+<script>
+/*@amo-lib*/
+// userlayer 各表达共用的读写层（2026-11-01 原型）。
+// 读 <script id="amo-data"> 里的 datalayer；人的操作记在 localStorage，所有表达共用一份，
+// 所以在一种表达里回答了，换一种表达打开也能看到——这正是「表现随便换」要验证的。
+window.AMO = (() => {
+  const raw = JSON.parse(document.getElementById("amo-data").textContent);
+  const KEY = "amo-userlayer:" + raw.context.id;
+  const NOW = raw.now || "2026-11-01T08:30:00+08:00"; // 假数据的「现在」，让各表达的相对时间一致
+  const subs = [];
+  // 人的操作按假数据的「现在」往后排（第 n 次操作 = NOW + n 分钟），写成和数据一样的 +08:00 格式，
+  // 这样字符串比较、排序、「上次以来」都和假数据对得上（B、C 组 11-01 的建议）
+  function fakeNow(n) {
+    const d = new Date(new Date(NOW).getTime() + n * 60000 + 8 * 3600000);
+    return d.toISOString().slice(0, 19) + "+08:00";
+  }
+
+  const TYPE = {
+    decision: { label: "决定", hint: "要你拍板" },
+    question: { label: "问题", hint: "要你回答" },
+    bug: { label: "bug", hint: "出错的地方" },
+    finding: { label: "发现", hint: "值得注意" },
+    task: { label: "事项", hint: "要做的事" },
+    conclusion: { label: "结论", hint: "已经定了" },
+    milestone: { label: "节点", hint: "发布、开工、交接" },
+  };
+  // 状态不能只靠颜色：每个都带符号和文字
+  const STATUS = {
+    needs_you: { label: "等你", sym: "!", color: "var(--accent-fill)", soft: "var(--accent-soft)" },
+    working: { label: "进行中", sym: "◐", color: "var(--s2)", soft: "var(--surface-2)" },
+    waiting: { label: "等别人", sym: "○", color: "var(--warn)", soft: "var(--warn-soft)" },
+    settled: { label: "已定", sym: "✓", color: "var(--good)", soft: "var(--good-soft)" },
+    parked: { label: "搁置", sym: "–", color: "var(--neutral)", soft: "var(--surface-2)" },
+  };
+  const REL = {
+    depends: { out: "要等", in: "被它卡住的" },
+    affects: { out: "会影响", in: "受它影响" },
+    answers: { out: "回答了", in: "被回答" },
+    supersedes: { out: "取代了", in: "被取代" },
+    part_of: { out: "属于", in: "包含" },
+  };
+  const EVIDENCE = { file: "文件", commit: "提交", session: "会话", url: "网址", log: "记录" };
+  const IMPORTANCE = { high: 3, normal: 2, low: 1 };
+
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { ops: [], seenAt: null }; } catch { return { ops: [], seenAt: null }; } };
+  const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+  let state = load();
+  let data;
+
+  function build() {
+    data = JSON.parse(JSON.stringify(raw));
+    // 0.2 的条目只写 at：补齐 0.1 的时间和重要程度字段，各表达不用分两套
+    for (const i of data.items) { i.createdAt ||= i.at; i.updatedAt ||= i.at; i.importance ||= "normal"; i.evidence ||= []; }
+    data.events ||= []; data.areas ||= []; data.links ||= [];
+    if (state.seenAt) data.viewer.lastSeenAt = state.seenAt;
+    for (const op of state.ops) applyOp(op);
+  }
+  function applyOp(op) {
+    const it = data.items.find((i) => i.id === op.item);
+    if (!it) return;
+    const ev = { at: op.at, item: it.id, actor: "human", kind: op.kind, text: "" };
+    if (op.kind === "answered") {
+      const opt = it.ask.options.find((o) => o.id === op.option);
+      it.ask.answer = { option: op.option, note: op.note || "", at: op.at };
+      it.status = "working";
+      it.owner = it.source;
+      // 球交回提问的 agent：它的状态和在做的事跟着变
+      const ag = data.agents.find((a) => a.id === it.source);
+      if (ag) { ag.status = "running"; ag.item = it.id; ag.doing = `按你选的「${opt ? opt.label : op.option}」处理 #${it.num}`; }
+      ev.text = `你选了「${opt ? opt.label : op.option}」${op.note ? "：" + op.note : ""}，交回${ownerName(it.source)}`;
+    } else if (op.kind === "parked") {
+      it.status = "parked"; it.owner = "human";
+      ev.kind = "status"; ev.text = "你搁置了" + (op.note ? "：" + op.note : "");
+    } else if (op.kind === "reopened") {
+      const orig = raw.items.find((i) => i.id === it.id);
+      it.status = orig.status === "parked" ? "needs_you" : orig.status; it.owner = orig.status === "parked" ? "human" : orig.owner;
+      if (it.ask && orig.ask && !orig.ask.answer) { delete it.ask.answer; it.status = "needs_you"; it.owner = "human"; }
+      ev.kind = "status"; ev.text = "你重新打开了";
+    } else if (op.kind === "comment") {
+      ev.text = "你批注：" + op.note;
+    }
+    it.updatedAt = op.at;
+    data.events.push(ev);
+  }
+  function commit(op) {
+    op.at = fakeNow(state.ops.length + 1);
+    state.ops.push(op); save(); build(); emit();
+  }
+  const emit = () => subs.forEach((f) => f(data));
+
+  // ---------- 查询 ----------
+  const items = (pred) => data.items.filter(pred || (() => true));
+  const item = (key) => data.items.find((i) => i.id === key || i.num === key || "#" + i.num === key);
+  const agent = (id) => data.agents.find((a) => a.id === id);
+  const area = (id) => data.areas.find((a) => a.id === id);
+  function ownerName(owner) {
+    if (!owner) return "";
+    if (owner === "human") return "你";
+    if (owner.startsWith("team:")) return owner.slice(5);
+    const a = agent(owner); return a ? a.name : owner;
+  }
+  // 站在当前这一条说话：「要先等 #5」「#10 在等这条」，比 label 的「被它卡住的」好懂（A 组 11-01 的建议）
+  const SAY = {
+    depends: { out: (n) => `要先等 #${n}`, in: (n) => `#${n} 在等这条` },
+    affects: { out: (n) => `会影响 #${n}`, in: (n) => `#${n} 会影响这条` },
+    answers: { out: (n) => `回答了 #${n}`, in: (n) => `#${n} 回答了这条` },
+    supersedes: { out: (n) => `取代了 #${n}`, in: (n) => `#${n} 取代了这条` },
+    part_of: { out: (n) => `属于 #${n}`, in: (n) => `#${n} 是这条的一部分` },
+  };
+  function links(id) {
+    return {
+      out: data.links.filter((l) => l.from === id).map((l) => ({ ...l, item: item(l.to), label: REL[l.rel].out, say: SAY[l.rel].out(item(l.to).num) })),
+      in: data.links.filter((l) => l.to === id).map((l) => ({ ...l, item: item(l.from), label: REL[l.rel].in, say: SAY[l.rel].in(item(l.from).num) })),
+    };
+  }
+  const lastSeen = () => data.viewer.lastSeenAt;
+  // 「上次以来」只算 agent 那边的变化，人自己的操作不算
+  const isNew = (it) => { const r = raw.items.find((i) => i.id === it.id) || it; return (r.updatedAt || r.at) > lastSeen(); };
+  const changesSince = (t) => data.events.filter((e) => e.at > (t || lastSeen())).sort((a, b) => a.at.localeCompare(b.at));
+  const byWeight = (a, b) => IMPORTANCE[b.importance] - IMPORTANCE[a.importance] || a.createdAt.localeCompare(b.createdAt);
+  const needsYou = () => items((i) => i.status === "needs_you").sort(byWeight);
+  function counts() {
+    const c = { total: data.items.length };
+    for (const s of Object.keys(STATUS)) c[s] = data.items.filter((i) => i.status === s).length;
+    return c;
+  }
+
+  // ---------- 文字 ----------
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function inline(s) {
+    return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/#(\d+)/g, '<a href="#" class="amo-ref" data-num="$1">#$1</a>');
+  }
+  function md(text) {
+    if (!text) return "";
+    return text.split(/\n{2,}/).map((p) => {
+      const lines = p.split("\n");
+      if (lines.every((l) => /^\s*[-*] /.test(l))) return "<ul>" + lines.map((l) => "<li>" + inline(l.replace(/^\s*[-*] /, "")) + "</li>").join("") + "</ul>";
+      return "<p>" + lines.map(inline).join("<br>") + "</p>";
+    }).join("");
+  }
+  function fmtTime(iso) {
+    const d = new Date(iso), now = new Date(NOW);
+    const hm = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Shanghai" });
+    const day = (x) => x.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
+    if (day(d) === day(now)) return "今天 " + hm;
+    if (day(new Date(d.getTime() + 864e5)) === day(now)) return "昨天 " + hm;
+    return d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", timeZone: "Asia/Shanghai" }) + " " + hm;
+  }
+  function ago(iso) {
+    const m = Math.round((new Date(NOW) - new Date(iso)) / 60000);
+    if (m < 1) return "刚才"; if (m < 60) return m + " 分钟前";
+    const h = Math.round(m / 60); return h < 24 ? h + " 小时前" : Math.round(h / 24) + " 天前";
+  }
+
+  // ---------- 外观 ----------
+  function applyTheme() { const t = localStorage.getItem("amo-userlayer:theme"); if (t) document.documentElement.dataset.theme = t; }
+  function toggleTheme() {
+    const r = document.documentElement;
+    const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    r.dataset.theme = dark ? "light" : "dark";
+    localStorage.setItem("amo-userlayer:theme", r.dataset.theme);
+  }
+  function toast(msg) {
+    let el = document.getElementById("amo-toast");
+    if (!el) {
+      el = document.createElement("div"); el.id = "amo-toast";
+      el.style.cssText = "position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--tip-bg);color:var(--tip-fg);padding:9px 16px;border-radius:10px;font:13.5px var(--sans);z-index:99;opacity:0;transition:opacity .2s;pointer-events:none";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.opacity = 1;
+    clearTimeout(el._t); el._t = setTimeout(() => (el.style.opacity = 0), 2200);
+  }
+
+  applyTheme();
+  build();
+  addEventListener("storage", (e) => { if (e.key === KEY) { state = load(); build(); emit(); } });
+
+  return {
+    raw, get data() { return data; }, NOW, TYPE, STATUS, REL, EVIDENCE, IMPORTANCE,
+    items, item, agent, area, ownerName, links, lastSeen, isNew, changesSince, needsYou, counts, byWeight,
+    esc, md, inline, fmtTime, ago, toggleTheme, toast,
+    now: () => fakeNow(state.ops.length),
+    // 各表达自己的布局（纸摆在哪、区画在哪），按表达分开存，人摆过的位置不会被别的表达改掉
+    layout: (view, value) => { const k = "amo-userlayer:layout:" + view; if (value === undefined) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } } localStorage.setItem(k, JSON.stringify(value)); },
+    on: (f) => { subs.push(f); return () => subs.splice(subs.indexOf(f), 1); },
+    // 人的操作：都写成事件，球交回提问的 agent
+    answer: (id, option, note) => { commit({ kind: "answered", item: id, option, note }); toast("已发回" + ownerName(item(id).source)); },
+    park: (id, note) => { commit({ kind: "parked", item: id, note }); toast("已搁置 #" + item(id).num); },
+    reopen: (id) => { commit({ kind: "reopened", item: id }); toast("已重新打开 #" + item(id).num); },
+    comment: (id, note) => { commit({ kind: "comment", item: id, note }); toast("批注已记下，整理员会归档"); },
+    markSeen: () => { state.seenAt = fakeNow(state.ops.length + 1); save(); build(); emit(); toast("已标为看过"); },
+    reset: () => { state = { ops: [], seenAt: null }; save(); build(); emit(); toast("已恢复成初始假数据"); },
+  };
+})();
+
+/*@/amo-lib*/
+</script>
+<script>
+// 地图：区域 = areas，条目钉在区里固定的位置（状态变了也不挪，记得住在哪）；语义缩放：远看区、中看针、近看卡。
+const $ = (s, r = document) => r.querySelector(s);
+const E = AMO.esc, who = (o) => AMO.ownerName(o);
+const WW = 1800, WH = 1150;
+// 区的位置是这页自己排的（数据里没有坐标）
+const GEO = { android: [330, 350, 250, 190], deploy: [905, 320, 310, 210], admin: [1480, 330, 220, 175], progress: [520, 830, 380, 235], issues: [1300, 830, 330, 220] };
+const AREA_C = ["a1", "a2", "a3", "a4", "a5"];
+const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+const rnd = (s) => (hash(String(s)) % 1000) / 1000;
+const REL_OUT = { depends: "要先等", affects: "会影响", answers: "回答了", supersedes: "取代了", part_of: "属于" };
+const REL_IN = { depends: "在等它", affects: "会影响它", answers: "回答了它", supersedes: "取代了它", part_of: "是它的一部分" };
+
+let k = 1, tx = 0, ty = 0, sel = null, filter = null;
+let legendFold = innerWidth < 1400; // 窄窗口先收起图例，免得盖住右下的区
+const P = {}; // 条目的地图坐标
+
+function blob(cx, cy, rx, ry, seed) {
+  const n = 11, pts = [];
+  for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + rnd(seed) * 0.5, r = 0.84 + rnd(seed + i) * 0.28; pts.push([cx + Math.cos(a) * rx * r, cy + Math.sin(a) * ry * r]); }
+  let d = `M${pts[0]}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    d += ` C${[p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]} ${[p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6]} ${p2}`;
+  }
+  return d + "Z";
+}
+function layoutItems() {
+  for (const ar of AMO.data.areas) {
+    const [cx, cy] = GEO[ar.id] || [WW / 2, WH / 2];
+    const list = AMO.raw.items.filter((i) => i.area === ar.id).sort((a, b) => AMO.IMPORTANCE[b.importance] - AMO.IMPORTANCE[a.importance] || a.num - b.num);
+    const n = list.length, cols = n <= 3 ? n : Math.ceil(n / 2), rows = Math.ceil(n / cols);
+    list.forEach((it, i) => {
+      const r = Math.floor(i / cols), c = i % cols, inRow = Math.min(cols, n - r * cols);
+      P[it.id] = [cx + (c - (inRow - 1) / 2) * 215 + (rnd(it.id + "x") - 0.5) * 30, cy + 34 + (r - (rows - 1) / 2) * 150 + (rnd(it.id + "y") - 0.5) * 24];
+    });
+  }
+}
+// 两条目之间的路：二次曲线，控制点往一侧偏
+function curve(a, b, bend = 0.16) {
+  const [x1, y1] = P[a], [x2, y2] = P[b], mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1;
+  return { x1, y1, x2, y2, cx: mx - dy * bend, cy: my + dx * bend };
+}
+const qAt = (c, t) => [(1 - t) ** 2 * c.x1 + 2 * (1 - t) * t * c.cx + t * t * c.x2, (1 - t) ** 2 * c.y1 + 2 * (1 - t) * t * c.cy + t * t * c.y2];
+
+// ---------- 画地图（几何只画一次，数据变了重画针和路） ----------
+function drawGeo() {
+  const g = $("#world");
+  const areas = AMO.data.areas.map((ar, i) => {
+    const [cx, cy, rx, ry] = GEO[ar.id], c = AREA_C[i % 5], d = blob(cx, cy, rx, ry, ar.id);
+    return `<path class="area-shape" d="${d}" fill="var(--${c})" stroke="var(--${c}l)"/><path d="${d}" fill="url(#blocks)" pointer-events="none"/>`;
+  }).join("");
+  const roads = AMO.data.links.map((l, i) => {
+    const a = AMO.item(l.from), b = AMO.item(l.to), c = curve(l.from, l.to, a.area === b.area ? 0.22 : 0.14);
+    const d = `M${c.x1} ${c.y1} Q${c.cx} ${c.cy} ${c.x2} ${c.y2}`;
+    return a.area === b.area ? `<path class="lane" data-l="${i}" d="${d}"/>` : `<g class="road-g" data-l="${i}"><path class="road-case" d="${d}"/><path class="road" d="${d}"/></g>`;
+  }).join("");
+  g.innerHTML = areas + roads;
+}
+
+// ---------- 叠在上面的 HTML：区名、徽标、针/卡、路名、agent ----------
+const agents = {}; // id -> {x,y, target, anim}
+function agentTarget(a) {
+  const handed = AMO.items((i) => i.status === "working" && i.owner === a.id && i.ask && i.ask.answer).sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))[0];
+  if (handed) return handed.id;
+  const m = /#(\d+)/.exec(a.doing); if (m) { const it = AMO.item(+m[1]); if (it) return it.id; }
+  const mine = AMO.items((i) => i.status === "working" && i.owner === a.id)[0];
+  return mine ? mine.id : null;
+}
+function drawOverlay() {
+  const ov = $("#ov");
+  const areaHtml = AMO.data.areas.map((ar) => {
+    const its = AMO.items((i) => i.area === ar.id), c = (s) => its.filter((i) => i.status === s).length;
+    const ny = c("needs_you");
+    const main = ny ? `<b class="ny">! ${ny} 等你</b>` : c("working") ? `<b class="other">◐ ${c("working")} 进行中</b>` : c("waiting") ? `<b class="other">○ ${c("waiting")} 等别人</b>` : `<b class="other">✓ ${c("settled")} 已定</b>`;
+    const rest = [["working", "◐"], ["waiting", "○"], ["settled", "✓"], ["parked", "–"]].filter(([s]) => c(s) && !(main.includes(AMO.STATUS[s].sym + " "))).map(([s, y]) => `${y} ${c(s)}`).join(" · ");
+    return `<div class="aname" data-area="${ar.id}">${E(ar.name)}</div><div class="abadge" data-badge="${ar.id}">${main}${rest ? `<span>${rest}</span>` : ""}</div>`;
+  }).join("");
+  const pins = AMO.data.items.map((it) => {
+    const st = AMO.STATUS[it.status];
+    return `<div class="pin st-${it.status}${sel === it.id ? " sel" : ""}${filter && filter !== it.status ? " dim" : ""}" data-pin="${it.id}" style="--c:${st.color};--soft:${st.soft}">
+      <i class="dot0"></i>${it.status === "needs_you" ? '<i class="ring"></i>' : ""}<i class="loc"></i>
+      <div class="drop"><svg width="28" height="38" viewBox="0 0 28 38"><path d="M14 37 C9 28 1 22 1 13.5 A13 13 0 0 1 27 13.5 C27 22 19 28 14 37Z" fill="${st.color}" stroke="rgba(0,0,0,.18)"/></svg><span class="sym">${st.sym}</span></div>
+      <span class="num">#${it.num}</span>${AMO.isNew(it) ? '<span class="badge-new">新</span>' : ""}
+      <div class="card"><div class="ch"><span class="s">${st.sym} ${st.label}</span><span>#${it.num} · ${AMO.TYPE[it.type].label}</span>${AMO.isNew(it) ? '<span class="nw">新</span>' : ""}</div><div class="ct">${E(it.title)}</div><div class="cs">${E(it.summary || "")}</div></div></div>`;
+  }).join("");
+  const rl = AMO.data.links.map((l, i) => `<div class="rlabel" data-rl="${i}">${REL_OUT[l.rel]}</div>`).join("");
+  const ags = AMO.data.agents.map((a) => {
+    const t = agentTarget(a); if (!t) return "";
+    const handed = AMO.item(t).ask && AMO.item(t).ask.answer && AMO.item(t).status === "working";
+    const st = handed ? "running" : a.status;
+    return `<div class="agent ${st}" data-agent="${a.id}"><i class="ad"></i><span class="al">${E(a.name)}<small>${E(handed ? `接手 #${AMO.item(t).num}` : a.doing)}</small></span></div>`;
+  }).join("");
+  ov.innerHTML = areaHtml + rl + pins + ags;
+  // agent 去它在忙的那条
+  for (const a of AMO.data.agents) {
+    const t = agentTarget(a); if (!t) { delete agents[a.id]; continue; }
+    const cur = agents[a.id];
+    if (!cur) {
+      // 第一次：从附近一段路上开过来
+      const [x, y] = P[t], ang = rnd(a.id) * Math.PI * 2;
+      agents[a.id] = { x: x + Math.cos(ang) * 260, y: y + Math.sin(ang) * 200, target: null };
+    }
+    if (agents[a.id].target !== t) driveTo(a.id, t);
+  }
+  layout();
+}
+function driveTo(aid, t) {
+  const ag = agents[aid], [x2, y2] = P[t];
+  const dx = x2 - ag.x, dy = y2 - ag.y, len = Math.hypot(dx, dy) || 1;
+  ag.anim = { x1: ag.x, y1: ag.y, x2, y2, cx: (ag.x + x2) / 2 - dy * 0.18, cy: (ag.y + y2) / 2 + dx * 0.18, t0: performance.now(), dur: Math.min(2600, 700 + len * 2.2) };
+  ag.target = t; tick();
+}
+
+// ---------- 坐标变换 ----------
+const mode = () => (k < 0.55 ? "far" : k < 1.15 ? "mid" : "near");
+function layout() {
+  $("#world").setAttribute("transform", `translate(${tx},${ty}) scale(${k})`);
+  const m = mode();
+  $("#map").className = m;
+  const S = (x, y) => [x * k + tx, y * k + ty];
+  for (const el of document.querySelectorAll(".aname")) {
+    const [cx, cy, , ry] = GEO[el.dataset.area];
+    // 远：区名在中心上方、徽标在下方，间距按屏幕像素算，缩得再小也不叠
+    const [sx, sy] = m === "far" ? S(cx, cy) : S(cx, cy - ry * 0.7);
+    el.style.transform = m === "far" ? `translate(${sx}px,${sy - 6}px) translate(-50%,-100%)` : `translate(${sx}px,${sy}px) translate(-50%,-50%)`;
+  }
+  for (const el of document.querySelectorAll(".abadge")) { const [cx, cy] = GEO[el.dataset.badge]; const [sx, sy] = S(cx, cy); el.style.transform = `translate(${sx}px,${sy}px) translate(-50%,0)`; }
+  for (const el of document.querySelectorAll(".pin")) { const [sx, sy] = S(...P[el.dataset.pin]); el.style.transform = `translate(${sx}px,${sy}px)`; el.style.zIndex = el.classList.contains("sel") ? 5 : el.matches(":hover") ? 4 : 2; }
+  for (const el of document.querySelectorAll(".rlabel")) {
+    const l = AMO.data.links[+el.dataset.rl], c = curve(l.from, l.to, AMO.item(l.from).area === AMO.item(l.to).area ? 0.22 : 0.14);
+    const [mx, my] = qAt(c, 0.5), [sx, sy] = S(mx, my);
+    el.style.transform = `translate(${sx}px,${sy}px) translate(-50%,-50%)`;
+    el.style.display = m === "far" ? "none" : "";
+  }
+  for (const el of document.querySelectorAll(".agent")) {
+    const ag = agents[el.dataset.agent]; if (!ag) continue;
+    const [sx, sy] = S(ag.x, ag.y);
+    // 停下时站在针的右下边，不挡住针
+    const nth = Object.keys(agents).filter((x) => agents[x].target === ag.target).indexOf(el.dataset.agent);
+    const off = ag.anim ? [0, 0] : m === "near" ? [-2, 24 + nth * 24] : [22, 8 + nth * 22];
+    el.style.transform = `translate(${sx + off[0]}px,${sy + off[1]}px)`;
+  }
+  $("#zlevel").textContent = `${{ far: "远：看区", mid: "中：看大头针", near: "近：看小卡" }[m]} · ${Math.round(k * 100)}%`;
+}
+let raf = 0;
+function tick() {
+  if (raf) return;
+  const step = (now) => {
+    raf = 0; let busy = false;
+    for (const ag of Object.values(agents)) {
+      if (!ag.anim) continue;
+      const a = ag.anim, t = Math.min(1, (now - a.t0) / a.dur), e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+      [ag.x, ag.y] = qAt(a, e);
+      if (t >= 1) ag.anim = null; else busy = true;
+    }
+    if (fly) { const t = Math.min(1, (now - fly.t0) / fly.dur), e = 1 - (1 - t) ** 3; fly.step(e); if (t >= 1) fly = null; else busy = true; }
+    layout();
+    if (busy) raf = requestAnimationFrame(step);
+  };
+  raf = requestAnimationFrame(step);
+}
+
+// 平滑飞到某个世界坐标和缩放
+let fly = null;
+function viewCenter() { const open = $("#panel").classList.contains("open"); const pw = open ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-w")) : 0; return [pw + (innerWidth - pw) / 2, innerHeight / 2]; }
+function flyTo(x, y, k2, dur = 750) {
+  const [vx, vy] = viewCenter();
+  const k1 = k, c1 = [(vx - tx) / k, (vy - ty) / k];
+  fly = { t0: performance.now(), dur, step: (e) => {
+    k = Math.exp(Math.log(k1) + (Math.log(k2) - Math.log(k1)) * e);
+    const cx = c1[0] + (x - c1[0]) * e, cy = c1[1] + (y - c1[1]) * e;
+    tx = vx - cx * k; ty = vy - cy * k;
+  } };
+  tick();
+}
+function fit(anim) {
+  const kk = Math.min(innerWidth / WW, (innerHeight - 30) / WH) * 0.98;
+  if (anim) { $("#panel").classList.remove("open"); document.body.classList.remove("panel-open"); flyTo(WW / 2, WH / 2, kk); }
+  else { k = kk; tx = (innerWidth - WW * k) / 2; ty = (innerHeight - WH * k) / 2 + 10; layout(); }
+}
+function zoomAt(f, sx, sy) {
+  const k2 = Math.max(0.32, Math.min(2.6, k * f));
+  tx = sx - ((sx - tx) * k2) / k; ty = sy - ((sy - ty) * k2) / k; k = k2; layout();
+}
+
+// ---------- 手势：拖动平移、滚轮缩放 ----------
+const map = $("#map");
+let pan = null;
+map.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  pan = { sx: e.clientX, sy: e.clientY, tx, ty, moved: false, target: e.target };
+  map.setPointerCapture(e.pointerId);
+});
+map.addEventListener("pointermove", (e) => {
+  if (!pan) return;
+  const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
+  if (!pan.moved && Math.hypot(dx, dy) < 4) return;
+  pan.moved = true; map.classList.add("panning"); fly = null;
+  tx = pan.tx + dx; ty = pan.ty + dy; layout();
+});
+map.addEventListener("pointerup", (e) => {
+  if (!pan) return;
+  const p = pan; pan = null; map.classList.remove("panning");
+  if (p.moved) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const pin = el && el.closest("[data-pin]"), badge = el && el.closest("[data-badge]");
+  if (pin) select(pin.dataset.pin);
+  else if (badge) { const [cx, cy] = GEO[badge.dataset.badge]; flyTo(cx, cy + 20, 0.95); }
+});
+map.addEventListener("dblclick", (e) => { if (!e.target.closest("[data-pin]")) { fly = null; const f = 1.8, s0 = k; const sx = e.clientX, sy = e.clientY; const wx = (sx - tx) / k, wy = (sy - ty) / k; const [vx, vy] = viewCenter(); flyTo(wx + (vx - sx) / (s0 * f), wy + (vy - sy) / (s0 * f), Math.min(2.6, k * f), 450); } });
+map.addEventListener("wheel", (e) => { e.preventDefault(); fly = null; zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); }, { passive: false });
+map.addEventListener("mouseover", (e) => { const p = e.target.closest("[data-pin]"); if (p) { p.style.zIndex = 4; hotLinks(p.dataset.pin, true); } });
+map.addEventListener("mouseout", (e) => { const p = e.target.closest("[data-pin]"); if (p) { p.style.zIndex = p.classList.contains("sel") ? 5 : 2; hotLinks(p.dataset.pin, false); } });
+function hotLinks(id, on) {
+  AMO.data.links.forEach((l, i) => { if (l.from === id || l.to === id || (sel && (l.from === sel || l.to === sel))) document.querySelector(`#world [data-l="${i}"]`)?.classList.toggle("hot", on || (sel && (l.from === sel || l.to === sel))); });
+  if (!on) AMO.data.links.forEach((l, i) => { if (!(sel && (l.from === sel || l.to === sel))) document.querySelector(`#world [data-l="${i}"]`)?.classList.remove("hot"); });
+}
+const zc = (f) => { const [vx, vy] = viewCenter(); const wx = (vx - tx) / k, wy = (vy - ty) / k; flyTo(wx, wy, Math.max(0.32, Math.min(2.6, k * f)), 300); };
+$("#zin").onclick = () => zc(1.6); $("#zout").onclick = () => zc(1 / 1.6); $("#zfit").onclick = () => fit(true);
+addEventListener("keydown", (e) => {
+  if (e.target.matches("input,textarea")) { if (e.key === "Escape") { e.target.blur(); closeResults(); } return; }
+  if (e.key === "Escape") closePanel();
+  if (e.key === "+" || e.key === "=") zc(1.6);
+  if (e.key === "-") zc(1 / 1.6);
+});
+addEventListener("resize", layout);
+
+// ---------- 选中一条：左边滑出地点详情，地图飞过去 ----------
+function select(id, zoom) {
+  const it = AMO.item(id); if (!it) return;
+  if (sel !== id) $("#pbody").scrollTop = 0;
+  sel = id;
+  $("#panel").classList.add("open"); document.body.classList.add("panel-open");
+  fillPanel(it);
+  document.querySelectorAll(".pin").forEach((p) => p.classList.toggle("sel", p.dataset.pin === id));
+  hotLinks(id, false);
+  const [x, y] = P[id];
+  flyTo(x, y - (k >= 1.15 || zoom >= 1.15 ? 40 : 0), zoom || Math.max(k, 0.95));
+}
+function closePanel() {
+  sel = null; $("#panel").classList.remove("open"); document.body.classList.remove("panel-open");
+  document.querySelectorAll(".pin.sel").forEach((p) => p.classList.remove("sel"));
+  hotLinks("", false);
+}
+function fillPanel(it) {
+  const st = AMO.STATUS[it.status], L = AMO.links(it.id);
+  const where = { needs_you: "在你手里，等你拍板", working: `在 <b>${E(who(it.owner))}</b> 手里，进行中`, waiting: `在等 <b>${E(who(it.owner))}</b>`, settled: "已经定了", parked: "你搁置了" }[it.status];
+  let ask = "";
+  if (it.ask) {
+    const a = it.ask;
+    if (a.answer) {
+      const o = a.options.find((x) => x.id === a.answer.option);
+      ask = `<div class="p-sec"><h4>你的回答</h4><p class="p-q">${E(a.question)}</p><div class="answered">你选了 <b>「${E(o ? o.label : a.answer.option)}」</b>${a.answer.note ? "：" + E(a.answer.note) : ""}<br><span style="font-size:13px">${AMO.fmtTime(a.answer.at)} · ${it.status === "working" ? `已交回 ${E(who(it.source))}，进行中（地图上它正开过来）` : "已交回"}</span></div></div>`;
+    } else if (it.status === "needs_you") {
+      const rec = a.options.find((o) => o.id === a.recommend);
+      ask = `<div class="p-sec"><h4>要你定</h4><p class="p-q">${E(a.question)}</p>
+        <textarea class="p-note" id="p-note" rows="1" placeholder="想附一句话给 ${E(who(it.source))}，先写在这里（可不填）"></textarea>
+        <div class="opts">${a.options.map((o) => `<button class="opt${o.id === a.recommend ? " rec" : ""}" data-opt="${o.id}"><span class="ol">${E(o.label)}${o.id === a.recommend ? '<span class="rec-tag">推荐</span>' : ""}</span>${o.detail ? `<span class="od">${E(o.detail)}</span>` : ""}<span class="go">选这个</span></button>`).join("")}</div>
+        ${a.why ? `<div class="why"><b>为什么推荐「${E(rec ? rec.label : "")}」</b>${E(a.why)}</div>` : ""}
+        ${a.deep ? '<div class="deep">! 这件事复杂，建议去对话里谈。</div>' : ""}</div>`;
+    }
+  }
+  const links = [...L.out.map((l) => ({ ...l, t: REL_OUT[l.rel] + " #" + l.item.num })), ...L.in.map((l) => ({ ...l, t: "#" + l.item.num + " " + REL_IN[l.rel] }))];
+  const hist = AMO.data.events.filter((e) => e.item === it.id).sort((x, y) => x.at.localeCompare(y.at));
+  const ar = AMO.area(it.area);
+  $("#pbody").innerHTML = `<div class="p-band" style="--soft:${st.soft}"><span class="s">${st.sym} ${st.label}</span><span>#${it.num} · ${AMO.TYPE[it.type].label}</span><span>${E(ar ? ar.name : "")}</span>${AMO.isNew(it) ? '<span class="nw">新</span>' : ""}<button class="x" data-close>关闭</button></div>
+    <h2 class="p-title">${E(it.title)}</h2>
+    <div class="p-who"><b>${E(who(it.source))}</b> 提的 · ${AMO.fmtTime(it.createdAt)}<br>现在${where}</div>
+    <p class="p-sum">${AMO.inline(it.summary || "")}</p>
+    <div class="p-body">${AMO.md(it.body)}</div>
+    ${it.conclusion ? `<div class="p-sec"><h4>${it.status === "parked" ? "搁置的原因" : "结论"}</h4><div class="concl">${AMO.inline(it.conclusion)}</div></div>` : ""}
+    ${ask}
+    ${it.evidence && it.evidence.length ? `<div class="p-sec"><h4>证据</h4>${it.evidence.map((v) => `<div class="ev"><span class="k">${AMO.EVIDENCE[v.kind] || v.kind}</span><code>${E(v.ref)}</code><span class="n">${E(v.note || "")}</span></div>`).join("")}</div>` : ""}
+    ${links.length ? `<div class="p-sec"><h4>关联 · 点了在地图上飞过去</h4>${links.map((l) => `<button class="lk" data-goto="${l.item.id}"><span class="r">${l.t}</span><span>${E(l.item.title)}</span><span class="ls">${AMO.STATUS[l.item.status].sym} ${AMO.STATUS[l.item.status].label} · ${E((AMO.area(l.item.area) || {}).name || "")}${l.note ? ` · ${E(l.note)}` : ""}</span></button>`).join("")}</div>` : ""}
+    <div class="p-sec"><h4>批注和处理</h4><textarea class="p-note" id="p-cmt" rows="2" placeholder="写一句批注"></textarea>
+      <div class="acts"><button class="pbtn" data-cmt>记下批注</button>
+      ${it.status === "parked" ? '<button class="pbtn" data-reopen>重新打开</button>' : it.status === "needs_you" ? '<button class="pbtn" data-park>先搁置</button>' : ""}</div></div>
+    <div class="p-sec"><h4>经过</h4><ul class="hist">${hist.map((h) => `<li><span>${AMO.fmtTime(h.at)}</span><span><b>${E(who(h.actor))}</b> ${E(h.text)}</span></li>`).join("")}</ul></div>`;
+}
+$("#panel").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-opt],[data-goto],[data-close],[data-park],[data-reopen],[data-cmt],.amo-ref");
+  if (!t) return;
+  e.preventDefault();
+  const id = sel;
+  if (t.matches("[data-close]")) closePanel();
+  else if (t.matches("[data-opt]")) AMO.answer(id, t.dataset.opt, ($("#p-note").value || "").trim());
+  else if (t.matches("[data-goto]")) select(t.dataset.goto);
+  else if (t.matches(".amo-ref")) { const it = AMO.item(+t.dataset.num); if (it) select(it.id); }
+  else if (t.matches("[data-park]")) AMO.park(id, $("#p-cmt").value.trim());
+  else if (t.matches("[data-reopen]")) AMO.reopen(id);
+  else if (t.matches("[data-cmt]")) { const n = $("#p-cmt").value.trim(); if (n) AMO.comment(id, n); }
+});
+
+// ---------- 搜索 ----------
+const q = $("#q"), results = $("#results");
+let hits = [], hi = 0;
+function search() {
+  const s = q.value.trim().replace(/^＃/, "#");
+  if (!s) return closeResults();
+  const num = /^#?(\d+)$/.exec(s);
+  hits = AMO.data.items.filter((i) => (num ? String(i.num).startsWith(num[1]) : (i.title + (i.summary || "")).toLowerCase().includes(s.toLowerCase())));
+  hi = 0; drawResults();
+}
+function drawResults() {
+  results.innerHTML = hits.length ? hits.slice(0, 8).map((i, n) => { const st = AMO.STATUS[i.status]; return `<button data-hit="${i.id}" class="${n === hi ? "on" : ""}"><span class="rs" style="background:${st.soft}">${st.sym}</span><span>#${i.num} ${E(i.title)}</span><span class="rm">${st.label} · ${E((AMO.area(i.area) || {}).name || "")}</span></button>`; }).join("") : '<div class="none">没找到。试试编号（#8）或标题里的词。</div>';
+  results.classList.add("show");
+}
+function closeResults() { results.classList.remove("show"); }
+q.addEventListener("input", search);
+q.addEventListener("focus", () => q.value && search());
+q.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { hi = Math.min(hits.length - 1, hi + 1); drawResults(); e.preventDefault(); }
+  if (e.key === "ArrowUp") { hi = Math.max(0, hi - 1); drawResults(); e.preventDefault(); }
+  if (e.key === "Enter" && hits[hi]) pick(hits[hi].id);
+});
+results.addEventListener("click", (e) => { const b = e.target.closest("[data-hit]"); if (b) pick(b.dataset.hit); });
+function pick(id) { const it = AMO.item(id); q.value = `#${it.num} ${it.title}`; closeResults(); q.blur(); select(id, 1.5); }
+$("#qx").onclick = () => { q.value = ""; closeResults(); closePanel(); };
+document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#search")) closeResults(); });
+
+// ---------- 状态筛选、最要紧、图例 ----------
+function drawChrome() {
+  const c = AMO.counts(), top = AMO.needsYou()[0];
+  $("#chips").innerHTML = ["needs_you", "working", "waiting", "settled", "parked"].map((s) => `<button data-f="${s}" class="${s === "needs_you" ? "ny " : ""}${filter === s ? "on" : ""}">${AMO.STATUS[s].sym} ${AMO.STATUS[s].label} ${c[s]}</button>`).join("");
+  $("#top1").innerHTML = top ? `<small>! ${c.needs_you} 件等你 · 最要紧的在「${E(AMO.area(top.area).name)}」</small>#${top.num} ${E(top.title)}` : "<small>✓ 没有等你的了</small>";
+  $("#top1").dataset.id = top ? top.id : "";
+  const pd = (s) => `<span class="pd" style="background:${AMO.STATUS[s].color}"><i style="${s === "waiting" ? "color:#3a2a00" : ""}">${AMO.STATUS[s].sym}</i></span>`;
+  $("#legend").innerHTML = `<h5>图例<button data-fold>${legendFold ? "展开" : "收起"}</button></h5><div class="lg">${["needs_you", "working", "waiting", "settled", "parked"].map((s) => `<span class="li">${pd(s)}${AMO.STATUS[s].label}${s === "needs_you" ? "（闪）" : ""}</span>`).join("")}<span class="li"><span class="badge-new" style="position:static;box-shadow:none">新</span>上次后变过</span></div>
+    <div class="row3"><span class="li"><svg width="34" height="10"><line x1="3" y1="5" x2="31" y2="5" stroke="var(--road-case)" stroke-width="9" stroke-linecap="round"/><line x1="3" y1="5" x2="31" y2="5" stroke="var(--road)" stroke-width="5" stroke-linecap="round"/></svg>道路：跨区的关联</span>
+    <span class="li"><svg width="34" height="10"><line x1="3" y1="5" x2="31" y2="5" stroke="var(--path)" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/></svg>小路：同区的关联</span>
+    <span class="li"><svg width="34" height="14"><circle cx="17" cy="7" r="5" fill="var(--surface)" stroke="var(--s2)" stroke-width="3"/></svg>agent：停在它在忙的那条旁边</span></div>`;
+}
+$("#legend").addEventListener("click", (e) => { if (e.target.closest("[data-fold]")) { legendFold = !legendFold; $("#legend").classList.toggle("fold", legendFold); drawChrome(); } });
+$("#chips").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (!b) return; filter = filter === b.dataset.f ? null : b.dataset.f; drawChrome(); drawOverlay(); });
+$("#top1").addEventListener("click", () => { const id = $("#top1").dataset.id; if (id) select(id, 1.5); });
+
+function render() {
+  drawGeo(); drawOverlay(); drawChrome();
+  if (sel) fillPanel(AMO.item(sel));
+}
+layoutItems();
+$("#legend").classList.toggle("fold", legendFold);
+AMO.on(render);
+render();
+fit(false);
+</script>
+</body>
+</html>

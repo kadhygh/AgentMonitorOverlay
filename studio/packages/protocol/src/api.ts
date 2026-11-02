@@ -154,6 +154,20 @@ export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; h
   { id: "planning", label: "整体待办与调度", hint: "画布侧栏的整体待办、调度 agent 和它的提案" },
 ];
 
+/**
+ * 设置 → 测试功能 (2026-11-01, the user: 设置里加个测试功能页，这个功能加个开关): features still being tried out. The
+ * opposite of OPTIONAL_FEATURES: off until the person turns one on, and the settings list the ones turned on.
+ */
+export type ExperimentalFeature = "panorama";
+
+export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: string; hint: string }[] = [
+  {
+    id: "panorama",
+    label: "全景",
+    hint: "顶栏多一个「全景」选项卡：把专题里的任务画成一张倾斜视角的图，每个任务一条路，会话是路上的节点，等你处理的会话立着牌子，点「N 件等你」依次飞过去。还在测试，只读不改数据，样子和内容以后会变。",
+  },
+];
+
 /** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
 export interface StudioSettings {
   /**
@@ -165,6 +179,8 @@ export interface StudioSettings {
   presets: SessionPreset[];
   /** Optional features turned off. */
   disabledFeatures: OptionalFeature[];
+  /** Features still being tried out that the person turned on (设置 → 测试功能); off by default. */
+  experimentalFeatures: ExperimentalFeature[];
   /**
    * 设置 → 功能 → 中转 (2026-10-30, the user: 开启后不用审批自动发送): what a session asks someone on the team through
    * 中转 (team_ask, team_followup) goes at once instead of waiting for the person's 发送. Off by default.
@@ -438,7 +454,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; teamAutoSend?: boolean; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; experimentalFeatures?: ExperimentalFeature[]; teamAutoSend?: boolean; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

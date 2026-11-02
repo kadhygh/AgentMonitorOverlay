@@ -24,6 +24,7 @@ import "./chat/pickers.css";
 import "./chat/options.css";
 import "./review/review.css";
 import "./canvas/canvas.css";
+import "./panorama/panorama.css";
 import "./collab/collab.css";
 import "./planning/planning.css";
 import "./settings/settings.css";

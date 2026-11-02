@@ -110,6 +110,17 @@ describe("AMO MCP", () => {
     expect(service.config.updateSettings({ disabledFeatures: [] }).disabledFeatures).toEqual([]);
   });
 
+  it("测试功能 are off until turned on, and only ones that exist", () => {
+    expect(service.config.settings().experimentalFeatures).toEqual([]);
+    expect(() => service.config.updateSettings({ experimentalFeatures: ["nope"] })).toThrow(/experimentalFeatures/);
+    expect(() => service.config.updateSettings({ experimentalFeatures: "panorama" })).toThrow(/experimentalFeatures/);
+    expect(service.config.updateSettings({ experimentalFeatures: ["panorama", "panorama"] }).experimentalFeatures).toEqual(["panorama"]);
+    // One that was taken out again is ignored when read back.
+    store.setKv("settings:experimental-features", JSON.stringify(["gone", "panorama"]));
+    expect(service.config.experimentalFeatures()).toEqual(["panorama"]);
+    expect(service.config.updateSettings({ experimentalFeatures: [] }).experimentalFeatures).toEqual([]);
+  });
+
   it("opens a file for the identified caller's project and directs comments back to that caller", async () => {
     service.liveWindows = 1;
     const file = "review me.ts";

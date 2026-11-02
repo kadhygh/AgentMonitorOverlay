@@ -27,6 +27,12 @@ export function BackButton({ label, onClick }: { label: string; onClick(): void 
           <rect x="9.2" y="9.9" width="5" height="3.6" rx="0.8" />
           <path d="M6.8 4.3h2.4a2 2 0 0 1 2 2v3.6" />
         </svg>
+      ) : label === "全景" ? (
+        // 全景 (2026-11-01): a tilted ground with a lane across it.
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M1.5 12.5 4.5 3.5h10l-3 9z" />
+          <path d="M4.2 9.6c1.8-2.2 3.6.4 6.4-3" />
+        </svg>
       ) : (
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
           <rect x="2" y="2.5" width="12" height="11" rx="1" />
