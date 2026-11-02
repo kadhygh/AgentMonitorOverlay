@@ -1,6 +1,7 @@
 package dev.amo.studio
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -62,6 +63,7 @@ fun StudioUi(state: StudioState, repo: StudioRepository) {
             stack.size > 1 -> { val left = stack.removeAt(stack.lastIndex); if (left == "task") repo.leaveTask() }
         }
     }
+    @OptIn(ExperimentalComposeUiApi::class)
     BackHandler(state.file != null || state.fileLoading != null || sheet.isNotEmpty() || stack.size > 1) { back() }
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -280,8 +282,12 @@ private fun taskTone(t: RemoteTask): Tone {
             state.peers.filter { it.role == "guest" }.forEach { p -> ListRow(p.name, "${if (p.online) "在线" else "离线"} · ${p.account}", if (p.online) Tone.Running else Tone.Quiet, tag = "peer-paired") { repo.selectPeer(p) } }
             Text("要配对的电脑", style = MaterialTheme.typography.labelSmall, color = c.dim, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
             PairingList(state, repo)
-            SectionHeader("更新")
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { UpdateSection(state.update, repo) }
+            // iOS: TestFlight updates the app; only its version is shown.
+            SectionHeader(if (repo.updatesSupported) "更新" else "版本")
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (repo.updatesSupported) UpdateSection(state.update, repo)
+                else Text("当前版本 ${repo.versionName}", color = c.dim, style = MaterialTheme.typography.bodySmall)
+            }
             SectionHeader("账号")
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(account.name, style = MaterialTheme.typography.titleSmall)
@@ -300,12 +306,12 @@ private fun taskTone(t: RemoteTask): Tone {
     val latest = u.latest
     if (latest == null) SecondaryButton(if (u.checking) "正在检查…" else "检查更新", "update-check", !u.checking) { repo.checkUpdate() }
     else {
-        Text("新版本 ${latest.version} · ${"%.1f".format(latest.size / 1048576.0)} MB", style = MaterialTheme.typography.titleSmall)
+        Text("新版本 ${latest.version} · ${megabytes(latest.size)} MB", style = MaterialTheme.typography.titleSmall)
         if (latest.notes.isNotBlank()) SelectionContainer { Text(latest.notes, style = MaterialTheme.typography.bodySmall) }
         when {
             u.downloading -> {
                 LinearProgressIndicator(progress = { (u.downloaded.toFloat() / latest.size).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().testTag("update-progress"))
-                Row(verticalAlignment = Alignment.CenterVertically) { Text("已下载 ${"%.1f".format(u.downloaded / 1048576.0)} / ${"%.1f".format(latest.size / 1048576.0)} MB", modifier = Modifier.weight(1f), color = c.dim, style = MaterialTheme.typography.bodySmall); AmoTextButton(onClick = repo::cancelUpdate) { Text("取消") } }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("已下载 ${megabytes(u.downloaded)} / ${megabytes(latest.size)} MB", modifier = Modifier.weight(1f), color = c.dim, style = MaterialTheme.typography.bodySmall); AmoTextButton(onClick = repo::cancelUpdate) { Text("取消") } }
             }
             u.ready != null -> PrimaryButton("安装", "update-install") { repo.installUpdate() }
             else -> PrimaryButton("下载并安装", "update-download") { repo.downloadUpdate() }
@@ -330,4 +336,10 @@ private fun taskTone(t: RemoteTask): Tone {
         PrimaryButton(if (state.busy) "正在登录…" else "登录", "login-submit", !state.busy && server.isNotBlank() && name.isNotBlank() && password.isNotBlank(), Modifier.fillMaxWidth()) { repo.login(server.trim(), name.trim(), password); password = "" }
         Text("在公司 Wi-Fi 或 Tailscale 上都连这个服务器地址。", color = LocalAmoColors.current.dim, style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/** "12.3": bytes as MB with one decimal (String.format is JVM-only). */
+internal fun megabytes(bytes: Long): String {
+    val tenths = kotlin.math.round(bytes / 104857.6).toLong()
+    return "${tenths / 10}.${tenths % 10}"
 }

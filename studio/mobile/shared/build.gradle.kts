@@ -23,6 +23,9 @@ kotlin {
             api("org.jetbrains.compose.foundation:foundation:1.11.1")
             api("org.jetbrains.compose.ui:ui:1.11.1")
             api("org.jetbrains.compose.material3:material3:1.9.0")
+            // 2b (2026-11-02): the fonts as Compose resources; the system back gesture without androidx.activity.
+            implementation("org.jetbrains.compose.components:components-resources:1.11.1")
+            implementation("org.jetbrains.compose.ui:ui-backhandler:1.11.1")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             // 2026-11-02 (plans/ios.md 第 2 步): what replaced OkHttp, org.json, java.io and java.time in the shared code.
             // Ktor 3.5.x: 3.6 brings okhttp 5.5, which needs compileSdk 37 (we build against 36).
@@ -43,4 +46,8 @@ kotlin {
             implementation("com.squareup.okhttp3:okhttp:5.3.0")
         }
     }
+}
+compose.resources {
+    packageOfResClass = "dev.amo.studio.res"
+    generateResClass = always
 }

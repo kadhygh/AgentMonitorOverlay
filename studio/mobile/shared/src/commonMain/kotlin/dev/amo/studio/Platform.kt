@@ -16,6 +16,8 @@ interface Platform {
     /** The app's own files (the phone's copy of histories lives under remote-cache/). */
     val filesDir: Path
     val prefs: Prefs
+    /** The composer's drafts and sent-but-unconfirmed messages (Android: their own preference file). */
+    val drafts: Prefs
     /** The client for the team server: HTTP and the devices WebSocket, with the platform's engine and timeouts. */
     fun httpClient(): HttpClient
     /** The account key at rest, with a key that never leaves the phone's keystore (Android Keystore, iOS Keychain). */
@@ -29,10 +31,19 @@ interface Platform {
 interface Prefs {
     fun string(key: String): String?
     fun boolean(key: String, fallback: Boolean): Boolean
+    fun long(key: String, fallback: Long): Long
+    /** Writes the changes together; `now`: on disk before it returns (a message about to be sent must survive the app being killed). */
+    fun edit(now: Boolean = false, changes: PrefsEditor.() -> Unit)
+}
+interface PrefsEditor {
     fun put(key: String, value: String)
     fun put(key: String, value: Boolean)
-    fun remove(vararg keys: String)
+    fun put(key: String, value: Long)
+    fun remove(key: String)
 }
+fun Prefs.put(key: String, value: String) = edit { put(key, value) }
+fun Prefs.put(key: String, value: Boolean) = edit { put(key, value) }
+fun Prefs.remove(vararg keys: String) = edit { keys.forEach { remove(it) } }
 
 /** Android's self-update (AppUpdate.kt): the server's newest build, its download, the system installer. */
 interface Updater {

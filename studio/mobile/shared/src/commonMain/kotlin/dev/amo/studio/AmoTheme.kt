@@ -1,13 +1,16 @@
 package dev.amo.studio
 
-import dev.amo.studio.shared.R
+import dev.amo.studio.res.Res
+import dev.amo.studio.res.jetbrains_mono
+import dev.amo.studio.res.noto_sans_sc
+import dev.amo.studio.res.noto_serif_sc
+import org.jetbrains.compose.resources.FontResource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -34,11 +37,13 @@ private val darkAmo = AmoColors(
 val LocalAmoColors = staticCompositionLocalOf { lightAmo }
 val LocalAmoCodeFont = staticCompositionLocalOf<FontFamily> { FontFamily.Monospace }
 
+// The fonts are Compose resources (2026-11-02, shared with iOS); on Android they were res/font before.
 @OptIn(ExperimentalTextApi::class)
-private fun variableFont(resource: Int): FontFamily = FontFamily(
-    *listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
-        Font(resource, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
-    }.toTypedArray()
+@Composable
+private fun variableFont(resource: FontResource): FontFamily = FontFamily(
+    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
+        org.jetbrains.compose.resources.Font(resource, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+    }
 )
 
 @Composable
@@ -60,9 +65,9 @@ fun AmoTheme(preference: String, content: @Composable () -> Unit) {
         surfaceContainerHigh = if (dark) Color(0xff1f2328) else Color(0xfff4f2ed), surfaceContainerHighest = if (dark) Color(0xff22272d) else Color(0xffe7e3db)
     )
     val base = Typography()
-    val sans = remember { variableFont(R.font.noto_sans_sc) }
-    val serif = remember { variableFont(R.font.noto_serif_sc) }
-    val codeFont = remember { variableFont(R.font.jetbrains_mono) }
+    val sans = variableFont(Res.font.noto_sans_sc)
+    val serif = variableFont(Res.font.noto_serif_sc)
+    val codeFont = variableFont(Res.font.jetbrains_mono)
     val body = base.bodyLarge.copy(fontFamily = sans, fontSize = 14.sp, lineHeight = 22.sp)
     val title = base.titleLarge.copy(fontFamily = serif, fontSize = 19.sp, lineHeight = 29.sp)
     val typography = Typography(bodyLarge = body, bodyMedium = body, bodySmall = body.copy(fontSize = 13.sp, lineHeight = 21.sp), titleLarge = title, titleMedium = body.copy(fontSize = 16.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium), titleSmall = body.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium), displayLarge = title.copy(fontSize = 24.sp, lineHeight = 36.sp), displayMedium = title.copy(fontSize = 24.sp, lineHeight = 36.sp), displaySmall = title, headlineLarge = title.copy(fontSize = 24.sp, lineHeight = 36.sp), headlineMedium = title.copy(fontSize = 24.sp, lineHeight = 36.sp), headlineSmall = title, labelLarge = body.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium), labelMedium = body.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium), labelSmall = body.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium))

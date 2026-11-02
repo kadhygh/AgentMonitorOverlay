@@ -1,6 +1,5 @@
 package dev.amo.studio
 
-import android.content.Context
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -16,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -25,7 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import java.security.MessageDigest
+import okio.ByteString.Companion.encodeUtf8
 
 // The conversation page (2026-10-31 redesign, plans/android-mobile-redesign.md 第 3 步): a turn's tool calls and thinking
 // fold into one line, Markdown renders as blocks, the composer starts at one line with the send button inside it,
@@ -56,17 +54,17 @@ private fun pending(e: Entry) = (e.type == "approval" || e.type == "question") &
 @Composable internal fun ChatScreen(state: StudioState, repo: StudioRepository, back: () -> Unit, newSession: () -> Unit, openTask: () -> Unit) {
     val session = state.selectedSession
     val identity = listOf(state.account?.server, state.account?.name, state.selectedPeer?.identity, state.selectedTask?.id, session?.id ?: "").joinToString("\n")
-    val draftKey = remember(identity) { MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it) } }
-    val prefs = LocalContext.current.applicationContext.getSharedPreferences("chat-drafts", Context.MODE_PRIVATE)
-    var draft by remember(draftKey) { mutableStateOf(prefs.getString("draft-$draftKey", "") ?: "") }
-    var submitted by remember(draftKey) { mutableStateOf(prefs.getString("pending-$draftKey", "") ?: "") }
-    var sentAfter by remember(draftKey) { mutableStateOf(prefs.getLong("after-$draftKey", -1L)) }
+    val draftKey = remember(identity) { identity.encodeUtf8().sha256().hex() }
+    val prefs = repo.drafts
+    var draft by remember(draftKey) { mutableStateOf(prefs.string("draft-$draftKey") ?: "") }
+    var submitted by remember(draftKey) { mutableStateOf(prefs.string("pending-$draftKey") ?: "") }
+    var sentAfter by remember(draftKey) { mutableStateOf(prefs.long("after-$draftKey", -1L)) }
     var verify by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     val expanded = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
-    fun saveDraft(value: String) { draft = value; prefs.edit().putString("draft-$draftKey", value).apply() }
-    fun clearPending() { submitted = ""; prefs.edit().remove("pending-$draftKey").remove("after-$draftKey").apply() }
+    fun saveDraft(value: String) { draft = value; prefs.put("draft-$draftKey", value) }
+    fun clearPending() { submitted = ""; prefs.remove("pending-$draftKey", "after-$draftKey") }
     val task = state.selectedTask
     val writable = state.connected && !state.busy && task?.peer?.online == true && !task.revoked && session?.archived != true
     val running = session?.state == "running"
@@ -132,7 +130,7 @@ private fun pending(e: Entry) = (e.type == "approval" || e.type == "question") &
         if (verify) AlertDialog(onDismissRequest = { verify = false }, title = { Text("处理待确认消息") }, text = { Text("请先在最新对话或电脑上核对这条消息。解除等待后可以继续编辑并发送；若原消息实际已送达，重发会让模型再次执行。") }, confirmButton = { AmoTextButton(onClick = { clearPending(); verify = false }) { Text("已确认未送达，继续编辑") } }, dismissButton = { AmoTextButton(onClick = { verify = false }) { Text("继续等待") } })
         Composer(draft, ::saveDraft, running, writable, canSend = writable && draft.isNotBlank() && submitted.isEmpty(), stop = repo::interrupt) {
             sentAfter = state.items.maxOfOrNull { it.optLong("seq", -1L) } ?: -1L; submitted = draft.trim(); saveDraft(submitted)
-            prefs.edit().putString("pending-$draftKey", submitted).putLong("after-$draftKey", sentAfter).commit(); repo.send(submitted); stick = true
+            prefs.edit(now = true) { put("pending-$draftKey", submitted); put("after-$draftKey", sentAfter) }; repo.send(submitted); stick = true
         }
     }
     detail?.let { id -> state.items.find { it.str("id") == id }?.let { item -> DetailSheet(item, { detail = null }) { path, cwd -> detail = null; repo.openFile(path, cwd) } } ?: run { detail = null } }

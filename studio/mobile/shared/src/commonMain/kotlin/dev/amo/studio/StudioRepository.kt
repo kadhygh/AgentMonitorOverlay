@@ -61,6 +61,8 @@ class StudioRepository(private val platform: Platform) {
     /** False where the store updates the app (iOS: TestFlight). */
     val updatesSupported: Boolean get() = platform.updater != null
     private val prefs = platform.prefs
+    /** The composer's drafts (ChatUi). */
+    internal val drafts: Prefs get() = platform.drafts
     private val cacheRoot = (platform.filesDir / "remote-cache").also { platform.fileSystem.createDirectories(it) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     /** Writes when leaving the app; not cancelled with `scope`, so close() does not cut them off. */

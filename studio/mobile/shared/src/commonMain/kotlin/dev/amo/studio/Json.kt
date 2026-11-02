@@ -18,6 +18,8 @@ class JSONException(message: String, cause: Throwable? = null) : RuntimeExceptio
 
 class JSONObject() {
     private val map = LinkedHashMap<String, Any>()
+    /** Something computed from this object, kept with it (Markdown.kt: the parsed text). Not part of the JSON. */
+    internal var memo: Any? = null
 
     constructor(text: String) : this() {
         val element = parse(text)

@@ -27,13 +27,13 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import java.util.WeakHashMap
 
 // Markdown for the phone (2026-10-31). The app has no Markdown library offline, and the old renderer went line by
 // line (each code line its own strip, no ordered lists, quotes or italics, fixed 160 dp table columns). This is a
 // small block parser — fenced code, headings, quotes, nested lists, tables, rules, paragraphs — and an inline one for
-// code, bold, italic, strike-through and links. Parses are kept per item (WeakHashMap by JSON identity): an item's
-// JSON never changes after it arrives, so a list redrawn while a reply streams parses only the streaming item.
+// code, bold, italic, strike-through and links. Parses are kept per item (on the JSONObject itself, see Json.kt memo;
+// it was a WeakHashMap by identity before the code was shared with iOS): an item's JSON never changes after it
+// arrives, so a list redrawn while a reply streams parses only the streaming item.
 
 @Immutable sealed interface Md
 @Immutable data class MdHeading(val level: Int, val text: String) : Md
@@ -122,11 +122,12 @@ private fun blocks(lines: List<String>): List<Md> {
     flush(); return out
 }
 
-private object MarkdownCache {
-    private val parsed = WeakHashMap<JSONObject, Pair<String, List<Md>>>()
-    fun of(item: JSONObject, text: String): List<Md> = parsed[item]?.takeIf { it.first == text }?.second ?: parseMarkdown(text).also { parsed[item] = text to it }
+private class ParsedMarkdown(val field: String, val text: String, val blocks: List<Md>)
+internal fun markdownOf(item: JSONObject, field: String): List<Md> {
+    val text = item.str(field)
+    (item.memo as? ParsedMarkdown)?.takeIf { it.field == field && it.text == text }?.let { return it.blocks }
+    return parseMarkdown(text).also { item.memo = ParsedMarkdown(field, text, it) }
 }
-internal fun markdownOf(item: JSONObject, field: String): List<Md> = MarkdownCache.of(item, item.str(field))
 
 /** Inline Markdown: `code`, **bold**, *italic*, ~~strike~~, [links](target), <https://…> and bare https:// links. */
 internal fun inlineMarkdown(source: String, link: Color, code: Color, codeFont: FontFamily, open: (String) -> Unit): AnnotatedString = buildAnnotatedString { inline(this, source, link, code, codeFont, open) }

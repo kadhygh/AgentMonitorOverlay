@@ -25,7 +25,7 @@
 
 - macOS 27.0.1，arm64，Xcode 27.2（27B52），iOS SDK 27.2 和模拟器 SDK 27.2 都有；数据盘还剩 3.1 TiB；git 2.54。
 - 签名身份：`Apple Distribution: Wu Naiyu (D39JR23NC7)`、`Apple Development: Wu Naiyu (333GJH539J)`。Xcode 里登录了 1 个账号。
-- **`AMOStudio_AppStore` 还没装到打包机上**：按名字查了 `~/Library/MobileDevice/Provisioning Profiles` 和 Xcode 的 UserData，都没有。手动签名之前，要先把它装上去：在 Xcode → Settings → Accounts 里点 Download Manual Profiles，或者把网页上下载的 `.mobileprovision` 拷过去。
+- **`AMOStudio_AppStore` 已装好**（2026-11-02，用户通过 RustDesk 在 Xcode 里下载）：App ID `D39JR23NC7.com.gorilla.amo`；App Store 类型（没有登记设备，`get-task-allow` false，`beta-reports-active` true，可以走 TestFlight）；里面的证书是 `Apple Distribution: Wu Naiyu (D39JR23NC7)`，打包机上有它的私钥；2027-06-10 到期。远程桌面用 RustDesk 直连 `172.16.8.85`（端口 21118），没有开 macOS 自带的屏幕共享。
 - **没有 JDK**（`/usr/libexec/java_home` 找不到），也没有 xcodegen 和 tuist。
 - 在 SSH 会话里读登录钥匙串的设置会报 `User interaction is not allowed`。自动打包时 codesign 能不能在 SSH 下拿到私钥，要在手动验证时试出来，见「发布流程 · 钥匙串」。
 - 检查时 Unity Hub 和 accelerator 开着，但没有在出包（load 约 1.0）。
@@ -37,6 +37,8 @@
 **第 1 步 · 改名 + KMP 结构（2026-11-02，✓）**：`studio/android` 改名为 `studio/mobile`，新加 `shared` 模块（`org.jetbrains.kotlin.multiplatform` 2.4.10 + `com.android.kotlin.multiplatform.library` 9.3.1 + Compose Multiplatform 1.11.1，material3 1.9.0；在 Android 上用的仍是 androidx compose 1.11.x / material3 1.4.0）。除 `MainActivity` 外的 11 个文件和 3 个字体都挪到 `shared/src/androidMain`，`app` 只剩外壳并依赖 `:shared`。代码只改了三处：`BuildConfig` 改成从安装包读取版本号（`StudioRepository.versionCode/versionName`）；字体改用 `dev.amo.studio.shared.R`；`isolatedHtml`、`localFileTarget` 从 internal 改成 public，因为 `app` 里的 `FilePolicyTest` 跨模块用到它们。验证：`:app:assembleDebug`、`:app:assembleDebugAndroidTest`、`:app:lintDebug` 都通过；APK 解压后 74.8 MB（0.2.0 是 74.9 MB）；模拟器 FakeNga_UI_API_36 + `node scripts/android-fixture.mjs`，`test.ps1` 共 `OK (6 tests)`。第一次跑失败过一次，是模拟器刚启动完，分开跑和重跑都通过。设置页截图里的版本号「0.2.0」和中文字体都正常。`scripts/android-publish.mjs` 改指 `mobile/`，它的单测 3 条通过。没提交。
 
 **第 2a 步 · 数据层进 commonMain（2026-11-02，✓）**：`Models`、`HistoryCache`、`StudioRepository` 挪进 `shared/src/commonMain`。org.json 换成 `Json.kt`：同名的 `JSONObject` / `JSONArray`，照 Android 自带 org.json 的规则（JSON null 的 optString 是 "null"，字符串能转数字和布尔值，put null 就是删掉这个键，2.0 输出成 2，键保持插入顺序，相等按对象本身比较），解析和输出交给 kotlinx.serialization，这样一百多处调用只要删掉 import。OkHttp 换成 Ktor 3.5.2（3.6 带的 okhttp 5.5 要求 compileSdk 37）；java.io/MessageDigest 换成 okio；java.time 换成 kotlinx-datetime。手机相关的东西放在 `Platform` 接口后面（`Platform.kt`），Android 的实现是 `AndroidPlatform.kt`：Keystore 加密原样搬过去，HTTP 用 OkHttp 引擎（ping 15 秒、连接超时 10 秒、读超时 30 秒，跟原来一样），自更新是 `AndroidUpdater`。`StudioRepository(context)` 的写法照旧能用。踩到的坑：服务器地址是 http:// 时，Ktor 的 WebSocket 地址要换成 ws://，不然发出去的是普通 GET，服务器回 404，连接就一直悄悄重试（日志查出来的）。验证：新加 `shared/src/commonTest/JsonTest.kt` 10 条（`:shared:testAndroidHostTest`）；assembleDebug、androidTest、lint 都过；模拟器 + 夹具 `test.ps1` 共 `OK (6 tests)`，对话页截图正常。没验证的：被别的设备挤掉（4001）和登录失效（401）这两条路，没有测试覆盖，靠的是读代码。
+
+**第 2b–2c 步 · 界面和文件查看进 commonMain（2026-11-02，✓）**：两步并成一次做，因为 `StudioUi`、`ChatUi` 都要用 `FileViewer`。`AmoTheme`、`AmoControls`、`Icons`、`Markdown`、`ChatUi`、`StudioUi`、`FileUi` 和三个字体都挪进 `shared/src/commonMain`，`androidMain` 只剩 `AndroidPlatform.kt`、`AppUpdate.kt` 和新的 `FileViews.android.kt`。改的地方：字体从 `res/font` 换成 Compose 资源（`compose.resources`，`Res` 在 `dev.amo.studio.res`）；`BackHandler` 换成 CMP 的 `ui-backhandler`（1.11 里标了过时、建议 NavigationEventHandler，先用着，能用）；对话草稿原来直接开 SharedPreferences「chat-drafts」，现在走 `Platform.drafts`，`Prefs` 加了 long 值和 `edit(now = true)`（发送前同步写盘，和原来的 commit() 一样）；草稿键的 SHA-256 换成 okio，结果和原来一样，已有草稿不丢；`"%.1f"` 换成 `megabytes()`；Markdown 的解析缓存从 WeakHashMap 换成挂在 JSONObject 上的 `memo`；`Uri.decode` 换成 `percentDecode()`（照 Android 的规则：`+` 不变，坏的转义变 U+FFFD）。HTML 预览和图片解码用 `expect/actual`：`HtmlView`、`decodeImage`，Android 那份就是原来的 WebView 和 BitmapFactory 代码原样搬过去。设置页的「更新」只在能自更新的平台显示，iOS 显示成「版本」和当前版本号（TestFlight 管更新）。验证：新加 `commonTest/SharedUiTest.kt` 4 条，加上 JsonTest 共 14 条通过；assembleDebug、androidTest、lint（0 错误，12 条都是版本提示）都过；模拟器 + 夹具 `test.ps1` 一次 `OK (6 tests)`；截图看过对话页、设置页、HTML 和 Markdown 查看，字体和以前一样。
 
 ## 工程结构（KMP）
 
@@ -140,9 +142,9 @@ codesign 要用 `Apple Distribution` 的私钥。SSH 会话里能不能直接用
 | 0 | 打包机上空的 SwiftUI 工程只编不签，确认工具链 | ✓ 2026-11-02 |
 | 1 | `android/` 改名 `mobile/`，改成 KMP 结构（先只有 androidMain），Android 测试不变 | ✓ 2026-11-02 |
 | 2a | 数据层进 commonMain | ✓ 2026-11-02 |
-| 2b–2c | 界面、文件查看进 commonMain（用户 11-02 确认了拆法） | ○ 下一步 |
+| 2b–2c | 界面、文件查看进 commonMain（用户 11-02 确认了拆法） | ✓ 2026-11-02 |
 | 2d | 加 iOS 目标、iosMain、iosApp；在 iOS 模拟器上跑通并截图。JDK 11-02 已装：Temurin 21.0.13，在打包机的 `~/amo-ios-build/jdk`，SHA-256 核对过 | ○ |
-| 3 | 手动验证签名和导出（见上面 1–4） | ○ 等描述文件装到打包机、API Key |
+| 3 | 手动验证签名和导出（见上面 1–4） | ○ 描述文件已装（11-02）；validate 那一步等 API Key |
 | 4 | `ios` 接进 `npm run release`：`ios-release.mjs`、`build-on-mac.sh`、TARGETS、CHANGELOG；脚本自己的单测 | ○ 可以跟 2 并行写 |
 | 5 | 问过用户后第一次上传；用户的设备通过 TestFlight 装上，Wi-Fi 下跑一次完整的对话、审批和文件查看 | ○ |
 | 6 | 外网（Tailscale）实测；`auto --if-due` 带上 ios | ○ |

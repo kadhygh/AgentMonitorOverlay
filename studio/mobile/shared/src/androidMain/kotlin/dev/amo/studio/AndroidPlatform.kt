@@ -28,6 +28,7 @@ class AndroidPlatform(context: Context) : Platform {
     override val fileSystem: FileSystem = FileSystem.SYSTEM
     override val filesDir: Path = app.filesDir.toOkioPath()
     override val prefs: Prefs = AndroidPrefs(app.getSharedPreferences("studio", Context.MODE_PRIVATE))
+    override val drafts: Prefs = AndroidPrefs(app.getSharedPreferences("chat-drafts", Context.MODE_PRIVATE))
     override val updater: Updater = AndroidUpdater(app)
 
     // The same OkHttp settings as before the move to Ktor: a ping every 15 s keeps the devices socket alive through NAT.
@@ -57,9 +58,17 @@ class AndroidPlatform(context: Context) : Platform {
 private class AndroidPrefs(private val prefs: SharedPreferences) : Prefs {
     override fun string(key: String): String? = prefs.getString(key, null)
     override fun boolean(key: String, fallback: Boolean) = prefs.getBoolean(key, fallback)
-    override fun put(key: String, value: String) = prefs.edit().putString(key, value).apply()
-    override fun put(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
-    override fun remove(vararg keys: String) = prefs.edit().apply { keys.forEach { remove(it) } }.apply()
+    override fun long(key: String, fallback: Long) = prefs.getLong(key, fallback)
+    override fun edit(now: Boolean, changes: PrefsEditor.() -> Unit) {
+        val editor = prefs.edit()
+        object : PrefsEditor {
+            override fun put(key: String, value: String) { editor.putString(key, value) }
+            override fun put(key: String, value: Boolean) { editor.putBoolean(key, value) }
+            override fun put(key: String, value: Long) { editor.putLong(key, value) }
+            override fun remove(key: String) { editor.remove(key) }
+        }.changes()
+        if (now) editor.commit() else editor.apply()
+    }
 }
 
 /** As before the shared module: `StudioRepository(context)` (MainActivity, the instrumentation tests). */
