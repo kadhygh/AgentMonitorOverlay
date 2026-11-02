@@ -42,6 +42,8 @@ import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
 import { RemoteBanner } from "./RemoteBanner.js";
+import { useStoredIds } from "../lib/storedIds.js";
+import { ALSO_MINE_KEY } from "../focus/pins.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -127,6 +129,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const copy = copyStatus(task, remote);
   const granted = grantsOf(remote, task.id);
   const remoteHeld = remoteHeldTasks(remote).has(task.id);
+  // 「我也关心」 (2026-11-02, 问题 #8): this computer's Focus keeps listing the granted task as usual (focus/pins.ts).
+  const alsoMine = useStoredIds(ALSO_MINE_KEY);
   const [granting, setGranting] = useState(false);
   // Git Review: only for a project under git; the branch shows in the line under the title.
   const gitRepo = useIsGitRepo(link, task.workspaceId) && !copy;
@@ -549,9 +553,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           <span className="remote-badge">已授权</span>
           <span className="remote-banner-text">
             <span>
-              {granted.map((g) => g.name).join("、")} 可以远程使用这个任务（会话还在这台电脑上跑）。{remoteHeld ? "它在线，这个任务的提醒只在它那边出现。" : ""}
+              {granted.map((g) => g.name).join("、")} 可以远程使用这个任务（会话还在这台电脑上跑）。{remoteHeld ? (alsoMine.has(task.id) ? "它在线，这台电脑的 Focus 也照常显示这个任务。" : "它在线，这个任务的提醒和进行中只在它那边的 Focus 出现。") : ""}
             </span>
           </span>
+          <label className="granted-also-mine" title="勾上后，对方在线时这台电脑的 Focus 也照常显示这个任务的提醒、完成待审核和进行中" data-testid="granted-also-mine">
+            <input type="checkbox" checked={alsoMine.has(task.id)} onChange={() => alsoMine.toggle(task.id)} />
+            我也关心
+          </label>
           {granted.map((g) => (
             <button key={`${g.account}\n${g.device}`} type="button" className="btn-ghost small" disabled={busy} onClick={() => void run(() => call(link, "POST /api/remote/grants/revoke", {}, { taskId: task.id, account: g.account, device: g.device }), () => setToast({ text: `已收回 ${g.name} 的授权` }))} data-testid="granted-revoke">
               收回{granted.length > 1 ? ` ${g.name}` : ""}

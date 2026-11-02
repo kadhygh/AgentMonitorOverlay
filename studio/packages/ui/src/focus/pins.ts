@@ -9,6 +9,11 @@ import { hangsUnderOf } from "../lib/sessionSeen.js";
 
 export const PINNED_KEY = "amo.focusPinned";
 export const SUBS_OPEN_KEY = "amo.focusSubsOpen";
+/**
+ * 「我也关心」 (2026-11-02, 问题 #8): tasks granted to a paired device that this computer's Focus still lists as usual
+ * while that device holds them (protocol remoteHeldTasks). Off by default: the device that sent the work watches it.
+ */
+export const ALSO_MINE_KEY = "amo.focusAlsoMine";
 
 /**
  * The session a pinned task shows, of its live ones that are not subagents: one waiting for the person (an approval, a

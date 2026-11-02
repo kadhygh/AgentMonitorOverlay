@@ -215,6 +215,20 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(aCard).toHaveAttribute("data-state", "accepted", { timeout: 30_000 });
   await expect(b.page.getByTestId("msg-agent").last()).toContainText("MOCK-DONE", { timeout: 60_000 });
 
+  // 问题 #8 (2026-11-02): while B's turn runs, A's Focus leaves 进行中 to B too — until A ticks 「我也关心」 on its banner.
+  await composer(b.page).fill("[[wait]] B 在跑");
+  await composer(b.page).press("Enter");
+  await until(() => a.api<{ sessions: Session[] }>("GET", "/api/state").then((s) => s.sessions.filter((x) => x.taskId === task.id && x.status === "running")), (l) => l.length === 1, "A's session runs B's turn");
+  await expect(aFocus.getByTestId("focus-working-entry")).toHaveCount(0);
+  await expect(a.page.getByTestId("granted-banner")).toContainText("提醒和进行中只在它那边的 Focus 出现");
+  await a.page.getByTestId("granted-also-mine").locator("input").check();
+  await expect(a.page.getByTestId("granted-banner")).toContainText("这台电脑的 Focus 也照常显示");
+  await expect(aFocus.getByTestId("focus-working-entry")).toHaveCount(1, { timeout: 5_000 });
+  await screenshot(a.app, "studio", "remote-a-also-mine", a.page);
+  await a.page.getByTestId("granted-also-mine").locator("input").uncheck();
+  await expect(aFocus.getByTestId("focus-working-entry")).toHaveCount(0);
+  await expect(b.page.getByTestId("msg-agent").last()).toContainText("MOCK: [[wait]] B 在跑", { timeout: 60_000 });
+
   // A new session from B: only the model A allows (the one the task uses), started on A.
   await b.page.getByTestId("new-session-toggle").click();
   const form = b.page.getByTestId("remote-new-session");

@@ -17,7 +17,7 @@ import { usePetSkin } from "./petSkin.js";
 import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
 import { PinButton, PinnedEntry, WAITING_SUBS, WorkingEntry } from "./FocusWorking.js";
 import { StatusWord } from "./StatusWord.js";
-import { PINNED_KEY, pinnedSession, SUBS_OPEN_KEY } from "./pins.js";
+import { ALSO_MINE_KEY, PINNED_KEY, pinnedSession, SUBS_OPEN_KEY } from "./pins.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { historyRows, readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
@@ -88,7 +88,10 @@ export function FocusApp() {
     return () => clearInterval(t);
   }, [remote?.grants.length]);
   const held = remoteHeldTasks(remote, clock);
-  const mine = (s: Session) => !s.taskId || !held.has(s.taskId);
+  // 2026-11-02 (问题 #8): 进行中 and the 运行中 count follow this too — the device that sent the work is the one watching
+  // it; 「我也关心」 on the task page (ALSO_MINE_KEY) keeps a task listed here as usual.
+  const alsoMine = useStoredIds(ALSO_MINE_KEY);
+  const mine = (s: Session) => !s.taskId || !held.has(s.taskId) || alsoMine.has(s.taskId);
   const canvasAsks = Object.entries(questionsByTopic)
     .filter(([topicId]) => host.kind !== "ready" || host.state.topics.some((t) => t.id === topicId && !t.archivedAt))
     .map(([topicId, w]) => ({ topicId, ...w }))
@@ -143,6 +146,8 @@ export function FocusApp() {
   const liveSessionsId = live ? live.sessions.filter((s) => !s.archivedAt).map((s) => s.id).join("|") : null;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
   useEffect(() => void (liveTasksId !== null && pins.keepOnly(new Set(liveTasksId.split("|")))), [liveTasksId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
+  useEffect(() => void (liveTasksId !== null && alsoMine.keepOnly(new Set(liveTasksId.split("|")))), [liveTasksId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
   useEffect(() => void (liveSessionsId !== null && subsOpen.keepOnly(new Set(liveSessionsId.split("|")))), [liveSessionsId]);
   const subs = live ? subsByParent(live.sessions) : new Map<string, Session[]>();
@@ -248,7 +253,7 @@ export function FocusApp() {
 
   const { state, link } = host;
   const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length;
-  const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
+  const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running" && mine(s)).length;
   // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
   // show under 进行中 either (10-22).
   const pinned = pins.ids.flatMap((id) => {
@@ -262,7 +267,7 @@ export function FocusApp() {
   // waiting for subagents of its own (2026-10-21).
   const under = hangsUnderOf(state.sessions);
   const working = state.sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s) && mine(s))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const shown = list.filter((s) => !isPinned(s));
   const openId = open && shown.some((s) => s.id === open) ? open : shown[0] && shown[0].id !== folded ? shown[0].id : null;
