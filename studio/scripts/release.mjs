@@ -254,9 +254,13 @@ async function tests(at = async () => undefined, targets = []) {
 }
 
 const KNOWN_FLAKY = [
-  // Since 2026-10 on this machine: under load a killed app-server's port is not released within the manager's 3 s, so
-  // the server comes back on another port and the file's later tests (sharing that server) fail with it.
-  { file: "packages/host/src/runtime/codex/server-manager.test.ts", why: "这台机器上端口释放慢，换了端口后整个文件跟着挂" },
+  // Since 2026-10: the killed app-server's port stayed taken, so the server came back on another port and the file's
+  // later tests (sharing that server) failed with it. The cause found 2026-11-03 (d392fe31) was not a slow release: the
+  // app-server's background `git fetch` of OpenAI's plugin marketplace inherits the listening socket and can escape
+  // `taskkill /T`; the test now starts its servers with `-c features.plugins=false`.
+  // TODO(2026-11-03, the user): kept out for a few days to watch it; once the full suite has stayed green with it (say
+  // by 2026-11-10), take this entry out so 自动打包 runs it again.
+  { file: "packages/host/src/runtime/codex/server-manager.test.ts", why: "观察中：11-03 已修（插件同步的 git 占着端口），稳定几天后放回自动打包" },
 ];
 
 /**
