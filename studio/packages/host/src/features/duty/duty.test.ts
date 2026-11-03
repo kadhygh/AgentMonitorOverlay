@@ -50,7 +50,9 @@ function setup() {
 
 const lastRun = (runs: DutyRun[], itemId: string) => runs.find((r) => r.itemId === itemId);
 
-describe("值守", () => {
+// Items here run real commands (`node -e …`), several in a row in some tests: a busy machine (the full suite at low
+// priority) takes more than vitest's 5 s for them, so the tests get as long as `until` waits (2026-11-03).
+describe("值守", { timeout: 30_000 }, () => {
   it("runs a command when it is due, once at a time, and keeps its last line", async () => {
     const { duty } = setup();
     let now = Date.parse("2026-10-31T10:00:00Z");

@@ -6,8 +6,19 @@ import type { ModelProfile } from "@amo-studio/protocol";
 import { mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
 import { StaticCredentialReader } from "../credentials.js";
 import { CodexServerManager, type CodexServerHandle } from "./server-manager.js";
+import { resolveCodexCommand } from "./command.js";
 
 // Integration: real `codex app-server` (npm package) against the local mock model. No model budget is spent.
+//
+// Without its plugins (2026-11-03): an app-server starts `git fetch https://github.com/openai/plugins.git` in the
+// background (Codex 0.165, the plugin marketplace sync), and that git inherits the listening socket. When it is started
+// just as the test kills the server, `taskkill /T` misses it and it keeps the port for as long as GitHub takes, so the
+// restart moved to another port and the next tests failed — not a slow port release, as was thought. Tests reach no
+// GitHub either.
+const CODEX = (() => {
+  const cmd = resolveCodexCommand();
+  return { ...cmd, prefixArgs: [...cmd.prefixArgs, "-c", "features.plugins=false"] };
+})();
 
 const PROFILE: ModelProfile = { id: "codex-mock", label: "Mock", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" };
 const root = mkdtempSync(join(tmpdir(), "amo-studio-test-servers-"));
@@ -24,9 +35,14 @@ function manager(dataDir = join(root, "data")) {
     env: { CODEX_HOME: join(root, "codex-home") },
     providers: { "amo-mock": mockCodexProvider(mock.baseUrl) },
     portRange: [47940, 47949],
+    codexCommand: CODEX,
     backoffMs: { first: 200, max: 1000 },
   });
   managers.push(m);
+  const n = managers.length;
+  m.on("log", (l: string) => console.log(`[m${n} ${Date.now() % 100000}] ${l}`));
+  m.on("down", (d: unknown) => console.log(`[m${n} ${Date.now() % 100000}] down ${JSON.stringify(d).slice(0, 400)}`));
+  m.on("ready", (h: { port: number }) => console.log(`[m${n} ${Date.now() % 100000}] ready ${h.port}`));
   return m;
 }
 
@@ -46,11 +62,12 @@ beforeAll(async () => {
   mock = await startMockModel();
 });
 
+// Each stop waits up to 5 s for the process and 5 s for the port: more than vitest's 10 s for a hook.
 afterAll(async () => {
   for (const m of managers) await m.stopAll();
   await mock.close();
   removeTempDir(root);
-});
+}, 60_000);
 
 describe("CodexServerManager", () => {
   let first: CodexServerManager;
