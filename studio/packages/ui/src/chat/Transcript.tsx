@@ -35,17 +35,23 @@ interface TranscriptProps {
   keepTurn?: string;
   /** 立即发送 a message still waiting, or 重新发送 one never read (2026-11-02); absent: no buttons (read only). */
   onDelivery?(itemId: string, action: DeliveryAction): void;
+  /**
+   * 立即发送 was asked and the turn has not given way yet (2026-11-03, 问题 #16: the turn can take a while to stop, and
+   * the row still read 「等待送达 · 立即发送」 as if the send had not gone): waiting messages say it is being interrupted.
+   */
+  givingWay?: boolean;
 }
 
 export type DeliveryAction = "now" | "resend";
 
 /** onDelivery for the person's messages, however deep in the turns they are drawn. */
-const DeliveryContext = createContext<TranscriptProps["onDelivery"]>(undefined);
+const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean }>({ onDelivery: undefined, givingWay: false });
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery }: TranscriptProps) {
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false }: TranscriptProps) {
+  const delivery = useMemo(() => ({ onDelivery, givingWay }), [onDelivery, givingWay]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded (or folded again); finished turns start folded.
@@ -102,7 +108,7 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   const runningTurn = last?.running ? last.turn : null;
 
   return (
-    <DeliveryContext.Provider value={onDelivery}>
+    <DeliveryContext.Provider value={delivery}>
       {start > 0 && (
         <button ref={earlierRef} type="button" className="turn-earlier" data-testid="turn-earlier" onClick={showEarlier}>
           显示更早的对话（还有 {start} 轮）
@@ -351,16 +357,18 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
  * the turn's end; Codex: at its next step), or one whose process went before reading it.
  */
 function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]> }) {
-  const onDelivery = useContext(DeliveryContext);
+  const { onDelivery, givingWay } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
   const waiting = delivery === "waiting";
+  // 问题 #16: once 立即发送 is under way (this button, or Ctrl+Enter in the composer) the row says so until it is read.
+  const interrupting = waiting && (asked || givingWay);
   return (
-    <div className={`msg-delivery ${delivery}`} data-testid="msg-delivery" data-delivery={delivery}>
-      <span className="msg-delivery-state" title={waiting ? "模型还没读到这条：工具调用后或这一轮结束时读到" : "这条消息发出时会话的进程没了，模型没读到它"}>
-        {waiting ? "◐ 等待送达" : "! 没送到"}
+    <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : delivery}>
+      <span className="msg-delivery-state" title={interrupting ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）" : waiting ? "模型还没读到这条：工具调用后或这一轮结束时读到" : "这条消息发出时会话的进程没了，模型没读到它"}>
+        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : waiting ? "◐ 等待送达" : "! 没送到"}
       </span>
-      {onDelivery && (
+      {onDelivery && !interrupting && (
         <button
           type="button"
           className="msg-delivery-btn"
@@ -372,7 +380,7 @@ function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNulla
             onDelivery(itemId, waiting ? "now" : "resend");
           }}
         >
-          {waiting ? (asked ? "正在发送…" : "立即发送") : asked ? "正在发送…" : "重新发送"}
+          {waiting ? "立即发送" : asked ? "正在发送…" : "重新发送"}
         </button>
       )}
     </div>

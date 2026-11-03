@@ -52,7 +52,17 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await expect(waiting).toHaveAttribute("data-delivery", "waiting", { timeout: 10_000 });
   await expect(waiting).toContainText("等待送达");
   await screenshot(studio.app, "send-now", "send-now-01-waiting", page);
+  // 问题 #16 (2026-11-03): until the turn gives way the row says it is being interrupted (held here, as a real one can
+  // take seconds), and the 立即发送 button is gone.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/send-now", async (route) => (await held, route.continue()));
   await waiting.getByTestId("send-now").click();
+  await expect(waiting).toHaveAttribute("data-delivery", "interrupting");
+  await expect(waiting).toContainText("正在打断当前这一步");
+  await expect(waiting.getByTestId("send-now")).toHaveCount(0);
+  await screenshot(studio.app, "send-now", "send-now-01b-interrupting", page);
+  release();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after the slow one", { timeout: 30_000 });
   await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
@@ -61,7 +71,13 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await composer.press("Enter");
   await expect(page.getByRole("button", { name: "排队" })).toBeVisible({ timeout: 30_000 });
   await composer.fill("right now");
+  let releaseSend!: () => void;
+  const heldSend = new Promise<void>((resolve) => (releaseSend = resolve));
+  await page.route("**/api/sessions/*/messages", async (route) => (await heldSend, route.continue()));
   await composer.press("Control+Enter");
+  await expect(page.locator(".composer-hint")).toHaveText("正在打断，停下后马上发出…");
+  // Released, it passes the next sends straight on (unrouting now would race the held one).
+  releaseSend();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: right now", { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
   await screenshot(studio.app, "send-now", "send-now-02-after", page);

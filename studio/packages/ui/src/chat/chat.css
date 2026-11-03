@@ -107,6 +107,9 @@
 /* 立即发送 (2026-11-02): under a message the model has not read yet (or never will), what it is and what to do. */
 .msg-delivery { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px; color: var(--chat-caption); }
 .msg-delivery.unsent .msg-delivery-state { color: var(--chat-warn); }
+/* 问题 #16: 立即发送 under way — the turn may take a few seconds to give way; the line breathes so it reads as working. */
+.msg-delivery.interrupting .msg-delivery-state { color: var(--chat-brand); animation: msg-delivery-pulse 1.4s ease-in-out infinite; }
+@keyframes msg-delivery-pulse { 50% { opacity: 0.45; } }
 .msg-delivery-btn { padding: 1px 8px; border: 1px solid var(--chat-hairline); border-radius: 999px; background: transparent; color: var(--chat-brand); font: inherit; cursor: pointer; }
 .msg-delivery-btn:hover:not(:disabled) { background: var(--chat-hover); }
 .msg-delivery-btn:disabled { color: var(--chat-caption); cursor: default; }
@@ -362,6 +365,8 @@
 .round-btn.send:disabled { background: var(--chat-hover); color: var(--chat-caption); cursor: default; }
 .round-btn.stop { background: var(--chat-hover); color: var(--chat-label); }
 .round-btn.stop:hover { background: color-mix(in srgb, var(--chat-label) 18%, transparent); }
+/* 停止 pressed, the turn not ended yet (问题 #16): greyed and breathing until it does. */
+.round-btn.stop.stopping, .round-btn.stop.stopping:hover { background: var(--chat-hover); cursor: default; color: var(--chat-caption); animation: msg-delivery-pulse 1.4s ease-in-out infinite; }
 .composer-stats { display: flex; gap: 12px; font-size: 11.5px; color: var(--chat-caption); font-variant-numeric: tabular-nums; }
 .pr-review { font-size: 13px; line-height: 21px; color: var(--chat-dim-hover); white-space: pre-wrap; border-left: 2px solid var(--chat-hairline); padding-left: 12px; margin-left: 7px; }
 
