@@ -249,8 +249,13 @@ function showPad(): void {
 }
 
 /** The shortcut and a click on the tray icon: shows it, or hides it when it is in front already. */
-function togglePad(): void {
-  if (pad && pad.isVisible() && (pad.isFocused() || testMode)) pad.hide();
+/**
+ * The shortcut hides it only when it is in front (pressed elsewhere, it brings it there). A tray (its own icon, or AMO
+ * 平台's 显示 / 隐藏便签) takes the focus when clicked, so from there "shown" is enough to hide it — it only ever showed
+ * (2026-11-03, the user).
+ */
+function togglePad(fromTray = false): void {
+  if (pad && pad.isVisible() && (pad.isFocused() || fromTray || testMode)) pad.hide();
   else showPad();
 }
 
@@ -414,7 +419,7 @@ function applyShortcut(): ShortcutStatus {
   }
   let ok = false;
   try {
-    ok = shortcuts.register(wanted, togglePad);
+    ok = shortcuts.register(wanted, () => togglePad());
   } catch {
     ok = false;
   }
@@ -516,7 +521,7 @@ function openTrayMenu(): void {
 function createTray(): void {
   tray = new Tray(trayImage());
   tray.setToolTip("AMO 便签");
-  tray.on("click", togglePad);
+  tray.on("click", () => togglePad(true));
   tray.on("right-click", openTrayMenu);
 }
 
@@ -645,7 +650,7 @@ if (!app.requestSingleInstanceLock() || process.argv.includes("--amo-quit")) {
   app.on("second-instance", (_event, argv) => {
     // From AMO 平台's tray (2026-10-29): 退出便签, 显示 / 隐藏便签.
     if (argv.includes("--amo-quit")) return quit();
-    if (argv.includes("--amo-toggle")) return togglePad();
+    if (argv.includes("--amo-toggle")) return togglePad(true);
     if (argv.includes("--amo-todo")) return showTodo();
     if (argv.includes("--amo-settings")) return openSettings();
     if (!argv.includes("--hidden")) showPad();
