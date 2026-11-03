@@ -1,18 +1,16 @@
 import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { removeTempDir } from "@amo-studio/testkit";
+import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
 // AMO Reviewer on its own (2026-10-23): Git Review and the viewer for any tool, without AMO Studio. Started with a
 // folder it opens its changes; amo-review --reviewer opens a file in it; comments are copied (复制注释); no bookmarks.
 
-const require = createRequire(import.meta.url);
-const electronPath = require("electron") as unknown as string;
 const MAIN = join(studioRoot, "packages", "reviewer", "dist", "main.js");
 const CLI = join(studioRoot, "scripts", "amo-review.mjs");
 
@@ -70,7 +68,8 @@ test("started with a folder it reviews its changes; comments are copied; amo-rev
   git(repo, "commit", "-q", "-m", "base");
   writeFileSync(join(repo, "drop.lua"), "local rate = 0.25\nreturn rate\n");
 
-  app = await _electron.launch({ executablePath: electronPath, args: [MAIN, repo], env: cleanEnv(home) });
+  const launched = programLaunch("reviewer", MAIN);
+  app = await _electron.launch({ executablePath: launched.executablePath, args: [...launched.args, repo], env: cleanEnv(home) });
   const review = await windowAt(app, "reviewer.html#review");
   await expect(review.getByTestId("review-file")).toHaveCount(1);
   await expect(review.getByTestId("review-file-head")).toContainText("drop.lua");

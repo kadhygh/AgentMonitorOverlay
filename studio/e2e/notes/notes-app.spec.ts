@@ -1,17 +1,15 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { removeTempDir } from "@amo-studio/testkit";
+import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
 // AMO 便签 as a program of its own (2026-10-23): its window in the final look, its keys, its files in its home, its
 // settings window, and only one running at a time.
 
-const require = createRequire(import.meta.url);
-const electronPath = require("electron") as unknown as string;
 const MAIN = join(studioRoot, "packages", "notes", "dist", "main.js");
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
 
@@ -34,7 +32,7 @@ test.afterEach(async () => {
 
 async function launch(): Promise<{ app: ElectronApplication; pad: Page }> {
   home = mkdtempSync(join(tmpdir(), "amo-notes-e2e-"));
-  app = await _electron.launch({ executablePath: electronPath, args: [MAIN], env: cleanEnv(home) });
+  app = await _electron.launch({ ...programLaunch("notes", MAIN), env: cleanEnv(home) });
   // The 便签启动中 bar comes first; the 便签 window is the one at #scratchpad.
   const pad = await windowAt(app, "#scratchpad");
   await expect(pad.locator(".pad-root")).toBeVisible();
@@ -139,7 +137,8 @@ test("starting shows 便签启动中 until the window is ready; the tray menu is
 test("one at a time: starting it again shows the running one and the second ends", async () => {
   const { app } = await launch();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.hide());
-  const second = spawn(electronPath, [MAIN], { env: cleanEnv(home), stdio: "ignore", windowsHide: true });
+  const { executablePath, args } = programLaunch("notes", MAIN);
+  const second = spawn(executablePath, args, { env: cleanEnv(home), stdio: "ignore", windowsHide: true });
   const code = await new Promise<number | null>((done) => second.on("exit", done));
   expect(code).toBe(0);
   await expect.poll(() => padVisible(app)).toBe(true);

@@ -1,10 +1,10 @@
 /// <reference lib="dom" />
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type ElectronApplication, type Page } from "@playwright/test";
+import { programLaunch } from "./packed.js";
 import { fakeAcpAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
 
 // Launch helper for Studio end-to-end tests: temp data dir, hidden window, attached Host on an ephemeral port, and by
@@ -12,8 +12,6 @@ import { fakeAcpAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, st
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const studioRoot = resolve(here, "..", "..");
-const require = createRequire(import.meta.url);
-const electronPath = require("electron") as unknown as string;
 
 export interface Studio {
   app: ElectronApplication;
@@ -66,8 +64,7 @@ export async function launchStudio(
       }
     : {};
   const app = await _electron.launch({
-    executablePath: electronPath,
-    args: [join(studioRoot, "packages", "app", "dist", "main.js")],
+    ...programLaunch("app", join(studioRoot, "packages", "app", "dist", "main.js")),
     env: {
       ...withoutDataDir(process.env),
       AMO_STUDIO_TEST: "1",
@@ -140,8 +137,7 @@ export function withoutDataDir(env: NodeJS.ProcessEnv): Record<string, string> {
 /** Launches the app as the portable build's first run (setup window only; it exits once setup is done). */
 export async function launchFirstRun(portableDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await _electron.launch({
-    executablePath: electronPath,
-    args: [join(studioRoot, "packages", "app", "dist", "main.js")],
+    ...programLaunch("app", join(studioRoot, "packages", "app", "dist", "main.js")),
     env: { ...withoutDataDir(process.env), AMO_STUDIO_TEST: "1", AMO_STUDIO_PORTABLE_DIR: portableDir },
   });
   return { app, page: await app.firstWindow() };

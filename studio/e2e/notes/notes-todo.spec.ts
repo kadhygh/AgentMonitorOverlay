@@ -1,18 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { removeTempDir } from "@amo-studio/testkit";
+import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
 // 待办 (2026-11-01, plans/todo.md): the 便签 program's second window, its lists on a team server — here a relay service
 // started in this process, never the real one. This computer (台式机) and another device of the account (手机, through the
 // API) change the lists; the server goes away and comes back; the login goes; 使用待办 is turned off.
 
-const require = createRequire(import.meta.url);
-const electronPath = require("electron") as unknown as string;
 const MAIN = join(studioRoot, "packages", "notes", "dist", "main.js");
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
 const account = (await import(pathToFileURL(join(studioRoot, "packages", "account", "dist", "index.js")).href)) as typeof import("../../packages/account/src/index.js");
@@ -81,14 +79,15 @@ async function onServer(key: string): Promise<Array<{ id: string; list: string; 
 }
 
 async function launch(): Promise<{ app: ElectronApplication; todo: Page; notesApi: (method: string, path: string, body?: unknown) => Promise<unknown> }> {
-  app = await _electron.launch({ executablePath: electronPath, args: [MAIN, "--hidden"], env: cleanEnv() });
+  const launched = programLaunch("notes", MAIN);
+  app = await _electron.launch({ executablePath: launched.executablePath, args: [...launched.args, "--hidden"], env: cleanEnv() });
   await app.evaluate(async () => {
     for (let i = 0; i < 100 && !(globalThis as { __notesShowTodo?: () => void }).__notesShowTodo; i++) await new Promise((r) => setTimeout(r, 100));
     (globalThis as { __notesShowTodo?: () => void }).__notesShowTodo!();
   });
   const todo = await windowAt(app, "#todo");
   await expect(todo.locator(".todo-root")).toBeVisible();
-  const running = () => JSON.parse(require("node:fs").readFileSync(join(root, "notes", "running.json"), "utf8")) as { url: string; token: string };
+  const running = () => JSON.parse(readFileSync(join(root, "notes", "running.json"), "utf8")) as { url: string; token: string };
   const notesApi = async (method: string, path: string, body?: unknown) => {
     const { url, token } = running();
     return (await fetch(`${url}${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })).json();
@@ -270,7 +269,7 @@ test("待办 bound to a Studio task (问题 #10): its tag, Studio away and there
   await expect(todo.getByTestId("todo-toast")).toHaveText("打开 Studio 才能跳过去");
 
   // Studio linked (its socket): the tag asks it to open the task and session.
-  const { url, token } = JSON.parse(require("node:fs").readFileSync(join(root, "notes", "running.json"), "utf8")) as { url: string; token: string };
+  const { url, token } = JSON.parse(readFileSync(join(root, "notes", "running.json"), "utf8")) as { url: string; token: string };
   const got: unknown[] = [];
   const ws = new WebSocket(`${url.replace(/^http/, "ws")}/api/events?client=studio&token=${token}`);
   ws.addEventListener("message", (e) => got.push(JSON.parse(String(e.data))));
