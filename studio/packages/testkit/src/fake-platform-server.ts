@@ -32,8 +32,8 @@ export interface FakePlatformServer {
   setChannel(channel: "stable" | "test", tool: string, version: string | null): void;
   /** The next downloads of this object send other bytes (a wrong sha256). */
   corruptObject(sha256: string): void;
-  /** The next downloads of this object send half the bytes and then drop the connection. */
-  breakObject(sha256: string): void;
+  /** The next download (or `times` downloads) of this object send half the bytes and then drop the connection. */
+  breakObject(sha256: string, times?: number): void;
   /** Holds every object download this long before sending it (to see the progress on screen). */
   delayObjects(ms: number): void;
   /** Holds every channels request this long before answering (to see the platform while it is connecting). */
@@ -85,7 +85,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   const manifests = new Map<string, FakePlatformManifest>();
   const channels: Record<"stable" | "test", Record<string, string>> = { stable: {}, test: {} };
   const corrupt = new Set<string>();
-  const broken = new Set<string>();
+  const broken = new Map<string, number>();
   const requests: string[] = [];
   let delay = 0;
   let channelsDelay = 0;
@@ -276,7 +276,9 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
           return res.end(bad);
         }
         if (broken.has(sha)) {
-          broken.delete(sha);
+          const left = broken.get(sha)! - 1;
+          if (left > 0) broken.set(sha, left);
+          else broken.delete(sha);
           res.writeHead(200, { "content-type": "application/octet-stream", "content-length": data.length });
           res.write(data.subarray(0, Math.max(1, Math.floor(data.length / 2))));
           setTimeout(() => res.destroy(), 20);
@@ -326,7 +328,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     delayObjects: (ms) => void (delay = ms),
     delayChannels: (ms) => void (channelsDelay = ms),
     corruptObject: (sha) => void corrupt.add(sha),
-    breakObject: (sha) => void broken.add(sha),
+    breakObject: (sha, times = 1) => void broken.set(sha, times),
     revokeKeys: () => keys.clear(),
     mirrorClaude: (version, exe, o = {}) => void (claude = { version, exe, zst: zstdCompressSync(exe), slowMs: o.slowMs ?? 0 }),
     mirrorCodex: (version, tgz, o = {}) => void (codex = { version, tgz, integrity: `sha512-${createHash("sha512").update(tgz).digest("base64")}`, slowMs: o.slowMs ?? 0, npmLatest: o.npmLatest ?? version }),

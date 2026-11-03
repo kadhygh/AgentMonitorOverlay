@@ -14,6 +14,16 @@ export interface Source {
 }
 
 const IDLE_MS = 30_000;
+/** A download that breaks off is tried this many times in all. */
+const DOWNLOAD_TRIES = 3;
+
+/** An error and what is under it (undici says only 「terminated」 or 「fetch failed」; the cause says why). */
+function why(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error ? (err.cause as { code?: string; message?: string } | undefined) : undefined;
+  const under = cause ? [cause.code, cause.message].filter(Boolean).join(" ") : "";
+  return under && !text.includes(under) ? `${text}：${under}` : text;
+}
 /** A manifest (a few MB) may take a while on a slow link: the timeout covers reading its body as well. */
 const MANIFEST_MS = 120_000;
 
@@ -104,7 +114,31 @@ export class PlatformClient implements Source {
     throw new PlatformError("unreachable", `从服务器读 ${tool} ${version} 的清单没读完整：${why}。网络慢或者断了，再试一次`);
   }
 
+  /**
+   * An object's bytes into `dest`. 2026-11-03: the platform's update kept failing with 「中途断了（terminated）」 on its
+   * biggest new file while the same download from a script never did — undici ends a body whose Response has been
+   * garbage collected, and nothing held `res` once its body was handed to the pipeline (the platform's window process
+   * collects often). `res` is now held until the file is written; a download that still breaks is tried twice more from
+   * the start, and its cause is said.
+   */
   async download(sha256: string, dest: string, onBytes: (n: number) => void): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      let got = 0;
+      try {
+        await this.downloadOnce(sha256, dest, (n) => {
+          got += n;
+          onBytes(n);
+        });
+        return;
+      } catch (err) {
+        // The bar went forward with what came: back again, the next try counts it anew.
+        if (got) onBytes(-got);
+        if (!(err instanceof PlatformError) || err.code !== "unreachable" || attempt >= DOWNLOAD_TRIES) throw err;
+      }
+    }
+  }
+
+  private async downloadOnce(sha256: string, dest: string, onBytes: (n: number) => void): Promise<void> {
     // A download that stops sending for a while is given up (the connection may hang rather than break).
     const abort = new AbortController();
     let idle = setTimeout(() => abort.abort(), IDLE_MS);
@@ -112,15 +146,15 @@ export class PlatformClient implements Source {
       clearTimeout(idle);
       idle = setTimeout(() => abort.abort(), IDLE_MS);
     };
+    let res: Response | undefined;
     try {
-      let res: Response;
       try {
         // The server keeps most objects gzipped (2026-10-29) and sends them as Content-Encoding: gzip when asked to; fetch
         // unpacks them, so what is written, counted (onBytes: the progress bar runs on the manifest's sizes) and checked
         // is always the original file.
         res = await this.fetchImpl(`${this.server}/platform/objects/${sha256}`, { headers: { authorization: `Bearer ${this.key}`, "accept-encoding": "gzip" }, signal: abort.signal });
       } catch (err) {
-        throw new PlatformError("unreachable", `下载 ${sha256.slice(0, 12)} 时连不上服务器（${err instanceof Error ? err.message : String(err)}）`);
+        throw new PlatformError("unreachable", `下载 ${sha256.slice(0, 12)} 时连不上服务器（${why(err)}）`);
       }
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
@@ -136,10 +170,12 @@ export class PlatformClient implements Source {
       try {
         await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), count, createWriteStream(dest));
       } catch (err) {
-        throw new PlatformError("unreachable", `下载 ${sha256.slice(0, 12)} 中途断了（${err instanceof Error ? err.message : String(err)}）`);
+        throw new PlatformError("unreachable", `下载 ${sha256.slice(0, 12)} 中途断了（${why(err)}）`);
       }
     } finally {
       clearTimeout(idle);
+      // Held to here (see download): read after the body is done, so the Response is not collected while it streams.
+      void res?.status;
     }
   }
 }

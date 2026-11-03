@@ -259,6 +259,33 @@ describe("launch and the machine", () => {
     await expect(new PlatformClient("http://127.0.0.1:1", "k", junk).manifest("studio", "0.9.28")).rejects.toThrow("不是 JSON 对象");
   });
 
+  it("a download that breaks off is tried again from the start, twice; then it says why (2026-11-03)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "amo-platform-dl-"));
+    try {
+      let breaks = 0;
+      const broken = () =>
+        new ReadableStream<Uint8Array>({
+          pull(c) {
+            c.enqueue(new TextEncoder().encode("hal"));
+            c.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }) }));
+          },
+        });
+      const server = (async () => (breaks-- > 0 ? new Response(broken()) : new Response("hello"))) as unknown as typeof fetch;
+      const client = new PlatformClient("http://s", "k", server);
+      const dest = join(dir, "f");
+      let counted = 0;
+      breaks = 2;
+      await client.download("a".repeat(64), dest, (n) => (counted += n));
+      // The bytes of the broken tries are taken back: the bar ends at the file's size, not past it.
+      expect(readFileSync(dest, "utf8")).toBe("hello");
+      expect(counted).toBe(5);
+      breaks = 3;
+      await expect(client.download("a".repeat(64), dest, () => {})).rejects.toMatchObject({ code: "unreachable", message: expect.stringContaining("中途断了（terminated：UND_ERR_SOCKET other side closed）") });
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
   it("what is shown of a version is its summary; a server without …/summary hands the manifest instead (2026-11-03)", async () => {
     const manifest = { tool: "studio", name: "AMO Studio", version: "0.9.29", builtAt: 5, exe: "AMO Studio.exe", notes: "- 新", files: [{ path: "AMO Studio.exe", size: 3, sha256: "a".repeat(64) }] };
     const asked: string[] = [];

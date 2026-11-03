@@ -118,15 +118,19 @@ describe("Installer", () => {
     expect(inst.currentVersion("gamma")).toBe("1.1.0");
   });
 
-  it("a download that breaks off half way leaves no half version behind", async () => {
+  it("a download that keeps breaking off half way leaves no half version behind; one that breaks once is tried again", async () => {
     const inst = setup();
     publishThree("delta");
-    server.breakObject(sha256Of(big("E")));
+    // The client tries a broken download three times in all (2026-11-03).
+    server.breakObject(sha256Of(big("E")), 3);
     await expect(inst.install("delta", "1.0.0", client)).rejects.toMatchObject({ code: expect.stringMatching(/unreachable|checksum/) });
     const dir = join(root, "apps", "delta");
     expect(readdirSync(dir)).toEqual([]);
     expect(inst.currentVersion("delta")).toBeNull();
     expect(existsSync(join(root, "home", "programs.json"))).toBe(false);
+    server.breakObject(sha256Of(big("E")));
+    await inst.install("delta", "1.0.0", client);
+    expect(inst.currentVersion("delta")).toBe("1.0.0");
   });
 
   it("switches `current` while a file of the old version is open (a program still running from it)", async () => {
