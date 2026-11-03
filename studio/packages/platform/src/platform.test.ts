@@ -259,6 +259,23 @@ describe("launch and the machine", () => {
     await expect(new PlatformClient("http://127.0.0.1:1", "k", junk).manifest("studio", "0.9.28")).rejects.toThrow("不是 JSON 对象");
   });
 
+  it("what is shown of a version is its summary; a server without …/summary hands the manifest instead (2026-11-03)", async () => {
+    const manifest = { tool: "studio", name: "AMO Studio", version: "0.9.29", builtAt: 5, exe: "AMO Studio.exe", notes: "- 新", files: [{ path: "AMO Studio.exe", size: 3, sha256: "a".repeat(64) }] };
+    const asked: string[] = [];
+    const server = (withSummary: boolean) =>
+      (async (url: string) => {
+        asked.push(new URL(url).pathname);
+        if (url.endsWith("/summary")) return withSummary ? new Response(JSON.stringify({ ...manifest, files: undefined, fileCount: 1, size: 3 })) : new Response(JSON.stringify({ message: "没有这个接口" }), { status: 404 });
+        return new Response(JSON.stringify(manifest));
+      }) as unknown as typeof fetch;
+    const shown = { tool: "studio", name: "AMO Studio", version: "0.9.29", builtAt: 5, exe: "AMO Studio.exe", notes: "- 新" };
+    expect(await new PlatformClient("http://s", "k", server(true)).summary("studio", "0.9.29")).toEqual(shown);
+    expect(asked).toEqual(["/api/platform/tools/studio/0.9.29/summary"]);
+    asked.length = 0;
+    expect(await new PlatformClient("http://s", "k", server(false)).summary("studio", "0.9.29")).toEqual(shown);
+    expect(asked).toEqual(["/api/platform/tools/studio/0.9.29/summary", "/api/platform/tools/studio/0.9.29"]);
+  });
+
   it("reads Studio's sessions from its Host, read only; no `running` field is unknown", async () => {
     let body: unknown = { ok: true, pid: 1 };
     let auth = "";

@@ -360,14 +360,21 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         if (!file) throw new RelayError("not_found", `服务器上没有 ${name}`);
         return sendFile(res, file, true);
       }
-      const tm = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)$/.exec(path);
+      // A version's manifest, or (/summary, 2026-11-03) all of it but the file list: what the platform shows. The
+      // manifest goes minified, gzipped to a client that takes it (Studio's: 2.3 MB as written, 0.53 MB so).
+      const tm = /^\/api\/platform\/tools\/([^/]+)\/([^/]+)(\/summary)?$/.exec(path);
       if (tm) {
         const [tool, version] = [part(tm[1]!), part(tm[2]!)];
         if (!TOOL_ID.test(tool)) throw new RelayError("bad_request", `工具名不对：${tool}`);
         if (!VERSION.test(version)) throw new RelayError("bad_request", `版本号不对：${version}`);
-        const file = platform.manifest(tool, version);
-        if (!file) throw new RelayError("not_found", `${tool} 还没有发布 ${version}`);
-        return sendFile(res, file);
+        const served = platform.manifestServed(tool, version);
+        if (!served) throw new RelayError("not_found", `${tool} 还没有发布 ${version}`);
+        if (tm[3]) return send(res, 200, served.summary);
+        const gzipped = acceptsGzip(req.headers["accept-encoding"]);
+        const body = gzipped ? served.gzip : served.json;
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": String(body.length), vary: "accept-encoding", ...(gzipped ? { "content-encoding": "gzip" } : {}) });
+        res.end(body);
+        return;
       }
       const om = /^\/platform\/objects\/([^/]+)$/.exec(path);
       if (om) {

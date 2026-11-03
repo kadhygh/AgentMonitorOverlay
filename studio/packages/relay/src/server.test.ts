@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { get as httpGet, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
@@ -218,6 +218,18 @@ describe("relay service", () => {
     expect((await get(`/platform/objects/${sha}`, null)).status).toBe(401);
     expect(await (await get("/api/platform/channels")).json()).toEqual({ stable: { notes: "0.9.0" }, test: { notes: "0.9.0" } });
     expect(await (await get("/api/platform/tools/notes/0.9.0")).json()).toEqual(manifest);
+    // 2026-11-03: minified and gzipped to a client that takes it; its summary without the file list.
+    const raw = await new Promise<{ encoding: string | undefined; body: Buffer }>((ok, fail) => {
+      httpGet(`${url}/api/platform/tools/notes/0.9.0`, { headers: { authorization: `Bearer ${key}`, "accept-encoding": "gzip" } }, (res) => {
+        const parts: Buffer[] = [];
+        res.on("data", (c: Buffer) => parts.push(c));
+        res.on("end", () => ok({ encoding: res.headers["content-encoding"], body: Buffer.concat(parts) }));
+      }).on("error", fail);
+    });
+    expect(raw.encoding).toBe("gzip");
+    expect(gunzipSync(raw.body).toString()).toBe(JSON.stringify(manifest));
+    expect(await (await get("/api/platform/tools/notes/0.9.0/summary")).json()).toEqual({ tool: "notes", name: "AMO Notes", version: "0.9.0", builtAt: 1, exe: "AMO Notes.exe", notes: "- 第一版", fileCount: 1, size: body.length });
+    expect((await get("/api/platform/tools/notes/0.9.1/summary")).status).toBe(404);
     const obj = await get(`/platform/objects/${sha}`);
     expect(obj.headers.get("content-type")).toBe("application/octet-stream");
     expect(await obj.text()).toBe(body);

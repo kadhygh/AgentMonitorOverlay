@@ -27,6 +27,13 @@ export interface Manifest {
   files: ManifestFile[];
 }
 
+/**
+ * What the platform shows of a version (2026-11-03): the manifest without its file list (Studio's is 2.3 MB), as the
+ * server's …/summary sends it; the full manifest is read only to install. From a server before that, the manifest
+ * itself stands in.
+ */
+export type ManifestSummary = Omit<Manifest, "files">;
+
 export type Channels = Record<Channel, Record<string, string>>;
 
 export class PlatformError extends Error {
@@ -81,6 +88,21 @@ export function checkManifest(value: unknown, tool: string, version: string): Ma
     ...(typeof m.runtime === "string" && m.runtime ? { runtime: m.runtime } : {}),
     notes: typeof m.notes === "string" ? m.notes : "",
     files,
+  };
+}
+
+export function checkSummary(value: unknown, tool: string, version: string): ManifestSummary {
+  if (!value || typeof value !== "object") throw new PlatformError("bad_data", `服务器上 ${tool} ${version} 的说明不对：不是 JSON 对象`);
+  const m = value as Record<string, unknown>;
+  if (m.tool !== tool || m.version !== version) throw new PlatformError("bad_data", `服务器上 ${tool} ${version} 的说明不对：写的是 ${String(m.tool)} ${String(m.version)}`);
+  return {
+    tool,
+    version,
+    name: typeof m.name === "string" && m.name ? m.name : tool,
+    builtAt: typeof m.builtAt === "number" ? m.builtAt : typeof m.builtAt === "string" ? Date.parse(m.builtAt) || 0 : 0,
+    exe: typeof m.exe === "string" ? m.exe : "",
+    ...(typeof m.runtime === "string" && m.runtime ? { runtime: m.runtime } : {}),
+    notes: typeof m.notes === "string" ? m.notes : "",
   };
 }
 

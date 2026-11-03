@@ -1,7 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { checkChannels, checkManifest, PlatformError, type Channels, type Manifest } from "./manifest.js";
+import { checkChannels, checkManifest, checkSummary, PlatformError, type Channels, type Manifest, type ManifestSummary } from "./manifest.js";
 
 // The platform's side of the team server (the relay service), logged in: the channels, a version's manifest, and the
 // files by sha256. All need `Authorization: Bearer <key>` (account.json).
@@ -48,6 +48,25 @@ export class PlatformClient implements Source {
       if (err instanceof PlatformError && err.code === "not_found") return { stable: {}, test: {} };
       throw err;
     }
+  }
+
+  /**
+   * What the platform shows of a version: its summary (2026-11-03), a few KB instead of the whole manifest. A server
+   * from before has no …/summary (404 for the path): the manifest then, without its files.
+   */
+  async summary(tool: string, version: string): Promise<ManifestSummary> {
+    const base = `/api/platform/tools/${encodeURIComponent(tool)}/${encodeURIComponent(version)}`;
+    let res: Response;
+    try {
+      res = await this.get(`${base}/summary`);
+    } catch (err) {
+      if (err instanceof PlatformError && err.code === "not_found") {
+        const { files: _files, ...rest } = await this.manifest(tool, version);
+        return rest;
+      }
+      throw err;
+    }
+    return checkSummary(await res.json().catch(() => null), tool, version);
   }
 
   /**

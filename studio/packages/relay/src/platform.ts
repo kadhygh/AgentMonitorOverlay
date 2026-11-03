@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 import { resolve, sep } from "node:path";
+import { gzipSync } from "node:zlib";
 
 // The AMO platform's files on the relay service (2026-10-28, plans/amo-lan-platform.md 「第一版的接口约定」). The
 // platform dir is outside the service's app/ (deploy never touches it) and is written only by the publisher
@@ -9,7 +10,8 @@ import { resolve, sep } from "node:path";
 //   objects/<sha256 first two>/<sha256>.gz   gzipped (2026-10-29: Studio's install was 375 MB); the sha256 is always the
 //                                         original's. Sent as it is with Content-Encoding: gzip to a client that takes
 //                                         gzip, unpacked on the way to one that does not (server.ts).
-//   tools/<tool>/<version>.json           one tool's manifest for one version
+//   tools/<tool>/<version>.json           one tool's manifest for one version (sent minified and gzipped, and as a
+//                                         summary without its file list: manifestServed, 2026-11-03)
 //   channels.json                         { "stable": { "studio": "0.9.0", … }, "test": { … } }
 //   downloads/AMO-Platform-win.zip        the platform itself for the download page (optional; here because deploy
 //                                         replaces app/downloads)
@@ -44,6 +46,16 @@ export interface PlatformChannels {
   test: Record<string, string>;
 }
 
+/** A manifest ready to send: minified, gzipped, and its summary (the manifest without `files`, with their count and size). */
+export interface ServedManifest {
+  json: Buffer;
+  gzip: Buffer;
+  summary: Record<string, unknown> & { fileCount: number; size: number };
+}
+
+/** Manifests kept made: a few tools' current and previous versions. */
+const SERVED_KEPT = 12;
+
 export class PlatformFiles {
   readonly dir: string | null;
 
@@ -69,6 +81,37 @@ export class PlatformFiles {
   manifest(tool: string, version: string): string | null {
     if (!TOOL_ID.test(tool) || !VERSION.test(version)) return null;
     return this.file("tools", tool, `${version}.json`);
+  }
+
+  private readonly served = new Map<string, ServedManifest & { key: string }>();
+
+  /**
+   * A manifest as it is sent (2026-11-03, the user): without its indentation and gzipped (Studio's is 2.3 MB as
+   * written, 0.53 MB so), and its summary — all but the file list — which the platform reads to show a version (the
+   * list only when it installs). Made once per file and kept for the last few asked for (a republished file is made
+   * again: its size and time are part of the key).
+   */
+  manifestServed(tool: string, version: string): ServedManifest | null {
+    const file = this.manifest(tool, version);
+    if (!file) return null;
+    const st = statSync(file);
+    const key = `${file}|${st.size}|${st.mtimeMs}`;
+    const kept = this.served.get(file);
+    if (kept?.key === key) {
+      // Most recently used last.
+      this.served.delete(file);
+      this.served.set(file, kept);
+      return kept;
+    }
+    const value = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> & { files?: Array<{ size?: number }> };
+    const files = Array.isArray(value.files) ? value.files : [];
+    const { files: _files, ...rest } = value;
+    const json = Buffer.from(JSON.stringify(value));
+    const made = { key, json, gzip: gzipSync(json), summary: { ...rest, fileCount: files.length, size: files.reduce((n, f) => n + (typeof f?.size === "number" ? f.size : 0), 0) } };
+    this.served.delete(file);
+    this.served.set(file, made);
+    while (this.served.size > SERVED_KEPT) this.served.delete(this.served.keys().next().value!);
+    return made;
   }
 
   /**

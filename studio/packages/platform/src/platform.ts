@@ -4,7 +4,7 @@ import { amoHome, AccountError, clearAccount, fetchProfile, login, logout, platf
 import { PlatformClient } from "./client.js";
 import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./entry.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
-import { channelVersion, compareVersions, PlatformError, type Channels, type Manifest } from "./manifest.js";
+import { channelVersion, compareVersions, PlatformError, type Channels, type ManifestSummary } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { NOTES_SETTINGS_ARG, NOTES_TODO_ARG, QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
@@ -80,7 +80,8 @@ export class Platform implements PlatformCalls {
   private account: Account | null = null;
   private client: PlatformClient | null = null;
   private channels: Channels | null = null;
-  private readonly manifests = new Map<string, Manifest>();
+  /** What is shown of each version offered: its summary, not the whole manifest (2026-11-03). */
+  private readonly manifests = new Map<string, ManifestSummary>();
   private connection: PlatformView["connection"] = { state: "idle", message: null };
   /** When the server last answered the channels (0: not since the login or the start). */
   private lastServerCheck = 0;
@@ -454,7 +455,7 @@ export class Platform implements PlatformCalls {
         // The platform's own manifest too: its notes are shown under 平台更新.
         if (!v || this.manifests.has(`${id}@${v}`)) continue;
         try {
-          this.manifests.set(`${id}@${v}`, await client.manifest(id, v));
+          this.manifests.set(`${id}@${v}`, await client.summary(id, v));
         } catch (err) {
           if (err instanceof PlatformError && err.code === "unauthorized") throw err;
           // One broken manifest does not hide the other tools; installing that one says what is wrong.
