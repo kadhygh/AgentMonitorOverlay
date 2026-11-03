@@ -39,7 +39,7 @@ export { askedQuestions, describeToolUse, retryReason } from "./tool-use.js";
 //   canUseTool waits for the person and becomes an approval card (asks.ts);
 // - a message sent while a turn runs waits at the CLI: it is folded into the turn after its next tool call, or runs as
 //   the next turn (CLI 2.1.304; checked 2026-11-02 against the mock). command_lifecycle says when the model got it
-//   (`delivery` on the user item); 立即发送 makes the turn give way to it (sendNow, or `priority: "now"`);
+//   (`delivery` on the user item); 立即发送 makes the turn give way to it (sendNow; not `priority: "now"`, see deliver);
 // - interrupt() ends the turn with error_during_execution, treated as "interrupted"; the query goes on, and messages
 //   still waiting run right after (as the CLI's "esc to interrupt and send");
 // - one query can produce several results (a background subagent's notification starts another turn);
@@ -222,13 +222,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const uuid = randomUUID();
     live.undelivered.set(uuid, itemId);
     this.clearIdle(live);
-    // 立即发送 from the composer (Ctrl+Enter, 2026-11-02): the running turn gives way to it (CLI 2.1.304 ends the turn
-    // at once, aborting a running tool call).
-    const now = options.now === true && mode === "queue";
-    if (now) live.givingWay = true;
     // Goes in once the permission mode is in force, without waiting for it here: a new session's process takes a few
     // seconds to come up, and the caller (开始, 新会话) is not held for it (2026-10-23). Sends queue up in order on it.
-    void live.ready.then(() => live.push({ content, uuid, ...(now ? { priority: "now" as const } : {}) }));
+    void live.ready.then(() => live.push({ content, uuid }));
+    // 立即发送 from the composer (Ctrl+Enter, 2026-11-02): the running turn gives way to it, as the button under a
+    // waiting message does. 2026-11-03 (问题 #16, "it seems to hang a long time"): it went as a `priority: "now"` message,
+    // which CLI 2.1.304 only lets through at once while a shell command is in its first second or two — after that the
+    // turn waited for the command to finish (33–40 s for a 41 s sleep against the mock; the Send now request and 停止
+    // took 0.03–0.1 s at any point, the command ended). So the message goes as any other and is sent now once at the CLI.
+    if (options.now === true && mode === "queue") {
+      void this.sendNow(sessionId, itemId).catch((err: unknown) => this.emit("log", `send now after Ctrl+Enter failed for ${sessionId}: ${String(err)}`));
+    }
     return { mode };
   }
 
@@ -601,7 +605,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       for (;;) {
         while (queue.length) {
           const next = queue.shift()!;
-          yield { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, session_id: ref, uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}`, ...(next.priority ? { priority: next.priority } : {}) };
+          yield { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, session_id: ref, uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}` };
         }
         if (ended) return;
         await new Promise<void>((r) => (wake = r));

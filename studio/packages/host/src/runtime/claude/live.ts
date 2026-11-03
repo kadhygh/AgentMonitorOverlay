@@ -22,11 +22,13 @@ export interface PendingQuestion {
 /** Tools whose call is the person's to answer: shown as a question item rather than a tool row. */
 export const QUESTION_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
 
-/** One message for the CLI's input: `uuid` names it in command_lifecycle; `priority: "now"` is 立即发送 (2026-11-02). */
+/**
+ * One message for the CLI's input: `uuid` names it in command_lifecycle. No `priority: "now"` for 立即发送 any more
+ * (2026-11-03, 问题 #16): it waited out a running shell command; the Send now request is used instead.
+ */
 export interface LiveInput {
   content: SDKUserMessage["message"]["content"];
   uuid: string;
-  priority?: "now";
 }
 
 /** One running Claude Code process for a session, fed through a streaming input. */
