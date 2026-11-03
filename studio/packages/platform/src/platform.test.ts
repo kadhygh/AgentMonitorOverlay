@@ -242,6 +242,23 @@ describe("launch and the machine", () => {
     expect(await new PlatformClient("http://127.0.0.1:1", "k", notFound).channels()).toEqual({ stable: {}, test: {} });
   });
 
+  it("a manifest cut short on the way is asked for once more, then said to be cut short — not 「不是 JSON 对象」 (2026-11-03)", async () => {
+    const whole = JSON.stringify({ tool: "studio", version: "0.9.28", exe: "AMO Studio.exe", files: [{ path: "AMO Studio.exe", size: 3, sha256: "a".repeat(64) }] });
+    const answers: string[] = [];
+    const cut = (async () => {
+      const body = answers.shift() ?? whole;
+      return new Response(body, { status: 200, headers: { "content-length": String(Buffer.byteLength(whole)), "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const client = new PlatformClient("http://127.0.0.1:1", "k", cut);
+    answers.push(whole.slice(0, 40));
+    expect((await client.manifest("studio", "0.9.28")).files).toHaveLength(1);
+    answers.push(whole.slice(0, 40), whole.slice(0, 60));
+    await expect(client.manifest("studio", "0.9.28")).rejects.toMatchObject({ code: "unreachable", message: expect.stringContaining(`只读到 60 / ${Buffer.byteLength(whole)} 字节`) });
+    // Whole but not a manifest: still the manifest's fault.
+    const junk = (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch;
+    await expect(new PlatformClient("http://127.0.0.1:1", "k", junk).manifest("studio", "0.9.28")).rejects.toThrow("不是 JSON 对象");
+  });
+
   it("reads Studio's sessions from its Host, read only; no `running` field is unknown", async () => {
     let body: unknown = { ok: true, pid: 1 };
     let auth = "";

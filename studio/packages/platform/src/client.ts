@@ -14,6 +14,8 @@ export interface Source {
 }
 
 const IDLE_MS = 30_000;
+/** A manifest (a few MB) may take a while on a slow link: the timeout covers reading its body as well. */
+const MANIFEST_MS = 120_000;
 
 export class PlatformClient implements Source {
   constructor(
@@ -48,9 +50,39 @@ export class PlatformClient implements Source {
     }
   }
 
+  /**
+   * A version's manifest. 2026-11-03: Studio's is 2.3 MB now, and the 15 s the other calls get covers reading the body
+   * too — on a slow link it was cut off and reported as 「不是 JSON 对象」. So it gets longer, one more try when the body
+   * does not arrive whole, and says so when it still does not.
+   */
   async manifest(tool: string, version: string): Promise<Manifest> {
-    const res = await this.get(`/api/platform/tools/${encodeURIComponent(tool)}/${encodeURIComponent(version)}`);
-    return checkManifest(await res.json().catch(() => null), tool, version);
+    const path = `/api/platform/tools/${encodeURIComponent(tool)}/${encodeURIComponent(version)}`;
+    let why = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await this.get(path, MANIFEST_MS);
+      const expected = Number(res.headers.get("content-length") ?? NaN);
+      let text: string;
+      try {
+        text = await res.text();
+      } catch (err) {
+        why = `读到一半断了（${err instanceof Error ? err.message : String(err)}）`;
+        continue;
+      }
+      let value: unknown;
+      try {
+        value = JSON.parse(text);
+      } catch {
+        const got = Buffer.byteLength(text);
+        // Cut short on the way: try once more. Whole but not JSON: the manifest itself is wrong.
+        if (Number.isFinite(expected) && got < expected) {
+          why = `只读到 ${got} / ${expected} 字节`;
+          continue;
+        }
+        return checkManifest(null, tool, version);
+      }
+      return checkManifest(value, tool, version);
+    }
+    throw new PlatformError("unreachable", `从服务器读 ${tool} ${version} 的清单没读完整：${why}。网络慢或者断了，再试一次`);
   }
 
   async download(sha256: string, dest: string, onBytes: (n: number) => void): Promise<void> {
