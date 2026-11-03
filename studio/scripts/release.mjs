@@ -39,8 +39,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { constants, setPriority } from "node:os";
-import { join, resolve } from "node:path";
+import { constants, setPriority, tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { TOOLS, studio } from "./amo-tools.mjs";
 import { marketingVersion, releaseIos, withMarketingVersion } from "./ios-release.mjs";
 
@@ -250,7 +250,38 @@ async function tests(at = async () => undefined, targets = []) {
   // fail on the development machine for reasons of the machine, not of the change (run them on their own when touching
   // what they test).
   console.log(`不跑：${KNOWN_FLAKY.map((k) => `${k.file}（${k.why}）`).join("；")}`);
-  run("npx", ["vitest", "run", "--maxWorkers=6", "--retry=1", ...KNOWN_FLAKY.flatMap((k) => ["--exclude", k.file])]);
+  // 2026-11-03: the third failure that passed on its own afterwards (11-01, 11-02, 11-03), and which test it was could
+  // not be told: 自动打包's output is not kept. A JSON report beside the usual one; a failure names its tests, so
+  // 问题页's bar says which.
+  const json = join(tmpdir(), `amo-release-vitest-${process.pid}.json`);
+  try {
+    run("npx", ["vitest", "run", "--maxWorkers=6", "--retry=1", "--reporter=default", "--reporter=json", `--outputFile.json=${json}`, ...KNOWN_FLAKY.flatMap((k) => ["--exclude", k.file])]);
+  } catch (err) {
+    const failed = failedTests(json);
+    if (failed.length) err.message += `\n失败的用例（${failed.length}）：\n${failed.slice(0, 8).join("\n")}${failed.length > 8 ? "\n……" : ""}`;
+    throw err;
+  } finally {
+    rmSync(json, { force: true });
+  }
+}
+
+/** The failed tests in vitest's JSON report: `file › test — first line of the error`; a file that did not load, its message. */
+function failedTests(file) {
+  let report;
+  try {
+    report = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return [];
+  }
+  const firstLine = (s) => String(s ?? "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 160) ?? "";
+  const out = [];
+  for (const f of report.testResults ?? []) {
+    const name = relative(studio, f.name ?? "").replaceAll("\\", "/");
+    const bad = (f.assertionResults ?? []).filter((a) => a.status === "failed");
+    for (const a of bad) out.push(`${name} › ${a.fullName ?? a.title} — ${firstLine(a.failureMessages?.[0])}`);
+    if (!bad.length && f.status === "failed") out.push(`${name} — ${firstLine(f.message)}`);
+  }
+  return out;
 }
 
 const KNOWN_FLAKY = [
@@ -336,12 +367,20 @@ async function buildReporter() {
     console.log("（没登录 AMO 平台：问题页上看不到这次打包的进度）");
     return async () => undefined;
   }
+  // One more try when it did not reach the server (2026-11-03): the bar stayed at 类型检查 on 11-02's and 11-03's failed
+  // builds although the unit tests had run. Likely the kept-alive connection: the typecheck runs synchronously, the
+  // server closes the idle socket meanwhile, and the next report goes out on it. A second try opens a new one.
   return async (report) => {
-    try {
-      const res = await fetch(`${a.server}/api/issues/release/build`, { method: "POST", headers: { authorization: `Bearer ${a.key}`, "content-type": "application/json" }, body: JSON.stringify(report), signal: AbortSignal.timeout(5000) });
-      if (!res.ok) console.log(`（问题页没收到打包进度：${res.status}）`);
-    } catch (err) {
-      console.log(`（问题页没收到打包进度：${err.message}）`);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const res = await fetch(`${a.server}/api/issues/release/build`, { method: "POST", headers: { authorization: `Bearer ${a.key}`, "content-type": "application/json" }, body: JSON.stringify(report), signal: AbortSignal.timeout(5000) });
+        if (!res.ok) console.log(`（问题页没收到打包进度：${res.status}）`);
+        return;
+      } catch (err) {
+        if (attempt < 2) continue;
+        console.log(`（问题页没收到打包进度：${err.message}）`);
+        return;
+      }
     }
   };
 }
