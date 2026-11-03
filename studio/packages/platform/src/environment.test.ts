@@ -6,6 +6,7 @@ import { claudeCodeCandidates, codexOnPath, dshDesktopDir, gitOnPath } from "@am
 import { removeTempDir } from "@amo-studio/testkit";
 import { checkClaude, checkCodex, checkDsh, checkEnvironment, checkGit, CLAUDE_INSTALL_COMMAND, DOWNLOADS, downloadUrl, EnvironmentChecker, latestVersion, runProgram, studioSdkClaudeCodeVersion, updatePlan, type RunResult, type Runner } from "./environment.js";
 import { Platform } from "./platform.js";
+import type { ToolSources } from "./tool-mirror.js";
 
 // The 环境 page's checks against made-up machines: folders standing in for PATH, %USERPROFILE%, %APPDATA% and
 // %LOCALAPPDATA%, files standing in for the exes, and a runner standing in for starting them.
@@ -205,26 +206,38 @@ describe("the checks", () => {
     expect(url).toBe("http://mirror.local/x/latest");
   });
 
-  it("Claude Code from the mirror (2026-11-03): not there or from its own installer — 安装 / 更新 say the version and where from; npm's stays npm's", async () => {
+  it("Claude Code and Codex installed here (2026-11-03): the server's and the official place side by side, 「最新」 the newer; npm's Claude Code stays npm's", async () => {
     const { dirs, env, file } = machine();
     const latest = async () => "9.9.9";
-    const src = { version: "2.1.316", from: "server" as const, platform: "win32-x64" as const, size: 122_064_664, preparing: "团队服务器正在准备 2.1.317（45%），下好之后从这里装会更快。" };
-    const claudeSource = async () => src;
-    const byId = async (e: typeof env, answers: Record<string, RunResult> = {}, source = claudeSource) => Object.fromEntries((await checkEnvironment({ env: e, run: runner(answers).run, latest, claudeSource: source })).items.map((i) => [i.id, i]));
-    // Not there: 安装 2.1.316 from the server; no 「最新」 (nothing to compare).
-    expect((await byId(env)).claude).toMatchObject({ state: "missing", latest: null, updater: null, install: { version: "2.1.316", from: "server", size: 122_064_664 }, preparing: src.preparing });
-    // From its own installer, older: 「最新」 is the server's version, not npm's.
+    const preparing = "团队服务器正在准备 2.1.317（45%），下好之后可以从团队服务器装（局域网，更快）。";
+    const claude = async (): Promise<ToolSources> => ({ platform: "win32-x64", server: { version: "2.1.316", size: 122_064_664 }, official: { version: "2.1.317" }, preparing });
+    const codex = async (): Promise<ToolSources> => ({ platform: "win32-x64", server: null, official: { version: "0.166.0" }, preparing: null });
+    const byId = async (e: typeof env, answers: Record<string, RunResult> = {}, sources: Record<string, () => Promise<ToolSources | null>> = { claude, codex }) => Object.fromEntries((await checkEnvironment({ env: e, run: runner(answers).run, latest, sources })).items.map((i) => [i.id, i]));
+    // Not there: both places; no 「最新」 (nothing to compare). Codex without npm: its buttons wait for Node.js.
+    const missing = await byId(env);
+    expect(missing.claude).toMatchObject({ state: "missing", latest: null, updater: null, install: { server: { version: "2.1.316", size: 122_064_664 }, official: { version: "2.1.317" }, preparing, blocked: null } });
+    expect(missing.codex).toMatchObject({ state: "missing", install: { server: null, official: { version: "0.166.0" }, blocked: { page: "node" } } });
+    expect(missing.codex!.install!.blocked!.text).toMatch(/没找到 npm：先装 Node\.js/);
+    expect(downloadUrl("node")).toBe("https://nodejs.org/zh-cn/download");
+    // From its own installer, older: 「最新」 is the newer of the two places, not npm's.
     const native = file(join(dirs.home, ".local", "bin", "claude.exe"));
-    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } })).claude).toMatchObject({ state: "ok", version: "2.1.300", latest: "2.1.316", updater: "从团队服务器下载 2.1.316，再运行 claude install", install: { version: "2.1.316" } });
-    // Neither the server nor Anthropic answered: no 「最新」, nothing to install from.
-    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } }, async () => null)).claude).toMatchObject({ latest: null, updater: null, install: null });
-    // npm's: npm's latest and npm install, as before.
+    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } })).claude).toMatchObject({ state: "ok", version: "2.1.300", latest: "2.1.317", updater: "下载后运行 claude install", install: { server: { version: "2.1.316" } } });
+    // Neither place answered: both shown empty (the official one says it was not reached), no 「最新」.
+    expect((await byId(env, { [native]: { ok: true, out: "2.1.300 (Claude Code)" } }, { claude: async () => null })).claude).toMatchObject({ latest: null, updater: null, install: { server: null, official: null } });
+    // npm's Claude Code: npm's latest and npm install, as before. npm's Codex: the two places, npm there.
     const npmExe = file(join(dirs.appdata, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"));
     file(join(dirs.appdata, "npm", "claude.cmd"));
     file(join(dirs.bin, "npm.cmd"));
+    const codexShim = file(join(dirs.appdata, "npm", "codex.cmd"));
     const npmEnv = { ...env, USERPROFILE: join(root, "elsewhere"), PATH: [join(dirs.appdata, "npm"), dirs.bin].join(delimiter) };
-    const viaNpm = (await byId(npmEnv, { [npmExe]: { ok: true, out: "2.1.300 (Claude Code)" } })).claude;
-    expect(viaNpm).toMatchObject({ version: "2.1.300", latest: "9.9.9", updater: "npm install -g @anthropic-ai/claude-code@latest", install: null });
+    const viaNpm = await byId(npmEnv, { [npmExe]: { ok: true, out: "2.1.300 (Claude Code)" }, [codexShim]: { ok: true, out: "codex-cli 0.165.0" } });
+    expect(viaNpm.claude).toMatchObject({ version: "2.1.300", latest: "9.9.9", updater: "npm install -g @anthropic-ai/claude-code@latest", install: null });
+    expect(viaNpm.codex).toMatchObject({ version: "0.165.0", latest: "0.166.0", updater: "下载后放进 npm 的缓存，再运行 npm install -g @openai/codex", install: { official: { version: "0.166.0" }, blocked: null } });
+    // OpenAI's standalone Codex: not updated here, and the note says so (the user, 2026-11-03).
+    const standalone = file(join(dirs.local, "Programs", "OpenAI", "Codex", "bin", "codex.exe"));
+    const alone = (await byId({ ...env, PATH: [join(dirs.local, "Programs", "OpenAI", "Codex", "bin"), dirs.bin].join(delimiter) }, { [standalone]: { ok: true, out: "codex-cli 0.164.0" } })).codex;
+    expect(alone).toMatchObject({ version: "0.164.0", latest: "0.166.0", updater: null, install: null });
+    expect(alone!.note).toMatch(/OpenAI 安装脚本装的独立版 Codex：平台不更新它/);
   });
 
   it("keeps the last check until asked again; two asks at once share one", async () => {

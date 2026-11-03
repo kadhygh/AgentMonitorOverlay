@@ -169,7 +169,7 @@ export interface PlatformCalls {
   /** 环境 (environment-view.ts): the last check, or a new one. */
   environment(fresh?: boolean): Promise<EnvironmentView>;
   /** 环境 → 更新 (2026-10-29): Claude Code or Codex to the newest version, the way it was installed; checked again after. */
-  updateEnvironment(id: string): Promise<EnvUpdateResult>;
+  updateEnvironment(id: string, from?: "server" | "official"): Promise<EnvUpdateResult>;
   openDownload(id: string): Promise<void>;
   copyInstallCommand(): Promise<void>;
   /** 更新平台: the channel's platform into <root>\apps\platform, made current; the running one stays until 重启平台. */

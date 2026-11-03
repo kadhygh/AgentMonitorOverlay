@@ -4,7 +4,8 @@ import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshRegisteredDirs, firstOnPath, gitOnPath, locateDshDesktop, olderVersion, versionIn } from "@amo-studio/locate";
 import type { EnvironmentView, EnvItemId, EnvItemView } from "./environment-view.js";
-import { SOURCE_NAME, type ClaudeSource } from "./claude-install.js";
+import { isStandaloneCodex } from "./codex-install.js";
+import type { ToolSources } from "./tool-mirror.js";
 
 // AMO 平台's 环境 page (the user, 2026-10-28): whether what the AMO tools run on is installed here — Claude Code, the
 // DeepSeek Harness desktop app, Codex, git — and, when it is not, a link to its official page. Only looking and linking:
@@ -39,9 +40,12 @@ const USES: Record<EnvItemId, string> = {
 };
 const ORDER: EnvItemId[] = ["claude", "dsh", "codex", "git"];
 
-/** The page for `id`, when it is one of ours and https. */
+/** Pages that help with something an item needs (2026-11-03: Codex is installed with npm, which comes with Node.js). */
+export const HELP_PAGES: Record<string, string> = { node: "https://nodejs.org/zh-cn/download" };
+
+/** The page for `id` (an item, or one of HELP_PAGES), when it is one of ours and https. */
 export function downloadUrl(id: unknown): string | null {
-  const url = typeof id === "string" && Object.hasOwn(DOWNLOADS, id) ? DOWNLOADS[id as EnvItemId] : null;
+  const url = typeof id !== "string" ? null : Object.hasOwn(DOWNLOADS, id) ? DOWNLOADS[id as EnvItemId] : Object.hasOwn(HELP_PAGES, id) ? HELP_PAGES[id]! : null;
   return url && /^https:\/\//.test(url) ? url : null;
 }
 
@@ -103,18 +107,18 @@ export interface CheckOptions {
   /** Where the registry says the DSH app is installed (tests stand in for it); default: asked (dshRegisteredDirs). */
   dshRegistry?: (env: Env) => string[];
   /**
-   * Where 安装 / 更新 Claude Code would fetch from (claude-install.ts's pickClaudeSource: the team server's mirror, else
-   * Anthropic); asked for a Claude Code that is not there or came from its own installer. Absent: the old way (npm's
-   * latest, `claude update`).
+   * Where 安装 / 更新 could fetch from (claude-install.ts's claudeSources, codex-install.ts's codexSources: the team
+   * server's mirror and the maker's latest); asked for a Claude Code that is not there or came from its own installer, and
+   * a Codex that is not there or came from npm. Absent: the old way (npm's latest, `npm install -g`, `claude update`).
    */
-  claudeSource?: () => Promise<ClaudeSource | null>;
+  sources?: Partial<Record<"claude" | "codex", () => Promise<ToolSources | null>>>;
 }
 
 const TIMEOUT_MS = 10_000;
 const why = (r: { reason: "timeout" | "error" }) => (r.reason === "timeout" ? "等了太久没有回应" : "运行出错");
 
 function item(id: EnvItemId, fields: Pick<EnvItemView, "state" | "path" | "version" | "note">): EnvItemView {
-  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, latest: null, updater: null, install: null, preparing: null, ...fields };
+  return { id, name: NAMES[id], uses: USES[id], download: downloadUrl(id), installCommand: id === "claude" ? CLAUDE_INSTALL_COMMAND : null, latest: null, updater: null, install: null, ...fields };
 }
 
 // ---- 已安装 / 最新 and 更新 (2026-10-29, the user: like cc-switch — the version here, the newest one, 更新 when there is a
@@ -252,17 +256,35 @@ export function isNativeClaude(path: string | null, env: Env): boolean {
   return !!path && lower(path).startsWith(lower(join(env.USERPROFILE ?? homedir(), ".local", "bin")) + "\\");
 }
 
+/** A Codex npm installed globally: its shim in %APPDATA%\npm, or a path in its package folder. */
+function isNpmCodex(path: string | null, env: Env): boolean {
+  if (!path) return false;
+  const p = lower(path);
+  return p.includes(`${sep}node_modules${sep}@openai${sep}codex${sep}`.toLowerCase()) || (!!env.APPDATA && p.startsWith(lower(join(env.APPDATA, "npm")) + "\\"));
+}
+
+/** The newer of two versions (either may be missing). */
+const newerOf = (a: string | null | undefined, b: string | null | undefined) => (!a ? (b ?? null) : !b ? a : olderVersion(a, b) ? b : a);
+
 /**
- * Claude Code not there (or not answering), or from its own installer, with a source to fetch from (2026-11-03): 「最新」
- * is the version 安装 / 更新 would bring (the team server's newest ready, else Anthropic's latest), the button says
- * where from. Null: not this case (npm's, another installer's, no claudeSource) — the old way goes on.
+ * Claude Code not there (or not answering) or from its own installer, Codex not there or from npm (2026-11-03): 安装 /
+ * 更新 here, from the team server or the official place, the person picks (install.server / install.official); 「最新」 is
+ * the newer of the two. Codex without npm: the buttons wait for Node.js (install.blocked). A Codex from OpenAI's own
+ * installer is left to update itself, and the note says so. Null: not one of these (or no sources) — the old way goes on.
  */
-async function withClaudeSource(it: EnvItemView, o: CheckOptions): Promise<EnvItemView | null> {
-  if (!o.claudeSource || !(!it.version || isNativeClaude(it.path, o.env))) return null;
-  const src = await o.claudeSource().catch(() => null);
-  if (!src) return { ...it, latest: null, updater: null };
-  const how = `从${SOURCE_NAME[src.from]}下载 ${src.version}，再运行 claude install`;
-  return { ...it, latest: it.version ? src.version : null, updater: it.version ? how : null, install: { version: src.version, from: src.from, size: src.size }, preparing: src.preparing };
+async function withSources(it: EnvItemView, o: CheckOptions): Promise<EnvItemView | null> {
+  if (it.id === "codex" && isStandaloneCodex(it.path, o.env)) {
+    const latest = it.version && o.sources?.codex ? ((await o.sources.codex().catch(() => null))?.official?.version ?? null) : null;
+    return { ...it, latest, updater: null, note: [it.note, "这是 OpenAI 安装脚本装的独立版 Codex：平台不更新它，它会自己提示更新；也可以在 PowerShell 里重新运行 OpenAI 的安装命令。"].filter(Boolean).join(" ") };
+  }
+  const here = it.id === "claude" ? !it.version || isNativeClaude(it.path, o.env) : it.id === "codex" ? !it.version || isNpmCodex(it.path, o.env) : false;
+  const ask = here ? o.sources?.[it.id as "claude" | "codex"] : undefined;
+  if (!ask) return null;
+  const src = await ask().catch(() => null);
+  const blocked = it.id === "codex" && !firstOnPath(["npm.cmd"], o.env) ? { text: "Codex 用 npm 安装，这台电脑上没找到 npm：先装 Node.js（自带 npm），装好后退出平台再打开，就能在这里装了。", page: "node", pageName: "Node.js 下载页" } : null;
+  const install = { server: src?.server ?? null, official: src?.official ?? null, preparing: src?.preparing ?? null, blocked };
+  const how = it.id === "claude" ? "下载后运行 claude install" : "下载后放进 npm 的缓存，再运行 npm install -g @openai/codex";
+  return { ...it, latest: it.version ? newerOf(install.server?.version, install.official?.version) : null, updater: it.version && !blocked && (install.server || install.official) ? how : null, install };
 }
 
 /** All four at once (each `--version` has its own timeout, so the slowest one bounds the wait). */
@@ -273,10 +295,8 @@ export async function checkEnvironment(o: CheckOptions, now: () => Date = () => 
     ORDER.map(async (id) => {
       const pkg = NPM_PACKAGES[id];
       const it = await checks[id](o);
-      if (id === "claude") {
-        const sourced = await withClaudeSource(it, o);
-        if (sourced) return sourced;
-      }
+      const sourced = id === "claude" || id === "codex" ? await withSources(it, o) : null;
+      if (sourced) return sourced;
       // Asked only for what is installed (nothing to compare otherwise).
       const newest = pkg && it.version ? await latest(pkg) : null;
       return { ...it, latest: it.version ? newest : null, updater: it.version ? (updatePlan(id, it.path, o.env)?.how ?? null) : null };

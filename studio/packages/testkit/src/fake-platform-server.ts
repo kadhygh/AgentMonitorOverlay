@@ -54,6 +54,12 @@ export interface FakePlatformServer {
    * login). `slowMs`: the .zst comes in 20 parts this far apart (to see the progress on screen).
    */
   mirrorClaude(version: string, exe: Buffer, options?: { slowMs?: number }): void;
+  /**
+   * Codex 镜像 (2026-11-03): `tgz` (the platform package's bytes) ready on the server for win32-x64 as
+   * codex-<version>-win32-x64.tgz with Range, and `/npm/` standing in for npm's registry (@openai/codex's latest —
+   * `npmLatest`, default `version` — the platform package's dist.integrity, the .tgz; no login). `slowMs` as for Claude Code.
+   */
+  mirrorCodex(version: string, tgz: Buffer, options?: { slowMs?: number; npmLatest?: string }): void;
   close(): Promise<void>;
 }
 
@@ -122,13 +128,13 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
 
   let claude: { version: string; exe: Buffer; zst: Buffer; slowMs: number } | null = null;
   const claudeManifest = () => ({ version: claude!.version, platforms: { "win32-x64": { binary: "claude.exe", checksum: sha256Of(claude!.exe), size: claude!.exe.length } } });
-  const sendZst = (req: IncomingMessage, res: ServerResponse) => {
-    const zst = claude!.zst;
+  /** A big file with Range; `slowMs`: in 20 parts this far apart. */
+  const sendRanged = (req: IncomingMessage, res: ServerResponse, file: Buffer, slowMs: number) => {
     const m = /^bytes=(\d+)-$/.exec(req.headers.range ?? "");
-    const start = m ? Math.min(Number(m[1]), zst.length) : 0;
-    const body = zst.subarray(start);
-    res.writeHead(m ? 206 : 200, { "content-type": "application/octet-stream", "accept-ranges": "bytes", "content-length": body.length, ...(m ? { "content-range": `bytes ${start}-${zst.length - 1}/${zst.length}` } : {}) });
-    if (!claude!.slowMs) return void res.end(body);
+    const start = m ? Math.min(Number(m[1]), file.length) : 0;
+    const body = file.subarray(start);
+    res.writeHead(m ? 206 : 200, { "content-type": "application/octet-stream", "accept-ranges": "bytes", "content-length": body.length, ...(m ? { "content-range": `bytes ${start}-${file.length - 1}/${file.length}` } : {}) });
+    if (!slowMs) return void res.end(body);
     const step = Math.ceil(body.length / 20);
     let at = 0;
     const next = () => {
@@ -136,10 +142,13 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
       if (at >= body.length) return void res.end();
       res.write(body.subarray(at, at + step));
       at += step;
-      setTimeout(next, claude!.slowMs);
+      setTimeout(next, slowMs);
     };
     next();
   };
+  const sendZst = (req: IncomingMessage, res: ServerResponse) => sendRanged(req, res, claude!.zst, claude!.slowMs);
+  let codex: { version: string; tgz: Buffer; integrity: string; slowMs: number; npmLatest: string } | null = null;
+  const codexName = () => `codex-${codex!.version}-win32-x64.tgz`;
 
   const server = createServer((req, res) => {
     void (async () => {
@@ -182,6 +191,14 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         }
         return fail(res, 404, "not_found", "没有");
       }
+      // npm's registry, standing in (no login).
+      if (req.method === "GET" && path.startsWith("/npm/")) {
+        const rest = path.slice("/npm/".length).replace(/%2f/i, "/");
+        if (codex && rest === "@openai/codex/latest") return send(res, 200, { name: "@openai/codex", version: codex.npmLatest });
+        if (codex && rest === `@openai/codex/${codex.version}-win32-x64`) return send(res, 200, { name: "@openai/codex", version: `${codex.version}-win32-x64`, dist: { integrity: codex.integrity } });
+        if (codex && rest === `@openai/codex/-/${codexName()}`) return sendRanged(req, res, codex.tgz, codex.slowMs);
+        return fail(res, 404, "not_found", "没有");
+      }
       const key = keyOf(req, url);
       if (!key || !keys.has(key)) return fail(res, 401, "unauthorized", "登录已失效，请重新登录");
       if (req.method === "GET" && path === "/api/platform/mirror/claude-code") {
@@ -194,6 +211,12 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         if (mirrored[2] === "manifest.json") return send(res, 200, claudeManifest());
         if (mirrored[2] === "win32-x64/claude.exe.zst") return sendZst(req, res);
       }
+      if (req.method === "GET" && path === "/api/platform/mirror/codex") {
+        if (!codex) return fail(res, 404, "not_found", "这个服务没有开 codex 的镜像");
+        const file = { file: codexName(), size: codex.tgz.length, integrity: codex.integrity };
+        return send(res, 200, { official: codex.npmLatest, checkedAt: new Date().toISOString(), versions: [{ version: codex.version, readyAt: new Date().toISOString(), platforms: { "win32-x64": file } }], preparing: null });
+      }
+      if (req.method === "GET" && codex && path === `/platform/mirror/codex/${codex.version}/win32-x64/${codexName()}`) return sendRanged(req, res, codex.tgz, codex.slowMs);
       if (req.method === "POST" && path === "/api/logout") {
         keys.delete(key);
         return send(res, 200, { ok: true });
@@ -306,6 +329,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     breakObject: (sha) => void broken.add(sha),
     revokeKeys: () => keys.clear(),
     mirrorClaude: (version, exe, o = {}) => void (claude = { version, exe, zst: zstdCompressSync(exe), slowMs: o.slowMs ?? 0 }),
+    mirrorCodex: (version, tgz, o = {}) => void (codex = { version, tgz, integrity: `sha512-${createHash("sha512").update(tgz).digest("base64")}`, slowMs: o.slowMs ?? 0, npmLatest: o.npmLatest ?? version }),
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

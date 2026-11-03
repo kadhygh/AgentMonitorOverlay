@@ -50,7 +50,7 @@ app.setPath("userData", join(amoLocalHome(), "platform-profile"));
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
-type TestGlobals = { __platformTrayLook?: () => TrayLook & { blinking: boolean }; __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void; __platformClaudeInstall?: { exe: string; args: string[] }[] };
+type TestGlobals = { __platformTrayLook?: () => TrayLook & { blinking: boolean }; __platformForward?: LaunchSpec; __platformPicks?: string[]; __platformOpened?: string[]; __platformExternal?: string[]; __platformCopied?: string; __platformOpenAtLogin?: boolean; __platformOpenAtLoginExe?: string | null; __platformRestart?: LaunchSpec; __platformTray?: () => string[]; __platformTrayClick?: (label: string) => void; __platformTrayIconClick?: () => void; __platformShow?: () => void; __platformClaudeInstall?: { exe: string; args: string[] }[]; __platformNpm?: { exe: string; args: string[] }[] };
 const g = globalThis as TestGlobals;
 
 let win: BrowserWindow | null = null;
@@ -140,7 +140,27 @@ const claudeRun =
       }
     : undefined;
 
-const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart, ...(claudeRun ? { claudeRun } : {}) });
+/**
+ * Test mode with AMO_PLATFORM_TEST_NPM_INSTALL=1: npm is recorded instead of run, and `install -g` does the one thing
+ * checking again looks at — the .tgz last given to `cache add` (the test's "Codex" is some other small program) copied to
+ * %APPDATA%\npm\codex.exe, where npm keeps its global commands.
+ */
+const npmRun = (() => {
+  if (!testMode || process.env.AMO_PLATFORM_TEST_NPM_INSTALL !== "1") return undefined;
+  let cached: string | null = null;
+  return async (exe: string, args: string[]) => {
+    g.__platformNpm = [...(g.__platformNpm ?? []), { exe, args }];
+    if (args[0] === "cache") cached = args[2] ?? null;
+    if (args[0] === "install" && cached) {
+      const bin = join(process.env.APPDATA ?? "", "npm");
+      mkdirSync(bin, { recursive: true });
+      copyFileSync(cached, join(bin, "codex.exe"));
+    }
+    return { ok: true, out: "added 2 packages in 4s" };
+  };
+})();
+
+const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart, ...(claudeRun ? { claudeRun } : {}), ...(npmRun ? { npmRun } : {}) });
 
 // ---- the window
 

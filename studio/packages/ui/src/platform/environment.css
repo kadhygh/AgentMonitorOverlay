@@ -4,3 +4,11 @@
 .pf-env-note.warn { padding: 6px 10px; border: 1px solid var(--attention-border); border-radius: var(--r-m); background: var(--attention-bg); color: var(--text); }
 .pf-env-command { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pf-env-command .pf-path { user-select: all; }
+
+/* 安装 / 更新's places (2026-11-03): 团队服务器 (when it has a version ready) above 官方, each a row with its button. */
+.pf-env-sources { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-m); }
+.pf-env-source { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; }
+.pf-env-source + .pf-env-source { border-top: 1px solid var(--border); }
+.pf-env-source-text { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.pf-env-source-name { font-size: var(--fs-sm); color: var(--text-dim); min-width: 5em; }
+.pf-env-source-version { font-weight: 600; font-variant-numeric: tabular-nums; }

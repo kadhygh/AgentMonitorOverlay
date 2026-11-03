@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
-import { claudePlatform, installClaude, pickClaudeSource, type ClaudeSource, type InstallRunner } from "./claude-install.js";
+import { claudeSources, installClaude } from "./claude-install.js";
+import { machinePlatform, type InstallFrom, type InstallRunner } from "./tool-mirror.js";
 
 // One fake server for both sides: Anthropic's paths at /official/…, the team server's mirror at /api/platform/mirror/…
 // and /platform/mirror/… (Bearer key "k").
@@ -105,35 +106,35 @@ const setup = async () => {
   const home = tmp();
   const env = { USERPROFILE: home, PROCESSOR_ARCHITECTURE: "AMD64" };
   const base = { env, account: { server: f.url, key: "k" }, base: `${f.url}/official` };
-  const install = (source: ClaudeSource, extra: Record<string, unknown> = {}) => installClaude(source, { ...base, downloadsDir: join(home, "dl"), run, retryDelaysMs: [10, 10], ...extra });
+  const install = (version: string, from: InstallFrom, extra: Record<string, unknown> = {}) => installClaude(version, from, { ...base, downloadsDir: join(home, "dl"), run, retryDelaysMs: [10, 10], ...extra });
   const versionFile = (v: string) => join(home, ".local", "share", "claude", "versions", v);
   return { f, home, env, base, install, versionFile };
 };
 
 describe("Claude Code 安装 (claude-install.ts)", () => {
-  it("takes the server's newest ready version, else Anthropic's latest; says when the server prepares a newer one", async () => {
+  it("gives both places: the server's newest ready version and Anthropic's latest; says when the server prepares a newer one", async () => {
     const { f, base } = await setup();
     f.latest = "2.1.317";
     f.preparing = { version: "2.1.317", platform: "win32-x64", done: 45, total: 100 };
-    const fromServer = await pickClaudeSource(base);
-    expect(fromServer).toMatchObject({ version: "2.1.316", from: "server", platform: "win32-x64" });
-    expect(fromServer?.size).toBeGreaterThan(0);
-    expect(fromServer?.preparing).toBe("团队服务器正在准备 2.1.317（45%），下好之后从这里装会更快。");
-    expect(await pickClaudeSource({ ...base, account: null })).toMatchObject({ version: "2.1.317", from: "official", size: null });
-    expect(await pickClaudeSource({ ...base, account: { server: f.url, key: "wrong" } })).toMatchObject({ from: "official" });
+    const both = await claudeSources(base);
+    expect(both).toMatchObject({ platform: "win32-x64", server: { version: "2.1.316" }, official: { version: "2.1.317" } });
+    expect(both.server?.size).toBeGreaterThan(0);
+    expect(both.preparing).toBe("团队服务器正在准备 2.1.317（45%），下好之后可以从团队服务器装（局域网，更快）。");
+    expect(await claudeSources({ ...base, account: null })).toEqual({ platform: "win32-x64", server: null, official: { version: "2.1.317" }, preparing: null });
+    expect((await claudeSources({ ...base, account: { server: f.url, key: "wrong" } })).server).toBeNull();
     f.ready.clear();
-    expect(await pickClaudeSource(base)).toMatchObject({ version: "2.1.317", from: "official" });
+    expect((await claudeSources(base)).server).toBeNull();
     f.officialDown = true;
-    expect(await pickClaudeSource(base)).toBeNull();
-    expect(claudePlatform({ PROCESSOR_ARCHITECTURE: "AMD64", PROCESSOR_ARCHITEW6432: "ARM64" })).toBe("win32-arm64");
-    expect(claudePlatform({})).toBe("win32-x64");
+    expect(await claudeSources(base)).toMatchObject({ server: null, official: null });
+    expect(machinePlatform({ PROCESSOR_ARCHITECTURE: "AMD64", PROCESSOR_ARCHITEW6432: "ARM64" })).toBe("win32-arm64");
+    expect(machinePlatform({})).toBe("win32-x64");
   });
 
   it("downloads from the server, checks it against Anthropic's manifest, puts it in versions and runs install", async () => {
     const { f, home, install, versionFile } = await setup();
     runs.length = 0;
     const phases: string[] = [];
-    const done = await install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null }, { onProgress: (p: { phase: string }) => phases.at(-1) !== p.phase && phases.push(p.phase) });
+    const done = await install("2.1.316", "server", { onProgress: (p: { phase: string }) => phases.at(-1) !== p.phase && phases.push(p.phase) });
     expect(done).toMatchObject({ version: "2.1.316", from: "server" });
     expect(readFileSync(versionFile("2.1.316")).equals(f.exe.get("2.1.316")!)).toBe(true);
     expect(runs).toEqual([{ exe: versionFile("2.1.316"), args: ["install", "2.1.316"] }]);
@@ -144,38 +145,47 @@ describe("Claude Code 安装 (claude-install.ts)", () => {
     expect(readdirSync(join(home, ".local", "share", "claude", "versions"))).toEqual(["2.1.316"]);
     // Already there and right: only install runs again.
     f.seen.length = 0;
-    await install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null });
+    await install("2.1.316", "server");
     expect(f.seen.map((s) => s.path)).toEqual(["/official/2.1.316/manifest.json"]);
   });
 
-  it("goes on after a break, and on from Anthropic when the server no longer has the file", async () => {
+  it("goes on after a break; a server without the file stops and points at the official one, which goes on from the same part", async () => {
     const { f, install, versionFile } = await setup();
     f.cutNext = 40_000;
-    await install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null });
+    await install("2.1.316", "server");
     const zst = f.seen.filter((s) => s.path.endsWith(".zst"));
     expect(zst[0]!.range).toBeNull();
     expect(zst[1]!.range).toMatch(/^bytes=\d+-$/);
     expect(readFileSync(versionFile("2.1.316")).equals(f.exe.get("2.1.316")!)).toBe(true);
 
+    // Not turned to Anthropic by itself (the user, 2026-11-03: the person picks).
     const b = await setup();
     b.f.mirrorFile404 = true;
-    const r = await b.install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null });
+    await expect(b.install("2.1.316", "server")).rejects.toThrow(/团队服务器上拿不到这个文件了.*也可以点「官方」那一行的按钮从官方下/);
+    expect(b.f.seen.map((s) => s.path)).not.toContain("/official/2.1.316/win32-x64/claude.exe.zst");
+
+    // Broken from the server with no tries left: the part stays, and 官方 goes on from it.
+    const c = await setup();
+    c.f.cutNext = 40_000;
+    await expect(c.install("2.1.316", "server", { retryDelaysMs: [] })).rejects.toThrow(/下了的部分留着/);
+    const r = await c.install("2.1.316", "official");
     expect(r.from).toBe("official");
-    expect(b.f.seen.map((s) => s.path)).toContain("/official/2.1.316/win32-x64/claude.exe.zst");
-    expect(readFileSync(b.versionFile("2.1.316")).equals(b.f.exe.get("2.1.316")!)).toBe(true);
+    expect(c.f.seen.find((s) => s.path === "/official/2.1.316/win32-x64/claude.exe.zst")?.range).toMatch(/^bytes=[1-9]\d*-$/);
+    expect(readFileSync(c.versionFile("2.1.316")).equals(c.f.exe.get("2.1.316")!)).toBe(true);
+    await expect(c.install("2.1.316", "server", { account: null })).rejects.toThrow(/没登录团队服务器/);
   });
 
   it("uses the server's manifest only when Anthropic cannot be reached; installs nothing that does not match", async () => {
     const { f, install, versionFile, home } = await setup();
     f.officialDown = true;
-    await install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null });
+    await install("2.1.316", "server");
     expect(existsSync(versionFile("2.1.316"))).toBe(true);
-    await expect(install({ version: "2.1.316", from: "official", platform: "win32-x64", size: null, preparing: null })).rejects.toThrow(/拿不到 2\.1\.316 的清单/);
+    await expect(install("2.1.316", "official")).rejects.toThrow(/拿不到 2\.1\.316 的清单/);
 
     const b = await setup();
     b.f.wrongChecksum = true;
     runs.length = 0;
-    await expect(b.install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null })).rejects.toThrow(/对不上/);
+    await expect(b.install("2.1.316", "server")).rejects.toThrow(/对不上/);
     expect(existsSync(b.versionFile("2.1.316"))).toBe(false);
     expect(readdirSync(join(b.home, "dl"))).toEqual([]);
     expect(runs).toEqual([]);
@@ -189,7 +199,7 @@ describe("Claude Code 安装 (claude-install.ts)", () => {
     mkdirSync(join(home, ".local", "share", "claude", "versions"), { recursive: true });
     writeFileSync(versionFile("2.1.316"), "");
     const failing: InstallRunner = async () => ({ ok: false, out: "line1\nInstallation failed", reason: "error" });
-    await expect(install({ version: "2.1.316", from: "server", platform: "win32-x64", size: null, preparing: null }, { run: failing })).rejects.toThrow(/claude install 没成功（出错）：\nline1\nInstallation failed/);
+    await expect(install("2.1.316", "server", { run: failing })).rejects.toThrow(/claude install 没成功（出错）：\nline1\nInstallation failed/);
     expect(readdirSync(join(home, "dl"))).toEqual([]);
     expect(readFileSync(versionFile("2.1.316")).length).toBe(200_000);
   });

@@ -2,7 +2,7 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -632,8 +632,16 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   // and git here are not what is found. Claude Code: a file named claude.exe that is no program (found, does not answer);
   // no DSH app, no Codex, no git (Codex turns up later: a .cmd that says its version).
   const bin = () => join(root, "bin");
-  // npm's registry, standing in: Codex's newest is 0.200.0 (2026-10-29: 已安装 / 最新 and 更新).
-  const registry = createServer((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0" })));
+  // npm's registry, standing in: Codex's newest is 0.200.0 (2026-10-29: 已安装 / 最新 and 更新), with its platform
+  // package's sha512 and .tgz (2026-11-03: the platform downloads that itself, then hands it to npm).
+  const codexTgz = randomBytes(60_000);
+  const integrity = `sha512-${createHash("sha512").update(codexTgz).digest("base64")}`;
+  const registry = createServer((req, res) => {
+    const path = req.url ?? "";
+    if (path.endsWith("/codex-0.200.0-win32-x64.tgz")) return void res.writeHead(200, { "content-length": String(codexTgz.length) }).end(codexTgz);
+    if (/0\.200\.0-win32-x64$/.test(path)) return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0-win32-x64", dist: { integrity } }));
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0" }));
+  });
   await new Promise<void>((ok) => registry.listen(0, "127.0.0.1", ok));
   const registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
   const { app, page } = await launch([], (r) => {
@@ -681,8 +689,9 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   // Codex installed since, with npm: 重新检测 finds it (the page keeps the last check until then).
   const codexCmd = join(root, "appdata", "npm", "codex.cmd");
   writeFileSync(codexCmd, "@echo off\r\necho codex-cli 0.161.0\r\n");
-  // npm, standing in: its install -g rewrites codex.cmd to say the newer version, a few seconds later (to see the progress, 问题 #9).
-  writeFileSync(join(bin(), "npm.cmd"), `@echo off\r\nping -n 4 127.0.0.1 >nul\r\necho added 1 package\r\necho @echo off>"${codexCmd}"\r\necho echo codex-cli 0.200.0>>"${codexCmd}"\r\n`);
+  // npm, standing in: `cache add` and `install -g` both rewrite codex.cmd to say the newer version, a few seconds later
+  // (to see the progress, 问题 #9); what it was given is kept in npm-args.txt.
+  writeFileSync(join(bin(), "npm.cmd"), `@echo off\r\necho %*>>"${join(root, "npm-args.txt")}"\r\nping -n 3 127.0.0.1 >nul\r\necho added 1 package\r\necho @echo off>"${codexCmd}"\r\necho echo codex-cli 0.200.0>>"${codexCmd}"\r\n`);
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "工具" }).click();
   await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
   await expect(envStatus("codex")).toHaveText("○ 没装");
@@ -690,20 +699,26 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.161.0 · 最新 0.200.0", { timeout: 30_000 });
   await expect(item("codex")).toContainText(codexCmd);
   await expect(item("codex").getByRole("button", { name: "去下载" })).toHaveCount(0);
-  await expect(page.getByTestId("env-codex-update")).toHaveAttribute("title", "运行 npm install -g @openai/codex@latest");
+  // The team server has no Codex here: only the official place (2026-11-03).
+  await expect(page.getByTestId("env-codex-from-server")).toHaveCount(0);
+  await expect(page.getByTestId("env-codex-install-official")).toHaveText("更新到 0.200.0");
+  await expect(page.getByTestId("env-codex-install-official")).toHaveAttribute("title", "下载后放进 npm 的缓存，再运行 npm install -g @openai/codex");
   await item("git").scrollIntoViewIfNeeded();
   await screenshot(app, "platform", "P18-environment-rechecked", page);
-  // 更新: npm runs, the page checks again.
-  await page.getByTestId("env-codex-update").click();
-  // While it runs (问题 #9): a moving bar, the command and the seconds so far.
-  await expect(page.getByTestId("env-codex-progress")).toContainText("正在运行 npm install -g @openai/codex@latest，已 ");
-  await expect(page.getByTestId("env-codex-update")).toHaveText("正在更新…");
+  // 更新: the .tgz from npm, checked, then npm (cache add, install -g); the page checks again.
+  await page.getByTestId("env-codex-install-official").click();
+  // While npm runs: a moving bar and what it does.
+  await expect(page.getByTestId("env-codex-progress")).toContainText("正在运行 npm install -g @openai/codex@0.200.0（用刚下好的文件", { timeout: 15_000 });
+  await expect(page.getByTestId("env-codex-install-official")).toBeDisabled();
   await screenshot(app, "platform", "P37-environment-updating", page);
-  await expect(page.getByTestId("env-codex-result")).toHaveText("✓ 已更新，现在是 0.200.0", { timeout: 60_000 });
+  await expect(page.getByTestId("env-codex-result")).toHaveText("✓ 已更新，现在是 0.200.0（从官方下载）", { timeout: 60_000 });
   await expect(envStatus("codex")).toHaveText("✓ 已安装 · 0.200.0 · 已是最新");
-  await expect(page.getByTestId("env-codex-update")).toHaveCount(0);
+  await expect(page.getByTestId("env-codex-from-official")).toContainText("✓ 装的就是这版");
   await expect(page.getByTestId("env-codex-progress")).toHaveCount(0);
   await screenshot(app, "platform", "P36-environment-updated", page);
+  const tgzFile = join(root, "local", "downloads", "codex", "codex-0.200.0-win32-x64.tgz");
+  expect(readFileSync(join(root, "npm-args.txt"), "utf8").trim().split(/\r?\n/).map((l) => l.trim())).toEqual([`"cache" "add" "${tgzFile}"`, `"install" "-g" "@openai/codex@0.200.0" "--no-fund" "--no-audit"`]);
+  expect(existsSync(tgzFile)).toBe(false);
   registry.close();
 });
 
@@ -731,13 +746,16 @@ test("环境: 安装 Claude Code from the team server's mirror (2026-11-03) — 
     await expect(page.getByTestId("pf-connection")).toContainText("服务器在线", { timeout: 20_000 });
     await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
     const envStatus = page.getByTestId("env-claude-status");
-    await expect(envStatus).toHaveText("○ 没装 · 团队服务器上有 2.1.316", { timeout: 30_000 });
-    await expect(page.getByTestId("env-claude-source")).toContainText("从团队服务器下载（局域网，压缩包 ");
-    await expect(page.getByTestId("env-claude-install")).toHaveText("安装 2.1.316");
+    await expect(envStatus).toHaveText("○ 没装", { timeout: 30_000 });
+    // Both places, the person picks (the user, 2026-11-03).
+    await expect(page.getByTestId("env-claude-from-server")).toContainText("团队服务器2.1.316局域网 · ");
+    await expect(page.getByTestId("env-claude-from-official")).toContainText("官方2.1.316从 Anthropic 下载");
+    await expect(page.getByTestId("env-claude-install-server")).toHaveText("安装 2.1.316");
+    await expect(page.getByTestId("env-claude-install-official")).toHaveText("安装 2.1.316");
     await screenshot(app, "platform", "P38-claude-install-offered", page);
 
-    await page.getByTestId("env-claude-install").click();
-    await expect(page.getByTestId("env-claude-install")).toHaveText("正在安装…");
+    await page.getByTestId("env-claude-install-server").click();
+    await expect(page.getByTestId("env-claude-install-official")).toBeDisabled();
     await expect(page.getByTestId("env-claude-progress")).toContainText(/正在从团队服务器下载 2\.1\.316：.+ \/ .+（[1-9]\d*%）/, { timeout: 15_000 });
     await screenshot(app, "platform", "P39-claude-installing", page);
     await expect(page.getByTestId("env-claude-result")).toHaveText(`✓ 已安装，现在是 ${curlVersion}（从团队服务器下载）`, { timeout: 60_000 });
@@ -754,6 +772,68 @@ test("环境: 安装 Claude Code from the team server's mirror (2026-11-03) — 
     expect(own.requests.filter((r) => r.includes("claude"))).toEqual(expect.arrayContaining(["GET /api/platform/mirror/claude-code", "GET /claude-official/2.1.316/manifest.json", "GET /platform/mirror/claude-code/2.1.316/win32-x64/claude.exe.zst"]));
     expect(own.requests).not.toContain("GET /claude-official/2.1.316/win32-x64/claude.exe.zst");
     expect(readdirSync(join(root, "local", "downloads", "claude-code"))).toEqual([]);
+  } finally {
+    await own.close();
+  }
+});
+
+test("环境: 安装 Codex (2026-11-03) — npm needed first; then the team server's or npm's version, the .tgz checked against npm's sha512, npm cache add + npm install -g", async () => {
+  // The server has 0.166.0 ready, npm's latest is 0.167.0 (/npm/ stands in for the registry). The "Codex" is curl.exe
+  // again: npm is recorded instead of run, its install putting the cached file where npm keeps global commands (main.ts).
+  const own = await startFakePlatformServer({ users: { 小王: "secret" } });
+  const curl = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "curl.exe");
+  const tgz = readFileSync(curl);
+  const curlVersion = /\d+\.\d+\.\d+/.exec(execFileSync(curl, ["--version"], { encoding: "utf8" }))![0];
+  own.mirrorCodex("0.166.0", tgz, { slowMs: 150, npmLatest: "0.167.0" });
+  try {
+    const { app, page } = await launch([], (r) => {
+      const dirs = { bin: join(r, "bin"), home: join(r, "home"), appdata: join(r, "appdata"), local: join(r, "localappdata") };
+      for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
+      return { PATH: [join(dirs.appdata, "npm"), dirs.bin, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";"), USERPROFILE: dirs.home, APPDATA: dirs.appdata, LOCALAPPDATA: dirs.local, AMO_STUDIO_DSH_REGISTRY: "0", AMO_PLATFORM_NPM_REGISTRY: `${own.url}/npm`, AMO_PLATFORM_TEST_NPM_INSTALL: "1" };
+    });
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await expect(page.getByTestId("pf-connection")).toContainText("服务器在线", { timeout: 20_000 });
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "环境" }).click();
+    const envStatus = page.getByTestId("env-codex-status");
+    await expect(envStatus).toHaveText("○ 没装", { timeout: 30_000 });
+    // No npm here yet: the versions are shown, the buttons wait for Node.js (the user, 2026-11-03).
+    await expect(page.getByTestId("env-codex-from-server")).toContainText("0.166.0");
+    await expect(page.getByTestId("env-codex-from-official")).toContainText("官方0.167.0从 npm 下载");
+    await expect(page.getByTestId("env-codex-install-server")).toBeDisabled();
+    await expect(page.getByTestId("env-codex-blocked")).toContainText("这台电脑上没找到 npm：先装 Node.js");
+    await expect(page.getByTestId("env-codex-blocked").getByRole("button")).toHaveText("打开 Node.js 下载页");
+    await page.getByTestId("env-codex").scrollIntoViewIfNeeded();
+    await screenshot(app, "platform", "P41-codex-needs-npm", page);
+
+    // npm there (as if Node.js was installed): checking again lets it install.
+    writeFileSync(join(root, "bin", "npm.cmd"), "@echo off\r\n");
+    await page.getByRole("button", { name: "重新检测" }).click();
+    await expect(page.getByTestId("env-codex-blocked")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("env-codex-install-server")).toHaveText("安装 0.166.0");
+    await expect(page.getByTestId("env-codex-install-official")).toHaveText("安装 0.167.0");
+    await page.getByTestId("env-codex-install-server").click();
+    await expect(page.getByTestId("env-codex-progress")).toContainText(/正在从团队服务器下载 0\.166\.0：.+ \/ .+（[1-9]\d*%）/, { timeout: 15_000 });
+    await page.getByTestId("env-codex").scrollIntoViewIfNeeded();
+    await screenshot(app, "platform", "P42-codex-installing", page);
+    await expect(page.getByTestId("env-codex-result")).toHaveText(`✓ 已安装，现在是 ${curlVersion}（从团队服务器下载）`, { timeout: 60_000 });
+    await expect(envStatus).toHaveText(`✓ 已安装 · ${curlVersion} · 已是最新`);
+    await expect(page.getByTestId("env-codex")).toContainText(join(root, "appdata", "npm", "codex.exe"));
+    await page.getByTestId("env-codex").scrollIntoViewIfNeeded();
+    await screenshot(app, "platform", "P43-codex-installed", page);
+
+    // npm's sha512 asked, the .tgz from the server; npm given the checked file, then the version; nothing left.
+    const dl = join(root, "local", "downloads", "codex");
+    expect(await app.evaluate(() => (globalThis as { __platformNpm?: unknown }).__platformNpm)).toEqual([
+      { exe: join(root, "bin", "npm.cmd"), args: ["cache", "add", join(dl, "codex-0.166.0-win32-x64.tgz")] },
+      { exe: join(root, "bin", "npm.cmd"), args: ["install", "-g", "@openai/codex@0.166.0", "--no-fund", "--no-audit"] },
+    ]);
+    expect(own.requests).toEqual(expect.arrayContaining(["GET /api/platform/mirror/codex", "GET /npm/@openai%2fcodex/0.166.0-win32-x64", "GET /platform/mirror/codex/0.166.0/win32-x64/codex-0.166.0-win32-x64.tgz"]));
+    expect(own.requests).not.toContain("GET /npm/@openai/codex/-/codex-0.166.0-win32-x64.tgz");
+    expect(readdirSync(dl)).toEqual([]);
   } finally {
     await own.close();
   }

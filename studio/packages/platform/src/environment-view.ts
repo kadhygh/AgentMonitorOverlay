@@ -25,21 +25,33 @@ export interface EnvItemView {
    *  platform does not update). */
   updater: string | null;
   /**
-   * Claude Code not installed, or installed by its own installer (2026-11-03, plans/claude-code-mirror.md): what 安装 /
-   * 更新 fetches — the version, from the team server's mirror or Anthropic, the .zst's size when known. Null for the
-   * others, and for a Claude Code from npm (npm updates it) or another installer.
+   * Claude Code (not installed, or from its own installer) and Codex (not installed, or from npm) are installed here by
+   * the platform (2026-11-03, plans/claude-code-mirror.md): the two places to fetch from, side by side. Null for the
+   * others, a Claude Code from npm (npm updates it) and anything from another installer.
    */
-  install: { version: string; from: "server" | "official"; size: number | null } | null;
-  /** The team server is getting a newer version ready (「团队服务器正在准备 2.1.317（45%）…」). */
-  preparing: string | null;
+  install: EnvInstallView | null;
 }
 
-/** 安装 / 更新 Claude Code under way (PlatformView.envTask): what it does now and how far it is. */
+export type EnvFrom = "server" | "official";
+
+/** 安装 / 更新's places (the user, 2026-11-03: the team server's block when it has a version ready, the official one always; the person picks). */
+export interface EnvInstallView {
+  /** The team server's newest ready version for this machine, with the download's size; null: none there. */
+  server: { version: string; size: number } | null;
+  /** The maker's latest; null: not reached. */
+  official: { version: string } | null;
+  /** The team server is getting a newer version ready (「团队服务器正在准备 2.1.317（45%）…」). */
+  preparing: string | null;
+  /** Why the buttons cannot be used here (Codex without npm), with the page that helps; null: they can. */
+  blocked: { text: string; page: string; pageName: string } | null;
+}
+
+/** 安装 / 更新 Claude Code or Codex under way (PlatformView.envTask): what it does now and how far it is. */
 export interface EnvTaskView {
   id: EnvItemId;
   version: string;
-  from: "server" | "official";
-  phase: "manifest" | "downloading" | "unpacking" | "installing";
+  from: EnvFrom;
+  phase: "manifest" | "downloading" | "unpacking" | "verifying" | "installing";
   done: number;
   total: number | null;
   /** Over the last few seconds, while downloading. */
