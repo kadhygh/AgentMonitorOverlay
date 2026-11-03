@@ -1,6 +1,6 @@
 # 程序包瘦身（2026-11-03）
 
-状态：**范围已定（用户 2026-11-03），在做**。分支 `studio/package-slim`（worktree `G:\PROJECT\AgentMonitorOverlay-package-slim`），合并等用户说。
+状态：**做完、自动验证都过了（2026-11-03），等用户用真模型点一遍（下面「请你点的」），再说合不合**。分支 `studio/package-slim`（worktree `G:\PROJECT\AgentMonitorOverlay-package-slim`），合并等用户说。
 
 ## 为什么
 
@@ -86,27 +86,45 @@
 
 ## 请你点的（合并前）
 
-打好的平台模式包在 `G:\PROJECT\AgentMonitorOverlay-package-slim\studio\release\platform\`。先关掉正在用的 Studio 再开它（两个 Studio 用同一个数据目录会抢）；或者用环境变量 `AMO_STUDIO_DATA_DIR` 给它一个临时数据目录。
+都在 `G:\PROJECT\AgentMonitorOverlay-package-slim\studio\release\`。正在用的 Studio 不用关。
 
-1. `AMO Studio\AMO Studio.exe` 打开，主界面和看板正常。
-2. 新建任务，Claude 会话发一句，能回。
+Studio 用便携版（`release\AMO Studio`，内容和平台版一样，只是 exe 带图标），**双击 `release\try-slim-studio.cmd` 打开**：它让瘦身版的 Host 用空闲端口（不和正在用的 Studio 抢 47900），数据放在 `release\AMO Studio\data`（第一次打开会问，选默认就行），不碰你平时的数据。不要直接开 `release\platform\AMO Studio`：平台版会去读平台设置里的 Studio 数据目录，也就是你平时那份。
+
+1. `try-slim-studio.cmd` 打开 Studio，看板正常。新数据目录里没有模型的话，在 设置 → 模型 里加。
+2. 新建一个任务（项目随便选个文件夹），Claude 会话发一句，能回。
 3. Codex 会话发一句，能回。
 4. DSH（DeepSeek）会话发一句，能回。
-5. 任务页点 Review，Git Review 窗口打开；点一个文件链接，查看器打开。
-6. 便签随 Studio 起来，在托盘里；快捷键能呼出。
-7. `AMO Reviewer\AMO Reviewer.exe <某个 git 文件夹>`：独立 Reviewer 打开改动。
-8. `AMO Relay\AMO Relay.exe`：中转客户端打开、登录。
-9. `AMO Platform\AMO Platform.exe`：平台打开，「工具」页正常。
+5. 任务页点 Review，Git Review 窗口打开；点回复里的一个文件链接，查看器打开。
+6. 便签：你平时的便签开着时，Studio 只会把它叫出来（同一时间只开一个），测不到瘦身版的。要测就先在托盘里退出平时的便签，再开 `release\AMO Notes\AMO Notes.exe`，快捷键能呼出、能写。
+7. `release\AMO Reviewer\AMO Reviewer.exe <某个 git 文件夹>`（命令行），独立 Reviewer 打开改动。
+点完关掉这些窗口；瘦身版 Studio 从托盘「完全退出」。
+
+中转客户端和平台**不要**从这里手动开：它们用的是 `%APPDATA%\AMO`、`%APPDATA%\AMO Relay` 里和平时共用的文件（中转会把 `amo-relay.cmd` 改成指向这里的 exe，平台会把这个文件夹当成它的根目录）。这两个用 e2e 的 `platform`、`relay` 两个 project 在临时目录里前后对比（打好的文件夹先复制到 `%TEMP%`，e2e 改不到 `release\`）。
 
 ## 提交顺序（`studio/package-slim`）
 
 1. 方案（本文件）。
 2. `check-package.mjs` + 瘦身前的白名单（行为不变）。
-3. e2e 的 `AMO_E2E_APP`，瘦身前跑一遍记结果。
-4. 复制过滤（R2–R4）。
-5. 工作区包去重 + 转发文件（R1）。
-6. 瘦身后的 import 检查、冒烟、e2e；各工具 `CHANGELOG.md`「## 下一版」、`HANDOFF.md`。
+3. e2e 的 `AMO_E2E_APP`。
+4. 复制过滤（R2–R4）和工作区包去重（R1）一个提交（都在 `package-portable.mjs` 里，拆开意义不大）；打完自动跑 import 检查、输出文件数、删掉过滤后留下的空目录。
+5. 结果、各工具 `CHANGELOG.md`「## 下一版」、`HANDOFF.md`。
 
 ## 结果
 
-（做完填）
+平台模式打包（`npm run package:platform`），同一份 dist，瘦身前打到 `release/before/`，瘦身后打到 `release/platform/`：
+
+| 工具 | 瘦身前 | 瘦身后 | 程序部分（resources/app） | LICENSE/NOTICE/COPYING（前 → 后） |
+|---|---|---|---|---|
+| AMO Studio | 11211 | 4392 | 58 → 37 MB | 104 → 104 |
+| AMO Reviewer | 11125 | 4340 | 57 → 37 MB | 104 → 104 |
+| AMO 中转客户端 | 3857 | 1804 | 17 → 9 MB | 96 → 96 |
+| AMO 便签 | 3436 | 1114 | 19 → 18 MB | 1 → 1 |
+| AMO 平台 | 404 | 351 | 18 → 18 MB | 0 → 0 |
+
+- **import 检查**：瘦身前五个工具找不到的都记进了白名单（Studio 135 处：`bufferutil`、`utf-8-validate`、`ejs`、`re2`、`@cfworker/json-schema` 这些可选依赖，node_modules 里测试文件要的 `tape`，JSDoc 里的 `import('./types/index')`）；瘦身后五个都是「白名单以外 0 处」。第一次跑时它抓到 `side-channel-list` 的 JSDoc `import('./list.d.ts')`，那不是运行时的 import，检查改成不管指向 `.d.ts` 的。
+- **e2e（打好的包，`AMO_E2E_APP`）**：`notes` + `reviewer` 瘦身前后都是 9 过 1 败，败的是同一条（`notes-todo.spec.ts:190` 要版本号带「开发版」，打好的包本来就不带，和瘦身无关）。
+- **e2e `studio`（197 条，打好的包）**：瘦身前 188 过 9 败（27.5 分钟），瘦身后 189 过 8 败（33.5 分钟）。瘦身后败的 8 条都在瘦身前那 9 条里，没有新的；少的那条是 `viewer-review.spec.ts:51`（位置差 0.12 像素，时好时坏）。这 8 条是打好的包和开发版本来就不一样的地方，用打好的包跑本来就过不了：`maintenance.spec.ts` 两条（要「源码 · git 工程」，打好的包是「启动自便携版」）、`model-channels.spec.ts:316`（要「SDK 附带的（源码运行）」，打好的包用本机装的 Claude Code）、`portable.spec.ts:20`（它自己模拟首次运行，打好的包启动方式不同）、`cli.spec.ts:35`、`task-head.spec.ts:22`、`tray.spec.ts:35`、`turn-start.spec.ts:74`。要让这些在打好的包上也过，得给它们各加「打好的包」的分支，这次不做。
+- **e2e `platform`、`relay`（打好的文件夹复制到 `%TEMP%` 再跑）**：前后一样，`platform` 2 过 6 败、`relay` 2 过 5 败，失败的是同一批。这两个 project 在打好的包上能证明的不多：平台模式的中转客户端要求在 AMO 平台里登录（页面停在「在 AMO 平台里登录」，用例要的是自己的注册页）。打好的平台连测试服务器的几条也一样过不了。能看出来的是：瘦身后的中转客户端能启动、从服务器取到界面、连上服务器（页面显示「服务器在线」）；平台能启动，「环境」页和「没有写权限」两条通过。中转 `issues-page` 两条不开客户端，前后都过。
+- **便携包冒烟**（`npm run package:portable` 的 zip，`smoke-portable.mjs`）：都过。Studio 解压、首次运行选数据目录、用本机的 Claude Code（2.1.316）和模拟模型聊天、拉起便签、文件夹外什么都没写；独立 Reviewer 打开改动；独立便签启动。zip：Studio 158 MB、Reviewer 158 MB、便签 151 MB、平台 151 MB。
+- 截图抽看：界面、字体和 master 上的截图一致（e2e 截图没提交，已还原）。
+- 还没做：真模型（Claude、Codex、DSH）和中转客户端、平台的手动检查，见「请你点的」。
