@@ -36,7 +36,10 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
 
   // DSH has no fork and no terminal of its own.
   await expect(page.getByTestId("session-fork")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "在终端打开" })).toHaveCount(0);
+  await page.getByTestId("session-more").click();
+  await expect(page.getByTestId("session-menu")).toBeVisible();
+  await expect(page.getByTestId("session-terminal")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // A message sent while a turn runs waits for the turn to end.
   const composer = page.getByLabel("输入消息");

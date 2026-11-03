@@ -105,12 +105,17 @@ test("hands a Claude session to a terminal and takes it back", async () => {
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
 
   // Test mode records the launch instead of opening a window (red line 7).
-  await page.getByRole("button", { name: "在终端打开" }).click();
+  // 在终端打开 is under ⋯ (2026-11-03, 问题 #15).
+  await page.getByTestId("session-more").click();
+  await page.getByTestId("session-terminal").click();
   const banner = page.getByTestId("handoff-banner");
   await expect(banner).toContainText("工作台暂时只读");
   await expect(page.getByTestId("writer")).toHaveText("已交给终端 · 只读");
   await expect(page.getByLabel("输入消息")).toBeDisabled();
-  await expect(page.getByRole("button", { name: "在终端打开" })).toHaveCount(0);
+  await page.getByTestId("session-more").click();
+  await expect(page.getByTestId("session-menu")).toBeVisible();
+  await expect(page.getByTestId("session-terminal")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await screenshot(studio.app, "stage-4", "S4-05-handoff", page);
 
   await banner.getByRole("button", { name: "立即收回" }).click();

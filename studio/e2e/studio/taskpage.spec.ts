@@ -54,7 +54,8 @@ test("task page: column, fork, new session, terminal and archive", async () => {
 
   // Open in terminal: test mode records the launch instead of opening a window.
   await rows.first().click();
-  await page.getByRole("button", { name: "在终端打开" }).click();
+  await page.getByTestId("session-more").click();
+  await page.getByTestId("session-terminal").click();
   await expect(page.getByTestId("toast")).toContainText("已在新终端窗口接入同一会话");
   await expect(page.getByTestId("toast").locator("code")).toHaveText(/^codex --remote ws:\/\/127\.0\.0\.1:\d+ --remote-auth-token-env AMO_STUDIO_CODEX_TOKEN resume \S+$/);
   await expect(page.getByTestId("writer")).toHaveText("终端已接入 · 共享");

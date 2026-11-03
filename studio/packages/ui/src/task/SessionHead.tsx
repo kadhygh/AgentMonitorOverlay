@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { Session } from "@amo-studio/protocol";
-import type { HostLink } from "../host/client.js";
+import { HostApiError, type HostLink } from "../host/client.js";
 import { openMarks } from "../marks/open.js";
 import { CopyId } from "../lib/CopyId.js";
-import { WorkdirActions } from "../files/WorkdirActions.js";
+import { openInEditor, revealInExplorer } from "../lib/openin.js";
+import { useVsCode } from "../files/FileLinks.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { EditableName } from "./EditableName.js";
 import { PopMenu, below, type Anchor } from "./TaskHead.js";
@@ -17,7 +18,10 @@ const WRITER = {
   archived: { label: "已归档 · 只读", color: "var(--text-dim)" },
 } as const;
 
-/** The session's name and model, who writes to it, and its actions: open outside, 在终端打开, 分支, more. */
+/**
+ * The session's name and model, who writes to it, and its actions: 追踪, 分支, 归档, and ⋯ (VS Code, 资源管理器, 在终端打开,
+ * 书签, 绑定到待办).
+ */
 export function SessionHead({
   link,
   session,
@@ -25,6 +29,8 @@ export function SessionHead({
   model,
   workdir,
   busy,
+  tracked,
+  onTrack,
   onRename,
   onTerminal,
   onFork,
@@ -41,6 +47,10 @@ export function SessionHead({
   /** The folder the session works in. */
   workdir: string | undefined;
   busy: boolean;
+  /** 追踪 (2026-11-03, 问题 #15): the task is pinned in Focus (focus/pins.ts), the same list Focus's own 置顶 keeps. */
+  tracked?: boolean;
+  /** Absent where Focus would not show the task (an archived one). */
+  onTrack?(): void;
   onRename(title: string): void;
   onTerminal(): void;
   onFork(): void;
@@ -54,6 +64,15 @@ export function SessionHead({
   // 远程 (step 2): a copy of another computer's session — its folder, terminal and branches are there
   // (its name and 归档 too, but they are done from here: sent there, 2026-10-30).
   const remote = session.runtime === "remote";
+  const vscode = useVsCode(link);
+  const fail = (err: unknown) => onError(err instanceof HostApiError ? err.message : String(err));
+  const dir = remote ? undefined : workdir;
+  // DSH sessions (stage 17) have no terminal of their own to hand to, and no fork.
+  const terminal = !session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub");
+  const pick = (f: () => void) => () => {
+    setSessionMenu(null);
+    f();
+  };
   return (
     <div className="thread-head" data-testid="thread-head">
       <span className="thread-title">
@@ -76,29 +95,29 @@ export function SessionHead({
         </span>
       )}
       <span className="spacer" />
-      {/* Where the session works, opened outside Studio: editor, folder, terminal. */}
-      <span className="bar-group" role="group" aria-label="在外部打开">
-        {workdir && !remote && <WorkdirActions link={link} path={workdir} onError={onError} compact />}
-        {/* DSH sessions (stage 17) have no terminal of their own to hand to, and no fork. */}
-        {!session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
-          <button
-            type="button"
-            className="bar-btn"
-            aria-label="在终端打开"
-            title={session.runtime === "claude" ? "在终端打开：交给终端里的 Claude 继续，工作台暂时只读" : "在终端打开：终端接入同一会话，两边都能输入"}
-            disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
-            onClick={onTerminal}
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-              <path d="m4.2 6.2 2.3 1.8-2.3 1.8M8.3 10.2h3.2" />
-            </svg>
-          </button>
-        )}
-      </span>
+      {/* 追踪 (2026-11-03, 问题 #15): the same as 置顶 in Focus — the task stays on top there; the button shows whether it
+          is. VS Code, 资源管理器 and 在终端打开 went into ⋯ to make room (the user's call, same issue). */}
+      {onTrack && (
+        <button
+          type="button"
+          className={tracked ? "bar-btn labeled track on" : "bar-btn labeled track"}
+          aria-pressed={!!tracked}
+          aria-label="在 Focus 里追踪"
+          title={tracked ? "追踪中：这个任务置顶在 Focus 最上面。点一下取消" : "追踪：把这个任务置顶在 Focus 最上面（和在 Focus 里点置顶一样）"}
+          onClick={onTrack}
+          data-testid="session-track"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.6" />
+            <circle cx="8" cy="8" r="2.1" className={tracked ? "dot on" : "dot"} />
+            <path d="M8 .9v2.2M8 12.9v2.2M.9 8h2.2M12.9 8h2.2" />
+          </svg>
+          <span className="bar-label">{tracked ? "追踪中" : "追踪"}</span>
+        </button>
+      )}
       {!session.archivedAt && !remote && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
         <>
-          <span className="head-sep" aria-hidden="true" />
+          {onTrack && <span className="head-sep" aria-hidden="true" />}
           <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={onFork} data-testid="session-fork">
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <circle cx="4.5" cy="3.5" r="1.7" />
@@ -118,7 +137,14 @@ export function SessionHead({
           <span className="bar-label">归档</span>
         </button>
       )}
-      <button type="button" className="bar-btn" aria-label="会话的更多操作" title={onBindTodo ? "更多：书签、绑定到待办" : "更多：书签"} onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
+      <button
+        type="button"
+        className="bar-btn"
+        aria-label="会话的更多操作"
+        title={["更多", [dir && vscode && "VS Code", dir && "资源管理器", terminal && "在终端打开", "书签", onBindTodo && "绑定到待办"].filter(Boolean).join("、")].join("：")}
+        onClick={(e) => setSessionMenu(below(e.currentTarget))}
+        data-testid="session-more"
+      >
         <svg viewBox="0 0 16 16" aria-hidden="true" className="filled">
           <circle cx="3.5" cy="8" r="1.3" />
           <circle cx="8" cy="8" r="1.3" />
@@ -127,29 +153,41 @@ export function SessionHead({
       </button>
       {sessionMenu && (
         <PopMenu at={sessionMenu} label="会话" onClose={() => setSessionMenu(null)} testId="session-menu">
+          {/* Where the session works, opened outside Studio (on the bar until 2026-11-03, 问题 #15). */}
+          {dir && vscode && (
+            <button type="button" role="menuitem" title={`VS Code 打开文件夹：${dir}`} onClick={pick(() => void openInEditor(link, { path: dir }).catch(fail))} data-testid="session-vscode">
+              VS Code 打开文件夹
+            </button>
+          )}
+          {dir && (
+            <button type="button" role="menuitem" title={`在资源管理器中显示：${dir}`} onClick={pick(() => void revealInExplorer(link, { path: dir }).catch(fail))} data-testid="session-explorer">
+              在资源管理器中显示
+            </button>
+          )}
+          {terminal && (
+            <button
+              type="button"
+              role="menuitem"
+              title={session.runtime === "claude" ? "交给终端里的 Claude 继续，工作台暂时只读" : "终端接入同一会话，两边都能输入"}
+              disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
+              onClick={pick(onTerminal)}
+              data-testid="session-terminal"
+            >
+              在终端打开
+            </button>
+          )}
+          {(!!dir || terminal) && <div className="menu-sep" role="separator" />}
           <button
             type="button"
             role="menuitem"
             title="书签：这个专题记下的文件和对话片段，可以拖进输入框"
-            onClick={() => {
-              setSessionMenu(null);
-              openMarks({ topicId: topicId ?? "none", workspaceId: session.workspaceId, ...(session.taskId ? { taskId: session.taskId } : {}) });
-            }}
+            onClick={pick(() => openMarks({ topicId: topicId ?? "none", workspaceId: session.workspaceId, ...(session.taskId ? { taskId: session.taskId } : {}) }))}
             data-testid="session-marks"
           >
             书签
           </button>
           {onBindTodo && (
-            <button
-              type="button"
-              role="menuitem"
-              title="选一条便签里的待办绑定到这个会话：在待办里点它就回到这里"
-              onClick={() => {
-                setSessionMenu(null);
-                onBindTodo();
-              }}
-              data-testid="session-bind-todo"
-            >
+            <button type="button" role="menuitem" title="选一条便签里的待办绑定到这个会话：在待办里点它就回到这里" onClick={pick(onBindTodo)} data-testid="session-bind-todo">
               绑定到待办…
             </button>
           )}

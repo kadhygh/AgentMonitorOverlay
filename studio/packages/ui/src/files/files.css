@@ -96,7 +96,3 @@ a.file-link.file-chip:hover .file-chip-name { text-decoration: underline; text-u
 .tc-dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--chat-caption); font-size: 11.5px; }
 .tc-tag { flex: none; color: var(--chat-caption); font-size: 11px; }
 .tc-row-stat { margin-left: auto; flex: none; }
-
-/* ---- the session header ---- */
-.workdir { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
-.workdir-path { min-width: 0; max-width: 320px; margin-right: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 11.5px; color: var(--text-faint); }

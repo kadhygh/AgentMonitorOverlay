@@ -200,12 +200,12 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   await expect(preview).toHaveCount(0);
   await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
 
-  // The header: the working directory with Explorer (and VS Code) next to it.
-  const workdir = page.getByTestId("workdir");
-  await expect(workdir).toBeVisible();
-  const folder = await nextOpenIn(page, () => workdir.getByRole("button", { name: "在资源管理器中显示" }).click());
+  // The session bar's ⋯ (2026-11-03, 问题 #15: out of the bar): the working directory in Explorer (and VS Code).
+  await page.getByTestId("session-more").click();
+  if (vscode) await expect(page.getByTestId("session-vscode")).toBeVisible();
+  const folder = await nextOpenIn(page, () => page.getByTestId("session-explorer").click());
   expect(folder.asked).toMatchObject({ path: ws.path, app: "explorer" });
-  if (vscode) await expect(workdir.getByRole("button", { name: "VS Code 打开文件夹" })).toBeVisible();
+  await expect(page.getByTestId("session-menu")).toHaveCount(0);
 });
 
 test("a finished turn lists the files it changed; each opens its diff, then the file; 用 git diff 看", async () => {

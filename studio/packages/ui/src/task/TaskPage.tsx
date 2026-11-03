@@ -44,7 +44,7 @@ import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
 import { RemoteBanner } from "./RemoteBanner.js";
 import { useStoredIds } from "../lib/storedIds.js";
-import { ALSO_MINE_KEY } from "../focus/pins.js";
+import { ALSO_MINE_KEY, PINNED_KEY } from "../focus/pins.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -133,6 +133,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // 「我也关心」 (2026-11-02, 问题 #8): this computer's Focus keeps listing the granted task as usual (focus/pins.ts), and
   // what agents open in the device's turns (查看包, Review) pops up here too (远程 Reviewer, the user 2026-11-02).
   const alsoMine = useStoredIds(ALSO_MINE_KEY);
+  // 追踪 on the session bar (2026-11-03, 问题 #15): Focus's own 置顶 list, followed across windows.
+  const focusPins = useStoredIds(PINNED_KEY);
   const [granting, setGranting] = useState(false);
   // Git Review: only for a project under git; the branch shows in the line under the title.
   const gitRepo = useIsGitRepo(link, task.workspaceId) && !copy;
@@ -655,6 +657,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               model={[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
               workdir={workdir}
               busy={busy}
+              {...(!task.archivedAt ? { tracked: focusPins.has(task.id), onTrack: () => focusPins.toggle(task.id) } : {})}
               onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
               onTerminal={() => void openTerminal(session)}
               onFork={() => void fork(session.id)}

@@ -214,9 +214,6 @@
 .thread-head { flex-wrap: nowrap; gap: 10px; padding: 6px 16px 6px 24px; min-height: 44px; box-sizing: border-box; }
 .thread-head .thread-title { min-width: 0; overflow: hidden; font-size: 15px; }
 .thread-model { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; padding: 2px 9px; border-radius: 10px; background: var(--chip); font-size: 12px; line-height: 16px; color: var(--text-dim); white-space: nowrap; }
-.workdir.compact { display: inline-flex; gap: 2px; }
-.bar-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
-.bar-group:empty { display: none; }
 .bar-btn { flex: none; height: 30px; min-width: 30px; padding: 0 7px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
 .bar-btn svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .bar-btn svg.filled { fill: currentColor; stroke: none; }
@@ -230,6 +227,12 @@
 .btn-ghost.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-text); color: var(--danger-soft-text); }
 .bar-btn.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-border); color: var(--danger-soft-text); }
 .thread-head .head-sep { height: 18px; margin: 0; }
+/* 追踪 (2026-11-03, 问题 #15): on while the task is pinned in Focus — tinted, the target's centre filled, 「追踪中」. */
+.bar-btn.track .dot { fill: none; }
+.bar-btn.track.on { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.bar-btn.track.on .dot { fill: currentColor; }
+.bar-btn.track.on:hover:not(:disabled) { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 16%, transparent); }
+.ctx-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 /* A narrow window keeps the icons and drops the words. */
 @media (max-width: 1000px) {
   .bar-btn .bar-label { display: none; }
