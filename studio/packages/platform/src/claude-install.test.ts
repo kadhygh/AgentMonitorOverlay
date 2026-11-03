@@ -149,6 +149,29 @@ describe("Claude Code 安装 (claude-install.ts)", () => {
     expect(f.seen.map((s) => s.path)).toEqual(["/official/2.1.316/manifest.json"]);
   });
 
+  it("a launcher `install` left as it was (a session ran it) is moved aside and replaced; what was moved aside goes once nothing runs from the launcher (2026-11-03)", async () => {
+    const { f, home, install, versionFile } = await setup();
+    const bin = join(home, ".local", "bin");
+    const launcher = join(bin, "claude.exe");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(launcher, "the old 2.1.314 launcher");
+    let running = [launcher.toUpperCase()];
+    await install("2.1.316", "server", { runningPaths: async () => running });
+    expect(readFileSync(launcher).equals(f.exe.get("2.1.316")!)).toBe(true);
+    expect(readFileSync(versionFile("2.1.316")).equals(f.exe.get("2.1.316")!)).toBe(true);
+    // Still running from the launcher (the old one, renamed): it stays aside.
+    const aside = readdirSync(bin).filter((n) => n.startsWith("claude.exe.amo-old-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(join(bin, aside[0]!), "utf8")).toBe("the old 2.1.314 launcher");
+    // Asking fails: nothing removed either.
+    await install("2.1.316", "server", { runningPaths: async () => Promise.reject(new Error("no PowerShell")) });
+    expect(readdirSync(bin).sort()).toEqual(["claude.exe", aside[0]]);
+    // The right launcher already: not touched; nothing runs from it now, so what was aside goes.
+    running = [];
+    await install("2.1.316", "server", { runningPaths: async () => running });
+    expect(readdirSync(bin)).toEqual(["claude.exe"]);
+  });
+
   it("goes on after a break; a server without the file stops and points at the official one, which goes on from the same part", async () => {
     const { f, install, versionFile } = await setup();
     f.cutNext = 40_000;

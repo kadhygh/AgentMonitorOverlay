@@ -1021,7 +1021,7 @@ export class Platform implements PlatformCalls {
     };
     try {
       const common = { downloadsDir: this.envDownloadsDir(it.id as "claude" | "codex"), runEnv: startEnv(this.options.env), onProgress };
-      if (it.id === "claude") await installClaude(version, from, { ...this.claudeOptions(), ...common, ...(this.options.claudeRun ? { run: this.options.claudeRun } : {}) });
+      if (it.id === "claude") await installClaude(version, from, { ...this.claudeOptions(), ...common, runningPaths: () => (this.options.runningPaths ?? runningExePaths)(), ...(this.options.claudeRun ? { run: this.options.claudeRun } : {}) });
       else await installCodex(version, from, { ...this.codexOptions(), ...common, npm: npm!, ...(this.options.npmRun ? { run: this.options.npmRun } : {}) });
       const fresh = await this.environment(true);
       const now = fresh.items.find((i) => i.id === it.id);

@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileSha256, unpackZstd } from "@amo-studio/locate/download";
 import { fetchPart, InstallError, machinePlatform, mirrorInfo, outputTail, runInstaller, toolSources, VERSION, type InstallFrom, type InstallProgress, type InstallRunner, type MachinePlatform, type ServerAccount, type ToolSources } from "./tool-mirror.js";
 
@@ -16,6 +16,11 @@ import { fetchPart, InstallError, machinePlatform, mirrorInfo, outputTail, runIn
 
 export const CLAUDE_OFFICIAL = "https://downloads.claude.ai/claude-code-releases";
 type Env = Record<string, string | undefined>;
+
+/** Claude Code's launcher, what `claude` on PATH runs: a copy of the version in use. */
+export const claudeLauncher = (env: Env) => join(env.USERPROFILE || homedir(), ".local", "bin", "claude.exe");
+/** A launcher moved aside while it ran (installClaude, step 5): claude.exe.amo-old-<time>. */
+const ASIDE = ".amo-old-";
 
 /** Where Claude Code's own installer keeps its versions. */
 export const claudeVersionsDir = (env: Env) => join(env.USERPROFILE || homedir(), ".local", "share", "claude", "versions");
@@ -58,6 +63,8 @@ export interface InstallOptions extends SourceOptions {
   stallMs?: number;
   /** Pauses between tries of the download (default 2, 5, 10 s). */
   retryDelaysMs?: number[];
+  /** The exe paths of the running programs (system.ts runningExePaths): a launcher moved aside is removed only when none runs from the launcher. */
+  runningPaths?: () => Promise<string[]>;
   signal?: AbortSignal;
 }
 
@@ -77,6 +84,31 @@ async function manifestEntry(url: string, version: string, platform: MachinePlat
   } catch {
     return null;
   }
+}
+
+/** Whether `file` is the one Anthropic's manifest describes. */
+async function isEntry(file: string, entry: ManifestEntry): Promise<boolean> {
+  try {
+    return statSync(file).size === entry.size && (await fileSha256(file)) === entry.sha256;
+  } catch {
+    return false;
+  }
+}
+
+/** Removes the launchers moved aside, when no program runs from the launcher (nor when that cannot be told). */
+async function dropAside(launcher: string, runningPaths?: () => Promise<string[]>): Promise<void> {
+  const dir = dirname(launcher);
+  const name = `${basename(launcher)}${ASIDE}`;
+  let old: string[];
+  try {
+    old = readdirSync(dir).filter((n) => n.startsWith(name));
+  } catch {
+    return;
+  }
+  if (!old.length) return;
+  const paths = runningPaths ? await runningPaths().catch(() => null) : [];
+  if (!paths || paths.some((p) => p.toLowerCase() === launcher.toLowerCase())) return;
+  for (const n of old) rmSync(join(dir, n), { force: true });
 }
 
 /**
@@ -151,5 +183,31 @@ export async function installClaude(version: string, from: InstallFrom, o: Insta
     const tail = outputTail(run.out);
     throw new InstallError(`文件已经下好、校验过了，但 claude install 没成功（${run.reason === "timeout" ? "等了 5 分钟还没做完" : "出错"}）${tail ? "：\n" + tail : ""}`);
   }
+
+  // 5. The launcher really is this version. 2026-11-03: the user's 「更新到 2.1.317」 left 2.1.316, twice — Studio's Claude
+  // sessions run %USERPROFILE%\.local\bin\claude.exe, Windows does not let a running exe be overwritten, and `install`
+  // said 「successfully installed! Version: 2.1.317」 all the same (tried here). A running exe can be renamed: the old one
+  // is moved aside (the sessions go on with it) and the version copied in its place. What was moved aside goes once no
+  // program runs from the launcher (a renamed program is still listed under its old name, so it cannot be told apart).
+  const launcher = claudeLauncher(o.env);
+  if (existsSync(launcher) && !(await isEntry(launcher, entry))) {
+    const aside = `${launcher}${ASIDE}${Date.now().toString(36)}`;
+    try {
+      renameSync(launcher, aside);
+    } catch (err) {
+      throw new InstallError(`${version} 已经装好，但 Claude Code 的启动程序（${launcher}）换不了（${err instanceof Error ? err.message : String(err)}）：先结束正在开着的 Claude Code（Studio 里的 Claude 会话、终端里的 claude），再点一次，不用重新下载。`);
+    }
+    try {
+      copyFileSync(final, launcher);
+    } catch (err) {
+      try {
+        renameSync(aside, launcher);
+      } catch {
+        // the old one stays aside; claude is then missing until the next try
+      }
+      throw new InstallError(`${version} 已经装好，但没能放到 ${launcher}（${err instanceof Error ? err.message : String(err)}）。再点一次试试。`);
+    }
+  }
+  await dropAside(launcher, o.runningPaths);
   return { version, from, out: run.out };
 }
