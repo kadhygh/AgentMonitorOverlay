@@ -42,7 +42,13 @@ export function markSeen(ids: readonly string[], at = new Date().toISOString(), 
   const data = readSeen(storage);
   for (const id of ids) data.seen[id] = at;
   const entries = Object.entries(data.seen);
-  if (entries.length > MAX_ENTRIES) data.seen = Object.fromEntries(entries.sort((a, b) => b[1].localeCompare(a[1])).slice(0, MAX_ENTRIES));
+  if (entries.length > MAX_ENTRIES) {
+    const sorted = entries.sort((a, b) => b[1].localeCompare(a[1]));
+    data.seen = Object.fromEntries(sorted.slice(0, MAX_ENTRIES));
+    // 2026-11-04: a session dropped here fell back to `since` and, ended after it, came back to Focus as 完成待审核
+    // (the oldest looked-at ones, all at once). What was dropped was seen by then: `since` moves up to it.
+    data.since = maxIso(data.since, sorted[MAX_ENTRIES]![1]);
+  }
   try {
     storage?.setItem(KEY, JSON.stringify(data));
   } catch {

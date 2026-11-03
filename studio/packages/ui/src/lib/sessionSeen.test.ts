@@ -121,3 +121,18 @@ describe("a task granted from another computer (远程, 2026-11-04)", () => {
     expect(withGrants(data, [{ id: "own" }], sessions)).toBe(data);
   });
 });
+
+describe("the seen record kept small", () => {
+  it("does not bring back the sessions it drops (2026-11-04)", () => {
+    const store = memory();
+    store.setItem("amo.sessionSeen", JSON.stringify({ since: "2026-10-01T00:00:00.000Z", seen: {} }));
+    const iso = (i: number) => new Date(Date.UTC(2026, 9, 2) + i * 60_000).toISOString();
+    // 501 sessions, each ended a minute before it was looked at.
+    for (let i = 1; i <= 501; i++) markSeen([`s${i}`], iso(i), store);
+    const data = readSeen(store);
+    expect(Object.keys(data.seen)).toHaveLength(500);
+    expect(data.seen.s1).toBeUndefined();
+    expect(unseenSessions([at("s1", "idle", iso(0.5)), at("s501", "idle", iso(500.5))], data)).toEqual([]);
+    expect(unseenSessions([at("later", "idle", iso(600))], data).map((s) => s.id)).toEqual(["later"]);
+  });
+});
