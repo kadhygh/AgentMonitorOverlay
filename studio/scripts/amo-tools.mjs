@@ -23,7 +23,9 @@ export const TOOLS = {
   platform: { name: "AMO Platform", zip: "AMO-Platform", pkg: "platform", description: "AMO 平台", platform: true, packages: ["platform", "account", "locate", "traymenu", "ui"] },
   // AMO 中转's desktop client installs and updates through the platform too (the user, 2026-10-28); its content still
   // comes from its service (relay-release.mjs). The portable zip (relay-release --shell) is for clients unpacked by hand.
-  relay: { name: "AMO Relay", zip: "AMO-Relay", pkg: "relay-app", description: "AMO 中转", platform: true, packages: ["relay-app", "relay", "account", "traymenu"] },
+  // locate (2026-11-03): @amo-studio/relay needs @amo-studio/locate/download since the tool mirror (its index loads
+  // server.js → mirror.js), so without it the client could not start; scripts/check-package.mjs found it.
+  relay: { name: "AMO Relay", zip: "AMO-Relay", pkg: "relay-app", description: "AMO 中转", platform: true, packages: ["relay-app", "relay", "locate", "account", "traymenu"] },
 };
 
 export function tool(id) {
