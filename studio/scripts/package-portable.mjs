@@ -15,8 +15,10 @@
 //   <out>/<Name>/resources/app/package.json          main: launch.js
 //   <out>/<Name>/resources/app/launch.js             runs the program, or the one --amo-app=<id> names (Studio starts
 //                                                    its 便签 as `AMO Studio.exe --amo-app=notes`)
-//   <out>/<Name>/resources/app/packages/<pkg>/       package.json + dist (+ assets)
-//   <out>/<Name>/resources/app/node_modules/         production dependencies, copied from studio/node_modules
+//   <out>/<Name>/resources/app/packages/<pkg>/       package.json + dist (+ assets): the packages reached by path (BY_PATH)
+//   <out>/<Name>/resources/app/node_modules/         production dependencies, copied from studio/node_modules, without
+//                                                    types, maps, docs and tests (shipped); @amo-studio/<pkg>: the
+//                                                    workspace packages imported by name, or files forwarding to packages/
 //   <out>/<Name>/使用说明.txt
 // No network: Electron comes from node_modules/electron/dist and dependencies from the installed tree.
 //
@@ -29,8 +31,9 @@
 // tool, so nothing would be shared. The portable zips (the tools used without the platform) keep their own exe icons.
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { TOOLS, studio, toolVersion } from "./amo-tools.mjs";
+import { checkPackage } from "./check-package.mjs";
 
 const args = process.argv.slice(2);
 const platformMode = args.includes("--platform");
@@ -44,6 +47,52 @@ const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 /** The program each package runs as (launch.js), when it is one. */
 const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js", platform: "packages/platform/dist/main.js", relay: "packages/relay-app/dist/main.js" };
+/**
+ * Workspace packages reached by their path in resources/app/packages: the programs (MAINS), the Host process Studio starts
+ * (packages/host/dist/bin.js, which finds its assets and the app folder from there) and the UI folder.
+ */
+const BY_PATH = new Set(["app", "host", "reviewer", "notes", "platform", "relay-app", "ui"]);
+
+// What a packed program carries (2026-11-03, plans/package-slim.md; the user settled the scope, only what is safe):
+// no type declarations and no source maps; in third-party packages also none of their docs, tests, examples and tool
+// configs. Licences (LICENSE, NOTICE, COPYING) stay, each package's as it ships. Kept on purpose: .ts sources, the empty
+// modules of generated types, @anthropic-ai/sdk, the fonts.
+const LICENCE = /^(licen[cs]e|notice|copying)/i;
+const NOT_RUN_DIR = /^(test|tests|__tests__|example|examples|docs|\.github|benchmark|bench)$/i;
+const NOT_RUN_FILE = [
+  /^(readme|changelog|history|authors|contributing)\b/i,
+  /\.(md|markdown)$/i,
+  /^\.(eslintrc|nycrc|editorconfig|prettierrc|prettierignore|nvmrc|npmignore|travis\.yml|runkit_example\.js)/,
+  /^tsconfig.*\.json$/,
+  /^eslint\.config\.[cm]?js$/,
+];
+/** Whether a file or folder goes into the program folder; `packageRoot`: a third-party package the path is in. */
+function shipped(path, packageRoot) {
+  const name = basename(path);
+  if (/\.d\.[cm]?ts$|\.map$|\.tsbuildinfo$/.test(name)) return false;
+  if (!packageRoot || LICENCE.test(name)) return true;
+  if (relative(packageRoot, path).split(sep).some((part) => NOT_RUN_DIR.test(part))) return false;
+  return !NOT_RUN_FILE.some((re) => re.test(name));
+}
+
+/** node_modules/@amo-studio/<name> of a package that lives in packages/: its package.json and one file per export. */
+function forwardPackage(name, from, app) {
+  const pkg = readJson(join(from, "package.json"));
+  const dir = join(app, "node_modules", "@amo-studio", name);
+  const exportsOut = {};
+  for (const [key, entry] of Object.entries(pkg.exports ?? { ".": { default: `./${pkg.main}` } })) {
+    const target = typeof entry === "string" ? entry : entry.default ?? entry.import;
+    const source = readFileSync(join(from, target), "utf8");
+    // `export *` passes on every named export but not a default one.
+    if (/^export default\b|^export \{[^}]*\bas default\b/m.test(source)) throw new Error(`@amo-studio/${name} 的 ${key} 有 export default，转发文件带不过去`);
+    const file = key === "." ? "index.js" : `${key.slice(2).replaceAll("/", "-")}.js`;
+    const to = relative(dir, join(app, "packages", name, target)).split(sep).join("/");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, file), `// Written by scripts/package-portable.mjs: @amo-studio/${name} lives in packages/${name}.\nexport * from "${to}";\n`);
+    exportsOut[key] = `./${file}`;
+  }
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: pkg.name, version: pkg.version, private: true, type: "module", exports: exportsOut }, null, 2));
+}
 
 /** How each tool of TOOLS is built: its packages, the programs its exe can run, its icon and its 使用说明. */
 const BUILDS = {
@@ -173,6 +222,17 @@ function size(p) {
   return total;
 }
 const mb = (n) => `${(n / 1024 / 1024).toFixed(0)} MB`;
+/** Takes away the folders `shipped` left empty (hono's dist/types…); true when `dir` itself is empty now. */
+function removeEmptyDirs(dir) {
+  let empty = true;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory() && removeEmptyDirs(join(dir, e.name))) rmSync(join(dir, e.name), { recursive: true });
+    else empty = false;
+  }
+  return empty;
+}
+/** Files under `p` (what the platform's manifest lists one by one). */
+const fileCount = (p) => readdirSync(p, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).length;
 
 function build(id) {
   const spec = { ...TOOLS[id], ...BUILDS[id] };
@@ -192,20 +252,23 @@ function build(id) {
   const KEEP_LOCALES = new Set(["en-US.pak", "zh-CN.pak", "zh-TW.pak"]);
   for (const name of readdirSync(join(target, "locales"))) if (!KEEP_LOCALES.has(name)) rmSync(join(target, "locales", name));
 
-  // 2. The program's own packages (only what runs: package.json, dist, assets).
+  // 2. The program's own packages (only what runs: package.json, dist, assets), each in one place (2026-11-03, plans/
+  //    package-slim.md: until then the ones imported by name were copied twice). In development npm links
+  //    node_modules/@amo-studio/<name> to packages/<name>; here a package reached by path stays in packages/, one only
+  //    imported by name goes to node_modules/@amo-studio/, and one that is both (host, reviewer) gets in node_modules only
+  //    a package.json and files passing its exports on to packages/ — what the link did.
+  const ownDeps = (name) => (name === "ui" ? [] : Object.keys(readJson(join(studio, "packages", name, "package.json")).dependencies ?? {}));
   for (const name of spec.packages) {
-    const dir = `packages/${name}`;
-    const from = join(studio, dir);
-    if (!existsSync(join(from, "dist"))) throw new Error(`${dir}/dist is missing: run npm run build first`);
-    cpSync(join(from, "dist"), join(app, dir, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) && !(platformMode && spec.platformSkip?.test(p)) });
-    if (name !== "ui") cpSync(join(from, "package.json"), join(app, dir, "package.json"));
+    const from = join(studio, "packages", name);
+    if (!existsSync(join(from, "dist"))) throw new Error(`packages/${name}/dist is missing: run npm run build first`);
+    const byPath = BY_PATH.has(name);
+    const byName = spec.packages.some((other) => other !== name && ownDeps(other).includes(`@amo-studio/${name}`));
+    const dest = byPath || !byName ? join(app, "packages", name) : join(app, "node_modules", "@amo-studio", name);
+    cpSync(join(from, "dist"), join(dest, "dist"), { recursive: true, filter: (p) => shipped(p) && !/\.test\.js$/.test(p) && !(platformMode && spec.platformSkip?.test(p)) });
+    if (name !== "ui") cpSync(join(from, "package.json"), join(dest, "package.json"));
     // Window, tray and exe icons (each tool's own since 2026-10-28, scripts/make-icons.mjs); the Codex model catalogue (host).
-    if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
-    // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
-    if (["protocol", "host", "reviewer", "relay", "account", "locate", "traymenu"].includes(name)) {
-      cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
-      cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
-    }
+    if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(dest, "assets"), { recursive: true });
+    if (byPath && byName) forwardPackage(name, from, app);
   }
 
   // 3. The launcher: this exe's own program, or the one --amo-app= names (only programs that are in this download).
@@ -243,7 +306,7 @@ function build(id) {
   writeFileSync(join(target, "使用说明.txt"), [...((platformMode && spec.platformReadme) || spec.readme), "", `版本 ${version}`, ""].join("\r\n"), "utf8");
 
   // 5. Production dependencies of the packages, with their dependency closure, copied from the installed tree. A package
-  //    is copied whole (including any nested node_modules npm put inside it).
+  //    is copied with any nested node_modules npm put inside it, less what does not run (shipped, 2026-11-03).
   const copied = new Set();
   function copyDep(name, fromDir) {
     if (copied.has(name) || name.startsWith("@types/") || name.startsWith("@amo-studio/") || spec.skipDeps?.test(name)) return;
@@ -254,7 +317,7 @@ function build(id) {
     if (!src) return; // an optional dependency for another platform
     if (src === nested) return; // copied along with its parent
     copied.add(name);
-    cpSync(src, join(app, "node_modules", name), { recursive: true, dereference: true });
+    cpSync(src, join(app, "node_modules", name), { recursive: true, dereference: true, filter: (p) => shipped(p, src) });
     const pkg = readJson(join(src, "package.json"));
     for (const dep of [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {})]) copyDep(dep, src);
   }
@@ -262,6 +325,7 @@ function build(id) {
     const pkg = readJson(join(studio, "packages", name, "package.json"));
     for (const dep of Object.keys(pkg.dependencies ?? {})) copyDep(dep, join(studio, "packages", name));
   }
+  removeEmptyDirs(app);
 
   const result = {
     program: spec.name,
@@ -272,7 +336,11 @@ function build(id) {
     seconds: Math.round((Date.now() - started) / 1000),
     dependencies: [...copied].sort(),
     size: { total: mb(size(target)), electron: mb(size(target) - size(app)), app: mb(size(app)) },
+    files: { total: fileCount(target), app: fileCount(app) },
   };
+  // 6. Every import written out in the folder finds its file (scripts/check-package.mjs), before anything is zipped.
+  const { unexpected } = checkPackage(target);
+  if (unexpected.length) throw new Error(`${spec.name}：这些 import 在打好的文件夹里找不到（scripts/check-package.mjs）：\n  ${unexpected.join("\n  ")}`);
   if (zip) {
     // Windows' own bsdtar writes zip archives (-a picks the format from the extension); nothing to install.
     const archive = join(outRoot, `${spec.zip}-${version}-portable.zip`);

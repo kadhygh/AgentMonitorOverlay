@@ -80,6 +80,8 @@ function resolvePackage(pkgDir, sub) {
 function resolveSpecifier(spec, fromFile, appDir) {
   if (spec.startsWith("node:") || BUILTIN.has(spec) || BUILTIN.has(spec.split("/")[0]) || spec === "electron" || spec.startsWith("electron/")) return { ok: true };
   if (/^[a-z]+:/i.test(spec) || spec.startsWith("/") || /^[A-Za-z]:\\/.test(spec)) return { ok: true }; // URLs, absolute paths: not ours to judge
+  // A declaration file is never loaded: that is a JSDoc type (`@type {import('./list.d.ts').X}`), not an import.
+  if (/\.d\.[cm]?ts$/.test(spec)) return { ok: true };
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") return fileOrDir(resolve(dirname(fromFile), spec)) ? { ok: true } : { ok: false, why: "文件不在" };
   const parts = spec.split("/");
   const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
