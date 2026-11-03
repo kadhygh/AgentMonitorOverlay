@@ -8,12 +8,14 @@ import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { resumeDownload } from "@amo-studio/locate/download";
 import { RelayClient } from "./client.js";
-import { checkMirrorSettings, ClaudeCodeMirror, DEFAULT_MIRROR_SETTINGS } from "./mirror.js";
+import { checkMirrorSettings, CLAUDE_CODE_SOURCE, CODEX_SOURCE, DEFAULT_MIRROR_SETTINGS, type MirrorOptions, type MirrorSource, ToolMirror } from "./mirror.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 
 // A stand-in for downloads.claude.ai: /latest, /<v>/manifest.json, /<v>/<platform>/claude.exe.zst with Range, and ways to
-// break a download part way (cut: the connection drops after n bytes; stall: it stops sending and hangs).
+// break a download part way (cut: the connection drops after n bytes; stall: it stops sending and hangs). The same server
+// stands in for npm's registry for Codex: /@openai%2fcodex/latest, /@openai%2fcodex/<v>-<platform> (dist.integrity) and
+// /@openai/codex/-/codex-<v>-<platform>.tgz (the build's zst bytes standing in for the .tgz).
 
 interface Build {
   exe: Buffer;
@@ -35,7 +37,7 @@ interface Fake {
 
 const fakes: Fake[] = [];
 const dirs: string[] = [];
-const mirrors: ClaudeCodeMirror[] = [];
+const mirrors: ToolMirror[] = [];
 
 afterEach(async () => {
   for (const m of mirrors.splice(0)) await m.close();
@@ -71,7 +73,15 @@ async function fake(versions: Record<string, string[]>, latest: string): Promise
       const platforms = Object.fromEntries(Object.entries(b).map(([p, x]) => [p, { binary: "claude.exe", checksum: f.wrongChecksum ? "0".repeat(64) : createHash("sha256").update(x.exe).digest("hex"), size: x.exe.length }]));
       return void res.end(JSON.stringify({ version: m[1], manifestSignatureEnforcement: "flag", platforms }));
     }
-    const z = /^\/([^/]+)\/([^/]+)\/claude\.exe\.zst$/.exec(path);
+    if (path === "/@openai%2fcodex/latest") return void res.end(JSON.stringify({ name: "@openai/codex", version: f.latest }));
+    const doc = /^\/@openai%2fcodex\/(\d+\.\d+\.\d+)-(win32-[a-z0-9]+)$/.exec(path);
+    if (doc) {
+      const b = f.builds.get(doc[1]!)?.[doc[2]!];
+      if (!b) return void (res.writeHead(404), res.end());
+      const integrity = `sha512-${createHash("sha512").update(f.wrongChecksum ? Buffer.from("x") : b.zst).digest("base64")}`;
+      return void res.end(JSON.stringify({ name: "@openai/codex", version: `${doc[1]}-${doc[2]}`, dist: { integrity, tarball: `${f.base}/@openai/codex/-/codex-${doc[1]}-${doc[2]}.tgz` } }));
+    }
+    const z = /^\/([^/]+)\/([^/]+)\/claude\.exe\.zst$/.exec(path) ?? /^\/@openai\/codex\/-\/codex-(\d+\.\d+\.\d+)-(win32-[a-z0-9]+)\.tgz$/.exec(path);
     const file = z ? f.builds.get(z[1]!)?.[z[2]!]?.zst : undefined;
     if (!file) return void (res.writeHead(404), res.end());
     const range = req.headers.range ?? null;
@@ -94,8 +104,8 @@ async function fake(versions: Record<string, string[]>, latest: string): Promise
   return f;
 }
 
-const mirror = (dir: string, f: Fake, extra: Partial<ConstructorParameters<typeof ClaudeCodeMirror>[0]> = {}) => {
-  const m = new ClaudeCodeMirror({ dir, base: f.base, retryDelaysMs: [10, 10, 10], stallMs: 300, ...extra });
+const mirror = (dir: string, f: Fake, extra: Partial<MirrorOptions> = {}, source: MirrorSource = CLAUDE_CODE_SOURCE) => {
+  const m = new ToolMirror(source, { dir, base: f.base, retryDelaysMs: [10, 10, 10], stallMs: 300, ...extra });
   mirrors.push(m);
   return m;
 };
@@ -117,7 +127,8 @@ describe("Claude Code 镜像 (mirror.ts)", () => {
     expect(readFileSync(file.path).equals(x64.zst)).toBe(true);
     expect(m.file("2.1.316", "win32-arm64")).toBeNull();
     expect(m.file("../2.1.316", "win32-x64")).toBeNull();
-    expect(JSON.parse(readFileSync(m.manifestFile("2.1.316")!, "utf8")).version).toBe("2.1.316");
+    expect(JSON.parse(readFileSync(m.metaFile("2.1.316", "manifest.json")!, "utf8")).version).toBe("2.1.316");
+    expect(m.metaFile("2.1.316", "index.json")).toBeNull();
     expect(m.platformView()).toMatchObject({ official: "2.1.316", preparing: null, versions: [{ version: "2.1.316" }] });
     await m.checkNow();
     expect(f.ranges).toHaveLength(1);
@@ -198,6 +209,40 @@ describe("Claude Code 镜像 (mirror.ts)", () => {
   });
 });
 
+describe("Codex 镜像 (mirror.ts, CODEX_SOURCE)", () => {
+  it("downloads npm's win32-x64 package of the latest, checks its sha512 and hands it out; its settings are its own", async () => {
+    const f = await fake({ "0.166.0": ["win32-x64", "win32-arm64"] }, "0.166.0");
+    f.faults.push({ kind: "cut", after: 40_000 });
+    const dir = tmp();
+    const claude = mirror(dir, f);
+    claude.saveSettings({ keep: 5 });
+    const m = mirror(dir, f, {}, CODEX_SOURCE);
+    expect(m.settings().keep).toBe(3);
+    await m.checkNow();
+    const view = m.adminView();
+    expect(view).toMatchObject({ tool: "codex", name: "Codex", status: { state: "idle", official: "0.166.0", error: null } });
+    const tgz = f.builds.get("0.166.0")!["win32-x64"]!.zst;
+    expect(view.versions[0]!.platforms).toEqual({ "win32-x64": { file: "codex-0.166.0-win32-x64.tgz", size: tgz.length, integrity: `sha512-${createHash("sha512").update(tgz).digest("base64")}` } });
+    expect(readFileSync(m.file("0.166.0", "win32-x64")!.path).equals(tgz)).toBe(true);
+    // It went on after the cut.
+    expect(f.ranges[1]).toMatch(/^bytes=\d+-$/);
+    expect(existsSync(join(dir, "codex", "0.166.0", "win32-x64", "codex-0.166.0-win32-x64.tgz"))).toBe(true);
+    expect(m.metaFile("0.166.0", "manifest.json")).toBeNull();
+    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"))).toMatchObject({ "claude-code": { keep: 5 } });
+    m.saveSettings({ keep: 2 });
+    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"))).toMatchObject({ "claude-code": { keep: 5 }, codex: { keep: 2 } });
+  });
+
+  it("throws away a package whose sha512 is not npm's", async () => {
+    const f = await fake({ "0.166.0": ["win32-x64"] }, "0.166.0");
+    f.wrongChecksum = true;
+    const m = mirror(tmp(), f, { retryDelaysMs: [] }, CODEX_SOURCE);
+    await m.checkNow();
+    expect(m.adminView().versions).toEqual([]);
+    expect(m.adminView().status.error).toMatch(/sha512 对不上/);
+  });
+});
+
 describe("resumeDownload (locate/download.ts)", () => {
   it("starts over when the server ignores Range, and is done at once when the file is already whole", async () => {
     const f = await fake({ "1.0.0": ["win32-x64"] }, "1.0.0");
@@ -223,17 +268,24 @@ describe("the service's mirror routes (server.ts)", () => {
     const f = await fake({ "2.1.316": ["win32-x64"] }, "2.1.316");
     const m = mirror(tmp(), f);
     const store = new RelayStore(":memory:");
-    const server = await startRelayServer({ store, host: "127.0.0.1", port: 0, mirror: m });
+    const codex = mirror(m.dir, f, {}, CODEX_SOURCE);
+    const server = await startRelayServer({ store, host: "127.0.0.1", port: 0, mirrors: { "claude-code": m, codex } });
     try {
       store.setAdminPassword("admin-pw");
       const admin = (method: string, path: string, body?: unknown) =>
         fetch(`${server.url}${path}`, { method, headers: { "content-type": "application/json", "x-amo-admin": "admin-pw" }, ...(body ? { body: JSON.stringify(body) } : {}) }).then(async (r) => ({ status: r.status, body: (await r.json()) as Record<string, any> }));
-      expect((await admin("POST", "/api/admin/mirror/settings", { everyMinutes: 5 })).status).toBe(400);
-      expect((await admin("POST", "/api/admin/mirror/settings", { everyMinutes: 30 })).body.settings.everyMinutes).toBe(30);
-      expect((await admin("POST", "/api/admin/mirror/check")).status).toBe(200);
+      expect((await admin("POST", "/api/admin/mirror/settings", { tool: "claude-code", everyMinutes: 5 })).status).toBe(400);
+      expect((await admin("POST", "/api/admin/mirror/settings", { tool: "claude-code", everyMinutes: 30 })).body.settings.everyMinutes).toBe(30);
+      expect((await admin("POST", "/api/admin/mirror/settings", { tool: "codex", enabled: false })).body.settings.enabled).toBe(false);
+      expect(codex.settings().everyMinutes).toBe(60);
+      expect((await admin("POST", "/api/admin/mirror/check", { tool: "codex" })).status).toBe(409);
+      expect((await admin("POST", "/api/admin/mirror/check", { tool: "nope" })).status).toBe(404);
+      expect((await admin("POST", "/api/admin/mirror/check", { tool: "claude-code" })).status).toBe(200);
       await m.checkNow();
       const view = (await admin("GET", "/api/admin/mirror")).body;
-      expect(view.versions[0].version).toBe("2.1.316");
+      expect(view.tools.map((t: { tool: string }) => t.tool)).toEqual(["claude-code", "codex"]);
+      expect(view.tools[0].versions[0].version).toBe("2.1.316");
+      expect(view.tools[1].status.state).toBe("off");
 
       const { key } = await new RelayClient(server.url).register("程序老李", "pw-li");
       const get = (path: string, headers: Record<string, string> = {}) => fetch(`${server.url}${path}`, { headers: { authorization: `Bearer ${key}`, ...headers } });
@@ -253,6 +305,8 @@ describe("the service's mirror routes (server.ts)", () => {
       expect((await get("/platform/mirror/claude-code/2.1.316/win32-arm64/claude.exe.zst")).status).toBe(404);
       expect((await get("/platform/mirror/claude-code/2.1.316/win32-x64/other.zst")).status).toBe(404);
       expect((await get("/platform/mirror/claude-code/2.1.300/manifest.json")).status).toBe(404);
+      expect((await get("/api/platform/mirror/codex")).status).toBe(200);
+      expect((await get("/api/platform/mirror/other")).status).toBe(404);
       // The platform's own resume goes through the service the same way.
       const dest = join(tmp(), "c.part");
       writeFileSync(dest, zst.subarray(0, 5000));

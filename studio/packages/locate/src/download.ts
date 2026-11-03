@@ -163,3 +163,13 @@ export async function fileSha256(file: string): Promise<string> {
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return hash.digest("hex");
 }
+
+/** npm's integrity of a file (`sha512-<base64>`), to compare with a package's `dist.integrity` (Codex, 2026-11-03). */
+export async function fileIntegrity(file: string): Promise<string> {
+  const hash = createHash("sha512");
+  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
+  return `sha512-${hash.digest("base64")}`;
+}
+
+/** An npm `dist.integrity` we can check: one sha512 (the registry gives that for every package published since 2017). */
+export const SHA512_INTEGRITY = /^sha512-[A-Za-z0-9+/]{86}==$/;

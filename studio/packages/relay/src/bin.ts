@@ -7,7 +7,7 @@ import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayH
 import { createRelayMcp } from "./mcp.js";
 import { RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
-import { ClaudeCodeMirror } from "./mirror.js";
+import { createMirrors } from "./mirror.js";
 import { RelayStore } from "./store.js";
 import { takeInbox } from "./inbox.js";
 import { newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
@@ -17,7 +17,8 @@ import { typeOf } from "./types.js";
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name 策划组] [--passphrase <邀请口令>]
 //         (passphrase also from AMO_RELAY_PASSPHRASE; public = client/ + downloads/, default: next to this file;
 //         platform dir = the AMO platform's files, platform.ts, also from AMO_RELAY_PLATFORM_DIR, default: none;
-//         [--mirror | --no-mirror]: Claude Code 镜像, mirror.ts, in <data>/mirror — on by default with a platform dir)
+//         [--mirror | --no-mirror]: 工具镜像 (Claude Code, Codex), mirror.ts, in <data>/mirror — on by default with a
+//         platform dir)
 //   passwd --data <dir> <名字> <新密码>        on the service machine, while it is stopped or running
 //   register --server <host:port> --name <名字> --password <密码> [--role …] [--passphrase …] | login --server … --name … --password …
 //   whoami | people | prompt | mcp
@@ -106,14 +107,15 @@ async function main(): Promise<void> {
       const platformGiven = flags["platform-dir"] ?? process.env.AMO_RELAY_PLATFORM_DIR;
       const platformDir = platformGiven && platformGiven !== "true" ? resolve(platformGiven) : undefined;
       const store = new RelayStore(join(data, "relay.db"));
-      // Claude Code 镜像 (mirror.ts, 2026-11-03): on the service that hands out the platform's tools (the team server), or
-      // with --mirror; --no-mirror turns it off. A service started only for trying things never downloads 122 MB on its own.
+      // 工具镜像 (mirror.ts, 2026-11-03: Claude Code, Codex): on the service that hands out the platform's tools (the team
+      // server), or with --mirror; --no-mirror turns it off. A service started only for trying things never downloads
+      // hundreds of MB on its own. Each tool can still be switched off on the admin page.
       const withMirror = flags["no-mirror"] ? false : !!flags.mirror || !!platformDir;
-      const mirror = withMirror ? new ClaudeCodeMirror({ dir: join(data, "mirror"), log: (line) => out(`${new Date().toISOString()} ${line}`) }) : undefined;
-      const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), dataDir: data, name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT, mirror });
-      mirror?.start();
-      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；Claude Code 镜像${mirror ? "开着（设置在管理页）" : "没开"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
-      const stop = () => void Promise.all([mirror?.close(), server.close()]).then(() => (store.close(), process.exit(0)));
+      const mirrors = withMirror ? createMirrors({ dir: join(data, "mirror"), log: (line) => out(`${new Date().toISOString()} ${line}`) }) : undefined;
+      const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), dataDir: data, name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT, mirrors });
+      for (const m of Object.values(mirrors ?? {})) m.start();
+      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；工具镜像（Claude Code、Codex）${mirrors ? "开着（设置在管理页）" : "没开"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
+      const stop = () => void Promise.all([...Object.values(mirrors ?? {}).map((m) => m.close()), server.close()]).then(() => (store.close(), process.exit(0)));
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
       return;

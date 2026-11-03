@@ -8,7 +8,7 @@ import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { APK_NAME, PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { ANDROID_DOWNLOAD, PublicFiles, landingPage, sendFile, sendHtml, sendRanged } from "./public.js";
-import { CLAUDE_CODE, type ClaudeCodeMirror } from "./mirror.js";
+import { MIRROR_TOOLS, type MirrorTool, type ToolMirror } from "./mirror.js";
 import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
 import { issuesPage } from "./issues-page.js";
@@ -53,9 +53,9 @@ export interface RelayServerOptions {
   dataDir?: string;
   /** How often 服务器状态 takes a point (default 5 min). Tests shorten it. */
   monitorEveryMs?: number;
-  /** Claude Code 镜像 (mirror.ts, 2026-11-03): its admin calls and, for people signed in, its files; none = 404. Started
-   *  and closed by whoever made it (bin.ts). */
-  mirror?: ClaudeCodeMirror;
+  /** 工具镜像 (mirror.ts, 2026-11-03: Claude Code, Codex): their admin calls and, for people signed in, their files;
+   *  none = 404. Started and closed by whoever made them (bin.ts). */
+  mirrors?: Partial<Record<MirrorTool, ToolMirror>>;
 }
 
 export interface RelayServer {
@@ -154,6 +154,12 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const serviceName = opts.name?.trim() || "AMO 中转";
   const files = new PublicFiles(opts.publicDir);
   const platform = new PlatformFiles(opts.platformDir);
+  const mirrorList = () => MIRROR_TOOLS.flatMap((t) => (opts.mirrors?.[t] ? [opts.mirrors[t]] : []));
+  const mirrorOf = (tool: unknown): ToolMirror => {
+    const m = MIRROR_TOOLS.includes(tool as MirrorTool) ? opts.mirrors?.[tool as MirrorTool] : undefined;
+    if (!m) throw new RelayError("not_found", `这个服务没有开${typeof tool === "string" && tool ? ` ${tool.slice(0, 40)} 的` : ""}镜像`);
+    return m;
+  };
   // 问题页 (2026-10-31, plans/issues.md): its tables in the same database.
   const issues = new IssueStore(store.db);
   // 待办 (2026-11-01, plans/todo.md): every account's todo lists, in the same database.
@@ -299,8 +305,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         return send(res, 200, { service: serviceName, invite: inviteNeeded(), members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
       }
       if (method === "GET" && path === "/api/admin/mirror") {
-        if (!opts.mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
-        return send(res, 200, opts.mirror.adminView());
+        if (!mirrorList().length) throw new RelayError("not_found", "这个服务没有开工具镜像");
+        return send(res, 200, { tools: mirrorList().map((m) => m.adminView()) });
       }
       if (method === "GET" && path === "/api/admin/monitor") {
         return send(res, 200, { everyMs: monitor.intervalMs, now: await monitor.now(), history: monitor.history() });
@@ -339,16 +345,16 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         store.setPassphrase(typeof body.passphrase === "string" ? body.passphrase : null);
         return send(res, 200, { invite: inviteNeeded() });
       }
-      // Claude Code 镜像 (mirror.ts): its card on the admin page.
+      // 工具镜像 (mirror.ts): a card per tool on the admin page; the body says which tool.
       if (path.startsWith("/api/admin/mirror")) {
-        const mirror = opts.mirror;
-        if (!mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
+        const mirror = mirrorOf(body.tool);
+        const { tool: _tool, ...settings } = body as Record<string, unknown>;
         if (method === "POST" && path === "/api/admin/mirror/settings") {
-          mirror.saveSettings(body);
+          mirror.saveSettings(settings);
           return send(res, 200, mirror.adminView());
         }
         if (method === "POST" && path === "/api/admin/mirror/check") {
-          if (!mirror.settings().enabled) throw new RelayError("conflict", "镜像关着：先打开它");
+          if (!mirror.settings().enabled) throw new RelayError("conflict", `${mirror.source.name} 镜像关着：先打开它`);
           // Answered at once; the page follows the check by asking again. A failure is the check's own (status.error).
           mirror.checkNow().catch(() => undefined);
           return send(res, 200, mirror.adminView());
@@ -358,20 +364,21 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     }
     // The AMO platform's files (platform.ts, plans/amo-lan-platform.md): for people signed in; objects also take ?key=,
     // so a download can be a plain URL.
-    // Claude Code 镜像 (mirror.ts, 2026-11-03), for people signed in like the platform's files: what is ready, Anthropic's
-    // manifest of a ready version, and its .zst with Range (a broken download goes on).
+    // 工具镜像 (mirror.ts, 2026-11-03), for people signed in like the platform's files: what is ready (/api/platform/mirror/
+    // <tool>), a ready version's own file (Claude Code: Anthropic's manifest) and its platform files with Range (a broken
+    // download goes on).
     if (method === "GET" && (path.startsWith("/api/platform/mirror/") || path.startsWith("/platform/mirror/"))) {
       auth(req, url);
-      const mirror = opts.mirror;
-      if (!mirror) throw new RelayError("not_found", "这个服务没有开 Claude Code 镜像");
-      if (path === `/api/platform/mirror/${CLAUDE_CODE}`) return send(res, 200, mirror.platformView());
-      const parts = path.slice(`/platform/mirror/${CLAUDE_CODE}/`.length).split("/");
-      if (path.startsWith(`/platform/mirror/${CLAUDE_CODE}/`) && parts.length === 2 && parts[1] === "manifest.json") {
-        const file = mirror.manifestFile(parts[0]!);
-        if (!file) throw new RelayError("not_found", `镜像里没有 ${parts[0]}`);
+      const api = path.startsWith("/api/");
+      const [tool = "", ...parts] = path.slice(api ? "/api/platform/mirror/".length : "/platform/mirror/".length).split("/");
+      const mirror = mirrorOf(tool);
+      if (api && !parts.length) return send(res, 200, mirror.platformView());
+      if (!api && parts.length === 2) {
+        const file = mirror.metaFile(parts[0]!, parts[1]!);
+        if (!file) throw new RelayError("not_found", `镜像里没有 ${parts.join(" ")}`);
         return sendFile(res, file);
       }
-      if (path.startsWith(`/platform/mirror/${CLAUDE_CODE}/`) && parts.length === 3) {
+      if (!api && parts.length === 3) {
         const got = mirror.file(parts[0]!, parts[1]!);
         if (!got || basename(got.path) !== parts[2]) throw new RelayError("not_found", `镜像里没有 ${parts.join(" ")}`);
         return sendRanged(req, res, got.path, got.size);
