@@ -4,6 +4,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { readJsonFile, updateJsonFile, writeJsonFile } from "@amo-studio/account";
 import type { Source } from "./client.js";
 import { compareVersions, isToolId, isVersion, PlatformError, safeParts, type Manifest } from "./manifest.js";
+import { discard, emptyTrash, present } from "./remove.js";
+import { foldersInUse } from "./system.js";
 
 /** Errors Windows gives while another program has a file open: an antivirus scanning what was just written. */
 const HELD = new Set(["EPERM", "EACCES", "EBUSY"]);
@@ -47,6 +49,12 @@ export async function renamePatiently(from: string, to: string, waitMs = 30_000,
 // or unreadable, and by repair(); every path is checked (there, a file, the manifest's size) before it is linked, and
 // one that is not is dropped and the file downloaded instead. Each tool's folder holds only its own links: removing a
 // version or uninstalling a tool removes its names, the other tools' names of the same files stay.
+//
+// Removing (2026-11-03, remove.ts): folders go into apps\.trash and are removed there file by file — rmSync could not
+// remove hard links of a running program in the platform's Electron, so old versions piled up. A version folder a
+// program runs from is never removed (unlink would take it): the running programs' exe paths are asked first.
+// Downloaded files are kept as hard links in apps\.objects\<sha256> until their install went through, so an install
+// that broke off goes on with what it had (each file is checked by its size; it was checked by sha256 when it came).
 
 export interface VersionRecord {
   manifest: Manifest;
@@ -96,6 +104,17 @@ export interface FileIndex {
 
 const KEEP = 2;
 const PARALLEL = 4;
+/** apps\.objects: downloaded files kept for the next try (see above); older ones go on a start. */
+const OBJECTS = ".objects";
+const OBJECTS_DAYS = 7;
+
+export interface InstallOptions {
+  /**
+   * 用完整包 (2026-11-03): every file from `source`, none linked from what is here, and a kept copy of the version that
+   * nothing runs from put together again (it may be what is broken).
+   */
+  fresh?: boolean;
+}
 
 export interface InstallerOptions {
   /** <the platform's folder>\apps (self-update.ts's root) */
@@ -106,6 +125,8 @@ export interface InstallerOptions {
   indexFile?: string;
   /** Whether a program runs from this tool's folder (uninstall refuses then). */
   isRunning?: (tool: string) => Promise<boolean>;
+  /** The exe paths of the running programs (system.ts runningExePaths): a version folder one runs from is not removed. */
+  runningPaths?: () => Promise<string[]>;
   now?: () => Date;
 }
 
@@ -148,6 +169,70 @@ export class Installer {
 
   get indexFile(): string {
     return this.options.indexFile ?? join(this.options.appsDir, "file-index.json");
+  }
+
+  // ---- removing, and the files kept for the next try
+
+  /** Which folders a program runs from now. Not known (the check failed): all of them, so nothing is removed this time. */
+  private async usedNow(): Promise<(dir: string) => boolean> {
+    const paths = this.options.runningPaths ? await this.options.runningPaths().catch(() => null) : [];
+    if (!paths) return () => true;
+    return (dir) => foldersInUse(paths, [dir])[0] === true;
+  }
+
+  private discard(path: string): boolean {
+    return discard(path, this.options.appsDir);
+  }
+
+  /**
+   * On a start: removes what apps\.trash still holds and the kept downloads older than a week (an install nobody tried
+   * again). Returns how many entries of .trash are left.
+   */
+  emptyTrash(): number {
+    const objects = join(this.options.appsDir, OBJECTS);
+    if (existsSync(objects)) {
+      const old = this.now().getTime() - OBJECTS_DAYS * 86_400_000;
+      for (const name of readdirSync(objects)) {
+        try {
+          if (statSync(join(objects, name)).mtimeMs < old) unlinkSync(join(objects, name));
+        } catch {
+          // held: the next start
+        }
+      }
+    }
+    return emptyTrash(this.options.appsDir);
+  }
+
+  private keptObject(sha256: string, size: number): string | null {
+    const file = join(this.options.appsDir, OBJECTS, sha256);
+    try {
+      const st = statSync(file);
+      return st.isFile() && st.size === size ? file : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private keepObject(file: string, sha256: string): void {
+    const dir = join(this.options.appsDir, OBJECTS);
+    try {
+      mkdirSync(dir, { recursive: true });
+      linkSync(file, join(dir, sha256));
+    } catch {
+      // there already (another install of the same file), or no hard links here: only the next try loses it
+    }
+  }
+
+  private dropObjects(files: Manifest["files"]): void {
+    const dir = join(this.options.appsDir, OBJECTS);
+    if (!existsSync(dir)) return;
+    for (const f of files) {
+      try {
+        unlinkSync(join(dir, f.sha256));
+      } catch {
+        // not there
+      }
+    }
   }
 
   // ---- the sha256 index of the files here
@@ -269,7 +354,7 @@ export class Installer {
    * Cleans up after a run that stopped half way: a switch between removing `current` and renaming the new link, .partial
    * folders, version folders without a record (or records without a folder), and versions beyond the 2 kept.
    */
-  repair(tool: string): void {
+  async repair(tool: string): Promise<void> {
     const dir = this.toolDir(tool);
     if (!existsSync(dir)) {
       this.indexDrop(`${tool}/`);
@@ -280,13 +365,17 @@ export class Installer {
     if (!exists(link) && exists(`${link}.next`)) renameSync(`${link}.next`, link);
     else if (exists(`${link}.next`)) removeLink(`${link}.next`);
     this.relink(tool);
+    // Which programs run is asked only when something may go (it takes a moment).
+    let used: ((dir: string) => boolean) | null = null;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
-      if (e.name.startsWith(".partial-") || e.name.endsWith(".tmp")) rmSync(p, { recursive: true, force: true, maxRetries: 3 });
-      else if (e.isDirectory() && e.name !== "current" && isVersion(e.name) && !existsSync(`${p}.json`)) this.tryRemove(p);
-      else if (e.isFile() && e.name.endsWith(".json") && !existsSync(p.slice(0, -5))) rmSync(p, { force: true });
+      if (e.name.startsWith(".partial-") || e.name.endsWith(".tmp")) this.discard(p);
+      else if (e.isDirectory() && e.name !== "current" && isVersion(e.name) && !existsSync(`${p}.json`)) {
+        used ??= await this.usedNow();
+        if (!used(p)) this.discard(p);
+      } else if (e.isFile() && e.name.endsWith(".json") && !existsSync(p.slice(0, -5))) rmSync(p, { force: true });
     }
-    this.prune(tool);
+    await this.prune(tool, used);
     this.syncPrograms(tool);
     // The index's entries for this tool, again from its records.
     this.indexDrop(`${tool}/`);
@@ -298,7 +387,7 @@ export class Installer {
    * Installs `version` of `tool` from `source` and makes it current. Already installed (kept): only `current` moves.
    * `onProgress` is called as files are linked and bytes arrive.
    */
-  async install(tool: string, version: string, source: Source, onProgress: (p: InstallProgress) => void = () => undefined): Promise<InstallResult> {
+  async install(tool: string, version: string, source: Source, onProgress: (p: InstallProgress) => void = () => undefined, opts: InstallOptions = {}): Promise<InstallResult> {
     if (!isVersion(version)) throw new PlatformError("bad_data", `版本号不对：${version}`);
     const dir = this.toolDir(tool);
     mkdirSync(dir, { recursive: true });
@@ -307,12 +396,18 @@ export class Installer {
     const report = () => onProgress({ ...progress });
     report();
 
-    const kept = this.versions(tool).find((v) => v.version === version);
+    let kept = this.versions(tool).find((v) => v.version === version);
+    if (kept && opts.fresh && !kept.current && !(await this.usedNow())(kept.dir)) {
+      rmSync(`${kept.dir}.json`, { force: true });
+      this.indexDrop(`${tool}/${version}/`);
+      this.discard(kept.dir);
+      kept = undefined;
+    }
     if (kept) {
       progress.phase = "switching";
       report();
       this.activate(tool, version);
-      const leftover = this.prune(tool);
+      const leftover = await this.prune(tool);
       this.saveIndex();
       return { version, previous, reused: 0, downloaded: 0, downloadedBytes: 0, switchedOnly: true, leftover };
     }
@@ -329,8 +424,10 @@ export class Installer {
       // Files this machine has, by sha256, in any kept version of any tool (file-index.json; each path checked there and
       // of the manifest's size: a file someone changed by hand, or one gone since, is not reused).
       const have = new Map<string, string | null>();
+      // And the files a try before this one downloaded (apps\.objects). None of either for 用完整包.
       const findHere = (f: Manifest["files"][number]) => {
-        if (!have.has(f.sha256)) have.set(f.sha256, this.findHere(f.sha256, f.size));
+        if (opts.fresh) return null;
+        if (!have.has(f.sha256)) have.set(f.sha256, this.findHere(f.sha256, f.size) ?? this.keptObject(f.sha256, f.size));
         return have.get(f.sha256)!;
       };
 
@@ -401,6 +498,7 @@ export class Installer {
           }
           // A short count from the server would leave the bar short: the file is right, so it is all there.
           progress.doneBytes += m.size - got;
+          if (!opts.fresh) this.keepObject(tmp, sha);
           await renamePatiently(tmp, first);
           progress.doneFiles++;
           for (const more of m.paths.slice(1)) {
@@ -416,16 +514,12 @@ export class Installer {
       progress.phase = "switching";
       report();
       // A folder by this name without a record is a leftover from a run that stopped; a complete one was found above.
-      if (existsSync(target)) rmSync(target, { recursive: true, force: true, maxRetries: 3 });
+      if (present(target)) this.discard(target);
       await renamePatiently(partial, target);
     } catch (err) {
       // What went wrong is `err`: a folder that cannot be removed now either (held the same way) is left for the next
-      // start or install to remove, and must not hide it (it did, 2026-11-03).
-      try {
-        rmSync(partial, { recursive: true, force: true, maxRetries: 3 });
-      } catch {
-        // left for later
-      }
+      // start or install to remove, and must not hide it (it did, 2026-11-03). The files it downloaded stay in .objects.
+      this.discard(partial);
       // Paths found missing on the way are forgotten all the same.
       this.saveIndex();
       throw err;
@@ -433,8 +527,9 @@ export class Installer {
     const at = this.now().toISOString();
     writeJsonFile(join(dir, `${version}.json`), { manifest, installedAt: at, activatedAt: at } satisfies VersionRecord);
     this.indexAdd(tool, version, manifest.files);
+    this.dropObjects(manifest.files);
     this.activate(tool, version);
-    const leftover = this.prune(tool);
+    const leftover = await this.prune(tool);
     this.saveIndex();
     return { version, previous, reused: progress.reused, downloaded: manifest.files.length - progress.reused, downloadedBytes: progress.totalBytes, switchedOnly: false, leftover };
   }
@@ -460,11 +555,7 @@ export class Installer {
     this.indexDrop(`${tool}/`);
     this.saveIndex();
     if (!existsSync(dir)) return;
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
-    } catch (err) {
-      throw new PlatformError("io", `${name} 的文件夹没删干净（${err instanceof Error ? err.message : String(err)}），可能有程序还在用里面的文件。`);
-    }
+    if (!this.discard(dir)) throw new PlatformError("io", `${name} 的文件夹没删干净（${dir}），可能有程序还在用里面的文件。`);
   }
 
   /**
@@ -504,26 +595,26 @@ export class Installer {
     this.syncPrograms(tool);
   }
 
-  /** Keeps the current version and the one used before it; removes the rest. Returns those still in use. */
-  private prune(tool: string): string[] {
+  /**
+   * Keeps the current version and the one used before it; removes the rest but those a program runs from (they go on a
+   * later install or start). Returns the versions left.
+   */
+  private async prune(tool: string, known: ((dir: string) => boolean) | null = null): Promise<string[]> {
     const leftover: string[] = [];
-    for (const v of this.versions(tool).slice(KEEP)) {
-      if (this.tryRemove(v.dir)) {
-        rmSync(`${v.dir}.json`, { force: true });
-        this.indexDrop(`${tool}/${v.version}/`);
-      } else leftover.push(v.version);
+    const surplus = this.versions(tool).slice(KEEP);
+    if (!surplus.length) return leftover;
+    const used = known ?? (await this.usedNow());
+    for (const v of surplus) {
+      if (used(v.dir)) {
+        leftover.push(v.version);
+        continue;
+      }
+      // The record first: a folder without one is never taken for a version, and repair removes what is left of it.
+      rmSync(`${v.dir}.json`, { force: true });
+      this.indexDrop(`${tool}/${v.version}/`);
+      if (!this.discard(v.dir)) leftover.push(v.version);
     }
     return leftover;
-  }
-
-  private tryRemove(dir: string): boolean {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return true;
-    } catch {
-      // A program still runs from it (Windows keeps its exe locked): it goes on a later install or start.
-      return false;
-    }
   }
 
   /** programs.json: the tool's entry follows `current` (gone when nothing is installed). Other tools' entries stay. */

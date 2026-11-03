@@ -519,6 +519,37 @@ test("平台更新: tools go into the unpacked folder's apps → 更新平台 �
   expect([realHome, realLocal].map((p) => (existsSync(p) ? statSync(p).mtimeMs : null))).toEqual(before);
 });
 
+test("用完整包更新 (2026-11-03): the way out when 更新平台 gets stuck — the whole zip on Electron's network stack, going on where it broke off, unpacked, 重启平台", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" } });
+  try {
+    own.publish("platform", "0.9.2", { "AMO Platform.exe": "a stand-in platform", "resources/app/package.json": '{"version":"0.9.2"}', "resources/app/main.js": "platform 0.9.2", "使用说明.txt": "0.9.2" }, { name: "AMO Platform", exe: "AMO Platform.exe", notes: "- 平台更新卡住时可以用完整包更新" });
+    const v092 = () => join(root, "TOOLS", "AMO Platform", "apps", "platform", "0.9.2");
+    const { page } = await launch([], (r) => asPlatform(r, join(unpackedPlatform(r, "TOOLS"), "AMO Platform.exe"), "0.9.1"));
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await page.getByTestId("pf-self-hint").click();
+    const section = page.getByRole("region", { name: "平台更新" });
+    await expect(section.getByTestId("pf-self-full")).toContainText("「更新平台」卡住时可以用完整包更新");
+    await screenshot(app!, "platform", "P44-self-full-offered", page);
+    // Breaks off once on the way: the second request goes on from there (Range), all on Electron's session.fetch.
+    own.breakZip(1);
+    await section.getByTestId("pf-self-full-button").click();
+    await expect(section.getByTestId("pf-self-status")).toHaveText("✓ 0.9.2 已装好，点「重启平台」换成新版", { timeout: 20_000 });
+    await expect(section.getByTestId("pf-self-result")).toHaveText(/已用完整包装好 0\.9\.2/);
+    const zips = own.requests.filter((r) => r.startsWith("GET /platform/zip/"));
+    expect(zips).toHaveLength(2);
+    expect(readFileSync(join(v092(), "resources", "app", "main.js"), "utf8")).toBe("platform 0.9.2");
+    expect(readFileSync(join(v092(), "使用说明.txt"), "utf8")).toBe("0.9.2");
+    await expect(section.getByTestId("pf-self-full")).toHaveCount(0);
+    await screenshot(app!, "platform", "P45-self-full-done", page);
+  } finally {
+    await own.close();
+  }
+});
+
 test("a platform folder it cannot write to (no administrator rights): 工具 says to move it; 安装 and 更新平台 are greyed out", async () => {
   const own = await startFakePlatformServer({ users: { 小王: "secret" } });
   const who = `${process.env.USERDOMAIN ?? "."}\\${process.env.USERNAME ?? ""}`;

@@ -458,7 +458,7 @@ function studioRestartLine(t: ToolView): string | null {
 // after the download, then the real width from 0): empty until the download, its bytes while it runs, full while
 // switching. The sliding block only for what has no amount at all (uninstalling, going back to a kept version).
 function BarFill({ task }: { task: TaskView }) {
-  const fraction = task.phase === "manifest" || task.phase === "linking" ? 0 : task.phase === "downloading" ? (task.totalBytes > 0 ? Math.min(1, task.doneBytes / task.totalBytes) : 1) : task.kind === "install" || task.kind === "update" ? 1 : null;
+  const fraction = task.phase === "manifest" || task.phase === "linking" ? 0 : task.phase === "downloading" || task.phase === "package" ? (task.totalBytes > 0 ? Math.min(1, task.doneBytes / task.totalBytes) : task.phase === "package" ? 0 : 1) : task.phase === "unpacking" ? null : task.kind === "install" || task.kind === "update" ? 1 : null;
   if (fraction === null) return <div className="pf-bar-fill busy" />;
   return <div className="pf-bar-fill" style={{ width: `${(100 * fraction).toFixed(1)}%` }} />;
 }
@@ -475,6 +475,10 @@ function taskLine(task: TaskView): string {
       return task.kind === "rollback" ? `正在回到 ${task.version}…` : `正在切换到 ${task.version}…`;
     case "removing":
       return "正在卸载…";
+    case "package":
+      return task.totalBytes > 0 ? `正在下载完整包 · ${formatBytes(task.doneBytes)} / ${formatBytes(task.totalBytes)}` : "正在下载完整包…";
+    case "unpacking":
+      return "正在解压完整包…";
   }
 }
 
@@ -852,6 +856,16 @@ function SelfSection({ view }: { view: PlatformView }) {
             ×
           </button>
         </div>
+      )}
+      {/* 2026-11-03, the user: when 更新平台 gets stuck, a way out from here — the whole package, another download. */}
+      {s.standing === "update" && !s.task && (
+        <p className="pf-hint" data-testid="pf-self-full">
+          {s.result?.tone === "error" ? "更新不了？可以" : "「更新平台」卡住时可以"}
+          <button type="button" className="pf-link" disabled={busy || !online || !view.root.writable} onClick={() => void call("updateSelfFull")} data-testid="pf-self-full-button">
+            用完整包更新
+          </button>
+          ：一次下载整个平台，换一条下载路，断了再点会接着下。
+        </p>
       )}
       {s.notes && (s.standing === "update" || s.standing === "restart") && (
         <details className="pf-notes pf-self-notes" open={s.standing === "update"}>

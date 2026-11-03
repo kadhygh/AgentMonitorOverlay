@@ -7,8 +7,8 @@ export type Channel = "stable" | "test";
 export interface TaskView {
   kind: "install" | "update" | "rollback" | "uninstall";
   version: string | null;
-  /** manifest → linking → downloading → switching. */
-  phase: "manifest" | "linking" | "downloading" | "switching" | "removing";
+  /** manifest → linking → downloading → switching; 用完整包: manifest → package (the zip) → unpacking → linking → … */
+  phase: "manifest" | "linking" | "downloading" | "switching" | "removing" | "package" | "unpacking";
   doneBytes: number;
   totalBytes: number;
   doneFiles: number;
@@ -174,6 +174,8 @@ export interface PlatformCalls {
   copyInstallCommand(): Promise<void>;
   /** 更新平台: the channel's platform into <root>\apps\platform, made current; the running one stays until 重启平台. */
   updateSelf(): Promise<void>;
+  /** 用完整包更新 (2026-11-03): the platform from one zip, when 更新平台 does not go through. */
+  updateSelfFull(): Promise<void>;
   /** 重启平台 / 打开那个: <root>\apps\platform\current's platform starts and this one quits. */
   restartSelf(): Promise<void>;
   /** 知道了 on the platform's update result. */

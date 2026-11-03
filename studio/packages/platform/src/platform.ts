@@ -1,9 +1,11 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { amoHome, AccountError, clearAccount, fetchProfile, login, logout, platformFile, programsFile, readAccount, readJsonFile, register, serverInfo, updateProfile, type Account, type Env, type Protector } from "@amo-studio/account";
 import { PlatformClient } from "./client.js";
 import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./entry.js";
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
+import { packageSource, unpackedRoot, unpackZip } from "./package-install.js";
+import { discard } from "./remove.js";
 import { channelVersion, compareVersions, PlatformError, type Channels, type ManifestSummary } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { NOTES_SETTINGS_ARG, NOTES_TODO_ARG, QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
@@ -55,6 +57,10 @@ export interface PlatformOptions {
   fetch?: typeof fetch;
   /** Exe paths of running processes (tests hand in their own). */
   runningPaths?: () => Promise<string[]>;
+  /** 用完整包's download: Electron's net.fetch in the app (another network stack than the update's); tests: `fetch`. */
+  packageFetch?: typeof fetch;
+  /** 用完整包's unpacking (default: Windows' tar). */
+  unpack?: (zip: string, dir: string) => Promise<void>;
   launch?: (spec: LaunchSpec) => Promise<void>;
   /** 环境's 更新 (tests stand in for npm and claude update). */
   runUpdate?: (plan: UpdatePlan, env: Record<string, string>) => Promise<UpdateRun>;
@@ -124,6 +130,7 @@ export class Platform implements PlatformCalls {
       appsDir: join(this.place.root, "apps"),
       programsFile: programsFile(options.env),
       isRunning: async (tool) => (await this.checkRunning([tool]))[tool] === true,
+      runningPaths: () => (this.options.runningPaths ?? runningExePaths)(),
     });
   }
 
@@ -231,9 +238,14 @@ export class Platform implements PlatformCalls {
       })
       .catch(() => undefined);
     if (this.rootView.writable) {
+      try {
+        this.installer.emptyTrash();
+      } catch {
+        // the next start
+      }
       for (const tool of this.installer.tools()) {
         try {
-          this.installer.repair(tool);
+          await this.installer.repair(tool);
         } catch {
           // a folder in use: left for the next time
         }
@@ -821,6 +833,77 @@ export class Platform implements PlatformCalls {
     } catch (err) {
       this.selfResult = { tone: "error", text: `平台没更新成功：${this.failed(err)}` };
     } finally {
+      this.selfTask = null;
+      this.changed();
+    }
+  }
+
+  /**
+   * 用完整包更新 (2026-11-03, the user: when 更新平台 gets stuck — it did, 「中途断了（terminated）」 — there should be a way
+   * out from here): the channel's platform as one zip, downloaded on Electron's own network stack and going on where it
+   * stopped (also on a later click), unpacked with Windows' tar, then installed from the unpacked files like any update
+   * (package-install.ts: each checked against the manifest; fresh, nothing linked from the tools' files). 重启平台 then
+   * as after 更新平台. The zip and the unpacked folder are in apps\.downloads; the zip stays when it did not go through.
+   */
+  async updateSelfFull(): Promise<void> {
+    if (this.selfTask) return;
+    const done = (tone: "ok" | "warn" | "error", text: string) => {
+      this.selfResult = { tone, text };
+      this.changed();
+    };
+    if (this.place.kind === "dev") return done("warn", "这是从源码启动的开发版，不自己更新。");
+    const readonly = this.readonlyText();
+    if (readonly) return done("error", readonly);
+    const client = this.client;
+    if (!client || !this.channels) return done("error", "现在连不上服务器，更新不了。");
+    const version = channelVersion(this.channels, this.channel(), SELF);
+    if (!version) return done("error", "这个通道里没有平台。");
+    if (compareVersions(version, this.options.version) <= 0) return done("ok", `平台 ${this.options.version} 已是最新。`);
+    const task: TaskView = { kind: "update", version, phase: "manifest", doneBytes: 0, totalBytes: 0, doneFiles: 0, totalFiles: 0, reused: 0 };
+    this.selfTask = task;
+    this.selfResult = null;
+    this.changed();
+    const downloads = join(this.installer.appsDir, ".downloads");
+    const zip = join(downloads, `${SELF}-${version}.zip`);
+    const unpacked = join(downloads, `${SELF}-${version}`);
+    try {
+      const manifest = await client.manifest(SELF, version);
+      task.phase = "package";
+      this.changed();
+      if (!existsSync(zip)) {
+        mkdirSync(downloads, { recursive: true });
+        let last = 0;
+        await client.downloadPackage(
+          SELF,
+          version,
+          zip,
+          (got, total) => {
+            task.doneBytes = got;
+            task.totalBytes = Number.isFinite(total) ? total : 0;
+            const t = Date.now();
+            if (t - last >= 100) {
+              last = t;
+              this.changed();
+            }
+          },
+          this.options.packageFetch,
+        );
+      }
+      task.phase = "unpacking";
+      this.changed();
+      discard(unpacked, this.installer.appsDir);
+      await (this.options.unpack ?? unpackZip)(zip, unpacked);
+      await this.installer.install(SELF, version, packageSource(manifest, unpackedRoot(unpacked)), (p: InstallProgress) => {
+        Object.assign(task, p);
+        this.changed();
+      }, { fresh: true });
+      this.selfInstalledThisRun = true;
+      discard(zip, this.installer.appsDir);
+      this.selfResult = { tone: "ok", text: `已用完整包装好 ${version}` };
+    } catch (err) {
+      this.selfResult = { tone: "error", text: `用完整包也没更新成功：${this.failed(err)}${existsSync(zip) ? `（下载好的完整包在 ${zip}）` : ""}` };
+    } finally {
+      discard(unpacked, this.installer.appsDir);
       this.selfTask = null;
       this.changed();
     }

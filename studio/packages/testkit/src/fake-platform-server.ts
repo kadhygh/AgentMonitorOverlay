@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { gzipSync, zstdCompressSync } from "node:zlib";
+import { crc32, gzipSync, zstdCompressSync } from "node:zlib";
 import { listenInStudioRange } from "./ports.js";
 
 // A stand-in for the team server's side of AMO 平台 (plans/amo-lan-platform.md, 「第一版的接口约定」), for the platform's
@@ -34,6 +34,8 @@ export interface FakePlatformServer {
   corruptObject(sha256: string): void;
   /** The next download (or `times` downloads) of this object send half the bytes and then drop the connection. */
   breakObject(sha256: string, times?: number): void;
+  /** The next download (or `times` downloads) of a whole zip (/platform/zip/…) send part of it and drop the connection. */
+  breakZip(times?: number): void;
   /** Holds every object download this long before sending it (to see the progress on screen). */
   delayObjects(ms: number): void;
   /** Holds every channels request this long before answering (to see the platform while it is connecting). */
@@ -86,6 +88,47 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
   const channels: Record<"stable" | "test", Record<string, string>> = { stable: {}, test: {} };
   const corrupt = new Set<string>();
   const broken = new Map<string, number>();
+  let zipBreaks = 0;
+  /** A manifest's files as a zip (stored, under `AMO-<tool>/`), as the relay service gives it. */
+  const zipOf = (m: FakePlatformManifest): Buffer => {
+    const parts: Buffer[] = [];
+    const central: Buffer[] = [];
+    let offset = 0;
+    for (const f of m.files) {
+      const data = objects.get(f.sha256) ?? Buffer.alloc(0);
+      const name = Buffer.from(`AMO-${m.tool}/${f.path}`);
+      const crc = crc32(data) >>> 0;
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4);
+      local.writeUInt16LE(0x0800, 6);
+      local.writeUInt32LE(crc, 14);
+      local.writeUInt32LE(data.length, 18);
+      local.writeUInt32LE(data.length, 22);
+      local.writeUInt16LE(name.length, 26);
+      const cd = Buffer.alloc(46);
+      cd.writeUInt32LE(0x02014b50, 0);
+      cd.writeUInt16LE(20, 4);
+      cd.writeUInt16LE(20, 6);
+      cd.writeUInt16LE(0x0800, 8);
+      cd.writeUInt32LE(crc, 16);
+      cd.writeUInt32LE(data.length, 20);
+      cd.writeUInt32LE(data.length, 24);
+      cd.writeUInt16LE(name.length, 28);
+      cd.writeUInt32LE(offset, 42);
+      parts.push(local, name, data);
+      central.push(cd, name);
+      offset += 30 + name.length + data.length;
+    }
+    const cdBuf = Buffer.concat(central);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(m.files.length, 8);
+    end.writeUInt16LE(m.files.length, 10);
+    end.writeUInt32LE(cdBuf.length, 12);
+    end.writeUInt32LE(offset, 16);
+    return Buffer.concat([...parts, cdBuf, end]);
+  };
   const requests: string[] = [];
   let delay = 0;
   let channelsDelay = 0;
@@ -262,6 +305,27 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         const m = manifests.get(`${decodeURIComponent(tool[1]!)}@${decodeURIComponent(tool[2]!)}`);
         return m ? send(res, 200, m) : fail(res, 404, "not_found", "没有这个版本");
       }
+      // A version's whole zip (the relay service makes it from its objects, platform-zip.ts): here stored, with Range.
+      const zipPath = /^\/platform\/zip\/([^/]+)\/([^/]+)$/.exec(path);
+      if (req.method === "GET" && zipPath) {
+        const m = manifests.get(`${decodeURIComponent(zipPath[1]!)}@${decodeURIComponent(zipPath[2]!)}`);
+        if (!m) return fail(res, 404, "not_found", "没有这个版本");
+        const zip = zipOf(m);
+        const etag = `"zip-${createHash("sha256").update(zip).digest("hex").slice(0, 16)}"`;
+        const range = /^bytes=(\d+)-$/.exec(String(req.headers.range ?? ""));
+        const start = range && (!req.headers["if-range"] || req.headers["if-range"] === etag) ? Number(range[1]) : 0;
+        if (start >= zip.length && start > 0) return fail(res, 416, "bad_request", "超出范围");
+        const headers: Record<string, string | number> = { "content-type": "application/zip", "accept-ranges": "bytes", etag, "content-length": zip.length - start };
+        if (start) headers["content-range"] = `bytes ${start}-${zip.length - 1}/${zip.length}`;
+        res.writeHead(start ? 206 : 200, headers);
+        if (zipBreaks > 0) {
+          zipBreaks--;
+          res.write(zip.subarray(start, start + Math.max(1, Math.floor((zip.length - start) / 2))));
+          setTimeout(() => res.destroy(), 20);
+          return;
+        }
+        return res.end(zip.subarray(start));
+      }
       const object = /^\/platform\/objects\/([0-9a-f]{64})$/.exec(path);
       if (req.method === "GET" && object) {
         const sha = object[1]!;
@@ -329,6 +393,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
     delayChannels: (ms) => void (channelsDelay = ms),
     corruptObject: (sha) => void corrupt.add(sha),
     breakObject: (sha, times = 1) => void broken.set(sha, times),
+    breakZip: (times = 1) => void (zipBreaks = times),
     revokeKeys: () => keys.clear(),
     mirrorClaude: (version, exe, o = {}) => void (claude = { version, exe, zst: zstdCompressSync(exe), slowMs: o.slowMs ?? 0 }),
     mirrorCodex: (version, tgz, o = {}) => void (codex = { version, tgz, integrity: `sha512-${createHash("sha512").update(tgz).digest("base64")}`, slowMs: o.slowMs ?? 0, npmLatest: o.npmLatest ?? version }),

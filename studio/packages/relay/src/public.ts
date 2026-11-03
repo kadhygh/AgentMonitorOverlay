@@ -120,13 +120,13 @@ export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&
 /** The Android app's newest build on the landing page, without signing in (2026-11-02). */
 export const ANDROID_DOWNLOAD = "/downloads/android/latest.apk";
 
-export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number } | null = null, android: { version: string; size: number } | null = null): string {
+export function landingPage(service: string, client: ClientManifest | null, files: Array<{ name: string; size: number }>, platform: { size: number; version?: string } | null = null, android: { version: string; size: number } | null = null): string {
   // 2026-10-28, the user: everything goes through AMO 平台 — the page offers only its download. The relay client's zip and
   // the browser client (/app/) are no longer linked; their routes stay (installed clients load /client/ from here).
   void client;
   void files;
   const platformLink = platform
-    ? `<a class="btn" href="/downloads/AMO-Platform-win.zip">下载 AMO 平台<small>安装和更新团队的 AMO 工具 · ${(platform.size / 1024 / 1024).toFixed(0)} MB</small></a>`
+    ? `<a class="btn" href="/downloads/AMO-Platform-win.zip">下载 AMO 平台<small>安装和更新团队的 AMO 工具 · ${platform.version ? `${escapeHtml(platform.version)} · ` : ""}${(platform.size / 1024 / 1024).toFixed(0)} MB</small></a>`
     : `<p class="muted">还没有放 AMO 平台的安装包。</p>`;
   const androidLink = android
     ? `<a class="btn alt" href="${ANDROID_DOWNLOAD}" data-testid="landing-android">下载 Android 版 ${escapeHtml(android.version)}<small>在手机上打开这个页面下载 · ${(android.size / 1024 / 1024).toFixed(0)} MB</small></a>`

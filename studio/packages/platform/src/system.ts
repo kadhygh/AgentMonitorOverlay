@@ -15,7 +15,10 @@ function powershell(): string {
 export function runningExePaths(): Promise<string[]> {
   if (process.platform !== "win32") return Promise.resolve([]);
   // One line on stdin, not an encoded command (10-28: an antivirus took encoded PowerShell in AMO for a trojan).
-  const script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique\n";
+  // CIM, not Get-Process (2026-11-03): Get-Process's .Path opens every process and took 10.9 s here (the platform read
+  // 正在连接 that long after each login, and an install's clean-up would wait as long); Win32_Process gives the same
+  // list (compared: the same 107 paths) in under a second.
+  const script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Property ExecutablePath -ErrorAction SilentlyContinue | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ } | Sort-Object -Unique\n";
   return new Promise((done) => {
     const child = spawn(powershell(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
     let out = "";

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -244,6 +244,51 @@ describe("Platform's own update against the server", () => {
     const again = make(join(apps, "platform", "current", "AMO Platform.exe"), "0.9.2");
     await again.platform.init();
     expect(again.platform.lastEntryRefresh).toEqual({ changed: 0, removed: 0, error: null });
+  });
+
+  it("用完整包更新 (2026-11-03): the whole zip, going on where it broke off, unpacked with Windows' tar; every file its own (no links to the tools'), 重启平台 after", async () => {
+    const r = temp();
+    const unpacked = unpack(r);
+    const apps = join(unpacked, "apps");
+    const asked: string[] = [];
+    const packageFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      asked.push(`${String(input).replace(server.url, "")} ${(init?.headers as Record<string, string> | undefined)?.range ?? ""}`.trim());
+      return fetch(input, init);
+    }) as typeof fetch;
+    const { platform, restarts } = make(join(unpacked, "AMO Platform.exe"), "0.9.1", { packageFetch });
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    await platform.install("notes");
+    expect(platform.view().self.standing).toBe("update");
+    // Breaks off twice: the third request goes on from what the second had, which went on from the first's.
+    server.breakZip(2);
+    await platform.updateSelfFull();
+    expect(platform.view().self).toMatchObject({ standing: "restart", installed: "0.9.2", task: null, result: { tone: "ok", text: "已用完整包装好 0.9.2" } });
+    expect(asked).toHaveLength(3);
+    expect(asked[0]).toBe("/platform/zip/platform/0.9.2");
+    expect(asked[1]).toMatch(/^\/platform\/zip\/platform\/0\.9\.2 bytes=\d+-$/);
+    expect(asked[2]).toMatch(/^\/platform\/zip\/platform\/0\.9\.2 bytes=\d+-$/);
+    expect(readFileSync(join(apps, "platform", "0.9.2", "resources", "app", "main.js"), "utf8")).toBe("platform 0.9.2");
+    expect(readFileSync(join(apps, "platform", "0.9.2", "使用说明.txt"), "utf8")).toBe("0.9.2");
+    // Its own copy of the runtime, not the 便签's.
+    expect(ino(join(apps, "platform", "0.9.2", "AMO Platform.exe"))).not.toBe(ino(join(apps, "notes", "1.0.0", "AMO Notes.exe")));
+    // Nothing of the download left.
+    expect(existsSync(join(apps, ".downloads")) ? readdirSync(join(apps, ".downloads")) : []).toEqual([]);
+    await platform.restartSelf();
+    expect(restarts[0]).toMatchObject({ file: join(apps, "platform", "0.9.2", "AMO Platform.exe") });
+  });
+
+  it("用完整包更新 against a relay service without it: says the service has to be updated first", async () => {
+    const r = temp();
+    const unpacked = unpack(r);
+    const old = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).includes("/platform/zip/") ? new Response(JSON.stringify({ error: "not_found", message: "没有这个接口：GET /platform/zip/platform/0.9.2" }), { status: 404 }) : fetch(input, init)) as typeof fetch;
+    const { platform } = make(join(unpacked, "AMO Platform.exe"), "0.9.1", { packageFetch: old });
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    await platform.updateSelfFull();
+    expect(platform.view().self.result).toEqual({ tone: "error", text: "用完整包也没更新成功：团队服务器还不能给完整包：要先把中转服务更新到新版" });
+    expect(platform.view().self.standing).toBe("update");
   });
 
   it("a folder it cannot write to: nothing installed or updated, and the view says so; a network drive is only said", async () => {

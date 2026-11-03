@@ -1,4 +1,4 @@
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { checkChannels, checkManifest, checkSummary, PlatformError, type Channels, type Manifest, type ManifestSummary } from "./manifest.js";
@@ -16,6 +16,8 @@ export interface Source {
 const IDLE_MS = 30_000;
 /** A download that breaks off is tried this many times in all. */
 const DOWNLOAD_TRIES = 3;
+/** The whole package (用完整包) goes on where it stopped this many times in all. */
+const PACKAGE_TRIES = 5;
 
 /** An error and what is under it (undici says only 「terminated」 or 「fetch failed」; the cause says why). */
 function why(err: unknown): string {
@@ -136,6 +138,100 @@ export class PlatformClient implements Source {
         if (!(err instanceof PlatformError) || err.code !== "unreachable" || attempt >= DOWNLOAD_TRIES) throw err;
       }
     }
+  }
+
+  /**
+   * 用完整包 (2026-11-03): a version's whole program as one zip (/platform/zip/<tool>/<version>, the server makes it from
+   * the same files) into `dest`. `fetchImpl` is the platform's other network stack (Electron's net.fetch: the update file
+   * by file runs on Node's fetch, which is what broke). It comes in `<dest>.part`, with the zip's ETag beside it, and a
+   * broken download goes on from where it stopped (Range, If-Range: a zip made anew — the version published again —
+   * starts over), also on a later click. Calls `onProgress(done, total)` as bytes arrive.
+   */
+  async downloadPackage(tool: string, version: string, dest: string, onProgress: (done: number, total: number) => void, fetchImpl: typeof fetch = this.fetchImpl): Promise<void> {
+    const url = `${this.server}/platform/zip/${encodeURIComponent(tool)}/${encodeURIComponent(version)}`;
+    const part = `${dest}.part`;
+    const tagFile = `${dest}.part.etag`;
+    let reason = "";
+    for (let attempt = 1; attempt <= PACKAGE_TRIES; attempt++) {
+      let have = existsSync(part) ? statSync(part).size : 0;
+      const etag = have && existsSync(tagFile) ? readFileSync(tagFile, "utf8").trim() : "";
+      if (have && !etag) {
+        rmSync(part, { force: true });
+        have = 0;
+      }
+      const abort = new AbortController();
+      let idle = setTimeout(() => abort.abort(), IDLE_MS);
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => abort.abort(), IDLE_MS);
+      };
+      let res: Response | undefined;
+      try {
+        try {
+          res = await fetchImpl(url, { headers: { authorization: `Bearer ${this.key}`, ...(have ? { range: `bytes=${have}-`, "if-range": etag } : {}) }, signal: abort.signal });
+        } catch (err) {
+          reason = `连不上服务器（${why(err)}）`;
+          continue;
+        }
+        if (res.status === 416) {
+          // What is here is longer than the zip: begin again.
+          rmSync(part, { force: true });
+          reason = "下载了一半的部分对不上";
+          continue;
+        }
+        if (!res.ok || !res.body) {
+          const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+          const message = typeof body?.message === "string" ? body.message : `下载完整包时服务器回了 ${res.status}`;
+          // An older relay service has no /platform/zip/: it says 「没有这个接口」.
+          if (res.status === 404 && message.includes("没有这个接口")) throw new PlatformError("not_found", "团队服务器还不能给完整包：要先把中转服务更新到新版");
+          throw new PlatformError(res.status === 401 ? "unauthorized" : res.status === 404 ? "not_found" : "server", message);
+        }
+        const resumed = res.status === 206;
+        let total = Number(res.headers.get("content-length") ?? NaN);
+        if (resumed) {
+          const m = /^bytes (\d+)-\d+\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
+          if (!m || Number(m[1]) !== have) {
+            rmSync(part, { force: true });
+            reason = "服务器接着给的位置不对";
+            continue;
+          }
+          total = Number(m[2]);
+        } else {
+          have = 0;
+          writeFileSync(tagFile, res.headers.get("etag") ?? "");
+        }
+        let done = have;
+        onProgress(done, total);
+        const count = new Transform({
+          transform(chunk: Buffer, _enc, cb) {
+            touch();
+            done += chunk.length;
+            onProgress(done, total);
+            cb(null, chunk);
+          },
+        });
+        try {
+          await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), count, createWriteStream(part, { flags: resumed ? "a" : "w" }));
+        } catch (err) {
+          reason = `中途断了（${why(err)}）`;
+          continue;
+        }
+        const size = statSync(part).size;
+        if (Number.isFinite(total) && size !== total) {
+          reason = `只下到 ${size} / ${total} 字节`;
+          continue;
+        }
+        rmSync(dest, { force: true });
+        renameSync(part, dest);
+        rmSync(tagFile, { force: true });
+        return;
+      } finally {
+        clearTimeout(idle);
+        // Held to here (see download).
+        void res?.status;
+      }
+    }
+    throw new PlatformError("unreachable", `完整包没下完：${reason}。下了的部分留着，再点一次会接着下`);
   }
 
   private async downloadOnce(sha256: string, dest: string, onBytes: (n: number) => void): Promise<void> {

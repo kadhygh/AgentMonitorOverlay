@@ -8,6 +8,7 @@ import { createGunzip } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { APK_NAME, PLATFORM_ZIP, PlatformFiles, SHA256, TOOL_ID, VERSION } from "./platform.js";
 import { ANDROID_DOWNLOAD, PublicFiles, landingPage, sendFile, sendHtml, sendRanged } from "./public.js";
+import { sendZip } from "./platform-zip.js";
 import { MIRROR_TOOLS, type MirrorTool, type ToolMirror } from "./mirror.js";
 import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
@@ -154,6 +155,14 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const serviceName = opts.name?.trim() || "AMO 中转";
   const files = new PublicFiles(opts.publicDir);
   const platform = new PlatformFiles(opts.platformDir);
+  /** A version's whole zip; an object missing or damaged on the server is said as such (409), not a crash. */
+  const platformZip = async (tool: string, version: string) => {
+    try {
+      return await platform.zipOf(tool, version);
+    } catch (err) {
+      throw new RelayError("conflict", `服务器上 ${tool} ${version} 打不成完整包：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   const mirrorList = () => MIRROR_TOOLS.flatMap((t) => (opts.mirrors?.[t] ? [opts.mirrors[t]] : []));
   const mirrorOf = (tool: unknown): ToolMirror => {
     const m = MIRROR_TOOLS.includes(tool as MirrorTool) ? opts.mirrors?.[tool as MirrorTool] : undefined;
@@ -426,6 +435,17 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         res.end(body);
         return;
       }
+      // A version's whole program as one zip (platform-zip.ts, 2026-11-03): the platform's 更新 page falls back on it when
+      // the update file by file does not go through. Range and If-Range, so a broken download goes on.
+      const zm = /^\/platform\/zip\/([^/]+)\/([^/]+)$/.exec(path);
+      if (zm) {
+        const [tool, version] = [part(zm[1]!), part(zm[2]!)];
+        if (!TOOL_ID.test(tool)) throw new RelayError("bad_request", `工具名不对：${tool}`);
+        if (!VERSION.test(version)) throw new RelayError("bad_request", `版本号不对：${version}`);
+        const zip = await platformZip(tool, version);
+        if (!zip) throw new RelayError("not_found", `${tool} 还没有发布 ${version}`);
+        return sendZip(req, res, zip.layout, zip.filename);
+      }
       const om = /^\/platform\/objects\/([^/]+)$/.exec(path);
       if (om) {
         const sha = part(om[1]!);
@@ -451,13 +471,19 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
     }
     if (method === "GET" && !path.startsWith("/api/")) {
-      // The platform's own zip: in downloads/ beside the client's, or in the platform dir (which deploy leaves alone).
-      const platformZip = files.file("downloads", PLATFORM_ZIP) ?? platform.zip();
+      // The platform's own zip (2026-11-03, the user: each release updates the page's too): made from the newest
+      // published platform; only when none is published, the one put by hand (downloads/ beside the client's, or in the
+      // platform dir).
+      const newest = platform.dir ? platform.newestPlatform() : null;
+      const made = newest && (path === "/" || path === "/index.html" || path === `/downloads/${PLATFORM_ZIP}`) ? await platformZip("platform", newest).catch(() => null) : null;
+      const platformZipFile = made ? null : (files.file("downloads", PLATFORM_ZIP) ?? platform.zip());
       // The Android app's newest build, for anyone on the page (2026-11-02, the user: a phone installs it from here without
       // signing in; it pairs only after signing in). Updates still go through /platform/android/ (signed in).
       const android = platform.dir ? platform.androidLatest() : null;
-      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads().filter((f) => f.name !== PLATFORM_ZIP), platformZip ? { size: statSync(platformZip).size } : null, android));
-      if (path === `/downloads/${PLATFORM_ZIP}` && platformZip) return sendFile(res, platformZip, true);
+      const pageZip = made ? { size: made.layout.size, version: newest! } : platformZipFile ? { size: statSync(platformZipFile).size } : null;
+      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads().filter((f) => f.name !== PLATFORM_ZIP), pageZip, android));
+      if (path === `/downloads/${PLATFORM_ZIP}` && made) return sendZip(req, res, made.layout, `AMO-Platform-win-${newest}.zip`);
+      if (path === `/downloads/${PLATFORM_ZIP}` && platformZipFile) return sendFile(res, platformZipFile, true);
       if (path === ANDROID_DOWNLOAD) {
         const file = android ? platform.apk(android.file) : null;
         if (!file) throw new RelayError("not_found", "服务器上还没有发布安卓版");

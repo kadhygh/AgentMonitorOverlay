@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, session, shell, Tray } from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -160,7 +160,21 @@ const npmRun = (() => {
   };
 })();
 
-const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart, ...(claudeRun ? { claudeRun } : {}), ...(npmRun ? { npmRun } : {}) });
+/**
+ * 用完整包's download (2026-11-03): Chromium's network stack, not Node's fetch the update file by file runs on (that is
+ * what broke). Its own session, without a proxy: the team server is on the LAN, and Node's fetch does not go through
+ * the system proxy either (a proxy app set as Windows' proxy would otherwise get it).
+ */
+let packageSession: Electron.Session | null = null;
+const packageFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  if (!packageSession) {
+    packageSession = session.fromPartition("amo-platform-package", { cache: false });
+    await packageSession.setProxy({ mode: "direct" });
+  }
+  return packageSession.fetch(input instanceof URL ? input.href : input, init);
+}) as typeof fetch;
+
+const platform = new Platform({ env: process.env, argv: process.argv, version: VERSION, testMode, shell: platformShell, selfExe, restart, packageFetch, ...(claudeRun ? { claudeRun } : {}), ...(npmRun ? { npmRun } : {}) });
 
 // ---- the window
 
@@ -381,7 +395,7 @@ function quit(): void {
 
 // ---- the page's calls
 
-const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "close", "setChannel", "setOpenAtLogin", "setTheme", "pickStudioDataDir", "openPath", "dismiss", "environment", "updateEnvironment", "openDownload", "copyInstallCommand", "updateSelf", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
+const CALLS = new Set<keyof PlatformCalls>(["login", "register", "serverInfo", "logout", "loadProfile", "saveProfile", "refresh", "install", "rollback", "uninstall", "open", "close", "setChannel", "setOpenAtLogin", "setTheme", "pickStudioDataDir", "openPath", "dismiss", "environment", "updateEnvironment", "openDownload", "copyInstallCommand", "updateSelf", "updateSelfFull", "restartSelf", "dismissSelf", "restartStudio", "refreshStudio"]);
 
 function wire(): void {
   ipcMain.handle("platform:view", () => platform.view());

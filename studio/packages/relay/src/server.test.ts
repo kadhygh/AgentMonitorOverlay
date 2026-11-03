@@ -1,11 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { get as httpGet, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { crc32, deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
@@ -292,6 +293,105 @@ describe("relay service", () => {
     writeFileSync(join(dir, "android", "latest.json"), JSON.stringify({ ...latest, file: "gone.apk" }));
     expect((await get("/api/platform/android")).status).toBe(404);
     expect((await get("/downloads/android/latest.apk", null)).status).toBe(404);
+  });
+
+  it("makes a version's whole zip from its objects, goes on with Range, and the download page's comes from the newest platform (2026-11-03)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-platform-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    const put = (name: string, data: Buffer) => {
+      mkdirSync(join(dir, "objects", name.slice(0, 2)), { recursive: true });
+      writeFileSync(join(dir, "objects", name.slice(0, 2), name), data);
+    };
+    const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+    // Three ways an object is kept: gzipped by Node (no name in the header), gzipped by macOS gzip (FNAME), as it is.
+    const exe = Buffer.from("MZ the program ".repeat(20_000));
+    const pkg = Buffer.from(JSON.stringify({ name: "amo-platform", version: "0.9.21" }));
+    const png = randomBytes(5000);
+    put(`${sha(exe)}.gz`, gzipSync(exe));
+    const named = Buffer.concat([Buffer.from([0x1f, 0x8b, 8, 8, 0, 0, 0, 0, 0, 3]), Buffer.from("0004abc\0"), deflateRawSync(pkg), Buffer.alloc(8)]);
+    named.writeUInt32LE(crc32(pkg), named.length - 8);
+    named.writeUInt32LE(pkg.length, named.length - 4);
+    put(`${sha(pkg)}.gz`, named);
+    put(sha(png), png);
+    const files = [
+      { path: "AMO Platform.exe", size: exe.length, sha256: sha(exe) },
+      { path: "resources/app/package.json", size: pkg.length, sha256: sha(pkg) },
+      { path: "resources/app/图标.png", size: png.length, sha256: sha(png) },
+      { path: "resources/app/same.png", size: png.length, sha256: sha(png) },
+    ];
+    mkdirSync(join(dir, "tools", "platform"), { recursive: true });
+    for (const v of ["0.9.20", "0.9.21"]) writeFileSync(join(dir, "tools", "platform", `${v}.json`), JSON.stringify({ tool: "platform", name: "AMO 平台", version: v, builtAt: Date.UTC(2026, 10, 3, 12, 0, 0), exe: "AMO Platform.exe", notes: "", files }));
+    writeFileSync(join(dir, "channels.json"), JSON.stringify({ stable: { platform: "0.9.20" }, test: { platform: "0.9.21" } }));
+    mkdirSync(join(dir, "downloads"));
+    writeFileSync(join(dir, "downloads", "AMO-Platform-win.zip"), "the old one put by hand");
+    const { url, plannerSettings } = await service(undefined, { platformDir: dir });
+    const key = plannerSettings.key;
+    const get = (p: string, headers: Record<string, string> = { authorization: `Bearer ${key}` }) => fetch(`${url}${p}`, { headers });
+
+    expect((await get("/platform/zip/platform/0.9.21", {})).status).toBe(401);
+    expect((await get("/platform/zip/platform/0.9.99")).status).toBe(404);
+    const res = await get("/platform/zip/platform/0.9.21");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("AMO-Platform-win-0.9.21.zip");
+    const etag = res.headers.get("etag")!;
+    const zip = Buffer.from(await res.arrayBuffer());
+    expect(zip.length).toBe(Number(res.headers.get("content-length")));
+
+    // Read back by its central directory, each entry unpacked and checked against its CRC-32.
+    const eocd = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 5, 6]));
+    const count = zip.readUInt16LE(eocd + 10);
+    let at = zip.readUInt32LE(eocd + 16);
+    const got: Record<string, Buffer> = {};
+    for (let i = 0; i < count; i++) {
+      expect(zip.readUInt32LE(at)).toBe(0x02014b50);
+      const method = zip.readUInt16LE(at + 10);
+      const crc = zip.readUInt32LE(at + 16);
+      const csize = zip.readUInt32LE(at + 20);
+      const nameLen = zip.readUInt16LE(at + 28);
+      const local = zip.readUInt32LE(at + 42);
+      const name = zip.subarray(at + 46, at + 46 + nameLen).toString("utf8");
+      const dataAt = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
+      const data = zip.subarray(dataAt, dataAt + csize);
+      const content = method === 8 ? inflateRawSync(data) : Buffer.from(data);
+      expect(crc32(content), name).toBe(crc);
+      got[name] = content;
+      at += 46 + nameLen;
+    }
+    expect(Object.keys(got)).toEqual(["AMO Platform/", "AMO Platform/AMO Platform.exe", "AMO Platform/resources/app/package.json", "AMO Platform/resources/app/图标.png", "AMO Platform/resources/app/same.png"]);
+    expect(got["AMO Platform/AMO Platform.exe"]!.equals(exe)).toBe(true);
+    expect(got["AMO Platform/resources/app/package.json"]!.equals(pkg)).toBe(true);
+    expect(got["AMO Platform/resources/app/图标.png"]!.equals(png)).toBe(true);
+
+    // What the platform unpacks it with: Windows' own tar (bsdtar).
+    const tar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+    if (process.platform === "win32" && existsSync(tar)) {
+      const out = mkdtempSync(join(tmpdir(), "relay-zip-out-"));
+      closers.push(() => rmSync(out, { recursive: true, force: true }));
+      writeFileSync(join(out, "p.zip"), zip);
+      execFileSync(tar, ["-xf", join(out, "p.zip"), "-C", out]);
+      expect(readFileSync(join(out, "AMO Platform", "AMO Platform.exe")).equals(exe)).toBe(true);
+      expect(readFileSync(join(out, "AMO Platform", "resources", "app", "图标.png")).equals(png)).toBe(true);
+    }
+
+    // A broken download goes on where it stopped; another version of the zip (If-Range) starts again.
+    const rest = await get("/platform/zip/platform/0.9.21", { authorization: `Bearer ${key}`, range: "bytes=1000-", "if-range": etag });
+    expect(rest.status).toBe(206);
+    expect(Buffer.concat([zip.subarray(0, 1000), Buffer.from(await rest.arrayBuffer())]).equals(zip)).toBe(true);
+    expect((await get("/platform/zip/platform/0.9.21", { authorization: `Bearer ${key}`, range: "bytes=1000-", "if-range": '"zip-other"' })).status).toBe(200);
+
+    // The download page: the newest published platform, made the same way, without signing in; not the one put by hand.
+    const landing = await (await get("/", {})).text();
+    expect(landing).toContain("0.9.21");
+    const page = await get("/downloads/AMO-Platform-win.zip", {});
+    expect(page.headers.get("content-disposition")).toContain("AMO-Platform-win-0.9.21.zip");
+    expect(Buffer.from(await page.arrayBuffer()).equals(zip)).toBe(true);
+
+    // An object missing on the server: said, not a broken zip.
+    rmSync(join(dir, "objects", sha(png).slice(0, 2), sha(png)));
+    writeFileSync(join(dir, "tools", "platform", "0.9.20.json"), JSON.stringify({ tool: "platform", name: "AMO 平台", version: "0.9.20", builtAt: 2, exe: "AMO Platform.exe", notes: "", files }));
+    const broken = await get("/platform/zip/platform/0.9.20");
+    expect(broken.status).toBe(409);
+    expect(await broken.json()).toMatchObject({ message: expect.stringContaining("打不成完整包") });
   });
 
   it("sends an object stored gzipped as gzip to a client that takes it, and unpacked to one that does not", async () => {
