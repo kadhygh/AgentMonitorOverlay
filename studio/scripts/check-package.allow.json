@@ -1,0 +1,315 @@
+{
+  "resources/app/node_modules/@modelcontextprotocol/sdk/dist/cjs/validation/cfworker-provider.js": [
+    "@cfworker/json-schema: 包不在"
+  ],
+  "resources/app/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/cfworker-provider.js": [
+    "@cfworker/json-schema: 包不在"
+  ],
+  "resources/app/node_modules/@stablelib/base64/lib/base64.bench.js": [
+    "@stablelib/benchmark: 包不在"
+  ],
+  "resources/app/node_modules/ajv/dist/runtime/re2.js": [
+    "re2: 包不在"
+  ],
+  "resources/app/node_modules/call-bind-apply-helpers/test/index.js": [
+    "es-value-fixtures: 包不在",
+    "for-each: 包不在",
+    "has-strict-mode: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/call-bound/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/debug/src/node.js": [
+    "supports-color: 包不在"
+  ],
+  "resources/app/node_modules/dunder-proto/test/get.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/dunder-proto/test/set.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/es-define-property/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/es-errors/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/es-object-atoms/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/express/lib/application.js": [
+    "ejs: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/benchmark/benchmark.mjs": [
+    "tinybench: 包不在",
+    "uri-js: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/benchmark/equal.mjs": [
+    "tinybench: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/benchmark/non-simple-domain.mjs": [
+    "tinybench: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/benchmark/string-array-to-hex-stripped.mjs": [
+    "tinybench: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/benchmark/ws-is-secure.mjs": [
+    "tinybench: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/eslint.config.js": [
+    "neostandard: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/index.js": [
+    "./types/index: 文件不在"
+  ],
+  "resources/app/node_modules/fast-uri/lib/schemes.js": [
+    "../types/index: 文件不在"
+  ],
+  "resources/app/node_modules/fast-uri/lib/utils.js": [
+    "../types/index: 文件不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/ajv.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/component-safe-serialization.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/equal.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/ipv6-canonical.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/ipv6-validation.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/malformed-percent.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/malformed-urn.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/parse.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/query-fragment-normalization.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/reserved-path-normalization.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/resolve.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/rfc-3986.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/scheme-validation.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/security-normalization.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/security.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/serialize.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/uri-js-compatibility.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/uri-js.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/urn-full-input.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/util.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/fast-uri/test/websocket-query-preservation.test.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/function-bind/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/get-intrinsic/test/GetIntrinsic.js": [
+    "es-abstract/2023/DefinePropertyOrThrow: 包不在",
+    "es-value-fixtures: 包不在",
+    "for-each: 包不在",
+    "make-async-function: 包不在",
+    "make-async-generator-function: 包不在",
+    "make-generator-function: 包不在",
+    "mock-property: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/get-proto/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/gopd/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/has-symbols/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/has-symbols/test/shams/core-js.js": [
+    "core-js/fn/symbol: 包不在",
+    "core-js/fn/symbol/to-string-tag: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/has-symbols/test/shams/get-own-property-symbols.js": [
+    "get-own-property-symbols: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/has-symbols/test/tests.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/hasown/eslint.config.mjs": [
+    "@ljharb/eslint-config/flat: 包不在"
+  ],
+  "resources/app/node_modules/hono/dist/cjs/hono-base.js": [
+    "itty-router: 包不在"
+  ],
+  "resources/app/node_modules/hono/dist/cjs/middleware/mount/index.js": [
+    "itty-router: 包不在"
+  ],
+  "resources/app/node_modules/hono/dist/hono-base.js": [
+    "itty-router: 包不在"
+  ],
+  "resources/app/node_modules/hono/dist/middleware/mount/index.js": [
+    "itty-router: 包不在"
+  ],
+  "resources/app/node_modules/isexe/test/basic.js": [
+    "mkdirp: 包不在",
+    "rimraf: 包不在",
+    "tap: 包不在"
+  ],
+  "resources/app/node_modules/math-intrinsics/test/index.js": [
+    "es-value-fixtures: 包不在",
+    "for-each: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test-core-js.js": [
+    "core-js: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/bigint.js": [
+    "has-tostringtag/shams: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/browser/dom.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/circular.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/deep.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/element.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/err.js": [
+    "error-cause/Error: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/fakes.js": [
+    "for-each: 包不在",
+    "has-tostringtag/shams: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/fn.js": [
+    "functions-have-names: 包不在",
+    "make-arrow-function: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/global.js": [
+    "globalthis: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/has.js": [
+    "mock-property: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/holes.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/indent-option.js": [
+    "for-each: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/inspect.js": [
+    "string.prototype.repeat: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/lowbyte.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/number.js": [
+    "es-value-fixtures: 包不在",
+    "for-each: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/quoteStyle.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/toStringTag.js": [
+    "has-tostringtag/shams: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/undef.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/object-inspect/test/values.js": [
+    "for-each: 包不在",
+    "has-tostringtag/shams: 包不在",
+    "mock-property: 包不在",
+    "semver: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/qs/eslint.config.mjs": [
+    "@ljharb/eslint-config/flat: 包不在"
+  ],
+  "resources/app/node_modules/qs/test/parse.js": [
+    "es-value-fixtures: 包不在",
+    "has-override-mistake: 包不在",
+    "has-property-descriptors: 包不在",
+    "has-proto: 包不在",
+    "mock-property: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/qs/test/stringify.js": [
+    "has-bigints: 包不在",
+    "has-proto: 包不在",
+    "mock-property: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/qs/test/utils.js": [
+    "es-value-fixtures: 包不在",
+    "for-each: 包不在",
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/safer-buffer/tests.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/side-channel-list/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/side-channel-map/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/side-channel-weakmap/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/side-channel/test/index.js": [
+    "tape: 包不在"
+  ],
+  "resources/app/node_modules/ws/lib/buffer-util.js": [
+    "bufferutil: 包不在"
+  ],
+  "resources/app/node_modules/ws/lib/validation.js": [
+    "utf-8-validate: 包不在"
+  ]
+}
