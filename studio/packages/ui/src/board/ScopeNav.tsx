@@ -563,7 +563,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
         ))}
       </div>
 
-      <UsageFooter link={link} live={live} />
+      <UsageFooter link={link} live={live} sessions={sessions} />
       {/* Settings and, at its right, folding the column (2026-10-15: beside 全部任务 it pushed that row short of the
           lists' right edge); folded, the same corner unfolds it. */}
       <div className="nav-bottom">

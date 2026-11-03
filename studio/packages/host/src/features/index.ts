@@ -4,6 +4,7 @@ import type { AmoTool, ToolContext } from "../mcp/tool-kit.js";
 import { projectsRoutes } from "./projects/routes.js";
 import { projectsTools } from "./projects/mcp.js";
 import { configRoutes } from "./config/routes.js";
+import { claudeAccountsRoutes } from "./claudeaccounts/routes.js";
 import { tasksRoutes } from "./tasks/routes.js";
 import { tasksTools } from "./tasks/mcp.js";
 import { topicsRoutes } from "./topics/routes.js";
@@ -67,6 +68,7 @@ export interface HostFeature {
 export const FEATURES: readonly HostFeature[] = [
   { name: "projects", routes: projectsRoutes, tools: projectsTools },
   { name: "config", routes: configRoutes },
+  { name: "claudeaccounts", routes: claudeAccountsRoutes },
   { name: "channels", routes: channelsRoutes },
   { name: "dsh", routes: dshRoutes },
   { name: "tasks", routes: tasksRoutes, tools: tasksTools },

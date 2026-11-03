@@ -24,6 +24,7 @@ export class ConfigFeature extends Feature {
       autoCompactTokens: readAutoCompact(this.store),
       autoCompactProfiles: readAutoCompactProfiles(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
+      claudeAccounts: this.f.claudeAccounts.state(),
       modelPrefs: readModelPrefs(this.store),
       quotaDisplay: this.quotaDisplay(),
       quickModels: this.quickModels(),
@@ -301,7 +302,9 @@ export class ConfigFeature extends Feature {
     const out: AccountUsage[] = [];
     for (const p of this.profiles) {
       const u = this.runtime.usage ? await this.runtime.usage(p.id, refresh).catch(() => null) : null;
-      if (u) out.push(u);
+      // Claude with several accounts: one entry per account (Claude 多账号, 2026-11-03).
+      if (Array.isArray(u)) out.push(...u);
+      else if (u) out.push(u);
     }
     return out;
   }

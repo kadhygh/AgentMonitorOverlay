@@ -27,6 +27,7 @@ import { requireClaudeCode } from "./executable.js";
 import { handoffKey, hasTranscript, importTranscript, readTranscript, withConfigDir } from "./transcripts.js";
 import { ClaudeTurns } from "./turns.js";
 import { ClaudeUsageTracker } from "./usage-tracker.js";
+import { ClaudeAccounts } from "./accounts.js";
 import { ClaudeWake } from "./wake-control.js";
 
 export { claudeCommands, localCommandText } from "./commands.js";
@@ -58,6 +59,8 @@ export interface ClaudeRuntimeOptions {
   claudeHome: string;
   /** The person's Claude Code config dir, used by sessions started with the local login (default: theirs, ~/.claude). */
   localClaudeHome?: string;
+  /** Claude 多账号 (2026-11-03): the subscription's accounts; default: the person's own dir only. */
+  accounts?: ClaudeAccounts;
   now?: () => Date;
   /** An idle query (no turn, no background task) is closed after this long; the next message resumes it. */
   idleCloseMs?: number;
@@ -110,6 +113,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   /** The person's own config dir; `explicit` when they set CLAUDE_CONFIG_DIR (read once: helpers set it for a while). */
   private readonly local: { dir: string; explicit: boolean };
+  /** Claude 多账号: the subscription runs on the current one (its dir shares the default dir's records). */
+  readonly accounts: ClaudeAccounts;
 
   private readonly core: ClaudeCore;
   private readonly usageTracker: ClaudeUsageTracker;
@@ -134,10 +139,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       close: (id) => this.close(id),
       clearIdle: (live) => this.clearIdle(live),
     };
-    this.usageTracker = new ClaudeUsageTracker(this.store, { localDir: this.local.dir, baseUrl: (p) => (p.provider ? this.options.providers[p.provider]?.baseUrl : undefined) });
+    this.accounts = options.accounts ?? new ClaudeAccounts(this.store, { defaultDir: this.local.dir, defaultExplicit: this.local.explicit, ...(options.baseEnv ? { baseEnv: options.baseEnv } : {}) });
+    this.accounts.setGuard({ blocked: () => this.switchBlocked(), beforeSwitch: () => this.beforeAccountSwitch() });
+    this.usageTracker = new ClaudeUsageTracker(this.store, { accounts: this.accounts, baseUrl: (p) => (p.provider ? this.options.providers[p.provider]?.baseUrl : undefined) });
     this.wake = new ClaudeWake(this.core, (sessionId) => {
       const profileId = this.store.getSession(sessionId)?.profileId;
-      return profileId ? this.usageTracker.usedUpUntil(profileId, this.now().getTime()) : null;
+      return profileId ? this.usageTracker.usedUpUntil(this.limitKey(profileId), this.now().getTime()) : null;
     });
     this.turns = new ClaudeTurns(this.core, (sessionId, live, by) => this.wake.onTurnStart(sessionId, live, by));
     this.asks = new ClaudeAsks(this.core);
@@ -148,7 +155,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       wake: this.wake,
       recordRateLimit: (sessionId, info) => {
         const profileId = this.store.getSession(sessionId)?.profileId;
-        if (profileId) this.usageTracker.record(profileId, info);
+        if (profileId) this.usageTracker.record(this.limitKey(profileId), info);
       },
       noteSkills: (sessionId, skills) => {
         const profileId = this.store.getSession(sessionId)?.profileId;
@@ -355,7 +362,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return filled;
   }
 
-  async usage(profileId: Id, refresh = false): Promise<AccountUsage | null> {
+  /** One entry per account (current first) once there are several (Claude 多账号, 2026-11-03). */
+  async usage(profileId: Id, refresh = false): Promise<AccountUsage | AccountUsage[] | null> {
     const profile = this.profile(profileId);
     if (!this.isSubscription(profile)) return null;
     return this.usageTracker.usage(profile, refresh);
@@ -401,7 +409,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const permissions = provider?.baseUrl ? CLAUDE_PERMISSIONS.map((p) => (p.id === "auto" ? { ...p, unavailable: "只有 Anthropic 的 Claude 能用（第三方模型没有这个分类器）" } : p)) : CLAUDE_PERMISSIONS;
     const base = { profileId, permissions, defaultPermission: CLAUDE_DEFAULT_PERMISSION };
     if (provider?.models) return { ...base, models: provider.models.map((m) => ({ ...m, ...(m.id === profile.model ? { isDefault: true } : {}) })), source: "builtin" };
-    const cacheKey = `${profileId}|${this.newHome(profile).login}`;
+    const cacheKey = `${profileId}|${this.newHome(profile).login}|${this.isSubscription(profile) ? this.accounts.currentId() : ""}`;
     const cached = this.modelCache.get(cacheKey);
     // An older list is answered at once and asked again behind it: asking starts a CLI, seconds that 开始 and 新会话
     // waited for (2026-10-23).
@@ -501,6 +509,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Closes every running query and waits for the processes to end (Host shutdown). Sessions resume on the next message. */
   async closeAll(): Promise<void> {
     this.wake.shutdown();
+    this.accounts.shutdown();
     await Promise.all([...this.live.keys()].map((id) => this.close(id)));
     await Promise.all([...this.closing.values()]);
   }
@@ -810,14 +819,53 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return !!profile.provider && this.options.providers[profile.provider]?.auth === "oauth";
   }
 
-  /** Where a session started now runs: the subscription follows 设置 → 模型, every other profile Studio's own dir. */
+  /** Where a session started now runs: the subscription on the current account, every other profile Studio's own dir. */
   private newHome(profile: ModelProfile): ClaudeHome {
-    return this.isSubscription(profile) && readClaudeLogin(this.store) === "local" ? { ...this.local, login: "local" } : { dir: this.options.claudeHome, login: "token" };
+    return this.isSubscription(profile) && readClaudeLogin(this.store) === "local" ? this.accountHome() : { dir: this.options.claudeHome, login: "token" };
   }
 
-  /** Where an existing session runs: the way it was started (its transcript is in that dir). */
+  /**
+   * Where an existing session runs: the way it was started. With the local login that is the current account, whichever
+   * it was started on: every account's dir shares the default dir's `projects`, so the transcript is found (2026-11-03).
+   */
   private homeOf(sessionId: Id): ClaudeHome {
-    return sessionClaudeLogin(this.store, sessionId) === "local" ? { ...this.local, login: "local" } : { dir: this.options.claudeHome, login: "token" };
+    return sessionClaudeLogin(this.store, sessionId) === "local" ? this.accountHome() : { dir: this.options.claudeHome, login: "token" };
+  }
+
+  private accountHome(): ClaudeHome {
+    const { dir, explicit } = this.accounts.currentHome();
+    return { dir, explicit, login: "local" };
+  }
+
+  /** The key of a profile's rate-limit windows: the subscription's are the current account's. */
+  private limitKey(profileId: Id): string {
+    const profile = this.options.profiles.find((p) => p.id === profileId);
+    return profile && this.isSubscription(profile) ? `${profileId}|${this.accounts.currentId()}` : profileId;
+  }
+
+  /**
+   * Claude 多账号: switching waits until no session on the local login is at work — a turn, an approval or question
+   * waiting, a background command or a subagent in its process (the user, 2026-11-03: 会话进行中禁止切换).
+   */
+  private switchBlocked(): string | null {
+    const busy = new Set<Id>();
+    for (const s of this.store.listSessions()) {
+      if (s.runtime !== "claude" || s.archivedAt || s.kind === "sub") continue;
+      if (s.status !== "running" && s.status !== "awaiting-approval" && s.status !== "awaiting-answer") continue;
+      if (sessionClaudeLogin(this.store, s.id) === "local") busy.add(s.id);
+    }
+    for (const [id, live] of this.live) {
+      if (sessionClaudeLogin(this.store, id) !== "local") continue;
+      if (live.running || live.background.size || live.approvals.size || live.questions.size) busy.add(id);
+    }
+    return busy.size ? `有 ${busy.size} 个 Claude 会话正在进行，等它${busy.size > 1 ? "们" : ""}结束（或停止）后再切换账号` : null;
+  }
+
+  /** Before switching: the idle processes on the old account close; their next message resumes on the new one. */
+  private async beforeAccountSwitch(): Promise<void> {
+    const ids = [...this.live.keys()].filter((id) => sessionClaudeLogin(this.store, id) === "local");
+    await Promise.all(ids.map((id) => this.close(id)));
+    await Promise.all(ids.map((id) => this.closing.get(id)));
   }
 
   private cwdOf(sessionId: Id): string | undefined {

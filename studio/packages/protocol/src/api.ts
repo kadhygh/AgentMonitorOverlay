@@ -196,6 +196,8 @@ export interface StudioSettings {
   /** How the Claude subscription signs in (设置 → 模型); sessions keep the way they were started. */
   /** The person's own Claude Code config dir and whether it holds a login (null: cannot tell on this system). */
   claudeLocal: { dir: string; signedIn: boolean | null };
+  /** Claude 多账号 (2026-11-03): the accounts the Claude subscription can run on and which one it runs on now. */
+  claudeAccounts: ClaudeAccountsState;
   /** Per profile id: model order and defaults (设置 → 模型). */
   modelPrefs: Record<string, ModelPrefs>;
   /** Per profile id: where its quota (subscription use or balance) shows (设置 → 额度); absent = the defaults. */
@@ -292,6 +294,45 @@ export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false 
  * the person can no longer save a `claude setup-token` token (the person's call: Studio keeps no Claude.ai credential).
  */
 export type ClaudeLogin = "token" | "local";
+
+/**
+ * Claude 多账号 (2026-11-03, the user): Claude Code keeps one login per config dir (CLAUDE_CONFIG_DIR, its documented
+ * way to use several accounts). "default" is the person's own Claude Code dir (~/.claude, what a terminal uses); each
+ * account added in 设置 → 模型 gets its own dir under ~/.claude-accounts, which shares the default dir's conversation
+ * records (projects), skills, plugins, CLAUDE.md and settings.json, so a session can go on under another account.
+ * Claude subscription sessions run on the current account; switching waits until no Claude session is at work.
+ */
+export interface ClaudeAccount {
+  id: Id;
+  /** The person's name for it, or the account's email when they gave none. */
+  label: string;
+  dir: string;
+  /** The person's own Claude Code dir (cannot be removed). */
+  isDefault: boolean;
+  /** Whether the dir holds a login (Windows: `.credentials.json`); null when this system cannot tell. */
+  signedIn: boolean | null;
+  /** From `claude auth status` (read after signing in and now and then). */
+  email: string | null;
+  /** "max", "pro", … */
+  plan: string | null;
+  /** A sign-in under way in Studio (设置 → 模型 → 添加账号 / 重新登录). */
+  login: ClaudeAccountLogin | null;
+}
+
+export interface ClaudeAccountLogin {
+  state: "waiting" | "failed";
+  /** The sign-in page, when the browser did not open by itself. */
+  url: string | null;
+  /** Why it failed. */
+  error: string | null;
+}
+
+export interface ClaudeAccountsState {
+  current: Id;
+  accounts: ClaudeAccount[];
+  /** Why switching is not possible now (a Claude session is at work); null when it is. */
+  switchBlocked: string | null;
+}
 
 /**
  * 设置 → 模型 (2026-10-24): the Claude Code that Claude sessions run on. The portable build ships none: the person's own
@@ -463,6 +504,24 @@ export interface HostRoutes {
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.
    */
   "GET /api/usage": { req: void; res: AccountUsage[] };
+  /** Claude 多账号 (2026-11-03): the accounts (also in `settings.claudeAccounts`, which follows every change). */
+  "GET /api/claude-accounts": { req: void; res: ClaudeAccountsState };
+  /** 添加账号: a new account dir, and Claude Code's sign-in started for it (the browser opens; `login.url` otherwise). */
+  "POST /api/claude-accounts": { req: { label?: string; /** Test runs only (AMO_STUDIO_TEST=1): no sign-in started. */ signIn?: false }; res: ClaudeAccountsState };
+  /** 重新登录: the sign-in again for an account (expired or signed out). */
+  "POST /api/claude-accounts/:id/login": { req: void; res: ClaudeAccountsState };
+  /** The code the sign-in page shows, when the browser could not hand it back by itself. */
+  "POST /api/claude-accounts/:id/login/code": { req: { code: string }; res: ClaudeAccountsState };
+  /** Stops a sign-in; a new account that never signed in goes with it. */
+  "DELETE /api/claude-accounts/:id/login": { req: void; res: ClaudeAccountsState };
+  /** Reads email and plan again (`claude auth status`). */
+  "POST /api/claude-accounts/:id/refresh": { req: void; res: ClaudeAccountsState };
+  /** Renames an account. */
+  "PATCH /api/claude-accounts/:id": { req: { label: string }; res: ClaudeAccountsState };
+  /** 切换: the Claude subscription runs on this account from now on; refused (conflict) while a Claude session is at work. */
+  "PUT /api/claude-accounts/current": { req: { id: Id }; res: ClaudeAccountsState };
+  /** Removes an added account: its login and dir (the shared records stay with the default account). Not the default or current one. */
+  "DELETE /api/claude-accounts/:id": { req: void; res: ClaudeAccountsState };
   /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
   /** Raw bytes in the body (not JSON), the type in `content-type`, the file name in `?name=`. */
   "POST /api/attachments": { req: void; res: Attachment };

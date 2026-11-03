@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import type { Session, Task, Workspace, Topic, StateSnapshot, StudioSettings } from "@amo-studio/protocol";
+import type { ClaudeAccountsState, Session, Task, Workspace, Topic, StateSnapshot, StudioSettings } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // 设置: the theme (dark, light, or following the system; remembered, shared with Focus), the common space, and how the
@@ -123,10 +123,10 @@ test("设置 → 模型: the Claude subscription signs in through Claude Code it
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
   await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
-  await expect(dialog.getByTestId("claude-local-state")).toBeVisible();
+  await expect(dialog.getByTestId("claude-accounts")).toBeVisible();
   await expect(dialog.getByRole("radio", { name: /令牌/ })).toHaveCount(0);
   await expect(dialog.locator('[data-testid="credential"][data-id="claude-subscription"]')).toHaveCount(0);
-  await expect(dialog.getByTestId("claude-login-notes")).toContainText("claude --resume");
+  await expect(dialog.getByTestId("claude-login-notes")).toContainText("对话记录");
   // Studio stores no Claude.ai token any more: the Host refuses one.
   await expect(studio.api("PUT", "/api/credentials/claude-subscription", { secret: "sk-ant-oat01-e2e" })).rejects.toThrow(/cannot be changed from Studio/);
   // API keys stored elsewhere are shown on their channel's page, never editable here.
@@ -151,8 +151,10 @@ test("the Claude subscription on the local Claude Code login: found in 设置, t
   await dialog.getByRole("tab", { name: "模型" }).click();
   await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
   // The local login is found (the stand-in here); there is nothing to choose and no token row.
-  await expect(dialog.getByTestId("claude-local-state")).toContainText("已找到");
-  await expect(dialog.getByTestId("claude-local-state")).toContainText(mine);
+  const own = dialog.locator('[data-testid="claude-account"][data-id="default"]');
+  await expect(own).toContainText("已登录");
+  await expect(own).toContainText("✓ 正在使用");
+  await expect(own).toContainText(mine);
   await expect(dialog.locator('[data-testid="credential"][data-id="claude-subscription"]')).toHaveCount(0);
   await screenshot(app, "stage-12", "S12-I-models-page", page);
   await page.keyboard.press("Escape");
@@ -174,5 +176,57 @@ test("the Claude subscription on the local Claude Code login: found in 设置, t
   await expect(windows.nth(1)).toContainText("剩 88%");
   await expect(windows.nth(1).getByTestId("usage-reset")).toHaveText(/^3d 2h [56]m$/);
   await screenshot(app, "stage-12", "S12-J-claude-usage", page);
+  await page.getByTestId("host-status").click();
+});
+
+test("Claude 多账号: a second account in 设置, the quota per account at the bottom left, and switching only when no session is at work (2026-11-03)", async ({}, info) => {
+  const mine = join(info.outputDir, "my-claude");
+  mkdirSync(mine, { recursive: true });
+  const expiresAt = Date.now() + 365 * 24 * 3600_000;
+  const login = (token: string, plan: string) => JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: `${token}-r`, expiresAt, scopes: ["user:inference", "user:profile"], subscriptionType: plan } });
+  writeFileSync(join(mine, ".credentials.json"), login("sk-ant-oat01-e2e-local", "max"));
+  studio = await launchStudio({ env: { CLAUDE_CONFIG_DIR: mine } });
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+
+  // A second account (signed in here as `claude auth login` would: a test run opens no browser).
+  const added = await studio.api<ClaudeAccountsState>("POST", "/api/claude-accounts", { label: "工作号", signIn: false });
+  const work = added.accounts.find((a) => a.label === "工作号")!;
+  writeFileSync(join(work.dir, ".credentials.json"), login("sk-ant-oat01-e2e-local-work", "pro"));
+  // Its records are the default account's.
+  expect(lstatSync(join(work.dir, "projects")).isSymbolicLink()).toBe(true);
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
+  await expect(dialog.getByTestId("claude-account")).toHaveCount(2);
+  const workRow = dialog.locator(`[data-testid="claude-account"][data-id="${work.id}"]`);
+  await expect(workRow).toContainText("已登录");
+  await expect(workRow.getByTestId("claude-account-switch")).toBeEnabled();
+  await screenshot(app, "settings", "claude-accounts", page);
+  await page.keyboard.press("Escape");
+
+  // A session on the default account; while it works, no switching.
+  await studio.api("POST", "/api/tasks", { title: "多账号", workspaceId: ws.id, firstSession: { profileId: "claude-subscription", text: "[[slow]] hello mine" } });
+  await page.getByTestId("host-status").click();
+  const current = page.locator('[data-testid="usage-account"][data-current="1"]');
+  await expect(current).toContainText("正在使用");
+  await expect(current).toContainText("剩 63%");
+  await page.getByTestId("usage-others-toggle").click();
+  const other = page.locator(`[data-testid="usage-account"][data-account="${work.id}"]`);
+  await expect(other).toContainText("工作号");
+  await expect(other.getByTestId("usage-switch")).toBeDisabled();
+  await expect(studio.api("PUT", "/api/claude-accounts/current", { id: work.id })).rejects.toThrow(/正在进行/);
+  await screenshot(app, "settings", "claude-accounts-usage-busy", page);
+
+  // Once it is over, 切换 from the quota list; the session goes on under the work account.
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("slow slow", { timeout: 60_000 });
+  await expect(other.getByTestId("usage-switch")).toBeEnabled({ timeout: 30_000 });
+  await other.getByTestId("usage-switch").click();
+  await expect(page.locator(`[data-testid="usage-account"][data-current="1"][data-account="${work.id}"]`)).toBeVisible();
+  await expect.poll(async () => (await studio!.api<StudioSettings>("GET", "/api/settings")).claudeAccounts.current).toBe(work.id);
+  await screenshot(app, "settings", "claude-accounts-usage", page);
   await page.getByTestId("host-status").click();
 });

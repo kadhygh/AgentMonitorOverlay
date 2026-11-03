@@ -813,4 +813,9 @@ export interface AccountUsage {
   note: string | null;
   /** When these numbers were read; null when never. */
   updatedAt: Timestamp | null;
+  /**
+   * Claude 多账号 (2026-11-03): which of the Claude subscription's accounts this is; one entry per account, the current
+   * one first. Absent for every other subscription (and for Claude with a single account).
+   */
+  account?: { id: Id; label: string; current: boolean };
 }

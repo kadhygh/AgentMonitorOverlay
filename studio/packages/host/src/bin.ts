@@ -44,6 +44,8 @@ function testModelOptions(): Partial<StartHostOptions> {
       ...(dshAgent ? [{ id: "dsh-mock", label: "Mock DSH", runtime: "dsh" as const, provider: "deepseek-official", model: null, credentialId: "mock" }] : []),
     ],
     ...(dshAgent && node ? { dshAgent: { command: node, args: [dshAgent] } } : {}),
+    // Claude 多账号: added accounts' dirs in the test's data folder, never the person's ~/.claude-accounts.
+    claudeAccountsDir: join(dataDir, "claude-accounts"),
     // Off the network (2026-10-27): Studio's real sessions fetch the CLI's feature flags; tests must not.
     ...(claudeUrl
       ? {

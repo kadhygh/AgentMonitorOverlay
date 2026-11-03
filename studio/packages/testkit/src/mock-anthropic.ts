@@ -45,6 +45,8 @@ export type ClaudeMockReply =
   | { kind: "error"; status: number; type: string; message: string };
 
 export interface ClaudeMockRequest {
+  /** The request's Authorization header (which login sent it: Claude 多账号 tests). */
+  authorization?: string;
   /** Text the person typed in the last user message (context blocks such as <system-reminder> are skipped). */
   lastUserText: string;
   /** Image blocks in that message. */
@@ -340,6 +342,7 @@ export async function startMockAnthropic(options: { port?: number; script?: Clau
       }
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       const parsed = parseClaudeRequest(body);
+      parsed.authorization = String(req.headers.authorization ?? "");
       parsed.attempt = requests.filter((r) => r.lastUserText === parsed.lastUserText && r.afterToolOutput === parsed.afterToolOutput && r.lastTool?.name === parsed.lastTool?.name).length;
       requests.push(parsed);
       const reply = script(parsed);

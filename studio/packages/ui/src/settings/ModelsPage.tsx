@@ -8,6 +8,7 @@ import { ChannelDialog } from "./ChannelDialog.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
 import { DshSection } from "./DshSection.js";
 import { ClaudeCodeSection } from "./ClaudeCodeSection.js";
+import { ClaudeAccountsSection } from "./ClaudeAccountsSection.js";
 import { useProfiles } from "../lib/balance.js";
 
 /** What each 「+ … 方案」 adds. */
@@ -20,7 +21,7 @@ const ADD_HINT = {
 // 设置 → 模型. S18 (2026-10-18): a list on the left — 支持的渠道 (built in), 第三方 (the person's own endpoints, each run
 // as a Codex or a Claude one; added from the two buttons under them), then 快速选择 and 常用预设, which belong to no
 // channel — and the chosen entry on the right. A channel's page holds everything about it: key, balance, hiding, the
-// Claude subscription's sign-in or the DSH clone, the order and defaults of its models, and its 自动压缩点.
+// Claude subscription's accounts (Claude 多账号, 2026-11-03) or the DSH clone, the order and defaults of its models, and its 自动压缩点.
 
 /** The built-in Claude subscription channel: it signs in through the person's own Claude Code. */
 const CLAUDE_SUBSCRIPTION = "claude-subscription";
@@ -57,7 +58,7 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
     profile?.runtime === "claude" ? (
       <>
         <ClaudeCodeSection link={link} />
-        {!profile.custom && profile.id === CLAUDE_SUBSCRIPTION && settings && <ClaudeLoginSection settings={settings} />}
+        {!profile.custom && profile.id === CLAUDE_SUBSCRIPTION && settings && <ClaudeAccountsSection link={link} settings={settings} />}
       </>
     ) : profile && !profile.custom && profile.runtime === "dsh" ? (
       <DshSection link={link} credentialId={profile.credentialId} />
@@ -127,33 +128,6 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
           }}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * The Claude subscription's sign-in: the person's own Claude Code login, the only way since 2026-10-27 (the
- * `claude setup-token` token mode is gone, so Studio keeps no Claude.ai credential). Shown with what that means.
- */
-function ClaudeLoginSection({ settings }: { settings: StudioSettings }) {
-  const local = settings.claudeLocal;
-  return (
-    <div className="claude-login" aria-label="Claude 订阅">
-      <span className="settings-hint">用本机 Claude Code 的登录：和终端里的 claude 同一个账号、同一份用量额度。要换账号或重新登录，在终端运行 claude 即可。</span>
-      <div className="settings-row" data-testid="claude-local-state">
-        <span className="settings-label">本机登录</span>
-        <span className={`credential-state${local.signedIn ? " saved" : ""}`}>{local.signedIn === null ? "无法检测" : local.signedIn ? "已找到" : "没找到：先在终端运行 claude 登录一次"}</span>
-        <code className="login-dir" title={local.dir}>
-          {local.dir}
-        </code>
-      </div>
-      <ul className="settings-hint claude-login-notes" data-testid="claude-login-notes">
-        <li>
-          Studio 的对话记录写进 <code>{local.dir}\projects</code>，和你终端的会话放在一起，<code>claude --resume</code> 的列表里也看得到。
-        </li>
-        <li>和终端里一样，会加载那里的 settings.json、CLAUDE.md、自定义命令、skills 和 hooks；MCP 服务器只用 Studio 自己的。</li>
-        <li>左下角的 Claude 用量读这份登录去查额度（只读）。</li>
-      </ul>
     </div>
   );
 }

@@ -10,6 +10,8 @@ import type { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
 import { DshFeature } from "./features/dsh/service.js";
 import { ProjectsFeature } from "./features/projects/service.js";
 import { ConfigFeature } from "./features/config/service.js";
+import { ClaudeAccountsFeature } from "./features/claudeaccounts/service.js";
+import type { ClaudeAccounts } from "./runtime/claude/accounts.js";
 import { TasksFeature } from "./features/tasks/service.js";
 import { TopicsFeature } from "./features/topics/service.js";
 import { SessionsFeature } from "./features/sessions/service.js";
@@ -52,6 +54,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   liveWindows = 0;
   readonly projects = new ProjectsFeature(this);
   readonly config = new ConfigFeature(this);
+  /** Claude 多账号 (2026-11-03): the Claude subscription's accounts, signing in and switching. */
+  readonly claudeAccounts = new ClaudeAccountsFeature(this);
   readonly tasks = new TasksFeature(this);
   readonly topics = new TopicsFeature(this);
   readonly sessions = new SessionsFeature(this);
@@ -98,6 +102,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       commonDir?: string;
       /** The person's Claude Code config dir (设置 → 模型 shows whether it holds a login); default theirs, ~/.claude. */
       localClaudeHome?: string;
+      /** Claude 多账号: the Claude runtime's accounts (one for the person's own dir when absent). */
+      claudeAccounts?: ClaudeAccounts;
       /** The person's own model channels (设置 → 模型); `profiles` is its list. */
       channels?: ChannelRegistry;
       /** DeepSeek on a DSH clone (stage 17): 设置 → 模型 →「检查」 runs through it. */

@@ -49,7 +49,7 @@ export interface SessionRuntimeApi {
   /** Answers a pending `question` item (stage 12): the reply must fit its source (see QuestionReply). */
   answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void>;
   /** A subscription's quota use, for profiles that have one; null otherwise. `refresh`: ask the account now. */
-  usage?(profileId: Id, refresh: boolean): Promise<AccountUsage | null>;
+  usage?(profileId: Id, refresh: boolean): Promise<AccountUsage | AccountUsage[] | null>;
   /** Codex only: where an attached TUI connects. */
   attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }>;
   setWriter(sessionId: Id, writer: Session["writer"]): Session;
@@ -123,7 +123,7 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   setOptions(sessionId: Id, options: SessionOptions) {
     return this.forSession(sessionId).setOptions(sessionId, options);
   }
-  async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | null> {
+  async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | AccountUsage[] | null> {
     const profile = this.profiles.find((p) => p.id === profileId);
     const r = profile ? this.runtimes[profile.runtime] : undefined;
     return r?.usage ? r.usage(profileId, refresh) : null;

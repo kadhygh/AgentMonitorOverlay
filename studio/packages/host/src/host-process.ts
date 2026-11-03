@@ -6,6 +6,7 @@ import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
+import { ClaudeAccounts } from "./runtime/claude/accounts.js";
 import { CLAUDE_CODE_MISSING, findClaudeCode } from "./runtime/claude/executable.js";
 import { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
 import type { FolderAccess } from "./runtime/dsh/folder-access.js";
@@ -53,6 +54,8 @@ export interface StartHostOptions {
   claudeBaseEnv?: NodeJS.ProcessEnv;
   /** The person's Claude Code config dir for the local login (default: their CLAUDE_CONFIG_DIR or ~/.claude). */
   localClaudeHome?: string;
+  /** Where added Claude accounts' dirs go (default ~/.claude-accounts; tests their own folder). */
+  claudeAccountsDir?: string;
   /** Tests: the ACP agent DSH sessions run (a fake one) instead of the DSH clone set in 设置 → 模型. */
   dshAgent?: { command: string; args: readonly string[] };
   /** Variables DSH processes start from (default: process.env). */
@@ -235,6 +238,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     // Managed Claude sessions keep their transcripts in Studio's own config dir, unless the person chose the local login
     // (设置 → 模型): then sessions started with it use their Claude Code login and ~/.claude.
     const localClaudeHome = options.localClaudeHome ?? localClaudeHomeOf(options.claudeBaseEnv ?? process.env);
+    // Claude 多账号 (2026-11-03): the subscription's accounts, shared by the runtime (where sessions run) and 设置.
+    const claudeAccounts = new ClaudeAccounts(store, {
+      defaultDir: localClaudeHome,
+      defaultExplicit: !!options.localClaudeHome || !!(options.claudeBaseEnv ?? process.env).CLAUDE_CONFIG_DIR?.trim(),
+      ...(options.claudeAccountsDir ? { root: options.claudeAccountsDir } : {}),
+      ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
+    });
     claude = new ClaudeRuntime({
       store,
       profiles,
@@ -244,6 +254,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
       // Only an explicit dir is passed down: otherwise the CLI is left to find ~/.claude (and ~/.claude.json) itself.
       ...(options.localClaudeHome ? { localClaudeHome: options.localClaudeHome } : {}),
+      accounts: claudeAccounts,
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
       mcpInstructions: (sessionId): string => {
         try {
@@ -274,6 +285,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       launcher: options.launcher ?? new WindowsTerminalLauncher(),
       credentials,
       localClaudeHome,
+      claudeAccounts,
       channels,
       dsh,
       // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.

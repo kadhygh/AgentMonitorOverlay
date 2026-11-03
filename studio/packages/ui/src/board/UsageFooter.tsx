@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AccountUsage, ModelProfile } from "@amo-studio/protocol";
-import { call, type HostLink } from "../host/client.js";
+import type { ReactNode } from "react";
+import type { AccountUsage, ModelProfile, Session } from "@amo-studio/protocol";
+import { call, HostApiError, type HostLink } from "../host/client.js";
 import { IconClock } from "../chat/icons.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { balanceText, money, useBalance, useProfiles } from "../lib/balance.js";
@@ -10,7 +11,11 @@ import { quotaOf } from "../lib/quota.js";
 // balance of channels whose site tells it — the accounts 设置 → 额度 shows here. One line folded (the highest use of
 // each account, each balance); click for every window with what is left and when it resets.
 
+// Claude 多账号 (2026-11-03, the user): the Claude subscription shows one entry per account — the one in use as before,
+// the others folded together under it, each with 切换 (refused while a Claude session is at work).
+
 const OPEN_KEY = "amo.usageOpen";
+const OTHERS_KEY = "amo.usageOthersOpen";
 const STORED_KEY = "amo.usage";
 const REFRESH_MS = 5 * 60_000;
 
@@ -33,6 +38,13 @@ export function resetIn(iso: string, now = new Date()): string {
   return [d ? `${d}d` : "", d || h ? `${h}h` : "", `${m}m`].filter(Boolean).join(" ");
 }
 
+/** One entry of the list: a profile, or one of the Claude subscription's accounts. */
+const keyOf = (u: AccountUsage) => (u.account ? `${u.profileId}|${u.account.id}` : u.profileId);
+
+/** Whether a Claude subscription session is at work (switching accounts waits for it; the Host checks too). */
+const claudeBusy = (sessions: readonly Session[]) =>
+  sessions.some((s) => s.runtime === "claude" && s.profileId === "claude-subscription" && !s.archivedAt && s.kind !== "sub" && (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer"));
+
 /** The highest known use of an account; null when it told no percentages. */
 const peak = (u: AccountUsage) => {
   const known = u.windows.flatMap((w) => (w.usedPercent === null ? [] : [w.usedPercent]));
@@ -51,7 +63,7 @@ function useNow(on: boolean): Date {
   return now;
 }
 
-export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
+export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; live: boolean; sessions?: readonly Session[] }) {
   const [open, setOpen] = useState(() => {
     try {
       return localStorage.getItem(OPEN_KEY) === "1";
@@ -65,6 +77,18 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
   const settings = useSettings(link);
   const balances = (useProfiles(link) ?? []).filter((p) => p.balance && quotaOf(settings, p.id).footer);
   const shown = usage.filter((u) => quotaOf(settings, u.profileId).footer);
+  // The accounts not in use, folded together under the one in use.
+  const others = shown.filter((u) => u.account && !u.account.current);
+  const [othersOpen, setOthersOpen] = useState(() => {
+    try {
+      return localStorage.getItem(OTHERS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const busy = claudeBusy(sessions);
 
   const load = useCallback(
     (refresh: boolean) => {
@@ -73,7 +97,7 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
       call(link, "GET /api/usage", {}, undefined, refresh ? { refresh: "1" } : {})
         .then((list) => {
           // A plain read without numbers keeps the numbers known from before.
-          setUsage((cur) => list.map((u) => (u.windows.length || refresh ? u : (cur.find((c) => c.profileId === u.profileId) ?? u))));
+          setUsage((cur) => list.map((u) => (u.windows.length || refresh ? u : { ...(cur.find((c) => keyOf(c) === keyOf(u)) ?? u), ...(u.account ? { account: u.account } : {}) })));
           if (refresh) {
             try {
               localStorage.setItem(STORED_KEY, JSON.stringify(list));
@@ -97,6 +121,30 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
     return () => clearInterval(t);
   }, [open, load]);
 
+  async function switchTo(u: AccountUsage) {
+    if (!u.account) return;
+    setSwitching(u.account.id);
+    setSwitchError(null);
+    try {
+      await call(link, "PUT /api/claude-accounts/current", {}, { id: u.account.id });
+      load(false);
+    } catch (err) {
+      setSwitchError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  const toggleOthers = () =>
+    setOthersOpen((v) => {
+      try {
+        localStorage.setItem(OTHERS_KEY, v ? "0" : "1");
+      } catch {
+        // per-viewer convenience only
+      }
+      return !v;
+    });
+
   const toggle = () =>
     setOpen((v) => {
       try {
@@ -112,36 +160,46 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
       {open && (
         <div className="usage-list" data-testid="usage-list">
           {shown.length === 0 && balances.length === 0 && <span className="usage-note">没有要显示的额度。在 设置 → 额度 里选。</span>}
-          {shown.map((u) => (
-            <div key={u.profileId} className="usage-acct" data-testid="usage-account">
-              <b className="usage-acct-name">{u.label}</b>
-              <div className="usage-acct-body">
-              {u.windows.map((w) => {
-                const used = w.usedPercent;
-                return (
-                  <div key={w.label} className="usage-win" data-testid="usage-window">
-                    <div className="usage-win-line">
-                      <span>{w.label}</span>
-                      <span className="usage-left" title={used === null ? "账号没有告诉用了多少" : `已用 ${used}%`}>
-                        {used === null ? "剩 —" : `剩 ${Math.max(0, 100 - used)}%`}
-                      </span>
-                      {w.resetsAt && (
-                        <span className="usage-reset" title={`${new Date(w.resetsAt).toLocaleString()} 重置`} data-testid="usage-reset">
-                          <IconClock />
-                          {resetIn(w.resetsAt, now)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="usage-bar" aria-label={used === null ? `${w.label} 用量未知` : `${w.label} 已用 ${used}%`}>
-                      {used !== null && <span className={used >= 80 ? "hot" : undefined} style={{ width: `${Math.min(100, used)}%` }} />}
-                    </div>
-                  </div>
-                );
-              })}
-              {u.note && <span className="usage-note">{u.note}</span>}
-              </div>
+          {shown
+            .filter((u) => !u.account || u.account.current)
+            .map((u) => (
+              <UsageAccount key={keyOf(u)} usage={u} now={now} />
+            ))}
+          {others.length > 0 && (
+            <div className="usage-others" data-testid="usage-others">
+              <button type="button" className="usage-others-toggle" aria-expanded={othersOpen} onClick={toggleOthers} data-testid="usage-others-toggle">
+                <span aria-hidden="true">{othersOpen ? "▾" : "▸"}</span>
+                <span>其他 Claude 账号（{others.length}）</span>
+                {!othersOpen && <span className="usage-others-peaks">{others.map((u) => `${u.account!.label} ${peak(u) === null ? "—" : `${peak(u)}%`}`).join(" · ")}</span>}
+              </button>
+              {othersOpen &&
+                others.map((u) => (
+                  <UsageAccount
+                    key={keyOf(u)}
+                    usage={u}
+                    now={now}
+                    action={
+                      <button
+                        type="button"
+                        className="btn-ghost small usage-switch"
+                        disabled={!!switching || busy}
+                        title={busy ? "有 Claude 会话正在进行，等它结束（或停止）后再切换" : `切换到「${u.account!.label}」：之后 Claude 订阅的会话都用这个账号`}
+                        onClick={() => void switchTo(u)}
+                        data-testid="usage-switch"
+                      >
+                        {switching === u.account!.id ? "切换中…" : "切换"}
+                      </button>
+                    }
+                  />
+                ))}
+              {othersOpen && busy && <span className="usage-note">有 Claude 会话正在进行，结束（或停止）后才能切换。</span>}
+              {switchError && (
+                <span className="usage-note error" role="alert">
+                  {switchError}
+                </span>
+              )}
             </div>
-          ))}
+          )}
           {balances.map((p) => (
             <BalanceAccount key={p.id} link={link} profile={p} />
           ))}
@@ -154,10 +212,10 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
         <span className={live ? "dot live" : "dot"} aria-hidden="true" />
         <span data-testid="host-status">{live ? "Host 运行中" : "Host 重新连接中…"}</span>
         <span className="usage-peaks">
-          {shown.map((u) => {
+          {shown.filter((u) => !u.account || u.account.current).map((u) => {
             const p = peak(u);
             return (
-              <span key={u.profileId} className={p !== null && p >= 80 ? "hot" : undefined}>
+              <span key={keyOf(u)} className={p !== null && p >= 80 ? "hot" : undefined}>
                 {u.label} {p === null ? "—" : `${p}%`}
               </span>
             );
@@ -167,6 +225,51 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
           ))}
         </span>
       </button>
+    </div>
+  );
+}
+
+/** One subscription account in the open list: its windows (what is left, when it resets); `action`: 切换. */
+function UsageAccount({ usage: u, now, action }: { usage: AccountUsage; now: Date; action?: ReactNode }) {
+  const other = !!u.account && !u.account.current;
+  return (
+    <div className={other ? "usage-acct other" : "usage-acct"} data-testid="usage-account" data-account={u.account?.id} data-current={u.account ? (u.account.current ? "1" : "0") : undefined}>
+      <b className="usage-acct-name" title={u.account ? `${u.label} · ${u.account.label}` : u.label}>
+        {other ? u.account!.label : u.label}
+      </b>
+      <div className="usage-acct-body">
+        {u.account && (
+          <div className="usage-win-line usage-acct-who">
+            <span className="usage-acct-label" title={u.account.label}>
+              {u.account.current ? `✓ 正在使用 · ${u.account.label}` : "○ 未使用"}
+            </span>
+            {action}
+          </div>
+        )}
+        {u.windows.map((w) => {
+          const used = w.usedPercent;
+          return (
+            <div key={w.label} className="usage-win" data-testid="usage-window">
+              <div className="usage-win-line">
+                <span>{w.label}</span>
+                <span className="usage-left" title={used === null ? "账号没有告诉用了多少" : `已用 ${used}%`}>
+                  {used === null ? "剩 —" : `剩 ${Math.max(0, 100 - used)}%`}
+                </span>
+                {w.resetsAt && (
+                  <span className="usage-reset" title={`${new Date(w.resetsAt).toLocaleString()} 重置`} data-testid="usage-reset">
+                    <IconClock />
+                    {resetIn(w.resetsAt, now)}
+                  </span>
+                )}
+              </div>
+              <div className="usage-bar" aria-label={used === null ? `${w.label} 用量未知` : `${w.label} 已用 ${used}%`}>
+                {used !== null && <span className={used >= 80 ? "hot" : undefined} style={{ width: `${Math.min(100, used)}%` }} />}
+              </div>
+            </div>
+          );
+        })}
+        {u.note && <span className="usage-note">{u.note}</span>}
+      </div>
     </div>
   );
 }

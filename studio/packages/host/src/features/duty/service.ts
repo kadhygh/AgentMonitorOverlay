@@ -454,7 +454,9 @@ export class DutyFeature extends Feature {
 
   /** Whether the profile's subscription is (nearly) used up, as far as Studio can read it. */
   private async usedUp(profileId: Id): Promise<string | null> {
-    const usage = this.runtime.usage ? await this.runtime.usage(profileId, false).catch(() => null) : null;
+    const answer = this.runtime.usage ? await this.runtime.usage(profileId, false).catch(() => null) : null;
+    // Claude with several accounts: the one sessions run on now (listed first).
+    const usage = Array.isArray(answer) ? (answer.find((u) => u.account?.current) ?? answer[0] ?? null) : answer;
     const full = usage?.windows.find((w) => w.usedPercent !== null && w.usedPercent >= USED_UP_PERCENT);
     return full ? `${usage!.label}「${full.label}」已用 ${full.usedPercent}%` : null;
   }

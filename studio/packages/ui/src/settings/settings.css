@@ -254,3 +254,19 @@
 .tb-btn.duty-toggle-btn:not([data-on]) { color: var(--text-dim); }
 .duty-form .settings-row .field.duty-grow { flex: 1; min-width: 220px; }
 .settings-hint.error { color: var(--error); }
+
+/* Claude 多账号 (2026-11-03): one row per account, the one in use marked; the sign-in under way below its row. */
+.claude-accounts { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-s); }
+.claude-account { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; }
+.claude-account + .claude-account { border-top: 1px solid var(--border); }
+.claude-account.current { background: var(--chip); }
+.claude-account-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.claude-account-name { font-size: 13px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claude-account-badge { font-size: 12px; color: var(--running-text); }
+.claude-account-tag { font-size: 11.5px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 9px; padding: 0 6px; line-height: 17px; }
+.claude-account-sub { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); min-width: 0; }
+.claude-account-sub .login-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.claude-account-login { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.claude-account-code, .claude-account-add, .claude-account-rename { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.claude-account-code .field, .claude-account-add .field { flex: 1 1 220px; min-width: 0; }
+.claude-account-rename .field { width: 200px; }
