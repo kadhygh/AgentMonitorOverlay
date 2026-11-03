@@ -136,3 +136,18 @@ describe("the seen record kept small", () => {
     expect(unseenSessions([at("later", "idle", iso(600))], data).map((s) => s.id)).toEqual(["later"]);
   });
 });
+
+describe("when a turn ended, not when the session last changed (2026-11-04)", () => {
+  it("a rename, a setting or restoring after the last look does not list it; a turn ending does", () => {
+    const data = { since: "2026-11-01T00:00:00.000Z", seen: { s: "2026-11-04T10:00:00.000Z", sub: "2026-11-04T10:00:00.000Z" } };
+    const renamed = at("s", "idle", "2026-11-04T10:30:00.000Z", { endedAt: "2026-11-04T09:50:00.000Z" });
+    expect(unseenSessions([renamed], data)).toEqual([]);
+    expect(unseenSessions([{ ...renamed, endedAt: "2026-11-04T10:20:00.000Z" }], data).map((s) => s.id)).toEqual(["s"]);
+    // No turn ended yet (a fork just made): not listed, whatever its updatedAt.
+    expect(unseenSessions([at("fork", "idle", "2026-11-04T10:30:00.000Z", { endedAt: null })], data)).toEqual([]);
+    // A subagent's end counts for its parent, its rename does not.
+    const sub = at("k", "completed", "2026-11-04T10:40:00.000Z", { kind: "sub", parentId: "s", endedAt: "2026-11-04T09:55:00.000Z" });
+    expect(unseenSessions([renamed, sub], data)).toEqual([]);
+    expect(unseenSessions([renamed, { ...sub, endedAt: "2026-11-04T10:35:00.000Z" }], data).map((s) => s.id)).toEqual(["s"]);
+  });
+});

@@ -415,7 +415,7 @@ test("Focus: 「我知道了」 counts a 完成待审核 entry as reviewed witho
   await expect(entry).toHaveCount(0);
 });
 
-test("Focus: restoring an archived task does not list its ended sessions as 完成待审核 again (2026-11-03)", async () => {
+test("Focus: renaming an ended session or restoring its archived task does not list it as 完成待审核 again (2026-11-03)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -426,6 +426,10 @@ test("Focus: restoring an archived task does not list its ended sessions as 完�
   const entry = focus.getByTestId("focus-entry");
   await expect(entry).toHaveCount(1, { timeout: 30_000 });
   await focus.getByTestId("focus-done").click();
+  await expect(entry).toHaveCount(0);
+  // Renaming it is not a reply either (Session.endedAt, 2026-11-04).
+  await studio.api("PATCH", `/api/sessions/${session.id}`, { title: "改个名字" });
+  await page.waitForTimeout(800);
   await expect(entry).toHaveCount(0);
   await studio.api("POST", `/api/tasks/${task.id}/archive`);
   await studio.api("POST", `/api/tasks/${task.id}/unarchive`);

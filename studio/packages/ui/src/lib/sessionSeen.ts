@@ -78,7 +78,7 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
     .filter((s) => !s.archivedAt && s.kind !== "sub" && !folded(s) && (s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error"))
     .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
     .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => endedOf(b).localeCompare(endedOf(a)));
 }
 
 /**
@@ -87,7 +87,7 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
  */
 export function interruptedSince(session: Session, sessions: readonly Session[], data: SeenData): Session[] {
   const after = maxIso(data.since, data.seen[session.id]);
-  return (subsByParent(sessions).get(session.id) ?? []).filter((s) => s.status === "interrupted" && s.updatedAt > after);
+  return (subsByParent(sessions).get(session.id) ?? []).filter((s) => s.status === "interrupted" && endedOf(s) > after);
 }
 
 /** Whether the workbench opening this session is the person coming to deal with it: it waits, or ended unseen. */
@@ -128,9 +128,17 @@ export function runningSubs(id: string, subs: ReadonlyMap<string, readonly Sessi
   return (subs.get(id) ?? []).filter((s) => s.status === "running");
 }
 
-/** When the session or one of its subagents last changed. */
+/** When the session or one of its subagents last ended a turn. */
 function lastChange(s: Session, subs: ReadonlyMap<string, readonly Session[]>): string {
-  return (subs.get(s.id) ?? []).reduce((at, x) => (x.updatedAt > at ? x.updatedAt : at), s.updatedAt);
+  return (subs.get(s.id) ?? []).reduce((at, x) => (endedOf(x) > at ? endedOf(x) : at), endedOf(s));
+}
+
+/**
+ * When its last turn ended (Session.endedAt, 2026-11-04): renaming, settings, archiving and restoring move updatedAt
+ * and made an ended session look just finished. "" when none has ended; updatedAt from a Host before the field.
+ */
+export function endedOf(s: Pick<Session, "updatedAt" | "endedAt">): string {
+  return s.endedAt === undefined ? s.updatedAt : (s.endedAt ?? "");
 }
 
 /** The seen record, following changes made by the other windows. */
@@ -186,7 +194,8 @@ export function withGrants(data: SeenData, tasks: readonly Pick<Task, "id" | "re
  * restored session with the time of restoring, so each one that had ended looked like a reply that just ended unseen
  * — the task's sessions, forks and 委派 ones all at once. Restoring is the person dealing with it, so it counts as
  * seen; with the session it hangs under, whose last change takes in its subagents' and 委派 sessions' (restored a
- * moment later each).
+ * moment later each). Since Session.endedAt restoring moves nothing Focus reads, but sessions ended before it carry
+ * updatedAt as their end (migration 24), for an archived one the time it was archived.
  */
 export function noteRestored(session: Session): void {
   const under = session.kind === "sub" ? session.parentId : session.parentId ? null : session.startedBy;

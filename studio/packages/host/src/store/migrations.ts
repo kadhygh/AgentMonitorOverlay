@@ -350,4 +350,10 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE tasks ADD COLUMN remote TEXT;
   `,
+  // 24: when a session's last turn ended (2026-11-04): Focus's 完成待审核 follows it instead of updated_at, which
+  // renaming, settings, archiving and restoring move too. Sessions already ended take updated_at, as Focus read before.
+  `
+  ALTER TABLE sessions ADD COLUMN ended_at TEXT;
+  UPDATE sessions SET ended_at = updated_at WHERE status IN ('idle', 'completed', 'interrupted', 'error');
+  `,
 ];

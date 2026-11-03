@@ -90,6 +90,7 @@ export function toSession(r: Row): Session {
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
+    endedAt: strOrNull(r.ended_at),
   };
 }
 

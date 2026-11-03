@@ -182,7 +182,16 @@ export interface Session {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   archivedAt: Timestamp | null;
+  /**
+   * When its last turn ended (2026-11-04): the status became idle, completed, interrupted or error. Only that writes it,
+   * so Focus's 完成待审核 / 出错 follow it, not updatedAt, which renaming, settings, archiving and restoring move too.
+   * null: no turn has ended yet. Absent: from a Host before it — readers take updatedAt.
+   */
+  endedAt?: Timestamp | null;
 }
+
+/** The statuses a session is in once a turn has ended. */
+export const ENDED_STATUSES: readonly SessionStatus[] = ["idle", "completed", "interrupted", "error"];
 
 /**
  * A Claude session that goes on by itself (stage 15, 2026-10-16). Studio keeps its Claude Code process while this is
