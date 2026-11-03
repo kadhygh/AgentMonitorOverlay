@@ -4,19 +4,20 @@
 //   npm run release -- due [--wait <min>] [--max <min>]
 //                                                   what is waiting to go out — tools changed since their tag with 「下一版」
 //                                                   entries — one line each, nothing when nothing is; --wait: only a tool
-//                                                   whose last change is that old (quiet so long), or whose first one is
-//                                                   --max old (120 by default)
+//                                                   whose last change is that old (quiet so long), or whose first 「下一版」
+//                                                   entry is --max old (120 by default)
 //   npm run release -- <tool…> | auto [--minor] [--skip-tests] [--dry-run]
 //                                                   checks, typecheck + unit tests, version +1, 「下一版」 → `## <version>（date）`,
 //                                                   commit (landed on master), package, publish to the test channel, tag
 //                                                   `<tool>-v<version>`; auto = every tool `due` lists; each step is
 //                                                   shown on 问题页 (with this machine's platform login), and the issues
 //                                                   it fixed become 已发布 there
-//   npm run release -- auto --if-due [--wait <min>] [--max <min>]
+//   npm run release -- auto --if-due [--wait <min>] [--max <min>] [--retry-quiet <min>]
 //                                                   值守 item 自动打包 (2026-11-01): only the tools due by that rule (30 /
 //                                                   120 by default), or every due one when 发布打包 was clicked; silent
 //                                                   when there are none; after a failure, not again on the same master
-//                                                   until 发布打包 is clicked again
+//                                                   until 发布打包 is clicked again, and on a new master only once it has
+//                                                   been quiet --retry-quiet minutes (10 by default)
 //   npm run release -- relay-service [--skip-tests] [--dry-run]
 //                                                   AMO 中转's service and client content (relay-release, deploy: the service
 //                                                   restarts when it changed), its version in packages/relay
@@ -49,7 +50,7 @@ const args = process.argv.slice(2);
 const [cmd = "status", ...rest] = args;
 const has = (f) => rest.includes(f);
 const flag = (f) => (rest.includes(f) ? rest[rest.indexOf(f) + 1] : undefined);
-const positional = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--wait" && rest[i - 1] !== "--max");
+const positional = rest.filter((a, i) => !a.startsWith("--") && !["--wait", "--max", "--retry-quiet"].includes(rest[i - 1]));
 try {
   setPriority(constants.priority.PRIORITY_BELOW_NORMAL);
 } catch {
@@ -123,20 +124,36 @@ function due() {
     if (!ch?.length) continue;
     const entries = nextEntries(show("master", rel(changelogFile(t))));
     if (!entries.length) continue;
-    out.push({ t, changes: ch, entries, oldest: Math.min(...ch.map((c) => c.at)), latest: Math.max(...ch.map((c) => c.at)) });
+    out.push({ t, changes: ch, entries, oldest: Math.min(...ch.map((c) => c.at)), latest: Math.max(...ch.map((c) => c.at)), firstEntry: firstEntryAt(t) });
   }
   return out;
 }
 
+/** When 「下一版」 got its first entry since the target's last tag (ms): the oldest commit after which the section has one. */
+function firstEntryAt(t) {
+  const file = rel(changelogFile(t));
+  const out = git("log", "--reverse", "--format=%H%x09%ct", `${lastTag(t)}..master`, "--", file);
+  for (const [sha, ct] of out ? out.split("\n").map((l) => l.split("\t")) : []) {
+    if (nextEntries(show(sha, file)).length) return Number(ct) * 1000;
+  }
+  return Date.now();
+}
+
 /**
  * Due by the clock (2026-11-01, the user: 0.9.24 went out 5 minutes after #5's fix, #6's a few minutes later missed
- * it): a tool whose last change is `wait` old — master quiet for it so long — or whose first change is `max` old, so a
- * busy day still ships. Before: the first change `wait` old, which an old change without an entry made true at once.
+ * it): a tool whose last change is `wait` old — master quiet for it so long — or whose first 「下一版」 entry is `max`
+ * old, so a busy day still ships. Before: the first change `wait` old, which an old change without an entry made true at
+ * once. The `max` rule had the same hole until 2026-11-03: it counted from the first change, and 12:45's platform commit
+ * touching packages/relay (one of Studio's packages, no Studio entry) made it true at 20:04, 52 s after #14's fix put
+ * the first entry in — the build raced the sessions still testing on this machine and its unit tests failed.
  */
 function ready(list, wait, max) {
   const now = Date.now();
-  return list.filter((d) => now - d.latest >= wait || now - d.oldest >= max);
+  return list.filter((d) => now - d.latest >= wait || now - d.firstEntry >= max);
 }
+
+/** Master's last commit (ms). */
+const masterAt = () => Number(git("log", "-1", "--format=%ct", "master")) * 1000;
 const minutes = (f, fallback) => Number(flag(f) ?? fallback) * 60_000;
 
 // ---- where this runs
@@ -544,7 +561,11 @@ try {
       const tip = git("rev-parse", "master");
       const failed = lastFailed();
       // Failed on this master: not again until it moves (a fix landed) or 发布打包 is clicked after the failure.
-      if (failed?.sha === tip && !(requestedAt && requestedAt > failed.at)) break;
+      const clicked = requestedAt && failed && requestedAt > failed.at;
+      if (failed?.sha === tip && !clicked) break;
+      // After a failure, not on a master that moved minutes ago (2026-11-03, the user agreed): 20:12's retry started 22 s
+      // after a commit landed, while the session that made it may still have been testing; quiet `--retry-quiet` first.
+      if (failed && !clicked && Date.now() - masterAt() < minutes("--retry-quiet", 10)) break;
       try {
         await release(list.map((d) => d.t.id));
         rmSync(failedFile(), { force: true });
