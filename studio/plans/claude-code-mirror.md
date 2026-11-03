@@ -67,15 +67,17 @@
 | 2 | 中转：接口（平台的要登录、zst 支持 Range）+ 管理页卡片 + 服务启动时带上 | ✓ `3b9a3622` |
 | 3 | 平台：`claude-install.ts`（选来源、续传、校验、放进 versions、`install`）+ 单测 | ✓ `f2f42560` |
 | 4 | 平台：环境页（安装按钮、真实进度、来源和服务器准备中的提示）+ e2e 截图 | ✓ `f2f42560` |
-| 5 | 收尾：CHANGELOG、HANDOFF、中转 README；告诉用户部署中转 | ○ |
-| 6 | Codex 镜像（先调查，和用户谈定再做） | ○ |
+| 5 | 收尾：CHANGELOG、HANDOFF、中转 README；告诉用户部署中转 | ✓ `a3577cda` |
+| 6 | 中转：镜像按工具（Claude Code、Codex），管理页两组设置 | ✓ |
+| 7 | 平台：`codex-install.ts`；环境页改成「团队服务器 / 官方」两块（Claude Code 也是）；没 npm、独立安装版的说明；e2e 截图 | ✓ |
+| 8 | 收尾：CHANGELOG、README、HANDOFF | ✓ |
 
 ## 做的时候定下的细节（2026-11-03）
 
 - 续传和 zst 校验是共用模块 `@amo-studio/locate/download`（服务器和平台都用）。
 - 服务器只在带平台目录启动时（也就是团队服务器）默认开镜像；`--mirror` 强制开、`--no-mirror` 关。本机试服务、e2e 都不会自己去下 122 MB。第一次检查在服务启动 30 秒后。
 - 平台的半截下载放在平台自己的文件夹 `downloads\claude-code\`（和工具的 `apps\` 一样在平台文件夹里），不放 `%APPDATA%`。
-- 从服务器下时：401/403/404 或断两次，就接着从官方下（服务器存的就是官方的 zst 原样，同一个 `.part` 能接着续）。
+- ~~从服务器下时：401/403/404 或断两次，就接着从官方下~~（11-03 改：两块由人选，从服务器没下成就停下说原因、提示点「官方」那一行；服务器存的是官方原样的文件，同一个 `.part` 换着点也能接着续）。
 - `versions\<版本>` 已经有且 sha256 对（比如 Claude Code 自己的后台更新先下好了），就不下载，只跑 `install`。
 
 ## 验证（2026-11-03）
@@ -84,6 +86,35 @@
 - 真实流程：本机起打包后的服务（`--mirror`），从官方真实下了 2.1.316 的 zst（122,064,664 字节）并按官方清单校验通过；平台的 `installClaude` 从这个服务装进临时用户目录，共 10.1 秒，`claude install` 时给了坏代理也装好了，`claude --version` 是 2.1.316。
 - e2e：平台的两条「环境」用例通过（新加的用 testkit 的假镜像，curl.exe 当 Claude Code），截图 `screenshots/platform/P38–P40`。整组平台 e2e 里另有 6 条登录后「正在连接」超过 5 秒失败，master 上同一条也失败，和这次改动无关（机器忙时的超时，没再查）。
 - 管理页卡片：浅色、深色截图看过（下载中、进度、设置表单）。
+
+### Codex 和「两块」（2026-11-03 第二轮）
+
+- 单测：`mirror.test.ts` 12 条（加 Codex：断流续传、sha512 不对、设置各管各的、接口按工具），`codex-install.test.ts` 5 条（两处来源、续传、npm 连不上时用服务器的 sha512、对不上不装、npm 失败留下核对过的 .tgz 下次不再下、独立版识别），`claude-install.test.ts` 改成两块（服务器没文件不再自动换官方；断了的 `.part` 换官方接着续），`environment.test.ts` 改写那条（两块、没 npm、npm 装的 Codex、独立版的说明）；relay、platform、locate、testkit、平台界面共 184 条全过，类型检查通过。
+- 真实流程：本机起服务（`--mirror`），两个镜像都从官方真实下好、核对通过（Codex 0.166.0 的平台包 180,706,795 字节，Claude Code 这时已是 2.1.317，122,895,826 字节）；`installCodex` 从这个服务装进临时的 npm 前缀和缓存（没碰本机的全局 npm）：下载 + 核对 1 秒，`npm cache add` + `npm install -g` 共 15 秒，npm 的日志里大包是 `cache hit`（不加 `--prefer-offline` 也是），`codex --version` 是 `codex-cli 0.166.0`。
+- e2e：平台「环境」三条通过；新截图 `P41-codex-needs-npm`、`P42-codex-installing`、`P43-codex-installed`，P17/P18/P36–P40 跟着变（两块的样子；P36/P37 现在是 npm 装的 Codex 从官方更新）。整组平台 e2e 还是那 6 条「正在连接」失败，和这次无关。
+- 管理页两张卡片浅色、深色截图看过（空、备好）。
+
+## Codex（2026-11-03 调查、用户确认）
+
+### 调查结论（Codex 0.166.0）
+
+- npm 的 `@openai/codex` 主包只有 13 KB，程序在平台包里：`@openai/codex@<版本>-win32-x64`（`https://registry.npmjs.org/@openai/codex/-/codex-<版本>-win32-x64.tgz`，180,706,795 字节，解开 502 MB），npm 给 `dist.integrity`（sha512），支持 Range。`/@openai%2fcodex/latest` 是正式版的版本号（不含 alpha）。
+- **先 `npm cache add <平台包.tgz>` 再 `npm install -g @openai/codex@<版本>`**：5 秒装好，只从网上拿了 5 MB 的包信息（packument）和 13 KB 的主包，大包直接用缓存（npm 按 sha512 找）。npm 自己装也会在缓存里留这一份，不多占。
+- 官方另有 `install.ps1`（独立安装）：装到 `%USERPROFILE%\.codex\packages\standalone\releases\<版本>-<target>`，`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` 是指过去的目录链接，还改 PATH、管 daemon。太复杂，平台不替它装。
+
+### 用户定的（2026-11-03）
+
+1. 服务器镜像 npm 的平台包（原样存，sha512 核对），每小时查 npm 的 `latest`，只要 win32-x64（arm64 可开），保留 3 版；管理页里 Claude Code、Codex 各一组设置。
+2. **环境页分两块**（Claude Code 也一样）：服务器有备好的版本时显示「团队服务器」一块（版本 + 安装按钮）；「官方」一块总是显示（官方最新版 + 安装按钮）。装哪个由人点，不再自动选。服务器正在准备新版时照旧写出来。
+3. 没有 npm 时：两块照样显示版本，按钮不能点，写明「要先装 Node.js（自带 npm）」并给下载页。
+4. 官方独立安装脚本装的 Codex：面板里写明是独立安装版、平台不更新它（它自己更新，或重新运行官方安装命令）。
+5. Codex 正在运行时照旧不更新，提示先完全退出 Studio。
+
+### 做法
+
+- 服务器：`mirror.ts` 改成按工具的来源（Claude Code：Anthropic 的 latest + 清单 + zst；Codex：npm 的 latest + 每个平台包的 dist + tgz），同一套检测、续传、保留、设置。目录 `mirror/codex/<版本>/<平台>/codex-<版本>-<平台>.tgz`；`settings.json` 里 `"codex"` 一组。接口 `/api/platform/mirror/<工具>`、`/platform/mirror/<工具>/<版本>/<平台>/<文件>`；管理接口带 `tool`。
+- 平台：`codex-install.ts`：下 tgz 到 `downloads\codex\`（续传），sha512 先对 npm 官方的 `dist.integrity`，连不上 npm 时用服务器记的；`npm cache add` + `npm install -g @openai/codex@<版本>`，成功后删掉下载的文件。
+- 两块各下各的：从服务器下没成功就停下说原因、提示可以点官方那块，不再自动换官方（下了一半的文件两边是同一份内容，换着点会接着下）。
 
 ## 约束
 

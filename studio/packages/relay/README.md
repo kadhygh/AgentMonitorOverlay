@@ -128,16 +128,22 @@ npm run relay:mac -- platform-prune [--dry-run] [--keep 3]   # 删各工具的�
 - 这几个命令都可以加 `--target-dir <本机目录>`：不走 SSH，直接发布到这个目录。用来测试，也可以在本机起一个带平台目录的服务做联调：`node release/relay/amo-relay.mjs serve --port 47130 --data <临时目录> --platform-dir <同一个目录>`。
 - 核心逻辑在 `scripts/platform-publish.mjs`（测试 `scripts/platform-publish.test.mjs`），工具表在 `scripts/amo-tools.mjs`。
 
-## Claude Code 镜像（2026-11-03 起）
+## 工具镜像：Claude Code、Codex（2026-11-03 起）
 
-服务定时从 Anthropic 下好 Claude Code，AMO 平台的「环境」页从这里安装、更新（方案 `plans/claude-code-mirror.md`，代码 `src/mirror.ts`）。
+服务定时从官方下好 Claude Code 和 Codex，AMO 平台的「环境」页可以从这里安装、更新（也可以选从官方下）。方案在 `plans/claude-code-mirror.md`，代码在 `src/mirror.ts`。
 
 - 带 `--platform-dir` 启动的服务默认开（团队服务器就是）；`--mirror` 强制开，`--no-mirror` 关。第一次检查在启动 30 秒后。
-- 设置和状态在管理页 `/admin` 的「Claude Code 镜像」卡片：开关、检查间隔（默认 60 分钟）、平台（默认只要 win32-x64）、保留几版（默认 3），改了马上生效；「现在检查」立刻查一次。
-- 每次检查 GET `https://downloads.claude.ai/claude-code-releases/latest`；有新版就拿它的 `manifest.json`，下 `<版本>/<平台>/claude.exe.zst`（约 120 MB），断了用 Range 接着下（60 秒没数据算卡住，一轮最多 6 次），解压后 sha256 和大小对上清单才算备好。
-- 文件在 `<数据目录>/mirror/`：`settings.json`、`claude-code/index.json`、`claude-code/<版本>/manifest.json`、`claude-code/<版本>/<平台>/claude.exe.zst`（下载中是 `.part`）。Mac 上就是 `~/Services/amo-relay/data/mirror/`。
-- 接口（要登录，和平台的文件一样）：`GET /api/platform/mirror/claude-code`（备好的版本、官方最新、正在准备的进度），`GET /platform/mirror/claude-code/<版本>/manifest.json`，`GET /platform/mirror/claude-code/<版本>/<平台>/claude.exe.zst`（支持 Range）。管理页用 `GET /api/admin/mirror`、`POST /api/admin/mirror/settings`、`POST /api/admin/mirror/check`。
-- 日志里以 `[镜像]` 开头：备好、断了重试、删旧版本、检查失败。
+- 设置和状态在管理页 `/admin`，每个工具一张卡片（「Claude Code 镜像」「Codex 镜像」）：开关、检查间隔（默认 60 分钟）、平台（默认只要 win32-x64）、保留几版（默认 3），各管各的，改了马上生效；「现在检查」立刻查一次。
+- **Claude Code**：每次检查 GET `https://downloads.claude.ai/claude-code-releases/latest`；有新版就拿它的 `manifest.json`，下 `<版本>/<平台>/claude.exe.zst`（约 120 MB）。解压后 sha256 和大小对上清单才算备好。
+- **Codex**：每次检查 GET `https://registry.npmjs.org/@openai%2fcodex/latest`（npm 的正式版）；有新版就拿平台包 `@openai/codex@<版本>-<平台>` 的 `dist.integrity`，下 `@openai/codex/-/codex-<版本>-<平台>.tgz`（约 180 MB，原样存）。sha512 对上才算备好。
+- 两个都是断了用 Range 接着下（60 秒没数据算卡住，一轮最多 6 次）。
+- 文件在 `<数据目录>/mirror/`：`settings.json`（`{"claude-code": …, "codex": …}`）、`<工具>/index.json`、`claude-code/<版本>/manifest.json`、`<工具>/<版本>/<平台>/<文件>`（下载中是 `.part`）。Mac 上就是 `~/Services/amo-relay/data/mirror/`。
+- 接口（要登录，和平台的文件一样）：
+  - `GET /api/platform/mirror/<工具>`：备好的版本、官方最新、正在准备的进度；
+  - `GET /platform/mirror/claude-code/<版本>/manifest.json`；
+  - `GET /platform/mirror/<工具>/<版本>/<平台>/<文件>`：支持 Range。
+- 管理页的接口：`GET /api/admin/mirror`（`{tools: [...]}`）；`POST /api/admin/mirror/settings` 和 `POST /api/admin/mirror/check`，body 里带 `tool`。
+- 日志里以 `[Claude Code 镜像]`、`[Codex 镜像]` 开头：备好、断了重试、删旧版本、检查失败。
 
 ## 给同事用
 
