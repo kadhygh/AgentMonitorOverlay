@@ -1,6 +1,6 @@
 # 程序包瘦身（2026-11-03）
 
-状态：**做完、自动验证都过了（2026-11-03），等用户用真模型点一遍（下面「请你点的」），再说合不合**。分支 `studio/package-slim`（worktree `G:\PROJECT\AgentMonitorOverlay-package-slim`），合并等用户说。
+状态：**做完，已 rebase 到 master（41d7f2d1）并重新验证过（2026-11-03），可以合并；合并等用户说**。分支 `studio/package-slim`（worktree `G:\PROJECT\AgentMonitorOverlay-package-slim`），合并等用户说。
 
 ## 为什么
 
@@ -127,4 +127,24 @@ Studio 用便携版（`release\AMO Studio`，内容和平台版一样，只是 e
 - **e2e `platform`、`relay`（打好的文件夹复制到 `%TEMP%` 再跑）**：前后一样，`platform` 2 过 6 败、`relay` 2 过 5 败，失败的是同一批。这两个 project 在打好的包上能证明的不多：平台模式的中转客户端要求在 AMO 平台里登录（页面停在「在 AMO 平台里登录」，用例要的是自己的注册页）。打好的平台连测试服务器的几条也一样过不了。能看出来的是：瘦身后的中转客户端能启动、从服务器取到界面、连上服务器（页面显示「服务器在线」）；平台能启动，「环境」页和「没有写权限」两条通过。中转 `issues-page` 两条不开客户端，前后都过。
 - **便携包冒烟**（`npm run package:portable` 的 zip，`smoke-portable.mjs`）：都过。Studio 解压、首次运行选数据目录、用本机的 Claude Code（2.1.316）和模拟模型聊天、拉起便签、文件夹外什么都没写；独立 Reviewer 打开改动；独立便签启动。zip：Studio 158 MB、Reviewer 158 MB、便签 151 MB、平台 151 MB。
 - 截图抽看：界面、字体和 master 上的截图一致（e2e 截图没提交，已还原）。
-- 还没做：真模型（Claude、Codex、DSH）和中转客户端、平台的手动检查，见「请你点的」。
+- 用户试过（维护总管转达，2026-11-03）：Reviewer 正常；便签没打开是因为平时的便签开着（只开一个，被拿到前面），不是瘦身的问题。
+
+### rebase 到 master 之后（2026-11-03，master 41d7f2d1）
+
+master 新加了 Claude Code / Codex 镜像（平台「环境」页）、平台安装重试、DeepSeek 用 DSH 桌面版账号或 Key 登录、Claude 多账号、便签托盘切换修复。冲突只有 `platform.spec.ts` 的 import 行和 CHANGELOG / HANDOFF，按两边都留解决。
+
+- **import 检查抓到 master 自己的问题**：`@amo-studio/relay` 从镜像那次起依赖 `@amo-studio/locate/download`（`index.js` → `server.js` → `mirror.js`），但 `amo-tools.mjs` 里中转的包列表没有 locate，所以从 master 打的下一个中转客户端一启动就会 `ERR_MODULE_NOT_FOUND`，和瘦身无关（瘦身前的打包脚本一样不带它）。已发的中转 0.9.5 在镜像之前，没受影响。修法：中转的包列表加上 `locate`（单独一个提交）。用打好的 `AMO Relay.exe`（`ELECTRON_RUN_AS_NODE`）加载 `@amo-studio/relay`：带 locate 能加载（63 个导出），删掉 locate 就是 `ERR_MODULE_NOT_FOUND`。
+- **import 检查**：五个工具白名单以外都是 0 处。
+- **新功能会不会读被去掉的文件**：查了 master 这几次提交在各包 `src` 里新加的代码，没有按路径读程序文件夹的（没有新的 `import.meta.url` / `createRequire` / `node_modules` / `assets` 路径）。Claude 多账号读写的是 `~/.claude-accounts` 和默认的 `~/.claude`，DSH 账号登录读 `~/.dsh/.credentials.yaml`、把补丁写进数据目录，都不在程序文件夹里。master 删掉的 `host/assets/codex/deepseek-flash.models.json` 也没人再读。
+- **便携包冒烟**：都过（和上面同样的几步）。
+- 文件数（rebase 后，瘦身前用 master 的打包脚本打一份对比）：
+
+| 工具 | 瘦身前 | 瘦身后 |
+|---|---|---|
+| AMO Studio 0.9.29 | 11230 | 4396 |
+| AMO Reviewer 0.9.10 | 11144 | 4344 |
+| AMO 中转客户端 0.9.5（带上 locate） | 3871 | 1808 |
+| AMO 便签 0.9.9 | 3436 | 1114 |
+| AMO 平台 0.9.18 | 414 | 355 |
+
+- 没重跑 e2e（总管说 check-package 和冒烟没发现瘦身的问题就不用）。
