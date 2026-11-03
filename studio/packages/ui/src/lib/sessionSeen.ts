@@ -156,6 +156,18 @@ export function noteSeen(ids: readonly string[]): void {
 }
 
 /**
+ * A session came back from the archive (问题 2026-11-03: restoring a done task flooded Focus). The Host stamps every
+ * restored session with the time of restoring, so each one that had ended looked like a reply that just ended unseen
+ * — the task's sessions, forks and 委派 ones all at once. Restoring is the person dealing with it, so it counts as
+ * seen; with the session it hangs under, whose last change takes in its subagents' and 委派 sessions' (restored a
+ * moment later each).
+ */
+export function noteRestored(session: Session): void {
+  const under = session.kind === "sub" ? session.parentId : session.parentId ? null : session.startedBy;
+  noteSeen(under ? [session.id, under] : [session.id]);
+}
+
+/**
  * The workbench shows this session. Opening it counts as seeing it (while the window is visible). A change while it
  * stays open — the reply ending, a failure — counts as seen only at the person's next sign of being there: the window
  * coming forward, or a click, key or wheel in it. Before 2026-10-20 the window merely being visible was enough, so a
