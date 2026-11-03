@@ -1,8 +1,12 @@
-import type { ChannelBalance, ChannelInput, ClaudeCodeStatus, ModelChannel, ModelProfile } from "@amo-studio/protocol";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { ChannelBalance, ChannelInput, ClaudeCodeStatus, ModelChannel, ModelProfile, ProfileEndpoint } from "@amo-studio/protocol";
 import { askBalance } from "../../runtime/balance.js";
 import { claudeCodeStatus } from "../../runtime/claude/executable.js";
 import { ChannelError, balanceConfig, type ChannelRegistry } from "../../runtime/channels.js";
 import { listSiteModels } from "../../runtime/site-models.js";
+import { claudeEndpoint, codexEndpoint } from "../../runtime/endpoints.js";
+import { localClaudeHome } from "../../runtime/claude/claude-login.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
@@ -91,6 +95,18 @@ export class ChannelsFeature extends Feature {
     const value = await askBalance({ profileId, ...ask });
     this.balances.set(profileId, { at: Date.now(), value });
     return value;
+  }
+
+  /**
+   * 问题 #14: where Claude 订阅 (the person's Claude Code) and GPT (their Codex) send requests, read from their setup
+   * each time it is asked; null for every other profile (Studio sets their address itself and the page shows it).
+   */
+  endpoint(profileId: string): ProfileEndpoint | null {
+    const p = this.requireProfile(profileId);
+    if (p.custom) return null;
+    if (p.runtime === "claude" && p.provider === "anthropic") return claudeEndpoint(this.options.localClaudeHome ?? localClaudeHome());
+    if (p.runtime === "codex" && !p.provider) return codexEndpoint(this.options.codexHome ?? (process.env.CODEX_HOME?.trim() || join(homedir(), ".codex")));
+    return null;
   }
 
   /** The 添加/编辑 dialog's 测试: a query with what is typed, filling in what `id` has stored. */

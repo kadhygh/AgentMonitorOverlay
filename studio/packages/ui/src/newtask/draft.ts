@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ModelProfile, Session, SessionOptions, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { defaultProfile, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
+import { defaultProfile, rememberProfile, rememberWorkspace, repick } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
 import { withMentionRefs, type MentionPick } from "../attach/mentions.js";
 
@@ -92,6 +92,17 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [profiles]);
+  // A model hidden in 设置 → 模型 after the draft took it gives way to the default (问题 #14); so does an empty pick
+  // once the profiles have loaded.
+  useEffect(() => {
+    const next = repick(profiles, draft.pick.profileId);
+    if (next === null) return;
+    setDraft((cur) => {
+      const fixed = { ...cur, pick: { profileId: next, model: null }, options: {} };
+      save(fixed);
+      return fixed;
+    });
+  }, [profiles, draft.pick.profileId]);
   const update = useCallback((patch: Partial<TaskDraft>) => {
     setDraft((cur) => {
       const next = { ...cur, ...patch };

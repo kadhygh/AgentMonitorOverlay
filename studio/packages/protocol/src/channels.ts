@@ -73,6 +73,25 @@ export interface ModelChannel {
   createdAt: Timestamp;
 }
 
+/**
+ * 问题 #14 (2026-11-03): where a built-in channel that runs on the person's own CLI setup (Claude 订阅 on their Claude
+ * Code, GPT on their Codex) sends its requests, read from that setup's files — tools like ccswitch change them.
+ */
+export interface ProfileEndpoint {
+  /** The address requests go to; "" when the file names a provider without one. */
+  url: string;
+  /** Where it was read ("C:\…\settings.json 的 env.ANTHROPIC_BASE_URL"); null: nothing set, the CLI's own default. */
+  from: string | null;
+  /** The model the setup names (a model picked for a session goes before it); null: none named. */
+  model: string | null;
+  modelFrom: string | null;
+  /** What else decides it (a project's own settings). */
+  note: string;
+  /** A file that could not be read, and why. */
+  problem?: string;
+  readAt: Timestamp;
+}
+
 /** What a create or an edit sends. Absent fields keep their value; `key`/`accessToken` "" removes it. */
 export interface ChannelInput {
   kind?: ChannelKind;

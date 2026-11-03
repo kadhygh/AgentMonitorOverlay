@@ -14,6 +14,7 @@ export function channelsRoutes(service: HostService): Route[] {
     route("PATCH", "/api/channels/:id", ({ params, body }) => service.channels.update(params.id!, obj(body) as ChannelInput)),
     route("DELETE", "/api/channels/:id", ({ params }) => service.channels.remove(params.id!)),
     route("PUT", "/api/profiles/:id/hidden", ({ params, body }) => service.channels.setHidden(params.id!, obj(body).hidden)),
+    route("GET", "/api/profiles/:id/endpoint", ({ params }) => service.channels.endpoint(params.id!)),
     route("GET", "/api/profiles/:id/balance", ({ params, query }) => service.channels.balance(params.id!, query.get("refresh") === "1")),
   ];
 }

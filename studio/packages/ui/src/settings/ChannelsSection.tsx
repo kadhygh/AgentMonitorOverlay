@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CHANNEL_KIND_LABEL, RUNTIME_LABELS, type ChannelKind, type CredentialStatus, type ModelChannel, type ModelProfile, type StudioSettings } from "@amo-studio/protocol";
+import { CHANNEL_KIND_LABEL, RUNTIME_LABELS, type ChannelKind, type CredentialStatus, type ModelChannel, type ModelProfile, type ProfileEndpoint, type StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { balanceText, useBalance } from "../lib/balance.js";
@@ -68,6 +68,70 @@ export function ChannelNavItem({ profile, channel, selected, onSelect }: { profi
         </span>
       </span>
     </button>
+  );
+}
+
+/**
+ * 问题 #14 (2026-11-03): where Claude 订阅 and GPT send requests, as the person's own Claude Code / Codex setup has it
+ * (ccswitch and the like rewrite it). Read when the page opens and on 重新读取; nothing for profiles Studio routes itself.
+ */
+function EndpointRow({ link, profileId }: { link: HostLink; profileId: string }) {
+  const [endpoint, setEndpoint] = useState<ProfileEndpoint | null>(null);
+  const [error, setError] = useState("");
+  const [tick, setTick] = useState(0);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    call(link, "GET /api/profiles/:id/endpoint", { id: profileId })
+      .then((e) => {
+        if (!live) return;
+        setEndpoint(e);
+        setError("");
+      })
+      .catch((err) => live && setError(err instanceof HostApiError ? err.message : String(err)))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [link, profileId, tick]);
+  useEffect(() => {
+    setEndpoint(null);
+    setError("");
+  }, [profileId]);
+  if (!endpoint && !error) return null;
+  return (
+    <div className="channel-endpoint" data-testid="channel-endpoint">
+      <span className="channel-endpoint-lab">请求地址</span>
+      <span className="channel-endpoint-val">
+        <span className="channel-endpoint-line">
+          <span className="channel-endpoint-url" data-testid="channel-endpoint-url">
+            {endpoint ? endpoint.url || "（没有）" : "—"}
+          </span>
+          <button type="button" className="btn-ghost small" disabled={loading} onClick={() => setTick((t) => t + 1)} title="改过配置（比如用 ccswitch 切换过）后再读一次" data-testid="channel-endpoint-reload">
+            {loading ? "读取中…" : "重新读取"}
+          </button>
+        </span>
+        {endpoint && <span className="settings-hint">{endpoint.from ? `来自 ${endpoint.from}` : "没有另设，用官方默认地址"}</span>}
+        {endpoint?.problem && <span className="form-error">{endpoint.problem}</span>}
+        {error && <span className="form-error">读不到请求地址：{error}</span>}
+      </span>
+      {endpoint?.model && (
+        <>
+          <span className="channel-endpoint-lab">配置的模型</span>
+          <span className="channel-endpoint-val">
+            <span className="channel-endpoint-url">{endpoint.model}</span>
+            <span className="settings-hint">{endpoint.modelFrom ? `来自 ${endpoint.modelFrom}；` : ""}会话里另选了模型的以选的为准</span>
+          </span>
+        </>
+      )}
+      {endpoint && (
+        <>
+          <span />
+          <span className="settings-hint">{endpoint.note}</span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -194,6 +258,7 @@ export function ChannelPage({
             现在不能用：{profile.unavailable}
           </span>
         )}
+        {!channel && <EndpointRow link={link} profileId={profile.id} />}
         <CredentialMessage message={message} />
         {extra && <div className="channel-extra">{extra}</div>}
       </section>

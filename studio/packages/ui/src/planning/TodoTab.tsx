@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { projectWorkspaces, type ModelProfile, type TodoItem, type Workspace, type WorkspaceActivity } from "@amo-studio/protocol";
-import { defaultProfile, pickable, profileLabel, rememberProfile } from "../lib/profiles.js";
+import { defaultProfile, pickable, profileLabel, rememberProfile, repick } from "../lib/profiles.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
@@ -167,6 +167,11 @@ function ConvertForm({
 }) {
   const [workspaceId, setWorkspaceId] = useState(todo.workspaceId ?? workspaces[0]?.id ?? "");
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
+  // A model hidden in 设置 → 模型 meanwhile gives way to the default (问题 #14).
+  useEffect(() => {
+    const next = repick(profiles, profileId);
+    if (next !== null) setProfileId(next);
+  }, [profiles, profileId]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function convert() {
@@ -222,6 +227,10 @@ function ConvertForm({
  */
 function SchedulerRun({ link, profiles, onStarted, disabled }: { link: HostLink; profiles: readonly ModelProfile[]; onStarted(taskId: string, sessionId: string): void; disabled: boolean }) {
   const [profileId, setProfileId] = useState(() => (profiles.find((p) => /glm/i.test(p.id)) ?? defaultProfile(profiles))?.id ?? "");
+  useEffect(() => {
+    const next = repick(profiles, profileId);
+    if (next !== null) setProfileId(next);
+  }, [profiles, profileId]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function run() {

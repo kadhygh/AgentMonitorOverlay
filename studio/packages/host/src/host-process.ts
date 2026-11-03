@@ -285,6 +285,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       launcher: options.launcher ?? new WindowsTerminalLauncher(),
       credentials,
       localClaudeHome,
+      ...(options.codexEnv?.CODEX_HOME ? { codexHome: options.codexEnv.CODEX_HOME } : {}),
       claudeAccounts,
       channels,
       dsh,

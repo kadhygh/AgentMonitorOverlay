@@ -1023,6 +1023,8 @@ export interface HostRoutes {
   "PUT /api/profiles/:id/hidden": { req: { hidden: boolean }; res: ModelProfile[] };
   /** `?refresh=1` asks the site again; otherwise the last answer within a minute. */
   "GET /api/profiles/:id/balance": { req: void; res: import("./channels.js").ChannelBalance };
+  /** 问题 #14: Claude 订阅's and GPT's request address as the person's Claude Code / Codex setup has it; null for other profiles. */
+  "GET /api/profiles/:id/endpoint": { req: void; res: import("./channels.js").ProfileEndpoint | null };
 }
 
 // ---- 设置 → 维护 (2026-10-20): how Studio was started, a model's CLI in a terminal at the repo (maintenance.ts) ------
