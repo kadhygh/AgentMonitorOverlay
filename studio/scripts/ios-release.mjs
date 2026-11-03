@@ -1,16 +1,15 @@
 // The iOS app to TestFlight from one commit (2026-11-02, plans/ios.md「发布流程」): npm run release -- ios calls it after
 // the release commit; on its own it is for trying a build:
 //   node scripts/ios-release.mjs <commit> [--no-upload]
-//   node scripts/ios-release.mjs --install-agent     once per build Mac (and when mobile/iosApp/agent changes)
 // The commit's studio/mobile goes to the build Mac (ssh mac) by git archive — what was committed, not what is on disk —
 // into ~/amo-ios-build/src/<short sha>/; iosApp/build-on-mac.sh builds, checks and uploads it there and its steps are
-// printed here. It runs under the LaunchAgent com.amo.ios-build, in the Mac's desktop session at nice 10: codesign
-// needs the login keychain, which ssh cannot use (errSecInternalComponent, 2026-11-02); ssh only queues the job
-// (iosApp/submit-build.sh) and follows it. Its logs come back to studio/release/ios/<version>-<build>/ (ignored by git). The version is
+// printed here. ssh runs it directly at nice 10 (2026-11-03: signing with Jenkins' jenkins-build keychain, unlocked by
+// build-on-mac.sh, works over ssh; the LaunchAgent com.amo.ios-build that ran it in the desktop session is gone). Its
+// logs come back to studio/release/ios/<version>-<build>/ (ignored by git). The version is
 // the commit's Version.xcconfig; the build number (CFBundleVersion) the commit's count on its history, so it only grows
 // and says which commit it is. Nothing here reads or sends the App Store Connect key: it stays on the Mac.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { studio } from "./amo-tools.mjs";
@@ -21,8 +20,6 @@ export const VERSION_FILE = "studio/mobile/iosApp/Version.xcconfig";
 export const MARKETING_RE = /^MARKETING_VERSION[ \t]*=[ \t]*(\S+)[ \t]*(?=\r?$)/m;
 /** build-on-mac.sh's exit codes: 10 + the step it stopped at; step 1 = the Mac is busy (Unity, another build). */
 export const BUSY_EXIT = 11;
-/** submit-build.sh: the agent is not installed, or did not take the job. */
-export const NO_AGENT_EXIT = 9;
 
 const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8" }).trim();
 
@@ -49,7 +46,7 @@ export function plan(sha, version, build, { upload = true } = {}) {
     dir,
     archive: ["-c", "core.autocrlf=false", "archive", "--format=tar", sha, "studio/mobile"],
     unpack: `rm -rf ~/${dir} && mkdir -p ~/${dir} && tar -xf - -C ~/${dir}`,
-    build: `bash ~/${dir}/studio/mobile/iosApp/submit-build.sh ~/${dir}/studio/mobile ${version} ${build}${upload ? "" : " --no-upload"}`,
+    build: `nice -n 10 bash ~/${dir}/studio/mobile/iosApp/build-on-mac.sh ~/${dir}/studio/mobile ${version} ${build}${upload ? "" : " --no-upload"}`,
     logs: `amo-ios-build/logs/${version}-${build}`,
   };
 }
@@ -83,43 +80,15 @@ export async function releaseIos(sha, { upload = true, log = console.log } = {})
   const copied = spawnSync("scp", ["-q", "-r", `mac:${p.logs}/.`, local], { stdio: "inherit" });
   log(copied.status === 0 ? `日志在 ${local}` : `（日志没拷回来，在打包机的 ~/${p.logs}）`);
   if (res.status !== 0) {
-    const err = new Error(res.status === BUSY_EXIT ? "打包机正忙（Unity 在出包或者有别的构建），这次没打 iOS 包" : res.status === NO_AGENT_EXIT ? "打包机上的 com.amo.ios-build 没接任务（没装：node scripts/ios-release.mjs --install-agent；或者桌面没登录）" : `iOS 打包失败（build-on-mac.sh 退出码 ${res.status}，第 ${res.status - 10} 步），见上面的输出和 ${local}`);
+    const err = new Error(res.status === BUSY_EXIT ? "打包机正忙（Unity 在出包或者有别的构建），这次没打 iOS 包" : `iOS 打包失败（build-on-mac.sh 退出码 ${res.status}，第 ${res.status - 10} 步），见上面的输出和 ${local}`);
     err.busy = res.status === BUSY_EXIT;
     throw err;
   }
   return { version, build };
 }
 
-/**
- * The LaunchAgent on the build Mac, from this checkout's mobile/iosApp/agent (the user agreed to it, 2026-11-02):
- * runner.sh to ~/amo-ios-build/agent/, the plist (with the Mac's home) to ~/Library/LaunchAgents/, loaded into the
- * desktop session again. Touches nothing else there.
- */
-export function installAgent() {
-  const agent = join(studio, "mobile", "iosApp", "agent");
-  const step = (what, cmd, argv, input) => {
-    const r = spawnSync(cmd, argv, { stdio: [input === undefined ? "inherit" : "pipe", "inherit", "inherit"], input });
-    if (r.status !== 0) throw new Error(`${what}失败（退出码 ${r.status}）`);
-  };
-  step("建目录", "ssh", ["mac", "mkdir -p ~/amo-ios-build/agent ~/amo-ios-build/queue ~/amo-ios-build/jobs ~/Library/LaunchAgents"]);
-  step("拷 runner.sh", "scp", ["-q", join(agent, "runner.sh"), "mac:amo-ios-build/agent/runner.sh"]);
-  const plist = readFileSync(join(agent, "com.amo.ios-build.plist"), "utf8");
-  step("写 plist", "ssh", ["mac", 'sed "s#HOME/#$HOME/#g" > ~/Library/LaunchAgents/com.amo.ios-build.plist && plutil -lint ~/Library/LaunchAgents/com.amo.ios-build.plist'], plist);
-  step("载入", "ssh", ["mac", 'launchctl bootout "gui/$(id -u)/com.amo.ios-build" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.amo.ios-build.plist && launchctl print "gui/$(id -u)/com.amo.ios-build" | grep -E "state|path" | head -3']);
-}
-
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.includes("--install-agent")) {
-    try {
-      installAgent();
-      console.log("com.amo.ios-build 已装好，在打包机的桌面会话里");
-    } catch (err) {
-      console.error(err.message);
-      process.exitCode = 1;
-    }
-    process.exit();
-  }
   const sha = args.find((a) => !a.startsWith("--"));
   if (!sha) {
     console.error("用法：node scripts/ios-release.mjs <提交> [--no-upload]");

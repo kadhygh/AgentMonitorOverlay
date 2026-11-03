@@ -6,10 +6,12 @@
 # Every step logs to ~/amo-ios-build/logs/<version>-<build>/NN-<step>.log and stops the build when it fails; the exit
 # code says where (10 + the step). It never makes, changes or removes certificates or profiles (they also sign the
 # team's games), and never prints the API key: altool gets only its ID and finds the .p8 by itself.
-# Signing (2026-11-02, the user: Jenkins' jenkins-build keychain stays as it is): with the iOS builds' own keychain
-# ~/amo-ios-build/signing.keychain-db (agent/setup-keychain.sh), which is not in the keychain search list — so the archive
-# is built unsigned and step 5 signs the app with codesign --keychain and zips the .ipa itself (xcodebuild -exportArchive
-# only finds identities through the search list).
+# Signing (2026-11-03, the user, after wunaiyu tried it over ssh): with the distribution certificate and key already in
+# Jenkins' jenkins-build keychain, unlocked the way Jenkins' own ~/.jenkins/bin/xcodebuild does it (its password file;
+# only unlock — Jenkins never locks it again either, so the two do not get in each other's way). Nothing in that keychain
+# or the search list changes, and the password is not copied anywhere. The private key cannot be exported, so there is
+# no keychain of our own. The archive is built unsigned and step 5 signs the app with codesign --keychain and zips the
+# .ipa itself, as Xcode's App Store export would.
 set -u
 MOBILE=$(cd "${1:?studio/mobile 目录}" && pwd)
 VERSION=${2:?版本号}
@@ -61,10 +63,10 @@ for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobile
   if security cms -D -i "$f" 2>/dev/null | grep -q '<string>AMOStudio_AppStore</string>'; then PROFILE=$f; break; fi
 done
 [ -n "$PROFILE" ] || fail "打包机上没有描述文件 AMOStudio_AppStore"
-KEYCHAIN=$ROOT/signing.keychain-db
-KEYCHAIN_PW=$HOME/.amo-ios/keychain-password
-[ -f "$KEYCHAIN" ] && [ -f "$KEYCHAIN_PW" ] || fail "没有 iOS 打包用的钥匙串 $KEYCHAIN（在打包机的终端里跑一次 mobile/iosApp/agent/setup-keychain.sh）"
-security unlock-keychain -p "$(cat "$KEYCHAIN_PW")" "$KEYCHAIN" >>"$LOG" 2>&1 || fail "解不开 $KEYCHAIN"
+KEYCHAIN=$HOME/Library/Keychains/jenkins-build.keychain-db
+KEYCHAIN_PW=$HOME/.jenkins/secrets/build-keychain-password
+[ -f "$KEYCHAIN" ] && [ -r "$KEYCHAIN_PW" ] || fail "没有 Jenkins 的钥匙串 $KEYCHAIN 或它的密码文件 $KEYCHAIN_PW"
+security unlock-keychain -p "$(cat "$KEYCHAIN_PW")" "$KEYCHAIN" >>"$LOG" 2>&1 || fail "解不开 $KEYCHAIN（密码文件 $KEYCHAIN_PW 是不是过时了）"
 IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/^ *[0-9]*) \([0-9A-F]\{40\}\) "Apple Distribution: .*(D39JR23NC7)"$/\1/p' | head -n 1)
 [ -n "$IDENTITY" ] || fail "$KEYCHAIN 里没有 Apple Distribution (D39JR23NC7) 的签名身份"
 say "  描述文件、签名身份都在$([ $HAVE_KEY = 1 ] && echo '，API Key 在' || echo '；没有 API Key，只打包不校验')"

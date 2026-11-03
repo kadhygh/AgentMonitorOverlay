@@ -28,11 +28,11 @@ describe("Version.xcconfig", () => {
 });
 
 describe("plan", () => {
-  it("unpacks one commit's studio/mobile in its own folder and queues its build for the agent", () => {
+  it("unpacks one commit's studio/mobile in its own folder and builds it there over ssh", () => {
     const p = plan(SHA, "0.1.0", 2981);
     expect(p.archive).toEqual(["-c", "core.autocrlf=false", "archive", "--format=tar", SHA, "studio/mobile"]);
     expect(p.unpack).toBe("rm -rf ~/amo-ios-build/src/0123456789 && mkdir -p ~/amo-ios-build/src/0123456789 && tar -xf - -C ~/amo-ios-build/src/0123456789");
-    expect(p.build).toBe("bash ~/amo-ios-build/src/0123456789/studio/mobile/iosApp/submit-build.sh ~/amo-ios-build/src/0123456789/studio/mobile 0.1.0 2981");
+    expect(p.build).toBe("nice -n 10 bash ~/amo-ios-build/src/0123456789/studio/mobile/iosApp/build-on-mac.sh ~/amo-ios-build/src/0123456789/studio/mobile 0.1.0 2981");
     expect(p.logs).toBe("amo-ios-build/logs/0.1.0-2981");
     expect(plan(SHA, "0.1.0", 2981, { upload: false }).build).toMatch(/ --no-upload$/);
   });
