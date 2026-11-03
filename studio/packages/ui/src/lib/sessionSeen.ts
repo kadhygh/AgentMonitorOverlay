@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@amo-studio/protocol";
+import type { Session, Task } from "@amo-studio/protocol";
 import { needsPerson } from "./status.js";
 
 // When the person last looked at each session in the workbench (2026-10-15). Focus lists a session whose reply ended,
@@ -153,6 +153,26 @@ export function noteSeen(ids: readonly string[]): void {
   if (!ids.length) return;
   markSeen(ids);
   window.dispatchEvent(new Event(LOCAL_EVENT));
+}
+
+/**
+ * The seen record with what a copy of another computer's task (远程) had before it was granted here counted as seen
+ * (问题 2026-11-04: after a task was granted to this computer, Focus here listed every session of it that had ended
+ * long before as 完成待审核). Its sessions come with that computer's times, all after this one began keeping; what
+ * ended there before the grant was never this computer's to review. Both times are that computer's clock.
+ */
+export function withGrants(data: SeenData, tasks: readonly Pick<Task, "id" | "remote">[], sessions: readonly Pick<Session, "id" | "taskId">[]): SeenData {
+  const granted = new Map<string, string>();
+  for (const t of tasks) if (t.remote?.grantedAt) granted.set(t.id, t.remote.grantedAt);
+  if (!granted.size) return data;
+  let seen: Record<string, string> | null = null;
+  for (const s of sessions) {
+    const at = s.taskId ? granted.get(s.taskId) : undefined;
+    if (!at || at <= maxIso(data.since, data.seen[s.id])) continue;
+    seen ??= { ...data.seen };
+    seen[s.id] = at;
+  }
+  return seen ? { since: data.since, seen } : data;
 }
 
 /**

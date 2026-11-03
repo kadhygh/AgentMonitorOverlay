@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleSessions, type Session } from "@amo-studio/protocol";
-import { awaitsPerson, hangsUnderOf, interruptedSince, markSeen, readSeen, subsByParent, unseenSessions } from "./sessionSeen.js";
+import { awaitsPerson, hangsUnderOf, interruptedSince, markSeen, readSeen, subsByParent, unseenSessions, withGrants } from "./sessionSeen.js";
 
 function memory(): Pick<Storage, "getItem" | "setItem"> & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -103,5 +103,21 @@ describe("sessions the person has not looked at", () => {
     const done = at("s3", "completed", "2026-10-28T10:04:00.000Z", { kind: "sub", parentId: "p" });
     const data = { since: "2026-10-01T00:00:00.000Z", seen: { p: "2026-10-28T10:00:00.000Z" } };
     expect(interruptedSince(parent, [parent, old, fresh, done], data).map((s) => s.id)).toEqual(["s2"]);
+  });
+});
+
+describe("a task granted from another computer (远程, 2026-11-04)", () => {
+  it("counts what its sessions had before the grant as seen, and lists what ends after it", () => {
+    const data = { since: "2026-10-01T00:00:00.000Z", seen: {} };
+    const remote = { account: "a", device: "d_a", name: "A", state: "active" as const, profiles: [], allowed: [], grantedAt: "2026-11-04T10:00:00.000Z" };
+    const tasks = [{ id: "copy", remote }, { id: "own" }];
+    const sessions = [
+      at("before", "idle", "2026-11-04T09:00:00.000Z", { taskId: "copy" }),
+      at("after", "completed", "2026-11-04T10:05:00.000Z", { taskId: "copy" }),
+      at("mine", "idle", "2026-11-04T09:00:00.000Z", { taskId: "own" }),
+    ];
+    expect(unseenSessions(sessions, withGrants(data, tasks, sessions)).map((s) => s.id)).toEqual(["after", "mine"]);
+    // Nothing granted: the same record.
+    expect(withGrants(data, [{ id: "own" }], sessions)).toBe(data);
   });
 });

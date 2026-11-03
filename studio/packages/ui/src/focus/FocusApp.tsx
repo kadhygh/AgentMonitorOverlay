@@ -3,7 +3,7 @@ import { remoteHeldTasks, type Session, type StateSnapshot } from "@amo-studio/p
 import { useHostState } from "../host/useHostState.js";
 import { needsPerson } from "../lib/status.js";
 import { noteFocusJump } from "../lib/focusJump.js";
-import { hangsUnderOf, interruptedSince, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
+import { hangsUnderOf, interruptedSince, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen, withGrants } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
@@ -137,8 +137,10 @@ export function FocusApp() {
   // A right-click on the title row (a window drag area) only reaches the main process, which passes it on.
   useEffect(() => window.amo?.focus?.onContextMenu?.(() => setPop(true)), []);
 
-  const seenData = useSessionSeen();
+  const seenHere = useSessionSeen();
   const live = host.kind === "ready" ? host.state : null;
+  // A granted task's sessions: what they had before the grant is not to review here (lib/sessionSeen.ts withGrants).
+  const seenData = live ? withGrants(seenHere, live.tasks, live.sessions) : seenHere;
   // 置顶 and which sessions show their subagents (2026-10-21); forgotten once their task or session is gone.
   const pins = useStoredIds(PINNED_KEY);
   const subsOpen = useStoredIds(SUBS_OPEN_KEY);

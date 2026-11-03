@@ -31,7 +31,7 @@ import { setDutyOpener, useDuty, useDutyWatch } from "./duty/duty.js";
 import { DutyDialog } from "./duty/DutyDialog.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 import { useMascotIcon } from "./focus/mascot.js";
-import { useSessionSeen } from "./lib/sessionSeen.js";
+import { useSessionSeen, withGrants } from "./lib/sessionSeen.js";
 import { remoteButton, useRemote } from "./remote/remote.js";
 import { RemoteDialog } from "./remote/RemoteDialog.js";
 
@@ -206,7 +206,8 @@ export function App() {
   // A place come back to that is gone (a deleted task, an archived topic or project): the board, everything in scope.
   const ready = host.kind === "ready" ? host.state : null;
   // 「AMO 娘」 (2026-10-26): while she is the 桌宠, the top-left icon and the window's are hers (focus/mascot.ts).
-  const seen = useSessionSeen();
+  const seenHere = useSessionSeen();
+  const seen = ready ? withGrants(seenHere, ready.tasks, ready.sessions) : seenHere;
   const mascot = useMascotIcon(ready?.sessions ?? null, seen);
   useEffect(() => window.amo?.setAppIcon?.(mascot?.file ?? null), [mascot?.file]);
   useEffect(() => {
