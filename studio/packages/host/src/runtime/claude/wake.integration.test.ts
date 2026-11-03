@@ -205,4 +205,17 @@ describe("ClaudeRuntime: loop and usage limits", () => {
     expect(items(s.id).filter((i) => i.type === "turn").every((t) => (t as Extract<SessionItem, { type: "turn" }>).usage?.input !== 195_015)).toBe(true);
     feed(s.id, result());
   }, 120_000);
+
+  it("keeps a background subagent's handed-back report whole, as its reply (问题 #13)", async () => {
+    const s = await started("sub handback");
+    feed(s.id, assistant([{ type: "tool_use", id: "toolu_bg", name: "Agent", input: { description: "首关波次调查", prompt: "查首关", run_in_background: true } }]));
+    const child = (items(s.id).find((i) => i.type === "subagent")! as Extract<SessionItem, { type: "subagent" }>).childSessionId;
+    const report = `## 首关波次\n${"普通怪合计 638 只。".repeat(900)}`;
+    feed(s.id, { ...assistant([{ type: "tool_use", id: "toolu_hb", name: "SubagentHandback", input: { message: report } }]), parent_tool_use_id: "toolu_bg" });
+    feed(s.id, { ...toolResult("toolu_hb", '{"success":true}', { success: true }), parent_tool_use_id: "toolu_bg" });
+    const last = items(child).at(-1)!;
+    expect(last).toMatchObject({ type: "agent", markdown: report, raw: { method: "agent/handback" } });
+    expect(items(child).some((i) => i.type === "tool" && i.name === "SubagentHandback")).toBe(false);
+    feed(s.id, result());
+  }, 120_000);
 });

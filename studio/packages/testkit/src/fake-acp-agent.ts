@@ -11,6 +11,9 @@
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
 //   [[fail]]                 the prompt fails
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
+//   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
+//                            signal): thought, a pwsh call, a reply each; `[[goal: N slow]]`: the last round's call
+//                            runs until session/cancel
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
 // is the default; as in DSH, a model that is not offered cannot be picked. Images (2026-10-26): as DSH does, initialize
 // offers them only when the agent's default model takes them (deepseek-flash here); a prompt's images are counted in
@@ -248,10 +251,31 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     }
     update(a.id, { sessionUpdate: "agent_message_chunk", messageId: randomUUID(), content: { type: "text", text: reply } });
     writeLog(a.id, s.turns, startedAt);
+    const goal = /\[\[goal: (\d+)( slow)?\]\]/.exec(text);
+    if (goal) setTimeout(() => void goalRounds(a, Number(goal[1]), !!goal[2]), 50);
     return { stopReason: "end_turn" };
   } finally {
     if (!cancelled) a.cancel = null;
     a.prompting = false;
+  }
+}
+
+/** A goal's rounds after the prompt (DSH's goal-round-driver): ACP updates only, outside any prompt. */
+async function goalRounds(a: Active, n: number, slow: boolean): Promise<void> {
+  for (let round = 1; round <= n; round++) {
+    await new Promise((r) => setTimeout(r, 80));
+    const messageId = randomUUID();
+    update(a.id, { sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: `Round ${round}` } });
+    const callId = `call-${randomUUID()}`;
+    update(a.id, { sessionUpdate: "tool_call", toolCallId: callId, title: "pwsh", kind: "other", status: "in_progress", rawInput: { command: `echo round ${round}` } });
+    if (slow && round === n) {
+      await new Promise<void>((resolve) => (a.cancel = resolve));
+      a.cancel = null;
+      update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: "Error: tool call aborted" } }] });
+      return;
+    }
+    update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "completed", content: [{ type: "content", content: { type: "text", text: `round ${round}` } }] });
+    update(a.id, { sessionUpdate: "agent_message_chunk", messageId: randomUUID(), content: { type: "text", text: `ROUND ${round} DONE` } });
   }
 }
 

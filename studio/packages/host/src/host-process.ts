@@ -64,6 +64,9 @@ export interface StartHostOptions {
   dshFolderAccess?: FolderAccess | null;
   /** Tests: the wait between a set-up folder's scans after write turns. */
   dshFolderScanMs?: number;
+  /** Tests: how long a turn DSH runs by itself waits after its last reply, and after anything else, to end. */
+  dshAutoQuietMs?: number;
+  dshAutoStallMs?: number;
   /**
    * 远程 (2026-10-29): connect to the team server as this computer's device with the AMO platform's login. Studio's
    * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
@@ -278,6 +281,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.dshEnv ? { env: options.dshEnv } : {}),
       ...(options.dshFolderAccess !== undefined ? { folderAccess: options.dshFolderAccess } : {}),
       ...(options.dshFolderScanMs !== undefined ? { folderScanEveryMs: options.dshFolderScanMs } : {}),
+      ...(options.dshAutoQuietMs !== undefined ? { autoQuietMs: options.dshAutoQuietMs } : {}),
+      ...(options.dshAutoStallMs !== undefined ? { autoStallMs: options.dshAutoStallMs } : {}),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
     const liveStore = store;

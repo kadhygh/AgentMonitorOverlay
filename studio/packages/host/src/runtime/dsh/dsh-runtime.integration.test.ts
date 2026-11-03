@@ -142,6 +142,43 @@ describe("DSH runtime", () => {
     expect(list.filter((i) => i.type === "approval").map((i) => (i.type === "approval" ? i.state : ""))).toEqual(["accepted", "declined"]);
   });
 
+  it("makes what a DSH goal does by itself after the prompt turns of their own: running meanwhile, one per round, each ended after its reply (问题 #13)", async () => {
+    const host = await boot({ dshAutoQuietMs: 400 });
+    const s = await start(host, "做到底 [[goal: 2]]");
+    await until(() => items(host, s.id), (l) => replies(l).includes("ROUND 1 DONE"));
+    expect(await status(host, s.id)).toBe("running");
+    await until(() => items(host, s.id), (l) => replies(l).includes("ROUND 2 DONE"));
+    await idle(host, s.id);
+    const list = await items(host, s.id);
+    const turns = list.filter((i) => i.type === "turn");
+    expect(turns.map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["completed", "completed", "completed"]);
+    // Every row has its turn; each round's reply is the last row of its own.
+    expect(list.filter((i) => i.type !== "user" && i.type !== "turn").every((i) => !!i.raw?.turnId)).toBe(true);
+    const repliesOf = (t: SessionItem) => replies(list.filter((i) => t.type === "turn" && i.raw?.turnId === t.turnId));
+    expect(turns.map(repliesOf)).toEqual([["MOCK-DSH: 做到底 [[goal: 2]]"], ["ROUND 1 DONE"], ["ROUND 2 DONE"]]);
+  });
+
+  it("停止 stops a DSH goal going on by itself; a message sent meanwhile ends that turn and starts the person's (问题 #13)", async () => {
+    const host = await boot({ dshAutoQuietMs: 400 });
+    const s = await start(host, "做 [[goal: 1 slow]]");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
+    expect(await status(host, s.id)).toBe("running");
+    await call(host, "POST", `/api/sessions/${s.id}/interrupt`);
+    await idle(host, s.id);
+    let list = await items(host, s.id);
+    expect(list.filter((i) => i.type === "turn").map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["completed", "interrupted"]);
+    // DSH's last update while stopping (the call aborted) stays in the stopped turn.
+    expect(list.find((i) => i.type === "tool")).toMatchObject({ status: "failed" });
+
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "再来 [[goal: 1 slow]]" });
+    await until(() => items(host, s.id), (l) => l.filter((i) => i.type === "tool").length === 2 && l.filter((i) => i.type === "turn").length === 4);
+    expect((await call<{ mode: string }>(host, "POST", `/api/sessions/${s.id}/messages`, { text: "先停一下" })).mode).toBe("start");
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 先停一下"));
+    await idle(host, s.id);
+    list = await items(host, s.id);
+    expect(list.filter((i) => i.type === "turn").map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["completed", "interrupted", "completed", "completed", "completed"]);
+  });
+
   it("queues a message sent while a turn runs; stopping ends the turn and drops the queue", async () => {
     const host = await boot();
     const s = await start(host, "[[slow]]");

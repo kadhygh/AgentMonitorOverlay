@@ -58,6 +58,10 @@ export class ClaudeSubagents {
         // Its thinking and text too since 2026-10-27 (forwardSubagentText): before, only its tool calls came.
         if (block.type === "thinking" && block.thinking) this.core.appendItem(child, { type: "reasoning", text: block.thinking, streaming: false }, { method: "assistant" });
         else if (block.type === "text" && block.text) this.core.appendItem(child, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
+        // A background subagent hands its report back with SubagentHandback: that report is its answer, kept whole as a
+        // reply (2026-11-03, 问题 #13: as a tool call it folded away with the work, and its input is cut at 8,000).
+        else if (block.type === "tool_use" && block.name === "SubagentHandback" && typeof (block.input as { message?: unknown })?.message === "string" && (block.input as { message: string }).message.trim())
+          this.core.appendItem(child, { type: "agent", markdown: (block.input as { message: string }).message.trim(), streaming: false }, { method: "agent/handback", itemId: block.id });
         else if (block.type === "tool_use") this.turns.addToolCard(child, live, block.id, block.name, block.input as Record<string, unknown>);
       }
     } else if (m.type === "user" && Array.isArray(m.message.content)) {

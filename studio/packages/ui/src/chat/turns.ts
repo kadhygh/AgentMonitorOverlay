@@ -44,23 +44,37 @@ const isRowless = (item: SessionItem) => item.type === "turn" || item.type === "
 /** What always shows at the end of a turn, folded or not: errors, notices, a compaction, a command's output. */
 const isTail = (item: SessionItem) => item.type === "error" || item.type === "notice" || item.type === "compaction" || item.type === "command";
 
+/** Work and replies: what an orphan stretch (below) is made of. Errors and notices without a turn stay with the turn before. */
+const isWork = (item: SessionItem) => item.type === "reasoning" || item.type === "tool" || item.type === "subagent" || item.type === "agent";
+
 export function buildTranscript(items: readonly SessionItem[], sessionRunning: boolean): Segment[] {
   const turns = new Map<string, TurnItem>();
   for (const i of items) if (i.type === "turn") turns.set(i.turnId, i);
 
   // A new segment starts at a message from the person once the current one has more than messages, unless the
   // message belongs to the same turn (steering), and wherever the turn changes.
-  const parts: Array<{ turnId: string | undefined; items: SessionItem[] }> = [];
-  let cur: (typeof parts)[number] | null = null;
+  // Orphans (2026-11-03, 问题 #13): a DSH goal goes on by itself after the turn the person started has ended, and
+  // Studio until this fix recorded those rounds with no turn. Work without a turn after a finished turn is its own
+  // stretch (else the finished turn's answer had work after it and folded away); in it, a reply followed straight by
+  // thinking or another reply (no tool between) ends a round, as a DSH turn ends on a message without tool calls.
+  type Part = { turnId: string | undefined; items: SessionItem[]; orphan?: boolean };
+  const parts: Part[] = [];
+  let cur: Part | null = null;
   for (const item of items) {
     if (isRowless(item)) continue;
     const tid = turnIdOf(item);
+    const prev = cur as Part | null;
+    const curTurn = prev?.turnId ? turns.get(prev.turnId) : undefined;
+    const ended = !!curTurn && curTurn.state !== "running";
+    const orphan = !tid && isWork(item) && (ended || (!!prev?.orphan && prev.items.at(-1)?.type === "agent" && (item.type === "reasoning" || item.type === "agent")));
     const fresh =
       !cur ||
+      orphan ||
       (item.type === "user" && cur.items.some((i) => i.type !== "user") && (!tid || tid !== cur.turnId)) ||
-      (!!tid && !!cur.turnId && tid !== cur.turnId);
+      (!!tid && !!cur.turnId && tid !== cur.turnId) ||
+      (!!tid && !!cur.orphan);
     if (fresh) {
-      cur = { turnId: tid, items: [] };
+      cur = { turnId: tid, items: [], ...(orphan ? { orphan: true } : {}) };
       parts.push(cur);
     } else if (!cur!.turnId && tid) cur!.turnId = tid;
     cur!.items.push(item);
@@ -77,7 +91,9 @@ export function buildTranscript(items: readonly SessionItem[], sessionRunning: b
     while (end > 0 && isTail(body[end - 1]!)) end--;
     const tail = body.slice(end);
     const work = body.slice(0, end);
-    const answer = work.at(-1)?.type === "agent" ? (work.pop() as AgentItem) : null;
+    const handback = handbackReply(work.at(-1));
+    if (handback) work.pop();
+    const answer = handback ?? (work.at(-1)?.type === "agent" ? (work.pop() as AgentItem) : null);
 
     const rows: Row[] = [];
     let group: Extract<Row, { kind: "group" }> | null = null;
@@ -105,6 +121,39 @@ export function buildTranscript(items: readonly SessionItem[], sessionRunning: b
     if (running && !answer && lastGroup >= 0 && waiting) (rows[lastGroup] as Extract<Row, { kind: "group" }>).closed = false;
     return { key: part.items[0]!.id, turn, inputs, rows, answer, tail, running, interleaved };
   });
+}
+
+/**
+ * A Claude background subagent hands its report back with the SubagentHandback tool, not as a reply (2026-11-03, 问题
+ * #13): the report is its answer. Since then the Host records it as a reply; sessions recorded before still have only
+ * the call, whose input Studio kept to its first 8,000 characters — a cut one shows what was kept, marked.
+ */
+export function handbackReply(item: SessionItem | undefined): AgentItem | null {
+  if (item?.type !== "tool" || item.name !== "SubagentHandback" || item.status !== "completed" || !item.input) return null;
+  const markdown = handbackMessage(item.input);
+  if (!markdown) return null;
+  const { id, sessionId, seq, createdAt, raw } = item;
+  return { id, sessionId, seq, createdAt, ...(raw ? { raw } : {}), type: "agent", markdown, streaming: false };
+}
+
+function handbackMessage(input: string): string {
+  const read = (json: string) => {
+    try {
+      const v = JSON.parse(json) as { message?: unknown };
+      return typeof v?.message === "string" ? v.message.trim() : "";
+    } catch {
+      return null;
+    }
+  };
+  const whole = read(input);
+  if (whole !== null) return whole;
+  // Cut at the limit ("…\n…" at the end, maybe inside an escape): close the string where it parses.
+  const kept = input.replace(/\n…$/, "");
+  for (let drop = 0; drop <= 6 && drop < kept.length; drop++) {
+    const part = read(`${kept.slice(0, kept.length - drop)}"}`);
+    if (part) return `${part}\n\n…（报告太长，这里只留了前面一部分）`;
+  }
+  return "";
 }
 
 /** Whether the turn's work folds away behind its "已完成" line. */

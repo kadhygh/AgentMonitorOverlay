@@ -68,6 +68,46 @@ describe("buildTranscript", () => {
     expect(segs[1]!.rows).toEqual([]);
   });
 
+  it("keeps a finished turn's answer when a DSH goal went on without a turn (问题 #13), in rounds of their own", () => {
+    const items = [user("继续"), turn("t1"), think("先看脚本", "t1"), tool("read", "a.ps1", "t1"), agent("脚本在 tools 里", "t1"), think("Round 9"), tool("command", "Get-Process YY"), agent("准备好了"), think("Round 10"), tool("edit", "x.cs")];
+    const segs = buildTranscript(items, false);
+    expect(segs).toHaveLength(3);
+    expect(segs[0]!.answer?.markdown).toBe("脚本在 tools 里");
+    expect(foldable(segs[0]!)).toBe(true);
+    expect(segs[1]!.inputs).toEqual([]);
+    expect(segs[1]!.answer?.markdown).toBe("准备好了");
+    expect(segs[1]!.turn).toBeNull();
+    expect(segs[2]!.answer).toBeNull();
+    expect(segs[2]!.rows.flatMap((r) => (r.kind === "group" ? r.members : [r.item])).map((i) => i.type)).toEqual(["reasoning", "tool"]);
+  });
+
+  it("leaves notices without a turn with the turn before, and a reply between steps in its round", () => {
+    const notice: SessionItem = { ...base(), type: "notice", level: "warning", message: "到上限了" };
+    const items = [user("a"), turn("t1"), tool("read", "x", "t1"), agent("A", "t1"), notice, think("go on"), agent("看到了，接着改"), tool("edit", "x"), agent("B"), user("b"), turn("t2"), agent("C", "t2")];
+    const segs = buildTranscript(items, false);
+    expect(segs.map((s) => s.answer?.markdown)).toEqual(["A", "B", "C"]);
+    expect(segs[0]!.tail).toEqual([notice]);
+    expect(segs[1]!.rows.map((r) => r.kind)).toEqual(["group", "item", "group"]);
+    expect(segs[2]!.inputs.map((i) => i.type)).toEqual(["user"]);
+  });
+
+  it("does not split a running turn's work without turn ids", () => {
+    const items = [user("a"), turn("t1", "running"), tool("read", "x", "t1"), think("…")];
+    const segs = buildTranscript(items, true);
+    expect(segs).toHaveLength(1);
+  });
+
+  it("shows a Claude subagent's handed-back report as its answer, also one cut at the input limit", () => {
+    const handback = (input: string): SessionItem => ({ ...base(), type: "tool", name: "SubagentHandback", kind: "other", summary: "", input, status: "completed" });
+    const report = "## 结论\n首关 638 只怪，\"1003\" 是分裂怪";
+    const [seg] = buildTranscript([user("查首关"), tool("read", "Wave.json"), handback(JSON.stringify({ message: report }, null, 2))], false);
+    expect(seg!.answer?.markdown).toBe(report);
+    expect(seg!.rows.flatMap((r) => (r.kind === "group" ? r.members : [r.item])).map((i) => i.type)).toEqual(["tool"]);
+    const cut = `${JSON.stringify({ message: `${report}\n${"细节".repeat(50)}` }, null, 2).slice(0, 60)}\n…`;
+    const [cutSeg] = buildTranscript([user("查首关"), handback(cut)], false);
+    expect(cutSeg!.answer?.markdown).toMatch(/^## 结论\n首关 638 只怪，"1003" 是分裂怪[\s\S]*只留了前面一部分）$/);
+  });
+
   it("keeps a reply between steps in the work, and lets it end the group before it", () => {
     const items = [turn("t1"), user("a", "t1"), tool("read", "x", "t1"), agent("看到了，接着改", "t1"), tool("edit", "x", "t1"), agent("done", "t1")];
     const [seg] = buildTranscript(items, false);

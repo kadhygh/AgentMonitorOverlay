@@ -56,6 +56,31 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(page.getByText("停止后，排队的 1 条消息没有发出")).toBeVisible();
 });
 
+test("a DSH goal going on by itself: each round a turn, the answers stay in sight, 打断 stops it (问题 #13)", async () => {
+  // 标准 view: finished turns fold (the tests' default 完全展开 never folds).
+  studio = await launchStudio({ dsh: true, transcriptView: "standard" });
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "DSH 目标", workspaceId: ws.id, firstSession: { profileId: "dsh-mock", text: "一直做 [[goal: 2]]" } });
+  await page.getByTestId("task-card").filter({ hasText: "DSH 目标" }).click();
+  const turns = page.getByTestId("turn");
+  // Round 2 replied and DSH is still taken to be working (its turn ends after a quiet spell): three turns.
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "ROUND 2 DONE" })).toBeVisible({ timeout: 30_000 });
+  await expect(turns).toHaveCount(3);
+  // The person's turn and round 1 are over and folded, their answers outside the fold.
+  await expect(turns.nth(0)).toHaveAttribute("data-folded", "true");
+  await expect(turns.nth(0).getByTestId("msg-agent")).toContainText("MOCK-DSH: 一直做");
+  await expect(turns.nth(1)).toHaveAttribute("data-folded", "true");
+  await expect(turns.nth(1).getByTestId("msg-agent")).toContainText("ROUND 1 DONE");
+  await expect(page.getByRole("button", { name: "打断" })).toBeVisible();
+  await screenshot(studio.app, "stage-17", "S17-dsh-goal-rounds", page);
+  await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
+  await expect(turns.nth(2).getByTestId("turn-fold")).toContainText("已停止");
+  await expect(turns.nth(2).getByTestId("msg-agent")).toContainText("ROUND 2 DONE");
+  await screenshot(studio.app, "stage-17", "S17-dsh-goal-stopped", page);
+});
+
 
 /** An asar archive with no files (its header pickles, as @electron/asar writes them). */
 function emptyAsar(): Buffer {

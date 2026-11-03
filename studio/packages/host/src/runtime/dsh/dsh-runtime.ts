@@ -36,7 +36,7 @@ import {
 /** Starting a DeepSeek session that has no way to sign in (设置 → 模型 → DeepSeek). */
 const ACCOUNT_SIGN_IN = "DSH 桌面版还没有登录 DeepSeek 账号：打开 DeepSeek Harness 桌面版登录，或者在 设置 → 模型 → DeepSeek 里改用 API Key";
 const NO_KEY = "还没有 DeepSeek 的 API Key：在 设置 → 模型 → DeepSeek 里填上，或者改用 DSH 桌面版登录的账号";
-import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
+import { blockText, DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 import { withoutHostEnv } from "../agent-env.js";
 
@@ -81,6 +81,10 @@ export interface DshRuntimeOptions {
   folderAccess?: FolderAccess | null;
   /** How long a set-up folder waits between scans after write turns (default AUTO_SCAN_MS; tests: 0). */
   folderScanEveryMs?: number;
+  /** A turn DSH runs by itself ends this long after its last reply (default AUTO_QUIET_MS) … */
+  autoQuietMs?: number;
+  /** … or this long after anything else, when no command runs and nothing waits on the person (default AUTO_STALL_MS). */
+  autoStallMs?: number;
   now?: () => Date;
 }
 
@@ -145,6 +149,8 @@ interface Live {
   idleTimer: NodeJS.Timeout | null;
   /** When the running turn's speed was last read from DSH's log. */
   measuredAt: number;
+  /** A turn DSH runs by itself, outside any prompt of Studio's (a goal's next round), and the timer that ends it. */
+  auto: { timer: NodeJS.Timeout | null; stopping?: boolean } | null;
 }
 
 /** An ACP inline image (prompt content). */
@@ -160,6 +166,16 @@ const MEASURE_EVERY_MS = 15_000;
 const BACKFILL_SLACK_MS = 5000;
 
 const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
+
+/**
+ * DSH tells over ACP neither when a turn it runs by itself starts nor when it ends (2026-11-03, 问题 #13): the quiet
+ * after a reply that ends it (the user: 60 s; DSH sends a message only once its model call is written, so tens of
+ * seconds between two updates are normal), and after anything else (a model call still thinking).
+ */
+const AUTO_QUIET_MS = 60_000;
+const AUTO_STALL_MS = 10 * 60_000;
+/** After 停止 on such a turn: it ends this long after DSH's last update. */
+const AUTO_STOP_MS = 3000;
 
 export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
@@ -237,6 +253,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       live.queue.push({ text, images: blocks });
       return { mode: "queue" };
     }
+    // DSH going on by itself: that turn ends here; DSH takes the message in when its step is done.
+    if (live.auto) this.endAuto(sessionId, live, "end_turn", true);
     this.appendItem(sessionId, item, { method: "user" });
     await this.prompt(sessionId, live, text, blocks);
     return { mode: "start" };
@@ -249,7 +267,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
    */
   private async takesImages(session: Session, live: Live): Promise<Live> {
     const model = session.options.model;
-    if ((model ?? "") !== (live.model ?? "") && !live.inflight) {
+    if ((model ?? "") !== (live.model ?? "") && !live.inflight && !live.auto) {
       await this.release(session.id);
       live = await this.ensureLive(this.requireSession(session.id));
     }
@@ -300,7 +318,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (!live) return updated;
     if (to === "danger-full-access") for (const w of [...live.waiting.values()]) this.settleWaiting(sessionId, live, w, "allow");
-    if (!live.inflight) {
+    // Not while DSH goes on by itself either: a restart would cut it off (it restarts when that turn ends).
+    if (!live.inflight && !live.auto) {
       if (live.permission !== to) await this.release(sessionId);
       else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
     }
@@ -319,6 +338,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async interrupt(sessionId: Id): Promise<void> {
     const live = this.live.get(sessionId);
+    // A turn DSH runs by itself: session/cancel without a prompt stops DSH's own work (its ACP cancel()). The turn
+    // ends shortly after DSH's last update, so what it still sends while stopping stays in it.
+    if (live?.auto && !live.inflight) {
+      for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+      live.conn.notify("session/cancel", { sessionId: live.acpId });
+      live.auto.stopping = true;
+      this.armAutoEnd(sessionId, live);
+      return;
+    }
     if (!live?.inflight) return;
     const dropped = live.queue.splice(0);
     if (dropped.length) this.appendItem(sessionId, { type: "notice", level: "info", message: `停止后，排队的 ${dropped.length} 条消息没有发出` }, { method: "dsh/queue-dropped" });
@@ -485,13 +513,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0 };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
       const p = params as { sessionId?: string; update?: AcpUpdate };
       if (p.sessionId !== live.acpId || !p.update) return;
+      if (!live.inflight) this.autonomous(session.id, live, p.update);
       live.transcript.update(p.update);
+      if (live.auto) this.armAutoEnd(session.id, live);
       // DSH could not set its sandbox up on the folder: the fix is offered.
       if (p.update.sessionUpdate === "tool_call_update" && p.update.status === "failed") {
         const failed = grantFailurePath(`${toolOutput(p.update.content)}\n${typeof p.update.rawOutput === "string" ? p.update.rawOutput : JSON.stringify(p.update.rawOutput ?? "")}`);
@@ -499,12 +529,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       // Now and then while a turn runs, its speed so far. 2026-10-27: on any update, not only usage_update — DSH sends
       // that about once a turn, at its start (the log still empty), so a long turn showed no speed until it ended.
-      if (live.inflight && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
+      if ((live.inflight || live.auto) && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
     });
     conn.on("exit", (code) => {
       if (this.live.get(session.id) === live) this.live.delete(session.id);
       if (live.idleTimer) clearTimeout(live.idleTimer);
       if (!this.closing && live.inflight) this.emit("log", `DSH process of ${session.id} exited mid-turn (${code})`);
+      // A turn DSH ran by itself is cut off with its process (a Host shutdown leaves it to the next start).
+      if (!this.closing && live.auto) this.endAuto(session.id, live, "cancelled");
     });
     this.armIdle(session.id, live);
     // Before its first command: the folder's permissions let DSH set its write sandbox up.
@@ -690,9 +722,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private armIdle(sessionId: Id, live: Live): void {
     if (live.idleTimer) clearTimeout(live.idleTimer);
     live.idleTimer = null;
-    if (live.inflight) return;
+    if (live.inflight || live.auto) return;
     live.idleTimer = setTimeout(() => {
-      if (!live.inflight && this.live.get(sessionId) === live) void this.release(sessionId);
+      if (!live.inflight && !live.auto && this.live.get(sessionId) === live) void this.release(sessionId);
     }, this.options.idleMs ?? 20 * 60_000);
     live.idleTimer.unref();
   }
@@ -746,6 +778,61 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       return;
     }
     this.setStatus(sessionId, "idle");
+    this.armIdle(sessionId, live);
+  }
+
+  /**
+   * DSH works with no prompt of Studio's running (2026-11-03, 问题 #13): a goal's next round starts by itself once the
+   * turn before has ended. Before, those rows had no turn: the turn before kept them, its answer folded away with the
+   * work after it, the session read as idle (no 停止, nothing in Focus) and its process was closed after the idle time
+   * mid-goal. Now each such round is a turn: one opens on DSH's first update with none running; a reply followed
+   * straight by a new model call (no tool between; a DSH turn ends on a message without tool calls) ends it and opens
+   * the next; the last ends after a quiet spell (armAutoEnd), on the person's next message, 停止, or the process ending.
+   */
+  private autonomous(sessionId: Id, live: Live, u: AcpUpdate): void {
+    const work = ((u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk") && !!blockText(u.content)) || (u.sessionUpdate === "tool_call" && !!u.toolCallId);
+    if (!work) return;
+    if (live.auto && !live.auto.stopping && live.transcript.endsRound(u)) this.endAuto(sessionId, live, "end_turn", true);
+    if (live.auto) return;
+    live.auto = { timer: null };
+    if (live.idleTimer) clearTimeout(live.idleTimer);
+    live.idleTimer = null;
+    live.transcript.openTurn();
+    this.setStatus(sessionId, "running");
+  }
+
+  /** When a turn DSH runs by itself is taken to be over, from its latest update on. */
+  private armAutoEnd(sessionId: Id, live: Live): void {
+    const auto = live.auto;
+    if (!auto) return;
+    if (auto.timer) clearTimeout(auto.timer);
+    const ms = auto.stopping ? AUTO_STOP_MS : live.transcript.lastWasReply() ? (this.options.autoQuietMs ?? AUTO_QUIET_MS) : (this.options.autoStallMs ?? AUTO_STALL_MS);
+    auto.timer = setTimeout(() => {
+      if (live.auto !== auto) return;
+      // A command still running or a question to the person: not over (their own updates arm this again).
+      if (!auto.stopping && (live.waiting.size || live.transcript.toolsRunning())) return void this.armAutoEnd(sessionId, live);
+      this.endAuto(sessionId, live, auto.stopping ? "cancelled" : "end_turn");
+    }, ms);
+    auto.timer.unref?.();
+  }
+
+  /** Ends the turn DSH ran by itself; `next`: another turn (DSH's next round, or the person's message) follows at once. */
+  private endAuto(sessionId: Id, live: Live, stopReason: string, next = false): void {
+    const auto = live.auto;
+    if (!auto) return;
+    if (auto.timer) clearTimeout(auto.timer);
+    live.auto = null;
+    const turnItem = live.transcript.turnItemId();
+    live.transcript.closeTurn(stopReason);
+    this.measure(live, turnItem);
+    setTimeout(() => this.measure(live, turnItem), 2000).unref?.();
+    if (next) return;
+    // Idle after 停止 too, as after a stopped turn of Studio's (the turn itself says 已停止).
+    this.setStatus(sessionId, "idle");
+    if (this.live.get(sessionId) !== live) return;
+    // A permission changed meanwhile: the process ends now (as after a turn of Studio's).
+    const session = this.store.getSession(sessionId);
+    if (session && live.permission !== dshPermissionMode(session.options.permission)) return void this.release(sessionId);
     this.armIdle(sessionId, live);
   }
 
@@ -844,7 +931,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const option = w.options.find((o) => o.kind === kind);
     w.answer(how === "cancelled" || !option ? { outcome: { outcome: "cancelled" } } : { outcome: { outcome: "selected", optionId: option.optionId } });
     this.updateItem(w.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: how === "allow" ? "accepted" : "declined" } : it));
-    if (!live.waiting.size && live.inflight && this.store.getSession(sessionId)?.status === "awaiting-approval") this.setStatus(sessionId, "running");
+    if (!live.waiting.size && (live.inflight || live.auto) && this.store.getSession(sessionId)?.status === "awaiting-approval") this.setStatus(sessionId, "running");
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
