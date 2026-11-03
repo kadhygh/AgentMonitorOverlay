@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const electronPath = require("electron") as unknown as string;
 
 /** The programs a packed folder has, by their dev main's package. */
-const PACKED = { app: "AMO Studio", notes: "AMO Notes", reviewer: "AMO Reviewer" } as const;
+const PACKED = { app: "AMO Studio", notes: "AMO Notes", reviewer: "AMO Reviewer", platform: "AMO Platform", "relay-app": "AMO Relay" } as const;
 
 /** The packed programs' folder, when the run checks a packed build. */
 export const packedApp = process.env.AMO_E2E_APP ? resolve(process.env.AMO_E2E_APP) : null;

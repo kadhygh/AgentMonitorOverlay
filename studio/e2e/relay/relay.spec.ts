@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { programLaunch } from "../support/packed.js";
 
 // AMO 中转's desktop client (plans/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
 // content download → login), register two people, a session sent by an AI through the command line the client
@@ -57,9 +58,10 @@ const startServer = (port: number) => relay.startRelayServer({ store, publicDir,
 
 async function launch(who: string, extraArgs: string[] = []): Promise<{ app: ElectronApplication; page: Page; home: string }> {
   const home = join(root, who);
+  const launched = programLaunch("relay-app", join(studio, "packages", "relay-app", "dist", "main.js"));
   const app = await _electron.launch({
-    executablePath: electronPath,
-    args: [join(studio, "packages", "relay-app", "dist", "main.js"), "--server", server.url, ...extraArgs],
+    executablePath: launched.executablePath,
+    args: [...launched.args, "--server", server.url, ...extraArgs],
     // AMO_HOME: the platform's folder (account.json), empty unless the test logs in there — never this machine's own.
     env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1" },
   });

@@ -4,11 +4,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
+import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2) against testkit's fake team server: log in, install a stand-in tool
@@ -16,8 +16,6 @@ import { screenshot, studioRoot } from "../support/studio.js";
 // Everything under temp folders (AMO_HOME, AMO_LOCAL_HOME; the self-update tests unpack the platform there instead and
 // point %LOCALAPPDATA% there): the real %APPDATA%\AMO and %LOCALAPPDATA%\AMO stay untouched.
 
-const require = createRequire(import.meta.url);
-const electronPath = require("electron") as unknown as string;
 const MAIN = join(studioRoot, "packages", "platform", "dist", "main.js");
 
 /** A pretend tool: its "exe" is a .cmd that leaves a mark (with Studio's data dir, for Studio) and ends. */
@@ -56,7 +54,8 @@ function cleanEnv(): Record<string, string> {
  */
 async function launch(args: string[] = [], machine?: (root: string) => Record<string, string>, again = false): Promise<{ app: ElectronApplication; page: Page }> {
   if (!again || !root) root = mkdtempSync(join(tmpdir(), "amo-platform-e2e-"));
-  app = await _electron.launch({ executablePath: electronPath, args: [MAIN, ...args], env: { ...cleanEnv(), ...machine?.(root) } });
+  const launched = programLaunch("platform", MAIN);
+  app = await _electron.launch({ executablePath: launched.executablePath, args: [...launched.args, ...args], env: { ...cleanEnv(), ...machine?.(root) } });
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   return { app, page };
