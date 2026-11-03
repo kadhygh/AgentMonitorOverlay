@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { removeTempDir, sha256Of, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
 import { PlatformClient } from "./client.js";
-import { Installer, type ProgramsFile } from "./installer.js";
+import { Installer, renamePatiently, type ProgramsFile } from "./installer.js";
 import { channelVersion, checkManifest, compareVersions, safeParts } from "./manifest.js";
 
 let server: FakePlatformServer;
@@ -36,6 +36,36 @@ function publishThree(tool: string) {
   server.publish(tool, "1.1.0", files("1.1.0"), { exe: "Tool.exe", notes: "第二版", channel: null });
   server.publish(tool, "1.2.0", { ...files("1.2.0"), "resources/new.txt": "new" }, { exe: "Tool.exe", notes: "第三版", channel: null });
 }
+
+describe("renamePatiently (2026-11-03)", () => {
+  it("tries again while the rename is refused for a moment (an antivirus holding a new file), then gives the error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "amo-rename-"));
+    try {
+      // A folder renamed onto another folder is refused (EPERM on Windows): it stands in for one held.
+      const from = join(dir, ".partial"), to = join(dir, "0.9.17");
+      mkdirSync(from);
+      writeFileSync(join(from, "a.exe"), "a");
+      mkdirSync(to);
+      writeFileSync(join(to, "held"), "x");
+      const pauses: number[] = [];
+      await renamePatiently(from, to, 5_000, async (ms) => {
+        pauses.push(ms);
+        // Let go after the second wait (on Windows a folder is never renamed onto another: the stand-in goes as a whole).
+        if (pauses.length === 2) rmSync(to, { recursive: true });
+      });
+      expect(pauses).toEqual([100, 200]);
+      expect(readFileSync(join(to, "a.exe"), "utf8")).toBe("a");
+      // Held for longer than it waits: the error as it is.
+      mkdirSync(from);
+      const other = join(dir, "other");
+      mkdirSync(other);
+      writeFileSync(join(other, "held"), "x");
+      await expect(renamePatiently(from, other, 250, async () => undefined)).rejects.toMatchObject({ code: expect.stringMatching(/EPERM|ENOTEMPTY|EEXIST/) });
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+});
 
 describe("Installer", () => {
   it("installs a version: the files, `current` as a junction to it, its record and programs.json", async () => {

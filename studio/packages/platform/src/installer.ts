@@ -5,6 +5,28 @@ import { readJsonFile, updateJsonFile, writeJsonFile } from "@amo-studio/account
 import type { Source } from "./client.js";
 import { compareVersions, isToolId, isVersion, PlatformError, safeParts, type Manifest } from "./manifest.js";
 
+/** Errors Windows gives while another program has a file open: an antivirus scanning what was just written. */
+const HELD = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+/**
+ * renameSync, tried again for a while when the file or folder is held (2026-11-03: 火绒 opens a freshly downloaded exe
+ * or dll to scan it, and while it does Windows refuses to rename the folder they are in — the platform's update to
+ * 0.9.17 failed so; a moment later the same rename went through). Up to `waitMs`, then the error as it is.
+ */
+export async function renamePatiently(from: string, to: string, waitMs = 30_000, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))): Promise<void> {
+  const until = Date.now() + waitMs;
+  for (let pause = 100; ; pause = Math.min(pause * 2, 2000)) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      if (!HELD.has(code) || Date.now() + pause > until) throw err;
+      await sleep(pause);
+    }
+  }
+}
+
 // Installs, updates, rolls back and removes the tools (plans/amo-lan-platform.md, 「安装和更新怎么做」):
 //   <apps>\<tool>\<version>\        one whole program folder per version, never changed in place
 //   <apps>\<tool>\<version>.json    what the platform knows of it: the manifest, when installed, when last made current
@@ -379,7 +401,7 @@ export class Installer {
           }
           // A short count from the server would leave the bar short: the file is right, so it is all there.
           progress.doneBytes += m.size - got;
-          renameSync(tmp, first);
+          await renamePatiently(tmp, first);
           progress.doneFiles++;
           for (const more of m.paths.slice(1)) {
             place(first, join(partial, ...more));
@@ -395,9 +417,15 @@ export class Installer {
       report();
       // A folder by this name without a record is a leftover from a run that stopped; a complete one was found above.
       if (existsSync(target)) rmSync(target, { recursive: true, force: true, maxRetries: 3 });
-      renameSync(partial, target);
+      await renamePatiently(partial, target);
     } catch (err) {
-      rmSync(partial, { recursive: true, force: true, maxRetries: 3 });
+      // What went wrong is `err`: a folder that cannot be removed now either (held the same way) is left for the next
+      // start or install to remove, and must not hide it (it did, 2026-11-03).
+      try {
+        rmSync(partial, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        // left for later
+      }
       // Paths found missing on the way are forgotten all the same.
       this.saveIndex();
       throw err;
