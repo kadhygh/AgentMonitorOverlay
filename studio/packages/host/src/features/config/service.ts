@@ -175,11 +175,13 @@ export class ConfigFeature extends Feature {
     return !this.disabledFeatures().includes(id);
   }
 
+  /** 常用预设, without those whose profile is gone (2026-11-03: the built-in Codex DeepSeek was removed; the whole list comes back on save and would be refused). */
   private presets(): SessionPreset[] {
     const raw = this.store.getKv(PRESETS_KEY)?.value;
     if (!raw) return [];
     try {
-      return JSON.parse(raw) as SessionPreset[];
+      const list = JSON.parse(raw) as unknown;
+      return Array.isArray(list) ? (list as SessionPreset[]).filter((p) => this.profiles.some((x) => x.id === p?.profileId)) : [];
     } catch {
       return [];
     }

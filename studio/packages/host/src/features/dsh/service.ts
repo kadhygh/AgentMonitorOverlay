@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile, type Workspace } from "@amo-studio/protocol";
 import { dshDesktopIn } from "@amo-studio/locate";
-import { DSH_DESKTOP_PATH_KEY, DSH_OPTIONS_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
+import { DSH_ACCOUNT_OPTIONS_KEY, DSH_AUTH_KEY, DSH_DESKTOP_PATH_KEY, DSH_KEY_CREDENTIAL, DSH_OPTIONS_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import type { DshRuntime } from "../../runtime/dsh/dsh-runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -13,14 +13,34 @@ import { Feature } from "../../core/feature.js";
  */
 export class DshFeature extends Feature {
   status(): DshStatus {
-    return dshStatus(this.store);
+    return dshStatus(this.store, process.env, this.keySaved());
+  }
+
+  /** Whether the built-in DeepSeek's key is saved. */
+  private keySaved(): boolean {
+    const id = this.profiles.find((p) => p.runtime === "dsh" && !p.custom)?.credentialId ?? DSH_KEY_CREDENTIAL;
+    try {
+      return !!this.options.credentials?.read(id);
+    } catch {
+      return false;
+    }
   }
 
   /**
    * 设置's changes: `source` ("auto": the desktop app when installed; "clone"), `desktopPath` (the desktop app's folder
-   * when it is installed somewhere else, null: look for it) and/or `path` (the clone's folder).
+   * when it is installed somewhere else, null: look for it), `path` (the clone's folder) and/or `auth` (how the
+   * built-in DeepSeek signs in: "account" in the desktop app, or "key").
    */
-  update(body: { source?: unknown; path?: unknown; desktopPath?: unknown }): DshStatus {
+  update(body: { source?: unknown; path?: unknown; desktopPath?: unknown; auth?: unknown }): DshStatus {
+    if (body.auth !== undefined) {
+      if (body.auth !== "account" && body.auth !== "key") throw new HostError("bad_request", 'auth must be "account" or "key"');
+      this.store.setKv(DSH_AUTH_KEY, body.auth);
+      // The account and the key offer different models: the next 「检查」 or session tells them again. Sessions already
+      // running keep their process until it ends (a new message after that starts it the new way).
+      this.forgetOptions();
+      this.profilesChanged();
+      if (body.source === undefined && body.path === undefined && body.desktopPath === undefined) return this.status();
+    }
     if (body.desktopPath !== undefined) {
       this.setDesktopPath(body.desktopPath);
       if (body.source === undefined && body.path === undefined) return this.status();
@@ -29,7 +49,7 @@ export class DshFeature extends Feature {
       if (body.source !== "auto" && body.source !== "clone") throw new HostError("bad_request", 'source must be "auto" or "clone"');
       this.store.setKv(DSH_SOURCE_KEY, body.source);
       if (body.path === undefined) {
-        this.store.setKv(DSH_OPTIONS_KEY, "null");
+        this.forgetOptions();
         this.profilesChanged();
         return this.status();
       }
@@ -49,7 +69,7 @@ export class DshFeature extends Feature {
       this.store.setKv(DSH_DESKTOP_PATH_KEY, path);
     }
     // Another install may offer other models: the next 「检查」 or session tells them again.
-    this.store.setKv(DSH_OPTIONS_KEY, "null");
+    this.forgetOptions();
     this.profilesChanged();
   }
 
@@ -65,7 +85,7 @@ export class DshFeature extends Feature {
       this.store.setKv(DSH_PATH_KEY, path);
     }
     // Models of another clone may differ: the next 「检查」 or session tells them again.
-    this.store.setKv(DSH_OPTIONS_KEY, "null");
+    this.forgetOptions();
     this.profilesChanged();
     return this.status();
   }
@@ -144,6 +164,12 @@ export class DshFeature extends Feature {
     if (!w || (w.archivedAt && !archivedToo)) throw new HostError("not_found", `project ${workspaceId} not found`);
     if (!runtime?.foldersAvailable) throw new HostError("not_found", "这台机器上 Studio 不处理文件夹权限（只在 Windows 上）");
     return { runtime, w };
+  }
+
+  /** Models DSH offered, with a key and on the account: the next 「检查」 or session tells them again. */
+  private forgetOptions(): void {
+    this.store.setKv(DSH_OPTIONS_KEY, "null");
+    this.store.setKv(DSH_ACCOUNT_OPTIONS_KEY, "null");
   }
 
   private profilesChanged(): void {

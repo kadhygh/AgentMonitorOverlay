@@ -22,9 +22,20 @@ import {
   DSH_OPTIONS_KEY,
   DSH_PERMISSION_ENV,
   DSH_REJECT,
+  DSH_ACCOUNT_DEFAULT_MODEL,
+  DSH_ACCOUNT_OPTIONS_KEY,
+  DSH_ACCOUNT_PROVIDER,
+  accountPatchYaml,
+  dshAccountFile,
+  dshAccountSignedIn,
+  readDshAuth,
   resolveDsh,
   type DshPermissionMode,
 } from "./install.js";
+
+/** Starting a DeepSeek session that has no way to sign in (设置 → 模型 → DeepSeek). */
+const ACCOUNT_SIGN_IN = "DSH 桌面版还没有登录 DeepSeek 账号：打开 DeepSeek Harness 桌面版登录，或者在 设置 → 模型 → DeepSeek 里改用 API Key";
+const NO_KEY = "还没有 DeepSeek 的 API Key：在 设置 → 模型 → DeepSeek 里填上，或者改用 DSH 桌面版登录的账号";
 import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 import { withoutHostEnv } from "../agent-env.js";
@@ -243,7 +254,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       live = await this.ensureLive(this.requireSession(session.id));
     }
     if (live.images) return live;
-    const models = this.cachedOptions() ? dshModels(this.cachedOptions()!) : [];
+    const profile = this.profile(session.profileId);
+    const config = this.cachedOptions(profile);
+    const models = config ? this.modelsOf(profile, config) : [];
     const name = (model ? models.find((m) => m.id === model) : models.find((m) => m.isDefault))?.label ?? model ?? "这个型号";
     const switched = (model ?? "") !== (live.model ?? "") ? "（刚换了型号的话，等这一轮做完再发）" : "";
     throw Object.assign(new Error(`${name} 不收图片（DSH 说这个型号不支持图片输入）${switched}；换成能看图的型号，例如 DeepSeek-V4.1-Flash，再发`), { code: "bad_request" });
@@ -251,16 +264,17 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async choices(profileId: Id): Promise<ProfileChoices> {
     const profile = this.profile(profileId);
-    let config = this.cachedOptions();
+    let config = this.cachedOptions(profile);
     if (!config) {
-      await this.check();
-      config = this.cachedOptions();
+      // Asked on this profile's own sign-in (a third-party channel's key, or the built-in one's account or key).
+      await this.probe(profile).catch(() => undefined);
+      config = this.cachedOptions(profile);
     }
     const base = { profileId, permissions: DSH_PERMISSIONS, defaultPermission: DSH_DEFAULT_PERMISSION };
     // A channel with its own model names: those (the efforts are DSH's).
     const own = this.ownModels(profile);
     if (own) return { ...base, models: channelModels(own, profile.model, config), source: "builtin" };
-    return { ...base, models: config ? dshModels(config) : [], source: config ? "cli" : "builtin" };
+    return { ...base, models: config ? this.modelsOf(profile, config) : [], source: config ? "cli" : "builtin" };
   }
 
   /**
@@ -362,19 +376,27 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       return c;
     };
     if (resolved && "error" in resolved) return result(false, resolved.error);
+    try {
+      const { protocolVersion, models } = await this.probe(null);
+      const how = this.usesAccount(null) ? " · 用桌面版登录的 DeepSeek 账号" : "";
+      return result(true, `可用 · ACP ${protocolVersion} · ${models} 个型号${how}`);
+    } catch (err) {
+      return result(false, `不能用：${this.explain(err).message}`);
+    }
+  }
+
+  /** Starts DSH for `profile` (null: the built-in one) and opens a session, no model call; keeps the models it offers. */
+  private async probe(profile: ModelProfile | null): Promise<{ protocolVersion: number; models: number }> {
     const probe = join(this.options.dir, "probe");
     mkdirSync(probe, { recursive: true });
     let conn: AcpConnection | null = null;
     try {
-      conn = this.spawn(probe, null, "workspace-write", "check");
+      conn = this.spawn(probe, profile, "workspace-write", "check");
       const init = await this.initialize(conn);
       const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: probe, mcpServers: [] }, 60_000);
-      this.remember(created.configOptions, null);
+      this.remember(created.configOptions, profile);
       await conn.request("session/close", { sessionId: created.sessionId }, 30_000).catch(() => undefined);
-      const models = created.configOptions ? dshModels(created.configOptions).length : 0;
-      return result(true, `可用 · ACP ${init.protocolVersion} · ${models} 个型号`);
-    } catch (err) {
-      return result(false, `不能用：${this.explain(err).message}`);
+      return { protocolVersion: init.protocolVersion, models: created.configOptions ? this.modelsOf(profile, created.configOptions).length : 0 };
     } finally {
       await conn?.close(5_000);
     }
@@ -390,14 +412,24 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private spawn(cwd: string, profile: ModelProfile | null, permission: DshPermissionMode, label: string, model?: string): AcpConnection {
     const env: NodeJS.ProcessEnv = { ...withoutHostEnv(this.options.env ?? process.env), [DSH_HOME_ENV]: join(this.options.dir, "home"), [DSH_PERMISSION_ENV]: permission };
-    const credentialId = profile?.credentialId ?? this.options.profiles.find((p) => p.runtime === "dsh" && p.credentialId)?.credentialId;
-    const key = credentialId ? this.options.credentials.read(credentialId) : null;
-    if (key) env[DSH_KEY_ENV] = key;
-    else if (profile?.credentialId) throw Object.assign(new Error(`还没有 DeepSeek 的 Key（凭据 ${profile.credentialId}）`), { code: "bad_request" });
-    // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
-    const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
-    if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
-    const patch = profile ? (this.catalogPatch(profile) ?? (model ? this.modelPatch(model) : null)) : null;
+    // A model of the other sign-in (picked before 设置 changed it) is not asked for: the agent starts on its default.
+    const usable = model && this.routeAllowed(profile, model) ? model : undefined;
+    let patch: string | null;
+    if (this.usesAccount(profile)) {
+      // The DSH desktop app's DeepSeek account (2026-11-03): its credentials file, no key.
+      const file = dshAccountFile(this.options.env ?? process.env);
+      if (!dshAccountSignedIn(file)) throw Object.assign(new Error(ACCOUNT_SIGN_IN), { code: "bad_request" });
+      patch = this.accountPatch(file, usable);
+    } else {
+      const credentialId = this.credentialOf(profile);
+      const key = credentialId ? this.options.credentials.read(credentialId) : null;
+      if (key) env[DSH_KEY_ENV] = key;
+      else if (profile?.credentialId) throw Object.assign(new Error(profile.custom ? `这个渠道还没有 Key（设置 → 模型 →「${profile.label}」→ 编辑）` : NO_KEY), { code: "bad_request" });
+      // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
+      const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
+      if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
+      patch = profile ? (this.catalogPatch(profile) ?? (usable ? this.modelPatch(usable) : null)) : null;
+    }
     let command: string;
     let args: string[];
     if (this.options.agent) {
@@ -724,8 +756,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     // A channel with its own names: a model it does not list (picked before the list was set) stays on its default.
     const own = profile ? this.ownModels(profile) : null;
     const listed = !own || !opts.model || own.some((m) => `deepseek-official/${m}` === opts.model);
-    if (opts.model && listed && opts.model !== live.applied.model) {
-      const value = dshModelValue(opts.model, this.cachedOptions());
+    // A model of the other sign-in (picked before 设置 changed it, 2026-11-03) stays on the default too.
+    if (opts.model && listed && this.routeAllowed(profile, opts.model) && opts.model !== live.applied.model) {
+      const value = dshModelValue(opts.model, this.cachedOptions(profile));
       const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_MODEL_OPTION, value });
       live.applied.model = opts.model;
       this.remember(r.configOptions, profile);
@@ -824,7 +857,17 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   /** Keeps what DSH offers, for the pickers; not from a channel with its own catalog (that is not DSH's own list). */
   private remember(config: ConfigOption[] | undefined, profile: ModelProfile | null): void {
-    if (config?.length && !(profile && this.ownModels(profile))) this.store.setKv(DSH_OPTIONS_KEY, JSON.stringify(config));
+    if (config?.length && !(profile && this.ownModels(profile))) this.store.setKv(this.optionsKey(profile), JSON.stringify(config));
+  }
+
+  /** Where the options DSH offers are kept: on the desktop app's account they are other models than with a key. */
+  private optionsKey(profile: ModelProfile | null): string {
+    return this.usesAccount(profile) ? DSH_ACCOUNT_OPTIONS_KEY : DSH_OPTIONS_KEY;
+  }
+
+  /** DSH's models on the profile's sign-in: the account's route on the account, the others with a key. */
+  private modelsOf(profile: ModelProfile | null, config: readonly ConfigOption[]): ModelOption[] {
+    return dshModels(config).filter((m) => this.routeAllowed(profile, m.id));
   }
 
   /** The site's own model names of a channel profile, or null (DSH's built-in catalog). */
@@ -846,6 +889,42 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return file;
   }
 
+  /** The key of `profile` (null: 「检查」, which checks the first DSH profile, the built-in one). */
+  private credentialOf(profile: ModelProfile | null): string | undefined {
+    return profile?.credentialId ?? this.options.profiles.find((p) => p.runtime === "dsh" && p.credentialId)?.credentialId;
+  }
+
+  /**
+   * Whether `profile` signs in with the DSH desktop app's account (设置 → 模型 → DeepSeek, 2026-11-03): only the
+   * built-in DeepSeek (null: 「检查」, which checks it); a third-party channel always uses its own key.
+   */
+  private usesAccount(profile: ModelProfile | null): boolean {
+    if (profile?.custom) return false;
+    const credentialId = this.credentialOf(profile);
+    let keySaved = false;
+    try {
+      keySaved = !!(credentialId && this.options.credentials.read(credentialId));
+    } catch {
+      keySaved = false;
+    }
+    return readDshAuth(this.store, keySaved) === "account";
+  }
+
+  /** Whether a model id belongs to the profile's sign-in: the account's route on the account, any other with a key. */
+  private routeAllowed(profile: ModelProfile | null, id: string): boolean {
+    return id.startsWith(`${DSH_ACCOUNT_PROVIDER}/`) === this.usesAccount(profile);
+  }
+
+  /** The desktop app's credentials and the ACP agent on the account's `model` (its default when none), as a DSH patch file. */
+  private accountPatch(file: string, model: string | undefined): string {
+    const name = model ? model.slice(DSH_ACCOUNT_PROVIDER.length + 1) : DSH_ACCOUNT_DEFAULT_MODEL;
+    const dir = join(this.options.dir, "patches");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `account-${name.replace(/[^A-Za-z0-9._-]+/g, "_")}.yml`);
+    writeFileSync(path, accountPatchYaml(file, name));
+    return path;
+  }
+
   /** The session's model as the ACP agent's default (DSH then says whether it takes images), as a DSH patch file. */
   private modelPatch(model: string): string | null {
     const cut = model.indexOf("/");
@@ -857,9 +936,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return file;
   }
 
-  private cachedOptions(): ConfigOption[] | null {
+  private cachedOptions(profile: ModelProfile | null): ConfigOption[] | null {
     try {
-      const v = JSON.parse(this.store.getKv(DSH_OPTIONS_KEY)?.value ?? "null") as unknown;
+      const v = JSON.parse(this.store.getKv(this.optionsKey(profile))?.value ?? "null") as unknown;
       return Array.isArray(v) ? (v as ConfigOption[]) : null;
     } catch {
       return null;

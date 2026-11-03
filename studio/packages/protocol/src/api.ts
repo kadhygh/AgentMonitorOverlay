@@ -338,6 +338,15 @@ export interface DshStatus {
   /** The Node that runs DSH and its version (DSH needs 22.19 or newer). */
   node: { path: string; version: string | null } | null;
   check: DshCheck | null;
+  /**
+   * How the built-in DeepSeek signs in (2026-11-03): "account" — the DeepSeek account signed in in the DSH desktop app
+   * (no key); "key" — the API key saved in Studio. Third-party DeepSeek channels always use their own key.
+   */
+  auth: "account" | "key";
+  /** The desktop app's credentials file and whether a DeepSeek account is signed in there. */
+  account: { file: string; signedIn: boolean };
+  /** Whether the built-in DeepSeek's API key is saved. */
+  keySaved: boolean;
 }
 
 export interface DshCheck {
@@ -427,7 +436,7 @@ export interface HostRoutes {
   /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
   "GET /api/dsh": { req: void; res: DshStatus };
   /** Sets (or with null clears) the clone's folder; it must hold a DSH checkout (`apps/cli`). */
-  "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone"; desktopPath?: string | null }; res: DshStatus };
+  "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone"; desktopPath?: string | null; auth?: "account" | "key" }; res: DshStatus };
   /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
   "POST /api/dsh/check": { req: void; res: DshStatus };
   /**

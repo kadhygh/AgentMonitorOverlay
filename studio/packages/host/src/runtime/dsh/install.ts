@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { DSH_DESKTOP_ARGS, dshDesktopDir, locateDshDesktop, type DshDesktopFound } from "@amo-studio/locate";
 import type { DshCheck, DshStatus } from "@amo-studio/protocol";
@@ -16,10 +17,21 @@ export const DSH_DESKTOP_PATH_KEY = "settings:dsh-desktop-path";
 /** kv: where DSH comes from — "auto" (the desktop app when installed, else the clone) or "clone" (always the clone). */
 export const DSH_SOURCE_KEY = "settings:dsh-source";
 export type DshSource = "auto" | "clone";
+/**
+ * kv: how the built-in DeepSeek signs in (2026-11-03, the user: a computer that never had old AMO has no key to reuse, and
+ * the desktop app works once signed in without one) — "account": the DeepSeek account signed in in the DSH desktop app;
+ * "key": the API key saved in Studio. Unset: "key" when one is saved (what it always was), else "account".
+ */
+export const DSH_AUTH_KEY = "settings:dsh-auth";
+export type DshAuth = "account" | "key";
+/** The built-in DeepSeek's key (Windows Credential Manager, old AMO's entry; Studio writes it since 2026-11-03). */
+export const DSH_KEY_CREDENTIAL = "deepseek-v4";
 /** kv: the last 「检查」. */
 export const DSH_CHECK_KEY = "dsh:check";
 /** kv: the session config options (models, efforts) DSH last offered, for the pickers. */
 export const DSH_OPTIONS_KEY = "dsh:config-options";
+/** kv: the same, offered on the desktop app's account (2026-11-03: other models than with a key). */
+export const DSH_ACCOUNT_OPTIONS_KEY = "dsh:config-options:account";
 
 /** The built CLI inside the clone (`pnpm run build:artifacts`). */
 export const DSH_BIN = ["apps", "cli", "lib", "bin.js"] as const;
@@ -102,6 +114,55 @@ export function readDshDesktopPath(kv: KvStore): string | null {
 
 export function readDshSource(kv: KvStore): DshSource {
   return kv.getKv(DSH_SOURCE_KEY)?.value === "clone" ? "clone" : "auto";
+}
+
+export function readDshAuth(kv: KvStore, keySaved: boolean): DshAuth {
+  const v = kv.getKv(DSH_AUTH_KEY)?.value;
+  return v === "account" || v === "key" ? v : keySaved ? "key" : "account";
+}
+
+// ---- the desktop app's sign-in ----------------------------------------------------------------------------------
+
+// Studio's DSH keeps its own home (its sessions stay out of the desktop app's list), so it does not see the app's
+// sign-in by itself: in "account" mode its processes get a patch that points DSH's credential store
+// (`@deepseek-ai/dsh-credentials-local`, plugin id `credentials`) at the app's `.credentials.yaml`, and start their ACP
+// agent on the account's route (`deepseek-account`, which takes no API key). Checked 2026-11-03 on the desktop app:
+// from a fresh home with the patch, DSH lists `deepseek-account/*` and answers on it.
+
+/** DSH's credential store plugin, its account route and the model the ACP agent starts on there. */
+export const DSH_CREDENTIALS_PLUGIN = "credentials";
+export const DSH_ACCOUNT_PROVIDER = "deepseek-account";
+export const DSH_ACCOUNT_DEFAULT_MODEL = "deepseek-flash";
+/** The desktop app's sign-in record in its credentials file. */
+const ACCOUNT_RECORD = /^\s+deepseek-account-platform\/default:\s*$/m;
+
+/** The desktop app's credentials file: in the person's own DSH home (DSH_HOME, else ~/.dsh). */
+export function dshAccountFile(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.DSH_HOME || join(homedir(), ".dsh"), ".credentials.yaml");
+}
+
+/** Whether the desktop app is signed in to a DeepSeek account (its credentials file holds the sign-in; never read out). */
+export function dshAccountSignedIn(file: string): boolean {
+  try {
+    return ACCOUNT_RECORD.test(readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+/** The patch for "account" mode: DSH's credentials from the desktop app's file, the ACP agent on the account's `model`. */
+export function accountPatchYaml(file: string, model: string): string {
+  return [
+    "# Written by AMO Studio: the DeepSeek account signed in in the DSH desktop app (设置 → 模型 → DeepSeek).",
+    `- id: ${DSH_CREDENTIALS_PLUGIN}`,
+    "  config:",
+    `    path: ${JSON.stringify(file)}`,
+    "- id: acp",
+    "  config:",
+    `    provider: ${DSH_ACCOUNT_PROVIDER}`,
+    `    model: ${JSON.stringify(model)}`,
+    "",
+  ].join("\n");
 }
 
 // ---- the desktop app --------------------------------------------------------------------------------------------
@@ -238,8 +299,10 @@ export function readDshCheck(kv: KvStore): DshCheck | null {
   }
 }
 
-export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env): DshStatus {
+/** `keySaved`: whether the built-in DeepSeek's API key is saved (DSH_KEY_CREDENTIAL). */
+export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env, keySaved = false): DshStatus {
   const path = readDshPath(kv);
+  const accountFile = dshAccountFile(env);
   const install = path ? describeDsh(path) : null;
   const node = resolveNode(env);
   const desktopChosen = readDshDesktopPath(kv);
@@ -259,5 +322,8 @@ export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env): Ds
     built: !!install?.built,
     node: node ? { path: node, version: nodeVersion(node) } : null,
     check: readDshCheck(kv),
+    auth: readDshAuth(kv, keySaved),
+    account: { file: accountFile, signedIn: dshAccountSignedIn(accountFile) },
+    keySaved,
   };
 }

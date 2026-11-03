@@ -16,10 +16,9 @@ import { AutoCompactSection } from "./AutoCompactSection.js";
 /** What a built-in channel is, in a few words. */
 const BUILTIN_SUB: Record<string, string> = {
   "codex-default": "Codex · 本机 Codex 的登录（ChatGPT 订阅）",
-  "codex-deepseek-flash": "Codex · DeepSeek 官方接口",
   "claude-glm": "Claude Code · 智谱 GLM Coding Plan",
   "claude-subscription": "Claude Code · Claude 订阅",
-  "dsh-deepseek": "DSH · DeepSeek 官方接口（DeepSeek Harness 源码）",
+  "dsh-deepseek": "DSH · DeepSeek 官方（桌面版登录的账号或 API Key）",
 };
 
 /** A third-party channel's scheme, as the list and the page call it. */
@@ -103,7 +102,8 @@ export function ChannelPage({
     setConfirm(false);
   }, [profile.id]);
 
-  const cred = profile.credentialId && !profile.custom ? credentials?.find((x) => x.id === profile.credentialId) : undefined;
+  // The built-in DeepSeek on DSH says how it signs in (account or key) in its own section below (2026-11-03).
+  const cred = profile.credentialId && !profile.custom && profile.runtime !== "dsh" ? credentials?.find((x) => x.id === profile.credentialId) : undefined;
   const keyState = channel
     ? channel.keyFrom
       ? `Key：沿用旧 AMO 的 ${channel.keyFrom.toUpperCase()}`

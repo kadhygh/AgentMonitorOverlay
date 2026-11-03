@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ApprovalDecision, Attachment, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, SlashCommand, SlashCommandList, SlashCommandResult, UserDelivery, Workspace, AccountUsage } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
-import { codexThreadParams } from "../profiles.js";
+import { codexThreadParams, profileGone } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { codexAutoCompactConfig } from "../compact.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
@@ -647,7 +647,8 @@ export class CodexRuntime extends RuntimeBase {
 
   private profile(id: Id): ModelProfile {
     const p = this.options.profiles.find((x) => x.id === id);
-    if (!p || p.runtime !== "codex") throw new Error(`unknown Codex profile ${id}`);
+    if (!p) throw profileGone(id);
+    if (p.runtime !== "codex") throw new Error(`unknown Codex profile ${id}`);
     return p;
   }
 

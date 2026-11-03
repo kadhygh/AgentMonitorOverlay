@@ -20,15 +20,11 @@ export interface CodexProviderDef {
   catalog?: string;
 }
 
-export const CODEX_PROVIDERS: Record<string, CodexProviderDef> = {
-  "amo-deepseek": {
-    name: "DeepSeek Flash",
-    baseUrl: "https://api.deepseek.com/",
-    wireApi: "responses",
-    envKey: "DEEPSEEK_API_KEY",
-    catalog: "deepseek-flash.models.json",
-  },
-};
+/**
+ * Built-in Codex providers: none since 2026-11-03 (the user retired DeepSeek on Codex; DeepSeek runs on DSH). The
+ * person's third-party Codex channels add theirs (channels.ts).
+ */
+export const CODEX_PROVIDERS: Record<string, CodexProviderDef> = {};
 
 /** Env var that carries the MCP-only token to Codex app-servers. */
 export const AMO_MCP_TOKEN_ENV = "AMO_STUDIO_MCP_TOKEN";
@@ -39,26 +35,18 @@ export const CLAUDE_SUBSCRIPTION_CREDENTIAL = "claude-subscription";
 export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   // The person's own Codex login and default model (a ChatGPT subscription: GPT).
   { id: "codex-default", label: "GPT", runtime: "codex", provider: null, model: null },
-  {
-    id: "codex-deepseek-flash",
-    label: "DeepSeek",
-    runtime: "codex",
-    provider: "amo-deepseek",
-    model: "deepseek-flash",
-    reasoningEffort: "low",
-    credentialId: "deepseek-v4",
-  },
   // Claude Code routed to GLM (old AMO's glm-5.3 preset; the key is the Coding Plan key stored as glm-5.2).
   { id: "claude-glm", label: "GLM", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
   // The person's Claude subscription, on their own Claude Code login (no token since 2026-10-27).
   { id: "claude-subscription", label: "Claude", runtime: "claude", provider: "anthropic", model: null },
-  // DeepSeek on DSH's own harness (stage 17): a DSH source clone set in 设置 → 模型, the same DeepSeek key.
+  // DeepSeek on DSH's own harness (stage 17): the DSH desktop app or a source clone (设置 → 模型). It signs in with the
+  // DeepSeek account of the desktop app or with this key (2026-11-03, dsh/install.ts DSH_AUTH_KEY). Sessions of the
+  // retired `codex-deepseek-flash` (DeepSeek on Codex, removed 2026-11-03) stay readable but cannot go on.
   { id: "dsh-deepseek", label: "DeepSeek", runtime: "dsh", provider: "deepseek-official", model: null, credentialId: "deepseek-v4" },
 ];
 
 /** Built-in profiles whose site tells the balance (设置 → 模型, 左下角额度). */
 export const BUILTIN_BALANCES: Record<string, { baseUrl: string; config: BalanceConfig }> = {
-  "codex-deepseek-flash": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } },
   "dsh-deepseek": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } },
 };
 
@@ -73,6 +61,14 @@ export interface CodexServerSpec {
   env: Record<string, string>;
   /** Providers whose key was missing; their threads will fail to authenticate. */
   missingCredentials: string[];
+}
+
+/**
+ * A session's profile is not there any more (a removed channel, or the retired `codex-deepseek-flash`, 2026-11-03): its
+ * conversation stays readable, a new message says why it cannot go on.
+ */
+export function profileGone(profileId: string): Error {
+  return Object.assign(new Error(`这个会话用的模型渠道已经没有了（${profileId}），不能接着发消息：新开一个会话接着做`), { code: "bad_request" });
 }
 
 export class CredentialMissingError extends Error {

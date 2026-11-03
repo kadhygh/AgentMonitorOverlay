@@ -60,7 +60,7 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
         {!profile.custom && profile.id === CLAUDE_SUBSCRIPTION && settings && <ClaudeLoginSection settings={settings} />}
       </>
     ) : profile && !profile.custom && profile.runtime === "dsh" ? (
-      <DshSection link={link} />
+      <DshSection link={link} credentialId={profile.credentialId} />
     ) : undefined;
 
   const select = (v: View) => {

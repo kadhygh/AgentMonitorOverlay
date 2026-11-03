@@ -7,6 +7,7 @@
 //   [[context: N]]           the usage update says N tokens in use
 //   [[env]]                  the reply tells the permission mode and whether a key and a home were given
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
+//   [[auth]]                 the reply tells whether a key was given, the credentials file of the account patch and the model
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
 //   [[fail]]                 the prompt fails
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
@@ -68,9 +69,28 @@ function patchedModels(): Array<{ value: string; name: string; description?: str
   const first = def ? (JSON.parse(def[1]!) as string) : ids[0]!;
   return [first, ...ids.filter((i) => i !== first)].map((id) => ({ value: JSON.stringify(["deepseek-official", id]), name: id }));
 }
-const MODELS = patchedModels() ?? BUILTIN_MODELS;
+/**
+ * Studio's account patch (2026-11-03): the credentials file it points the store at, and the `acp` provider. Like DSH,
+ * the account's route offers its models when that file holds the desktop app's sign-in (the key's route stays).
+ */
+function patchText(): string {
+  const at = process.argv.indexOf("--patch");
+  const path = at >= 0 ? process.argv[at + 1] : undefined;
+  return path && existsSync(path) ? readFileSync(path, "utf8") : "";
+}
+const CREDENTIALS_FILE = /^- id: credentials\s+config:\s+path: (".*")\s*$/m.exec(patchText())?.[1];
+const CREDENTIALS = CREDENTIALS_FILE ? (JSON.parse(CREDENTIALS_FILE) as string) : null;
+const PROVIDER = /^\s*provider: "?([\w-]+)"?\s*$/m.exec(patchText())?.[1] ?? "deepseek-official";
+const SIGNED_IN = !!CREDENTIALS && existsSync(CREDENTIALS) && readFileSync(CREDENTIALS, "utf8").includes("deepseek-account-platform/default:");
+const ACCOUNT_MODELS = SIGNED_IN
+  ? [
+      { value: '["deepseek-account","deepseek-flash"]', name: "账号 Flash" },
+      { value: '["deepseek-account","deepseek-v4-pro"]', name: "账号 Pro" },
+    ]
+  : [];
+const MODELS = patchedModels() ?? [...BUILTIN_MODELS, ...ACCOUNT_MODELS];
 const DEFAULT_NAME = patchedDefault();
-const DEFAULT_MODEL = MODELS.find((m) => (JSON.parse(m.value) as string[])[1] === DEFAULT_NAME) ?? MODELS[0]!;
+const DEFAULT_MODEL = MODELS.find((m) => JSON.stringify([PROVIDER, DEFAULT_NAME]) === m.value) ?? MODELS[0]!;
 const TAKES_IMAGES = IMAGE_MODELS.has((JSON.parse(DEFAULT_MODEL.value) as string[])[1]!);
 const EFFORTS = ["off", "low", "high", "max"];
 
@@ -215,6 +235,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
       return { stopReason: "cancelled" };
     }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
+    if (/\[\[auth\]\]/.test(text)) reply = `AUTH key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} credentials=${CREDENTIALS ?? ""} model=${s.model}`;
     if (/\[\[env\]\]/.test(text)) reply = `ENV permission=${process.env.DSH_PERMISSION_MODE ?? ""} key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} home=${process.env.DSH_HOME ? "yes" : "no"} model=${s.model} effort=${s.effort}`;
     const mcp = /\[\[mcp: ([a-z_]+)(?: (.*?))?\]\]/s.exec(text);
     if (mcp) {

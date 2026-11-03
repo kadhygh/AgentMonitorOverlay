@@ -9,7 +9,7 @@ import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { dshPermissionMode } from "../choices.js";
 import { catalogPatchYaml, channelModels, dshModelId, dshModels, dshModelValue } from "./dsh-runtime.js";
 import { locateDshDesktop } from "@amo-studio/locate";
-import { DSH_DESKTOP_PATH_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus, resolveDsh, type KvStore } from "./install.js";
+import { DSH_AUTH_KEY, DSH_DESKTOP_PATH_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, accountPatchYaml, describeDsh, dshAccountFile, dshAccountSignedIn, dshStatus, readDshAuth, resolveDsh, type KvStore } from "./install.js";
 import { describeDshTool } from "./transcript.js";
 
 const CONFIG = [
@@ -176,5 +176,38 @@ describe("DSH source (2026-10-26)", () => {
     // AMO_STUDIO_DSH_DESKTOP set ("" = nowhere): no usual folder, no registry — but the chosen folder still counts.
     expect(locateDshDesktop({ ...env, AMO_STUDIO_DSH_DESKTOP: "" }, null, () => [chosen])).toBeNull();
     expect(locateDshDesktop({ ...env, AMO_STUDIO_DSH_DESKTOP: "" }, chosen, () => [])).toMatchObject({ dir: chosen, from: "chosen" });
+  });
+});
+
+describe("DeepSeek sign-in (2026-11-03)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "amo-studio-test-dshauth-"));
+  });
+  afterEach(() => removeTempDir(root));
+  const kv = (values: Record<string, string>): KvStore => ({ getKv: (k) => (k in values ? { value: values[k]! } : undefined), setKv: () => undefined });
+
+  it("uses the key when one is saved and nothing was chosen, else the desktop app's account; a choice wins", () => {
+    expect(readDshAuth(kv({}), true)).toBe("key");
+    expect(readDshAuth(kv({}), false)).toBe("account");
+    expect(readDshAuth(kv({ [DSH_AUTH_KEY]: "account" }), true)).toBe("account");
+    expect(readDshAuth(kv({ [DSH_AUTH_KEY]: "key" }), false)).toBe("key");
+  });
+
+  it("finds the desktop app's sign-in in its DSH home without reading the token out", () => {
+    const file = dshAccountFile({ DSH_HOME: root });
+    expect(file).toBe(join(root, ".credentials.yaml"));
+    expect(dshAccountFile({}).endsWith(join(".dsh", ".credentials.yaml"))).toBe(true);
+    expect(dshAccountSignedIn(file)).toBe(false);
+    writeFileSync(file, ["version: 1", "records:", "  deepseek-account-platform/device:", "    kind: grant", "refs:", "  DEEPSEEK_API_KEY: sk-x", ""].join("\n"));
+    expect(dshAccountSignedIn(file)).toBe(false);
+    writeFileSync(file, ["version: 1", "records:", "  deepseek-account-platform/default:", "    kind: grant", ""].join("\r\n"));
+    expect(dshAccountSignedIn(file)).toBe(true);
+    expect(dshStatus(kv({}), { DSH_HOME: root, AMO_STUDIO_DSH_DESKTOP: "" }, false)).toMatchObject({ auth: "account", keySaved: false, account: { file, signedIn: true } });
+  });
+
+  it("points DSH's credential store at the app's file and starts the ACP agent on the account", () => {
+    const yaml = accountPatchYaml(String.raw`C:\Users\me\.dsh\.credentials.yaml`, "deepseek-flash");
+    expect(yaml).toContain(["- id: credentials", "  config:", '    path: "C:\\\\Users\\\\me\\\\.dsh\\\\.credentials.yaml"', "- id: acp", "  config:", "    provider: deepseek-account", '    model: "deepseek-flash"', ""].join("\n"));
   });
 });

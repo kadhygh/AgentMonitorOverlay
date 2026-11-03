@@ -1,7 +1,9 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Session, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
+import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // Stage 17: DeepSeek on DSH's own harness. 「Mock DSH」 sessions run the scripted ACP agent standing in for
@@ -116,4 +118,43 @@ test("设置 → 模型: the DSH clone's place, its version and 「检查」 (st
   await section.getByTestId("dsh-desktop-clear").click();
   await expect(section.getByTestId("dsh-desktop")).toContainText("没找到 DeepSeek Harness 桌面版");
   await expect(section.getByText("现在用的是源码克隆")).toBeVisible();
+});
+
+test("设置 → 模型 → DeepSeek: signs in with the DSH desktop app's account or an API key (2026-11-03)", async () => {
+  // The desktop app's DSH home of this test, never this machine's.
+  const home = mkdtempSync(join(tmpdir(), "amo-e2e-dsh-home-"));
+  try {
+    studio = await launchStudio({ dsh: true, env: { DSH_HOME: home } });
+    const { page } = studio;
+    await page.getByRole("button", { name: "设置" }).click();
+    const dialog = page.getByRole("dialog", { name: "设置" });
+    await dialog.getByRole("tab", { name: "模型" }).click();
+    await dialog.locator('[data-testid="channel-nav"][data-id="dsh-mock"]').click();
+    const section = dialog.getByTestId("dsh-section");
+    // A key is saved here: it is what DeepSeek uses until the account is chosen.
+    await expect(section.getByTestId("dsh-auth-key")).toHaveAttribute("aria-pressed", "true");
+    await expect(section.getByTestId("dsh-key")).toContainText("Key 已保存");
+    await expect(section.getByTestId("dsh-key-input")).toHaveAttribute("type", "password");
+
+    await section.getByTestId("dsh-auth-account").click();
+    await expect(section.getByTestId("dsh-auth-account")).toHaveAttribute("aria-pressed", "true");
+    await expect(section.getByTestId("dsh-account")).toContainText("桌面版还没有登录 DeepSeek 账号");
+    await screenshot(studio.app, "studio", "dsh-auth-signed-out", page);
+    // Signed in in the app: 重新检测 finds it.
+    writeFileSync(join(home, ".credentials.yaml"), ["version: 1", "records:", "  deepseek-account-platform/default:", "    kind: grant", ""].join("\n"));
+    await section.getByTestId("dsh-account-recheck").click();
+    await expect(section.getByTestId("dsh-account")).toContainText("✓ 桌面版已登录 DeepSeek 账号");
+    await expect(section.getByTestId("dsh-account")).toContainText(join(home, ".credentials.yaml"));
+    await screenshot(studio.app, "studio", "dsh-auth-account", page);
+    const choices = await studio.api<{ models: Array<{ id: string }> }>("GET", "/api/profiles/dsh-mock/choices");
+    expect(choices.models.map((m) => m.id)).toEqual(["deepseek-account/deepseek-flash", "deepseek-account/deepseek-v4-pro"]);
+
+    await section.getByTestId("dsh-auth-key").click();
+    await expect(section.getByTestId("dsh-key")).toContainText("Key 已保存");
+    await screenshot(studio.app, "studio", "dsh-auth-key", page);
+  } finally {
+    await studio?.close();
+    studio = undefined;
+    removeTempDir(home);
+  }
 });

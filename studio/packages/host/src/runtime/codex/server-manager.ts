@@ -8,7 +8,7 @@ import type { ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "../credentials.js";
 import { withoutHostEnv } from "../agent-env.js";
 import { lowerAgentPriority } from "../priority.js";
-import { codexServerSpec, type CodexProviderDef } from "../profiles.js";
+import { codexServerSpec, profileGone, type CodexProviderDef } from "../profiles.js";
 import { resolveCodexCommand, type CodexCommand } from "./command.js";
 import { CodexRpcClient } from "./rpc-client.js";
 
@@ -151,7 +151,8 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     let entry = this.entries.get(profileId);
     if (entry) return entry;
     const profile = this.options.profiles.find((p) => p.id === profileId);
-    if (!profile || profile.runtime !== "codex") throw new Error(`unknown Codex profile ${profileId}`);
+    if (!profile) throw profileGone(profileId);
+    if (profile.runtime !== "codex") throw new Error(`unknown Codex profile ${profileId}`);
     const saved = this.readState()[profileId];
     entry = {
       profileId,

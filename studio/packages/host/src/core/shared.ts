@@ -73,5 +73,8 @@ export function boundedText(value: unknown, field: string, max: number): string 
   return text;
 }
 
-/** Credentials Studio may write: none since 2026-10-27 (the Claude subscription token mode is gone). */
-export const WRITABLE_CREDENTIALS = new Set<string>();
+/**
+ * Credentials Studio may write (the Claude subscription token went 2026-10-27): the built-in DeepSeek's API key since
+ * 2026-11-03 (a computer that never had old AMO had no way to set it; 设置 → 模型 → DeepSeek).
+ */
+export const WRITABLE_CREDENTIALS = new Set<string>(["deepseek-v4"]);
