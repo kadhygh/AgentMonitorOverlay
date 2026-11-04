@@ -55,6 +55,8 @@ export interface CodexServerManagerOptions {
   backoffMs?: { first: number; max: number };
   /** Where app-servers reach the AMO MCP; read when a server starts (the Host's address is known only later). */
   mcp?: () => { url: string; token: string } | null;
+  /** MCP 设置 (2026-11-04): Studio's own servers that are on, read when a server starts (not passed to running ones). */
+  extraMcp?: () => Record<string, import("@amo-studio/protocol").McpServerSpec>;
 }
 
 interface Entry {
@@ -118,6 +120,15 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     // The launcher may exit before codex.exe releases the socket; wait until nothing listens any more.
     await waitPortClosed(entry.port, 5000);
     this.persist();
+  }
+
+  /** Studio's MCP servers for a new server; a broken list must not keep Codex from starting. */
+  private extraMcp(): Record<string, import("@amo-studio/protocol").McpServerSpec> {
+    try {
+      return this.options.extraMcp?.() ?? {};
+    } catch {
+      return {};
+    }
   }
 
   async stopAll(): Promise<void> {
@@ -202,7 +213,7 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
 
   private spawnServer(entry: Entry): void {
     const profile = this.options.profiles.find((p) => p.id === entry.profileId)!;
-    const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: this.options.mcp?.() ?? null });
+    const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: this.options.mcp?.() ?? null, extraMcp: this.extraMcp() });
     const cmd = this.options.codexCommand ?? resolveCodexCommand();
     const tokenFile = this.tokenFile(entry.profileId);
     const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];

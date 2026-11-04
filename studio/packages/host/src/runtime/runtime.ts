@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage, McpApply } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -67,6 +67,13 @@ export interface SessionRuntimeApi {
   setWakeChoice?(sessionId: Id, choice: { stopLoop?: boolean; autoContinue?: boolean }): Promise<Session>;
   /** The conversation settings changed: running sessions follow where the runtime can. */
   applyChatSettings?(settings: ChatSettings): void;
+  /**
+   * MCP 设置 (2026-11-04): the session's MCP may have changed (its own choices, its project's, the global ones or a
+   * server's): a running process takes it as the runtime can (see McpApply). Claude and DSH.
+   */
+  refreshMcp?(sessionId: Id): Promise<McpApply>;
+  /** Claude: the MCP servers of the session's running process as it reports them now; null when none runs. */
+  mcpStatus?(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null>;
   on(event: "event", listener: (e: HostEvent) => void): unknown;
   on(event: "log", listener: (line: string) => void): unknown;
 }
@@ -185,6 +192,14 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   applyChatSettings(settings: ChatSettings): void {
     for (const r of Object.values(this.runtimes)) r.applyChatSettings?.(settings);
+  }
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    const r = this.forSession(sessionId);
+    return r.refreshMcp ? r.refreshMcp(sessionId) : "codex-restart";
+  }
+  async mcpStatus(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null> {
+    const r = this.forSession(sessionId);
+    return r.mcpStatus ? r.mcpStatus(sessionId) : null;
   }
 }
 

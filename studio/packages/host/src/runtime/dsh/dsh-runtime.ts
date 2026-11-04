@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, FolderAccessStatus, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
+import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, FolderAccessStatus, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace, McpApply } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import { newId } from "../../store/store.js";
 import { MCP_SESSION_HEADER, type McpIdentities } from "../../mcp/identity.js";
@@ -39,6 +39,7 @@ const NO_KEY = "还没有 DeepSeek 的 API Key：在 设置 → 模型 → DeepS
 import { blockText, DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 import { withoutHostEnv } from "../agent-env.js";
+import { acpServer, type McpSource } from "../mcp-launch.js";
 
 // DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/done/stage-17-dsh.md). Each session runs its own
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
@@ -67,6 +68,8 @@ export interface DshRuntimeOptions {
   dir: string;
   /** The AMO MCP's address and its agent token, once the Host listens. */
   mcp?: () => { url: string; token: string } | null;
+  /** MCP 设置 (2026-11-04): the session's other MCP servers (Studio's and the person's that are on). */
+  mcpServers?: McpSource;
   identities?: McpIdentities;
   /** Tests: the agent command instead of node + the clone's CLI (a fake ACP agent). */
   agent?: { command: string; args: readonly string[] };
@@ -151,6 +154,8 @@ interface Live {
   measuredAt: number;
   /** A turn DSH runs by itself, outside any prompt of Studio's (a goal's next round), and the timer that ends it. */
   auto: { timer: NodeJS.Timeout | null; stopping?: boolean } | null;
+  /** MCP 设置 (2026-11-04): the other MCP servers the process was given (session/new or resume), to tell a change. */
+  mcpKey: string;
 }
 
 /** An ACP inline image (prompt content). */
@@ -210,11 +215,12 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const token = this.options.identities?.issue();
     const permission = dshPermissionMode(options.permission);
     const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`, options.model);
+    const extra = this.extraMcp({ workspaceId: input.workspace.id, ...(options.mcp ? { mcp: options.mcp } : {}) });
     let session: Session;
     let image = false;
     try {
       image = (await this.initialize(conn)).image;
-      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: this.mcpServers(token) });
+      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: [...this.mcpServers(token), ...extra.list] });
       this.remember(created.configOptions, profile);
       session = this.createSession({
         taskId: input.taskId,
@@ -233,6 +239,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (token) this.options.identities!.bind(token, session.id);
     const live = this.adopt(session, conn, {}, permission, image, options.model);
+    live.mcpKey = extra.key;
     await this.applyOptions(session.id, live);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
@@ -495,16 +502,18 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const permission = dshPermissionMode(session.options.permission);
       const conn = this.spawn(workspace.path, this.profile(session.profileId), permission, session.id, session.options.model);
       let image = false;
+      const extra = this.extraMcp(session.id);
       try {
         image = (await this.initialize(conn)).image;
         const token = this.options.identities?.tokenFor(session.id);
-        const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: this.mcpServers(token) });
+        const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: [...this.mcpServers(token), ...extra.list] });
         this.remember(resumed.configOptions, this.profile(session.profileId));
       } catch (err) {
         conn.kill();
         throw this.explain(err);
       }
       const live = this.adopt(session, conn, {}, permission, image, session.options.model);
+      live.mcpKey = extra.key;
       await this.applyOptions(session.id, live);
       return live;
     })().finally(() => this.starting.delete(session.id));
@@ -513,7 +522,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
@@ -764,7 +773,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     // A permission changed during the turn: its process ends now; the next message (or the queue) resumes it anew.
     const session = this.store.getSession(sessionId);
-    if (session && live.permission !== dshPermissionMode(session.options.permission) && this.live.get(sessionId) === live) {
+    // So did its MCP servers (MCP 设置): DSH takes them only at session/new or resume.
+    if (session && (live.permission !== dshPermissionMode(session.options.permission) || this.mcpChanged(sessionId, live)) && this.live.get(sessionId) === live) {
       const next = takeQueue(live);
       await this.release(sessionId);
       if (!next) return this.setStatus(sessionId, "idle");
@@ -935,6 +945,33 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
+
+  /** The session's other MCP servers in ACP's shape, and a key to tell a change. */
+  private extraMcp(target: Id | { workspaceId: Id; mcp?: Record<string, boolean> }): { list: unknown[]; key: string } {
+    try {
+      const plan = this.options.mcpServers?.launch(target, false);
+      if (!plan) return { list: [], key: "" };
+      const names = Object.keys(plan.explicit).sort();
+      return { list: names.map((n) => acpServer(n, plan.explicit[n]!)), key: JSON.stringify(names.map((n) => [n, plan.explicit[n]])) };
+    } catch (err) {
+      this.emit("log", `MCP servers for a DSH session could not be read: ${String(err)}`);
+      return { list: [], key: "" };
+    }
+  }
+
+  private mcpChanged(sessionId: Id, live: Live): boolean {
+    return !!this.options.mcpServers && this.extraMcp(sessionId).key !== live.mcpKey;
+  }
+
+  /** MCP 设置: a change reaches the process when it next starts — now if it is idle, else once the turn ends. */
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    const live = this.live.get(sessionId);
+    if (!live) return "next-message";
+    if (!this.mcpChanged(sessionId, live)) return "now";
+    if (live.inflight || live.auto) return "after-turn";
+    await this.release(sessionId);
+    return "next-message";
+  }
 
   private mcpServers(token: string | undefined): unknown[] {
     const mcp = this.options.mcp?.();

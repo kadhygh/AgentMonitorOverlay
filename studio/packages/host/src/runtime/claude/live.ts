@@ -1,4 +1,6 @@
 import type { PermissionResult, Query, SDKUserMessage, SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import type { McpLaunch } from "../mcp-launch.js";
+import type { McpServerSpec } from "@amo-studio/protocol";
 import type { Id, QuestionPrompt, SessionStatus } from "@amo-studio/protocol";
 
 // What Studio keeps about one running Claude Code process of a session (stage 16 split out of claude-runtime.ts).
@@ -49,6 +51,13 @@ export interface Live {
   givingWay: boolean;
   /** What the CLI said it can do (system/init `capabilities`): msg_lifecycle_v1, interrupt_send_now_v1… */
   capabilities: Set<string>;
+  /**
+   * MCP 设置 (2026-11-04): what the process was started with, the AMO server it was given (setMcpServers replaces the
+   * whole dynamic set, amo included), the servers added since (`dynamic`; those of the start stay until the process
+   * ends, whatever setMcpServers says — seen with CLI 2.1.304), and whether a change needs a new process.
+   */
+  mcp: { plan: McpLaunch; amo: unknown; dynamic: Record<string, McpServerSpec> } | null;
+  mcpStale: boolean;
   /**
    * Messages Studio sent that the model has not read yet (command_lifecycle `started` not seen): uuid -> its user item.
    * Still here when the process goes: those items become `unsent`.
@@ -149,6 +158,8 @@ export function newLive(push: Live["push"], end: Live["end"]): Live {
     interrupted: false,
     givingWay: false,
     capabilities: new Set(),
+    mcp: null,
+    mcpStale: false,
     undelivered: new Map(),
     atCli: new Set(),
     onAtCli: new Map(),

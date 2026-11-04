@@ -5,13 +5,14 @@ import { activeModel, optionsSummary, sameOptions, useProfileChoices } from "../
 import { rememberPick } from "../lib/recents.js";
 import { EffortBars, FastToggle, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
 import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
+import { SessionMcpTray, useSessionMcp } from "../mcp/SessionMcp.js";
 
 // Under the composer: what the session runs with — model, effort, permissions — each one click away
 // (design/ui-directions/new-task.html, "会话中切换"). Clicking the model or the permissions opens that group above the
 // composer; the effort bars are clicked directly. Models switch only within the session's own account (the context
 // stays); another account needs a new session. Codex takes a change from the next turn, Claude at once.
 
-type Tray = "model" | "permission" | null;
+type Tray = "model" | "permission" | "mcp" | null;
 
 export function SessionOptionsBar({
   link,
@@ -31,6 +32,8 @@ export function SessionOptionsBar({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const mcp = useSessionMcp(link, session);
+  const mcpOn = mcp.state?.entries.filter((e) => e.on).length ?? 0;
   const mine = presets.filter((p) => p.profileId === session.profileId);
   const model = choices ? activeModel(choices, session.options) : undefined;
   const when = session.runtime === "claude" ? "立即生效" : "下一轮生效";
@@ -111,7 +114,12 @@ export function SessionOptionsBar({
 
   return (
     <div className="session-options" ref={box}>
-      {tray && choices && (
+      {tray === "mcp" && (
+        <div className="tray" role="dialog" aria-label="MCP" data-testid="options-tray">
+          <SessionMcpTray link={link} session={session} state={mcp.state} onState={mcp.setState} disabled={disabled} />
+        </div>
+      )}
+      {tray && tray !== "mcp" && choices && (
         <div className="tray" role="dialog" aria-label={tray === "model" ? "换型号" : "权限"} data-testid="options-tray">
           <div className="tray-h">
             {tray === "model" ? "换型号" : "权限"}
@@ -175,6 +183,21 @@ export function SessionOptionsBar({
           <span aria-hidden="true">⛨</span>
           <span>{permission?.label ?? "默认权限"}</span>
         </button>
+        {session.runtime !== "remote" && (
+          <button
+            type="button"
+            className="seg-btn"
+            aria-expanded={tray === "mcp"}
+            onClick={() => {
+              if (tray !== "mcp") mcp.refresh();
+              setTray((t) => (t === "mcp" ? null : "mcp"));
+            }}
+            title="这个会话用哪些 MCP（Studio 自带的 amo 一直都在）"
+            data-testid="switch-mcp"
+          >
+            <span>MCP{mcp.state ? ` ${mcpOn}` : ""}</span>
+          </button>
+        )}
       </div>
       {mine.map((p) => (
         <button

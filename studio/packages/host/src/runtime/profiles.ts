@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BalanceConfig, ModelProfile } from "@amo-studio/protocol";
+import type { BalanceConfig, McpServerSpec, ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "./credentials.js";
 import { AUTO_APPROVED_WRITE_TOOLS, PROMPTED_WRITE_TOOLS } from "../mcp/names.js";
 
@@ -89,7 +89,15 @@ export function codexServerSpec(
   profile: ModelProfile,
   profiles: readonly ModelProfile[],
   credentials: CredentialReader,
-  options: { providers?: Record<string, CodexProviderDef>; assetsDir?: string; mcp?: { url: string; token: string } | null } = {},
+  options: {
+    providers?: Record<string, CodexProviderDef>;
+    assetsDir?: string;
+    mcp?: { url: string; token: string } | null;
+    /** MCP 设置 (2026-11-04): Studio's own servers that are on, for every thread of this server. */
+    extraMcp?: Record<string, McpServerSpec>;
+    /** The environment the server starts from (default: process.env): an env value of an MCP that one already has goes inline. */
+    baseEnv?: NodeJS.ProcessEnv;
+  } = {},
 ): CodexServerSpec {
   if (profile.runtime !== "codex") throw new Error(`profile ${profile.id} is not a Codex profile`);
   const providers = options.providers ?? CODEX_PROVIDERS;
@@ -135,9 +143,47 @@ export function codexServerSpec(
     env[AMO_MCP_TOKEN_ENV] = options.mcp.token;
   }
 
+  // Studio's MCP servers (设置 → MCP). Their secrets travel in the server's env like the AMO token: a stdio server's env
+  // through env_vars (a name the server already has, PATH say, goes inline instead: it is not one of Studio's secrets
+  // and must not change for the server), a remote one's headers through env_http_headers. Codex has no SSE transport.
+  const mcpSecrets: string[] = [];
+  const base = options.baseEnv ?? process.env;
+  let h = 0;
+  for (const [name, spec] of Object.entries(options.extraMcp ?? {})) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name) || name === "amo") continue;
+    const key = `mcp_servers.${name}`;
+    if (spec.type === "stdio" && spec.command) {
+      configArgs.push(...configArg(`${key}.command`, spec.command));
+      if (spec.args?.length) configArgs.push("-c", `${key}.args=[${spec.args.map(tomlString).join(",")}]`);
+      const forward: string[] = [];
+      for (const [k, v] of Object.entries(spec.env ?? {})) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+        if (base[k] !== undefined) configArgs.push(...configArg(`${key}.env.${k}`, v));
+        else {
+          env[k] = v;
+          forward.push(k);
+          mcpSecrets.push(k);
+        }
+      }
+      if (forward.length) configArgs.push("-c", `${key}.env_vars=[${forward.map(tomlString).join(",")}]`);
+    } else if (spec.type === "http" && spec.url) {
+      configArgs.push(...configArg(`${key}.url`, spec.url));
+      const headers = Object.entries(spec.headers ?? {});
+      if (headers.length) {
+        const pairs = headers.map(([header, value]) => {
+          const envName = `AMO_STUDIO_MCP_H${h++}`;
+          env[envName] = value;
+          mcpSecrets.push(envName);
+          return `${tomlString(header)}=${tomlString(envName)}`;
+        });
+        configArgs.push("-c", `${key}.env_http_headers={${pairs.join(",")}}`);
+      }
+    }
+  }
+
   // Commands the agent runs inherit the server's environment; Codex 0.161 passed the provider keys and the MCP token
   // straight through (S4-09 review). Keep its default KEY/SECRET/TOKEN filter on and name ours explicitly.
-  const secrets = [...new Set([...[...used].map((id) => providers[id]!.envKey), AMO_MCP_TOKEN_ENV])].sort();
+  const secrets = [...new Set([...[...used].map((id) => providers[id]!.envKey), AMO_MCP_TOKEN_ENV, ...mcpSecrets])].sort();
   configArgs.push("-c", "shell_environment_policy.ignore_default_excludes=false", "-c", `shell_environment_policy.exclude=[${secrets.map(tomlString).join(",")}]`);
 
   return { profileId: profile.id, configArgs, env, missingCredentials };

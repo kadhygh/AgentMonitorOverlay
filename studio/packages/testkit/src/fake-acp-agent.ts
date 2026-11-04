@@ -9,6 +9,7 @@
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
 //   [[auth]]                 the reply tells whether a key was given, the credentials file of the account patch and the model
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
+//   [[mcp-list]]             the reply names the MCP servers the session was given (session/new or resume)
 //   [[fail]]                 the prompt fails
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
 //   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
@@ -239,6 +240,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
     if (/\[\[auth\]\]/.test(text)) reply = `AUTH key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} credentials=${CREDENTIALS ?? ""} model=${s.model}`;
+    if (/\[\[mcp-list\]\]/.test(text)) reply = `MCP-LIST ${a.mcp.map((m) => `${m.name}:${m.url ? "http" : "stdio"}`).join(",")}`;
     if (/\[\[env\]\]/.test(text)) reply = `ENV permission=${process.env.DSH_PERMISSION_MODE ?? ""} key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} home=${process.env.DSH_HOME ? "yes" : "no"} model=${s.model} effort=${s.effort}`;
     const mcp = /\[\[mcp: ([a-z_]+)(?: (.*?))?\]\]/s.exec(text);
     if (mcp) {

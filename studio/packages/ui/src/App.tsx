@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { OPEN_SETTINGS_EVENT } from "./mcp/shared.js";
 import type { Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
@@ -108,6 +109,12 @@ export function App() {
   }, []);
   // Open, and on which page when something asked for one; `at` remounts it there.
   const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
+  // 设置 on a page asked for from deep inside (the composer's MCP tray: 管理 MCP…).
+  useEffect(() => {
+    const open = (e: Event) => setSettingsOpen({ page: (e as CustomEvent<SettingsPage>).detail, at: Date.now() });
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+  }, []);
   // 远程 (2026-10-29 evening, the user): a dialog over whatever is in front, opened from the top bar or by Focus.
   const [remoteOpen, setRemoteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);

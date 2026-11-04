@@ -215,6 +215,24 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, s.id))[1]).toContain("NO TOOL canvas_place");
   });
 
+  it("gives the session's other MCP servers (Studio's and the person's), and a change from its next message", async () => {
+    // The person's Claude Code config, in a dir of the test's own (the Host never reads the real ~/.claude.json here).
+    const claudeDir = join(root, "claude-local");
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { figma: { type: "http", url: "https://mcp.figma.com/mcp" }, "amo-relay": { command: "node" } } }));
+    const host = await boot({ localClaudeHome: claudeDir });
+    await call(host, "POST", "/api/mcp/servers", { name: "img", spec: { command: "npx", args: ["img-mcp"], env: { KEY: "k" } } });
+    const s = await start(host, "[[mcp-list]]");
+    await idle(host, s.id);
+    expect(replies(await items(host, s.id))[0]).toBe("MCP-LIST amo:http,figma:http,img:stdio");
+    const changed = await call<{ apply: string; entries: Array<{ name: string; on: boolean }> }>(host, "PUT", `/api/sessions/${s.id}/mcp`, { choices: { figma: false, "amo-relay": true } });
+    expect(changed.apply).toBe("next-message");
+    expect(Object.fromEntries(changed.entries.map((e) => [e.name, e.on]))).toMatchObject({ figma: false, "amo-relay": true, img: true });
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[mcp-list]]" });
+    await until(() => items(host, s.id), (l) => replies(l).length === 2);
+    expect(replies(await items(host, s.id))[1]).toBe("MCP-LIST amo:http,amo-relay:stdio,img:stdio");
+  });
+
   it("resumes the DSH session after a Host restart; model, effort and permission go to DSH", async () => {
     let host = await boot();
     const s = await start(host, "第一句");

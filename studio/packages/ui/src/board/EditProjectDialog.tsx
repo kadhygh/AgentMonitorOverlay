@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
+import { ProjectMcp } from "../mcp/ProjectMcp.js";
 
 /**
  * 编辑项目 (2026-10-14): the name a project has in Studio (two folders with the same name can be told apart; the folder
@@ -76,6 +77,7 @@ export function EditProjectDialog({ link, workspace, onClose }: { link: HostLink
             data-testid="edit-project-description"
           />
         </label>
+        <ProjectMcp link={link} workspace={workspace} />
         <div className="edit-project-folder">
           <span className="settings-hint">文件夹</span>
           <code>{workspace.path}</code>

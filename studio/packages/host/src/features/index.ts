@@ -22,6 +22,8 @@ import { canvasReviewTools } from "./canvasreview/mcp.js";
 import { reviewRoutes } from "./review/routes.js";
 import { promptTemplatesRoutes } from "./prompttemplates/routes.js";
 import { promptTemplatesTools } from "./prompttemplates/mcp.js";
+import { mcpRoutes } from "./mcp/routes.js";
+import { mcpTools } from "./mcp/mcp.js";
 import { attachmentsRoutes } from "./attachments/routes.js";
 import { scratchpadRoutes } from "./scratchpad/routes.js";
 import { gitReviewRoutes } from "./gitreview/routes.js";
@@ -80,6 +82,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "canvasreview", routes: canvasReviewRoutes, tools: canvasReviewTools },
   { name: "review", routes: reviewRoutes },
   { name: "prompttemplates", routes: promptTemplatesRoutes, tools: promptTemplatesTools },
+  { name: "mcp", routes: mcpRoutes, tools: mcpTools },
   { name: "attachments", routes: attachmentsRoutes },
   { name: "scratchpad", routes: scratchpadRoutes },
   { name: "gitreview", routes: gitReviewRoutes, tools: gitReviewTools },

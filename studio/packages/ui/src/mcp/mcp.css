@@ -1,0 +1,25 @@
+/* MCP 设置 (2026-11-04): 设置 → MCP, 编辑项目 and the composer's MCP tray. */
+.mcp-list { display: flex; flex-direction: column; gap: 2px; }
+.mcp-entry { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-m); }
+.mcp-entry:hover { background: var(--menu-hover); }
+.mcp-entry-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.mcp-name { font-weight: 600; font-family: var(--font-code); font-size: 13px; }
+.mcp-source { font-size: var(--fs-cap); color: var(--text-faint); }
+.mcp-summary {
+  font-family: var(--font-code); font-size: 11.5px; color: var(--text-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex-basis: 100%;
+}
+.mcp-note { flex-basis: 100%; }
+.mcp-status { font-size: var(--fs-cap); color: var(--text-dim); white-space: nowrap; }
+.mcp-status-connected { color: var(--running-text); }
+.mcp-status-failed, .mcp-status-needs-auth { color: var(--attention); }
+.mcp-choice { flex: none; justify-content: flex-end; gap: 4px; }
+.mcp-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel-raised); }
+.mcp-form textarea { font-family: var(--font-code); font-size: 12px; min-height: 120px; resize: vertical; }
+.mcp-actions { display: flex; gap: 4px; flex: none; align-items: center; }
+.mcp-tray-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
+.mcp-tray-list .mcp-entry { padding: 4px 6px; }
+.mcp-tray-list label.mcp-entry { cursor: pointer; }
+.mcp-tray-foot { display: flex; align-items: center; gap: 10px; }
+.mcp-tray-foot .link-btn { margin-left: auto; }
+.edit-project-mcp { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }

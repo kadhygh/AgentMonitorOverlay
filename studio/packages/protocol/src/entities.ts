@@ -141,6 +141,11 @@ export interface SessionOptions {
    * person's own Codex config applies); false = chosen off (standard speed is sent). Ignored by other runtimes.
    */
   fast?: boolean;
+  /**
+   * MCP 设置 (2026-11-04): the session's own choices by server name (true on, false off); the rest follow its project and
+   * the global ones. A new session of a task copies them from the task's latest main session.
+   */
+  mcp?: Record<string, boolean>;
 }
 
 /**

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { createSdkMcpServer, forkSession, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
-import { parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage } from "@amo-studio/protocol";
+import { parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage, type McpApply } from "@amo-studio/protocol";
 import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
@@ -15,6 +16,7 @@ import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLo
 import { keepsProcess } from "./wake.js";
 import { agentsMdInstructions } from "./project-instructions.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
+import { sameProcessPart, sdkServer, type McpLaunch, type McpSource } from "../mcp-launch.js";
 import { ClaudeAsks } from "./asks.js";
 import { BLOCKED_COMMANDS, claudeCommands } from "./commands.js";
 import type { ClaudeCore } from "./core.js";
@@ -72,7 +74,12 @@ export interface ClaudeRuntimeOptions {
   mcpTools?: (sessionId: Id) => AmoTool[];
   /** The MCP server's instructions for this session (its role card after the general ones); the general ones when absent. */
   mcpInstructions?: (sessionId: Id) => string;
+  /** MCP 设置 (2026-11-04): the session's other MCP servers. Without it, only amo (strict with the local login, as before). */
+  mcp?: McpSource;
 }
+
+/** How long after a process is up its MCP servers' statuses are read (they connect in the background). */
+const MCP_STATUS_DELAY_MS = 8_000;
 
 /** How long 停止 waits on the CLI before Studio closes its process (see interrupt). */
 const STOP_GRACE_MS = 15_000;
@@ -163,6 +170,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       },
       lastCommand: (sessionId) => this.lastCommand.get(sessionId),
       scheduleIdle: (sessionId, live) => this.scheduleIdle(sessionId, live),
+      noteMcp: (sessionId, live) => {
+        if (!this.options.mcp?.noteStatus) return;
+        setTimeout(() => {
+          if (this.live.get(sessionId) !== live) return;
+          void this.mcpStatus(sessionId)
+            .then((list) => list && this.options.mcp?.noteStatus?.(sessionId, list))
+            .catch(() => undefined);
+        }, MCP_STATUS_DELAY_MS).unref?.();
+      },
     });
     this.recoverAfterRestart();
   }
@@ -613,6 +629,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
     }
 
+    const plan = this.mcpPlan(session.id, home);
     const live = newLive(
       (next) => {
         queue.push(next);
@@ -647,10 +664,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         promptSuggestions: readChatSettings(this.store).promptSuggestions,
         canUseTool: (toolName, toolInput, ctx) => this.asks.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
-        ...this.mcpOptions(session.id),
+        ...this.mcpOptions(session.id, plan, live),
+        // MCP 设置 (2026-11-04): in the person's own config dir the CLI loads their servers itself (OAuth, plugins and
+        // its approvals as in a terminal); those turned off are denied to this process only (managedSettings is the
+        // SDK's policy tier: nothing is written, unlike toggleMcpServer, which writes ~/.claude.json), .mcp.json ones
+        // turned on are approved for it. Elsewhere, or with 加载本机 off, only what Studio passes (strict).
+        ...(plan.strict ? { strictMcpConfig: true } : {}),
+        ...(plan.deny.length ? { managedSettings: { deniedMcpServers: plan.deny.map((serverName) => ({ serverName })) } } : {}),
+        ...(plan.enableJson.length ? { settings: { enabledMcpjsonServers: plan.enableJson } } : {}),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
-        // The local login brings the person's config dir: only Studio's MCP server, not the ones they set up there.
-        ...(home.login === "local" ? { strictMcpConfig: true } : {}),
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
         pathToClaudeCodeExecutable: exe,
         spawnClaudeCodeProcess: spawnClaudeProcess((line) => this.emit("log", `${session.id}: ${line}`)),
@@ -745,6 +767,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private scheduleIdle(sessionId: Id, live: Live): void {
     this.clearIdle(live);
+    // A change of the person's MCP servers waited for this turn: the next message starts a process that has it.
+    if (live.mcpStale && this.canRestart(live) && !keepsProcess(this.store.getSession(sessionId)?.wake, this.now())) {
+      void this.close(sessionId);
+      return;
+    }
     if (live.background.size || live.approvals.size || live.questions.size) return;
     live.idleTimer = setTimeout(() => {
       if (live.running || live.background.size) return;
@@ -803,9 +830,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
    * The AMO MCP as an in-process SDK server bound to this session. Reads and writes to the session's own task are
    * allowed up front; everything else still goes through canUseTool.
    */
-  private mcpOptions(sessionId: Id) {
+  private mcpOptions(sessionId: Id, plan: McpLaunch, live: Live) {
     const tools = this.options.mcpTools?.(sessionId) ?? [];
-    if (!tools.length) return {};
+    const others = Object.fromEntries(Object.entries(plan.explicit).map(([name, spec]) => [name, sdkServer(spec)]));
+    if (!tools.length) {
+      live.mcp = { plan, amo: null, dynamic: {} };
+      return Object.keys(others).length ? { mcpServers: others as never } : {};
+    }
     const server = createSdkMcpServer({
       name: AMO_MCP_NAME,
       version: "0.5.0",
@@ -815,7 +846,63 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       // AMO's few, always-used tools up before every first use. They stay in the prompt (2026-10-20).
       alwaysLoad: true,
     });
-    return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
+    live.mcp = { plan, amo: server, dynamic: {} };
+    return { mcpServers: { ...(others as Record<string, never>), [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
+  }
+
+  /** The session's MCP servers now. `native`: it runs in the person's own config dir (the default account's). */
+  private mcpPlan(sessionId: Id, home: ClaudeHome): McpLaunch {
+    const native = home.login === "local" && sameDir(home.dir, this.local.dir);
+    return this.options.mcp?.launch(sessionId, native) ?? { explicit: {}, deny: [], enableJson: [], strict: home.login === "local" };
+  }
+
+  /**
+   * MCP 设置: a change of Studio's servers reaches the running process at once (setMcpServers, amo passed along: it
+   * replaces the whole dynamic set); one of the person's own (denied or approved names, strict) needs a new process —
+   * closed now when idle, else when it gets idle (scheduleIdle); the next message resumes it.
+   */
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    const live = this.live.get(sessionId);
+    if (!live?.mcp || !this.options.mcp) return "next-message";
+    const next = this.mcpPlan(sessionId, this.homeOf(sessionId));
+    const started = live.mcp.plan.explicit;
+    // What only a new process takes: the person's own servers, or one given at the start going or changing.
+    const startChanged = Object.entries(started).some(([name, spec]) => JSON.stringify(next.explicit[name]) !== JSON.stringify(spec));
+    if (!sameProcessPart(live.mcp.plan, next) || startChanged) {
+      live.mcpStale = true;
+      if (this.canRestart(live)) {
+        await this.close(sessionId);
+        return "next-message";
+      }
+      return "after-turn";
+    }
+    const dynamic = Object.fromEntries(Object.entries(next.explicit).filter(([name]) => !(name in started)));
+    if (JSON.stringify(sortedEntries(dynamic)) === JSON.stringify(sortedEntries(live.mcp.dynamic))) return "now";
+    const all = Object.fromEntries(Object.entries(dynamic).map(([name, spec]) => [name, sdkServer(spec)])) as Record<string, never>;
+    if (live.mcp.amo) all[AMO_MCP_NAME] = live.mcp.amo as never;
+    const result = await live.q.setMcpServers(all);
+    live.mcp = { ...live.mcp, dynamic };
+    const failed = Object.entries(result.errors ?? {});
+    if (failed.length) this.appendItem(sessionId, { type: "notice", level: "warning", message: `MCP 没连上：${failed.map(([n, e]) => `${n}（${firstLine(e)}）`).join("；")}` });
+    return "now";
+  }
+
+  async mcpStatus(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null> {
+    const live = this.live.get(sessionId);
+    if (!live || live.finished) return null;
+    const list = await withTimeout(live.q.mcpServerStatus(), 5_000);
+    return list
+      .filter((x) => x.name !== AMO_MCP_NAME)
+      .map((x) => {
+        const source = x.source ?? x.scope;
+        return { name: x.name, status: x.status, ...(x.error ? { error: x.error } : {}), ...(source ? { source } : {}) };
+      });
+  }
+
+  /** Nothing of the process's own is under way: no turn, approval, question, background command or running agent. */
+  private canRestart(live: Live): boolean {
+    if (live.running || live.background.size || live.approvals.size || live.questions.size) return false;
+    return ![...live.subs.values()].some((id) => this.store.getSession(id)?.status === "running");
   }
 
   /** Whether the profile is the Claude subscription (the only one the local login applies to). */
@@ -896,4 +983,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 function messageContent(text: string, images: readonly Attachment[]): SDKUserMessage["message"]["content"] {
   const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
   return blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text;
+}
+
+/** Two config dirs are the same folder (case and slashes aside, as on Windows). */
+function sameDir(a: string, b: string): boolean {
+  const norm = (p: string) => resolvePath(p).replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
+function sortedEntries<T>(v: Record<string, T>): Array<[string, T]> {
+  return Object.entries(v).sort(([a], [b]) => a.localeCompare(b));
 }
