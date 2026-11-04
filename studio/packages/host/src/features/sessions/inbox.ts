@@ -98,12 +98,12 @@ export class SessionInbox extends Feature {
     // The first starts a turn; the others follow it at once (queued at the CLI, steered in, or DSH's next turn) — once
     // the turn is seen to run: Codex tells it (turn/started) only after its turn/start, and a second turn/start before
     // that would not be a steer.
-    let first = true;
+    let before: number | null = null;
     for (const it of held) {
       const current = this.store.getItem(it.id);
       if (current?.type !== "user" || current.delivery !== "held") continue;
-      if (!first) await this.turnSeen(sessionId);
-      first = false;
+      if (before !== null) await this.turnSeen(sessionId, before);
+      before = current.seq;
       try {
         if (!rt.resend) throw new Error("this Host cannot send a held message");
         await rt.resend(sessionId, it.id, []);
@@ -116,12 +116,17 @@ export class SessionInbox extends Feature {
     if (!this.held(sessionId).length) this.forget(sessionId);
   }
 
-  /** Until the session is in a turn (or TURN_SEEN_MS passed: a turn that was over at once, or none started). */
-  private async turnSeen(sessionId: Id): Promise<void> {
+  /**
+   * Until the turn the message at `afterSeq` started shows: the session in a turn, or a turn row after the message (a
+   * short turn may be over already) — or TURN_SEEN_MS passed (none started).
+   */
+  private async turnSeen(sessionId: Id, afterSeq: number): Promise<void> {
     const end = Date.now() + TURN_SEEN_MS;
     while (Date.now() < end) {
       const s = this.store.getSession(sessionId);
       if (!s || inTurn(s.status)) return;
+      const [turn] = this.store.findItems(sessionId, "turn", {}, { newest: true, limit: 1 });
+      if (turn && turn.seq > afterSeq) return;
       await new Promise((r) => setTimeout(r, 50));
     }
   }

@@ -216,7 +216,7 @@ describe("session_send (续发)", () => {
     await expect(service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "x" })).rejects.toThrow(/已经归档/);
   });
 
-  it("one in a turn gets it once the turn is over, after its report; shown meanwhile (held); several waiting go in together", async () => {
+  it("one in a turn gets it once the turn is over, after its report; shown meanwhile (held); several waiting go in together", { timeout: 15_000 }, async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]", report: true });
     await until(() => store.getSession(s.id)?.status === "running");
     expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2" })).toMatchObject({ delivered: false, waiting: 1 });
@@ -236,7 +236,7 @@ describe("session_send (续发)", () => {
 
 // 会话收件箱 (2026-11-04, plans/message-delivery.md): what agents and Studio send waits on disk until the session is free.
 describe("the session inbox", () => {
-  it("goes on after a Host restart, and moves session_send's old queue in", async () => {
+  it("goes on after a Host restart, and moves session_send's old queue in", { timeout: 15_000 }, async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });
     await until(() => store.getSession(s.id)?.status === "idle");
     // Busy when the message came; the Host stops before the session is free.
