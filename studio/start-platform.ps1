@@ -1,10 +1,10 @@
 # Starts AMO Platform (the platform) from this source checkout (Windows); plans/amo-lan-platform.md, way 2 of developing.
 #   start-platform.cmd           install what is missing, build, open the platform (it stays in the tray)
 #   start-platform.cmd -Test     the same on the test channel (--channel test): the tools you publish with
-#                                `npm run relay:mac -- publish <tool>` before you promote them
+#                                `npm run release -- <tool>` (or `auto`) before you promote them
 #   start-platform.cmd -Install  reinstall dependencies first (npm ci)
-# The platform keeps its settings and login in %APPDATA%\AMO and the tools it installs in %LOCALAPPDATA%\AMO\apps, not
-# in this folder. Already running, the platform just comes to the front.
+# The platform keeps its settings and login in %APPDATA%\AMO; from the sources the tools it installs go to
+# AMO_LOCAL_HOME, else %LOCALAPPDATA%\AMO\apps (packages/platform/src/self-update.ts), not in this folder. Already running, the platform just comes to the front.
 param(
   [switch]$Test,
   [switch]$Install

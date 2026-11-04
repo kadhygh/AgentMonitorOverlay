@@ -1,6 +1,6 @@
 # AMO Studio 改动说明
 
-每个版本一节，标题写 `## 版本号（日期）`。发布到团队服务器时（`npm run relay:mac -- publish studio`），这一节就是平台上显示的改动说明。
+改动先写进「## 下一版」；发布时（`npm run release -- studio` 或 `auto`）它会改成 `## 版本号（日期）`，这一节就是平台上显示的改动说明。
 
 ## 下一版
 

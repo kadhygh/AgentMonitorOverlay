@@ -15,16 +15,19 @@
 
 ## 发布与更新
 
-中转分两部分发布（2026-10-28 起）：
+中转分两部分发布（2026-10-28 起）。**发布都走 `npm run release`**（2026-10-31 起，`scripts/release.mjs`）：它只从提交过的 master 打包，跑测试、升版本、把「下一版」改成版本标题、提交、打 tag，再调用下面的底层命令。不要直接跑底层命令发没提交的改动，下一次 `release` 会把它冲掉。
 
 | 部分 | 怎么发 | 谁来更新 |
 |---|---|---|
-| 服务 + 客户端界面（`relay`、`relay-ui`） | `npm run relay:release`，再 `npm run relay:mac -- deploy` | 服务器下发，在线的客户端几秒内自己更新（下面） |
-| 桌面程序（外壳，`relay-app`） | `npm run package:platform -- --only relay`，再 `npm run relay:mac -- publish relay`（见「AMO 平台的发布」） | AMO 平台：「工具」里的 AMO 中转，和别的工具一样安装、更新、回滚、卸载 |
+| 服务 + 客户端界面（`relay`、`relay-ui`） | `npm run release -- relay-service`（会重启中转几秒） | 服务器下发，在线的客户端几秒内自己更新（下面） |
+| 桌面程序（外壳，`relay-app`） | `npm run release -- relay`（或 `auto`），试过后 `npm run release -- promote relay <版本>` | AMO 平台：「工具」里的 AMO 中转，和别的工具一样安装、更新、回滚、卸载 |
+
+`release -- relay-service` 内部依次跑的底层命令（只在排查时单独用）：
 
 ```
-npm run relay:release              # 界面 + 服务；界面更新就是重跑这一条，在线的客户端几秒内自己更新
-npm run relay:release -- --shell   # 再加上桌面客户端的 portable zip（只给自己解压用的旧客户端，见下）
+npm run relay:release              # 界面 + 服务，生成 release/relay/
+npm run relay:release -- --shell   # 再加上桌面客户端的 portable zip（只给自己解压用的旧客户端，见下）；release 在外壳的包改过时自动加
+npm run relay:mac -- deploy        # 传到 Mac
 ```
 
 `release/relay/` 里有：
@@ -38,9 +41,9 @@ npm run relay:release -- --shell   # 再加上桌面客户端的 portable zip（
 ### 改了外壳时
 
 1. 改了 `shell-api.ts`（外壳给界面的接口）时，先把 `SHELL_VERSION` 加一；只改了外壳内部的不用。
-2. `packages/relay-app/package.json` 升版本号，`CHANGELOG.md` 加一节（平台上显示的改动说明）。
-3. `npm run package:platform -- --only relay`，`npm run relay:mac -- publish relay`（默认发到测试通道，试过再 `promote relay <版本>`）。
-4. 要用新接口的界面，等平台上的新外壳发出去以后再 `relay:release` + `deploy`。比 `minShell` 旧的外壳会提示：平台装的写「在 AMO 平台的「工具」里更新 AMO 中转」，自己解压的写「需要重新下载客户端」。
+2. 改动说明写进 `packages/relay-app/CHANGELOG.md` 的「## 下一版」（平台上显示的就是它；版本号由 `release` 升）。
+3. `npm run release -- relay`（默认发到测试通道，试过再 `npm run release -- promote relay <版本>`）。
+4. 要用新接口的界面，等平台上的新外壳发出去以后再 `npm run release -- relay-service`。比 `minShell` 旧的外壳会提示：平台装的写「在 AMO 平台的「工具」里更新 AMO 中转」，自己解压的写「需要重新下载客户端」。
 
 **平台装的中转不自己更新外壳**（`relay-app/src/build-mode.ts`，看 `resources/app/package.json` 的 `amoBuild.mode`）：不检查、不下载、不改写自己程序文件夹里的文件（平台装的工具共用硬链接的 Electron 文件，改一个就改到别的工具），「更新桌面程序」的提示和按钮都不出现；`updateShell` 直接拒绝。接入 AI 的配置和 `amo-relay.cmd` 指向 `apps\relay\current\AMO Relay.exe`，平台清掉旧版本文件夹后照样能用。从平台打开时，平台用 `--server` 传它登录的服务器地址，中转第一次打开就不用再填。
 
@@ -61,7 +64,8 @@ powershell -File scripts/relay-service.ps1 start|stop|restart|status [-Passphras
 服务在团队的 Mac mini 上：`http://172.16.8.85:47120/`。在这台 Windows 上用 `scripts/relay-mac.mjs` 通过 SSH 管它（`~/.ssh/config` 里的别名 `mac`，换机器时设 `SSH_HOST`）：
 
 ```
-npm run relay:release                 # 先在本机生成 release/relay
+npm run release -- relay-service      # 发布：生成 release/relay 再 deploy（下面两行是它的底层步骤）
+npm run relay:release                 # 在本机生成 release/relay
 npm run relay:mac -- deploy           # 传到 Mac；只改了界面不重启，服务本身变了会先备份数据库再重启
 npm run relay:mac -- status | start | stop | restart | logs [行数] | backup
 npm run relay:mac -- passwd <名字> [新密码]          # 忘了密码：重设并打印新密码（不填就随机生成 8 位）
@@ -107,7 +111,7 @@ platform/
 
 工具 id、版本号、sha256 不合格式时返回 400，不会去读磁盘；读到的文件一定在平台目录里面。同一个 sha256 两种都有时（`platform-compress` 做到一半）先用 `.gz`，两种都是对的。下载页（`/`）在 `downloads/AMO-Platform-win.zip` 存在时（客户端的 `downloads/` 里，或者平台目录的 `downloads/` 里）显示「下载 AMO 平台」，这个 zip 不用登录就能下载。放在平台目录里更稳：deploy 换客户端 zip 时会整个换掉 `app/downloads`。
 
-发布（在本机，通过 SSH，不开 HTTP 写接口）：
+发布（在本机，通过 SSH，不开 HTTP 写接口）。平时用 `npm run release -- <工具…>` / `auto` 和 `npm run release -- promote <工具> <版本>`，它们调用下面的底层命令；`platform-status`、`platform-compress`、`platform-prune` 照旧直接用：
 
 ```
 npm run package:platform -- --only notes               # 先用平台模式打包：release/platform/AMO Notes/

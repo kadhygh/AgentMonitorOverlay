@@ -20,7 +20,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 
 用户定的方向：在本机开发 → 确认没问题 → 推送到团队服务器 → 其他人自己选怎么更新。为了让这条路走得通：
 
-1. **工具不依赖平台**。不装平台也必须能单独运行（需要登录的功能除外，见第 7 条）。平台只通过工具已经支持的方式和它们打交道：环境变量、启动参数、工具自己的设置文件、只读的健康检查接口，以及平台在 `%APPDATA%\AMO\` 下写、工具只读的几个文件（`programs.json`、`updates.json`、`account.json`）。不要为平台去改工具的内部逻辑。
+1. **工具不依赖平台**。不装平台也必须能单独运行（需要登录的功能除外，见第 7 条）。平台只通过工具已经支持的方式和它们打交道：环境变量、启动参数、工具自己的设置文件、只读的健康检查接口，以及平台在 `%APPDATA%\AMO\` 下写、工具只读的几个文件（`programs.json`、`updates.json`、`account.json`，还有平台的设置 `platform.json`：Studio 从里面读数据目录 `studioDataDir`）。例外是本机的设备号 `device.json`（`packages/account/src/device.ts`）：平台或 Studio、便签谁先用到谁创建，之后共用。不要为平台去改工具的内部逻辑。
 2. **数据不放在程序文件夹里**。平台按版本给每个工具一个文件夹，升级就是换一个文件夹。所以数据、设置、日志都要放在程序文件夹外面：比如 `%APPDATA%\AMO …`，或者数据目录由 `AMO_STUDIO_DATA_DIR` 这类变量指定。不要新增「写在 exe 旁边」的东西。portable 版现在默认把数据放在 exe 旁边的 `data/`，平台装的版本会用变量改掉这一点，不要再加类似的默认。
 3. **更新只由平台做**。工具自己不检查、不下载、不安装更新。平台把更新状态写进 `%APPDATA%\AMO\updates.json`，工具只读它，然后在「设置」入口旁亮一个点，设置里有一页「更新」，操作交给平台。不要在顶栏或主界面另占地方放更新按钮。**中转**（2026-10-28 晚改）：也从平台安装和更新外壳；它的界面内容照旧由服务器热更新。平台装的中转不做自己的「一键更新外壳」（它会改写程序文件夹里的文件，而平台装的工具共用硬链接的 Electron 文件）。
 4. **Reviewer 只有一份**。别的程序要用 Reviewer 时，去找已经装好的那份（Studio 里带的，或者独立版），不要自己再打包一份。中转以后通过 `%APPDATA%\AMO\programs.json` 找它。
@@ -39,10 +39,10 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 - 跑重的任务（vitest、e2e、打包）用低优先级：`BelowNormal`，加 `--maxWorkers=6`。普通优先级会让用户的桌面卡。
 - 常用命令（在 `studio/` 下）：
   - `npm run verify`：类型检查、单测、构建；
-  - `npm run e2e`：e2e 按程序分成几个 Playwright project：`studio`、`notes`、`reviewer`、`relay`；
+  - `npm run e2e`：e2e 按程序分成几个 Playwright project：`studio`、`notes`、`reviewer`、`relay`、`platform`；
   - `npm run package:portable`：打 portable 包；
   - 发布都走 `npm run release`（`scripts/release.mjs` 开头有全部用法）：`status` 看各工具和两个通道；`<工具…>` 或 `auto` 发到平台的测试通道（跑测试、升版本、「下一版」改成版本标题、提交进 master、打包、发布、打 tag `<工具>-v<版本>`）；`relay-service` 部署中转服务（会重启中转几秒；服务器上只有一份，**不要绕过它直接 deploy 没提交的中转改动**，下一次部署会把它冲掉）；`promote <工具> <版本>` 转正式版。只从提交过的 master 打包：主工作区有没提交的改动时到值守目录里发。改动说明先写进各包 `CHANGELOG.md` 的「## 下一版」，没写的不发。工具 id 见 `studio/scripts/amo-tools.mjs`。
-  - `npm run relay:mac -- publish` 之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
+  - `relay:release`、`relay:mac -- deploy | publish`、`package:platform` 是 `release` 调用的底层步骤，只在排查时单独用。每次发布（底层是 `relay:mac -- publish`）之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
 - 计划和方案写在 `studio/plans/<主题>.md`。做完一段，在 `studio/HANDOFF.md`「最近的改动」最上面加一条（做了什么、怎么验证的、还剩什么），「当前状态」里过时的也顺手改掉；超过一两周的记录挪进 `studio/docs/history/`。
