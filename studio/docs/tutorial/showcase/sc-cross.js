@@ -6,6 +6,8 @@
 //     （task/GrantDialog.tsx 的提醒原话）
 //   4 安全：远程设置里同账号「直接开跑」、别的账号「先等我确认」（默认，protocol remote.ts DEFAULT_REMOTE_SECURITY）；
 //     别的账号建任务先在 Focus 等你「同意并开始」；授权随时「收回」
+// 11-04：远程也有了手机端（studio/mobile，Android 版测试中），页面上的说法从「电脑」改成「设备」，画出来的界面文字照旧
+// （远程设置里写的还是「你自己的其他电脑」）。
 // 只播一遍。人名、设备名、对话内容是示意。
 (function () {
   const T = globalThis.AMO_TUTORIAL;
@@ -23,8 +25,8 @@
     world: [1280, 800],
     chapters: [
       [0, "中转：AI 卡住了直接问人", "tutorial.html#ch8"],
-      [3, "远程：只配对你自己的电脑", "tutorial.html#ch9-pair"],
-      [5, "授权一个任务，换台电脑接着用", "tutorial.html#ch9-grant"],
+      [3, "远程：只配对你自己的设备", "tutorial.html#ch9-pair"],
+      [5, "授权一个任务，换台设备接着用", "tutorial.html#ch9-grant"],
       [8, "! 安全：别的账号先等你同意，随时收回", "tutorial.html#ch9-safety"],
     ],
     html: `<div class="ic-cam"><div class="pgs">
@@ -119,14 +121,14 @@
       { hold: 200, do: [["type", "reply", "小数，0 到 1"], ["click", "send"], ["show", "sent"], ["on", "dot2", "go"], ["show", "wait"]] },
       { hold: 1500, do: [["wait", 600], ["text", "waitSt", "收到 老李 的回复"], ["show", "go"], ...cap("中转：AI 卡住了直接问人", "人回一句，AI 自己接着做，不用你在中间传话")] },
       // 2 配对
-      { hold: 300, do: [["hide", "cap"], ...flip("p0", "p1"), ["wait", 550], ...cap("远程：只配对你自己的电脑", "同一个账号、同一个局域网里的设备")] },
+      { hold: 300, do: [["hide", "cap"], ...flip("p0", "p1"), ["wait", 550], ...cap("远程：只配对你自己的设备", "同一个账号、同一个局域网里的电脑，手机也行")] },
       { hold: 1400, do: [["click", "pair"], ["show", "pairWait"], ["on", "dot3", "go"], ["wait", 650], ["show", "req"], ["click", "allow"], ["hide", "req"], ["show", "paired2"], ["hide", "pairWait"], ["show", "paired1"]] },
       // 3 授权一个任务
-      { hold: 300, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("授权一个任务，换台电脑接着用", "会话还在原来那台跑：命令和模型账号都是那台的"), ["click", "grant"], ["show", "gcard"]] },
+      { hold: 300, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("授权一个任务，换台设备接着用", "笔记本、手机都行；会话还在原来那台跑，命令和模型账号都是那台的"), ["click", "grant"], ["show", "gcard"]] },
       { hold: 300, do: [["wait", 300], ["show", "nbMsg"], ["wait", 400], ["show", "nbAppr"]] },
       { hold: 1400, do: [["click", "nbOk"], ["hide", "nbAppr"], ["on", "dot4", "go"], ["wait", 650], ["show", "ran"]] },
       // 4 安全
-      { hold: 900, do: [["hide", "cap"], ...flip("p2", "p3"), ["wait", 550], ...cap("! 安全：别的账号先等你同意", "只在局域网里用，只配对你自己的电脑"), ["on", "cap", "warn"]] },
+      { hold: 900, do: [["hide", "cap"], ...flip("p2", "p3"), ["wait", 550], ...cap("! 安全：别的账号先等你同意", "只在局域网里用，只配对你自己的设备"), ["on", "cap", "warn"]] },
       { hold: 300, do: [["show", "fq"], ["wait", 900], ["click", "agree"], ["hide", "fq"]] },
       { hold: 1800, do: [...cap("! 安全：授权随时收回", "收回后那边只剩已经同步的记录，不能再操作"), ["on", "cap", "warn"], ["click", "revoke"], ["hide", "grantRow"], ["show", "revoked"]] },
     ],

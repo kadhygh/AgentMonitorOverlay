@@ -13,18 +13,18 @@ Claude、Codex、DeepSeek，第三方 API 也能接
 ::scene sc-intro
 
 ## 专题 › 任务 › 会话 {#topic}
-常规是项目 › 会话；AMO 多包了两层
+项目只管在哪，任务才是干活的单位
 ::scene sc-topic
 
 ## 审 AI 的活，又快又准 {#review}
 ::kicker 工具 · 不装 Studio 也能单独用
-Reviewer 带你直奔关键行，便签边看边记
+AI 标出要看的几处，便签边看边记
 ::scene sc-tools
 
 ## 跨人、跨设备接着干 {#remote}
 ::kicker 测试中
-中转找人确认，远程把任务交给另一台电脑
-! 只在局域网里用，只配对你自己的电脑
+中转找人确认；远程换台电脑或手机接着用
+! 只在局域网里用，只配对你自己的设备
 ! 远程会话的命令以这台电脑上你的身份运行
 ! 别的账号建的任务默认先等你同意；授权随时能收回
 ::scene sc-cross

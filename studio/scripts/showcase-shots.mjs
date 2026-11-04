@@ -79,12 +79,12 @@ try {
       }, id);
       const fig = t.locator(`figure.demo[data-scene="${id}"]`);
       await fig.scrollIntoViewIfNeeded();
-      await t.waitForTimeout(29000);
-      // A demo that plays once (def.once) must have finished by now and stay on its last frame.
+      await t.waitForTimeout(75000);
+      // A demo that plays once (def.once) must have finished by now and stay on its last frame (the longest, sc-topic, is about a minute since 11-04).
       if (await t.evaluate((id) => !!globalThis.AMO_TUTORIAL.demos.get(id).def.once, id)) {
         const st = await t.evaluate((id) => ({ done: !!globalThis.AMO_TUTORIAL.demos.get(id).done, rounds: globalThis.__rounds.length }), id);
-        notes.push(`${id}: 只播一遍，${st.done ? "播完了" : "29 秒还没播完"}`);
-        if (!st.done || st.rounds > 1) problems.push(`${id}: 只播一遍的演示 ${st.done ? `播了 ${st.rounds} 遍` : "29 秒还没播完"}`);
+        notes.push(`${id}: 只播一遍，${st.done ? "播完了" : "75 秒还没播完"}`);
+        if (!st.done || st.rounds > 1) problems.push(`${id}: 只播一遍的演示 ${st.done ? `播了 ${st.rounds} 遍` : "75 秒还没播完"}`);
         await t.close();
         return;
       }
@@ -117,8 +117,8 @@ try {
   // The play-once demos: frames along the way, and the last frame.
   for (const [id, times] of [
     ["sc-intro", [1000, 2600, 4300, 5600, 7000, 9200, 11800, 13500, 14800, 16400, 17800, 19900, 21600, 23600, 27500]],
-    ["sc-topic", [1500, 3500, 5500, 7000, 9000, 10500, 12500, 14500, 16500, 18500, 20500, 23000, 27000]],
-    ["sc-tools", [1500, 3500, 6000, 8000, 10000, 12500, 14500, 16500, 18500, 21000, 24000]],
+    ["sc-topic", [2500, 6500, 10000, 14500, 18000, 21500, 25000, 29500, 33000, 37000, 41000, 45000, 49000, 53000, 58000]],
+    ["sc-tools", [3500, 6500, 9500, 12000, 15500, 19000, 22000, 25500, 29000, 33000, 37000]],
     ["sc-cross", [1500, 3500, 6000, 8000, 10000, 12500, 14500, 16500, 18500, 21000, 24000]],
   ]) {
     const t = await ctx.newPage();

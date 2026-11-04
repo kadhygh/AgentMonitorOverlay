@@ -230,6 +230,8 @@
       for (let k = 0; k < n; k++) await this.runStep(k, true, gen);
       this.i = n;
       this.caption();
+      // 展示页：章节条和「在教程里看」跟着跳到的这一步（静态截图、窗口变宽后重摆时也对得上）。
+      if (this.loop) this.chapter(n);
       return this.runStep(n, instant, gen);
     }
     async play() {

@@ -1,5 +1,5 @@
 // 展示页几段翻页动画共用的 Studio 主窗口（按 1280×800 画，showcase.css 的 iw-* 样式）：顶栏、左栏（可带额度）、
-// 视图栏、看板的列和卡片、模型的标记。照 shell/TopBar、board/ScopeNav、board/Board、board/UsageFooter 画，只留名字和位置。
+// 视图栏、看板的列和卡片、模型的标记。照 shell/TopBar（2026-10-31 起没有「置顶」，开了远程有「远程」）、board/ScopeNav、board/Board、board/UsageFooter 画，只留名字和位置。
 (function () {
   const T = globalThis.AMO_TUTORIAL;
   const S = (T.studioParts = {});
@@ -43,7 +43,7 @@
   /** Studio 主窗口。main：右边的内容；nav：左栏上半；usage：左栏底下画额度；view：画视图栏（canvas：画布那页亮着）。 */
   S.studio = (main, { nav = S.nav(), usage = true, view = true, canvas = false } = {}) => `
     <div class="iw-top"><span class="iw-logo"></span><b class="iw-brand">AMO Studio</b><span class="s-sp"></span>
-      <span class="iw-tb">书签</span><span class="iw-tb">便签</span><span class="iw-tb">Focus<i></i></span><span class="iw-tb">置顶</span><span class="iw-wb">─ ☐ ✕</span></div>
+      <span class="iw-tb">书签</span><span class="iw-tb">远程</span><span class="iw-tb">便签</span><span class="iw-tb">Focus<i></i></span><span class="iw-wb">─ ☐ ✕</span></div>
     <div class="iw-nav">${nav}${usage ? S.usage : '<div class="iw-host"><span class="s-dot run"></span> Host 运行中</div>'}<div class="iw-set">⚙ 设置</div></div>
     ${view ? `<div class="iw-view"><span class="s-tab${canvas ? "" : " on"}" data-k="tabBoard">看板</span><span class="s-tab${canvas ? " on" : ""}" data-k="tabCanvas">画布</span><span class="s-sp"></span><span class="iw-search">搜索任务或会话</span><span class="s-btn pri iw-new-btn" data-k="newBtn">+ 新任务</span></div>` : ""}
     ${main}`;

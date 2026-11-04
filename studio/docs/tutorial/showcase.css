@@ -45,6 +45,13 @@ footer ul{margin:6px 0 0;padding-left:18px}
 
 /* ---------- 展示的演示：字比教程里的大一号 ---------- */
 .screen .stage{font-size:13.5px}
+/* 矮屏幕（1366×768 的笔记本，去掉浏览器的边只剩 650 上下）：演示框连章节条和底下的链接要整个放得进一屏，
+   所以演示区域的高度按视口高度收，宽度跟着按 1280×800 的比例收（11-04）。手机宽度不管，照旧用 --hn。 */
+@media (min-width:621px){
+  html .screen .stage{height:min(var(--h),max(380px,calc(100vh - 190px)))}
+  html .screen .shot{max-width:min(980px,max(608px,calc((100vh - 190px) * 1.6)))}
+  html .screen.intro .shot{max-width:min(1100px,max(608px,calc((100vh - 190px) * 1.6)))}
+}
 /* 只播一遍的演示，播完右下角的「重播」 */
 .screen figure.demo{position:relative}
 .replay{position:absolute;right:14px;bottom:12px;z-index:5;border:1px solid var(--line);background:color-mix(in srgb,var(--frame) 86%,transparent);color:var(--text-2);border-radius:999px;padding:4px 12px;font:12.5px var(--sans);cursor:pointer}
@@ -370,7 +377,7 @@ footer ul{margin:6px 0 0;padding-left:18px}
 .tk-answer ul{margin:4px 0;padding-left:22px}
 .tk-answer code,.tk-answer pre{font:14px var(--font-code)}
 .tk-answer pre{margin:12px 0;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-m)}
-.tk-hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);padding:9px 18px;border-radius:999px;background:var(--panel-float);border:1px solid var(--primary);box-shadow:0 10px 30px var(--shadow),0 0 0 4px color-mix(in srgb,var(--primary) 22%,transparent);font-size:15px;white-space:nowrap}
+.tk-hint{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);padding:9px 18px;border-radius:999px;background:var(--panel-float);border:1px solid var(--primary);box-shadow:0 10px 30px var(--shadow),0 0 0 4px color-mix(in srgb,var(--primary) 22%,transparent);font-size:15px;white-space:nowrap}
 .tk-hint.appear{animation:i-hint .45s cubic-bezier(.2,.9,.3,1.2)}
 @keyframes i-hint{from{opacity:0;transform:translate(-50%,14px)}}
 .tk-hint kbd{padding:0 6px;border:1px solid var(--border-strong);border-radius:4px;font:13px var(--font-code)}
@@ -480,6 +487,67 @@ footer ul{margin:6px 0 0;padding-left:18px}
 .ar-pj{margin-left:auto;padding:1px 9px;border-radius:999px;background:color-mix(in srgb,var(--running) 18%,transparent);font:500 13px var(--font-code);color:var(--text)}
 .ar-sess{display:flex;align-items:center;gap:8px;margin-top:6px;padding:5px 10px;border-radius:var(--r-m);background:var(--bg);font-size:14.5px}
 .ar-sess.sub{margin-left:22px}
+/* 常规：AI 编程客户端的侧栏（2026-11-04 用户：照 Codex App 的 Projects 那一列，配色和样子尽量一致）。它有自己的颜色，
+   不用 Studio 的 token：深色照它的深色，页面切浅色时照截图里的浅色。系统字体、细线文件夹、选中行是圆角灰底。 */
+.pg-cdx,.pg-amo{display:grid;grid-template-columns:640px 1fr;gap:44px;padding:34px 56px 150px;background:var(--bg-nav)}
+.cdx-cap,.am-cap{display:flex;align-items:baseline;gap:14px;margin-bottom:14px;font:600 26px var(--font-display)}
+.cdx-cap span,.am-cap span{font:500 17px var(--font-ui);color:var(--text-dim);letter-spacing:.06em}
+.pg-cdx>.cdx-cap{position:absolute;left:56px;top:30px}
+.cdx{--cx-side:#181818;--cx-main:#212121;--cx-text:#ececec;--cx-dim:#9b9b9b;--cx-hover:#2c2c2c;--cx-line:#303030;--cx-hot:rgba(255,163,102,.16);--cx-hot-line:#d9895a;position:relative;display:grid;grid-template-columns:372px 1fr;height:560px;margin-top:52px;border:1px solid var(--cx-line);border-radius:12px;overflow:visible;font:16px/1.4 "Segoe UI","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;color:var(--cx-text);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+:root[data-theme="light"] .cdx{--cx-side:#f9f9f8;--cx-main:#ffffff;--cx-text:#1f1f1f;--cx-dim:#8a8a8a;--cx-hover:#ececec;--cx-line:#e5e5e3;--cx-hot:rgba(217,119,87,.14);--cx-hot-line:#c96442;box-shadow:0 20px 50px rgba(20,20,19,.12)}
+.cdx-side{position:relative;z-index:2;padding:14px 10px;border-radius:12px 0 0 12px;background:var(--cx-side)}
+.cdx-main{position:relative;display:flex;flex-direction:column;align-items:center;border-left:1px solid var(--cx-line);border-radius:0 12px 12px 0;background:var(--cx-main)}
+.cdx-hello{position:absolute;left:0;right:0;bottom:96px;text-align:center;font-size:19px;color:var(--cx-text)}
+.cdx-input{position:absolute;left:18px;right:18px;bottom:18px;padding:12px 14px;border:1px solid var(--cx-line);border-radius:14px;color:var(--cx-dim);font-size:14px}
+.cdx-h{display:flex;align-items:center;gap:6px;margin:14px 10px 4px;color:var(--cx-dim);font-size:14.5px}
+.cdx-row{position:relative;display:flex;align-items:center;gap:10px;height:35px;padding:0 10px;border-radius:9px;white-space:nowrap;transition:background .35s,box-shadow .35s}
+.cdx-row .cdx-t{overflow:hidden;text-overflow:ellipsis}
+.cdx-row.cdx-tool{color:var(--cx-text)}
+.cdx-ic{width:20px;text-align:center;color:var(--cx-dim)}
+.cdx-fd{flex:none;width:19px;height:19px;fill:none;stroke:var(--cx-text);stroke-width:1.3}
+.cdx-row.pj{font-size:16.5px}
+.cdx-row.cdx-cv{padding-left:40px;font-size:15.5px}
+.cdx-row.cdx-more{padding-left:40px;color:var(--cx-dim);font-size:15.5px}
+.cdx-row.hov{background:var(--cx-hover)}
+.cdx-acts{margin-left:auto;color:var(--cx-dim);font-size:14px;letter-spacing:.04em}
+.cdx-row.soft{background:var(--cx-hover)}
+.cdx-row.hot{background:var(--cx-hot);box-shadow:inset 3px 0 0 var(--cx-hot-line)}
+.cdx-row.which{background:var(--cx-hot);box-shadow:inset 3px 0 0 var(--attention)}
+/* 侧栏行右边的标注：伸到主区上面 */
+.cdx-lab{position:absolute;left:calc(100% + 18px);top:50%;transform:translateY(-50%);padding:5px 12px;border:1px solid var(--cx-hot-line);border-radius:999px;background:var(--panel-float,var(--panel));color:var(--text);font:600 15px var(--font-ui);white-space:nowrap;box-shadow:0 8px 22px var(--shadow)}
+.cdx-lab.appear{animation:i-pop .35s ease-out}
+/* 右边的说明卡：一张一张出来，前面的变淡 */
+.ex{display:flex;flex-direction:column;gap:14px;padding-top:52px}
+.ex-card{padding:14px 18px 14px;border:1px solid var(--border-strong);border-radius:var(--r-l);background:var(--panel);transition:opacity .5s,border-color .5s}
+.ex-card.appear{animation:i-tile .5s cubic-bezier(.2,.9,.3,1.15)}
+.ex-card.past{opacity:.55}
+.ex-card b{display:flex;align-items:center;gap:10px;margin-bottom:6px;font:600 21px var(--font-display)}
+.ex-card p{margin:3px 0 0;font-size:16px;line-height:1.6;color:var(--text-dim)}
+.ex-card:not(.past){border-color:var(--primary)}
+.ex-card.ly b i{font-style:normal;padding:1px 9px;border-radius:var(--r-s);background:var(--primary);color:var(--on-primary);font:600 14px/24px var(--font-ui)}
+.ex-card.why{border-width:2px}
+.pg-amo .ex{padding-top:46px;gap:10px}
+.pg-amo .ex-card{padding:11px 16px}
+.pg-amo .ex-card p{font-size:15px}
+.ex-card.why p:first-of-type{color:var(--text);font-weight:600}
+/* AMO：同样的会话收进任务（项目 › 任务 › 会话），一层层亮 */
+.am-tree{padding-top:0}
+.am-proj{padding:14px 16px 16px;border:1px solid var(--border-strong);border-radius:var(--r-l);background:var(--panel)}
+.am-ph{display:flex;align-items:center;gap:10px;padding:2px 4px 6px;border-radius:var(--r-m);transition:background .4s,box-shadow .4s}
+.am-ph .cdx-fd{stroke:var(--text)}
+.am-ph b,.am-th b{padding:1px 8px;border-radius:var(--r-s);background:var(--selected);color:var(--text);font:600 13px/22px var(--font-ui)}
+.am-pn{font:600 20px var(--font-display)}
+.am-ph code{margin-left:auto;font:13px var(--font-code);color:var(--text-dim)}
+.am-task{margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-m);background:var(--bg);transition:border-color .4s,box-shadow .4s}
+.am-th{display:flex;align-items:center;gap:10px;font:600 17px var(--font-display)}
+.am-st{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font:500 13.5px var(--font-ui);color:var(--text-dim)}
+.am-sess{display:flex;align-items:center;gap:8px;margin:6px 0 0 14px;padding:5px 10px;border-radius:var(--r-m);background:var(--panel);font-size:14.5px;transition:background .4s,box-shadow .4s}
+.am-si{width:16px;color:var(--text-dim);text-align:center}
+.am-sess em{flex:none;width:52px;font-style:normal;color:var(--text-dim);font-size:13px}
+.am-sn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.am-proj.lit-p>.am-ph{background:color-mix(in srgb,var(--primary) 14%,transparent);box-shadow:0 0 0 2px var(--primary)}
+.am-proj.lit-t .am-task{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 40%,transparent)}
+.am-proj.lit-s .am-sess{background:color-mix(in srgb,var(--primary) 16%,var(--panel));box-shadow:inset 3px 0 0 var(--primary)}
 /* worktree → 项目 → 专题 */
 .pg-arch .wt{grid-column:1/-1;display:grid;grid-template-columns:1fr 50px 1fr 50px 1.25fr;align-items:start;gap:0}
 .wt-arrow{padding-top:120px;text-align:center;font-size:34px;color:var(--text-faint)}
@@ -563,6 +631,37 @@ footer ul{margin:6px 0 0;padding-left:18px}
 .rv-cacts .s-btn,.rv-foot .s-btn{height:30px;padding:0 14px;font-size:13.5px}
 .rv-foot{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border);font-size:13.5px}
 .rv-copied{color:var(--running-text);font-weight:600}
+/* 查看包的重点（11-04）：上面一排重点清单，代码里那几行着色、说明在最后一行下面，右边一条总览；按下的那处亮 */
+.rv{position:relative}
+.rv-main{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;padding-right:14px}
+.rv-marks{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);overflow:hidden}
+.rv-mark{display:flex;align-items:baseline;gap:8px;min-width:0;max-width:34%;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-m);font-size:13px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:border-color .3s,background .3s,color .3s}
+.rv-mark b{flex:none;font:600 12.5px var(--font-code);color:var(--primary)}
+.rv-mark.on{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 16%,transparent);color:var(--text)}
+.rv-main .rv-code{flex:1}
+.rv-hl{margin:2px 0;transition:background .35s}
+.rv-hl .rv-line{background:color-mix(in srgb,var(--primary) 9%,transparent);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--primary) 55%,transparent)}
+.rv-hl .rv-note{margin:6px 16px 8px 72px;opacity:.7;transition:opacity .35s,border-color .35s,box-shadow .35s}
+.rv-hl.cur .rv-line{background:color-mix(in srgb,var(--primary) 20%,transparent);box-shadow:inset 3px 0 0 var(--primary)}
+.rv-hl.cur .rv-note{opacity:1;border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 30%,transparent)}
+.rv-ruler{position:absolute;right:3px;top:56px;bottom:10px;width:7px;border-radius:4px;background:var(--border)}
+.rv-ruler i{position:absolute;left:0;right:0;height:16px;border-radius:3px;background:var(--primary)}
+.rv-ruler .r0{top:12%}.rv-ruler .r1{top:34%;height:30px}.rv-ruler .r2{top:62%}
+.key.rv-key{top:auto;bottom:66px;left:auto;right:36px;transform:none;padding:10px 16px}
+.key.rv-key.appear{animation:i-pop .3s ease-out}
+.rv-foot kbd{padding:0 5px;border:1px solid var(--border-strong);border-radius:4px;font:12px var(--font-code)}
+/* 批注小窗：浮在那一行下面、盖在后面几行上（gitreview 的 FloatDraft） */
+.rv-anchor{position:relative;height:0}
+.rv-float{position:absolute;z-index:5;left:72px;top:4px;width:420px;padding:0 0 10px;border:1px solid var(--border-strong);border-radius:var(--r-l);background:var(--panel-float,var(--panel));box-shadow:0 16px 40px var(--shadow);font:14px/1.6 var(--font-ui)}
+.rv-float.appear{animation:i-pop .3s ease-out}
+.rv-fhead{display:flex;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;color:var(--text-dim)}
+.rv-float .rv-ctext{margin:10px 12px 0}
+.rv-float .rv-cacts{margin-right:12px}
+.rv-comment{margin:4px 16px 8px 72px}
+/* 便签贴回对话之后：一个小对话窗，停在 AI 改完的回复上 */
+.pad-chat{position:absolute;left:690px;top:120px;width:500px;height:360px;box-shadow:0 22px 60px var(--shadow)}
+.pad-chat.appear{animation:i-dlg2 .4s cubic-bezier(.2,.9,.3,1.15)}
+.pad-chat .tk-user{line-height:1.8}
 .pg-viewer{display:grid;place-items:center;padding:30px 80px;background:var(--bg-nav)}
 .pg-viewer .rv{width:100%;height:100%}
 .vw-page{position:relative;flex:1;padding:26px 50px;background:var(--panel);font:15px/1.7 var(--font-ui)}
