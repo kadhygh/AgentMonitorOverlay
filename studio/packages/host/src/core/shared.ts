@@ -59,6 +59,8 @@ export class HostError extends Error {
 
 export interface HostServiceEvents {
   event: [HostEvent];
+  /** A line for host.log (the runtimes' too: until 2026-11-05 nobody listened to their "log" and it was lost). */
+  log: [string];
 }
 
 // Agents write notes, mail and questions through the AMO MCP; a runaway turn must not fill the store or the Focus

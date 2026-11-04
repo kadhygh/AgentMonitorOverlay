@@ -317,6 +317,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         return true;
       },
     });
+    // The features' and the runtimes' lines (a 停止 that did not take, a message that failed or hung…) into host.log.
+    service.on("log", (line) => console.log(line));
     http = await startHostServer({
       service,
       token,

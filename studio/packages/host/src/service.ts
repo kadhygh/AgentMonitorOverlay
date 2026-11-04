@@ -122,6 +122,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     super();
     this.runtime = new RemoteAwareRuntime(store, runtime, () => this.remote.copies);
     runtime.on("event", (e) => this.emit("event", e));
+    runtime.on("log", (line) => this.log(line));
     this.tasks.ensureStructure();
     this.sessions.watchReports();
     this.tasks.watchColumns();
@@ -206,6 +207,11 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.store.getSession(id);
     if (!s) throw new HostError("not_found", `session ${id} not found`);
     return s;
+  }
+
+  /** A line for host.log (host-process writes them). */
+  log(line: string): void {
+    this.emit("log", line);
   }
 
   async wrap<T>(fn: () => Promise<T>, fallback: HostErrorCode = "runtime_error"): Promise<T> {

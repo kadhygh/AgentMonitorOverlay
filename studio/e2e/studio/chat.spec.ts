@@ -99,6 +99,31 @@ test("steers a running reply and interrupts another", async () => {
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
 });
 
+test("a message the Host does not answer: 正在发送… after a few seconds, its text back in the composer after 30", async () => {
+  test.setTimeout(120_000);
+  studio = await launchStudio();
+  const { page } = studio;
+  await openTask(studio, "你好");
+  await expect(lastAgent(page)).toContainText("MOCK: 你好", { timeout: 60_000 });
+  // 2026-11-05: one sent right after 停止 never came back — no row, no error, the composer already empty.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/sessions/*/messages", async (route) => (await held, route.continue()));
+  await composer(page).fill("这条卡住了");
+  await composer(page).press("Enter");
+  await expect(composer(page)).toHaveValue("");
+  await expect(page.locator(".composer-hint")).toHaveText("正在发送…", { timeout: 10_000 });
+  await screenshot(studio.app, "studio", "send-slow", page);
+  await expect(composer(page)).toHaveValue("这条卡住了", { timeout: 40_000 });
+  await expect(page.getByText(/Host 还没回应：文字放回了输入框/)).toBeVisible();
+  await expect(page.locator(".composer-hint")).not.toContainText("正在发送");
+  await screenshot(studio.app, "studio", "send-given-up", page);
+  // It went in after all: the row shows, and the composer keeps the text (the person decides).
+  release();
+  await expect(page.getByTestId("msg-user").filter({ hasText: "这条卡住了" })).toBeVisible({ timeout: 30_000 });
+  await expect(composer(page)).toHaveValue("这条卡住了");
+});
+
 test("shows a subagent under its parent and jumps to it", async () => {
   studio = await launchStudio();
   const { page } = studio;

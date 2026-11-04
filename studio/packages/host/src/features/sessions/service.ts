@@ -10,6 +10,8 @@ import { SessionInbox } from "./inbox.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
+/** A message from the person still on its way after this long is written to host.log (sendMessage). */
+export const SLOW_SEND_MS = 5000;
 /** A session in the middle of a turn: archiving it (closing its process) would cut the turn off (session_archive). */
 const busy = (s: Session) => inTurn(s.status);
 
@@ -79,7 +81,22 @@ export class SessionsFeature extends Feature {
     const images = this.images(attachments);
     if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
     const update = this.roleUpdate(sessionId);
-    const result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images, options));
+    // 2026-11-05: a message the person sent right after 停止 (a DSH session) never came back and left no trace; the
+    // composer had already cleared it. One that fails, or is still on its way after SLOW_SEND_MS, is written to host.log.
+    const started = Date.now();
+    const runtime = this.store.getSession(sessionId)?.runtime ?? "?";
+    const slow = setTimeout(() => this.log(`${sessionId} (${runtime}): a message from the person is still on its way after ${SLOW_SEND_MS} ms`), SLOW_SEND_MS);
+    slow.unref?.();
+    let result: { mode: SendMode };
+    try {
+      result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images, options));
+    } catch (err) {
+      this.log(`${sessionId} (${runtime}): a message from the person failed after ${Date.now() - started} ms: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    } finally {
+      clearTimeout(slow);
+    }
+    if (Date.now() - started >= SLOW_SEND_MS) this.log(`${sessionId} (${runtime}): the message went in after ${Date.now() - started} ms (${result.mode})`);
     update.told();
     // The person wrote: what the inbox held since they stopped the session goes in with it (inbox.ts, pause).
     this.inbox.resume(sessionId);

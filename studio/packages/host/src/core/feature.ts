@@ -34,6 +34,10 @@ export abstract class Feature {
   protected wrap<T>(fn: () => Promise<T>, fallback?: HostErrorCode): Promise<T> {
     return this.host.wrap(fn, fallback);
   }
+  /** A line for host.log. */
+  protected log(line: string): void {
+    this.host.log(line);
+  }
   commonWorkspace(): Workspace {
     return this.host.commonWorkspace();
   }

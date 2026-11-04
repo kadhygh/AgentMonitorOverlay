@@ -49,6 +49,9 @@ import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./Thread
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
 /** A draft is kept this long after typing stops. */
 const DRAFT_SAVE_MS = 400;
+/** A message on its way this long: the composer's hint says so; this long with no answer: its text comes back (send). */
+const SEND_SLOW_MS = 3000;
+const SEND_GIVE_UP_MS = 30_000;
 
 interface ThreadProps {
   link: HostLink;
@@ -338,6 +341,8 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
   // 问题 #16 (2026-11-03): 停止 and 立即发送 ask the model to stop, and it can take a few seconds to (a command or a reply
   // in flight); until the turn ends the composer and the waiting message say so, so it does not read as failed.
   const [haltAsked, setHaltAsked] = useState<{ sessionId: string; kind: "stop" | "now" } | null>(null);
+  /** The session a message of the person's has been on its way to for SEND_SLOW_MS (send). */
+  const [sending, setSending] = useState<string | null>(null);
   useEffect(() => {
     if (!generating) setHaltAsked(null);
   }, [generating]);
@@ -412,10 +417,28 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
     const givesWay = now && sendsNow;
     if (givesWay) askHalt("now");
-    if (await onSend(message, ids, givesWay)) attach.release(sent);
+    // 2026-11-05: a message sent right after 停止 never came back — no row, no error, the composer already empty. Slow:
+    // the hint says it is on its way; given up on: its text comes back into the composer, saying why.
+    const sid = session?.id ?? "";
+    let settled = false;
+    let gaveUp = false;
+    const slow = setTimeout(() => !settled && setSending(sid), SEND_SLOW_MS);
+    const giveUp = setTimeout(() => {
+      if (settled) return;
+      gaveUp = true;
+      setSending((cur) => (cur === sid ? null : cur));
+      setDraft((d) => (d.trim() ? d : text));
+      onError?.(`发出去 ${SEND_GIVE_UP_MS / 1000} 秒了，Host 还没回应：文字放回了输入框。先看一眼对话里有没有这条，没有再发。`);
+    }, SEND_GIVE_UP_MS);
+    const ok = await onSend(message, ids, givesWay);
+    settled = true;
+    clearTimeout(slow);
+    clearTimeout(giveUp);
+    setSending((cur) => (cur === sid ? null : cur));
+    if (ok) attach.release(sent);
     else {
       if (givesWay) setHaltAsked((cur) => (cur?.kind === "now" ? null : cur));
-      setDraft((d) => (d.trim() ? d : text));
+      if (!gaveUp) setDraft((d) => (d.trim() ? d : text));
       attach.restore(sent);
     }
   }
@@ -719,8 +742,8 @@ ${d}` : back));
               <span
                 className="composer-hint"
                 {...(blocked ? { "data-testid": "remote-blocked" } : {})}
-                {...(halting && !blocked && !attachHold ? { title: "模型手上的命令或回复收住可能要几秒，这一轮结束前会一直显示" } : {})}
-              >{blocked || attachHold || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
+                {...(sending && sending === session?.id && !blocked && !attachHold ? { title: `Host 还没回应这条消息；${SEND_GIVE_UP_MS / 1000} 秒内还没有，文字会放回输入框` } : halting && !blocked && !attachHold ? { title: "模型手上的命令或回复收住可能要几秒，这一轮结束前会一直显示" } : {})}
+              >{blocked || attachHold || (sending && sending === session?.id ? "正在发送…" : "") || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && !blocked && (
                 <button
