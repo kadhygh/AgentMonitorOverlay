@@ -11,12 +11,12 @@
 | 0 | 先定的事 | 见下面「第 0 步」 |
 | 1 | 文档对齐 | ✓ 11-04 |
 | 2 | 发布脚本漏判 | ✓ 11-04 `dbc97045` |
-| 3 | 消息投递统一 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-delivery`，分支 `studio/message-delivery`，方案 `plans/message-delivery.md` |
+| 3 | 消息投递统一 | ✓ 11-04 合进 master（`6a231509`，分支 `studio/message-delivery`）；方案、用户定的五条和没验证的在 `plans/message-delivery.md` |
 | 4 | 中转登录收口 | ✓ 11-04 `0d56e627`（中转外壳的「下一版」有一条，会随自动打包发到测试通道） |
 | 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
-| 6 | 只增不删的数据 | ◐ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半等第 3 步合并后做 |
-| 7 | ui 的数据流和共用件 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-ui`，分支 `studio/ui-dataflow` |
-| 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；代码等第 3 步合并后按 8a → 8d 做 |
+| 6 | 只增不删的数据 | ◐ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半可以做了（第 3 步已合） |
+| 7 | ui 的数据流和共用件 | ✓ 前两批 11-04 合进 master（`36cc5a49`，分支 `studio/ui-dataflow`）；第三批和 base.css 下一轮 |
+| 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；代码下一轮按 8a → 8d 做，新开 worktree |
 
 ## 第 0 步：先定的事
 
@@ -93,15 +93,17 @@ purge 不删按会话的 kv 键；DSH 日志不轮转不删；中转的孤儿截
 
 `useLiveResource` 统一「订阅 → 加载 → 断线重读」（先换掉没处理重连的 6 处）；设置、值守单例；`lib/Modal`、`lib/ContextMenu`、`styles/controls.css`；`lib/stored.ts`；一个 `request()` 底座。
 
-进度（2026-11-04，分支 `studio/ui-dataflow`，worktree `.claude/worktrees/cleanup-ui`，没合进 master）：
+进度（2026-11-04，分支 `studio/ui-dataflow`，前两批 11-04 合进 master `36cc5a49`）：
 
 - **第一批（897a8b25）**：`host/live.ts`（`watchLive` / `useLiveResource`：现在加载、每次重连重读、`reloadOn` 的事件重读，加载途中收到的事件补到答案上，只认最后一次加载）、`host/shared.ts`（`sharedLive`：按连接一份的单例，多个组件共用一次加载）；`settings/useSettings.ts`、`useProfiles`、值守 `useDuty` 用它，DutyPage 不再自己加载两遍；二十多处「订阅 + 加载」换成它，`mergeFirstLoad` 删掉。新 e2e `reconnect-settings`：Host 被杀、换 pid 起来后，断线期间加的预设和值守项出现在设置里。
   - 查出来的：`window.amo.host()` 每次重连给一个新的 link 对象，所以按 `[link]` 的 effect 本来就会在重连后重跑——「没处理重连的 6 处」实际不会停在旧数据上，带 `onHostReconnect` 的反而重连后加载两次。现在都只加载一次。
   - 没换：`useCanvas`、`useSessionItems`、`useScratchpad`（各有自己的合并/乐观更新，换了风险大于收益）。
-- **第二批**：`lib/Modal`（焦点进出、Esc 只关最上面一层、`busy`、表单）、`lib/ContextMenu`（`useMenuDismiss` + `useInWindow`：Esc、点外面、滚轮、窗口失焦都关，贴边时往回挪）；19 个对话框、8 个菜单换过去（SettingsDialog 没换：它不响应 Esc、尺寸是拖出来的）。`styles/controls.css` 收 `.modal*`、`.ctx-menu`、`.action-menu`、`.field`、`.form-error`、按钮等共用规则，原样搬、保持原先的先后；搬动会翻转胜负的几处（`.archived-dialog`、`.description-dialog`、`.todo-bind-dialog`、`.callout-dialog` 的宽度、`.model-menu` 的 min-width、`.usage-switch`）是一直输给 `.modal` 的死声明，删掉，样子不变。
-  - base.css 两块浅色变量**没合**：用 `@container style()` 会把变量挪到 body，`code.css` 等在 `:root` 上派生的变量就断了；用 JS 要同时改 Studio 和 relay-ui 的 theme.ts；而且 relay-ui 也引 base.css，一改就得部署中转服务。chat.css、gitreview.css、stats.css、code.css 里是同样的重复写法。等人定。
+- **第二批**：`lib/Modal`（焦点进出、Esc 只关最上面一层、`busy`、表单）、`lib/ContextMenu`（`useMenuDismiss` + `useInWindow`：Esc、点外面、滚轮、窗口失焦都关，贴边时往回挪）；19 个对话框、8 个菜单换过去（SettingsDialog 没换：尺寸是拖出来的；它本来就按 Esc 关，`SettingsDialog.tsx` 自己听 keydown）。`styles/controls.css` 收 `.modal*`、`.ctx-menu`、`.action-menu`、`.field`、`.form-error`、按钮等共用规则，原样搬、保持原先的先后；搬动会翻转胜负的几处（`.archived-dialog`、`.description-dialog`、`.todo-bind-dialog`、`.callout-dialog` 的宽度、`.model-menu` 的 min-width、`.usage-switch`）是一直输给 `.modal` 的死声明，删掉，样子不变。
+  - base.css 两块浅色变量**没合**：用 `@container style()` 会把变量挪到 body，`code.css` 等在 `:root` 上派生的变量就断了；用 JS 要同时改 Studio 和 relay-ui 的 theme.ts；而且 relay-ui 也引 base.css，一改就得部署中转服务。chat.css、gitreview.css、stats.css、code.css 里是同样的重复写法。用户 11-04 定：这一轮不做。
   - 验证：typecheck（三套）；ui 单测 52 个文件 331 条；e2e 93 条（studio 里涉及这些对话框和菜单的 30 个 spec，加 notes、reviewer、platform）全过。截图对比：先在第一批的构建上跑一遍同样的 spec 和一个临时的浅色/深色截图 spec（看板、设置、专题右键、确认框、画布右键、任务说明），换上第二批再跑，逐像素比：同一构建跑两遍也会变的（时间、端口、机器人表情）之外，剩下的差别都是对话框标题文字的抗锯齿，或者是比对用的旧截图本身是 10-28 拍的（顶栏那时还没有「远程」）。临时 spec 和它的截图（`screenshots/controls/`）没提交。
-- **第三批**（`lib/stored.ts`、`request()` 底座、统一 `formatBytes`）：这一轮没做。`formatBytes` 有三份（`attach/refs.ts`、`notes/api.ts`、`platform/bridge.ts`），输出各不相同（KB 取整还是一位小数、有没有 GB），合成一份会改用户看到的数字，要先定用哪种写法。
+- **第三批**（`lib/stored.ts`、`request()` 底座、统一 `formatBytes`）：这一轮没做。`formatBytes` 有三份（`attach/refs.ts`、`notes/api.ts`、`platform/bridge.ts`），输出各不相同（KB 取整还是一位小数、有没有 GB），合成一份会改用户看到的数字。用户 11-04 定：一律一位小数、到 GB（如 `1.5 MB`），下一轮做。
+
+- 合并（11-04）：master 合进分支只冲突了三份 CHANGELOG（两边都留）；typecheck、单测 1247 条（三条 git 用例在全量负载下超时，单独跑过）、全部 e2e 224 条过。没过的两条在合并前的 master 上也不过，和这一步无关：`cli.spec` 的 Codex 压缩、`turn-start` 的「Focus 看过就消失」。
 
 ## 第 8 步：Host 结构重排（这一轮只写方案）
 

@@ -51,7 +51,12 @@
 
 ## 最近的改动（新的在上面）
 
-**2026-11-04 · 消息投递统一（分支 `studio/message-delivery`，worktree `.claude\worktrees\cleanup-delivery`，没合并）**：11 月梳理第 3 步，方案和进度在 `plans/message-delivery.md`。
+**2026-11-04 晚 · 梳理第 7 步合并、平台关闭变快、详细档展开思考（master）**
+- 第 7 步 ui 数据流和共用件前两批合进 master（`36cc5a49`）：`host/live.ts` 的 `useLiveResource`、`host/shared.ts`、`settings/useSettings.ts`、`lib/Modal`（19 个对话框）、`lib/ContextMenu`（8 个菜单）、`styles/controls.css`。细节和用户定的（base.css 不合、`formatBytes` 统一成一位小数到 GB 留到下一轮）在 `plans/cleanup-2026-11.md` 第 7 步。合并时全部 e2e 跑过：224 条过；`cli.spec` 的 Codex 压缩、`turn-start` 的「Focus 看过就消失」两条在合并前的 master 上就不过，还没查。
+- 平台的「关闭」「正在运行」先看工具自己记的进程号（`shell.json` / `running.json` 带 exe）和平台启动过的（`%APPDATA%\AMO\launched.json`），都不知道才扫全部进程（`cbd13ca6`，`platform/src/running.ts`）；各步耗时记在 `%APPDATA%\AMO\platform.log`。工具要从下一版起才写这些文件，装好后让用户试关闭、重启 Studio，慢就看 platform.log。
+- 「详细」「完全展开」里思考默认展开，思考灰色斜体、命令青绿色（`e75407da`）：用户插话后模型把回话写进了思考（Claude 自己的记录里也是 thinking 块）。
+
+**2026-11-04 · 消息投递统一（分支 `studio/message-delivery`，11-04 晚合进 master `6a231509`）**：11 月梳理第 3 步，方案和进度在 `plans/message-delivery.md`。
 - 会话收件箱 `features/sessions/inbox.ts`：中转回复和说明、值守接着做、传话、邮件转发、session_send、session_start 的回报不再像人发的那样插进正在跑的一轮，而是先显示成 `delivery: "held"`（「等这一轮结束后送进去」），会话空下来再用 runtime 的 `resend` 送进去；kv `sessions.inbox` 落盘，重启接着送，旧的 `sessions.peer-queue` 启动时搬进来；送不进去变「没送到」加一行原因。人发的（界面、远程 B、画布回答、批注）照旧。
 - DSH 补上 waiting / 立即发送 / Ctrl+Enter / 重新发送；出错、进程退出、归档、Host 重启时排队的变「没送到」；停止后排队的接着发（同 11-02 对 Claude / Codex 的决定）。
 - `RuntimeBase`：`writable`（中文、`profileGone`）、`archiveTree`、`settleLeftovers`、`armStopGrace`（DSH 关进程、Codex 本地记成已停止）；protocol `TURN_STATUSES` / `inTurn`。
@@ -60,8 +65,9 @@
 
 **2026-11-04 · 项目梳理第一轮（master + 两个 worktree）**：11-03 只读审查的结论和推进顺序在 `plans/cleanup-2026-11.md`，用户 11-04 定「都照做，按流程推进一轮」。
 - 已提交进 master：第 1 步文档对齐（`63413744`：本文件「当前状态」、AGENTS.md、发布命令统一成 `npm run release`，10-26～10-31 挪进 `docs/history/handoff-2026-10-late.md`）；第 2 步发布脚本漏判（`dbc97045`：中转服务的范围补 locate / account / base.css，外壳 zip 的触发补包，`package-lock` 跟着升版本）；第 5 步清死代码中不碰 runtime 的部分（`ff7d4a2f`）；第 4 步中转给 AI 用的身份不再存明文 key（`0d56e627`，中转外壳「下一版」有一条，会随自动打包发测试通道）；第 6 步中转服务的孤儿截图清理和异步写盘（`6280aeb4`，**没部署**，等用户说再 `release -- relay-service`）；第 8 步只写了方案 `plans/host-structure.md`。
-- 在做（子会话，各自的 worktree，合并前用户点头）：第 3 步消息投递统一（`.claude/worktrees/cleanup-delivery`，分支 `studio/message-delivery`，方案 `plans/message-delivery.md`）；第 7 步 ui 数据流和共用件（`.claude/worktrees/cleanup-ui`，分支 `studio/ui-dataflow`）。
-- 等用户：删除已合并的 5 个 worktree、6 个空 agent worktree、`release/` 旧包、`studio/Microsoft/`（自动审批拦下了删除，清单在方案第 0 步）；中转服务部署。
+- 第 3 步、第 7 步在各自的 worktree 里做完，11-04 晚合进 master（见上面两条）。worktree `.claude/worktrees/cleanup-delivery`、`cleanup-ui` 合并后没用了，删之前问用户。
+- 已合并的 worktree、`release/` 旧包、`studio/Microsoft/` 用户 11-04 已删。还等用户：中转服务部署（`6280aeb4`）；没有会话在跑时重启 Host，第 3、7 步才生效。
+- 下一步：第 6 步 Host 那一半（purge 清按会话的 kv 键、DSH 日志轮转、kv 键登记）；第 8 步下一轮新开 worktree。
 - 审查里核对后不成立、没改的：`ClaudeLogin = "token"`（API Key 渠道在用）、`relay-service.ps1`（README 写明的退路）、平台装的中转客户端早已只认平台登录。
 
 **2026-11-04 · MCP 设置（master）**：同事反馈 Figma MCP 在 Studio 的 Claude 会话里用不了。原因是本机登录时固定传了 `strictMcpConfig`（10-14，4cef30ce），只挡了 MCP，skills、CLAUDE.md 等一直照常加载。用户定的做法和细节见 `plans/mcp.md`：全局在设置 → 「MCP」；项目在「编辑项目」；会话在输入框下的「MCP」按钮，新会话沿用同一任务上一个会话的选择；AI 用 `mcp_server_save` 加 MCP，每次都要人批准；Codex 在下次启动时生效；`amo-relay` 默认不启用。
