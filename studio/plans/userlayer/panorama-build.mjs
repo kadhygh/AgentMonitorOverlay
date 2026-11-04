@@ -24,6 +24,8 @@ await build({
   build: {
     outDir: out,
     emptyOutDir: true,
+    // PANORAMA_NOMINIFY=1: readable names (for profiling).
+    minify: process.env.PANORAMA_NOMINIFY ? false : undefined,
     rolldownOptions: {
       input: { preview: join(ui, "src", "panorama", "preview.tsx") },
       output: { entryFileNames: "[name].js", chunkFileNames: "[name]-[hash].js", assetFileNames: "[name][extname]" },

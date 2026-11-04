@@ -1,34 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { CanvasDoc, CanvasItem, TopicDoc } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { LOOSE_TITLE, LOOSE_TOPIC } from "./datalayer.js";
 import { PanoramaPage } from "./PanoramaPage.js";
+import { THEMES } from "./themes.js";
 import type { ViewDef } from "../shell/views.js";
 
 /**
- * 全景 (设置 → 测试功能, 2026-11-01): like the canvas, the topic in scope, else the first live topic. Only while the
- * person has turned it on; the deck.gl map inside loads on first use.
+ * 全景 (设置 → 测试功能, 2026-11-01). 11-04 (plans/userlayer/framework.md 第 0 步): every live topic a block, and the
+ * tasks in no topic one more; opened from the left column (「全景」 under 全部任务, the user's call), not a tab. Only
+ * while the person has turned it on; the deck.gl map inside loads on first use.
  */
 export const panoramaView: ViewDef<"panorama"> = {
   kind: "panorama",
   experimental: "panorama",
-  tab: { label: "全景", open: () => ({ kind: "panorama" }) },
-  render: (_view, { link, state, scope, data, setView }) => {
+  render: (_view, { link, state, data, setView }) => {
     const liveTopics = state.topics.filter((t) => !t.archivedAt);
-    const topic = (scope.kind === "topic" ? liveTopics.find((t) => t.id === scope.id) : undefined) ?? liveTopics[0];
-    if (!topic) return <div className="placeholder">还没有专题。在左栏建一个专题，全景画的是一个专题里的任务。</div>;
+    const loose = state.tasks.some((t) => !t.topicId && !t.archivedAt);
+    if (!liveTopics.length && !loose) return <div className="placeholder">还没有专题，也还没有任务。全景画的是每个专题和它的任务。</div>;
+    // With `topics` given, `topic` only names the map's context; with no topic at all, the loose block does.
+    const topic = liveTopics[0] ?? { id: LOOSE_TOPIC, title: LOOSE_TITLE, workspaceIds: [], createdAt: "", updatedAt: "", archivedAt: null };
     return (
-      <PanoramaTopic
-        key={topic.id}
+      <PanoramaTopics
         link={link}
-        topicId={topic.id}
-        render={(dependencies) => (
+        topicIds={liveTopics.map((t) => t.id)}
+        render={({ dependencies, docs, reviews }, look) => (
           <PanoramaPage
+            key={look.id}
             topic={topic}
+            topics={liveTopics}
+            loose
             tasks={state.tasks}
             sessions={state.sessions}
             profiles={state.profiles}
             checklist={data.checklist}
+            workspaces={state.workspaces}
             dependencies={dependencies}
+            docs={docs}
+            reviews={reviews}
+            theme={THEMES[look.id]}
+            looks={LOOKS}
+            onLook={look.set}
             onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), back: { kind: "panorama" } })}
           />
         )}
@@ -37,19 +50,65 @@ export const panoramaView: ViewDef<"panorama"> = {
   },
 };
 
-/** The topic canvas's dependencies, read only (P1, 2026-11-02: 全景 draws them as arcs, it never changes the canvas). */
-function PanoramaTopic({ link, topicId, render }: { link: HostLink; topicId: string; render(dependencies: readonly { from: string; to: string }[]): React.ReactNode }) {
-  const [deps, setDeps] = useState<readonly { from: string; to: string }[]>([]);
+/** The two looks Studio offers (11-03's world looks), remembered on this machine; 地形岛 unless picked. */
+const LOOKS = [
+  { id: "terrain", label: "地形岛" },
+  { id: "metro", label: "地铁" },
+] as const;
+type LookId = (typeof LOOKS)[number]["id"];
+const LOOK_KEY = "amo.panorama.look";
+function readLook(): LookId {
+  try {
+    const v = localStorage.getItem(LOOK_KEY);
+    return LOOKS.some((l) => l.id === v) ? (v as LookId) : "terrain";
+  } catch {
+    return "terrain";
+  }
+}
+
+type Review = Pick<CanvasItem, "id" | "num" | "title" | "status" | "sessionId"> & { topicId: string; updatedAt?: string };
+interface TopicExtras {
+  dependencies: readonly { from: string; to: string }[];
+  docs: readonly (Pick<TopicDoc, "id" | "topicId" | "title" | "updatedAt"> & { body?: string })[];
+  reviews: readonly Review[];
+}
+type FromCanvas = Pick<TopicExtras, "dependencies" | "reviews">;
+
+/** What a topic's canvas gives 全景, read only: its dependencies (arcs) and review items (the points on its board). */
+function fromCanvas(doc: CanvasDoc): FromCanvas {
+  return {
+    dependencies: doc.edges.map((e) => ({ from: e.from, to: e.to })),
+    reviews: doc.nodes.filter((n): n is CanvasItem => n.kind === "item").map((n) => ({ id: n.id, num: n.num, title: n.title, status: n.status, sessionId: n.sessionId, topicId: doc.id, updatedAt: doc.updatedAt })),
+  };
+}
+
+/**
+ * Every live topic's canvas and documents (全景 never changes them), kept current from the Host's events and read again
+ * after a reconnect. A topic whose canvas or documents cannot be read is drawn without them.
+ */
+function PanoramaTopics({ link, topicIds, render }: { link: HostLink; topicIds: readonly string[]; render(extras: TopicExtras, look: { id: LookId; set(id: string): void }): React.ReactNode }) {
+  const ids = topicIds.join(",");
+  const [canvases, setCanvases] = useState<ReadonlyMap<string, FromCanvas>>(new Map());
+  const [docs, setDocs] = useState<ReadonlyMap<string, TopicExtras["docs"]>>(new Map());
+  const [look, setLook] = useState<LookId>(readLook);
   useEffect(() => {
     let alive = true;
-    const pick = (edges: readonly { from: string; to: string }[]) => edges.map((e) => ({ from: e.from, to: e.to }));
-    const load = () =>
-      void call(link, "GET /api/topics/:id/canvas", { id: topicId })
-        .then((doc) => alive && setDeps(pick(doc.edges)))
-        .catch(() => undefined);
+    const list = ids ? ids.split(",") : [];
+    const mine = new Set(list);
+    const putCanvas = (doc: CanvasDoc) => alive && setCanvases((m) => new Map(m).set(doc.id, fromCanvas(doc)));
+    const load = () => {
+      for (const id of list) {
+        void call(link, "GET /api/topics/:id/canvas", { id }).then(putCanvas).catch(() => undefined);
+        void call(link, "GET /api/topics/:id/docs", { id })
+          .then((d) => alive && setDocs((m) => new Map(m).set(id, d)))
+          .catch(() => undefined);
+      }
+    };
     load();
     const off = onHostEvent((e) => {
-      if (e.type === "canvas.updated" && e.canvas.id === topicId) setDeps(pick(e.canvas.edges));
+      if (e.type === "canvas.updated" && mine.has(e.canvas.id)) putCanvas(e.canvas);
+      else if (e.type === "topicdoc.upserted" && mine.has(e.doc.topicId)) setDocs((m) => new Map(m).set(e.doc.topicId, [...(m.get(e.doc.topicId) ?? []).filter((d) => d.id !== e.doc.id), e.doc]));
+      else if (e.type === "topicdoc.removed") setDocs((m) => (m.has(e.topicId) ? new Map(m).set(e.topicId, m.get(e.topicId)!.filter((d) => d.id !== e.docId)) : m));
     });
     const offReconnect = onHostReconnect(load);
     return () => {
@@ -57,6 +116,20 @@ function PanoramaTopic({ link, topicId, render }: { link: HostLink; topicId: str
       off();
       offReconnect();
     };
-  }, [link, topicId]);
-  return <>{render(deps)}</>;
+  }, [link, ids]);
+  // One object per change, so the page's datalayer runs again only when something it reads changed.
+  const extras = useMemo<TopicExtras>(() => {
+    const c = [...canvases.values()];
+    return { dependencies: c.flatMap((x) => x.dependencies), reviews: c.flatMap((x) => x.reviews), docs: [...docs.values()].flat() };
+  }, [canvases, docs]);
+  const set = (id: string) => {
+    if (!LOOKS.some((l) => l.id === id)) return;
+    setLook(id as LookId);
+    try {
+      localStorage.setItem(LOOK_KEY, id);
+    } catch {
+      // per-machine convenience only
+    }
+  };
+  return <>{render(extras, { id: look, set })}</>;
 }

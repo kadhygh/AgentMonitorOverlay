@@ -7,3 +7,6 @@ screenshots/**/tmp-*
 test-results/
 playwright-report/
 release/
+
+# 全景预览页的打包产物（plans/userlayer/panorama-build.mjs 生成，文件名带 hash，每次重建都变；用户 2026-11-03 定不进 git）
+plans/userlayer/panorama-preview/

@@ -55,6 +55,11 @@ interface ScopeNavProps {
   /** Opens the settings (the button under the Host status). */
   onSettings?: () => void;
   onScope(scope: Scope): void;
+  /**
+   * 全景 (测试功能, 11-04, the user's call): its own entry under 全部任务 — later the list of panoramas, one for now. Left
+   * out while it is turned off. While it is in front no scope row is current.
+   */
+  panorama?: { current: boolean; open(): void };
 }
 
 const isCurrent = (a: Scope, b: Scope) => a.kind === b.kind && (a.kind === "all" || (b.kind !== "all" && a.id === b.id));
@@ -74,7 +79,7 @@ function readFolded(): Record<PinKind, boolean> {
  * pinned (they come first, here and wherever they are picked) and each section folds down to its pinned entries. The
  * lists scroll between the fixed top and the Host / usage footer.
  */
-export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope, live, onScope, onSettings }: ScopeNavProps) {
+export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope, live, onScope, onSettings, panorama }: ScopeNavProps) {
   const [adding, setAdding] = useState(false);
   const [newTopic, setNewTopic] = useState<string | null>(null);
   const [path, setPath] = useState("");
@@ -187,7 +192,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
           endDrag();
         }}
       >
-        <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}
+        <button type="button" className="nav-row" aria-current={!panorama?.current && isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}
           draggable={!!kind && !!id}
           title={kind ? [title, "拖动排序；Alt ↑ / ↓ 调整顺序（置顶项在前）"].filter(Boolean).join("\n") : title}
           onDragStart={(e) => { if (kind && id) startDrag(e, { type: "item", kind, id }); }}
@@ -426,7 +431,16 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
   return (
     <>
     <nav className="scope-nav" aria-label="范围">
-      <div className="nav-top">{row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}</div>
+      <div className="nav-top">
+        {row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}
+        {panorama && (
+          <div className="nav-item">
+            <button type="button" className="nav-row" aria-current={panorama.current} onClick={panorama.open} data-testid="nav-panorama" title="全景：所有专题和任务画在一张图上（测试功能）">
+              <span className="name">全景</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="nav-scroll">
         {sectionRows.map((kind) => kind === "topic" ? (

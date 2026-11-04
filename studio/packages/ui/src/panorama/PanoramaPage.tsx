@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { needsYou, toPanorama, type ItemStatus, type PanoramaData, type PanoramaInput, type PanoramaItem } from "./datalayer.js";
+import { ITEM_LABEL, needsYou, toPanorama, type ItemStatus, type PanoramaData, type PanoramaDoc, type PanoramaInput, type PanoramaItem } from "./datalayer.js";
 import { DEFAULT_THEME, type PanoramaTheme } from "./themes.js";
 import type { EngineProbe, PanoramaEngine } from "./engine.js";
 
@@ -49,20 +49,31 @@ export function PanoramaPage({
   profiles,
   checklist,
   dependencies,
+  topics,
+  workspaces,
+  docs,
+  reviews,
+  extra,
+  loose,
   now,
   theme = DEFAULT_THEME,
+  looks,
+  onLook,
   onOpenTask,
-}: Required<Omit<PanoramaInput, "now">> & {
+}: Omit<PanoramaInput, "now"> & Required<Pick<PanoramaInput, "profiles" | "checklist" | "dependencies">> & {
   /** Its looks (the preview tries variants of them); Studio's default when left out. */
   theme?: PanoramaTheme;
   /** The time the data is from (the preview's snapshot); now when left out. */
   now?: string;
+  /** Studio (11-04): the looks to switch between in the corner, the current one being `theme`'s. */
+  looks?: readonly { id: string; label: string }[];
+  onLook?(id: string): void;
   /** What AMO does for 全景: open a task (on a session). */
   onOpenTask(taskId: string, sessionId?: string): void;
 }) {
   const data = useMemo(
-    () => toPanorama({ topic, tasks, sessions, profiles, checklist, dependencies, now: now ?? new Date().toISOString() }),
-    [topic, tasks, sessions, profiles, checklist, dependencies, now],
+    () => toPanorama({ topic, tasks, sessions, profiles, checklist, dependencies, topics, workspaces, docs, reviews, extra, loose, now: now ?? new Date().toISOString() }),
+    [topic, tasks, sessions, profiles, checklist, dependencies, topics, workspaces, docs, reviews, extra, loose, now],
   );
   const dataRef = useRef<PanoramaData>(data);
   dataRef.current = data;
@@ -129,11 +140,13 @@ export function PanoramaPage({
   useEffect(() => engineRef.current?.setData(data), [data]);
   useEffect(() => engineRef.current?.setOpen(open), [open]);
 
-  // A selection that no longer exists (the session was archived away, the task left the topic) closes its popup.
+  // A selection that no longer exists (the session was archived away, the task left the topic) closes its popup. 0.3:
+  // a document on a topic's shelf is selected the same way.
   const item = sel ? data.items.find((i) => i.id === sel) : undefined;
+  const doc = sel && !item ? data.docs.find((d) => d.id === sel) : undefined;
   useEffect(() => {
-    if (sel && !item) setSel(null);
-  }, [sel, item]);
+    if (sel && !item && !doc) setSel(null);
+  }, [sel, item, doc]);
 
   // The selection drives the map: its ring and bright sign, and the camera flies to it.
   useEffect(() => engineRef.current?.select(sel, !!sel), [sel]);
@@ -155,8 +168,17 @@ export function PanoramaPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [sel]);
 
-  const lane = item ? data.lanes.find((l) => l.id === item.lane) : undefined;
+  const lane = item?.lane ? data.lanes.find((l) => l.id === item.lane) : undefined;
   const curNeed = need.findIndex((n) => n.id === sel);
+  const nSessions = data.items.filter((i) => i.type === "session").length;
+  const topicOf = (id: string) => data.topics.find((t) => t.id === id);
+  // Where an item stands, for its popup: its task, or its topic's spine or board.
+  const where = (it: PanoramaItem) => {
+    const l = it.lane ? data.lanes.find((x) => x.id === it.lane) : undefined;
+    if (l) return l.title;
+    return `${topicOf(it.topic)?.title ?? ""} · ${it.type === "session" ? "主控（专题自己的会话）" : "公告板"}`;
+  };
+  const nextOrNull = (id: string) => (need.length > 1 || (need.length === 1 && need[0]!.id !== id) ? nextNeed : null);
 
   return (
     <div className="panorama" data-theme={theme.id} data-mode={mode} style={theme.css as CSSProperties} data-testid="panorama">
@@ -169,10 +191,13 @@ export function PanoramaPage({
           <div className="pn-fx" />
           <div className="pn-fx2" />
           <div className="pn-hud pn-title">
-            <span className="pn-k">全景 · 专题</span>
-            <span className="pn-ttl">{data.context.title}</span>
+            <span className="pn-k">{data.topics.length > 1 ? `全景 · ${data.topics.length} 个专题` : "全景 · 专题"}</span>
+            <span className="pn-ttl" title={data.topics.map((t) => t.title).join("\n")}>
+              {data.topics.length > 1 ? "全部专题" : (data.topics[0]?.title ?? data.context.title)}
+            </span>
             <span className="pn-row">
-              {data.lanes.length} 个任务 · {data.items.length} 个会话
+              {data.lanes.length} 个任务 · {nSessions} 个会话
+              {data.projects.length > data.topics.length ? ` · ${data.projects.length} 个项目` : ""}
             </span>
           </div>
           <div className="pn-hud pn-readout" ref={readoutRef} aria-hidden="true" />
@@ -183,28 +208,48 @@ export function PanoramaPage({
             </button>
           </div>
           <div className="pn-hud pn-br">
+            {looks && onLook && looks.length > 1 && (
+              <span className="pn-looks" role="group" aria-label="样式">
+                {looks.map((l) => (
+                  <button key={l.id} type="button" aria-pressed={l.id === theme.id} onClick={() => onLook(l.id)} title={`换成${l.label}样式（记在本机）`}>
+                    {l.label}
+                  </button>
+                ))}
+              </span>
+            )}
             <button type="button" onClick={() => engineRef.current?.zoomBy(1)} title="放大" aria-label="放大">
               +
             </button>
             <button type="button" onClick={() => engineRef.current?.zoomBy(-1)} title="缩小" aria-label="缩小">
               −
             </button>
-            <button type="button" onClick={() => engineRef.current?.flyHome()} title="看整个专题（双击空白处也行）">
+            <button type="button" onClick={() => engineRef.current?.flyHome()} title={data.topics.length > 1 ? "看全部（双击空白处也行）" : "看整个专题（双击空白处也行）"}>
               重置视角
             </button>
           </div>
           {mode === "loading" && <div className="pn-loading">正在画全景…</div>}
-          {!data.lanes.length && <div className="pn-loading">这个专题还没有任务。</div>}
-          {item && lane && (
+          {!data.lanes.length && <div className="pn-loading">{data.topics.length > 1 ? "这些专题还没有任务。" : "这个专题还没有任务。"}</div>}
+          {item && item.type === "session" && (lane || !item.lane) && (
             <PanoramaWindow
               item={item}
               from={item.forkFrom ? data.items.find((i) => i.id === item.forkFrom) : undefined}
-              laneTitle={lane.title}
-              next={need.length > 1 || (need.length === 1 && need[0]!.id !== item.id) ? nextNeed : null}
-              onOpenTask={() => onOpenTask(item.ref.taskId, item.ref.sessionId)}
+              laneTitle={where(item)}
+              next={nextOrNull(item.id)}
+              onOpenTask={item.ref.taskId ? () => onOpenTask(item.ref.taskId, item.ref.sessionId) : null}
               onClose={() => setSel(null)}
             />
           )}
+          {item && item.type !== "session" && (
+            <PointWindow
+              item={item}
+              of={item.of ? data.items.find((i) => i.id === item.of) : undefined}
+              where={where(item)}
+              next={nextOrNull(item.id)}
+              onOpenTask={item.ref.taskId ? () => onOpenTask(item.ref.taskId, item.ref.sessionId || undefined) : null}
+              onClose={() => setSel(null)}
+            />
+          )}
+          {doc && <DocWindow doc={doc} topic={topicOf(doc.topic)?.title ?? ""} projects={data.projects.filter((x) => x.topic === doc.topic).map((x) => x.title)} onClose={() => setSel(null)} />}
         </>
       )}
     </div>
@@ -212,7 +257,7 @@ export function PanoramaPage({
 }
 
 /** The popup of a node: the least to know what it is, and the way to its task. */
-function PanoramaWindow({ item, from, laneTitle, next, onOpenTask, onClose }: { item: PanoramaItem; from: PanoramaItem | undefined; laneTitle: string; next: (() => void) | null; onOpenTask(): void; onClose(): void }) {
+function PanoramaWindow({ item, from, laneTitle, next, onOpenTask, onClose }: { item: PanoramaItem; from: PanoramaItem | undefined; laneTitle: string; next: (() => void) | null; onOpenTask: (() => void) | null; onClose(): void }) {
   // A branch says which round it came from (0: from another branch).
   const forkRound = item.forkFrom ? (from?.round ?? 0) : undefined;
   const need = item.status === "needs_you";
@@ -230,7 +275,7 @@ function PanoramaWindow({ item, from, laneTitle, next, onOpenTask, onClose }: { 
       <div className="pn-in">
         <h2>{item.title}</h2>
         <div className="pn-meta">
-          <span>任务</span>
+          <span>{item.lane ? "任务" : "专题"}</span>
           <span>{laneTitle}</span>
           {forkRound !== undefined && (
             <>
@@ -250,13 +295,90 @@ function PanoramaWindow({ item, from, laneTitle, next, onOpenTask, onClose }: { 
           <span>{timeText(item.at)}</span>
         </div>
         <div className="pn-acts">
-          <button type="button" className="pn-btn primary" onClick={onOpenTask} data-testid="panorama-open-task">
-            打开任务
-          </button>
+          {onOpenTask && (
+            <button type="button" className="pn-btn primary" onClick={onOpenTask} data-testid="panorama-open-task">
+              打开任务
+            </button>
+          )}
           {next && (
             <button type="button" className="pn-btn nx" onClick={next}>
               下一件等你的 →
             </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 0.3: the popup of a point (决定、问题、发现、便签): what it says, where it came from, and the way to its session. */
+function PointWindow({ item, of, where, next, onOpenTask, onClose }: { item: PanoramaItem; of: PanoramaItem | undefined; where: string; next: (() => void) | null; onOpenTask: (() => void) | null; onClose(): void }) {
+  const need = item.status === "needs_you";
+  return (
+    <div className={`pn-win${need ? " need" : ""}`} role="dialog" aria-label={`${ITEM_LABEL[item.type]} ${item.title}`} data-testid="panorama-point" style={{ width: WIN_W }}>
+      <div className="pn-bar">
+        <span>{ITEM_LABEL[item.type]}</span>
+        <span className="pn-st">
+          {SYM[item.status]} {need ? "等你" : item.summary}
+        </span>
+        <button type="button" className="pn-x" onClick={onClose} title="Esc">
+          ✕ 关闭
+        </button>
+      </div>
+      <div className="pn-in">
+        <h2>{item.title}</h2>
+        {item.body && <p className="pn-body">{item.body}</p>}
+        <div className="pn-meta">
+          <span>在</span>
+          <span>{where}</span>
+          {of && (
+            <>
+              <span>来自</span>
+              <span>{of.round !== null ? `第 ${of.round} 轮 · ${of.title}` : of.title}</span>
+            </>
+          )}
+          <span>时间</span>
+          <span>{timeText(item.at)}</span>
+        </div>
+        <div className="pn-acts">
+          {onOpenTask && (
+            <button type="button" className="pn-btn primary" onClick={onOpenTask}>
+              打开会话
+            </button>
+          )}
+          {next && (
+            <button type="button" className="pn-btn nx" onClick={next}>
+              下一件等你的 →
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 0.3: the popup of a document on a topic's shelf: its first lines (the preview has no way to open it in full yet). */
+function DocWindow({ doc, topic, projects, onClose }: { doc: PanoramaDoc; topic: string; projects: string[]; onClose(): void }) {
+  return (
+    <div className="pn-win" role="dialog" aria-label={doc.title} data-testid="panorama-doc" style={{ width: WIN_W }}>
+      <div className="pn-bar">
+        <span>{doc.kind === "spec" ? "专题规范" : "专题文档"}</span>
+        <span className="pn-st">更新 {timeText(doc.updatedAt)}</span>
+        <button type="button" className="pn-x" onClick={onClose} title="Esc">
+          ✕ 关闭
+        </button>
+      </div>
+      <div className="pn-in">
+        <h2>{doc.title}</h2>
+        <p className="pn-body">{doc.summary || "快照里没带正文，只有标题。"}</p>
+        <div className="pn-meta">
+          <span>专题</span>
+          <span>{topic}</span>
+          {doc.kind === "spec" && projects.length > 0 && (
+            <>
+              <span>适用</span>
+              <span>{projects.join("、")}</span>
+            </>
           )}
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChecklistItem, Session, SessionStatus, Task, Topic } from "@amo-studio/protocol";
-import { cut, needsYou, toPanorama, workOf } from "./datalayer.js";
-import { foldRuns, goalGap, layoutPanorama, pillarHeight } from "./layout.js";
+import { cut, LOOSE_TITLE, LOOSE_TOPIC, needsYou, toPanorama, workOf } from "./datalayer.js";
+import { boardLines, foldRuns, goalGap, layoutPanorama, pillarHeight, U } from "./layout.js";
 import { LOOKS, lookFrom } from "./themes.js";
 
 const topic: Topic = { id: "tp-1", title: "AMO迭代", workspaceIds: [], description: "这几天的迭代", createdAt: "2026-10-29T12:00:00.000Z", updatedAt: "2026-11-01T02:00:00.000Z", archivedAt: null };
@@ -35,7 +35,7 @@ describe("全景 datalayer", () => {
       session("s-x", "t-gone", "2026-10-30T02:00:00.000Z", "running"),
     ];
     const d = toPanorama({ topic, tasks, sessions, now: NOW });
-    expect(d.spec).toBe("amo.datalayer/0.2");
+    expect(d.spec).toBe("amo.datalayer/0.3");
     expect(d.context).toEqual({ id: "tp-1", title: "AMO迭代", goal: "这几天的迭代", updatedAt: topic.updatedAt });
     expect(d.now).toBe(NOW);
     expect(d.lanes.map((l) => [l.id, l.title, l.status, l.startAt])).toEqual([
@@ -386,9 +386,167 @@ describe("全景 front, folding, fixed footprint, curves", () => {
 
   it("reads looks from the preview's address", () => {
     expect(lookFrom("abd")).toEqual(LOOKS.abd);
-    expect(lookFrom("abd-flow")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, curve: "flow" });
-    expect(lookFrom("spiral")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, curve: "spiral" });
-    expect(lookFrom("base-wave-nofold")).toEqual({ ...LOOKS.base, front: true, fold: false, span: true, curve: "wave" });
+    expect(lookFrom("abd-line")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, blocks: true, curve: "line" });
+    expect(lookFrom("abd-flow")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, blocks: true, curve: "flow" });
+    expect(lookFrom("spiral")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, blocks: true, curve: "spiral" });
+    expect(lookFrom("base-wave-nofold")).toEqual({ ...LOOKS.base, front: true, fold: false, span: true, blocks: true, curve: "wave" });
+    expect(lookFrom("abd-line-noblocks")).toEqual({ ...LOOKS.abd, front: true, fold: true, span: true, blocks: false, curve: "line" });
     expect(lookFrom("abd-sideways")).toBe(null);
+  });
+});
+
+describe("全景 0.3: topics and projects", () => {
+  const mining: Topic = { id: "tp-m", title: "mining 迭代", workspaceIds: ["ws-c", "ws-d"], description: "11 月 20 日出 0.18 测试版\n\n更多说明", createdAt: "2026-10-20T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z", archivedAt: null };
+  const t = (id: string, ws: string, extra: Partial<Task> = {}) => task(id, "2026-10-25T00:00:00.000Z", { topicId: "tp-m", workspaceId: ws, ...extra });
+  const s = (id: string, taskId: string | null, at: string, status: SessionStatus, extra: Partial<Session> = {}) => session(id, taskId as string, at, status, { taskId, ...extra });
+  const input = () => ({
+    topic,
+    topics: [topic, mining],
+    tasks: [task("t-a", "2026-10-30T01:00:00.000Z"), t("t-c1", "ws-c"), t("t-c2", "ws-c", { column: "review" }), t("t-s", "ws-s")],
+    sessions: [
+      s("s-a", "t-a", "2026-10-30T02:00:00.000Z", "idle"),
+      s("lead-1", null, "2026-10-21T00:00:00.000Z", "idle", { topicId: "tp-m" }),
+      s("lead-2", null, "2026-10-24T00:00:00.000Z", "running", { topicId: "tp-m" }),
+      s("lead-sub", null, "2026-10-24T01:00:00.000Z", "completed", { topicId: "tp-m", kind: "sub" }),
+      s("c1-1", "t-c1", "2026-10-25T01:00:00.000Z", "idle"),
+      s("c1-2", "t-c1", "2026-10-26T01:00:00.000Z", "awaiting-approval"),
+      s("c2-1", "t-c2", "2026-10-25T02:00:00.000Z", "idle"),
+      s("s-1", "t-s", "2026-10-25T03:00:00.000Z", "running"),
+    ],
+    workspaces: [
+      { id: "ws-c", name: "project_mining" },
+      { id: "ws-s", name: "project_mining_server" },
+    ],
+    docs: [
+      { id: "d-2", topicId: "tp-m", title: "版本规范", updatedAt: "2026-10-22T00:00:00.000Z", body: "# 版本规范\n\n版本号：主.次.修订。\n包体上限 **1.4 GB**。" },
+      { id: "d-1", topicId: "tp-m", title: "0.18 范围说明", updatedAt: "2026-10-21T00:00:00.000Z" },
+      { id: "d-x", topicId: "tp-other", title: "别的专题", updatedAt: "2026-10-21T00:00:00.000Z" },
+    ],
+    reviews: [{ id: "rv-1", topicId: "tp-m", num: 3, title: "掉落表要不要拆", status: "discuss" as const, sessionId: null, updatedAt: "2026-10-27T00:00:00.000Z" }],
+    extra: {
+      projects: { "tp-m/ws-c": { status: [{ label: "包体", value: "1.42 GB", tone: "warn" as const }], summary: "在瘦身", by: "专项管理 · 第 5 轮", updatedAt: "2026-11-01T00:00:00.000Z" } },
+      proposedBy: { "t-c1": "lead-1", "t-c2": "lead-2", "t-s": "s-a" },
+      cards: [
+        { id: "k-1", topicId: "tp-m", sessionId: "c1-1", type: "finding" as const, title: "音效包没压缩", at: "2026-10-25T05:00:00.000Z" },
+        { id: "k-2", topicId: "tp-m", type: "question" as const, title: "包体超了还发不发？", at: "2026-10-31T00:00:00.000Z", needsYou: true },
+        { id: "k-3", topicId: "tp-m", sessionId: "lead-1", type: "decision" as const, title: "不做跨服", at: "2026-10-21T05:00:00.000Z" },
+      ],
+    },
+    now: NOW,
+  });
+
+  it("makes a topic per topic, a project per workspace with the fields its spec asks for, the shelf and the spine", () => {
+    const d = toPanorama(input());
+    expect(d.topics.map((x) => [x.id, x.goal, x.status])).toEqual([
+      ["tp-1", "这几天的迭代", "waiting"],
+      ["tp-m", "11 月 20 日出 0.18 测试版 更多说明", "running"],
+    ]);
+    // Its tasks' workspaces in the order they came, then the topic's own (ws-d has no task yet).
+    const pm = d.projects.filter((p) => p.topic === "tp-m");
+    expect(pm.map((p) => [p.id, p.title])).toEqual([
+      ["tp-m/ws-c", "project_mining"],
+      ["tp-m/ws-s", "project_mining_server"],
+      ["tp-m/ws-d", "ws-d"],
+    ]);
+    expect(pm[0]!.status).toEqual([{ label: "包体", value: "1.42 GB", tone: "warn" }, { label: "任务", value: "2 个 · 1 在跑" }]);
+    expect([pm[0]!.summary, pm[0]!.by, pm[1]!.summary]).toEqual(["在瘦身", "专项管理 · 第 5 轮", null]);
+    expect(pm[1]!.status).toEqual([{ label: "任务", value: "1 个 · 1 在跑" }]);
+    expect(pm[2]!.status).toEqual([{ label: "任务", value: "0 个" }]);
+    expect(boardLines(pm[0]!)).toBe(5);
+    // Lanes know their topic and project.
+    expect(d.lanes.map((l) => [l.id, l.topic, l.project])).toEqual([
+      ["t-a", "tp-1", "tp-1/ws-1"],
+      ["t-c1", "tp-m", "tp-m/ws-c"],
+      ["t-c2", "tp-m", "tp-m/ws-c"],
+      ["t-s", "tp-m", "tp-m/ws-s"],
+    ]);
+    // The shelf: by title, 规范 in the title makes a spec; the first lines without headings or marks.
+    expect(d.docs.map((x) => [x.id, x.kind, x.summary])).toEqual([
+      ["d-1", "doc", ""],
+      ["d-2", "spec", "版本号：主.次.修订。 包体上限 1.4 GB。"],
+    ]);
+    // The spine: the topic's own sessions (no subagents), a round each; proposedBy only from the spine.
+    const spine = d.items.filter((i) => i.topic === "tp-m" && i.type === "session" && i.lane === null);
+    expect(spine.map((i) => [i.id, i.round])).toEqual([
+      ["lead-1", 1],
+      ["lead-2", 2],
+    ]);
+    expect(d.lanes.map((l) => l.proposedBy)).toEqual([null, "lead-1", "lead-2", null]);
+  });
+
+  it("puts points on a round when they came from it, else on the topic's board; review items by their status", () => {
+    const d = toPanorama(input());
+    const pts = d.items.filter((i) => i.type !== "session");
+    expect(pts.map((i) => [i.id, i.type, i.status, i.lane, i.round, i.of])).toEqual([
+      ["rv-1", "question", "waiting", null, null, null],
+      ["k-1", "finding", "settled", "t-c1", 1, "c1-1"],
+      ["k-2", "question", "needs_you", null, null, null],
+      ["k-3", "decision", "settled", null, null, "lead-1"],
+    ]);
+    expect(pts[0]!.title).toBe("#3 掉落表要不要拆");
+    // What waits on the person: the session asking for approval and the question.
+    expect(needsYou(d).map((i) => i.id)).toEqual(expect.arrayContaining(["c1-2", "k-2"]));
+    expect(needsYou(d)).toHaveLength(2);
+  });
+
+  it("lays each topic out as a block: bands that do not overlap, every task inside its band, lines from the spine", () => {
+    const d = toPanorama(input());
+    const L = layoutPanorama(d, { tight: true, curve: "line", span: true, fold: true, front: 2700, blocks: true });
+    expect(L.blocks.map((b) => b.id)).toEqual(["tp-1", "tp-m"]);
+    const [a, m] = [L.blocks[0]!, L.blocks[1]!];
+    // Blocks apart from each other.
+    const apart = (p: number[], q: number[]) => p[2]! < q[0]! || q[2]! < p[0]! || p[3]! < q[1]! || q[3]! < p[1]!;
+    expect(apart(a.bounds, m.bounds)).toBe(true);
+    expect(m.bands.map((b) => b.project.id)).toEqual(["tp-m/ws-c", "tp-m/ws-s", "tp-m/ws-d"]);
+    const box = (pts: number[][]) => [Math.min(...pts.map((p) => p[0]!)), Math.min(...pts.map((p) => p[1]!)), Math.max(...pts.map((p) => p[0]!)), Math.max(...pts.map((p) => p[1]!))];
+    const bands = m.bands.map((b) => box(b.fill));
+    for (let i = 1; i < bands.length; i++) expect(bands[i]![3]!).toBeLessThan(bands[i - 1]![1]!);
+    // Each task's base inside its project's band and inside the block.
+    for (const r of L.regions.filter((r) => r.lane.topic === "tp-m")) {
+      const band = bands[m.bands.findIndex((b) => b.project.id === r.lane.project)]!;
+      expect(r.bounds[0]).toBeGreaterThanOrEqual(band[0]! - 1e-9);
+      expect(r.bounds[2]).toBeLessThanOrEqual(m.bounds[2] + 1e-9);
+      expect(r.bounds[3]).toBeLessThanOrEqual(band[3]! + 1e-9);
+      expect(r.bounds[1]).toBeGreaterThanOrEqual(m.bounds[1] - 1e-9);
+    }
+    // The spine and its proposals: from lead-1 to t-c1's start, from lead-2 to t-c2's.
+    expect(m.spine.nodes.map((n) => n.id)).toEqual(["lead-1", "lead-2"]);
+    expect(m.proposed.map((p) => [p.item, p.lane])).toEqual([
+      ["lead-1", "t-c1"],
+      ["lead-2", "t-c2"],
+    ]);
+    const c1 = L.regions.find((r) => r.id === "t-c1")!;
+    const end = m.proposed[0]!.path[m.proposed[0]!.path.length - 1]!;
+    expect(Math.hypot(end[0] - c1.origin.ground[0], end[1] - c1.origin.ground[1])).toBeLessThan(0.5 * U);
+    // The shelf and the board: two documents; the review item, the question and the decision of a spine round.
+    expect(m.shelf.docs.map((x) => x.doc.id)).toEqual(["d-1", "d-2"]);
+    expect(m.board.cards.map((c) => c.id)).toEqual(["rv-1", "k-2", "k-3"]);
+    // Without blocks (or with spiral) nothing of this.
+    expect(layoutPanorama(d, { tight: true, curve: "line" }).blocks).toEqual([]);
+    expect(layoutPanorama(d, { tight: true, curve: "spiral", blocks: true }).blocks).toEqual([]);
+  });
+
+  it("puts live tasks in no topic into one more block, a band per project, only when asked and only when there are some", () => {
+    const base = input();
+    const free = [task("t-f1", "2026-10-28T00:00:00.000Z", { topicId: null, workspaceId: "ws-s" }), task("t-f2", "2026-10-29T00:00:00.000Z", { topicId: null, workspaceId: "ws-c" }), task("t-f3", "2026-10-29T00:00:00.000Z", { topicId: null, archivedAt: NOW })];
+    const d = toPanorama({ ...base, tasks: [...base.tasks, ...free], loose: true });
+    expect(d.topics.map((x) => [x.id, x.title])).toEqual([
+      ["tp-1", "AMO迭代"],
+      ["tp-m", "mining 迭代"],
+      [LOOSE_TOPIC, LOOSE_TITLE],
+    ]);
+    expect(d.lanes.filter((l) => l.topic === LOOSE_TOPIC).map((l) => [l.id, l.project])).toEqual([
+      ["t-f1", "loose/ws-s"],
+      ["t-f2", "loose/ws-c"],
+    ]);
+    expect(d.projects.filter((p) => p.topic === LOOSE_TOPIC).map((p) => p.title)).toEqual(["project_mining_server", "project_mining"]);
+    const L = layoutPanorama(d, { tight: true, curve: "line", span: true, fold: true, front: 2700, blocks: true });
+    expect(L.blocks.map((b) => b.id)).toEqual(["tp-1", "tp-m", LOOSE_TOPIC]);
+    expect(L.blocks[2]!.bands).toHaveLength(2);
+    // Not asked (the preview's demo), or only archived ones: no block.
+    expect(toPanorama({ ...base, tasks: [...base.tasks, ...free] }).topics.map((x) => x.id)).toEqual(["tp-1", "tp-m"]);
+    expect(toPanorama({ ...base, tasks: [...base.tasks, free[2]!], loose: true }).topics.map((x) => x.id)).toEqual(["tp-1", "tp-m"]);
+    // No topic at all: the loose block alone, once.
+    expect(toPanorama({ topic: { ...topic, id: LOOSE_TOPIC, title: LOOSE_TITLE }, topics: [], tasks: free, sessions: [], loose: true, now: NOW }).topics.map((x) => x.id)).toEqual([LOOSE_TOPIC]);
   });
 });

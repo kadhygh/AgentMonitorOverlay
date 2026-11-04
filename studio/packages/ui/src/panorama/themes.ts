@@ -1,5 +1,6 @@
 import type { ItemStatus } from "./datalayer.js";
-import type { Curve } from "./layout.js";
+import { WORLD_TYPE, type Curve } from "./layout.js";
+import type { WorldKind } from "./regions.js";
 
 // 全景's looks (2026-11-01): one table per theme, the engine and the page's panels both read it, so a new theme is a
 // new entry here. The user chose 冰白全息 (oblivion) from studio/plans/userlayer/v-deck3.html; it is the only one for
@@ -18,6 +19,13 @@ export type RGBA = [number, number, number, number];
  * brighter column and chevrons on the road on to the goal, flowing while the task runs; `fold` runs of smooth rounds
  * folded into one 「×N 轮」 stretch, spread out once zoomed in or clicked; `span` a footprint about fixed (近疏远密);
  * `curve` how the roads bend (layout.ts). The preview's address picks them (lookFrom).
+ *
+ * 2026-11-03 (the user): roads straight (`line`) again; `blocks` a block per topic — its projects' bands with their status
+ * boards, its own sessions as a spine, its documents and board (layout.ts planBlocks).
+ *
+ * 2026-11-03, later (the user, plans/userlayer/sketches): `world` — each topic a region of the map instead, an island
+ * (`terrain`) or a metro map's zone (`metro`), lanes straight lines with a tick at the start, a node a round, the front
+ * a bright dot and its column, the goal a dashed ring; the per-round columns (`pillars`) off unless asked for.
  */
 export interface PanoramaLook {
   track: boolean;
@@ -28,9 +36,12 @@ export interface PanoramaLook {
   fold: boolean;
   span: boolean;
   curve: Curve;
+  blocks: boolean;
+  world: WorldKind | null;
 }
 
-const P1 = { front: false, fold: false, span: false, curve: "wave" as Curve };
+const P1 = { front: false, fold: false, span: false, curve: "wave" as Curve, blocks: false, world: null };
+const WORLD_LOOK = { track: false, pillars: false, plinth: false, drafting: false, front: true, fold: true, span: true, curve: "line" as Curve, blocks: false };
 
 export const LOOKS: Record<string, PanoramaLook> = {
   base: { track: false, pillars: false, plinth: false, drafting: false, ...P1 },
@@ -38,22 +49,29 @@ export const LOOKS: Record<string, PanoramaLook> = {
   ab: { track: true, pillars: true, plinth: false, drafting: false, ...P1 },
   ad: { track: true, pillars: false, plinth: true, drafting: true, ...P1 },
   abd: { track: true, pillars: true, plinth: true, drafting: true, ...P1 },
+  terrain: { ...WORLD_LOOK, world: "terrain" },
+  metro: { ...WORLD_LOOK, world: "metro" },
 };
 
-/** The look the preview opens on: A/B/D, the front, folding, a fixed footprint, the shared flow. */
-export const PREVIEW_LOOK = "abd-flow";
+/** The look the preview opens on (11-03, later): the topics as islands. */
+export const PREVIEW_LOOK = "terrain";
 
 /**
- * A look from a name like the preview's address: one of LOOKS (abd when left out), then `-flow`, `-spiral` or `-wave`
- * for the curve — which brings the front, folding and the fixed footprint along, each turned off again by `-nofront`,
- * `-nofold`, `-nospan`. A bare A/B/D name is that look as it was (P1's wave, none of these). Null when not understood.
+ * A look from a name like the preview's address: one of LOOKS (abd when left out), then `-line`, `-flow`, `-spiral` or
+ * `-wave` for the curve — which brings the front, folding, the fixed footprint and topic blocks along, each turned off
+ * again by `-nofront`, `-nofold`, `-nospan`, `-noblocks`. A bare A/B/D name is that look as it was (P1's wave, none of
+ * these). `terrain` and `metro` have the front, folding and the fixed footprint already; `-pillars` adds the per-round
+ * columns to them (to compare). Null when not understood.
  */
 export function lookFrom(name: string): PanoramaLook | null {
   const words = name.split("-").filter(Boolean);
   const look: PanoramaLook = { ...LOOKS[words[0] && LOOKS[words[0]] ? words.shift()! : "abd"]! };
-  if (words.length) Object.assign(look, { front: true, fold: true, span: true });
+  if (words.length && !look.world) Object.assign(look, { front: true, fold: true, span: true, blocks: true });
   for (const w of words) {
-    if (w === "flow" || w === "spiral" || w === "wave") look.curve = w;
+    if (w === "pillars") look.pillars = true;
+    else if (look.world && (w === "flow" || w === "spiral" || w === "wave")) return null;
+    else if (w === "line" || w === "flow" || w === "spiral" || w === "wave") look.curve = w;
+    else if (w === "noblocks") look.blocks = false;
     else if (w === "nofront") look.front = false;
     else if (w === "nofold") look.fold = false;
     else if (w === "nospan") look.span = false;
@@ -116,6 +134,30 @@ export interface PanoramaTheme {
   fold: { size: number; text: number; brk: number; pillar: number };
   /** `curve`: alpha of the shared field's lines on the ground. */
   stream: number;
+  /**
+   * `blocks`: the block's outline and fill (alphas), its header (name size, info size), the status boards, documents and
+   * points (text size, plate), the spine (line stack, node px), a point's colour by its type, the zooms (from the
+   * one the insides are laid out for, layout.ts BLOCK_ZOOM) where a topic's inside comes in and where the rounds do.
+   */
+  block: { line: number; fill: number; band: number; head: number; info: number; text: number; plate: RGBA; spine: [number, number][]; node: number; card: Record<"decision" | "question" | "finding" | "note", RGB>; inside: number; rounds: number };
+  /**
+   * `world` (the sketches' values): the projects' tints (the metro's line colours too); `terrain`: the island's fill, the
+   * parts' fills (even / odd project) and the 主控 part's, the glow in from the coast (alpha of the deepest ring), the
+   * coast (line stack), the dotted divides; `metro`: the parts' fills, the outline, the dashed divides, the dot grid
+   * (alpha, px), the lanes (line stack); the lanes on the island (line stack), the start tick, the front dot (px).
+   * `type`: the text printed on the ground (11-04, the user: only the signs on nodes and columns face the camera), in
+   * layout units, so it grows and shrinks with the map — the topic's name and its line of counts, the plates' text,
+   * the labels over shelf, board and spine, a lane's name, 第 N 轮 and the goal's word, 「×N 轮」.
+   */
+  world: {
+    tints: RGB[];
+    terrain: { fill: number; zone: [number, number]; common: number; inset: number; coast: [number, number][]; border: number };
+    metro: { zone: [number, number]; common: number; coast: [number, number][]; cut: number; dots: [number, number]; lane: [number, number][] };
+    lane: [number, number][];
+    tick: number;
+    front: number;
+    type: { title: number; info: number; text: number; label: number; lane: number; round: number; fold: number };
+  };
   /** Camera flights, ms. */
   fly: number;
   /** The page's panels (HUD, popup): CSS custom properties set on the page. */
@@ -153,6 +195,22 @@ const oblivion: PanoramaTheme = {
   front: { min: 2700, lines: [[10, 22], [3.6, 80], [1.4, 255]], glow: 46, chev: [[5, 40], [1.6, 255]], idle: 110, run: 255, speed: 1.6 },
   fold: { size: 10.5, text: 215, brk: 230, pillar: 0.6 },
   stream: 16,
+  block: { line: 150, fill: 7, band: 9, head: 19, info: 11, text: 10.5, plate: [20, 28, 36, 228], spine: [[6, 18], [1.6, 200]], node: 7, card: { decision: [122, 198, 234], question: [255, 194, 128], finding: [196, 170, 255], note: [190, 204, 214] }, inside: -0.55, rounds: 0.9 },
+  world: {
+    tints: [
+      [196, 226, 252],
+      [182, 236, 232],
+      [214, 206, 250],
+      [236, 226, 206],
+    ],
+    terrain: { fill: 9, zone: [15, 9], common: 5, inset: 7, coast: [[9, 26], [3, 110], [1.15, 194]], border: 66 },
+    metro: { zone: [19, 13], common: 11, coast: [[9, 18], [1.3, 168]], cut: 87, dots: [31, 1.6], lane: [[6, 70], [2.6, 242]] },
+    lane: [[3.2, 110], [1.4, 220]],
+    tick: 230,
+    front: 9,
+    // Layout units; layout.ts owns them (the land is laid out round the text).
+    type: WORLD_TYPE,
+  },
   fly: 1300,
   css: {
     "--pn-base": "#141b22",
@@ -176,5 +234,9 @@ const oblivion: PanoramaTheme = {
   },
 };
 
-export const THEMES: Record<string, PanoramaTheme> = { oblivion };
+// The two world looks (11-03): 冰白全息 as it is, the topics as islands or as a metro map's zones.
+const terrain: PanoramaTheme = { ...oblivion, id: "terrain", label: "冰白全息 · 地形岛", look: LOOKS.terrain! };
+const metro: PanoramaTheme = { ...oblivion, id: "metro", label: "冰白全息 · 地铁", look: LOOKS.metro! };
+
+export const THEMES: Record<string, PanoramaTheme> = { oblivion, terrain, metro };
 export const DEFAULT_THEME = oblivion;

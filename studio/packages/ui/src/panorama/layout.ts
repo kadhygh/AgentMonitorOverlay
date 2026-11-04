@@ -1,4 +1,5 @@
-import type { PanoramaData, PanoramaItem, PanoramaLane } from "./datalayer.js";
+import type { PanoramaData, PanoramaDoc, PanoramaItem, PanoramaLane, PanoramaProject, PanoramaTopic } from "./datalayer.js";
+import { placeTopics, seedOf, rng, topicShape, type ShapeEl, type ShapeGroup, type TopicFrame, type TopicShape, type WorldKind, type XY as RXY } from "./regions.js";
 
 // Where everything sits on the 全景 map, from the datalayer alone (no deck.gl here, so it is plain to test). Layout as
 // in the prototype (studio/plans/userlayer/v-deck3.html: areas in rows, oldest far away, a gently waving lane).
@@ -17,6 +18,16 @@ import type { PanoramaData, PanoramaItem, PanoramaLane } from "./datalayer.js";
 // and the road ahead, `curve` bends the roads — `flow` all along one topic-wide field (neighbours stay parallel and
 // never cross), `spiral` as arms curling out of the middle. Each task is laid out in its own straight frame first (x
 // along its road, y across) and then mapped onto the map, so its base and branches bend with its road.
+//
+// 0.3 (2026-11-03, the user): the roads are straight again (`line`, flow and spiral stay as choices), and with `blocks`
+// each topic is a block — its documents and board, its own sessions as a spine the tasks start from, a band per
+// project with a status board at its head and the project's tasks along it (planBlocks).
+//
+// World (2026-11-03, the user, studio/plans/userlayer/sketches): a topic is a region of the map, shaped by what stands
+// in it (regions.ts: an island, `terrain`, or a metro map's zone, `metro`). Inside, the 主控 spine on the west, the header,
+// the documents' shelf and the 公告板 along the top; under them a band per project, its status board at the head and its
+// tasks as straight lanes, one a row; what a session opened leaves its round 45° down onto a sub-lane of its own,
+// runs alongside and, merged, comes back up 45° (planWorld). No bases, no frames: the region is the frame.
 
 /** One layout unit = 0.001° (about 111 m near 0,0): the map is drawn in a Web Mercator view around the origin. */
 export const U = 0.001;
@@ -25,6 +36,12 @@ const S = 18;
 const WAVE = 5;
 /** Where the start beacon stands, before the first round. */
 const OX = -16;
+/**
+ * World (11-03, the sketches' sizes × 0.7): a lane's row, a sub-lane's, the gap between projects; the status board's
+ * place and width, a line of text in it; where the lanes start after it; the spine; the header, the shelf (a book per
+ * document) and the 公告板 above the bands; how far a metro band may shift; the height nodes stand at.
+ */
+const WORLD = { row: 22, sub: 15, pgap: 40, cardX: 14, cardW: 86, line: 8.5, laneGap: 31, spineX: 4, spineTop: -64, head: { x: 0, y: -122, w: 154, h: 36 }, shelfX: 123, shelfY: -78, shelfH: 34, book: 10, boardW: 132, boardH: 34, shift: 28, z: 4 };
 /** Height of the nodes above the ground, and of the start beacon's top (metres). */
 export const H_NODE = 260;
 export const H_BEACON = 760;
@@ -71,7 +88,7 @@ export interface RegionLayout {
   /** Dashes from the last round to the goal while it is not reached. */
   ahead: LngLatZ[][];
   /** Each branch: what one node opened — the curve from that node on along its track, the sessions on it in order. */
-  branches: { from: string | null; itemIds: string[]; path: LngLatZ[]; ended: boolean }[];
+  branches: { from: string | null; itemIds: string[]; path: LngLatZ[]; ended: boolean; merge: string | null }[];
   /** Paths leading into the sessions that are running: the moving lights flow along them. */
   flows: LngLatZ[][];
   /** Each item: on the ground, up at node height, and on top of its light column (`pillars`). */
@@ -93,6 +110,43 @@ export interface RegionLayout {
    * 「×N 轮」 goes, an axis-break mark across the road while folded.
    */
   folds: { key: string; ids: string[]; open: boolean; at: LngLatZ; brk: LngLatZ[][] }[];
+  /** World: the project's index in its topic (the metro's line colour), the lead from the project's station to the start (`metro`), the start tick across the road, the goal's dashed ring (dashes). */
+  tint: number;
+  pre: LngLatZ[];
+  tick: LngLatZ[];
+  goalRing: LngLatZ[][];
+}
+
+/**
+ * A topic's region (world): its outline, rings in from it (`terrain`'s glow), the parts' fills and the dividing lines
+ * (in dashes); the header (title and a line of counts); the spine (its own sessions); a status board per project
+ * (`hub`: the metro station its lanes leave from); the shelf (a book per document) and the 公告板 (its first points).
+ * Text anchors at their top left; rectangles closed.
+ */
+export interface WorldTopic {
+  id: string;
+  topic: PanoramaTopic;
+  kind: WorldKind;
+  bounds: [number, number, number, number];
+  /** Its land is still being worked out (shapes.ts): nothing of the coast, parts or divides yet. */
+  pending: boolean;
+  /** A rough frame round what stands in it (closed) and its middle: where it will be, before its land is known. */
+  box: LngLatZ[];
+  middle: LngLatZ;
+  coast: LngLatZ[][];
+  insets: { depth: number; rings: LngLatZ[][] }[];
+  /** `tint`: the project's index, −1 the 主控 part. */
+  zones: { rings: LngLatZ[][]; tint: number }[];
+  borders: LngLatZ[][];
+  head: LngLatZ;
+  summary: string;
+  waits: number;
+  running: number;
+  spine: { path: LngLatZ[]; label: LngLatZ; nodes: { id: string; at: LngLatZ }[] };
+  cards: { project: PanoramaProject; tint: number; rect: LngLatZ[]; at: LngLatZ; w: number; lines: number; hub: LngLatZ | null; link: LngLatZ[]; waits: number; center: LngLatZ }[];
+  shelf: { label: LngLatZ; rect: LngLatZ[]; books: { doc: PanoramaDoc; rect: LngLatZ[]; at: LngLatZ; center: LngLatZ }[] };
+  board: { label: LngLatZ; rect: LngLatZ[]; w: number; lines: { id: string; at: LngLatZ }[]; more: number; center: LngLatZ };
+  proposed: { item: string; lane: string; path: LngLatZ[] }[];
 }
 
 export interface PanoramaLayout {
@@ -108,6 +162,31 @@ export interface PanoramaLayout {
   deco: { rings: LngLatZ[][]; dashes: LngLatZ[][]; ticks: { path: LngLatZ[]; a: number }[]; frame: LngLatZ[]; frameTicks: LngLatZ[][] };
   /** `flow` / `spiral`: faint lines of the shared field on the ground. */
   streams: LngLatZ[][];
+  /** `blocks`: a block per topic. */
+  blocks: BlockLayout[];
+  /** World: a region per topic; `metro`'s dot grid. */
+  world: WorldTopic[];
+  /** World: a topic's land now known (LayoutOptions.shape), put in its place in `world` (false: no such topic). */
+  reshape?: (topic: string) => boolean;
+  dots: LngLatZ[];
+}
+
+/**
+ * A topic's block (0.3): its outline and where its header stands (above its north-west corner); a band per project with
+ * its status board at the head; the spine (the topic's own sessions, a node each) and lines from a node to the tasks
+ * it proposed; the shelf (a panel per document) and the board (the topic's points) — text anchors at their top left.
+ */
+export interface BlockLayout {
+  id: string;
+  topic: PanoramaTopic;
+  bounds: [number, number, number, number];
+  outline: LngLatZ[];
+  head: LngLatZ;
+  bands: { project: PanoramaProject; fill: LngLatZ[]; board: LngLatZ }[];
+  spine: { path: LngLatZ[]; label: LngLatZ; nodes: { id: string; at: LngLatZ }[] };
+  proposed: { item: string; lane: string; path: LngLatZ[] }[];
+  shelf: { label: LngLatZ; docs: { doc: PanoramaDoc; at: LngLatZ }[] };
+  board: { label: LngLatZ; area: LngLatZ[]; cards: { id: string; at: LngLatZ }[] };
 }
 
 /** FNV-1a to 0–1: a stable "random" per id, so the same task always gets the same swing and offset. */
@@ -127,8 +206,8 @@ export function goalGap(lane: PanoramaLane): number {
 
 type XY = [number, number];
 
-/** How the roads run (`curve`): each its own gentle swing (P1), all along one topic-wide field, or as arms out of the middle. */
-export type Curve = "wave" | "flow" | "spiral";
+/** How the roads run (`curve`): straight, each its own gentle swing (P1), all along one topic-wide field, or as arms out of the middle. */
+export type Curve = "line" | "wave" | "flow" | "spiral";
 
 /** What the theme's look asks of the layout (2026-11-02, all off is P1's layout). */
 export interface LayoutOptions {
@@ -142,9 +221,18 @@ export interface LayoutOptions {
   open?: ReadonlySet<string> | "all";
   /** `front`: the least height of the front node's column (m); its top is at least a quarter above its own. Left out: no front. */
   front?: number | null;
+  /** `blocks`: each topic a block with its projects' bands (not with `spiral`). */
+  blocks?: boolean;
+  /** World: each topic a region of the map (`terrain` an island, `metro` a metro map's zone); lanes straight. */
+  world?: WorldKind | null;
+  /**
+   * World: a topic's region shape (by its frame); null while it is still being worked out — the topic is then laid out
+   * without its land (`pending`) and `reshape` puts the land in once it is known. Without it shapes are worked out here.
+   */
+  shape?: (frame: TopicFrame, kind: WorldKind, topic: string) => TopicShape | null;
 }
 
-type Opts = Required<LayoutOptions>;
+type Opts = Required<Omit<LayoutOptions, "shape">>;
 
 /**
  * `span`: the trunk keeps its natural spacing while it is up to `free` long; beyond, its length grows ever slower towards
@@ -211,7 +299,7 @@ interface Region {
   trunkEnd: number;
   goalX: number;
   gap: number;
-  branches: { from: string | null; itemIds: string[]; pts: XY[]; ended: boolean }[];
+  branches: { from: string | null; itemIds: string[]; pts: XY[]; ended: boolean; merge: string | null }[];
   flows: XY[][];
   front: string | null;
   folds: { key: string; ids: string[]; open: boolean; c: number }[];
@@ -242,7 +330,7 @@ function bez(a: XY, b: XY, n = 14): XY[] {
 }
 
 function region(lane: PanoramaLane, all: readonly PanoramaItem[], o: Opts): Region {
-  const items = all.filter((i) => i.lane === lane.id).sort((a, b) => a.at.localeCompare(b.at) || a.num - b.num);
+  const items = all.filter((i) => i.lane === lane.id && i.type === "session").sort((a, b) => a.at.localeCompare(b.at) || a.num - b.num);
   const phase = hash01(lane.id) * 6.283;
   // Along a shared field (`flow`) or as an arm (`spiral`) the road's own frame is straight: the bends come from the map.
   const amp = o.curve === "wave" ? WAVE : 0;
@@ -317,20 +405,37 @@ function region(lane: PanoramaLane, all: readonly PanoramaItem[], o: Opts): Regi
   const used: { k: number; a: number; b: number }[] = [];
   const branches: Region["branches"] = [];
   const flows: XY[][] = [];
+  // World (11-03): every track south of the trunk, the k-th WORLD.sub·k down; a branch leaves its node 45° down and, when
+  // its last session merged back (`mergeInto`) into a round further on, comes back up 45° into it.
+  const world = !!o.world;
   for (const [from, list] of [...groups].sort((a, b) => a[1][0]!.at.localeCompare(b[1][0]!.at))) {
     const fp = (from && pos[from]) || ([OX, wave(OX)] as XY);
-    const xs: number[] = [];
-    let x = fp[0];
-    for (const it of list) xs.push((x = Math.max(x + S * 0.6 * shrink, timeX(it.at))));
-    const last = xs[xs.length - 1]!;
+    const place = (k: number) => {
+      const off = world ? -WORLD.sub * k : (k % 2 ? 1 : -1) * (11 + 9 * Math.floor((k - 1) / 2));
+      const d = Math.abs(off - fp[1]);
+      const xs: number[] = [];
+      let x = world ? fp[0] + d - S * 0.6 * shrink : fp[0];
+      for (const it of list) xs.push((x = Math.max(x + S * 0.6 * shrink, timeX(it.at))));
+      const last = xs[xs.length - 1]!;
+      const m = world ? list[list.length - 1]!.mergeInto : null;
+      const mp = m ? pos[m] : undefined;
+      const merge = mp && mp[0] - Math.abs(off - mp[1]) > last + 2 ? m! : null;
+      return { off, d, xs, last, merge, end: merge ? mp![0] : last };
+    };
     let k = 1;
-    while (used.some((u) => u.k === k && !(last + 4 < u.a || fp[0] - 2 > u.b))) k++;
-    used.push({ k, a: fp[0] - 2, b: last + 4 });
-    const off = (k % 2 ? 1 : -1) * (11 + 9 * Math.floor((k - 1) / 2));
+    let pl = place(k);
+    while (used.some((u) => u.k === k && !(pl.end + 4 < u.a || fp[0] - 2 > u.b))) pl = place(++k);
+    const { off, d, xs, last, merge } = pl;
+    used.push({ k, a: fp[0] - 2, b: pl.end + 4 });
     const track = (a: number, b: number): XY[] => along(a, b).map(([x, y]) => [x, y + off]);
     list.forEach((it, j) => (pos[it.id] = [xs[j]!, wave(xs[j]!) + off]));
-    const lead = bez(fp, pos[list[0]!.id]!);
-    branches.push({ from: from || null, itemIds: list.map((i) => i.id), pts: [...lead, ...track(xs[0]!, last).slice(1)], ended: list.every((i) => i.ended) });
+    const lead = world ? [fp, [fp[0] + d, off] as XY] : bez(fp, pos[list[0]!.id]!);
+    const pts = [...lead, ...track(xs[0]!, last).slice(world ? 0 : 1)];
+    if (merge) {
+      const mp = pos[merge]!;
+      pts.push([mp[0] - Math.abs(off - mp[1]), off], mp);
+    }
+    branches.push({ from: from || null, itemIds: list.map((i) => i.id), pts, ended: list.every((i) => i.ended), merge });
     // Lights flow into a running session on it from the one before (or from the node that opened the branch).
     list.forEach((it, j) => it.status === "working" && flows.push(j ? track(xs[j - 1]!, xs[j]!) : lead));
   }
@@ -493,13 +598,502 @@ function dense(pts: XY[], step = 3): XY[] {
   return out;
 }
 
+/**
+ * `blocks` (0.3, the user 11-03): text standing in a block, measured in layout units at the zoom a topic's inside opens
+ * on (about 2.2 px a unit; a tilted view squeezes lengths across the map to about 0.6 and the far side more, so text
+ * standing up there takes more ground that way). Columns from the west: the shelf (documents), the board (the topic's
+ * points), the spine (the topic's own sessions), then a band per project — its status board, then its tasks two
+ * abreast. Kept about as wide as tall, so a topic fills a wide screen when it is gone into.
+ */
+const BLK = { px: 0.45, py: 0.8, shelf: 200, empty: 130, board: 196, line: 14, head: 24, nameH: 50, bandGap: 12, colGap: 90, rowGap: 260, maxW: 1400 };
+
+/** The zoom the blocks' insides are laid out for (1 / BLK.px pixels a unit): closer in, their text does not overlap. */
+export const BLOCK_ZOOM = Math.log2(360 / (512 * U * BLK.px));
+
+interface BlockPlan {
+  topic: PanoramaTopic;
+  W: number;
+  H: number;
+  bx: number;
+  by: number;
+  spineX: number;
+  bandX: number;
+  boardX: number;
+  boardW: number;
+  bands: { project: PanoramaProject; d0: number; d1: number }[];
+  places: { r: Region; x: number; d: number }[];
+  shelf: { doc: PanoramaDoc; d: number }[];
+  cards: { id: string; d: number }[];
+  cardsEnd: number;
+  bottom: number;
+  spine: PanoramaItem[];
+}
+
+/** How many lines a project's status board has: its name, each field, the summary, who wrote it and when. */
+export function boardLines(p: PanoramaProject): number {
+  return 1 + p.status.length + (p.summary ? 1 : 0) + (p.updatedAt || p.by ? 1 : 0);
+}
+
+function planBlocks(data: PanoramaData, regs: Region[], o: Opts): BlockPlan[] {
+  const px = (v: number) => v * BLK.px;
+  const py = (v: number) => v * BLK.py;
+  return data.topics.map((topic) => {
+    // An empty shelf or board keeps only room for its label.
+    const docList = data.docs.filter((x) => x.topic === topic.id);
+    const cardList = data.items.filter((i) => i.topic === topic.id && i.type !== "session" && i.lane === null);
+    const shelfW = docList.length ? px(BLK.shelf) : px(BLK.empty);
+    const boardW = cardList.length ? px(BLK.shelf) : px(BLK.empty);
+    const boardX = shelfW + 10;
+    const spineX = boardX + boardW + 14;
+    const bandX = spineX + 16;
+    const taskX = bandX + px(BLK.board) + 12;
+    const bands: BlockPlan["bands"] = [];
+    const places: BlockPlan["places"] = [];
+    const mine = regs.filter((r) => r.lane.topic === topic.id);
+    // One width for every task column of the topic: its widest base, or its longest name.
+    const tw = Math.max(60, ...mine.map((r) => Math.max(r.w + 8, nameRoom(r.lane) * 1.4)));
+    let d = 0;
+    let w = taskX + tw;
+    for (const project of data.projects.filter((p) => p.topic === topic.id)) {
+      const boardH = py(10 + BLK.head + boardLines(project) * BLK.line + 8);
+      const rs = mine.filter((x) => x.lane.project === project.id);
+      const cols = rs.length >= 2 ? 2 : 1;
+      let dd = d + 4;
+      for (let i = 0; i < rs.length; i += cols) {
+        const row = rs.slice(i, i + cols);
+        row.forEach((r, k) => places.push({ r, x: taskX + k * (tw + 16), d: dd }));
+        // Their names hang under their bases: room for them before the next row.
+        dd += Math.max(...row.map((r) => r.h)) + (o.tight ? NAME_GAP + py(BLK.nameH) : 10);
+      }
+      w = Math.max(w, taskX + cols * tw + (cols - 1) * 16);
+      const d1 = Math.max(d + boardH + 6, dd);
+      bands.push({ project, d0: d, d1 });
+      d = d1 + BLK.bandGap;
+    }
+    // The shelf: a label, then a panel per document (kind and title, its first lines, when it changed); the board beside it.
+    let sd = py(18);
+    const shelf: BlockPlan["shelf"] = [];
+    for (const doc of docList) {
+      shelf.push({ doc, d: sd });
+      sd += py(3 * BLK.line + 14) + 3;
+    }
+    let cd = py(18);
+    const cards: BlockPlan["cards"] = [];
+    for (const it of cardList) {
+      cards.push({ id: it.id, d: cd });
+      cd += py(2 * BLK.line + 12) + 3;
+    }
+    const spine = data.items.filter((i) => i.topic === topic.id && i.type === "session" && i.lane === null);
+    const bottom = Math.max(d - BLK.bandGap, sd + 4, cd + 4, 16 + spine.length * 16, 60);
+    return { topic, W: w, H: bottom, bx: 0, by: 0, spineX, bandX, boardX, boardW, bands, places, shelf, cards, cardsEnd: cd, bottom, spine };
+  });
+}
+
+/** Blocks in rows (oldest topic first, far away), each with its header above it; the tasks' frames set in place. */
+function placeBlocks(plans: BlockPlan[], o: Opts): void {
+  const rows: BlockPlan[][] = [];
+  let row: BlockPlan[] = [];
+  let w = 0;
+  for (const b of plans) {
+    if (row.length && w + BLK.colGap + b.W > BLK.maxW) {
+      rows.push(row);
+      row = [];
+      w = 0;
+    }
+    w += (row.length ? BLK.colGap : 0) + b.W;
+    row.push(b);
+  }
+  if (row.length) rows.push(row);
+  let top = 0;
+  for (const rw of rows) {
+    const tw = rw.reduce((s, b) => s + b.W, 0) + BLK.colGap * (rw.length - 1);
+    let x = -tw / 2;
+    for (const b of rw) {
+      b.bx = x;
+      b.by = top;
+      x += b.W + BLK.colGap;
+    }
+    top -= Math.max(...rw.map((b) => b.H)) + BLK.rowGap;
+  }
+  // Centred on the origin (the header above the first row counts).
+  const x0 = Math.min(...plans.map((b) => b.bx));
+  const x1 = Math.max(...plans.map((b) => b.bx + b.W));
+  const y1 = BLK.rowGap * 0.6;
+  const y0 = Math.min(...plans.map((b) => b.by - b.H));
+  const dx = -(x0 + x1) / 2;
+  const dy = -(y0 + y1) / 2;
+  for (const b of plans) {
+    b.bx += dx;
+    b.by += dy;
+    for (const { r, x, d } of b.places) {
+      const ox = b.bx + x - r.x0;
+      const oy = b.by - d - r.y1;
+      r.ox = ox;
+      r.oy = oy;
+      r.W = o.curve === "flow" ? (x, y) => warp(ox + x, oy + y) : (x, y) => [ox + x, oy + y];
+    }
+  }
+}
+
+function blockOut(b: BlockPlan, regions: Map<string, RegionLayout>): BlockLayout {
+  const P = (x: number, d: number, z = 0): LngLatZ => [(b.bx + x) * U, (b.by - d) * U, z];
+  const rect = (x0: number, d0: number, x1: number, d1: number, R: number) => dense(roundRect(x0, -d1, x1, -d0, 0, R)).map(([x, y]) => P(x, -y));
+  const spineD0 = 4;
+  const spineD1 = b.bottom - 4;
+  const n = b.spine.length;
+  const step = n > 1 ? Math.min(16, (spineD1 - spineD0 - 10) / (n - 1)) : 0;
+  const spineAt = new Map(b.spine.map((it, i) => [it.id, P(b.spineX, spineD0 + 8 + i * step)]));
+  const proposed: BlockLayout["proposed"] = [];
+  for (const { r } of b.places) {
+    const from = r.lane.proposedBy ? spineAt.get(r.lane.proposedBy) : undefined;
+    const to = regions.get(r.lane.id)?.origin.ground;
+    if (!from || !to) continue;
+    const a: XY = [from[0] / U, from[1] / U];
+    const c: XY = [to[0] / U, to[1] / U];
+    proposed.push({ item: r.lane.proposedBy!, lane: r.lane.id, path: bez(a, c).map(([x, y]) => [x * U, y * U, 0] as LngLatZ) });
+  }
+  return {
+    id: b.topic.id,
+    topic: b.topic,
+    bounds: [(b.bx - 8) * U, (b.by - b.H - 8) * U, (b.bx + b.W + 8) * U, (b.by + 8) * U],
+    outline: rect(-8, -8, b.W + 8, b.H + 8, 14),
+    head: P(-8, -12),
+    bands: b.bands.map((x) => ({ project: x.project, fill: rect(b.bandX - 4, x.d0, b.W, x.d1, 4), board: P(b.bandX, x.d0 + 2) })),
+    spine: { path: [P(b.spineX, spineD0), P(b.spineX, spineD1)], label: P(b.spineX, spineD0 - 1), nodes: b.spine.map((it) => ({ id: it.id, at: spineAt.get(it.id)! })) },
+    proposed,
+    shelf: { label: P(0, 0), docs: b.shelf.map((s) => ({ doc: s.doc, at: P(0, s.d) })) },
+    board: { label: P(b.boardX, 0), area: rect(b.boardX - 3, -3, b.boardX + b.boardW + 3, Math.max(b.cardsEnd + 2, BLK.py * 40), 4), cards: b.cards.map((c) => ({ id: c.id, at: P(b.boardX, c.d) })) },
+  };
+}
+
+/**
+ * World: the text printed on the ground, in layout units (themes.ts takes it from here): the region generator keeps the
+ * boxes of this text on the land, so it is laid out with the rest.
+ */
+export const WORLD_TYPE = { title: 20, info: 8, text: 5, label: 4, lane: 4.6, round: 3.4, fold: 3.8 };
+/** Roughly how wide a line of ground text is (CJK a full em, the rest a little over half), erring wide. */
+export function groundW(s: string, size: number): number {
+  return [...s].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? size : size * 0.62), 0);
+}
+/** World: the line of counts under a topic's name, and how many wait for the person. */
+export function worldSummary(topic: PanoramaTopic, data: PanoramaData): { summary: string; waits: number; running: number } {
+  const lanes = data.lanes.filter((l) => l.topic === topic.id);
+  const np = data.projects.filter((p) => p.topic === topic.id).length;
+  const running = lanes.filter((l) => l.status === "running").length;
+  return { summary: `${np} 项目 · ${lanes.length} 任务 · ${running} 在跑`, waits: data.items.filter((i) => i.topic === topic.id && i.status === "needs_you").length, running };
+}
+/** World: how far everything in a topic stays in from its coast (layout units). */
+const WORLD_MARGIN = { terrain: 9, metro: 7 };
+
+/** World: how many lines a project's status board shows (its name, then its summary and fields, at most three). */
+export function worldCardLines(p: PanoramaProject): number {
+  return 1 + Math.min(3, p.status.length + (p.summary ? 1 : 0));
+}
+
+interface WorldPlan {
+  topic: PanoramaTopic;
+  kind: WorldKind;
+  frame: TopicFrame;
+  box: { x0: number; y0: number; x1: number; y1: number };
+  /** Topic frame (x east, y down) → the map's layout units (y down; the map's y is its negative). */
+  off: XY;
+  cards: { project: PanoramaProject; pi: number; x: number; y: number; w: number; h: number; lines: number; hub: XY | null; hubY: number }[];
+  lanes: { r: Region; pi: number; start: number; ry: number; pre: XY[] }[];
+  shelf: { x: number; y: number; w: number; h: number; docs: PanoramaDoc[] };
+  board: { x: number; y: number; w: number; h: number; items: PanoramaItem[] };
+  spine: { x: number; y0: number; y1: number; items: PanoramaItem[] };
+}
+
+/**
+ * World (11-03): each topic laid out in its own frame as in the sketches (gen.mjs layoutTopic): the header, shelf and
+ * 公告板 on top; under them a band per project — its status board, its lanes one a row (a row as deep as its sub-lanes
+ * go), lanes starting a stretch east of the board (`metro`: out of the board's station, a bundle turning 45° onto
+ * their rows, and each band shifted a little east or west); what stands in it as the region generator's elements.
+ * Then the topics scattered over the map (placeTopics) and the tasks' frames set in place.
+ */
+function planWorld(data: PanoramaData, regs: Region[], kind: WorldKind): WorldPlan[] {
+  const metro = kind === "metro";
+  const W = WORLD;
+  const plans = data.topics.map((topic): WorldPlan => {
+    const seed = seedOf(topic.id);
+    const rr = rng(seed * 97 + 5);
+    const projects = data.projects.filter((p) => p.topic === topic.id);
+    const shifts = projects.map(() => {
+      const v = Math.round(rr() * W.shift);
+      return metro ? v : 0;
+    });
+    const lobes = projects.map(() => (12 + rr() * 64) * 0.7);
+    const headLobe = (12 + rr() * 50) * 0.7;
+    const mine = regs.filter((r) => r.lane.topic === topic.id);
+    const groups: ShapeGroup[] = [];
+    const bands: TopicFrame["bands"] = [];
+    const cards: WorldPlan["cards"] = [];
+    const lanes: WorldPlan["lanes"] = [];
+    const hubX: number[] = [];
+    // What must be on the land (11-04): boards, lanes, rings and the text printed on the ground round them.
+    const must: ShapeEl[] = [];
+    const TY = WORLD_TYPE;
+    const sx = W.spineX;
+    let y = 0;
+    projects.forEach((project, pi) => {
+      const sh = shifts[pi]!;
+      const rs = mine.filter((r) => r.lane.project === project.id);
+      const lines = worldCardLines(project);
+      const cardH = lines * W.line + 8;
+      // How deep each lane's sub-lanes go below its row.
+      const depth = rs.map((r) => Math.max(0, ...r.branches.flatMap((b) => b.pts.map((q) => -q[1]))));
+      const span = depth.reduce((a, h, i) => a + h + (i < depth.length - 1 ? W.row : 0), 0);
+      const pad = Math.max(0, (cardH - span) / 2);
+      const rows0 = y + pad;
+      const hubY = rows0 + span / 2;
+      const card = { x: W.cardX + sh, y: hubY - cardH / 2, w: W.cardW, h: cardH };
+      const hubPX = card.x + card.w + 6;
+      const laneX = card.x + card.w + W.laneGap;
+      const els: ShapeEl[] = [{ rect: [card.x, card.y, card.w, card.h], lane: true }];
+      let ry = rows0;
+      let end = laneX + 40;
+      rs.forEach((r, li) => {
+        let start = laneX;
+        let pre: XY[] = [];
+        if (metro) {
+          // Out of the station a bundle of parallel tracks: the top half's topmost turns first, the bottom half's lowest.
+          const nl = rs.length;
+          const by = hubY + (li - (nl - 1) / 2) * 2.5;
+          const dy = ry - by;
+          const rank = dy < 0 ? li : dy > 0 ? nl - 1 - li : nl;
+          const tx = hubPX + 6 + rank * 6.3;
+          start = Math.max(laneX, tx + Math.abs(dy) + 11);
+          pre = [[hubPX, by], [tx, by], [tx + Math.abs(dy), ry], [start, ry]];
+        }
+        const T = (q: XY): XY => [start + q[0] - OX, ry - q[1]];
+        const goal: XY = [start + r.goalX - OX, ry];
+        for (let i = 0; i + 1 < pre.length; i++) els.push({ seg: [...pre[i]!, ...pre[i + 1]!], lane: true });
+        els.push({ seg: [start, ry, goal[0], ry], lane: true });
+        // Only shapes the region (not drawn): a task starts from the 主控 spine, no lake between them.
+        els.push({ seg: [sx + 2, ry, laneX - 11, ry] });
+        end = Math.max(end, goal[0]);
+        for (const b of r.branches) {
+          const pts = b.pts.map(T);
+          for (let i = 0; i + 1 < pts.length; i++) els.push({ seg: [...pts[i]!, ...pts[i + 1]!], lane: true });
+          end = Math.max(end, ...pts.map((q) => q[0]));
+        }
+        lanes.push({ r, pi, start, ry, pre });
+        // The road and what is printed by it: the name above its start, the rounds and the goal's word below, the
+        // goal's ring; a sub-lane's rounds below it too.
+        const nameH = TY.lane * 1.3 + 4.2;
+        must.push({ rect: [start - 3, ry - nameH, Math.max(goal[0] - start + 3 + 6, groundW(r.lane.short, TY.lane) + 3), nameH + 4.8 + TY.round * 1.3] });
+        for (let i = 0; i + 1 < pre.length; i++) must.push({ seg: [...pre[i]!, ...pre[i + 1]!] });
+        for (const b of r.branches) {
+          const pts = b.pts.map(T);
+          for (let i = 0; i + 1 < pts.length; i++) {
+            const [ax, ay] = pts[i]!;
+            const [bx, by] = pts[i + 1]!;
+            must.push({ rect: [Math.min(ax, bx) - 2, Math.min(ay, by) - 2, Math.abs(bx - ax) + 4, Math.abs(by - ay) + 4 + 2.6 + TY.round * 1.3] });
+          }
+        }
+        ry += W.row + depth[li]!;
+      });
+      const bottom = rows0 + span;
+      els.push({ seg: [sx, rows0 - W.row / 2, sx, bottom + W.row / 2] });
+      els.push({ rect: [laneX - 11, rows0 - 7, end - (laneX - 11), bottom - rows0 + 14], shape: true });
+      els.push({ rect: [sx - lobes[pi]!, rows0 - 3, lobes[pi]!, bottom - rows0 + 6], shape: true });
+      bands.push({ top: Math.min(rows0, card.y), bottom: Math.max(bottom, card.y + card.h), shift: sh, end, lobe: lobes[pi]! });
+      cards.push({ project, pi, ...card, lines, hub: metro ? [hubPX, hubY] : null, hubY });
+      must.push({ rect: [card.x, card.y, card.w, card.h] }, { seg: [sx, card.y + card.h / 2, card.x, card.y + card.h / 2] });
+      hubX.push(hubPX + 4);
+      groups.push({ els, pi, common: false });
+      y = Math.max(bottom, card.y + card.h) + W.pgap;
+    });
+    const lastY = projects.length ? y - W.pgap : 20;
+    const docs = data.docs.filter((d) => d.topic === topic.id);
+    const shelfW = Math.max(78, Math.min(docs.length, 14) * (W.book + 2.6) + 4);
+    const shelf = { x: W.shelfX, y: W.shelfY, w: shelfW, h: W.shelfH, docs };
+    const board = { x: shelf.x + shelf.w + 17, y: W.shelfY, w: W.boardW, h: W.boardH, items: data.items.filter((i) => i.topic === topic.id && i.type !== "session" && i.lane === null) };
+    const H = W.head;
+    const top0 = bands[0]?.top ?? 0;
+    // The header as printed (a long name runs past its box), the shelf and the board with their labels above, the spine.
+    const sum = worldSummary(topic, data);
+    const headW = Math.max(H.w, groundW(topic.title, TY.title), groundW(sum.summary + (sum.waits ? ` · ${sum.waits} 等你` : ""), TY.info));
+    const lab = TY.label * 1.3 + 1.5;
+    must.push(
+      { rect: [H.x, H.y, headW, TY.title * 1.18 + 2 + TY.info * 1.3] },
+      { rect: [shelf.x, shelf.y - lab, shelf.w, shelf.h + lab] },
+      { rect: [board.x, board.y - lab, board.w, board.h + lab] },
+      { rect: [sx - 2, W.spineTop - lab, groundW("主控 · 99 轮", TY.label) + 6, 2] },
+      { seg: [sx, W.spineTop, sx, lastY + 7] },
+    );
+    groups.push({
+      common: true,
+      pi: projects.length,
+      els: [
+        { seg: [sx, W.spineTop, sx, top0 - W.row / 2] },
+        { rect: [H.x, H.y, H.w, H.h] },
+        { rect: [shelf.x, shelf.y, shelf.w, shelf.h] },
+        { rect: [board.x, board.y, board.w, board.h] },
+        // Only shapes it: header, shelf, board and spine one piece of land, no lake between them.
+        { seg: [sx, W.spineTop, shelf.x, shelf.y + shelf.h / 2] },
+        { seg: [shelf.x + shelf.w, shelf.y + shelf.h / 2, board.x, board.y + board.h / 2] },
+        { seg: [H.x + 14, H.y + H.h, sx, W.spineTop] },
+        { rect: [sx - headLobe, H.y + 7, headLobe, Math.max(10, top0 - W.row - H.y - 7)], shape: true },
+      ],
+    });
+    let x0 = 1e9;
+    let y0 = 1e9;
+    let x1 = -1e9;
+    let y1 = -1e9;
+    for (const e of [...groups.flatMap((g) => g.els), ...must]) {
+      const q = e.seg ?? [e.rect![0], e.rect![1], e.rect![0] + e.rect![2], e.rect![1] + e.rect![3]];
+      x0 = Math.min(x0, q[0], q[2]);
+      y0 = Math.min(y0, q[1], q[3]);
+      x1 = Math.max(x1, q[0], q[2]);
+      y1 = Math.max(y1, q[1], q[3]);
+    }
+    const frame: TopicFrame = { seed, x0: 0, groups, bands, cards: cards.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })), spineTop: W.spineTop, headBottom: shelf.y + shelf.h, hubX, must, margin: WORLD_MARGIN[kind] };
+    return { topic, kind, frame, box: { x0, y0, x1, y1 }, off: [0, 0], cards, lanes, shelf, board, spine: { x: sx, y0: W.spineTop, y1: lastY + 7, items: data.items.filter((i) => i.topic === topic.id && i.type === "session" && i.lane === null) } };
+  });
+  // Scattered, not in a grid; the same topics always land the same way.
+  const offs = placeTopics(plans.map((p) => p.box), seedOf(plans.map((p) => p.topic.id).join("|")));
+  plans.forEach((p, i) => {
+    p.off = offs[i] as XY;
+    for (const l of p.lanes) {
+      const ox = l.start - OX + p.off[0];
+      const oy = -(l.ry + p.off[1]);
+      l.r.ox = ox;
+      l.r.oy = oy;
+      l.r.W = (x, y) => [ox + x, oy + y];
+    }
+  });
+  return plans;
+}
+
+/** A closed rectangle (topic frame) on the map. */
+function worldRect(P: (x: number, y: number) => LngLatZ, x: number, y: number, w: number, h: number): LngLatZ[] {
+  return [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h), P(x, y)];
+}
+
+/** A line cut into dashes (`on` long, `off` apart), as deck.gl draws no dashes without its extensions. */
+function dashed(pts: readonly LngLatZ[], on: number, off: number): LngLatZ[][] {
+  // A phase (dash or gap) and what is left of it, walked segment by segment (no modulo: rounding made it stall).
+  const out: LngLatZ[][] = [];
+  let cur: LngLatZ[] = [];
+  let drawing = true;
+  let left = on;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) / U;
+    if (!(L > 1e-9)) continue;
+    const at = (u: number): LngLatZ => [a[0] + ((b[0] - a[0]) * u) / L, a[1] + ((b[1] - a[1]) * u) / L, 0];
+    let t = 0;
+    while (L - t > 1e-9) {
+      const step = Math.min(L - t, left);
+      if (drawing) {
+        if (!cur.length) cur.push(at(t));
+        cur.push(at(t + step));
+      }
+      t += step;
+      left -= step;
+      if (left <= 1e-9) {
+        if (drawing && cur.length > 1) out.push(cur);
+        cur = [];
+        drawing = !drawing;
+        left = drawing ? on : off;
+      }
+    }
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
+const NO_SHAPE: TopicShape = { coast: [], insets: [], zones: [], borders: [], cuts: [] };
+
+function worldOut(w: WorldPlan, data: PanoramaData, shapeOf: NonNullable<LayoutOptions["shape"]>): WorldTopic {
+  const P = (x: number, y: number, z = 0): LngLatZ => [(x + w.off[0]) * U, -(y + w.off[1]) * U, z];
+  const ring = (r: readonly RXY[]) => [...r, r[0]!].map(([x, y]) => P(x, y));
+  const got = shapeOf(w.frame, w.kind, w.topic.id);
+  const shape = got ?? NO_SHAPE;
+  // The land reaches about this far past what stands in it (the margin, then the noise): the bounds while it is pending.
+  const B = w.box;
+  const R = 26;
+  const np = w.cards.length;
+  const tintOf = (g: number) => (g < np ? g : -1);
+  const coast = shape.coast.map(ring);
+  const xs = coast.flat().map((q) => q[0]);
+  const ys = coast.flat().map((q) => q[1]);
+  const lanes = data.lanes.filter((l) => l.topic === w.topic.id);
+  const waitsIn = (pred: (i: PanoramaItem) => boolean) => data.items.filter((i) => i.topic === w.topic.id && i.status === "needs_you" && pred(i)).length;
+  const sp = w.spine;
+  const n = sp.items.length;
+  const spineAt = new Map(sp.items.map((it, i) => [it.id, P(sp.x, sp.y0 + ((sp.y1 - sp.y0) * (i + 0.5)) / Math.max(1, n))]));
+  const sh = w.shelf;
+  const HS = [0.9, 0.75, 1, 0.82, 0.68, 0.94];
+  const bd = w.board;
+  const borderDash: [number, number] = w.kind === "metro" ? [3.4, 2.8] : [1.3, 2.1];
+  return {
+    id: w.topic.id,
+    topic: w.topic,
+    kind: w.kind,
+    bounds: xs.length ? [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] : [P(B.x0 - R, 0)[0], P(0, B.y1 + R)[1], P(B.x1 + R, 0)[0], P(0, B.y0 - R)[1]],
+    pending: !got,
+    box: [P(B.x0 - 8, B.y0 - 8), P(B.x1 + 8, B.y0 - 8), P(B.x1 + 8, B.y1 + 8), P(B.x0 - 8, B.y1 + 8), P(B.x0 - 8, B.y0 - 8)],
+    middle: P((B.x0 + B.x1) / 2, (B.y0 + B.y1) / 2),
+    coast,
+    insets: shape.insets.map((i) => ({ depth: i.depth, rings: i.rings.map(ring) })),
+    zones: shape.zones.map((z) => ({ rings: z.rings.map(ring), tint: tintOf(z.g) })),
+    borders: shape.borders.flatMap((b) => dashed(b.map(([x, y]) => P(x, y)), ...borderDash)),
+    head: P(WORLD.head.x, WORLD.head.y),
+    ...worldSummary(w.topic, data),
+    spine: { path: [P(sp.x, sp.y0), P(sp.x, sp.y1)], label: P(sp.x + 3.5, sp.y0 - 1), nodes: sp.items.map((it) => ({ id: it.id, at: spineAt.get(it.id)! })) },
+    cards: w.cards.map((c) => ({
+      project: c.project,
+      tint: c.pi,
+      rect: worldRect(P, c.x, c.y, c.w, c.h),
+      at: P(c.x + 3.5, c.y + 3),
+      w: c.w - 7,
+      lines: c.lines,
+      hub: c.hub ? P(c.hub[0], c.hub[1]) : null,
+      link: [P(sp.x, c.hubY), P(c.x, c.hubY)],
+      waits: waitsIn((i) => !!i.lane && lanes.some((l) => l.id === i.lane && l.project === c.project.id)),
+      center: P(c.x + c.w / 2, c.y + c.h / 2),
+    })),
+    shelf: {
+      label: P(sh.x, sh.y - 1.5),
+      rect: worldRect(P, sh.x, sh.y, sh.w, sh.h),
+      books: sh.docs.slice(0, 14).map((doc, i) => {
+        const bx = sh.x + 3 + i * (WORLD.book + 2.6);
+        const bh = (sh.h - 5) * HS[i % HS.length]!;
+        const by = sh.y + sh.h - 2.5 - bh;
+        return { doc, rect: worldRect(P, bx, by, WORLD.book, bh), at: P(bx + WORLD.book / 2, by + 2), center: P(bx + WORLD.book / 2, by + bh / 2) };
+      }),
+    },
+    board: { label: P(bd.x, bd.y - 1.5), rect: worldRect(P, bd.x, bd.y, bd.w, bd.h), w: bd.w - 8, lines: bd.items.slice(0, 3).map((it, i) => ({ id: it.id, at: P(bd.x + 4, bd.y + 4 + i * WORLD.line) })), more: Math.max(0, bd.items.length - 3), center: P(bd.x + bd.w / 2, bd.y + bd.h / 2) },
+    proposed: w.lanes.filter((l) => l.r.lane.proposedBy && spineAt.has(l.r.lane.proposedBy)).map((l) => ({ item: l.r.lane.proposedBy!, lane: l.r.lane.id, path: [spineAt.get(l.r.lane.proposedBy!)!, P(l.start, l.ry)] })),
+  };
+}
+
+/** `metro`'s dot grid under everything (every 30 units, a margin round the map). */
+function dotGrid(X0: number, X1: number, Y0: number, Y1: number): LngLatZ[] {
+  const out: LngLatZ[] = [];
+  const st = 30;
+  for (let y = Math.floor((Y0 - 120) / st) * st; y <= Y1 + 120; y += st) for (let x = Math.floor((X0 - 160) / st) * st; x <= X1 + 160; x += st) out.push([x * U, y * U, 0]);
+  return out;
+}
+
 /** The look's layout (LayoutOptions; all off is how P1 laid it out). */
 export function layoutPanorama(data: PanoramaData, opts: LayoutOptions = {}): PanoramaLayout {
-  const o: Opts = { tight: !!opts.tight, curve: opts.curve ?? "wave", span: !!opts.span, fold: !!opts.fold, open: opts.open ?? new Set(), front: opts.front ?? null };
+  const world = opts.world && opts.curve !== "spiral" && data.topics.length ? opts.world : null;
+  // World: roads straight, no bases (the region is the frame).
+  const o: Opts = { tight: !world && !!opts.tight, curve: world ? "line" : (opts.curve ?? "wave"), span: !!opts.span, fold: !!opts.fold, open: opts.open ?? new Set(), front: opts.front ?? null, blocks: !world && !!opts.blocks, world };
   const tight = o.tight;
   const regs = data.lanes.map((l) => region(l, data.items, o));
-  const arm = o.curve === "spiral" ? arms(regs) : null;
-  if (!arm) pack(regs, o);
+  const worldPlans = world ? planWorld(data, regs, world) : null;
+  const plans = !worldPlans && o.blocks && o.curve !== "spiral" && data.topics.length ? planBlocks(data, regs, o) : null;
+  const arm = !plans && !worldPlans && o.curve === "spiral" ? arms(regs) : null;
+  const laneOf = new Map((worldPlans ?? []).flatMap((w) => w.lanes.map((l) => [l.r.lane.id, { l, off: w.off }] as const)));
+  if (worldPlans) {
+    // placed by planWorld
+  } else if (plans) placeBlocks(plans, o);
+  else if (!arm) pack(regs, o);
   const regions: RegionLayout[] = [];
   const byItem: Record<string, RegionLayout> = {};
   regs.forEach((r, idx) => {
@@ -526,7 +1120,7 @@ export function layoutPanorama(data: PanoramaData, opts: LayoutOptions = {}): Pa
       const [x, y] = r.pos[it.id]!;
       // The front's column stands out above its own height (and above the theme's least).
       const top = it.id === r.front ? Math.max(pillarHeight(it) * 1.25, o.front ?? 0) : pillarHeight(it) * (folded.has(it.id) ? FOLD.h : 1);
-      nodes[it.id] = { ground: P(x, y), at: P(x, y, H_NODE), top: P(x, y, top) };
+      nodes[it.id] = { ground: P(x, y), at: P(x, y, world ? WORLD.z : H_NODE), top: P(x, y, top) };
     }
     const walkedPts = road(OX, Math.max(roadEnd, OX + 0.5));
     const aheadPts = reached ? null : road(roadEnd, r.goalX);
@@ -567,6 +1161,8 @@ export function layoutPanorama(data: PanoramaData, opts: LayoutOptions = {}): Pa
         const flat = Math.abs(bx - ax) >= Math.abs(by - ay);
         return { name: P(r.x1 + 3, 0), nameBelow: flat || by < ay, nameAlign: !flat ? "middle" : bx > ax ? "start" : "end" };
       }
+      // World: just above the road's start (it stands on it).
+      if (world) return { name: P(OX, 4.2), nameBelow: false, nameAlign: "start" };
       if (!tight) return { name: P(r.x0 + 10, r.y1 + 5), nameBelow: false, nameAlign: "start" };
       // Under the base's near edge, clear of its corner marks (4 out), below wherever that edge runs under the name (a
       // bent road takes the edge with it).
@@ -589,10 +1185,24 @@ export function layoutPanorama(data: PanoramaData, opts: LayoutOptions = {}): Pa
       ticks: cornerTicks(r.x0, r.y0, r.x1, r.y1).map((t) => Q(t)),
       ...nameAt(),
       origin: { ground: P(OX, r.wave(OX)), top: P(OX, r.wave(OX), H_BEACON) },
-      goal: { ground: P(r.goalX, r.wave(r.goalX)), at: P(r.goalX, r.wave(r.goalX), H_NODE), gap: r.gap },
+      goal: { ground: P(r.goalX, r.wave(r.goalX)), at: P(r.goalX, r.wave(r.goalX), world ? WORLD.z : H_NODE), gap: r.gap },
       walked: Q(walkedPts),
       ahead,
-      branches: r.branches.map((b) => ({ from: b.from, itemIds: b.itemIds, path: Q(b.pts), ended: b.ended })),
+      branches: r.branches.map((b) => ({ from: b.from, itemIds: b.itemIds, path: Q(b.pts), ended: b.ended, merge: b.merge })),
+      tint: laneOf.get(r.lane.id)?.l.pi ?? 0,
+      pre: (() => {
+        const w = laneOf.get(r.lane.id);
+        return w ? w.l.pre.map(([x, y]) => [(x + w.off[0]) * U, -(y + w.off[1]) * U, 0] as LngLatZ) : [];
+      })(),
+      tick: Q([
+        [OX, -3.2],
+        [OX, 3.2],
+      ]),
+      goalRing: (() => {
+        const ring: XY[] = [];
+        for (let k = 0; k <= 28; k++) ring.push([r.goalX + 3.6 * Math.cos((k / 28) * 2 * Math.PI), 3.6 * Math.sin((k / 28) * 2 * Math.PI)]);
+        return dashed(Q(ring), 1.1, 1.1);
+      })(),
       flows: r.flows.map(Q),
       nodes,
       front: r.front,
@@ -609,17 +1219,32 @@ export function layoutPanorama(data: PanoramaData, opts: LayoutOptions = {}): Pa
     regions.push(out);
     for (const it of r.items) byItem[it.id] = out;
   });
-  const bx0 = regions.length ? Math.min(...regions.map((r) => r.bounds[0])) / U : -50;
-  const by0 = regions.length ? Math.min(...regions.map((r) => r.bounds[1])) / U : -30;
-  const bx1 = regions.length ? Math.max(...regions.map((r) => r.bounds[2])) / U : 50;
-  const by1 = regions.length ? Math.max(...regions.map((r) => r.bounds[3])) / U : 30;
+  const regMap = new Map(regions.map((r) => [r.id, r]));
+  const blocks = plans ? plans.map((b) => blockOut(b, regMap)) : [];
+  const shapeOf: NonNullable<LayoutOptions["shape"]> = opts.shape ?? ((frame, kind) => topicShape(frame, kind));
+  const worlds = worldPlans ? worldPlans.map((w) => worldOut(w, data, shapeOf)) : [];
+  // A block's header stands above it: room for it on the map.
+  const boxes = [...regions.map((r) => r.bounds), ...blocks.map((b) => [b.bounds[0], b.bounds[1], b.bounds[2], b.bounds[3] + 70 * U]), ...worlds.map((w) => w.bounds)];
+  const bx0 = boxes.length ? Math.min(...boxes.map((b) => b[0]!)) / U : -50;
+  const by0 = boxes.length ? Math.min(...boxes.map((b) => b[1]!)) / U : -30;
+  const bx1 = boxes.length ? Math.max(...boxes.map((b) => b[2]!)) / U : 50;
+  const by1 = boxes.length ? Math.max(...boxes.map((b) => b[3]!)) / U : 30;
   const X0 = bx0 - 40;
   const X1 = bx1 + 40;
   const Y0 = by0 - 40;
   const Y1 = by1 + 40;
   const reg = new Map(regions.map((r) => [r.id, r]));
-  const arcs = data.links.map((l) => ({ from: l.from, to: l.to, s: reg.get(l.from)!.goal.at, t: reg.get(l.to)!.origin.top })).filter((a) => a.s && a.t);
-  return { regions, byItem, bounds: [X0 * U, Y0 * U, X1 * U, Y1 * U], grid: grid(X0, X1, Y0, Y1), arcs, deco: deco(X0, X1, Y0, Y1), streams: streams(o.curve, X0, X1, Y0, Y1, regs.length, arm) };
+  // World: from the goal's ring to the start on the ground (no beacons to land on).
+  const arcs = data.links
+    .filter((l) => reg.has(l.from) && reg.has(l.to))
+    .map((l) => ({ from: l.from, to: l.to, s: reg.get(l.from)!.goal.at, t: world ? reg.get(l.to)!.origin.ground : reg.get(l.to)!.origin.top }));
+  const reshape = (id: string) => {
+    const i = worldPlans?.findIndex((w) => w.topic.id === id) ?? -1;
+    if (i < 0) return false;
+    worlds[i] = worldOut(worldPlans![i]!, data, shapeOf);
+    return true;
+  };
+  return { regions, byItem, bounds: [X0 * U, Y0 * U, X1 * U, Y1 * U], grid: world ? [] : grid(X0, X1, Y0, Y1), arcs, deco: deco(X0, X1, Y0, Y1), streams: streams(o.curve, X0, X1, Y0, Y1, regs.length, arm), blocks, world: worlds, dots: world === "metro" ? dotGrid(X0, X1, Y0, Y1) : [], ...(worldPlans ? { reshape } : {}) };
 }
 
 /** Faint lines of the shared field under everything: along `flow`, or arms between the tasks' arms (`spiral`). */

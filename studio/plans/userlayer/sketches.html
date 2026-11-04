@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全景 · 区域和线路的概念图</title>
+<style>
+/* 冰白全息（v-deck3.html#oblivion）的底色和细线；这一页只是看图用的壳 */
+:root{--base:#141b22;--tx:#eef5fa;--tx2:rgba(222,236,246,.74);--tx3:rgba(205,222,236,.5);--ln:rgba(230,242,252,.15);--ln2:rgba(230,242,252,.36);--need:#ffc482}
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(90% 40% at 50% 0%,#3a4957 0%,rgba(42,54,66,0) 70%),linear-gradient(180deg,#1b2530 0,#141b22 40%,#10161c 100%);background-color:#141b22;color:var(--tx);font:14px/1.6 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif}
+header{padding:36px 40px 8px;max-width:1880px;margin:0 auto}
+.k{font-size:10px;letter-spacing:.42em;color:var(--tx3);text-transform:uppercase}
+h1{font-weight:200;font-size:30px;letter-spacing:.2em;margin:6px 0 8px;color:#fff}
+header p{margin:4px 0;color:var(--tx2);max-width:1200px}
+header code,section code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;color:var(--tx);background:rgba(175,200,220,.08);padding:1px 6px;border-radius:2px}
+.bar{display:flex;gap:10px;align-items:center;margin:16px 0 0}
+button{font:inherit;font-size:12px;letter-spacing:.14em;color:var(--tx2);background:rgba(175,200,220,.07);border:1px solid var(--ln);border-radius:2px;padding:4px 12px;cursor:pointer}
+button:hover{border-color:var(--ln2);color:#fff}
+button[aria-pressed=true]{color:#0f161c;background:rgba(236,246,252,.92);border-color:transparent}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav a{color:var(--tx2);text-decoration:none;font-size:12px;letter-spacing:.12em;border:1px solid var(--ln);padding:4px 12px;border-radius:99px}
+nav a:hover{color:#fff;border-color:var(--ln2)}
+main{max-width:1880px;margin:0 auto;padding:8px 40px 60px}
+section{margin:30px 0 0;padding-top:20px;border-top:1px solid var(--ln)}
+section h2{margin:0;font-weight:300;font-size:21px;letter-spacing:.16em;color:#fff;display:flex;align-items:baseline;gap:14px}
+section h2 .n{font-size:12px;color:var(--tx3);letter-spacing:.3em}
+section h2 .en{font-size:10px;letter-spacing:.4em;color:var(--tx3)}
+section .one{margin:6px 0 2px;color:var(--tx2);max-width:1300px}
+section .note{margin:0 0 12px;color:var(--tx3);font-size:12.5px;max-width:1300px}
+.figs{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+figure{margin:0}
+figure.mid .frame{border-color:var(--ln2)}
+.frame{position:relative;aspect-ratio:16/10;overflow:hidden;border:1px solid var(--ln);border-radius:3px;background:#141b22;perspective:1500px;perspective-origin:50% 0%}
+.frame img{display:block;width:100%;height:100%;transform-origin:50% 62%;transition:transform .7s cubic-bezier(.22,.8,.2,1)}
+.frame.tilt img{transform:translateY(-9%) rotateX(50deg) scale(1.24)}
+figcaption{display:flex;justify-content:space-between;align-items:center;margin-top:7px;font-size:12px;color:var(--tx3);letter-spacing:.08em}
+figcaption .r{display:flex;gap:8px;align-items:center}
+figcaption a{color:var(--tx3);font-size:12px}
+figcaption a:hover{color:#fff}
+footer{max-width:1880px;margin:0 auto;padding:0 40px 40px;color:var(--tx3);font-size:12px}
+.gold{color:var(--need)}
+</style>
+</head>
+<body>
+<header>
+  <div class="k">Panorama · regions &amp; lanes · sketches 11-03 · round 4</div>
+  <h1>全景 · 区域和线路的概念图</h1>
+  <p>第二轮：用户从五个方向里定了两个，<b>地形岛</b>（等高线的岛型 + 群岛的海湾分割，新合成）和<b>地铁</b>。每个方向一行：前三张是远景（四个专题，假数据），种子 7 / 13 / 21 各一张，用来看形状的随机性稳不稳；最后一张是中景（mining 迭代：三个项目、七条 lane、三条子 lane、<span class="gold">两处等你</span>，种子 7）。</p>
+  <p>第三轮（用户：岛内不要等高线；左边一条直边、右边一道道凹陷，像一把梳子）：轮廓另由几块「只决定形状」的地算——每个项目带左边伸出一块随机长短的地（主控脊和状态牌就不再顶着左边），右边按整条项目带的外包算、不贴着每条 lane 的末端；扭曲和噪声不再被线路两侧的托底压平，整圈都有起伏。</p>
+  <p>第四轮（用户圈了两处「不用凹进去」）：岛内水道不要了；主控区和项目区之间不切湾，只用淡点线；项目之间只在切得够深时才切湾，切不深的只留淡点线，所以单项目的专题（AMO迭代、官网改版）岛上没有缺口。淡点分界不再跟着轮廓扭曲走，老实待在两个项目带之间，海湾也沿这条线切，湾口和点线接得上。内发光减了一档；地铁项目带左右错开上限从 70 收到 40；远景不再挑四角摆的布局。</p>
+  <p>形状全由脚本按种子算：<code>node studio/plans/userlayer/sketches/gen.mjs --seeds 7,13,21</code>。点「倾斜看」用 CSS 3D 透视模拟全景的倾斜视角，点「原图」看大图。</p>
+  <div class="bar">
+    <button id="all" aria-pressed="false">全部倾斜看</button>
+    <nav><a href="#terrain">1 地形岛</a><a href="#metro">2 地铁</a></nav>
+  </div>
+</header>
+<main>
+  <section id="terrain">
+    <h2><span class="n">01</span>地形岛<span class="en">TERRAIN ISLAND</span></h2>
+    <p class="one">专题是一座岛：外缘一圈发光轮廓，岛内没有线，只有很淡的面填充和沿岸往里的一圈内发光。主控区和项目区之间只有一条淡点线。项目之间切<b>东湾</b>（从东边切进来）或<b>西湾</b>（从西边切到主控脊为止），相邻两道不从同一边切；只有两边的地都够长、切得出一道看得出的湾时才切，不然只留淡点线。岛外什么都没有。</p>
+    <p class="note">先按种子定先东还是先西，再看够不够深：东湾要两条项目带都伸到 380 以外，西湾要两边项目带往左伸出的地都有 62 以上。西湾受伸出那块地的长短所限，这三个种子里一道都没够格，所以现在看到的都是东湾。线路、状态牌、主控脊两侧 16 个单位以内保证是陆地。</p>
+    <div class="figs">
+      <figure><div class="frame"><img src="sketches/terrain-far-7.svg" alt="地形岛 远景 种子 7"></div><figcaption><span>远景 · 种子 7</span><span class="r"><a href="sketches/terrain-far-7.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure><div class="frame"><img src="sketches/terrain-far-13.svg" alt="地形岛 远景 种子 13"></div><figcaption><span>远景 · 种子 13</span><span class="r"><a href="sketches/terrain-far-13.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure><div class="frame"><img src="sketches/terrain-far-21.svg" alt="地形岛 远景 种子 21"></div><figcaption><span>远景 · 种子 21</span><span class="r"><a href="sketches/terrain-far-21.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure class="mid"><div class="frame"><img src="sketches/terrain-mid-7.svg" alt="地形岛 中景"></div><figcaption><span>中景 · mining 迭代</span><span class="r"><a href="sketches/terrain-mid-7.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+    </div>
+  </section>
+
+  <section id="metro">
+    <h2><span class="n">02</span>地铁线路图<span class="en">METRO</span></h2>
+    <p class="one">线路照旧：45° / 90° 转折，每个项目一个始发站、线路成束出站；里面的分界是横平竖直的虚线加一段 45° 切角。各项目带整体左右错开（最多 40，状态牌、始发站、线路一起挪），左边每个项目带再伸出一块随机长短的地，所以左右两边的剪影都是一级一级的台阶和切角，不再是左直右梳。</p>
+    <p class="note">项目区是两条分界之间的多边形再用专题轮廓裁出来的，拼起来正好铺满。</p>
+    <div class="figs">
+      <figure><div class="frame"><img src="sketches/metro-far-7.svg" alt="地铁 远景 种子 7"></div><figcaption><span>远景 · 种子 7</span><span class="r"><a href="sketches/metro-far-7.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure><div class="frame"><img src="sketches/metro-far-13.svg" alt="地铁 远景 种子 13"></div><figcaption><span>远景 · 种子 13</span><span class="r"><a href="sketches/metro-far-13.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure><div class="frame"><img src="sketches/metro-far-21.svg" alt="地铁 远景 种子 21"></div><figcaption><span>远景 · 种子 21</span><span class="r"><a href="sketches/metro-far-21.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+      <figure class="mid"><div class="frame"><img src="sketches/metro-mid-7.svg" alt="地铁 中景"></div><figcaption><span>中景 · mining 迭代</span><span class="r"><a href="sketches/metro-mid-7.svg" target="_blank">原图</a><button class="tilt" aria-pressed="false">倾斜看</button></span></figcaption></figure>
+    </div>
+  </section>
+</main>
+<footer>取材：<code>studio/plans/userlayer/sketches/gen.mjs</code>（生成脚本，数据是脚本里的假数据；等高线、群岛、Voronoi、点阵的代码还在，<code>--only contour,isles,voronoi,stipple</code> 能再出）、<code>studio/plans/userlayer/panorama.md</code>（全景已定的事）。截图：<code>node plans/userlayer/sketches/shot.mjs</code>（在 studio/ 下）。</footer>
+<script>
+const set = (btn, on) => { btn.setAttribute("aria-pressed", on); btn.closest("figure").querySelector(".frame").classList.toggle("tilt", on); };
+document.querySelectorAll("button.tilt").forEach((b) => b.addEventListener("click", () => set(b, b.getAttribute("aria-pressed") !== "true")));
+const all = document.getElementById("all");
+all.addEventListener("click", () => { const on = all.getAttribute("aria-pressed") !== "true"; all.setAttribute("aria-pressed", on); document.querySelectorAll("button.tilt").forEach((b) => set(b, on)); });
+</script>
+</body>
+</html>

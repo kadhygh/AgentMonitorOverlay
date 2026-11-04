@@ -11,15 +11,16 @@ import "./panorama.css";
 // snapshot is written by panorama-snapshot.mjs (structure and titles only, read from the Host without changing it).
 
 /** The datalayer's input as it was when the snapshot was taken (AMO's shapes are the datalayer's business). */
-export interface PanoramaSnapshot extends Required<Omit<PanoramaInput, "now">> {
+export type PanoramaSnapshot = Omit<PanoramaInput, "now"> & Required<Pick<PanoramaInput, "profiles" | "checklist" | "dependencies">> & {
   takenAt: string;
   /** Set on a made-up variant (data changed by hand to show what the real data lacks): what was changed. */
   demo?: string;
-}
+};
 
 /**
  * The look to try, from the address (themes.ts lookFrom): #base (how P1 first looked), #a, #ab, #ad, #abd; with -flow,
- * -spiral or -wave the front, folding and the fixed footprint come along (-nofront, -nofold, -nospan leave one out).
+ * -spiral, -wave or -line (straight, the default since 11-03) the front, folding, the fixed footprint and topic blocks come
+ * along (-nofront, -nofold, -nospan, -noblocks leave one out).
  * Nothing (or what is not understood): PREVIEW_LOOK.
  */
 function lookName(): string {
@@ -64,6 +65,12 @@ function Preview() {
         profiles={snap.profiles}
         checklist={snap.checklist}
         dependencies={snap.dependencies}
+        topics={snap.topics}
+        workspaces={snap.workspaces}
+        docs={snap.docs}
+        reviews={snap.reviews}
+        extra={snap.extra}
+        loose={snap.loose}
         now={snap.takenAt}
         onOpenTask={() => setNote("这是预览：打开任务要在 Studio 里")}
       />

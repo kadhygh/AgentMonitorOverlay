@@ -300,6 +300,8 @@ export function App() {
             setView({ kind: "board" });
           }}
           onSettings={() => setSettingsOpen({ at: Date.now() })}
+          // 全景 (11-04): from the left column, not a tab; a task opened from it counts as in it.
+          panorama={views.some((d) => d.kind === "panorama") ? { current: shown.kind === "panorama" || ("back" in shown && shown.back?.kind === "panorama"), open: () => setView({ kind: "panorama" }) } : undefined}
         />
         <div className="main-col">
           <ViewBar

@@ -42,6 +42,13 @@
 .pn-br { right: 16px; bottom: 14px; display: flex; gap: 6px; }
 .pn-br button { min-width: 30px; height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--pn-tx2); letter-spacing: .12em; border-radius: 2px; }
 .pn-br button:hover { border-color: var(--pn-ln2); color: #fff; }
+/* Studio's look switch (11-04): 地形岛 | 地铁, the current one lit. */
+.pn-looks { display: flex; margin-right: 8px; }
+.pn-looks button { border-radius: 0; }
+.pn-looks button + button { border-left: none; }
+.pn-looks button:first-child { border-radius: 2px 0 0 2px; }
+.pn-looks button:last-child { border-radius: 0 2px 2px 0; }
+.pn-looks button[aria-pressed="true"] { color: #fff; border-color: var(--pn-ln2); background: rgba(175,200,220,.16); }
 
 /* The camera's readout, bottom left: which level the map is at, zoom, tilt, heading. */
 .pn-readout { left: 16px; bottom: 14px; font-size: 10.5px; letter-spacing: .22em; color: var(--pn-tx3); white-space: pre; pointer-events: none; font-variant-numeric: tabular-nums; }
@@ -60,6 +67,7 @@
 .pn-x:hover { color: #fff; }
 .pn-in { padding: 12px 16px 16px; }
 .pn-in h2 { margin: 0 0 8px; font-weight: 300; font-size: 19px; line-height: 1.45; letter-spacing: .03em; color: #fff; overflow-wrap: anywhere; }
+.pn-body { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: var(--pn-tx); white-space: pre-wrap; }
 .pn-meta { display: grid; grid-template-columns: 44px 1fr; gap: 2px 10px; font-size: 12.5px; color: var(--pn-tx2); }
 .pn-meta span:nth-child(odd) { color: var(--pn-tx3); }
 .pn-meta span { overflow-wrap: anywhere; }
