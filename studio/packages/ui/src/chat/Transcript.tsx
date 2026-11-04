@@ -54,13 +54,17 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   const delivery = useMemo(() => ({ onDelivery, givingWay }), [onDelivery, givingWay]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
-  // Turns the person unfolded (or folded again); finished turns start folded.
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
-  useEffect(() => setUnfolded(new Set()), [session?.id]);
+  // Turns the person unfolded or folded, against how finished turns start: folded, except in 详细 (2026-11-04, the
+  // user: the replies in between and the work's headings are what is read there) — 完全展开 does not fold at all.
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setToggled(new Set()), [session?.id, view]);
+  const startsOpen = view === "detailed";
+  const startsOpenRef = useRef(startsOpen);
+  startsOpenRef.current = startsOpen;
 
   // The drawn window: from the turn keyed `key` on (null: all of them), worked out once per session and view; new
   // turns come after it. 完全展开 draws every turn's work, so it holds fewer turns.
-  const unfoldedWork = view === "verbose";
+  const unfoldedWork = view === "verbose" || view === "detailed";
   const [from, setFrom] = useState<{ session: string | undefined; view: TranscriptView; key: string | null } | null>(null);
   const settled = !!from && from.session === session?.id && from.view === view;
   const startAt = (index: number) => segments[index]?.key ?? null;
@@ -95,7 +99,12 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
       const index = segmentsRef.current.findIndex((s) => s.rows.some((r) => (r.kind === "item" ? r.item.id === id : r.members.some((m) => m.id === id))) || s.answer?.id === id || s.inputs.some((i) => i.id === id) || s.tail.some((i) => i.id === id));
       const seg = segmentsRef.current[index];
       if (!seg) return;
-      setUnfolded((cur) => new Set(cur).add(seg.key));
+      setToggled((cur) => {
+        const next = new Set(cur);
+        if (startsOpenRef.current) next.delete(seg.key);
+        else next.add(seg.key);
+        return next;
+      });
       // Earlier than the window: drawn from there on.
       if (index < startRef.current) setFrom((cur) => (cur ? { ...cur, key: seg.key } : cur));
     };
@@ -124,9 +133,9 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
           view={view}
           model={model}
           busy={busy}
-          unfolded={unfolded.has(seg.key)}
+          unfolded={toggled.has(seg.key) !== startsOpen}
           onToggle={() =>
-            setUnfolded((cur) => {
+            setToggled((cur) => {
               const next = new Set(cur);
               if (next.has(seg.key)) next.delete(seg.key);
               else next.add(seg.key);
