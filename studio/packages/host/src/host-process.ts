@@ -360,6 +360,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     // 2026-10-27: DSH turns that ended without their tokens and speed get them from DSH's logs, once the Host settled.
     setTimeout(() => {
       if (stopped) return;
+      // DSH's stderr logs not written for a month, or empty since yesterday (2026-11-04).
+      try {
+        const n = finalDsh.pruneLogs();
+        if (n) console.log(`DSH: removed ${n} old logs`);
+      } catch (err) {
+        console.log(`DSH log cleanup failed: ${String(err)}`);
+      }
       void finalDsh
         .backfillStats()
         .then((n) => n && console.log(`DSH: filled in the tokens and speed of ${n} turns from DSH's logs`))

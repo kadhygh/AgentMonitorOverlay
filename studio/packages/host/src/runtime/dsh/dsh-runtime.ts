@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inTurn, type AccountUsage, type ApprovalDecision, type Attachment, type DshCheck, type FolderAccessStatus, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionOptions, type UserDelivery, type Workspace, type McpApply } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
@@ -182,6 +182,44 @@ interface ImageBlock {
 
 /** How often a running turn's speed is read again from DSH's log (on whatever update DSH sends next). */
 const MEASURE_EVERY_MS = 15_000;
+/** `logs/`: a log over LOG_MAX_BYTES is moved to `<label>.old.log` (the one before goes) when its process starts. */
+const LOG_MAX_BYTES = 2 * 1024 * 1024;
+const LOG_KEEP_DAYS = 30;
+const DAY_MS = 24 * 60 * 60_000;
+
+export function rotateLog(file: string, max = LOG_MAX_BYTES): void {
+  try {
+    if (statSync(file).size > max) renameSync(file, file.replace(/\.log$/, ".old.log"));
+  } catch {
+    // No log yet, or held by a process still writing it: it goes on growing until the next start.
+  }
+}
+
+/**
+ * DSH's stderr logs (`logs/`, one file per process label; 2026-11-04, 架构整理第 6 步): a file not written for
+ * LOG_KEEP_DAYS goes, and an empty one (most `new-*.log`) after a day. A deleted session's log is not written again, so
+ * it goes the same way. DSH's own records in `home/` are DSH's and never touched.
+ */
+export function pruneDshLogs(dir: string, now = Date.now()): number {
+  if (!existsSync(dir)) return 0;
+  let removed = 0;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".log")) continue;
+    const file = join(dir, name);
+    try {
+      const st = statSync(file);
+      const age = now - st.mtimeMs;
+      if (age > LOG_KEEP_DAYS * DAY_MS || (st.size === 0 && age > DAY_MS)) {
+        rmSync(file, { force: true });
+        removed++;
+      }
+    } catch {
+      // In use or gone: next start.
+    }
+  }
+  return removed;
+}
+
 /** How far a turn in DSH's log may start from Studio's turn and still be taken for it (backfillStats). */
 const BACKFILL_SLACK_MS = 5000;
 
@@ -534,6 +572,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (patch) args.push("--patch", patch);
     const logFile = join(this.options.dir, "logs", `${label}.log`);
+    rotateLog(logFile);
     return new AcpConnection({ command, args, cwd, env, logFile }, (method, params) => this.onRequest(method, params));
   }
 
@@ -950,6 +989,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       live.applied.effort = opts.effort;
       this.remember(r.configOptions, profile);
     }
+  }
+
+  /** `logs/` was never cleaned (2026-11-04, 架构整理第 6 步): see pruneDshLogs. */
+  pruneLogs(now = Date.now()): number {
+    return pruneDshLogs(join(this.options.dir, "logs"), now);
   }
 
   /**

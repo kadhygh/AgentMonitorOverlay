@@ -132,6 +132,14 @@ describe("数据管理", () => {
       updatedAt: new Date().toISOString(),
     };
     store.putCanvas(canvas);
+    // Its sessions' and its own kv keys (kv-keys.ts), an MCP token's both ways; another session's stay.
+    for (const sid of [x.s1.id, x.s1f.id, x.s3.id]) {
+      store.setKv(`role-stamp:${sid}`, "{}");
+      store.setKv(`report-turn:${sid}`, "t");
+      store.setKv(`mcp-identity:session:${sid}`, `tok-${sid}`);
+      store.setKv(`mcp-identity:token:tok-${sid}`, sid);
+    }
+    store.setKv(`remote.review-comments:${x.t1.id}`, "[]");
 
     await expect(Promise.resolve().then(() => host.data.preview("task", x.t1.id))).rejects.toMatchObject({ code: "conflict" });
     await host.tasks.archiveTask(x.t1.id);
@@ -159,6 +167,12 @@ describe("数据管理", () => {
     // The rest is untouched.
     expect(store.listItems(x.s3.id)).toHaveLength(1);
     expect(task(x.t2.id)).toBeDefined();
+    for (const sid of [x.s1.id, x.s1f.id]) {
+      for (const key of [`role-stamp:${sid}`, `report-turn:${sid}`, `mcp-identity:session:${sid}`, `mcp-identity:token:tok-${sid}`]) expect(store.getKv(key), key).toBeUndefined();
+    }
+    expect(store.getKv(`remote.review-comments:${x.t1.id}`)).toBeUndefined();
+    expect(store.getKv(`role-stamp:${x.s3.id}`)?.value).toBe("{}");
+    expect(store.getKv(`mcp-identity:token:tok-${x.s3.id}`)?.value).toBe(x.s3.id);
   });
 
   it("refuses while something live hangs on it", async () => {

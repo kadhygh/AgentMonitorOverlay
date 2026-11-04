@@ -6,6 +6,7 @@ import { collectSubtreeIds, ENDED_STATUSES, type CanvasDoc, type HostEvent, type
 import { DocumentStore } from "./documents.js";
 import { ATTACHMENT_ID, str, strOrNull, toItem, toSession, toTask, toTopic, toWorkspace, type Row } from "./rows.js";
 import { MIGRATIONS } from "./migrations.js";
+import { kvPrefixes, MCP_SESSION_PREFIX, MCP_TOKEN_PREFIX } from "./kv-keys.js";
 
 /** A HostEvent before the store assigns its sequence number. */
 export type HostEventInput = HostEvent extends infer E ? (E extends HostEvent ? Omit<E, "seq"> : never) : never;
@@ -456,6 +457,18 @@ export class Store extends DocumentStore {
       }
       each(topics, "DELETE FROM topics WHERE id = ?");
       for (const id of ids.workspaceIds) this.removeWorkspace(id);
+      // Their kv keys (kv-keys.ts; 2026-11-04: until then they stayed for good), a session's MCP token's too.
+      for (const id of sessions) {
+        const token = this.getKv(MCP_SESSION_PREFIX + id)?.value;
+        if (token) this.deleteKv(MCP_TOKEN_PREFIX + token);
+      }
+      const dropKv = (scope: "session" | "task" | "workspace", list: Iterable<Id>) => {
+        const prefixes = kvPrefixes(scope);
+        for (const id of list) for (const p of prefixes) this.deleteKv(p + id);
+      };
+      dropKv("session", sessions);
+      dropKv("task", tasks);
+      dropKv("workspace", ids.workspaceIds);
       // The event log is only for catching up after a reconnect; events about what is gone would bring it back.
       const gone = [...sessions, ...tasks, ...topics];
       for (let i = 0; i < gone.length; i += 50) {
