@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { call, formatBytes, type EnvFrom, type EnvironmentView, type EnvItemView, type EnvTaskView, type EnvUpdateResult } from "./bridge.js";
+import { formatBytes } from "../lib/bytes.js";
+import { call, type EnvFrom, type EnvironmentView, type EnvItemView, type EnvTaskView, type EnvUpdateResult } from "./bridge.js";
 import "./environment.css";
 
 // AMO 平台's 环境 page (the user, 2026-10-28; packages/platform/src/environment.ts): whether Claude Code, the DeepSeek

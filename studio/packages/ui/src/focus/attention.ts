@@ -1,3 +1,5 @@
+import { readStored, writeStored } from "../lib/stored.js";
+
 // When the Focus robot dances (S14-J): something needs the person that they have not acknowledged yet. Each thing gets
 // a key; clicking the robot or the list acknowledges every key on screen; a key that goes away (handled) is forgotten,
 // so the same session asking again later makes the robot come back.
@@ -34,40 +36,14 @@ export function shouldAlert(keys: readonly string[], seen: ReadonlySet<string>):
 const LOCK_KEY = "amo.focusLocked";
 
 /** 锁定位置: the Focus window cannot be dragged. Per machine, like where it was left. */
-export function readFocusLocked(): boolean {
-  try {
-    return localStorage.getItem(LOCK_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function writeFocusLocked(on: boolean): void {
-  try {
-    localStorage.setItem(LOCK_KEY, on ? "1" : "0");
-  } catch {
-    // a per-machine convenience only
-  }
-}
+export const readFocusLocked = (): boolean => readStored(LOCK_KEY) === "1";
+export const writeFocusLocked = (on: boolean): void => writeStored(LOCK_KEY, on ? "1" : "0");
 
 const PASSTHROUGH_KEY = "amo.focusPassthrough";
 
 /** 点击穿透 (2026-10-15): clicks on Focus go to the window below, except on its buttons. Off by default. */
-export function readFocusPassthrough(): boolean {
-  try {
-    return localStorage.getItem(PASSTHROUGH_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function writeFocusPassthrough(on: boolean): void {
-  try {
-    localStorage.setItem(PASSTHROUGH_KEY, on ? "1" : "0");
-  } catch {
-    // a per-machine convenience only
-  }
-}
+export const readFocusPassthrough = (): boolean => readStored(PASSTHROUGH_KEY) === "1";
+export const writeFocusPassthrough = (on: boolean): void => writeStored(PASSTHROUGH_KEY, on ? "1" : "0");
 
 /** What still answers clicks under 点击穿透: buttons, fields and links, and the settings box. */
 export const PASSTHROUGH_INTERACTIVE = "button, a[href], input, textarea, select, summary, [role=button], .focus-pop";

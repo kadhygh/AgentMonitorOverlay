@@ -7,7 +7,8 @@ import { ScratchpadIcon } from "../scratchpad/ScratchpadApp.js";
 import { shortcutFromKey, shortcutLabel } from "../scratchpad/logic.js";
 import { useScratchpad } from "../scratchpad/useScratchpad.js";
 import { openPlatform, todoView } from "../todo/api.js";
-import { formatBytes, notesCall, type NotesInfo } from "./api.js";
+import { formatBytes } from "../lib/bytes.js";
+import { notesCall, type NotesInfo } from "./api.js";
 
 // 便签设置 (2026-10-23): the 便签 program's own settings window, opened from its tray menu. The shortcut, the page count
 // and 复制's line breaks (as 设置 → 便签 had them in Studio), starting with Windows, the work folder (where it is, what

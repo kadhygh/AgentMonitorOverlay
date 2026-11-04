@@ -194,7 +194,9 @@ test("the settings window: shortcut, start with Windows, the work folder, its si
   await settings.getByTestId("ns-theme-light").click();
   await expect.poll(settingsBg).toBe(lightBg);
 
-  await settings.getByTestId("ns-login").check();
+  // The box shows what the 便签 program saved, so it turns on once its answer is back (check() looks at once after the click).
+  await settings.getByTestId("ns-login").click();
+  await expect(settings.getByTestId("ns-login")).toBeChecked();
   await expect.poll(() => app.evaluate(() => (globalThis as { __notesOpenAtLogin?: boolean }).__notesOpenAtLogin)).toBe(true);
   expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8"))).toMatchObject({ openAtLogin: true, shortcut: "Ctrl+Alt+N" });
 

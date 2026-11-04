@@ -13,6 +13,7 @@ import { topicProject } from "./choices.js";
 import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
 import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // 新任务页的「在别的设备上」 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
@@ -26,21 +27,9 @@ const COPY_WAIT_MS = 15_000;
 
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
-function lastDevice(): string | null {
-  try {
-    return localStorage.getItem(LAST_DEVICE);
-  } catch {
-    return null;
-  }
-}
+const lastDevice = (): string | null => readStored(LAST_DEVICE);
 
-function rememberDevice(key: string): void {
-  try {
-    localStorage.setItem(LAST_DEVICE, key);
-  } catch {
-    // per-viewer convenience only
-  }
-}
+const rememberDevice = (key: string): void => writeStored(LAST_DEVICE, key);
 
 type Loaded = { key: string; catalog: RemoteCatalog | null; error: string | null };
 

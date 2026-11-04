@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ModelOption, ProfileChoices, SessionOptions } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
+import { readStoredJson, writeStoredJson } from "./stored.js";
 
 // Models, reasoning efforts and permissions a profile offers (asked from its CLI by the Host), shared by the new-task
 // page, the new-session form, the composer and the presets in 设置.
@@ -33,25 +34,15 @@ onHostEvent((e) => {
 const storedKey = (profileId: string) => `amo.choices.${profileId}`;
 
 export function storedChoices(profileId: string): ProfileChoices | null {
-  try {
-    const c = JSON.parse(localStorage.getItem(storedKey(profileId)) ?? "null") as ProfileChoices | null;
-    return c && c.profileId === profileId && Array.isArray(c.models) && Array.isArray(c.permissions) ? c : null;
-  } catch {
-    return null;
-  }
+  const c = readStoredJson(storedKey(profileId)) as ProfileChoices | null | undefined;
+  return c && c.profileId === profileId && Array.isArray(c.models) && Array.isArray(c.permissions) ? c : null;
 }
 
 export function loadChoices(link: HostLink, profileId: string): Promise<ProfileChoices> {
   let p = cache.get(profileId);
   if (!p) {
     p = call(link, "GET /api/profiles/:id/choices", { id: profileId });
-    p.then((c) => {
-      try {
-        localStorage.setItem(storedKey(profileId), JSON.stringify(c));
-      } catch {
-        // per-viewer convenience only
-      }
-    }, () => cache.delete(profileId));
+    p.then((c) => writeStoredJson(storedKey(profileId), c), () => cache.delete(profileId));
     cache.set(profileId, p);
   }
   return p;

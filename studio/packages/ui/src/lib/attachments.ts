@@ -1,5 +1,5 @@
-import { ATTACHMENT_MIMES, MAX_ATTACHMENT_BYTES, type Attachment, type HostErrorBody } from "@amo-studio/protocol";
-import { HostApiError, type HostLink } from "../host/client.js";
+import { ATTACHMENT_MIMES, MAX_ATTACHMENT_BYTES, type Attachment } from "@amo-studio/protocol";
+import { request, type HostLink } from "../host/client.js";
 
 // Images pasted or dropped into Studio (stage 11): uploaded to the Host, which keeps them in the data folder.
 
@@ -10,17 +10,7 @@ export function attachable(file: Blob): boolean {
 
 export async function uploadAttachment(link: HostLink, file: Blob, name = (file as File).name ?? ""): Promise<Attachment> {
   const query = new URLSearchParams({ type: file.type, ...(name ? { name } : {}) });
-  const res = await fetch(`${link.url}/api/attachments?${query.toString()}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${link.token}`, "content-type": file.type },
-    body: file,
-  });
-  const data = (await res.json()) as Attachment | HostErrorBody;
-  if (!res.ok) {
-    const err = (data as HostErrorBody).error;
-    throw new HostApiError(res.status, err?.code ?? "internal", err?.message ?? res.statusText);
-  }
-  return data as Attachment;
+  return request<Attachment>(link, "POST", `/api/attachments?${query.toString()}`, file);
 }
 
 /** A URL an <img> can load (the token rides in the query; the Host only accepts that for attachments). */

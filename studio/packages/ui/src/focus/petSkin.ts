@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // Focus 桌宠的皮肤 (2026-10-15 evening): the pixel robot (default), 「看书的 Claude 娘」, or 「AMO 娘」 (10-26, mascot.ts),
 // whose faces also take over the icons. Chosen in 设置 → 界面, kept per machine in localStorage, which the workbench,
@@ -11,20 +12,12 @@ const KEY = "amo.focusPet";
 const LOCAL_EVENT = "amo:focus-pet";
 
 export function readPetSkin(): PetSkin {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v === "reader" || v === "mascot" ? v : "robot";
-  } catch {
-    return "robot";
-  }
+  const v = readStored(KEY);
+  return v === "reader" || v === "mascot" ? v : "robot";
 }
 
 export function writePetSkin(skin: PetSkin): void {
-  try {
-    localStorage.setItem(KEY, skin);
-  } catch {
-    // a per-machine choice only
-  }
+  writeStored(KEY, skin);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(LOCAL_EVENT));
 }
 

@@ -3,6 +3,7 @@ import type { BackgroundOutput, SessionItem } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../../host/client.js";
 import { formatDuration } from "../turns.js";
 import { IconChevronDown, IconChevronRight, IconTerminal, IconX } from "../icons.js";
+import { readStored, writeStored } from "../../lib/stored.js";
 
 // Above the composer (stage 12, S12-E): the commands the agent left running in the background, and the next message
 // Claude suggests after a reply.
@@ -38,11 +39,7 @@ export function BackgroundTasks({ link, sessionId, items, readOnly, onError }: {
   const endedCount = list.length - runningCount;
   const toggle = () =>
     setFolded((v) => {
-      try {
-        localStorage.setItem(FOLD_KEY, v ? "0" : "1");
-      } catch {
-        // per-viewer convenience only
-      }
+      writeStored(FOLD_KEY, v ? "0" : "1");
       return !v;
     });
   return (
@@ -81,13 +78,7 @@ export function BackgroundTasks({ link, sessionId, items, readOnly, onError }: {
 // 2026-11-02 问题 #12: with many background commands the list covered the conversation; it folds to one line now,
 // remembered for every session (the person folds it because it is in the way, not for one session).
 const FOLD_KEY = "amo.backgroundTasksFolded";
-function readFolded(): boolean {
-  try {
-    return localStorage.getItem(FOLD_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+const readFolded = (): boolean => readStored(FOLD_KEY) === "1";
 
 function BackgroundRow({
   link,

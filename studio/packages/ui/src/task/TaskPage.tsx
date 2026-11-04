@@ -45,25 +45,14 @@ import { GrantDialog } from "./GrantDialog.js";
 import { RemoteBanner } from "./RemoteBanner.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { ALSO_MINE_KEY, PINNED_KEY } from "../focus/pins.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
 /** Whether the session list is hidden (会话 in the head; the key is from when it folded to a strip). */
 const SESSIONS_KEY = "amo.sessionsFolded";
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-function writeFlag(key: string, on: boolean): void {
-  try {
-    localStorage.setItem(key, on ? "1" : "0");
-  } catch {
-    // per-window convenience only
-  }
-}
+const readFlag = (key: string): boolean => readStored(key) === "1";
+const writeFlag = (key: string, on: boolean): void => writeStored(key, on ? "1" : "0");
 
 interface TaskPageProps {
   link: HostLink;

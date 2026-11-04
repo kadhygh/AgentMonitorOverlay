@@ -1,5 +1,6 @@
 import type { ModelProfile } from "@amo-studio/protocol";
 import { storedChoices } from "./choices.js";
+import { readStoredJson, writeStoredJson } from "./stored.js";
 
 // The "常用" model tiles (design/ui-directions/new-task.html): the combinations the person used last, then each
 // profile's own default. Kept per install, like the other remembered choices.
@@ -14,12 +15,8 @@ const KEY = "amo.recentModels";
 const KEEP = 8;
 
 function read(): ModelPick[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(KEY) ?? "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.filter((p): p is ModelPick => !!p && typeof p.profileId === "string" && (typeof p.model === "string" || p.model === null)) : [];
-  } catch {
-    return [];
-  }
+  const parsed = readStoredJson(KEY);
+  return Array.isArray(parsed) ? parsed.filter((p): p is ModelPick => !!p && typeof p.profileId === "string" && (typeof p.model === "string" || p.model === null)) : [];
 }
 
 export const samePick = (a: ModelPick, b: ModelPick) => a.profileId === b.profileId && (a.model ?? null) === (b.model ?? null);
@@ -37,11 +34,7 @@ export function normalPick(p: ModelPick): ModelPick {
 /** Moves a pick to the front of the recent list. */
 export function rememberPick(pick: ModelPick): void {
   const next = [pick, ...read().filter((p) => !samePick(p, pick))].slice(0, KEEP);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    // per-viewer convenience only
-  }
+  writeStoredJson(KEY, next);
 }
 
 /**

@@ -1,3 +1,5 @@
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
+
 // What is being written in a session's composer, kept per session across switching sessions and restarts (2026-10-15:
 // a restart emptied the box). One map in storage; an emptied box drops its entry, and only the most recent drafts stay.
 
@@ -7,12 +9,8 @@ const MAX = 50;
 type Drafts = Record<string, { text: string; at: number }>;
 
 function readAll(): Drafts {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "{}") as unknown;
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Drafts) : {};
-  } catch {
-    return {};
-  }
+  const v = readStoredJson(KEY);
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Drafts) : {};
 }
 
 /** The session's kept draft, "" when none. */
@@ -33,8 +31,8 @@ export function writeSessionDraft(sessionId: string | null | undefined, text: st
     const kept = Object.entries(all)
       .sort((a, b) => b[1].at - a[1].at)
       .slice(0, MAX);
-    localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(kept)));
+    writeStoredJson(KEY, Object.fromEntries(kept));
   } catch {
-    // per-viewer convenience only
+    // an entry from an older version that does not sort: not kept this time
   }
 }

@@ -20,6 +20,7 @@ import { DescriptionDialog } from "../task/DescriptionDialog.js";
 import { DocsTab } from "./DocsTab.js";
 import { TopicBookmarks } from "../marks/MarksApp.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
+import { readStored, writeStored, readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 export { CARD_H, CARD_W, NOTE_H, NOTE_W } from "./cards.js";
 
@@ -37,20 +38,8 @@ const SIDE_W_KEY = "amo.canvasSidebarWidth";
 const SIDE_TAB_KEY = "amo.canvasSideTab";
 export const SIDE_W = { def: 320, min: 260, max: 560 };
 
-function readKey(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function writeKey(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // per-window convenience only
-  }
-}
+const readKey = readStored;
+const writeKey = (key: string, value: string): void => writeStored(key, value);
 
 interface View {
   x: number;
@@ -71,22 +60,11 @@ type Drag =
 type Menu = { x: number; y: number; label: string; entries: MenuEntry[] };
 
 function loadView(key: string): View {
-  try {
-    const v = JSON.parse(localStorage.getItem(key) ?? "") as View;
-    if ([v.x, v.y, v.k].every(Number.isFinite)) return v;
-  } catch {
-    // per-viewer convenience only
-  }
-  return { x: 0, y: 0, k: 1 };
+  const v = readStoredJson(key) as View | null | undefined;
+  return v && [v.x, v.y, v.k].every(Number.isFinite) ? v : { x: 0, y: 0, k: 1 };
 }
 
-function saveView(key: string, v: View) {
-  try {
-    localStorage.setItem(key, JSON.stringify(v));
-  } catch {
-    // ignore
-  }
-}
+const saveView = (key: string, v: View) => writeStoredJson(key, v);
 
 let idCounter = 0;
 export const newCanvasId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;

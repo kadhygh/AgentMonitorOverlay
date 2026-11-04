@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ITEM_LABEL, needsYou, toPanorama, type ItemStatus, type PanoramaData, type PanoramaDoc, type PanoramaInput, type PanoramaItem } from "./datalayer.js";
 import { DEFAULT_THEME, type PanoramaTheme } from "./themes.js";
 import type { EngineProbe, PanoramaEngine } from "./engine.js";
+import { readStored } from "../lib/stored.js";
 
 // 全景 (设置 → 测试功能, 2026-11-01): a topic's tasks as lanes on a tilted map (the userlayer), drawn only from the
 // datalayer (datalayer.ts), never from Studio's state directly. The map itself (engine.ts, deck.gl) is loaded on first
@@ -25,7 +26,7 @@ declare global {
 /** WebGL2 is what deck.gl 9 needs; asked once on a throwaway canvas, which is let go at once. */
 function webglAvailable(): boolean {
   // For checking the list without breaking WebGL (e2e): localStorage amo.panorama.noWebgl = "1".
-  if (localStorage.getItem("amo.panorama.noWebgl") === "1") return false;
+  if (readStored("amo.panorama.noWebgl") === "1") return false;
   try {
     const gl = document.createElement("canvas").getContext("webgl2");
     if (!gl) return false;

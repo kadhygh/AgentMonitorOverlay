@@ -1,27 +1,18 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
+import { readStored, writeStored } from "./stored.js";
 
 // A column whose width the person drags (2026-10-15: the left column and the task page's session list), kept on this
 // machine. The handle is a zero-width item after the column, so it never scrolls with the column's content.
 
 function saved(key: string, def: number, min: number, max: number): number {
-  try {
-    const v = Number(localStorage.getItem(key));
-    return v >= min ? Math.min(v, max) : def;
-  } catch {
-    return def;
-  }
+  const v = Number(readStored(key));
+  return v >= min ? Math.min(v, max) : def;
 }
 
 /** `fromLeft`: the handle is on the column's left edge (a right-hand column, 2026-10-29 the canvas sidebar): dragging left widens it. */
 export function useDragWidth(key: string, def: number, min: number, max: number, fromLeft = false): { width: number; handle: (label: string) => ReactElement } {
   const [width, setWidth] = useState(() => saved(key, def, min, max));
-  const keep = (w: number) => {
-    try {
-      localStorage.setItem(key, String(Math.round(w)));
-    } catch {
-      // not kept: fine
-    }
-  };
+  const keep = (w: number) => writeStored(key, String(Math.round(w)));
   const start = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();

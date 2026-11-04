@@ -6,6 +6,7 @@ import { IconClock } from "../chat/icons.js";
 import { useSettings } from "../settings/useSettings.js";
 import { balanceText, money, useBalance, useProfiles } from "../lib/balance.js";
 import { quotaOf } from "../lib/quota.js";
+import { readStored, writeStored, readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // Bottom of the left column: whether the Host runs, how much of the GPT and Claude subscriptions is used, and the
 // balance of channels whose site tells it — the accounts 设置 → 额度 shows here. One line folded (the highest use of
@@ -19,13 +20,9 @@ const OTHERS_KEY = "amo.usageOthersOpen";
 const STORED_KEY = "amo.usage";
 const REFRESH_MS = 5 * 60_000;
 
-function readStored(): AccountUsage[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(STORED_KEY) ?? "[]") as unknown;
-    return Array.isArray(v) ? (v as AccountUsage[]) : [];
-  } catch {
-    return [];
-  }
+function readSavedUsage(): AccountUsage[] {
+  const v = readStoredJson(STORED_KEY);
+  return Array.isArray(v) ? (v as AccountUsage[]) : [];
 }
 
 /** Time until a reset, to the minute: "34m", "1h 34m", "3d 2h 5m"; "已重置" once past. */
@@ -64,14 +61,8 @@ function useNow(on: boolean): Date {
 }
 
 export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; live: boolean; sessions?: readonly Session[] }) {
-  const [open, setOpen] = useState(() => {
-    try {
-      return localStorage.getItem(OPEN_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [usage, setUsage] = useState<AccountUsage[]>(readStored);
+  const [open, setOpen] = useState(() => readStored(OPEN_KEY) === "1");
+  const [usage, setUsage] = useState<AccountUsage[]>(readSavedUsage);
   const [loading, setLoading] = useState(false);
   const now = useNow(open);
   const settings = useSettings(link);
@@ -79,13 +70,7 @@ export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; liv
   const shown = usage.filter((u) => quotaOf(settings, u.profileId).footer);
   // The accounts not in use, folded together under the one in use.
   const others = shown.filter((u) => u.account && !u.account.current);
-  const [othersOpen, setOthersOpen] = useState(() => {
-    try {
-      return localStorage.getItem(OTHERS_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [othersOpen, setOthersOpen] = useState(() => readStored(OTHERS_KEY) === "1");
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const busy = claudeBusy(sessions);
@@ -98,13 +83,7 @@ export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; liv
         .then((list) => {
           // A plain read without numbers keeps the numbers known from before.
           setUsage((cur) => list.map((u) => (u.windows.length || refresh ? u : { ...(cur.find((c) => keyOf(c) === keyOf(u)) ?? u), ...(u.account ? { account: u.account } : {}) })));
-          if (refresh) {
-            try {
-              localStorage.setItem(STORED_KEY, JSON.stringify(list));
-            } catch {
-              // per-viewer convenience only
-            }
-          }
+          if (refresh) writeStoredJson(STORED_KEY, list);
         })
         .catch(() => undefined)
         .finally(() => setLoading(false));
@@ -137,21 +116,13 @@ export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; liv
 
   const toggleOthers = () =>
     setOthersOpen((v) => {
-      try {
-        localStorage.setItem(OTHERS_KEY, v ? "0" : "1");
-      } catch {
-        // per-viewer convenience only
-      }
+      writeStored(OTHERS_KEY, v ? "0" : "1");
       return !v;
     });
 
   const toggle = () =>
     setOpen((v) => {
-      try {
-        localStorage.setItem(OPEN_KEY, v ? "0" : "1");
-      } catch {
-        // per-viewer convenience only
-      }
+      writeStored(OPEN_KEY, v ? "0" : "1");
       return !v;
     });
 

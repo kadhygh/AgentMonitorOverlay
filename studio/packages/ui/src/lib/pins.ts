@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readStoredJson, writeStoredJson } from "./stored.js";
 
 // Topics and projects pinned to the top of the left column (kept per install, shared by the windows). Pinned ones also
 // come first wherever they are picked: the new-task chips, @ and # while typing, @ tasks in a conversation.
@@ -13,23 +14,15 @@ const KEY = "amo.pins";
 const EVENT = "amo:pins";
 
 function read(): Pins {
-  try {
-    const p = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Pins> | null;
-    const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-    return { topic: list(p?.topic), project: list(p?.project) };
-  } catch {
-    return { topic: [], project: [] };
-  }
+  const p = readStoredJson(KEY) as Partial<Pins> | null | undefined;
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return { topic: list(p?.topic), project: list(p?.project) };
 }
 
 export function togglePin(kind: PinKind, id: string): void {
   const pins = read();
   const list = pins[kind].includes(id) ? pins[kind].filter((x) => x !== id) : [...pins[kind], id];
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ ...pins, [kind]: list }));
-  } catch {
-    // per-viewer convenience only
-  }
+  writeStoredJson(KEY, { ...pins, [kind]: list });
   window.dispatchEvent(new Event(EVENT));
 }
 

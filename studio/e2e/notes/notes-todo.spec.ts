@@ -236,7 +236,9 @@ test("待办: the server away and back, the login gone, 使用待办 off — and
   await expect(settings.getByTestId("ns-keep-90")).toHaveAttribute("aria-checked", "true");
 
   // 使用待办 off: the window goes, the tray item goes, 显示待办 opens the settings instead.
-  await settings.getByTestId("ns-use-todo").uncheck();
+  // The box turns once the 便签 program has saved it (uncheck() / check() look at once after the click).
+  await settings.getByTestId("ns-use-todo").click();
+  await expect(settings.getByTestId("ns-use-todo")).not.toBeChecked();
   await expect.poll(() => todoVisible(app)).toBe(false);
   await expect(settings.getByLabel("待办").locator(".ns-hint").first()).toContainText("关着");
   await screenshot(app, "notes", "T11-settings-todo-off", settings, "scratchpad");
@@ -244,7 +246,8 @@ test("待办: the server away and back, the login gone, 使用待办 off — and
   await menu.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(menu.getByTestId("tm-todo")).toHaveCount(0);
   expect(await notesApi("GET", "/api/todo")).toMatchObject({ status: "off" });
-  await settings.getByTestId("ns-use-todo").check();
+  await settings.getByTestId("ns-use-todo").click();
+  await expect(settings.getByTestId("ns-use-todo")).toBeChecked();
   await expect.poll(async () => ((await notesApi("GET", "/api/todo")) as { status: string }).status).toBe("synced");
 });
 

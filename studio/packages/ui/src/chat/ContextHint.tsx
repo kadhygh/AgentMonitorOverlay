@@ -3,6 +3,7 @@ import { autoCompactFor, type Session, type SessionItem } from "@amo-studio/prot
 import type { HostLink } from "../host/client.js";
 import { useSettings } from "../settings/useSettings.js";
 import { formatTokens, type ContextUse } from "./turns.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // Above the composer (2026-10-17): a session whose context has grown large, where every model call reads the whole of
 // it again. A 2-day Claude session grew to 460k and spent ~450k per call; after more than about an hour away its cache
@@ -17,13 +18,7 @@ const AGAIN_AFTER = 50_000;
 
 const dismissKey = (sessionId: string) => `amo.contextHint.${sessionId}`;
 
-function dismissedAt(sessionId: string): number {
-  try {
-    return Number(localStorage.getItem(dismissKey(sessionId)) ?? 0) || 0;
-  } catch {
-    return 0;
-  }
-}
+const dismissedAt = (sessionId: string): number => Number(readStored(dismissKey(sessionId)) ?? 0) || 0;
 
 function since(ms: number): string {
   const min = Math.round(ms / 60_000);
@@ -55,11 +50,7 @@ export function ContextHint({
   const dsh = session.runtime === "dsh";
   const auto = dsh ? (context.window ? Math.round(context.window * 0.8) : null) : settings ? autoCompactFor(settings, session.profileId) : null;
   const dismiss = () => {
-    try {
-      localStorage.setItem(dismissKey(session.id), String(context.used));
-    } catch {
-      // Shown again next time; nothing else depends on it.
-    }
+    writeStored(dismissKey(session.id), String(context.used));
     setDismissed(context.used);
   };
   return (

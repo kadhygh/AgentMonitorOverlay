@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { writeStored, readStoredJson } from "../lib/stored.js";
 
 // 设置 can be resized from its bottom-right corner (2026-10-27): the size is kept for the next time (this install), and a
 // double click on the corner goes back to the default.
@@ -13,22 +14,11 @@ interface Size {
 }
 
 function read(): Size | null {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Size> | null;
-    return v && typeof v.w === "number" && typeof v.h === "number" ? { w: v.w, h: v.h } : null;
-  } catch {
-    return null;
-  }
+  const v = readStoredJson(KEY) as Partial<Size> | null | undefined;
+  return v && typeof v.w === "number" && typeof v.h === "number" ? { w: v.w, h: v.h } : null;
 }
 
-function write(size: Size | null): void {
-  try {
-    if (size) localStorage.setItem(KEY, JSON.stringify(size));
-    else localStorage.removeItem(KEY);
-  } catch {
-    // Not kept: it still applies until 设置 closes.
-  }
-}
+const write = (size: Size | null): void => writeStored(KEY, size ? JSON.stringify(size) : null);
 
 /** Within the window: 设置 sits 80px from the top, centred across. */
 function fit(s: Size): Size {

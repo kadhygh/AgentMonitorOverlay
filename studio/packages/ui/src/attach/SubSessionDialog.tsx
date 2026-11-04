@@ -7,6 +7,7 @@ import { EffortBars, pickLabel } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { subSessionArgs, type SubSessionSpec } from "./mentions.js";
 import { Modal } from "../lib/Modal.js";
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // 开子会话… (2026-10-26): from the composer's @ list, how the model is to start sub-sessions — model, effort,
 // permission, whether their results come back. Confirmed, the composer gets「@子会话N」 and the message says what it means.
@@ -30,20 +31,10 @@ interface Remembered {
   report: boolean;
 }
 function readRemembered(): Remembered | null {
-  try {
-    const r = JSON.parse(localStorage.getItem(KEY) ?? "null") as Remembered | null;
-    return r && typeof r.pick?.profileId === "string" ? r : null;
-  } catch {
-    return null;
-  }
+  const r = readStoredJson(KEY) as Remembered | null | undefined;
+  return r && typeof r.pick?.profileId === "string" ? r : null;
 }
-function remember(r: Remembered): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(r));
-  } catch {
-    // only a convenience
-  }
-}
+const remember = (r: Remembered): void => writeStoredJson(KEY, r);
 
 export function SubSessionDialog({
   link,

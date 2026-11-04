@@ -4,6 +4,7 @@ import { call, type HostLink } from "../host/client.js";
 import { defaultProfile, rememberProfile, rememberWorkspace, repick } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
 import { withMentionRefs, type MentionPick } from "../attach/mentions.js";
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // The task being written: one draft, shared by the draft task page and the quick bar (Ctrl N), kept across restarts
 // so leaving the page never loses it.
@@ -36,7 +37,7 @@ export function emptyDraft(profiles: readonly ModelProfile[]): TaskDraft {
 function load(profiles: readonly ModelProfile[]): TaskDraft {
   const fresh = emptyDraft(profiles);
   try {
-    const d = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<TaskDraft> | null;
+    const d = readStoredJson(KEY) as Partial<TaskDraft> | null | undefined;
     if (!d || typeof d !== "object") return fresh;
     const pick = d.pick && profiles.some((p) => p.id === d.pick!.profileId && !p.hidden && !p.unavailable) ? d.pick : fresh.pick;
     return {
@@ -72,13 +73,7 @@ export function draftText(draft: Pick<TaskDraft, "text" | "refs">): string {
   return draft.refs ? withMentionRefs(text, new Map(Object.entries(draft.refs))) : text;
 }
 
-function save(d: TaskDraft): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(d));
-  } catch {
-    // per-viewer convenience only
-  }
-}
+const save = (d: TaskDraft): void => writeStoredJson(KEY, d);
 
 /** The shared draft. `update` merges; switching the model drops an effort or permission the new one may not take. */
 export function useTaskDraft(profiles: readonly ModelProfile[]) {

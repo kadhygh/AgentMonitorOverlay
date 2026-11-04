@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AccountPage, Face } from "./AccountPage.js";
-import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type OpenResult, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
+import { formatBytes } from "../lib/bytes.js";
+import { bridge, call, openTool, serverLabel, type Channel, type OpenResult, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 import { EnvironmentPage } from "./EnvironmentPage.js";
 import { useMenuDismiss } from "../lib/ContextMenu.js";
 

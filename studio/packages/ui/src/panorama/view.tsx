@@ -6,6 +6,7 @@ import { LOOSE_TITLE, LOOSE_TOPIC } from "./datalayer.js";
 import { PanoramaPage } from "./PanoramaPage.js";
 import { THEMES } from "./themes.js";
 import type { ViewDef } from "../shell/views.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 /**
  * 全景 (设置 → 测试功能, 2026-11-01). 11-04 (plans/userlayer/framework.md 第 0 步): every live topic a block, and the
@@ -58,12 +59,8 @@ const LOOKS = [
 type LookId = (typeof LOOKS)[number]["id"];
 const LOOK_KEY = "amo.panorama.look";
 function readLook(): LookId {
-  try {
-    const v = localStorage.getItem(LOOK_KEY);
-    return LOOKS.some((l) => l.id === v) ? (v as LookId) : "terrain";
-  } catch {
-    return "terrain";
-  }
+  const v = readStored(LOOK_KEY);
+  return LOOKS.some((l) => l.id === v) ? (v as LookId) : "terrain";
 }
 
 type Review = Pick<CanvasItem, "id" | "num" | "title" | "status" | "sessionId"> & { topicId: string; updatedAt?: string };
@@ -128,11 +125,7 @@ function PanoramaTopics({ link, topicIds, render }: { link: HostLink; topicIds: 
   const set = (id: string) => {
     if (!LOOKS.some((l) => l.id === id)) return;
     setLook(id as LookId);
-    try {
-      localStorage.setItem(LOOK_KEY, id);
-    } catch {
-      // per-machine convenience only
-    }
+    writeStored(LOOK_KEY, id);
   };
   return <>{render(extras, { id: look, set })}</>;
 }

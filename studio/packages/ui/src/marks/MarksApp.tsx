@@ -31,6 +31,7 @@ import {
   type MarksScope,
   type MarksTarget,
 } from "./logic.js";
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // The bookmarks window (书签, 2026-10-19; it was 文件标记, S12-D; #marks?topic=…): bookmarks by topic, each a file (or
 // folder) or a passage of a conversation, with a note. Files come in by dropping them from Explorer, "+ 文件" (a
@@ -77,12 +78,8 @@ const SCOPE_KEEP = 300;
 
 /** 显示范围 as last chosen where the window was opened from (a task, else a topic or project; 2026-10-22). */
 function readScopes(): Record<string, MarksScope> {
-  try {
-    const all = JSON.parse(localStorage.getItem(SCOPE_KEY) ?? "{}") as unknown;
-    return all && typeof all === "object" ? (all as Record<string, MarksScope>) : {};
-  } catch {
-    return {};
-  }
+  const all = readStoredJson(SCOPE_KEY);
+  return all && typeof all === "object" ? (all as Record<string, MarksScope>) : {};
 }
 
 function useScope(target: MarksTarget): [MarksScope, (scope: MarksScope) => void] {
@@ -91,14 +88,10 @@ function useScope(target: MarksTarget): [MarksScope, (scope: MarksScope) => void
   useEffect(() => setChosen(readScopes()[key]), [key]);
   const choose = (scope: MarksScope) => {
     setChosen(scope);
-    try {
-      // The newest choices last; the oldest go once there are too many.
-      const { [key]: _, ...rest } = readScopes();
-      const entries = [...Object.entries(rest), [key, scope] as const].slice(-SCOPE_KEEP);
-      localStorage.setItem(SCOPE_KEY, JSON.stringify(Object.fromEntries(entries)));
-    } catch {
-      // no storage: kept as long as the window
-    }
+    // The newest choices last; the oldest go once there are too many.
+    const { [key]: _, ...rest } = readScopes();
+    const entries = [...Object.entries(rest), [key, scope] as const].slice(-SCOPE_KEEP);
+    writeStoredJson(SCOPE_KEY, Object.fromEntries(entries));
   };
   // A remembered scope the window cannot offer now (no topic or project in front) shows everything.
   const scope = chosen && scopesFor(target)[chosen] ? chosen : "all";

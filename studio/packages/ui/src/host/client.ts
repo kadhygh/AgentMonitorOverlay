@@ -141,17 +141,25 @@ export async function call<R extends HostRoute>(
   const [method, pattern] = route.split(" ") as [string, string];
   const path = pattern.replace(/:([A-Za-z]+)/g, (_, k: string) => encodeURIComponent(params[k] ?? ""));
   const search = query ? `?${new URLSearchParams(query).toString()}` : "";
-  const res = await fetch(`${link.url}${path}${search}`, {
+  return request<RouteResponse<R>>(link, method, `${path}${search}`, body);
+}
+
+/**
+ * The one way the windows talk to a local server — the Host, or the 便签 program's own (架构整理第 7 步, 2026-11-05; Host
+ * routes, attachments, 便签 and 待办 had a copy each): the bearer token, a JSON body (a Blob goes as it is, with its own
+ * type), a JSON answer, and a failure as HostApiError — also when the answer is not JSON (a proxy's page, a cut-off one).
+ */
+export async function request<T>(link: HostLink, method: string, path: string, body?: unknown): Promise<T> {
+  const raw = body instanceof Blob;
+  const res = await fetch(`${link.url}${path}`, {
     method,
-    headers: { authorization: `Bearer ${link.token}`, "content-type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    headers: { authorization: `Bearer ${link.token}`, "content-type": raw ? body.type : "application/json" },
+    ...(body === undefined ? {} : { body: raw ? body : JSON.stringify(body) }),
   });
-  const data = (await res.json()) as RouteResponse<R> | HostErrorBody;
-  if (!res.ok) {
-    const err = (data as HostErrorBody).error;
-    throw new HostApiError(res.status, err?.code ?? "internal", err?.message ?? res.statusText);
-  }
-  return data as RouteResponse<R>;
+  const data = (await res.json().catch(() => undefined)) as (T & Partial<HostErrorBody>) | undefined;
+  if (!res.ok) throw new HostApiError(res.status, data?.error?.code ?? "internal", data?.error?.message ?? (res.statusText || `HTTP ${res.status}`));
+  if (data === undefined) throw new HostApiError(res.status, "internal", "回应读不出来（不是 JSON）");
+  return data;
 }
 
 export const loadState = (link: HostLink): Promise<StateSnapshot> => call(link, "GET /api/state");

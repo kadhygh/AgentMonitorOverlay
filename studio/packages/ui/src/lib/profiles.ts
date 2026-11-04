@@ -1,5 +1,6 @@
 import { RUNTIME_LABELS, type ModelProfile } from "@amo-studio/protocol";
 import { pickDirectory } from "../folders/FolderPicker.js";
+import { readStored, writeStored } from "./stored.js";
 
 /** "Codex · DeepSeek", "Codex · GPT", "Claude · GLM", "DSH · DeepSeek" — the account behind a model. */
 export function profileLabel(p: ModelProfile): string {
@@ -14,20 +15,8 @@ export function shortModel(p: ModelProfile | undefined): string {
 const LAST_PROFILE_KEY = "amo.lastProfile";
 const LAST_WORKSPACE_KEY = "amo.lastWorkspace";
 
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // per-viewer convenience only
-  }
-}
+const read = readStored;
+const write = (key: string, value: string): void => writeStored(key, value);
 
 /**
  * What the model pickers offer: the profiles not hidden in 设置 → 模型 and able to start sessions (a DSH profile needs

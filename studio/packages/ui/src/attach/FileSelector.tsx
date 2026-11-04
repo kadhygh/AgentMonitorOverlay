@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { absolutePath, highlightRuns, type ProjectFiles } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { formatBytes, formatWhen } from "./refs.js";
+import { formatBytes } from "../lib/bytes.js";
+import { formatWhen } from "./refs.js";
 
 const LIMIT = 100;
 

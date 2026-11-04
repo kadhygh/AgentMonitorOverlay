@@ -1,18 +1,9 @@
 import type { TodoOp, TodoView } from "@amo-studio/protocol";
-import { HostApiError, type HostLink } from "../host/client.js";
+import { request, type HostLink } from "../host/client.js";
 
 // 待办's routes on the 便签 program's own server (packages/notes/src/server.ts, 2026-11-01).
 
-async function todoCall<T>(link: HostLink, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${link.url}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${link.token}`, "content-type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = (await res.json()) as T & { error?: { code: string; message: string } };
-  if (!res.ok) throw new HostApiError(res.status, data.error?.code ?? "internal", data.error?.message ?? res.statusText);
-  return data;
-}
+const todoCall = <T>(link: HostLink, method: "GET" | "POST", path: string, body?: unknown): Promise<T> => request<T>(link, method, path, body);
 
 export const todoView = (link: HostLink) => todoCall<TodoView>(link, "GET", "/api/todo");
 export const todoChange = (link: HostLink, ops: TodoOp[]) => todoCall<TodoView>(link, "POST", "/api/todo/ops", { ops });

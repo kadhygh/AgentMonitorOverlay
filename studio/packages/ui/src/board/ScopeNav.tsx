@@ -18,16 +18,11 @@ import { useStoredIds } from "../lib/storedIds.js";
 import { needsPerson } from "../lib/status.js";
 import { fromProjectGroups, fromTopicGroups, groupEntries, groupOwners, joinGroup, moveGroup, toProjectGroups, toTopicGroups, type NavGroup } from "./navGroups.js";
 import { EditGroupDialog } from "./EditGroupDialog.js";
+import { readStored, writeStored, readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 /** The left column folded to a strip (2026-10-14), remembered per window. */
 const NAV_FOLD_KEY = "amo.navCollapsed";
-function readNavFolded(): boolean {
-  try {
-    return localStorage.getItem(NAV_FOLD_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+const readNavFolded = (): boolean => readStored(NAV_FOLD_KEY) === "1";
 import { showToast } from "../lib/toast.js";
 import { useWaitingQuestions } from "../canvas/useCallouts.js";
 import { pickFolder } from "../lib/profiles.js";
@@ -67,12 +62,8 @@ const isCurrent = (a: Scope, b: Scope) => a.kind === b.kind && (a.kind === "all"
 
 const FOLD_KEY = "amo.navFolded";
 function readFolded(): Record<PinKind, boolean> {
-  try {
-    const v = JSON.parse(localStorage.getItem(FOLD_KEY) ?? "{}") as Partial<Record<PinKind, boolean>>;
-    return { topic: v.topic === true, project: v.project === true };
-  } catch {
-    return { topic: false, project: false };
-  }
+  const v = readStoredJson(FOLD_KEY) as Partial<Record<PinKind, boolean>> | null | undefined;
+  return { topic: v?.topic === true, project: v?.project === true };
 }
 
 /**
@@ -100,11 +91,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
   useNavWidthVar(navW.width, !collapsed);
   const setCollapsed = (on: boolean) => {
     setCollapsedState(on);
-    try {
-      localStorage.setItem(NAV_FOLD_KEY, on ? "1" : "0");
-    } catch {
-      // per-window convenience only
-    }
+    writeStored(NAV_FOLD_KEY, on ? "1" : "0");
   };
   const editingWs = editing ? workspaces.find((w) => w.id === editing) : undefined;
   const editingTopic = editingTopicId ? topics.find((t) => t.id === editingTopicId) : undefined;
@@ -159,11 +146,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
   const fold = (kind: PinKind) =>
     setFolded((f) => {
       const next = { ...f, [kind]: !f[kind] };
-      try {
-        localStorage.setItem(FOLD_KEY, JSON.stringify(next));
-      } catch {
-        // per-viewer convenience only
-      }
+      writeStoredJson(FOLD_KEY, next);
       return next;
     });
 

@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
 import { pinnedFirst } from "../lib/pins.js";
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 /** Sidebar order is a local view preference, independent of a project's or topic's identity. */
 export function useNavOrder(kind: "project" | "topic" | "sections") {
   const key = `amo.navOrder.${kind}`;
   const read = (): string[] => {
-    try {
-      const value: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
-      return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string"))] : [];
-    } catch {
-      return [];
-    }
+    const value = readStoredJson(key);
+    return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string"))] : [];
   };
   const [ids, setIds] = useState(read);
   useEffect(() => {
@@ -22,11 +19,7 @@ export function useNavOrder(kind: "project" | "topic" | "sections") {
     ids,
     save(next: string[]) {
       setIds(next);
-      try {
-        localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        // With storage unavailable, retain the order for this window's lifetime.
-      }
+      writeStoredJson(key, next);
     },
   };
 }

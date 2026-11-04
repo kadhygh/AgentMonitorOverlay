@@ -1,24 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
+import { readStoredJson, writeStoredJson } from "./stored.js";
 
 // A list of ids kept per machine in localStorage, followed across windows: what Focus pins and opens (2026-10-21), the
 // sessions folded in a task's session tree (10-22).
 
 export function readIds(key: string): string[] {
-  try {
-    const list = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+  const list = readStoredJson(key);
+  return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
 }
 
-function writeIds(key: string, ids: readonly string[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(ids));
-  } catch {
-    // no storage: kept as long as the window
-  }
-}
+const writeIds = (key: string, ids: readonly string[]): void => writeStoredJson(key, ids);
 
 /** A list of ids kept under `key`: whether one is in it, and putting it in or taking it out (first-come order). */
 export function useStoredIds(key: string): { ids: readonly string[]; has(id: string): boolean; toggle(id: string): void; keepOnly(live: ReadonlySet<string>): void } {

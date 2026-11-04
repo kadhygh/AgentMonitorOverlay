@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // 按专题分组 (2026-10-19): the board's columns hold their cards under their topics, the ones in none last. On unless
 // turned off on the board; stored per install.
@@ -6,20 +7,10 @@ import { useEffect, useState } from "react";
 const GROUP_KEY = "amo.boardGroupTopics";
 const GROUP_EVENT = "amo:board-group-topics";
 
-export function groupByTopic(): boolean {
-  try {
-    return localStorage.getItem(GROUP_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
+export const groupByTopic = (): boolean => readStored(GROUP_KEY) !== "off";
 
 export function setGroupByTopic(on: boolean): void {
-  try {
-    localStorage.setItem(GROUP_KEY, on ? "on" : "off");
-  } catch {
-    // private profile: still applies until reload
-  }
+  writeStored(GROUP_KEY, on ? "on" : "off");
   window.dispatchEvent(new CustomEvent(GROUP_EVENT, { detail: on }));
 }
 

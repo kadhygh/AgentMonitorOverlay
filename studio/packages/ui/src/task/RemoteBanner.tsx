@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ModelProfile, Session, Task } from "@amo-studio/protocol";
 import type { CopyStatus } from "../remote/remote.js";
 import { SESSION_LOOK, taskStatus } from "../lib/status.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // 远程 (step 2, 2026-10-29) under the head of a copy of another computer's task. 2026-10-30 (the user): one line by
 // default — the 远程 mark, where it runs and how its models are doing; the explanation folds out beneath, under the
@@ -9,21 +10,9 @@ import { SESSION_LOOK, taskStatus } from "../lib/status.js";
 
 const OPEN_KEY = "amo.remoteBannerOpen";
 
-function readOpen(): boolean {
-  try {
-    return localStorage.getItem(OPEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+const readOpen = (): boolean => readStored(OPEN_KEY) === "1";
 
-function writeOpen(on: boolean): void {
-  try {
-    localStorage.setItem(OPEN_KEY, on ? "1" : "0");
-  } catch {
-    // per-window convenience only
-  }
-}
+const writeOpen = (on: boolean): void => writeStored(OPEN_KEY, on ? "1" : "0");
 
 /** The task's models there (those of its sessions, not subagents) and the status that most needs the person. */
 export function remoteWatch(sessions: readonly Session[], profiles: readonly ModelProfile[]): { models: string[]; status: Session["status"] | null } {

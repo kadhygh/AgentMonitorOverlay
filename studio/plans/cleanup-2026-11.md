@@ -15,7 +15,7 @@
 | 4 | 中转登录收口 | ✓ 11-04 `0d56e627`（中转外壳的「下一版」有一条，会随自动打包发到测试通道） |
 | 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
 | 6 | 只增不删的数据 | ✓ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半 11-04 `48ecf1eb` |
-| 7 | ui 的数据流和共用件 | ✓ 前两批 11-04 合进 master（`36cc5a49`，分支 `studio/ui-dataflow`）；第三批和 base.css 下一轮 |
+| 7 | ui 的数据流和共用件 | ✓ 前两批 11-04 合进 master（`36cc5a49`，分支 `studio/ui-dataflow`）；第三批 11-05 在 master 上做完；base.css 用户定不做 |
 | 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；代码下一轮按 8a → 8d 做，新开 worktree |
 
 ## 第 0 步：先定的事
@@ -108,6 +108,7 @@ purge 不删按会话的 kv 键；DSH 日志不轮转不删；中转的孤儿截
   - base.css 两块浅色变量**没合**：用 `@container style()` 会把变量挪到 body，`code.css` 等在 `:root` 上派生的变量就断了；用 JS 要同时改 Studio 和 relay-ui 的 theme.ts；而且 relay-ui 也引 base.css，一改就得部署中转服务。chat.css、gitreview.css、stats.css、code.css 里是同样的重复写法。用户 11-04 定：这一轮不做。
   - 验证：typecheck（三套）；ui 单测 52 个文件 331 条；e2e 93 条（studio 里涉及这些对话框和菜单的 30 个 spec，加 notes、reviewer、platform）全过。截图对比：先在第一批的构建上跑一遍同样的 spec 和一个临时的浅色/深色截图 spec（看板、设置、专题右键、确认框、画布右键、任务说明），换上第二批再跑，逐像素比：同一构建跑两遍也会变的（时间、端口、机器人表情）之外，剩下的差别都是对话框标题文字的抗锯齿，或者是比对用的旧截图本身是 10-28 拍的（顶栏那时还没有「远程」）。临时 spec 和它的截图（`screenshots/controls/`）没提交。
 - **第三批**（`lib/stored.ts`、`request()` 底座、统一 `formatBytes`）：这一轮没做。`formatBytes` 有三份（`attach/refs.ts`、`notes/api.ts`、`platform/bridge.ts`），输出各不相同（KB 取整还是一位小数、有没有 GB），合成一份会改用户看到的数字。用户 11-04 定：一律一位小数、到 GB（如 `1.5 MB`），下一轮做。
+  - **11-05 做完**（master）：`lib/bytes.ts` 一份 `formatBytes`（1024 以下是 `B`，往上一位小数，不会出现 `1024.0 KB`，NaN 和负数读成 `0 B`），三份删掉，6 处调用改过去（Studio、便签设置、平台）。`lib/stored.ts`：`readStored` / `writeStored`（null 删掉）/ `readStoredJson`（没有或解析不了是 undefined）/ `writeStoredJson`，存储不在或满了不抛；33 个文件里的 localStorage 读写都换过去，键和存的值不变（各处 `"1"/"0"`、`"on"/"off"` 原样保留）。`host/client.ts` 的 `request()`：Host 路由（`call`）、附件上传（Blob 原样发、带自己的类型）、便签、待办四份 fetch 合成一份；回的不是 JSON 时给 `HostApiError`（状态码和 statusText），不再是 JSON 解析错。没动的：`relay-ui` 和 Host 自己的大小显示（不在 ui 包里）。验证：typecheck；ui 单测 57 个文件（新加 `bytes.test`、`stored.test`、`client.test`）；e2e notes、platform 和 studio 里碰到这些的 20 个 spec。便签设置的两处勾选框测试改成点完等它变（勾选框显示的是便签程序存下的值，`check()` 点完立刻看，以前是碰巧赶上）。
 
 - 合并（11-04）：master 合进分支只冲突了三份 CHANGELOG（两边都留）；typecheck、单测 1247 条（三条 git 用例在全量负载下超时，单独跑过）、全部 e2e 224 条过。没过的两条在合并前的 master 上也不过，和这一步无关：`cli.spec` 的 Codex 压缩、`turn-start` 的「Focus 看过就消失」。
 

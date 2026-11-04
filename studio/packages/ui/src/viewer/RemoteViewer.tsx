@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { RemoteFetchedFile, StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
-import { formatBytes } from "../attach/refs.js";
+import { formatBytes } from "../lib/bytes.js";
 import { fileName } from "../files/paths.js";
 import type { ViewerTarget } from "./logic.js";
 import { TitleBar } from "../shell/WindowControls.js";

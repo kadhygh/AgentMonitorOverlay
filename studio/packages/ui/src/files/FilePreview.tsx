@@ -6,11 +6,12 @@ import { languageForPath, type CodeToken } from "../lib/highlight.js";
 import { useWorkerHighlight } from "../lib/useWorkerHighlight.js";
 import { Markdown, MarkdownFileLinks } from "../lib/markdown.js";
 import { openInEditor, rawFileUrl, readTextFile, revealInExplorer, type FileRef } from "../lib/openin.js";
-import { formatBytes } from "../attach/refs.js";
+import { formatBytes } from "../lib/bytes.js";
 import { diffRows, type DiffRow } from "./changes.js";
 import { useVsCode } from "./FileLinks.js";
 import { fileName, folderOf } from "./paths.js";
 import { openViewer } from "../viewer/open.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // The quick look (stage 12, S12-C, after DSH's document preview): a file beside the conversation without leaving it.
 // Code with line numbers and colours, scrolled to and marking a line; Markdown rendered or as source; images; a
@@ -41,12 +42,8 @@ const OVERSCAN = 30;
 
 const maxWidth = () => Math.max(MIN_WIDTH, Math.min(1100, window.innerWidth - 420));
 function savedWidth(): number {
-  try {
-    const v = Number(localStorage.getItem(WIDTH_KEY));
-    return v >= MIN_WIDTH ? Math.min(v, maxWidth()) : DEFAULT_WIDTH;
-  } catch {
-    return DEFAULT_WIDTH;
-  }
+  const v = Number(readStored(WIDTH_KEY));
+  return v >= MIN_WIDTH ? Math.min(v, maxWidth()) : DEFAULT_WIDTH;
 }
 
 export const isImage = (path: string) => {
@@ -183,11 +180,7 @@ export function FilePreview({ link, file, line, endLine, column, diff, onClose, 
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      try {
-        localStorage.setItem(WIDTH_KEY, String(Math.round(w)));
-      } catch {
-        // not kept: fine
-      }
+      writeStored(WIDTH_KEY, String(Math.round(w)));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);

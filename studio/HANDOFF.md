@@ -51,6 +51,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 晚 · 发消息看得见、梳理第 7 步第三批（master）**
+- 实机试「停止后收件箱先不送」（Studio 0.9.37，DSH 会话中途切成完全权限再停止）：攒着的消息 ✓，DSH 停下约 40 ms ✓，停下后的提示、不自己接着跑 ✓，立即发送 ✓；✗ 停下后人发的一条消息没了——没有行、没有报错、输入框已清空，host.log 和 DSH 日志里都没有，同样步骤在假 DSH 上 113 ms 就过。原因没查到，最像是请求没到 Host 的 runtime 调用或卡在它前面。先让下次留下痕迹（`c69d57ca`）：输入框 3 秒没回应显示「正在发送…」，30 秒把文字放回并提示；Host 发消息失败或超过 5 秒写 host.log，runtime 自己的 log 行也接进 host.log（以前没人听）。再遇到时先看 host.log 里那个会话的行。
+- 顺带的副作用：那次 DSH 子会话里的 agent 跑了一次 ACL 修复，给 `G:\PROJECT\AgentMonitorOverlay` 加了当前用户的 WRITE_OWNER。以后开 DSH 子会话用 `permission: full`，或先让用户配好 DSH 的沙箱权限。
+- 第 7 步第三批：`lib/bytes.ts`（一位小数到 GB）、`lib/stored.ts`（33 个文件的 localStorage 读写）、`host/client.ts` 的 `request()`（四份 fetch 合一）。细节在 `plans/cleanup-2026-11.md` 第 7 步。验证：typecheck，ui 单测，e2e notes / platform / studio 20 个 spec；便签设置两处勾选框测试原来有竞态，改成点完等它变。
+
 **2026-11-05 · 全景接进新渲染器，发 Studio 0.9.37（master）**
 - 全景（测试功能）换成预览里的新画法（`fed28372`）：一个专题一块区域，地形岛 / 地铁两种样子可切（记在 localStorage），任务是路、分支会话是支路、同项目的任务排在一起；贴地字、大字用 SDF，开场动画时区域在 worker 里算，滚轮平滑缩放。入口从专题选项卡挪到左边栏「全部任务」附近，一次画所有专题加「没归专题的任务」。框架讨论（Router / Lead / Worker、节点状态、会话窗口抽模块、第一版顺序）在 `plans/userlayer/framework.md`，这是它的第 0 步。
 - 合并 master 时 `panorama/view.tsx` 冲突（`897a8b25` 把单专题的读取改成 `useLiveResource`），按新写法改成读所有专题的画布和文档（`55825c1c`）。验证：typecheck，ui 单测 342，build，e2e panorama / cli / reconnect-settings 4 条；发版时跑过全量单测。已发测试通道 Studio 0.9.37（`1f27de4e`）。

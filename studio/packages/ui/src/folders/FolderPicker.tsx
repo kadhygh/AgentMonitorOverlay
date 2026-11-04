@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FolderListing, FolderResult } from "../host/client.js";
+import { readStored, writeStored } from "../lib/stored.js";
 
 // 选择文件夹 (2026-10-25): Studio's own folder picker, in place of the system dialog, which loads every Explorer
 // extension and once hung for good on a disconnected NAS drive — with Studio's window, which it was modal to. Only
@@ -8,20 +9,8 @@ import type { FolderListing, FolderResult } from "../host/client.js";
 // after the overlay was excluded (2026-10-25), so its button was taken out.
 
 const LAST_KEY = "amo.folderPicker.last";
-const readLast = () => {
-  try {
-    return localStorage.getItem(LAST_KEY);
-  } catch {
-    return null;
-  }
-};
-const writeLast = (path: string) => {
-  try {
-    localStorage.setItem(LAST_KEY, path);
-  } catch {
-    // Only a convenience.
-  }
-};
+const readLast = () => readStored(LAST_KEY);
+const writeLast = (path: string) => writeStored(LAST_KEY, path);
 
 const inside = (dir: string, name: string) => (dir.endsWith("\\") ? dir + name : `${dir}\\${name}`);
 const parentOf = (path: string) => {

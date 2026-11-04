@@ -1,5 +1,6 @@
 import type { Scope } from "../board/Board.js";
 import type { View } from "./views.js";
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // Where the workbench was left (2026-10-15): the page (board, canvas, new task, or a task) and the left column's scope,
 // and per task the session last looked at. A restart or reload comes back there. Kept in this window profile's storage.
@@ -13,21 +14,8 @@ type SavedView = { kind: "board" } | { kind: "canvas" } | { kind: "panorama" } |
 
 const isBack = (v: unknown): v is Back => !!v && typeof v === "object" && ((v as Back).kind === "board" || (v as Back).kind === "canvas" || (v as Back).kind === "panorama");
 
-function readJson(key: string): unknown {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? "null") as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function writeJson(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // per-window convenience only
-  }
-}
+const readJson = readStoredJson;
+const writeJson = writeStoredJson;
 
 function scopeOf(v: unknown): Scope {
   const s = v as { kind?: unknown; id?: unknown } | null;
@@ -42,7 +30,7 @@ function lastSessions(): Record<string, string> {
 
 /** The place to open at: the page last left (a task with the session last looked at in it) and the scope. */
 export function readPlace(): { view: View; scope: Scope } {
-  const p = readJson(PLACE_KEY) as { view?: SavedView; scope?: unknown } | null;
+  const p = readJson(PLACE_KEY) as { view?: SavedView; scope?: unknown } | null | undefined;
   const scope = scopeOf(p?.scope);
   const v = p?.view;
   if (v?.kind === "task" && typeof v.taskId === "string") {

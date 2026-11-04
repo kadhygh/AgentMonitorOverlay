@@ -1,5 +1,6 @@
 import type { GitChangedFile } from "@amo-studio/protocol";
 import { listOrder } from "./logic.js";
+import { readStored, writeStoredJson } from "../lib/stored.js";
 
 // The file list of the review window (S12-A): a tree of folders (single-child chains compacted into one row, as in
 // VS Code) or a flat list, names that stay readable when they are too long, and the list's remembered width.
@@ -162,18 +163,6 @@ export function parsePrefs(raw: string | null): ReviewPrefs {
   }
 }
 
-export function readPrefs(): ReviewPrefs {
-  try {
-    return parsePrefs(localStorage.getItem(PREFS_KEY));
-  } catch {
-    return DEFAULT_PREFS;
-  }
-}
+export const readPrefs = (): ReviewPrefs => parsePrefs(readStored(PREFS_KEY));
 
-export function writePrefs(p: ReviewPrefs): void {
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...p, v: PREFS_VERSION }));
-  } catch {
-    // per-viewer convenience only
-  }
-}
+export const writePrefs = (p: ReviewPrefs): void => writeStoredJson(PREFS_KEY, { ...p, v: PREFS_VERSION });

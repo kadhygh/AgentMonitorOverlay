@@ -1,3 +1,5 @@
+import { readStoredJson, writeStoredJson } from "../lib/stored.js";
+
 // Focus 历史 (2026-10-20): the last things that needed the person (an approval, a question, a reply that ended, a
 // failure, a decision), each with when it came and whether it has been dealt with since; a click goes to it in the
 // workbench. Kept in localStorage (per machine, like the windows); only the newest are kept.
@@ -82,19 +84,8 @@ export function updateHistory(
 export const BLIP_MS = 5000;
 
 export function readHistory(): FocusRecord[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    const list = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(list) ? (list as FocusRecord[]).filter((r) => r && typeof r.key === "string" && typeof r.sessionId === "string").slice(0, HISTORY_MAX) : [];
-  } catch {
-    return [];
-  }
+  const list = readStoredJson(KEY);
+  return Array.isArray(list) ? (list as FocusRecord[]).filter((r) => r && typeof r.key === "string" && typeof r.sessionId === "string").slice(0, HISTORY_MAX) : [];
 }
 
-export function writeHistory(list: readonly FocusRecord[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    // no storage: the history lasts as long as the window
-  }
-}
+export const writeHistory = (list: readonly FocusRecord[]): void => writeStoredJson(KEY, list);
