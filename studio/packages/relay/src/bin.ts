@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, writeSettings } from "./client.js";
+import { RelayClient, RelayClientError, clientFromSettings, loadSettings, relayHome, writeSettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
 import { RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
@@ -77,8 +77,8 @@ const viaWith = (conv: string | undefined) => (conv?.trim() ? { ...CLI_VIA, conv
 
 const cliCommand = () => `node "${fileURLToPath(import.meta.url)}"`;
 
-function joined(): { client: RelayClient; me: string } {
-  const s = readSettings();
+async function joined(): Promise<{ client: RelayClient; me: string }> {
+  const s = await loadSettings();
   if (!s) throw new Error(`这台机器还没加入中转：先登录（AMO Relay 客户端，或 amo-relay login；身份在 ${relayHome()}）`);
   return { client: clientFromSettings(s), me: s.name };
 }
@@ -155,18 +155,18 @@ async function main(): Promise<void> {
       return;
     }
     case "whoami": {
-      const { client } = joined();
+      const { client } = await joined();
       const me = await client.me();
       out(`${me.name}${me.role ? `（${me.role}）` : ""} @ ${client.server} · ${me.service}`);
       return;
     }
     case "people": {
-      const { client, me } = joined();
+      const { client, me } = await joined();
       for (const m of await client.members()) if (m.name !== me) out(`${m.name}${m.role ? `（${m.role}）` : ""}${m.online ? " · 在线" : ""}`);
       return;
     }
     case "prompt": {
-      const { client } = joined();
+      const { client } = await joined();
       const [me, members, settings] = await Promise.all([client.me(), client.members(), client.settings().catch(() => null)]);
       out(usagePrompt({ me: me.name, role: me.role, members, cli: cliCommand(), flow: settings?.flow }));
       return;
@@ -178,7 +178,7 @@ async function main(): Promise<void> {
     }
     case "ask": {
       if (!flags.json) throw new Error("用法：amo-relay ask --json <文件|->");
-      const { client } = joined();
+      const { client } = await joined();
       const req = (await readJsonArg(flags.json)) as NewRequest;
       const res = await client.ask({ ...req, via: viaWith(flags.conv) });
       out(`已发给 ${res.thread.request?.to}。threadId: ${res.thread.id}`);
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
     }
     case "inbox": {
       if (!flags.conv?.trim()) throw new Error("用法：amo-relay inbox --conv <标记>（发会话时用的那个）");
-      const { client, me } = joined();
+      const { client, me } = await joined();
       const conv = flags.conv.trim();
       const items = await takeInbox(client, me, (c) => c === conv);
       if (!items.length) out("这个对话发出的会话还没有新回复。");
@@ -194,7 +194,7 @@ async function main(): Promise<void> {
       return;
     }
     case "replies": {
-      const { client, me } = joined();
+      const { client, me } = await joined();
       if (pos[0]) {
         const { thread, messages } = await client.messages(pos[0], Number(flags.after ?? 0), { ai: true });
         out(threadAsText(thread, messages));
@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     }
     case "wait": {
       if (!pos[0]) throw new Error("用法：amo-relay wait <threadId> [--minutes n]");
-      const { client, me } = joined();
+      const { client, me } = await joined();
       const { messages: all } = await client.messages(pos[0]);
       const after = all.reduce((n, m) => (m.author === me ? Math.max(n, m.seq) : n), 0);
       const minutes = Math.max(0.1, Math.min(Number(flags.minutes ?? 5), 10));
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
       if (!pos[0] || (!body && then !== "done") || !["ask", "done", "note"].includes(then)) throw new Error("用法：amo-relay send <threadId> --body <文字>|--body-file <文件> [--then ask|done] [--questions <文件|->]");
       const questions = flags.questions ? ((await readJsonArg(flags.questions)) as NewMessage["questions"]) : undefined;
       if (questions && then !== "ask") throw new Error("--questions 只能和 --then ask 一起用");
-      const { client } = joined();
+      const { client } = await joined();
       if (body) {
         const res = await client.send(pos[0], { kind: "text", body, pass: then === "ask", questions, via: viaWith(flags.conv) });
         out(then === "ask" ? `已追问（#${res.message.seq}），会话回到对方手里。` : `已发出（#${res.message.seq}）。`);
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
       return;
     }
     case "queue": {
-      const { client, me } = joined();
+      const { client, me } = await joined();
       const live = (await client.threads()).filter((t) => t.request && t.request.state !== "done" && t.request.waitingOn === me);
       if (!live.length) out("没有待处理的会话。");
       for (const t of live) {
@@ -251,20 +251,20 @@ async function main(): Promise<void> {
     }
     case "newtask": {
       if (!flags.title) throw new Error("用法：amo-relay newtask --title <标题> [--desc <文字>|--desc-file <文件>] [--holder <名字>] [--status <状态>]");
-      const { client } = joined();
+      const { client } = await joined();
       const t = await client.createTask({ title: flags.title, description: textArg(flags.desc, flags["desc-file"]) ?? "", holder: flags.holder, status: flags.status as TaskStatus | undefined, via: CLI_VIA });
       out(`已新建任务「${t.title}」，在 ${t.holder} 手里，${t.status}。taskId: ${t.id}`);
       return;
     }
     case "settask": {
       if (!pos[0]) throw new Error("用法：amo-relay settask <taskId> [--title <标题>] [--desc <文字>|--desc-file <文件>] [--status <状态>]");
-      const { client } = joined();
+      const { client } = await joined();
       const t = await client.updateTask(pos[0], { title: flags.title, description: textArg(flags.desc, flags["desc-file"]), status: flags.status as TaskStatus | undefined, via: CLI_VIA });
       out(`已更新「${t.title}」：${t.status}，在 ${t.holder} 手里。`);
       return;
     }
     case "tasks": {
-      const { client, me } = joined();
+      const { client, me } = await joined();
       const list = (await client.tasks()).filter((t) => !t.archived && (!flags.mine || t.holder === me));
       if (!list.length) out("没有任务。");
       for (const t of list) out(`${t.title} · ${t.status} · 在 ${t.holder} 手里 · ${t.id}`);
@@ -272,21 +272,21 @@ async function main(): Promise<void> {
     }
     case "task": {
       if (!pos[0]) throw new Error("用法：amo-relay task <taskId>");
-      const { client } = joined();
+      const { client } = await joined();
       const { task, events } = await client.task(pos[0]);
       out(taskAsText(task, events));
       return;
     }
     case "transfer": {
       if (!pos[0] || !flags.to || !flags.reason) throw new Error("用法：amo-relay transfer <taskId> --to <名字> [--status …] --reason <文字>");
-      const { client } = joined();
+      const { client } = await joined();
       const t = await client.transferTask(pos[0], { to: flags.to, status: flags.status as TaskStatus | undefined, reason: flags.reason, via: CLI_VIA });
       out(`「${t.title}」已交给 ${t.holder}，${t.status}。`);
       return;
     }
     case "put": {
       if (!pos[0] || (!flags.task === !flags.thread)) throw new Error("用法：amo-relay put <本机文件> --task <taskId> | --thread <threadId> [--name <显示名>]");
-      const { client } = joined();
+      const { client } = await joined();
       const name = flags.name ?? basename(pos[0]);
       const f = await client.upload({ taskId: flags.task, threadId: flags.thread }, name, readFileSync(pos[0]), typeOf(name), { ai: true });
       out(`已上传 ${f.name} v${f.version}。fileId: ${f.id}`);
@@ -294,7 +294,7 @@ async function main(): Promise<void> {
     }
     case "file": {
       if (!pos[0]) throw new Error("用法：amo-relay file <fileId>");
-      const { client } = joined();
+      const { client } = await joined();
       const [versions, notes] = await Promise.all([client.versions(pos[0]), client.notes(pos[0])]);
       const f = versions.find((v) => v.id === pos[0])!;
       out(`## ${f.name} v${f.version} · ${f.type} · ${f.size} 字节\n`);
@@ -305,7 +305,7 @@ async function main(): Promise<void> {
     case "handoff": {
       const note = textArg(flags.note, flags["note-file"]);
       if (!pos[0] || !note) throw new Error("用法：amo-relay handoff <threadId> --note <文字>");
-      const { client } = joined();
+      const { client } = await joined();
       await client.session(pos[0], "handoff", { note, via: CLI_VIA });
       out("已交给本人。");
       return;

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { RelayClient, RelayClientError, clientFromSettings, readSettings, relayHome, type RelaySettings } from "./client.js";
+import { RelayClient, RelayClientError, clientFromSettings, loadSettings, relayHome, type RelaySettings } from "./client.js";
 import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
 import { mcpInstructions, newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText } from "./usage.js";
 import { takeInbox } from "./inbox.js";
@@ -27,8 +27,8 @@ const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }],
 const NOT_JOINED = "这台机器还没加入 AMO 中转。请让使用者先在 AMO Relay 客户端里登录（或运行 amo-relay login）。";
 
 export interface RelayMcpOptions {
-  /** This machine's identity; default: the settings file. */
-  settings?: () => RelaySettings | null;
+  /** This machine's identity; default: the settings file (or the platform's account it points at, loadSettings). */
+  settings?: () => RelaySettings | null | Promise<RelaySettings | null>;
   /** Shown in the usage text for clients without MCP; usually left out here. */
   cli?: string;
   /** This conversation's mark (Via.conv); default a new one per process. */
@@ -37,8 +37,8 @@ export interface RelayMcpOptions {
 
 /** The server with its tools; `instructions` from the service's member list when it answers. */
 export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpServer> {
-  const settings = opts.settings ?? (() => readSettings());
-  const s = settings();
+  const settings = opts.settings ?? (() => loadSettings());
+  const s = await settings();
   const usageFile = join(relayHome(), "AMO中转用法.md");
   const file = existsSync(usageFile) ? usageFile : undefined;
   let instructions = mcpInstructions({ me: s?.name ?? "（未加入）", usageFile: file });
@@ -61,7 +61,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   };
 
   const tool = (run: (client: RelayClient, me: string) => Promise<string>) => async (): Promise<ToolResult> => {
-    const current = settings();
+    const current = await settings();
     if (!current) return fail(NOT_JOINED);
     try {
       return ok(await run(clientFromSettings(current), current.name));

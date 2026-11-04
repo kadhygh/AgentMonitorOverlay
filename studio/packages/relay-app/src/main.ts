@@ -9,6 +9,7 @@ import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   normalizeServer,
+  readSettings,
   relayHome,
   settingsPath,
   SHELL_VERSION,
@@ -351,6 +352,24 @@ function hookup(): McpHookup {
 
 // ---- IPC
 
+/**
+ * This machine's identity for the MCP and the command line. The platform's own account is written as a pointer to it
+ * (no key in settings.json, which agents' commands can read; @amo-studio/relay loadSettings decrypts account.json when
+ * asked — the 11-03 audit, AGENTS.md rule 7); a login of this client's own keeps its key there as before.
+ */
+async function writeIdentity(identity: { server: string; name: string; key: string }): Promise<void> {
+  const a = await readAccount().catch(() => null);
+  const platform = a && a.key === identity.key && normalizeServer(a.server) === normalizeServer(identity.server);
+  writeSettings(platform ? { server: identity.server, name: identity.name, account: "platform" } : identity, home);
+}
+
+/** A settings.json written before 11-04 with the platform account's key in it: the same identity, as a pointer. */
+async function unplainSettings(): Promise<void> {
+  const own = readSettings(home);
+  const a = own ? await readAccount().catch(() => null) : null;
+  if (own && a && a.key === own.key) await writeIdentity(own);
+}
+
 function wire(): void {
   ipcMain.on("relay:loader-ready", () => (loaderReady?.(), (loaderReady = null)));
   ipcMain.on("relay:loader-server", (_e, value: string) => loaderAnswer?.({ kind: "server", value }));
@@ -374,8 +393,8 @@ function wire(): void {
   ipcMain.handle("relay:accounts", () => accounts.list());
   ipcMain.handle("relay:save-account", (_e, a: { server: string; name: string; password: string | null }) => accounts.save(a));
   ipcMain.handle("relay:forget-account", (_e, s: string, name: string) => accounts.forget(s, name));
-  ipcMain.handle("relay:signed-in", (_e, identity: { server: string; name: string; key: string } | null) => {
-    if (identity) writeSettings(identity, home);
+  ipcMain.handle("relay:signed-in", async (_e, identity: { server: string; name: string; key: string } | null) => {
+    if (identity) await writeIdentity(identity);
     else rmSync(settingsPath(home), { force: true });
   });
   ipcMain.handle("relay:mcp", () => hookup());
@@ -689,6 +708,7 @@ function start(): void {
     createTray();
     win = createWindow();
     setTimeout(() => void removeOldFiles(), 5000);
+    void unplainSettings();
     await boot();
   });
 }
