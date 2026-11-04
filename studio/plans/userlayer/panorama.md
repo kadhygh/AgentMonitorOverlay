@@ -5,7 +5,7 @@
 ## 已定
 
 - **名字**：「全景」，id `panorama`。用户特意选中性名：渲染主题（星图、冰白全息……）以后给别人用时可以换，数据结构稳定。
-- **入口**：设置 → 测试功能（默认关，和默认开的「功能」/`disabledFeatures` 分开存 `experimentalFeatures`）；开了之后顶栏「画布」后面多一个「全景」。
+- **入口**：设置 → 测试功能（默认关，和默认开的「功能」/`disabledFeatures` 分开存 `experimentalFeatures`）；开了之后左边栏「全部任务」附近多一行「全景」（11-04 从顶栏选项卡挪过来，见 `framework.md`「入口和占位」）。
 - **视觉**：先只做冰白全息（`v-deck3.html#oblivion`），风格参数在 `ui/src/panorama/themes.ts` 一张表里。
 - **由简到繁**：正式迭代从最少的内容开始，以后再加（用户 11-01）。
 - **渲染由代码做、只读 datalayer**：`ui/src/panorama/datalayer.ts` 把 Studio 状态转成 0.2 的形状，页面只读它。super-agent 原型（DSH 团队，`deepseek-ai/dsh-superagent-prototype`）也是面板由代码从事实渲染、不交给模型。

@@ -51,6 +51,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 全景接进新渲染器，发 Studio 0.9.37（master）**
+- 全景（测试功能）换成预览里的新画法（`fed28372`）：一个专题一块区域，地形岛 / 地铁两种样子可切（记在 localStorage），任务是路、分支会话是支路、同项目的任务排在一起；贴地字、大字用 SDF，开场动画时区域在 worker 里算，滚轮平滑缩放。入口从专题选项卡挪到左边栏「全部任务」附近，一次画所有专题加「没归专题的任务」。框架讨论（Router / Lead / Worker、节点状态、会话窗口抽模块、第一版顺序）在 `plans/userlayer/framework.md`，这是它的第 0 步。
+- 合并 master 时 `panorama/view.tsx` 冲突（`897a8b25` 把单专题的读取改成 `useLiveResource`），按新写法改成读所有专题的画布和文档（`55825c1c`）。验证：typecheck，ui 单测 342，build，e2e panorama / cli / reconnect-settings 4 条；发版时跑过全量单测。已发测试通道 Studio 0.9.37（`1f27de4e`）。
+- 还剩：收起的左边栏没有全景入口；切样子会重放开场动画；会话标题信息少；左栏点专题不会在全景里定位；「没归专题的任务」区域偏大；数据实时更新时的顺滑度没测；缩放停下后展开 / 收起约 60 ms 的顿挫；SDF 用了 deck.gl 的内部接口 `_getFontRenderer`。下一步按 framework.md 第 1 步抽会话窗口模块，在 worktree `AgentMonitorOverlay-panorama`（分支 `studio/panorama`）里做。
+
 **2026-11-04 夜 · 梳理第 6 步 Host 那一半、详细档整轮展开、两条 e2e（master）**
 - 第 6 步 Host 那一半（`48ecf1eb`）：kv 键登记表 `host/src/store/kv-keys.ts`（66 个，测试扫源码对账）；彻底删除会话、任务、项目时一起删按它们存的 kv 键；DSH 的 stderr 日志超过 2 MB 换文件，30 天没写的和空的启动后删。细节在 `plans/cleanup-2026-11.md` 第 6 步。验证：typecheck，host 单测 564 条。要等 Host 下次重启才生效。
 - 「详细」档做完的一轮不再收成「已完成，用时 …」一行（`2a45170f`）。
