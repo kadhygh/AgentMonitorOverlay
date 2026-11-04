@@ -41,7 +41,7 @@ describe("request", () => {
 
   it("call fills the route's :params and query", async () => {
     const fetch = answer(200, "{}");
-    await call(link, "GET /api/sessions/:id", { id: "s 1" }, undefined, { a: "b" });
-    expect(fetch.mock.calls[0]![0]).toBe("http://127.0.0.1:1/api/sessions/s%201?a=b");
+    await call(link, "GET /api/sessions/:id/items", { id: "s 1" }, undefined, { a: "b" });
+    expect(fetch.mock.calls[0]![0]).toBe("http://127.0.0.1:1/api/sessions/s%201/items?a=b");
   });
 });
