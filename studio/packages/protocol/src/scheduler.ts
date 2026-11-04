@@ -14,8 +14,6 @@ export function inTurn(status: SessionStatus): boolean {
   return TURN_STATUSES.includes(status);
 }
 
-/** In a turn, or waiting for the person's review: not free for new work (nor for a message from an agent). */
-export const BUSY_STATUSES: readonly SessionStatus[] = [...TURN_STATUSES, "awaiting-review"];
 
 export interface WorkspaceActivity {
   workspaceId: Id;
@@ -26,7 +24,8 @@ export interface WorkspaceActivity {
 
 export function sessionKeepsBusy(s: Session): boolean {
   if (s.archivedAt) return false;
-  return BUSY_STATUSES.includes(s.status) || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
+  // awaiting-review no longer counts (2026-11-04, the user agreed): nothing sets it on a session.
+  return inTurn(s.status) || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
 }
 
 export function workspaceActivity(workspaceId: Id, sessions: readonly Session[]): WorkspaceActivity {

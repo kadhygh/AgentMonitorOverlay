@@ -301,6 +301,26 @@ describe("the session inbox", () => {
     await service.sessions.sendNow(s.id, row.id);
     await until(() => (store.getItem(row.id) as { delivery?: string }).delivery !== "held");
   });
+
+  it("stopped by the person: held until they write again, then it goes in with their message (2026-11-04, the user)", { timeout: 15_000 }, async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]" });
+    await until(() => store.getSession(s.id)?.status === "running");
+    await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "中转回复" });
+    await service.sessions.interrupt(s.id);
+    await until(() => store.getSession(s.id)?.status !== "running");
+    expect(store.listItems(s.id).some((i) => i.type === "notice" && i.message.includes("你停下了这个会话"))).toBe(true);
+    // Free now, and a second one comes: neither goes in by itself, and the notice is not repeated.
+    await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "又一条" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(deliveries(s.id)).toEqual([undefined, "held", "held"]);
+    expect(store.listItems(s.id).filter((i) => i.type === "notice" && i.message.includes("你停下了这个会话"))).toHaveLength(1);
+    // The person writes: theirs first, the held ones with it.
+    await service.sessions.sendMessage(s.id, "接着做");
+    await until(() => deliveries(s.id).every((d) => d === undefined || d === "waiting"));
+    expect(userTexts(s.id).at(-1)).toBe("接着做");
+    await until(() => store.getSession(s.id)?.status === "idle");
+    expect(deliveries(s.id).every((d) => d === undefined)).toBe(true);
+  });
 });
 
 const deliveries = (sessionId: string) => store.listItems(sessionId).flatMap((i) => (i.type === "user" ? [i.delivery] : []));

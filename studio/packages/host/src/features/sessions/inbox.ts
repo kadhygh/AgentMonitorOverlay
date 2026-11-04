@@ -1,4 +1,4 @@
-import { BUSY_STATUSES, inTurn, type Id, type Session, type SessionItem } from "@amo-studio/protocol";
+import { inTurn, type Id, type Session, type SessionItem } from "@amo-studio/protocol";
 import { newId, type SessionItemInput } from "../../store/store.js";
 import { Feature } from "../../core/feature.js";
 import { HostError } from "../../core/shared.js";
@@ -25,6 +25,35 @@ export class SessionInbox extends Feature {
   /** One delivery at a time per session; `again`: something came meanwhile, look once more after it. */
   private readonly flushing = new Map<Id, Promise<void>>();
   private readonly again = new Set<Id>();
+  /**
+   * Sessions the person stopped (2026-11-04, the user): what is held waits for their next message, and goes in with it,
+   * or for 立即发送 — a session stopped on purpose is not started again by a reply arriving. Until the Host restarts.
+   */
+  private readonly paused = new Set<Id>();
+  /** Paused sessions already told so in a notice. */
+  private readonly told = new Set<Id>();
+
+  /** 停止 by the person: hold what comes until they write again. */
+  pause(sessionId: Id): void {
+    this.paused.add(sessionId);
+    this.told.delete(sessionId);
+    if (this.held(sessionId).length) this.tellPaused(sessionId);
+  }
+
+  /** The person wrote again: what is held goes in now, with their message (queued or steered as theirs would be). */
+  resume(sessionId: Id): void {
+    if (!this.paused.delete(sessionId)) return;
+    this.told.delete(sessionId);
+    void this.flush(sessionId, true).catch(() => undefined);
+  }
+
+  private tellPaused(sessionId: Id): void {
+    const s = this.store.getSession(sessionId);
+    if (!s || this.told.has(sessionId)) return;
+    this.told.add(sessionId);
+    const message = "你停下了这个会话：别的会话、中转、值守发来的消息先不送进去，等你发下一条消息时一起送；想现在送就点它旁边的「立即发送」。";
+    this.publish({ type: "item.appended", item: this.store.appendItem(this.row(s, { type: "notice", level: "info", message }, "inbox/paused")) });
+  }
 
   /**
    * A message from an agent or from Studio into `sessionId`: shown at once, sent now when the session is free, else
@@ -43,6 +72,7 @@ export class SessionInbox extends Feature {
     const item = this.append(s, this.f.sessions.withRole(text, role.lines));
     role.told();
     this.remember(sessionId);
+    if (this.paused.has(sessionId)) this.tellPaused(sessionId);
     await this.flush(sessionId);
     const now = this.store.getItem(item.id);
     return { delivered: !(now?.type === "user" && now.delivery === "held"), waiting: this.held(sessionId).length };
@@ -71,13 +101,14 @@ export class SessionInbox extends Feature {
     return this.store.findItems(sessionId, "user", { delivery: "held" });
   }
 
-  flush(sessionId: Id): Promise<void> {
+  /** `withTurn`: also into a turn already running (the person's message that ended a pause). */
+  flush(sessionId: Id, withTurn = false): Promise<void> {
     const running = this.flushing.get(sessionId);
     if (running) {
       this.again.add(sessionId);
       return running;
     }
-    const p = this.deliver(sessionId).finally(() => {
+    const p = this.deliver(sessionId, withTurn).finally(() => {
       this.flushing.delete(sessionId);
       if (this.again.delete(sessionId)) void this.flush(sessionId).catch(() => undefined);
     });
@@ -85,7 +116,7 @@ export class SessionInbox extends Feature {
     return p;
   }
 
-  private async deliver(sessionId: Id): Promise<void> {
+  private async deliver(sessionId: Id, withTurn = false): Promise<void> {
     const s = this.store.getSession(sessionId);
     const held = s ? this.held(sessionId) : [];
     if (!s || !held.length) return this.forget(sessionId);
@@ -93,7 +124,8 @@ export class SessionInbox extends Feature {
       for (const it of held) this.mark(it.id, "unsent");
       return this.forget(sessionId);
     }
-    if (!free(s)) return;
+    if (this.paused.has(sessionId)) return;
+    if (!free(s) && !(withTurn && s.status === "running" && writable(s))) return;
     const rt = this.runtime;
     // The first starts a turn; the others follow it at once (queued at the CLI, steered in, or DSH's next turn) — once
     // the turn is seen to run: Codex tells it (turn/started) only after its turn/start, and a second turn/start before
@@ -197,5 +229,9 @@ export class SessionInbox extends Feature {
 
 /** Free for a message of an agent's: not in a turn or waiting on the person, and Studio may write to it. */
 function free(s: Session): boolean {
-  return !BUSY_STATUSES.includes(s.status) && (s.writer === "workbench" || s.writer === "terminal-shared");
+  return !inTurn(s.status) && writable(s);
+}
+
+function writable(s: Session): boolean {
+  return s.writer === "workbench" || s.writer === "terminal-shared";
 }
