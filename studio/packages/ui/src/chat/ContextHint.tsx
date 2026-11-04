@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { autoCompactFor, type Session, type SessionItem } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
-import { useSettings } from "../settings/SettingsDialog.js";
+import { useSettings } from "../settings/useSettings.js";
 import { formatTokens, type ContextUse } from "./turns.js";
 
 // Above the composer (2026-10-17): a session whose context has grown large, where every model call reads the whole of

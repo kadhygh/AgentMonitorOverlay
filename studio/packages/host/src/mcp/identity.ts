@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { Id } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
+import { MCP_SESSION_PREFIX, MCP_TOKEN_PREFIX } from "../store/kv-keys.js";
 
 // Who is calling the AMO MCP. A Codex thread sends its own token in a header that Studio set at thread/start (and sets
 // again on resume and fork); the Host maps the token back to the session. Tokens are kept in the store so an app-server
@@ -8,8 +9,8 @@ import type { Store } from "../store/store.js";
 
 export const MCP_SESSION_HEADER = "X-AMO-Session-Token";
 
-const byToken = (token: string) => `mcp-identity:token:${token}`;
-const bySession = (sessionId: Id) => `mcp-identity:session:${sessionId}`;
+const byToken = (token: string) => MCP_TOKEN_PREFIX + token;
+const bySession = (sessionId: Id) => MCP_SESSION_PREFIX + sessionId;
 
 export class McpIdentities {
   constructor(private readonly store: Store) {}

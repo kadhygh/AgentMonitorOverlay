@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -213,6 +213,59 @@ describe("Platform", () => {
     // 便签 with neither its own install nor Studio: nothing to start it with.
     expect(platform.notesAvailable()).toBe(false);
     expect(await platform.toggleNotes()).toMatchObject({ ok: false, reason: "not-installed" });
+  });
+
+  // 2026-11-04 (the user: 关闭 and 重启 slow): running.ts's layers — the tool's own running.json, what the platform
+  // started — before asking Windows. Uses the relay published above.
+  it("正在运行 and 关闭 go by what the tool says of itself and what the platform started; Windows only for the rest", async () => {
+    let scans = 0;
+    let exited: (left: number[]) => void = () => undefined;
+    const { platform, env } = make({
+      extra: {
+        runningPaths: async () => (scans++, []),
+        launch: async () => process.pid,
+        waitForExit: () => new Promise<number[]>((r) => (exited = r)),
+      },
+    });
+    const home = join(root, "relay-home");
+    Object.assign(env, { AMO_RELAY_HOME: home });
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    await platform.install("relay");
+    const relay = () => platform.view().tools.find((t) => t.id === "relay")!;
+    const dir = platform.installer.toolDir("relay");
+    mkdirSync(home, { recursive: true });
+    const say = (version: string) => writeFileSync(join(home, "running.json"), JSON.stringify({ pid: process.pid, exe: join(dir, version, "AMO Relay.exe") }));
+
+    // Said by the relay itself: running, and 关闭 asks Windows nothing; 正在关闭… until the process is gone.
+    say("0.9.5");
+    await platform.refresh();
+    expect(relay().running).toBe(true);
+    scans = 0;
+    expect(await platform.close("relay")).toEqual({ ok: true });
+    expect(scans).toBe(0);
+    expect(relay().result).toEqual({ tone: "busy", text: "正在关闭…" });
+    rmSync(join(home, "running.json"));
+    exited([]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(relay()).toMatchObject({ running: false, result: null });
+
+    // An older relay it says of itself is refused as before, still without asking Windows.
+    say("0.9.0");
+    scans = 0;
+    expect(await platform.close("relay")).toMatchObject({ ok: false, message: expect.stringContaining("是 0.9.0 打开的") });
+    expect(scans).toBe(0);
+    rmSync(join(home, "running.json"));
+
+    // Started by the platform (layer 2): 正在运行 at once, remembered in launched.json.
+    expect(await platform.open("relay")).toEqual({ ok: true });
+    expect(relay().running).toBe(true);
+    expect(JSON.parse(readFileSync(join(env.AMO_HOME, "launched.json"), "utf8")).relay).toEqual([{ pid: process.pid, exe: expect.stringMatching(/\\relay\\0\.9\.0\\AMO Relay\.exe$/) }]);
+    // A record outside the tool's folder (a relay unpacked by hand, Studio from the sources) does not count.
+    writeFileSync(join(env.AMO_HOME, "launched.json"), "{}");
+    writeFileSync(join(home, "running.json"), JSON.stringify({ pid: process.pid, exe: join(root, "elsewhere", "AMO Relay.exe") }));
+    await platform.refresh();
+    expect(relay().running).toBe(false);
   });
 });
 

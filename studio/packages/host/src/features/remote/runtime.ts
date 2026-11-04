@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, McpApply, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
 import { parseRemoteProfileId } from "@amo-studio/protocol";
 import type { SendMode, SendOptions, SessionRuntimeApi } from "../../runtime/runtime.js";
 import type { Store } from "../../store/store.js";
@@ -19,7 +19,7 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     private readonly copies: () => RemoteCopies,
   ) {
     // What the runtimes here do not offer, this one does not either (features ask whether a runtime has it).
-    const optional = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings"] as const;
+    const optional = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus"] as const;
     for (const k of optional) if (!inner[k]) (this as unknown as Record<string, unknown>)[k] = undefined;
   }
 
@@ -53,10 +53,10 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     if (!this.inner.sendNow) throw new HostError("bad_request", "这种会话不能立即发送");
     return this.inner.sendNow(sessionId, itemId);
   }
-  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     if (this.remote(sessionId)) return this.copies().resend(sessionId, itemId);
     if (!this.inner.resend) throw new HostError("bad_request", "这种会话不能重新发送消息");
-    return this.inner.resend(sessionId, itemId, images);
+    return this.inner.resend(sessionId, itemId, images, options);
   }
   interrupt(sessionId: Id): Promise<void> {
     if (this.remote(sessionId)) return this.copies().interrupt(sessionId);
@@ -124,6 +124,15 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
   }
   applyChatSettings(settings: ChatSettings): void {
     this.inner.applyChatSettings?.(settings);
+  }
+  /** A copy's MCP is the computer it runs on's business. */
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    if (this.remote(sessionId) || !this.inner.refreshMcp) return "not-running";
+    return this.inner.refreshMcp(sessionId);
+  }
+  async mcpStatus(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null> {
+    if (this.remote(sessionId) || !this.inner.mcpStatus) return null;
+    return this.inner.mcpStatus(sessionId);
   }
   on(event: "event", listener: (e: HostEvent) => void): this;
   on(event: "log", listener: (line: string) => void): this;

@@ -1,33 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ModelProfile, ScheduleProposal, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { keepWhere, useLiveResource } from "../host/live.js";
 import { pickable, profileLabel } from "../lib/profiles.js";
 
 /** Scheduler proposals waiting for the person, kept live. */
 export function usePendingProposals(link: HostLink) {
-  const [pending, setPending] = useState<readonly ScheduleProposal[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = (first = false) =>
-      call(link, "GET /api/proposals", {}, undefined, { state: "pending" })
-        .then((list) => !cancelled && setPending((cur) => (first ? mergeFirstLoad(list, cur) : list)))
-        .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type !== "proposal.upserted") return;
-      setPending((cur) => {
-        const rest = cur.filter((p) => p.id !== e.proposal.id);
-        return e.proposal.state === "pending" ? [...rest, e.proposal] : rest;
-      });
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load(true);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [pending] = useLiveResource<readonly ScheduleProposal[]>(
+    {
+      load: () => call(link, "GET /api/proposals", {}, undefined, { state: "pending" }),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "proposal.upserted" ? keepWhere(cur, e.proposal, e.proposal.state === "pending") : cur),
+    },
+    [link],
+  );
   return pending;
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CHANNEL_KIND_LABEL, RUNTIME_LABELS, type ChannelKind, type CredentialStatus, type ModelChannel, type ModelProfile, type ProfileEndpoint, type StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 import { balanceText, useBalance } from "../lib/balance.js";
 import { Mark } from "../chat/pickers.js";
 import { CredentialMessage, type SettingsMessage } from "./CredentialsSection.js";
@@ -31,19 +31,8 @@ function subOf(p: ModelProfile, c: ModelChannel | undefined): string {
 
 /** The person's own channels, following `profiles.updated`. */
 export function useChannels(link: HostLink): [ModelChannel[], () => void] {
-  const [list, setList] = useState<ModelChannel[]>([]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    call(link, "GET /api/channels")
-      .then((l) => live && setList(l))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [link, tick]);
-  useEffect(() => onHostEvent((e) => e.type === "profiles.updated" && setTick((t) => t + 1)), []);
-  return [list, () => setTick((t) => t + 1)];
+  const [list, , reload] = useLiveResource<ModelChannel[]>({ load: () => call(link, "GET /api/channels"), initial: [], reloadOn: (e) => e.type === "profiles.updated" }, [link]);
+  return [list, reload];
 }
 
 /** One row of the list on the left. */

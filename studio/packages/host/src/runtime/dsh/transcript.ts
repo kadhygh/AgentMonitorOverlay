@@ -49,6 +49,25 @@ export class DshTranscript {
     return this.turn?.itemId ?? null;
   }
 
+  /** The latest update was a reply (no tool call after it). */
+  lastWasReply(): boolean {
+    return this.last?.type === "agent";
+  }
+
+  /** A tool call of the running turn has not come back yet. */
+  toolsRunning(): boolean {
+    return this.tools.size > 0;
+  }
+
+  /**
+   * `u` starts a new model call right after a reply, with no tool call between: the reply was the last message of a
+   * DSH turn (one ends on a message without tool calls), so `u` belongs to the next (2026-11-03, 问题 #13).
+   */
+  endsRound(u: AcpUpdate): boolean {
+    const call = u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk";
+    return call && !!blockText(u.content) && this.last?.type === "agent" && !!u.messageId && u.messageId !== this.last.messageId;
+  }
+
   /** Tokens and generation time of a turn, read from DSH's log (session-log.ts); the context size stays ACP's. */
   applyStats(turnItemId: Id, stats: DshTurnStats): void {
     this.core.updateItem(turnItemId, (it) =>
@@ -85,16 +104,6 @@ export class DshTranscript {
     }
     const note = STOP_NOTES[stopReason];
     if (note && !error) this.core.appendItem(this.sessionId, { type: "notice", level: "warning", message: note }, { method: "session/prompt", turnId: turn.turnId });
-  }
-
-  /** After a Host restart: the turn that was running, its tools and its approvals are over. */
-  settleAfterRestart(): void {
-    const at = this.core.now().toISOString();
-    for (const item of this.core.store.listUnfinishedItems(this.sessionId)) {
-      if (item.type === "turn" && item.state === "running") this.core.updateItem(item.id, (it) => (it.type === "turn" ? { ...it, state: "interrupted", endedAt: at } : it));
-      else if (item.type === "tool" && item.status === "running") this.core.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "declined" } : it));
-      else if (item.type === "approval" && item.state === "pending") this.core.updateItem(item.id, (it) => (it.type === "approval" ? { ...it, state: "declined" } : it));
-    }
   }
 
   update(u: AcpUpdate): void {
@@ -185,7 +194,7 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-function blockText(content: unknown): string {
+export function blockText(content: unknown): string {
   const c = content as { type?: string; text?: string } | undefined;
   return c?.type === "text" && typeof c.text === "string" ? c.text : "";
 }

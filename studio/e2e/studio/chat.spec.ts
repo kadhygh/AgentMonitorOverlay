@@ -74,7 +74,16 @@ test("steers a running reply and interrupts another", async () => {
   await composer(page).press("Enter");
   await expect(page.getByRole("button", { name: "打断" })).toBeVisible({ timeout: 30_000 });
   await expect(lastAgent(page)).toContainText("slow");
+  // 问题 #16 (2026-11-03): until the turn has stopped (held here, as a real one can take seconds) the button greys and
+  // the composer says it is stopping.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/interrupt", async (route) => (await held, route.continue()));
   await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByRole("button", { name: "正在停止" })).toBeDisabled();
+  await expect(page.locator(".composer-hint")).toContainText("正在停止…");
+  await screenshot(studio.app, "stage-1", "S1-12-stopping", page);
+  release();
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "打断" })).toHaveCount(0);
   // A reply had come back: the message stays sent.

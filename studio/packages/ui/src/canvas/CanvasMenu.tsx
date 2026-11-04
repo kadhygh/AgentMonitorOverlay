@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CANVAS_COLORS, type CanvasColor } from "@amo-studio/protocol";
+import { ContextMenu } from "../lib/ContextMenu.js";
 
 // The canvas's right-click menu (stage 16, after Obsidian Canvas): one for the empty canvas, a card, a note, a group
-// or a dependency line. Items, separators and a row of colour marks; it closes on Escape, a click elsewhere, the wheel
-// or a pick.
+// or a dependency line. Items, separators and a row of colour marks; it closes on a pick or as every menu does
+// (lib/ContextMenu.tsx: Escape, a click elsewhere, the wheel, the window losing focus) and stays inside the window.
 
 export type MenuEntry =
   | { kind: "item"; label: string; onPick(): void; danger?: boolean; disabled?: boolean; hint?: string; testId?: string }
@@ -14,31 +14,8 @@ export const item = (label: string, onPick: () => void, more: { danger?: boolean
 export const SEP: MenuEntry = { kind: "sep" };
 
 export function CanvasMenu({ x, y, label, entries, onClose }: { x: number; y: number; label: string; entries: readonly MenuEntry[]; onClose(): void }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState({ x, y });
-  // Kept inside the window (a click near the right or bottom edge opens it leftwards or upwards).
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setAt({ x: Math.max(4, Math.min(x, window.innerWidth - r.width - 4)), y: Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) });
-  }, [x, y]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: MouseEvent) => !box.current?.contains(e.target as Node) && onClose();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("wheel", onClose, { passive: true });
-    window.addEventListener("blur", onClose);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("wheel", onClose);
-      window.removeEventListener("blur", onClose);
-    };
-  }, [onClose]);
   return (
-    <div className="ctx-menu canvas-menu" role="menu" aria-label={label} style={{ left: at.x, top: at.y }} ref={box} onContextMenu={(e) => e.preventDefault()} data-testid="canvas-menu">
+    <ContextMenu at={{ x, y }} label={label} onClose={onClose} className="canvas-menu" testId="canvas-menu">
       {entries.map((e, i) => {
         if (e.kind === "sep") return <div key={`sep${i}`} className="menu-sep" role="separator" />;
         if (e.kind === "colors") {
@@ -93,6 +70,6 @@ export function CanvasMenu({ x, y, label, entries, onClose }: { x: number; y: nu
           </button>
         );
       })}
-    </div>
+    </ContextMenu>
   );
 }

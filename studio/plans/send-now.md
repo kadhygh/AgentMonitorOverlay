@@ -11,7 +11,7 @@
 | 怎么发 | Enter、点发送 | 生成中按 Ctrl+Enter；或在一条「等待送达」的消息上点「立即发送」 |
 | 什么时候到模型 | 下一次工具调用后，或这一轮结束后 | 马上：打断当前这一步，模型立刻读到 |
 
-对齐 Claude Code CLI 的 Send now（`ctrl+enter`、`ctrl+x ctrl+s`）和 Codex TUI 的「press esc to interrupt and send immediately」。DSH 不做（它等这一轮结束才发）。
+对齐 Claude Code CLI 的 Send now（`ctrl+enter`、`ctrl+x ctrl+s`）和 Codex TUI 的「press esc to interrupt and send immediately」。DSH 当时不做（它等这一轮结束才发）；2026-11-04 补上了（`session/cancel` 让位，见 `plans/message-delivery.md`）。
 
 ## 用户定的（2026-11-02）
 

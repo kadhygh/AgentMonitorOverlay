@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
-import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
+import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
@@ -286,6 +286,11 @@ export class TasksFeature extends Feature {
 
   async startSession(owner: { taskId: Id | null; topicId: Id | null }, workspace: Workspace, input: NewSessionInput): Promise<Session> {
     const options = await this.withDefaults(input.profileId, sessionOptions(input.options));
+    // MCP 设置 (2026-11-04): no level of its own for a task; a new session goes on with the task's latest choices.
+    if (!options.mcp) {
+      const inherited = this.f.mcp.inherited(owner.taskId);
+      if (inherited) options.mcp = inherited;
+    }
     const images = this.firstImages(input);
     // A first message with images goes as an ordinary message once the session exists (the runtimes start with text only).
     const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text && !images.length ? { text: input.text } : {}), options }));
@@ -303,6 +308,6 @@ export class TasksFeature extends Feature {
  */
 export function sessionMoving(s: Session): boolean {
   if (s.archivedAt) return false;
-  if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") return true;
+  if (inTurn(s.status)) return true;
   return !!s.wake?.loop || !!s.wake?.limit || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
 }

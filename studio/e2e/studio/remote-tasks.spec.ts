@@ -136,6 +136,11 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(card).toHaveAttribute("data-remote", "online", { timeout: 30_000 });
   await expect(card.getByTestId("card-remote")).toHaveText("远程在 A 台式机 上");
   await screenshot(b.app, "studio", "remote-b-board", b.page);
+  // 2026-11-04: the reply A's session ended with before the grant is not 完成待审核 in B's Focus (B never opened it).
+  const bFocus = await turnOnFocus(b.page, b.app);
+  await expect(bFocus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+  await b.page.waitForTimeout(800);
+  await expect(bFocus.getByTestId("focus-entry")).toHaveCount(0);
   await card.click();
   await expect(b.page.getByTestId("task-title")).toHaveText("远程一起做的任务");
   await expect(b.page.getByTestId("remote-banner")).toHaveAttribute("data-state", "online");

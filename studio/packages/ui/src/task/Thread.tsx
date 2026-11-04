@@ -334,7 +334,25 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // 立即发送 (2026-11-02): Claude and Codex (a remote copy's computer says what it can); DSH waits for the turn's end.
-  const sendsNow = generating && !readOnly && !planReview && !isRevising && session?.runtime !== "dsh";
+  const sendsNow = generating && !readOnly && !planReview && !isRevising;
+  // 问题 #16 (2026-11-03): 停止 and 立即发送 ask the model to stop, and it can take a few seconds to (a command or a reply
+  // in flight); until the turn ends the composer and the waiting message say so, so it does not read as failed.
+  const [haltAsked, setHaltAsked] = useState<{ sessionId: string; kind: "stop" | "now" } | null>(null);
+  useEffect(() => {
+    if (!generating) setHaltAsked(null);
+  }, [generating]);
+  const halting = generating && haltAsked && haltAsked.sessionId === session?.id ? haltAsked.kind : null;
+  const askHalt = (kind: "stop" | "now") => session && setHaltAsked((cur) => (cur?.sessionId === session.id && cur.kind === "stop" ? cur : { sessionId: session.id, kind }));
+  // Kept the same between keystrokes, as the Transcript is drawn again only when its props change (2026-10-20).
+  const halt = useRef(askHalt);
+  halt.current = askHalt;
+  const deliver = useCallback(
+    (itemId: string, action: DeliveryAction) => {
+      if (action === "now") halt.current("now");
+      onDelivery?.(itemId, action);
+    },
+    [onDelivery],
+  );
   // Images must finish uploading (or be removed when they failed) before the message can go.
   const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
   const referring = !isRevising && (annotationRefs?.list.length ?? 0) > 0;
@@ -392,8 +410,11 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
     jumpToEnd();
     const message = withFileRefs(text ? mentions.expand(text) : "", sent.refs);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
-    if (await onSend(message, ids, now && sendsNow)) attach.release(sent);
+    const givesWay = now && sendsNow;
+    if (givesWay) askHalt("now");
+    if (await onSend(message, ids, givesWay)) attach.release(sent);
     else {
+      if (givesWay) setHaltAsked((cur) => (cur?.kind === "now" ? null : cur));
       setDraft((d) => (d.trim() ? d : text));
       attach.restore(sent);
     }
@@ -402,6 +423,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
   /** 停止 before anything came back for the message (2026-10-28): it goes back into the composer, ahead of what is there. */
   function stop() {
     const back = unansweredPrompt(items);
+    askHalt("stop");
     onInterrupt();
     if (back) setDraft((d) => (d.trim() ? `${back}
 
@@ -523,7 +545,7 @@ ${d}` : back));
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
-                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery } : {})} />
+                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver } : {})} givingWay={halting === "now"} />
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>
@@ -694,10 +716,21 @@ ${d}` : back));
                 }}
               />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly || isRemote} />
-              <span className="composer-hint" {...(blocked ? { "data-testid": "remote-blocked" } : {})}>{blocked || attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
+              <span
+                className="composer-hint"
+                {...(blocked ? { "data-testid": "remote-blocked" } : {})}
+                {...(halting && !blocked && !attachHold ? { title: "模型手上的命令或回复收住可能要几秒，这一轮结束前会一直显示" } : {})}
+              >{blocked || attachHold || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && !blocked && (
-                <button type="button" className="round-btn stop" onClick={stop} aria-label="打断" title={unansweredPrompt(items) ? "停止生成：还没有回复，刚发的消息放回输入框" : "停止生成"}>
+                <button
+                  type="button"
+                  className={`round-btn stop${halting === "stop" ? " stopping" : ""}`}
+                  onClick={stop}
+                  disabled={halting === "stop"}
+                  aria-label={halting === "stop" ? "正在停止" : "打断"}
+                  title={halting === "stop" ? "正在停止：等模型收住手上的这一步" : unansweredPrompt(items) ? "停止生成：还没有回复，刚发的消息放回输入框" : "停止生成"}
+                >
                   <IconStop />
                 </button>
               )}

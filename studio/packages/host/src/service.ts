@@ -20,6 +20,7 @@ import { CollabFeature } from "./features/collab/service.js";
 import { CanvasFeature } from "./features/canvas/service.js";
 import { ReviewFeature } from "./features/review/service.js";
 import { PromptTemplatesFeature } from "./features/prompttemplates/service.js";
+import { McpFeature } from "./features/mcp/service.js";
 import { AttachmentsFeature } from "./features/attachments/service.js";
 import { ScratchpadFeature } from "./features/scratchpad/service.js";
 import { GitReviewFeature } from "./features/gitreview/service.js";
@@ -65,6 +66,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly canvasReview = new CanvasReviewFeature(this);
   readonly review = new ReviewFeature(this);
   readonly promptTemplates = new PromptTemplatesFeature(this);
+  /** MCP 设置 (2026-11-04): which MCP servers sessions get besides amo. */
+  readonly mcp = new McpFeature(this);
   readonly attachments = new AttachmentsFeature(this);
   readonly scratchpad = new ScratchpadFeature(this);
   readonly gitReview = new GitReviewFeature(this);
@@ -102,6 +105,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       commonDir?: string;
       /** The person's Claude Code config dir (设置 → 模型 shows whether it holds a login); default theirs, ~/.claude. */
       localClaudeHome?: string;
+      /** The person's Claude Code config file (~/.claude.json, or in their CLAUDE_CONFIG_DIR): MCP 设置 reads their servers there. */
+      claudeConfigFile?: string;
       /** The Codex home its app-servers run with (tests: a stand-in); default CODEX_HOME or ~/.codex. 设置 → 模型 reads GPT's address there. */
       codexHome?: string;
       /** Claude 多账号: the Claude runtime's accounts (one for the person's own dir when absent). */

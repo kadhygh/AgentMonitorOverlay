@@ -7,6 +7,7 @@ import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
 // The controls and the review pages' own styles (the cascade order of main.tsx, without the workbench's).
 import "./styles/base.css";
+import "./styles/controls.css";
 import "./styles/markdown.css";
 import "./styles/code.css";
 import "./shell/shell.css";

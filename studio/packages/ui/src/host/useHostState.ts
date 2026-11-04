@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HostEvent, StateSnapshot } from "@amo-studio/protocol";
 import { discoverHost, loadState, type HostLink } from "./client.js";
 import { emitHostEvent, emitHostReconnect } from "./events.js";
+import { noteRestored } from "../lib/sessionSeen.js";
 
 // Board-level state: the snapshot plus live workspace/task/session updates from the Host event stream.
 // Session items are loaded per task page (S1-11).
@@ -50,12 +51,15 @@ export function useHostState() {
   const [host, setHost] = useState<HostState>({ kind: "connecting" });
   const socket = useRef<WebSocket | null>(null);
   const connectedOnce = useRef(false);
+  // Archived sessions by id, to tell when one is restored.
+  const archived = useRef(new Set<string>());
 
   const connect = useCallback(async () => {
     try {
       const link = await discoverHost();
       if (!link) throw new Error("没有找到 Host（请从 AMO Studio 应用打开）");
       const state = await loadState(link);
+      archived.current = new Set(state.sessions.filter((s) => s.archivedAt).map((s) => s.id));
       setHost({ kind: "ready", link, state, live: false });
 
       const ws = new WebSocket(`${link.url.replace(/^http/, "ws")}/api/events?token=${encodeURIComponent(link.token)}&since=${state.eventSeq}`);
@@ -67,6 +71,11 @@ export function useHostState() {
       };
       ws.onmessage = (msg) => {
         const event = JSON.parse(String(msg.data)) as HostEvent;
+        // Out of the archive: not new finished work (lib/sessionSeen.ts noteRestored).
+        if (event.type === "session.upserted") {
+          if (event.session.archivedAt) archived.current.add(event.session.id);
+          else if (archived.current.delete(event.session.id)) noteRestored(event.session);
+        }
         setHost((h) => {
           if (h.kind !== "ready") return h;
           const state = applyEvent(h.state, event);

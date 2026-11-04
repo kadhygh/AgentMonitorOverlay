@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CanvasDoc, CanvasItem, TopicDoc } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 import { LOOSE_TITLE, LOOSE_TOPIC } from "./datalayer.js";
 import { PanoramaPage } from "./PanoramaPage.js";
 import { THEMES } from "./themes.js";
@@ -82,41 +82,44 @@ function fromCanvas(doc: CanvasDoc): FromCanvas {
   };
 }
 
+type Loaded = { canvases: ReadonlyMap<string, FromCanvas>; docs: ReadonlyMap<string, TopicExtras["docs"]> };
+const NOTHING: Loaded = { canvases: new Map(), docs: new Map() };
+
 /**
  * Every live topic's canvas and documents (全景 never changes them), kept current from the Host's events and read again
- * after a reconnect. A topic whose canvas or documents cannot be read is drawn without them.
+ * after a reconnect (host/live.ts). A topic whose canvas or documents cannot be read is drawn without them.
  */
 function PanoramaTopics({ link, topicIds, render }: { link: HostLink; topicIds: readonly string[]; render(extras: TopicExtras, look: { id: LookId; set(id: string): void }): React.ReactNode }) {
   const ids = topicIds.join(",");
-  const [canvases, setCanvases] = useState<ReadonlyMap<string, FromCanvas>>(new Map());
-  const [docs, setDocs] = useState<ReadonlyMap<string, TopicExtras["docs"]>>(new Map());
+  const mine = new Set(topicIds);
   const [look, setLook] = useState<LookId>(readLook);
-  useEffect(() => {
-    let alive = true;
-    const list = ids ? ids.split(",") : [];
-    const mine = new Set(list);
-    const putCanvas = (doc: CanvasDoc) => alive && setCanvases((m) => new Map(m).set(doc.id, fromCanvas(doc)));
-    const load = () => {
-      for (const id of list) {
-        void call(link, "GET /api/topics/:id/canvas", { id }).then(putCanvas).catch(() => undefined);
-        void call(link, "GET /api/topics/:id/docs", { id })
-          .then((d) => alive && setDocs((m) => new Map(m).set(id, d)))
-          .catch(() => undefined);
-      }
-    };
-    load();
-    const off = onHostEvent((e) => {
-      if (e.type === "canvas.updated" && mine.has(e.canvas.id)) putCanvas(e.canvas);
-      else if (e.type === "topicdoc.upserted" && mine.has(e.doc.topicId)) setDocs((m) => new Map(m).set(e.doc.topicId, [...(m.get(e.doc.topicId) ?? []).filter((d) => d.id !== e.doc.id), e.doc]));
-      else if (e.type === "topicdoc.removed") setDocs((m) => (m.has(e.topicId) ? new Map(m).set(e.topicId, m.get(e.topicId)!.filter((d) => d.id !== e.docId)) : m));
-    });
-    const offReconnect = onHostReconnect(load);
-    return () => {
-      alive = false;
-      off();
-      offReconnect();
-    };
-  }, [link, ids]);
+  const [{ canvases, docs }] = useLiveResource<Loaded>(
+    {
+      load: async () => {
+        const canvases = new Map<string, FromCanvas>();
+        const docs = new Map<string, TopicExtras["docs"]>();
+        await Promise.all(
+          (ids ? ids.split(",") : []).map(async (id) => {
+            const [canvas, list] = await Promise.all([
+              call(link, "GET /api/topics/:id/canvas", { id }).catch(() => undefined),
+              call(link, "GET /api/topics/:id/docs", { id }).catch(() => undefined),
+            ]);
+            if (canvas) canvases.set(id, fromCanvas(canvas));
+            if (list) docs.set(id, list);
+          }),
+        );
+        return { canvases, docs };
+      },
+      initial: NOTHING,
+      onEvent: (cur, e) => {
+        if (e.type === "canvas.updated" && mine.has(e.canvas.id)) return { ...cur, canvases: new Map(cur.canvases).set(e.canvas.id, fromCanvas(e.canvas)) };
+        if (e.type === "topicdoc.upserted" && mine.has(e.doc.topicId)) return { ...cur, docs: new Map(cur.docs).set(e.doc.topicId, [...(cur.docs.get(e.doc.topicId) ?? []).filter((d) => d.id !== e.doc.id), e.doc]) };
+        if (e.type === "topicdoc.removed" && cur.docs.has(e.topicId)) return { ...cur, docs: new Map(cur.docs).set(e.topicId, cur.docs.get(e.topicId)!.filter((d) => d.id !== e.docId)) };
+        return cur;
+      },
+    },
+    [link, ids],
+  );
   // One object per change, so the page's datalayer runs again only when something it reads changed.
   const extras = useMemo<TopicExtras>(() => {
     const c = [...canvases.values()];

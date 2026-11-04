@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { HOST_DEFAULT_PORT, type ModelProfile } from "@amo-studio/protocol";
+import { HOST_DEFAULT_PORT, inTurn, type ModelProfile } from "@amo-studio/protocol";
 import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
@@ -13,6 +13,9 @@ import type { FolderAccess } from "./runtime/dsh/folder-access.js";
 import { dshUnavailable } from "./runtime/dsh/install.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
+import { personClaudeConfig } from "./features/mcp/local.js";
+import type { McpLaunch } from "./runtime/mcp-launch.js";
+import type { McpServerSpec } from "@amo-studio/protocol";
 import { AMO_MCP_INSTRUCTIONS, amoToolsFor } from "./mcp/tools.js";
 import { recordRole, roleCard, roleCardFor } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
@@ -54,6 +57,8 @@ export interface StartHostOptions {
   claudeBaseEnv?: NodeJS.ProcessEnv;
   /** The person's Claude Code config dir for the local login (default: their CLAUDE_CONFIG_DIR or ~/.claude). */
   localClaudeHome?: string;
+  /** MCP 设置: the Claude Code config file whose MCP servers count as the person's (tests: a file of their own). */
+  claudeConfigFile?: string;
   /** Where added Claude accounts' dirs go (default ~/.claude-accounts; tests their own folder). */
   claudeAccountsDir?: string;
   /** Tests: the ACP agent DSH sessions run (a fake one) instead of the DSH clone set in 设置 → 模型. */
@@ -64,6 +69,11 @@ export interface StartHostOptions {
   dshFolderAccess?: FolderAccess | null;
   /** Tests: the wait between a set-up folder's scans after write turns. */
   dshFolderScanMs?: number;
+  /** Tests: how long a turn DSH runs by itself waits after its last reply, and after anything else, to end. */
+  dshAutoQuietMs?: number;
+  /** Tests: how long 停止 waits on a runtime before Studio stops waiting (default STOP_GRACE_MS; Codex and DSH). */
+  stopGraceMs?: number;
+  dshAutoStallMs?: number;
   /**
    * 远程 (2026-10-29): connect to the team server as this computer's device with the AMO platform's login. Studio's
    * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
@@ -210,6 +220,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           ...(options.codexEnv ? { env: options.codexEnv } : {}),
           providers: channels.codexProviders,
           mcp: () => mcp,
+          // MCP 设置: Studio's servers that are on, when a server starts (not passed to running ones).
+          extraMcp: (): Record<string, McpServerSpec> => service.mcp.codexServers(),
         });
     const servers = options.servers ?? manager!;
     // Only app-servers Studio launches have the AMO MCP configured; threads then name their session to it.
@@ -218,6 +230,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       store,
       servers,
       profiles,
+      ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
       ...(manager ? { identities } : {}),
       roleInstructions: (draft): string | undefined => {
         try {
@@ -255,6 +268,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       // Only an explicit dir is passed down: otherwise the CLI is left to find ~/.claude (and ~/.claude.json) itself.
       ...(options.localClaudeHome ? { localClaudeHome: options.localClaudeHome } : {}),
       accounts: claudeAccounts,
+      mcp: { launch: (target, native): McpLaunch => service.mcp.launch(target, native), noteStatus: (sessionId, list): void => service.mcp.noteStatus(sessionId, list) },
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
       mcpInstructions: (sessionId): string => {
         try {
@@ -273,11 +287,15 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       providers: channels.dshProviders,
       dir: paths.dsh,
       mcp: () => mcp,
+      mcpServers: { launch: (target, native): McpLaunch => service.mcp.launch(target, native) },
       identities,
       ...(options.dshAgent ? { agent: options.dshAgent } : {}),
       ...(options.dshEnv ? { env: options.dshEnv } : {}),
       ...(options.dshFolderAccess !== undefined ? { folderAccess: options.dshFolderAccess } : {}),
       ...(options.dshFolderScanMs !== undefined ? { folderScanEveryMs: options.dshFolderScanMs } : {}),
+      ...(options.dshAutoQuietMs !== undefined ? { autoQuietMs: options.dshAutoQuietMs } : {}),
+      ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
+      ...(options.dshAutoStallMs !== undefined ? { autoStallMs: options.dshAutoStallMs } : {}),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
     const liveStore = store;
@@ -285,6 +303,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       launcher: options.launcher ?? new WindowsTerminalLauncher(),
       credentials,
       localClaudeHome,
+      claudeConfigFile: options.claudeConfigFile ?? personClaudeConfig(localClaudeHome, !!options.localClaudeHome || !!(options.claudeBaseEnv ?? process.env).CLAUDE_CONFIG_DIR?.trim()),
       ...(options.codexEnv?.CODEX_HOME ? { codexHome: options.codexEnv.CODEX_HOME } : {}),
       claudeAccounts,
       channels,
@@ -292,7 +311,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.
       restartProfileServer: async (profileId) => {
         if (!manager?.handle(profileId)) return true;
-        const busy = liveStore.listSessions().some((s) => s.profileId === profileId && (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer"));
+        const busy = liveStore.listSessions().some((s) => s.profileId === profileId && inTurn(s.status));
         if (busy) return false;
         await manager.stop(profileId);
         return true;
@@ -341,6 +360,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     // 2026-10-27: DSH turns that ended without their tokens and speed get them from DSH's logs, once the Host settled.
     setTimeout(() => {
       if (stopped) return;
+      // DSH's stderr logs not written for a month, or empty since yesterday (2026-11-04).
+      try {
+        const n = finalDsh.pruneLogs();
+        if (n) console.log(`DSH: removed ${n} old logs`);
+      } catch (err) {
+        console.log(`DSH log cleanup failed: ${String(err)}`);
+      }
       void finalDsh
         .backfillStats()
         .then((n) => n && console.log(`DSH: filled in the tokens and speed of ${n} turns from DSH's logs`))

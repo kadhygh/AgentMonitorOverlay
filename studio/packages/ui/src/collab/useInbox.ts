@@ -1,32 +1,17 @@
-import { useEffect, useState } from "react";
 import type { Id, MailMessage, Session } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { keepWhere, useLiveResource } from "../host/live.js";
 
 /** Unread mail across the workbench, kept live (board hints). */
 export function useUnreadMail(link: HostLink) {
-  const [unread, setUnread] = useState<readonly MailMessage[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = (first = false) =>
-      call(link, "GET /api/mail", {}, undefined, { state: "unread" })
-        .then((list) => !cancelled && setUnread((cur) => (first ? mergeFirstLoad(list, cur) : list)))
-        .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type !== "mail.upserted") return;
-      setUnread((cur) => {
-        const rest = cur.filter((m) => m.id !== e.mail.id);
-        return e.mail.state === "unread" ? [...rest, e.mail] : rest;
-      });
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load(true);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [unread] = useLiveResource<readonly MailMessage[]>(
+    {
+      load: () => call(link, "GET /api/mail", {}, undefined, { state: "unread" }),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "mail.upserted" ? keepWhere(cur, e.mail, e.mail.state === "unread") : cur),
+    },
+    [link],
+  );
   return unread;
 }
 

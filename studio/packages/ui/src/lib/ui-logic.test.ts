@@ -3,7 +3,6 @@ import { exampleItems, exampleSessions, type HostEvent, type SessionItem } from 
 import { applyItemEvent } from "../host/useSessionItems.js";
 import { applyEvent } from "../host/useHostState.js";
 import { relativeTime, taskStatus } from "./status.js";
-import { mergeFirstLoad } from "../host/events.js";
 
 describe("taskStatus", () => {
   it("picks the most urgent live session status", () => {
@@ -61,14 +60,5 @@ describe("applyEvent", () => {
     const state = { workspaces: [], topics: [], tasks: [], sessions: [exampleSessions[0]!], profiles: [], eventSeq: 3 };
     const delta = { seq: 10, type: "item.delta", sessionId: exampleSessions[0]!.id, itemId: "i-1", delta: "x" } as unknown as HostEvent;
     expect(applyEvent(state, delta)).toBe(state);
-  });
-});
-
-describe("mergeFirstLoad", () => {
-  it("keeps items and changes that events delivered before the first snapshot arrived", () => {
-    const loaded = [{ id: "a", v: 1 }, { id: "b", v: 1 }];
-    const live = [{ id: "b", v: 2 }, { id: "c", v: 1 }];
-    expect(mergeFirstLoad(loaded, live)).toEqual([{ id: "a", v: 1 }, { id: "b", v: 2 }, { id: "c", v: 1 }]);
-    expect(mergeFirstLoad(loaded, [])).toEqual(loaded);
   });
 });

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
+import { ProjectMcp } from "../mcp/ProjectMcp.js";
+import { Modal } from "../lib/Modal.js";
 
 /**
  * 编辑项目 (2026-10-14): the name a project has in Studio (two folders with the same name can be told apart; the folder
@@ -29,73 +30,64 @@ export function EditProjectDialog({ link, workspace, onClose }: { link: HostLink
     }
   }
 
-  return createPortal(
-    <div
-      className="modal-backdrop confirm-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          if (!busy) onClose();
-        }
+  return (
+    <Modal
+      portal
+      backdropClassName="confirm-backdrop"
+      className="confirm-modal edit-project"
+      labelledBy="edit-project-title"
+      testId="edit-project"
+      busy={busy}
+      onClose={onClose}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
       }}
     >
-      <form
-        className="modal confirm-modal edit-project"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-project-title"
-        data-testid="edit-project"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <span className="modal-title" id="edit-project-title">
-          编辑项目
+      <span className="modal-title" id="edit-project-title">
+        编辑项目
+      </span>
+      <label className="stack-field">
+        在 AMO 里显示的名字
+        <input ref={first} className="field" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} data-testid="edit-project-name" />
+      </label>
+      <label className="stack-field">
+        说明（给自己和 agent 看，可以留空）
+        <textarea
+          className="field"
+          rows={4}
+          value={description}
+          maxLength={2000}
+          placeholder="例如：Unity 主工程；策划表在 Docs/，美术资源走 BatchTextureImporter。"
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              void save();
+            }
+          }}
+          data-testid="edit-project-description"
+        />
+      </label>
+      <ProjectMcp link={link} workspace={workspace} />
+      <div className="edit-project-folder">
+        <span className="settings-hint">文件夹</span>
+        <code>{workspace.path}</code>
+        <span className="settings-hint">只改 AMO 里的名字，文件夹本身不会改名。</span>
+      </div>
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
         </span>
-        <label className="stack-field">
-          在 AMO 里显示的名字
-          <input ref={first} className="field" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} data-testid="edit-project-name" />
-        </label>
-        <label className="stack-field">
-          说明（给自己和 agent 看，可以留空）
-          <textarea
-            className="field"
-            rows={4}
-            value={description}
-            maxLength={2000}
-            placeholder="例如：Unity 主工程；策划表在 Docs/，美术资源走 BatchTextureImporter。"
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                void save();
-              }
-            }}
-            data-testid="edit-project-description"
-          />
-        </label>
-        <div className="edit-project-folder">
-          <span className="settings-hint">文件夹</span>
-          <code>{workspace.path}</code>
-          <span className="settings-hint">只改 AMO 里的名字，文件夹本身不会改名。</span>
-        </div>
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
-        <div className="settings-row end">
-          <button type="button" className="btn-ghost small" onClick={onClose} disabled={busy}>
-            取消
-          </button>
-          <button type="submit" className="btn-primary small" disabled={busy || !name.trim()} data-testid="edit-project-save">
-            保存
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body,
+      )}
+      <div className="settings-row end">
+        <button type="button" className="btn-ghost small" onClick={onClose} disabled={busy}>
+          取消
+        </button>
+        <button type="submit" className="btn-primary small" disabled={busy || !name.trim()} data-testid="edit-project-save">
+          保存
+        </button>
+      </div>
+    </Modal>
   );
 }

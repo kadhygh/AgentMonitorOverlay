@@ -10,4 +10,6 @@ export const AUTO_APPROVED_WRITE_TOOLS = ["task_note_add", "handoff_submit", "ma
 
 // Writes the person approves first. Codex's default ("auto") lets tools annotated as non-destructive run unasked
 // (S5-05: canvas_group_create ran without a prompt), so these are set to "prompt" explicitly.
-export const PROMPTED_WRITE_TOOLS = ["canvas_group_create", "canvas_depend", "canvas_place"] as const;
+// mcp_server_save (MCP 设置, 2026-11-04): a server is a command run on this computer — never without the person's yes
+// (and so never for DSH, which leaves these out).
+export const PROMPTED_WRITE_TOOLS = ["canvas_group_create", "canvas_depend", "canvas_place", "mcp_server_save"] as const;

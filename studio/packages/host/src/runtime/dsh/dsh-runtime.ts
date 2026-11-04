@@ -1,12 +1,13 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, FolderAccessStatus, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
+import { inTurn, type AccountUsage, type ApprovalDecision, type Attachment, type DshCheck, type FolderAccessStatus, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionOptions, type UserDelivery, type Workspace, type McpApply } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import { newId } from "../../store/store.js";
 import { MCP_SESSION_HEADER, type McpIdentities } from "../../mcp/identity.js";
 import { DSH_DEFAULT_PERMISSION, DSH_PERMISSIONS, dshPermissionMode } from "../choices.js";
 import type { CredentialReader } from "../credentials.js";
-import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
+import { RuntimeBase, STOP_GRACE_MS, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
+import { withDelivery } from "../items.js";
 import { AcpConnection, AcpError } from "./acp.js";
 import { allTurnStats, dshLogText, dshTurnStats, type DshTurnStats } from "./session-log.js";
 import {
@@ -36,15 +37,17 @@ import {
 /** Starting a DeepSeek session that has no way to sign in (设置 → 模型 → DeepSeek). */
 const ACCOUNT_SIGN_IN = "DSH 桌面版还没有登录 DeepSeek 账号：打开 DeepSeek Harness 桌面版登录，或者在 设置 → 模型 → DeepSeek 里改用 API Key";
 const NO_KEY = "还没有 DeepSeek 的 API Key：在 设置 → 模型 → DeepSeek 里填上，或者改用 DSH 桌面版登录的账号";
-import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
+import { blockText, DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 import { withoutHostEnv } from "../agent-env.js";
+import { acpServer, type McpSource } from "../mcp-launch.js";
 
 // DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/done/stage-17-dsh.md). Each session runs its own
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
 // directory and its permission mode is the process's environment. Studio's DSH home (`<data>/dsh/home`) keeps DSH's
 // own sessions; Studio keeps the conversation (DSH does not replay it on resume). What ACP lacks (spikes s17-00):
-// fork, question cards, steering a running turn (a message sent meanwhile waits for the turn to end). Images go when
+// fork, question cards, steering a running turn (a message sent meanwhile waits for the turn to end, `waiting`; 立即发送
+// cancels the turn so it goes at once, 2026-11-04). Images go when
 // the session's model takes them (2026-10-26: DSH tells at initialize, for the model its ACP agent starts on).
 
 /** A third-party DeepSeek endpoint DSH can be pointed at (an Anthropic Messages root, like https://api.deepseek.com/anthropic). */
@@ -67,7 +70,11 @@ export interface DshRuntimeOptions {
   dir: string;
   /** The AMO MCP's address and its agent token, once the Host listens. */
   mcp?: () => { url: string; token: string } | null;
+  /** MCP 设置 (2026-11-04): the session's other MCP servers (Studio's and the person's that are on). */
+  mcpServers?: McpSource;
   identities?: McpIdentities;
+  /** 停止 not answered by DSH this long: Studio closes the session's process (default STOP_GRACE_MS). */
+  stopGraceMs?: number;
   /** Tests: the agent command instead of node + the clone's CLI (a fake ACP agent). */
   agent?: { command: string; args: readonly string[] };
   /** Base environment for the agent processes (tests). */
@@ -81,6 +88,10 @@ export interface DshRuntimeOptions {
   folderAccess?: FolderAccess | null;
   /** How long a set-up folder waits between scans after write turns (default AUTO_SCAN_MS; tests: 0). */
   folderScanEveryMs?: number;
+  /** A turn DSH runs by itself ends this long after its last reply (default AUTO_QUIET_MS) … */
+  autoQuietMs?: number;
+  /** … or this long after anything else, when no command runs and nothing waits on the person (default AUTO_STALL_MS). */
+  autoStallMs?: number;
   now?: () => Date;
 }
 
@@ -134,8 +145,13 @@ interface Live {
   /** Model and effort last set on the DSH session. */
   applied: { model?: string; effort?: string };
   inflight: boolean;
-  /** Messages sent while a turn runs, sent together when it ends. */
-  queue: Array<{ text: string; images: ImageBlock[] }>;
+  /**
+   * Messages sent while a turn runs (their rows `waiting`), sent together when it ends — also after 停止, as Claude's
+   * and Codex's are (2026-11-02, plans/send-now.md). An error, the process going or archiving makes them 没送到.
+   */
+  queue: QueuedMessage[];
+  /** 停止 went unanswered and Studio closed the process: the turn ends as stopped, not as an error. */
+  killedOnStop?: boolean;
   /** DSH said at initialize that this process takes images (for `model`, its ACP agent's default). */
   images: boolean;
   /** The session's model when the process started (its ACP agent's default); undefined = DSH's own default. */
@@ -145,6 +161,16 @@ interface Live {
   idleTimer: NodeJS.Timeout | null;
   /** When the running turn's speed was last read from DSH's log. */
   measuredAt: number;
+  /** A turn DSH runs by itself, outside any prompt of Studio's (a goal's next round), and the timer that ends it. */
+  auto: { timer: NodeJS.Timeout | null; stopping?: boolean } | null;
+  /** MCP 设置 (2026-11-04): the other MCP servers the process was given (session/new or resume), to tell a change. */
+  mcpKey: string;
+}
+
+interface QueuedMessage {
+  itemId: Id;
+  text: string;
+  images: ImageBlock[];
 }
 
 /** An ACP inline image (prompt content). */
@@ -156,10 +182,56 @@ interface ImageBlock {
 
 /** How often a running turn's speed is read again from DSH's log (on whatever update DSH sends next). */
 const MEASURE_EVERY_MS = 15_000;
+/** `logs/`: a log over LOG_MAX_BYTES is moved to `<label>.old.log` (the one before goes) when its process starts. */
+const LOG_MAX_BYTES = 2 * 1024 * 1024;
+const LOG_KEEP_DAYS = 30;
+const DAY_MS = 24 * 60 * 60_000;
+
+export function rotateLog(file: string, max = LOG_MAX_BYTES): void {
+  try {
+    if (statSync(file).size > max) renameSync(file, file.replace(/\.log$/, ".old.log"));
+  } catch {
+    // No log yet, or held by a process still writing it: it goes on growing until the next start.
+  }
+}
+
+/**
+ * DSH's stderr logs (`logs/`, one file per process label; 2026-11-04, 架构整理第 6 步): a file not written for
+ * LOG_KEEP_DAYS goes, and an empty one (most `new-*.log`) after a day. A deleted session's log is not written again, so
+ * it goes the same way. DSH's own records in `home/` are DSH's and never touched.
+ */
+export function pruneDshLogs(dir: string, now = Date.now()): number {
+  if (!existsSync(dir)) return 0;
+  let removed = 0;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".log")) continue;
+    const file = join(dir, name);
+    try {
+      const st = statSync(file);
+      const age = now - st.mtimeMs;
+      if (age > LOG_KEEP_DAYS * DAY_MS || (st.size === 0 && age > DAY_MS)) {
+        rmSync(file, { force: true });
+        removed++;
+      }
+    } catch {
+      // In use or gone: next start.
+    }
+  }
+  return removed;
+}
+
 /** How far a turn in DSH's log may start from Studio's turn and still be taken for it (backfillStats). */
 const BACKFILL_SLACK_MS = 5000;
 
-const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
+/**
+ * DSH tells over ACP neither when a turn it runs by itself starts nor when it ends (2026-11-03, 问题 #13): the quiet
+ * after a reply that ends it (the user: 60 s; DSH sends a message only once its model call is written, so tens of
+ * seconds between two updates are normal), and after anything else (a model call still thinking).
+ */
+const AUTO_QUIET_MS = 60_000;
+const AUTO_STALL_MS = 10 * 60_000;
+/** After 停止 on such a turn: it ends this long after DSH's last update. */
+const AUTO_STOP_MS = 3000;
 
 export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
@@ -174,13 +246,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly folderJobs = new Map<string, { job: "setup" | "scan" | "revert"; state: "running" | "done" | "failed"; error?: string }>();
 
   constructor(private readonly options: DshRuntimeOptions) {
-    super(options.store, "dsh", options.now);
+    super(options.store, "dsh", options.now, options.profiles);
     this.folderAccess =
       options.folderAccess !== undefined ? options.folderAccess : options.agent || process.platform !== "win32" ? null : windowsFolderAccess(join(options.dir, "acl-backup"));
-    // The last Host stopped mid-turn: the turn is over (its process went with the Host).
+    // The last Host stopped mid-turn: the turn is over (its process went with the Host), and what waited for it was
+    // never read (没送到).
     for (const s of this.store.listSessions()) {
-      if (s.runtime !== "dsh" || !BUSY.has(s.status)) continue;
-      new DshTranscript(this.makeCore(), s.id).settleAfterRestart();
+      if (s.runtime !== "dsh" || !inTurn(s.status)) continue;
+      this.settleLeftovers(s.id, { approvals: true });
       this.setStatus(s.id, "interrupted");
     }
   }
@@ -194,11 +267,12 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const token = this.options.identities?.issue();
     const permission = dshPermissionMode(options.permission);
     const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`, options.model);
+    const extra = this.extraMcp({ workspaceId: input.workspace.id, ...(options.mcp ? { mcp: options.mcp } : {}) });
     let session: Session;
     let image = false;
     try {
       image = (await this.initialize(conn)).image;
-      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: this.mcpServers(token) });
+      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: [...this.mcpServers(token), ...extra.list] });
       this.remember(created.configOptions, profile);
       session = this.createSession({
         taskId: input.taskId,
@@ -217,29 +291,69 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (token) this.options.identities!.bind(token, session.id);
     const live = this.adopt(session, conn, {}, permission, image, options.model);
+    live.mcpKey = extra.key;
     await this.applyOptions(session.id, live);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }
 
-  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
     // Read the images first: a missing file fails the send before anything is shown or queued.
-    const blocks: ImageBlock[] = images.map((a) => ({ type: "image", mimeType: a.mime, data: readFileSync(a.path).toString("base64") }));
+    const blocks = imageBlocks(images);
     if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
+    const shown = images.map((a) => ({ id: a.id, path: a.path }));
+    return this.deliver(session, blocks, text, options, (mode, live, delivery) => {
+      const item = { type: "user" as const, text, ...(shown.length ? { images: shown } : {}), ...(delivery ? { delivery } : {}) };
+      // Queued: shown in the running turn (as Claude's queued messages are), so that turn still reads as running.
+      return this.appendItem(sessionId, item, mode === "queue" ? { method: "user/queued", ...live.transcript.turnRef() } : { method: "user" }).id;
+    });
+  }
+
+  /**
+   * One message into the session's process: a turn starts, or it waits for the running one to end (`waiting`). `item`
+   * makes its row (or brings one back, for 重新发送 and Studio's inbox) and returns its id. `now` (立即发送 from the
+   * composer, or B's): the running turn gives way to it (sendNow).
+   */
+  private async deliver(session: Session, blocks: ImageBlock[], text: string, options: SendOptions, item: (mode: SendMode, live: Live, delivery: UserDelivery | undefined) => Id): Promise<{ mode: SendMode }> {
+    const sessionId = session.id;
     let live = await this.ensureLive(session);
     if (blocks.length) live = await this.takesImages(session, live);
-    const shown = images.map((a) => ({ id: a.id, path: a.path }));
-    const item = { type: "user" as const, text, ...(shown.length ? { images: shown } : {}) };
     if (live.inflight) {
-      // Shown in the running turn (as Claude's queued messages are), so that turn still reads as running.
-      this.appendItem(sessionId, item, { method: "user/queued", ...live.transcript.turnRef() });
-      live.queue.push({ text, images: blocks });
+      const itemId = item("queue", live, "waiting");
+      live.queue.push({ itemId, text, images: blocks });
+      if (options.now === true) await this.sendNow(sessionId, itemId);
       return { mode: "queue" };
     }
-    this.appendItem(sessionId, item, { method: "user" });
+    // DSH going on by itself: that turn ends here; DSH takes the message in when its step is done.
+    if (live.auto) this.endAuto(sessionId, live, "end_turn", true);
+    item("start", live, undefined);
     await this.prompt(sessionId, live, text, blocks);
     return { mode: "start" };
+  }
+
+  /**
+   * 立即发送 on a waiting message (2026-11-04; ACP cannot steer a running turn): the turn is cancelled — DSH's own
+   * cancel, as 停止 does, approvals waiting are cancelled with it — and the waiting messages go at once as the next turn.
+   */
+  async sendNow(sessionId: Id, itemId: Id): Promise<void> {
+    this.writable(sessionId);
+    const live = this.live.get(sessionId);
+    if (!live?.inflight || !live.queue.some((q) => q.itemId === itemId)) return;
+    for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    live.conn.notify("session/cancel", { sessionId: live.acpId });
+  }
+
+  /** 重新发送 a message DSH never read (没送到), or one of Studio's inbox: the same row goes again, with its `images`. */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
+    const session = this.writable(sessionId);
+    const it = this.store.getItem(itemId);
+    if (it?.type !== "user" || it.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
+    if (it.delivery !== "unsent" && it.delivery !== "held") return { mode: this.live.get(sessionId)?.inflight ? "queue" : "start" };
+    return this.deliver(session, imageBlocks(images), it.text, options, (_mode, _live, delivery) => {
+      this.updateItem(itemId, (x) => (x.type === "user" ? withDelivery(x, delivery) : x));
+      return itemId;
+    });
   }
 
   /**
@@ -249,7 +363,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
    */
   private async takesImages(session: Session, live: Live): Promise<Live> {
     const model = session.options.model;
-    if ((model ?? "") !== (live.model ?? "") && !live.inflight) {
+    if ((model ?? "") !== (live.model ?? "") && !live.inflight && !live.auto) {
       await this.release(session.id);
       live = await this.ensureLive(this.requireSession(session.id));
     }
@@ -300,7 +414,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (!live) return updated;
     if (to === "danger-full-access") for (const w of [...live.waiting.values()]) this.settleWaiting(sessionId, live, w, "allow");
-    if (!live.inflight) {
+    // Not while DSH goes on by itself either: a restart would cut it off (it restarts when that turn ends).
+    if (!live.inflight && !live.auto) {
       if (live.permission !== to) await this.release(sessionId);
       else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
     }
@@ -319,11 +434,27 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async interrupt(sessionId: Id): Promise<void> {
     const live = this.live.get(sessionId);
+    // A turn DSH runs by itself: session/cancel without a prompt stops DSH's own work (its ACP cancel()). The turn
+    // ends shortly after DSH's last update, so what it still sends while stopping stays in it.
+    if (live?.auto && !live.inflight) {
+      for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+      live.conn.notify("session/cancel", { sessionId: live.acpId });
+      live.auto.stopping = true;
+      this.armAutoEnd(sessionId, live);
+      return;
+    }
     if (!live?.inflight) return;
-    const dropped = live.queue.splice(0);
-    if (dropped.length) this.appendItem(sessionId, { type: "notice", level: "info", message: `停止后，排队的 ${dropped.length} 条消息没有发出` }, { method: "dsh/queue-dropped" });
+    // What waits for the turn goes on after it, as with Claude and Codex (the user, 2026-11-02: 停止 sends what waits).
     for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
     live.conn.notify("session/cancel", { sessionId: live.acpId });
+    // 停止's fallback (2026-11-04): a DSH stuck in a command or a model call that does not end the prompt has its
+    // process closed; what waited for the turn becomes 没送到 (a process that had to be killed may be stuck again).
+    const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
+    this.armStopGrace(sessionId, grace, () => this.live.get(sessionId) === live && live.inflight, () => {
+      live.killedOnStop = true;
+      this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 DSH 还没停下（它可能卡在某个命令上），Studio 关掉了它的进程。发一条消息即可接着对话。` }, { method: "dsh/stop", ...live.transcript.turnRef() });
+      live.conn.kill();
+    }, "closing its process");
   }
 
   async fork(): Promise<Session> {
@@ -331,16 +462,13 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   async archive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.archiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    const changed = this.archiveTree(sessionId);
     for (const s of changed) await this.release(s.id);
     return changed;
   }
 
   async unarchive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.unarchiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
-    return changed;
+    return this.unarchiveTree(sessionId);
   }
 
   async respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {
@@ -444,6 +572,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (patch) args.push("--patch", patch);
     const logFile = join(this.options.dir, "logs", `${label}.log`);
+    rotateLog(logFile);
     return new AcpConnection({ command, args, cwd, env, logFile }, (method, params) => this.onRequest(method, params));
   }
 
@@ -467,16 +596,18 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const permission = dshPermissionMode(session.options.permission);
       const conn = this.spawn(workspace.path, this.profile(session.profileId), permission, session.id, session.options.model);
       let image = false;
+      const extra = this.extraMcp(session.id);
       try {
         image = (await this.initialize(conn)).image;
         const token = this.options.identities?.tokenFor(session.id);
-        const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: this.mcpServers(token) });
+        const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: [...this.mcpServers(token), ...extra.list] });
         this.remember(resumed.configOptions, this.profile(session.profileId));
       } catch (err) {
         conn.kill();
         throw this.explain(err);
       }
       const live = this.adopt(session, conn, {}, permission, image, session.options.model);
+      live.mcpKey = extra.key;
       await this.applyOptions(session.id, live);
       return live;
     })().finally(() => this.starting.delete(session.id));
@@ -485,13 +616,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0 };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
       const p = params as { sessionId?: string; update?: AcpUpdate };
       if (p.sessionId !== live.acpId || !p.update) return;
+      if (!live.inflight) this.autonomous(session.id, live, p.update);
       live.transcript.update(p.update);
+      if (live.auto) this.armAutoEnd(session.id, live);
       // DSH could not set its sandbox up on the folder: the fix is offered.
       if (p.update.sessionUpdate === "tool_call_update" && p.update.status === "failed") {
         const failed = grantFailurePath(`${toolOutput(p.update.content)}\n${typeof p.update.rawOutput === "string" ? p.update.rawOutput : JSON.stringify(p.update.rawOutput ?? "")}`);
@@ -499,12 +632,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       // Now and then while a turn runs, its speed so far. 2026-10-27: on any update, not only usage_update — DSH sends
       // that about once a turn, at its start (the log still empty), so a long turn showed no speed until it ended.
-      if (live.inflight && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
+      if ((live.inflight || live.auto) && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
     });
     conn.on("exit", (code) => {
       if (this.live.get(session.id) === live) this.live.delete(session.id);
       if (live.idleTimer) clearTimeout(live.idleTimer);
       if (!this.closing && live.inflight) this.emit("log", `DSH process of ${session.id} exited mid-turn (${code})`);
+      // A turn DSH ran by itself is cut off with its process (a Host shutdown leaves it to the next start).
+      if (!this.closing && live.auto) this.endAuto(session.id, live, "cancelled");
     });
     this.armIdle(session.id, live);
     // Before its first command: the folder's permissions let DSH set its write sandbox up.
@@ -681,6 +816,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     this.live.delete(sessionId);
     if (live.idleTimer) clearTimeout(live.idleTimer);
     for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    // Archived or the Host closing mid-turn: what waited for the turn goes with the process.
+    this.unsent(live);
     if (live.conn.alive) {
       await live.conn.request("session/close", { sessionId: live.acpId }, 15_000).catch(() => undefined);
       await live.conn.close();
@@ -690,17 +827,20 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private armIdle(sessionId: Id, live: Live): void {
     if (live.idleTimer) clearTimeout(live.idleTimer);
     live.idleTimer = null;
-    if (live.inflight) return;
+    if (live.inflight || live.auto) return;
     live.idleTimer = setTimeout(() => {
-      if (!live.inflight && this.live.get(sessionId) === live) void this.release(sessionId);
+      if (!live.inflight && !live.auto && this.live.get(sessionId) === live) void this.release(sessionId);
     }, this.options.idleMs ?? 20 * 60_000);
     live.idleTimer.unref();
   }
 
   // ---- turns ------------------------------------------------------------------------------------------------------
 
-  private async prompt(sessionId: Id, live: Live, text: string, images: readonly ImageBlock[] = []): Promise<void> {
+  private async prompt(sessionId: Id, live: Live, text: string, images: readonly ImageBlock[] = [], sent: readonly Id[] = []): Promise<void> {
     live.inflight = true;
+    live.killedOnStop = false;
+    // Queued messages going now: on their way to the model.
+    for (const id of sent) this.updateItem(id, (it) => (it.type === "user" ? withDelivery(it, undefined) : it));
     if (live.idleTimer) clearTimeout(live.idleTimer);
     await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
     live.transcript.openTurn();
@@ -715,6 +855,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private async endTurn(sessionId: Id, live: Live, stopReason: string, error?: string): Promise<void> {
+    // The Host is closing: the turn is cut off, not failed — the next start settles it (and its waiting messages were
+    // marked 没送到 by release).
+    if (this.closing) return;
+    // Closed after 停止 went unanswered (interrupt): a stopped turn, not an error.
+    if (error && live.killedOnStop) {
+      stopReason = "cancelled";
+      error = undefined;
+    }
     for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
     const turnItem = live.transcript.turnItemId();
     live.transcript.closeTurn(stopReason, error);
@@ -724,7 +872,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     live.inflight = false;
     this.autoScan(sessionId, live);
     if (error) {
-      live.queue.splice(0);
+      // 2026-11-04: they were dropped unseen; now 没送到, sent again by the person (重新发送).
+      this.unsent(live);
       this.appendItem(sessionId, { type: "error", message: error }, { method: "session/prompt" });
       this.setStatus(sessionId, "error");
       this.armIdle(sessionId, live);
@@ -732,20 +881,92 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     // A permission changed during the turn: its process ends now; the next message (or the queue) resumes it anew.
     const session = this.store.getSession(sessionId);
-    if (session && live.permission !== dshPermissionMode(session.options.permission) && this.live.get(sessionId) === live) {
-      const next = takeQueue(live);
+    // So did its MCP servers (MCP 设置): DSH takes them only at session/new or resume.
+    if (session && (live.permission !== dshPermissionMode(session.options.permission) || this.mcpChanged(sessionId, live)) && this.live.get(sessionId) === live) {
+      const queued = live.queue.splice(0);
       await this.release(sessionId);
-      if (!next) return this.setStatus(sessionId, "idle");
-      const fresh = await this.ensureLive(session);
-      await this.prompt(sessionId, fresh, next.text, next.images);
+      if (!queued.length) return this.setStatus(sessionId, "idle");
+      try {
+        const fresh = await this.ensureLive(session);
+        fresh.queue.push(...queued);
+        const next = takeQueue(fresh)!;
+        await this.prompt(sessionId, fresh, next.text, next.images, next.items);
+      } catch (err) {
+        // The new process did not come up: the messages are 没送到 and the session says why.
+        for (const q of queued) this.updateItem(q.itemId, (it) => (it.type === "user" && it.delivery === "waiting" ? withDelivery(it, "unsent") : it));
+        this.appendItem(sessionId, { type: "error", message: this.explain(err).message }, { method: "session/resume" });
+        this.setStatus(sessionId, "error");
+      }
       return;
     }
     if (live.queue.length && live.conn.alive && this.live.get(sessionId) === live) {
       const next = takeQueue(live)!;
-      await this.prompt(sessionId, live, next.text, next.images);
+      await this.prompt(sessionId, live, next.text, next.images, next.items);
       return;
     }
+    // The process went (or was replaced) with messages still waiting: never read.
+    this.unsent(live);
     this.setStatus(sessionId, "idle");
+    this.armIdle(sessionId, live);
+  }
+
+  /** Messages waiting for the turn that this process will never send: 没送到 (重新发送 sends them again). */
+  private unsent(live: Live): void {
+    for (const q of live.queue.splice(0)) this.updateItem(q.itemId, (it) => (it.type === "user" && it.delivery === "waiting" ? withDelivery(it, "unsent") : it));
+  }
+
+  /**
+   * DSH works with no prompt of Studio's running (2026-11-03, 问题 #13): a goal's next round starts by itself once the
+   * turn before has ended. Before, those rows had no turn: the turn before kept them, its answer folded away with the
+   * work after it, the session read as idle (no 停止, nothing in Focus) and its process was closed after the idle time
+   * mid-goal. Now each such round is a turn: one opens on DSH's first update with none running; a reply followed
+   * straight by a new model call (no tool between; a DSH turn ends on a message without tool calls) ends it and opens
+   * the next; the last ends after a quiet spell (armAutoEnd), on the person's next message, 停止, or the process ending.
+   */
+  private autonomous(sessionId: Id, live: Live, u: AcpUpdate): void {
+    const work = ((u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk") && !!blockText(u.content)) || (u.sessionUpdate === "tool_call" && !!u.toolCallId);
+    if (!work) return;
+    if (live.auto && !live.auto.stopping && live.transcript.endsRound(u)) this.endAuto(sessionId, live, "end_turn", true);
+    if (live.auto) return;
+    live.auto = { timer: null };
+    if (live.idleTimer) clearTimeout(live.idleTimer);
+    live.idleTimer = null;
+    live.transcript.openTurn();
+    this.setStatus(sessionId, "running");
+  }
+
+  /** When a turn DSH runs by itself is taken to be over, from its latest update on. */
+  private armAutoEnd(sessionId: Id, live: Live): void {
+    const auto = live.auto;
+    if (!auto) return;
+    if (auto.timer) clearTimeout(auto.timer);
+    const ms = auto.stopping ? AUTO_STOP_MS : live.transcript.lastWasReply() ? (this.options.autoQuietMs ?? AUTO_QUIET_MS) : (this.options.autoStallMs ?? AUTO_STALL_MS);
+    auto.timer = setTimeout(() => {
+      if (live.auto !== auto) return;
+      // A command still running or a question to the person: not over (their own updates arm this again).
+      if (!auto.stopping && (live.waiting.size || live.transcript.toolsRunning())) return void this.armAutoEnd(sessionId, live);
+      this.endAuto(sessionId, live, auto.stopping ? "cancelled" : "end_turn");
+    }, ms);
+    auto.timer.unref?.();
+  }
+
+  /** Ends the turn DSH ran by itself; `next`: another turn (DSH's next round, or the person's message) follows at once. */
+  private endAuto(sessionId: Id, live: Live, stopReason: string, next = false): void {
+    const auto = live.auto;
+    if (!auto) return;
+    if (auto.timer) clearTimeout(auto.timer);
+    live.auto = null;
+    const turnItem = live.transcript.turnItemId();
+    live.transcript.closeTurn(stopReason);
+    this.measure(live, turnItem);
+    setTimeout(() => this.measure(live, turnItem), 2000).unref?.();
+    if (next) return;
+    // Idle after 停止 too, as after a stopped turn of Studio's (the turn itself says 已停止).
+    this.setStatus(sessionId, "idle");
+    if (this.live.get(sessionId) !== live) return;
+    // A permission changed meanwhile: the process ends now (as after a turn of Studio's).
+    const session = this.store.getSession(sessionId);
+    if (session && live.permission !== dshPermissionMode(session.options.permission)) return void this.release(sessionId);
     this.armIdle(sessionId, live);
   }
 
@@ -768,6 +989,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       live.applied.effort = opts.effort;
       this.remember(r.configOptions, profile);
     }
+  }
+
+  /** `logs/` was never cleaned (2026-11-04, 架构整理第 6 步): see pruneDshLogs. */
+  pruneLogs(now = Date.now()): number {
+    return pruneDshLogs(join(this.options.dir, "logs"), now);
   }
 
   /**
@@ -844,10 +1070,37 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const option = w.options.find((o) => o.kind === kind);
     w.answer(how === "cancelled" || !option ? { outcome: { outcome: "cancelled" } } : { outcome: { outcome: "selected", optionId: option.optionId } });
     this.updateItem(w.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: how === "allow" ? "accepted" : "declined" } : it));
-    if (!live.waiting.size && live.inflight && this.store.getSession(sessionId)?.status === "awaiting-approval") this.setStatus(sessionId, "running");
+    if (!live.waiting.size && (live.inflight || live.auto) && this.store.getSession(sessionId)?.status === "awaiting-approval") this.setStatus(sessionId, "running");
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
+
+  /** The session's other MCP servers in ACP's shape, and a key to tell a change. */
+  private extraMcp(target: Id | { workspaceId: Id; mcp?: Record<string, boolean> }): { list: unknown[]; key: string } {
+    try {
+      const plan = this.options.mcpServers?.launch(target, false);
+      if (!plan) return { list: [], key: "" };
+      const names = Object.keys(plan.explicit).sort();
+      return { list: names.map((n) => acpServer(n, plan.explicit[n]!)), key: JSON.stringify(names.map((n) => [n, plan.explicit[n]])) };
+    } catch (err) {
+      this.emit("log", `MCP servers for a DSH session could not be read: ${String(err)}`);
+      return { list: [], key: "" };
+    }
+  }
+
+  private mcpChanged(sessionId: Id, live: Live): boolean {
+    return !!this.options.mcpServers && this.extraMcp(sessionId).key !== live.mcpKey;
+  }
+
+  /** MCP 设置: a change reaches the process when it next starts — now if it is idle, else once the turn ends. */
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    const live = this.live.get(sessionId);
+    if (!live) return "next-message";
+    if (!this.mcpChanged(sessionId, live)) return "now";
+    if (live.inflight || live.auto) return "after-turn";
+    await this.release(sessionId);
+    return "next-message";
+  }
 
   private mcpServers(token: string | undefined): unknown[] {
     const mcp = this.options.mcp?.();
@@ -958,11 +1211,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return p;
   }
 
-  private writable(id: Id): Session {
-    const s = this.requireSession(id);
-    if (s.writer === "archived" || s.archivedAt) throw Object.assign(new Error("这个会话已归档"), { code: "read_only" });
-    return s;
-  }
+}
+
+/** Images as ACP inline blocks, read now (a missing file fails the send before anything is shown or queued). */
+function imageBlocks(images: readonly Attachment[]): ImageBlock[] {
+  return images.map((a) => ({ type: "image", mimeType: a.mime, data: readFileSync(a.path).toString("base64") }));
 }
 
 /**
@@ -988,11 +1241,11 @@ export function dshModelValue(id: string, config: readonly ConfigOption[] | null
   return offered.find((v) => dshModelId(v) === id) ?? (cut > 0 ? JSON.stringify([id.slice(0, cut), id.slice(cut + 1)]) : id);
 }
 
-/** Messages queued during a turn, as one: their texts one after another, and all their images. */
-function takeQueue(live: Live): { text: string; images: ImageBlock[] } | null {
+/** Messages queued during a turn, as one: their texts one after another, all their images, and their rows. */
+function takeQueue(live: Live): { text: string; images: ImageBlock[]; items: Id[] } | null {
   const queued = live.queue.splice(0);
   if (!queued.length) return null;
-  return { text: queued.map((q) => q.text).filter(Boolean).join("\n\n"), images: queued.flatMap((q) => q.images) };
+  return { text: queued.map((q) => q.text).filter(Boolean).join("\n\n"), images: queued.flatMap((q) => q.images), items: queued.map((q) => q.itemId) };
 }
 
 /** The DSH patch that starts its ACP agent on `provider`/`model` (names JSON-quoted, which YAML reads as strings). */

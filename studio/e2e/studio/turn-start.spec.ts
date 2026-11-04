@@ -101,10 +101,16 @@ test("Focus lists replies that ended while the session was not on screen, until 
   await expect(focus.getByTestId("focus-entry")).toHaveCount(0, { timeout: 15_000 });
   await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
 
-  // Another one, looked at in Focus itself: clicking its row counts as seen too.
+  // Another one, looked at in Focus itself: its row only opens it (2026-10-26, the user: a click on the title took it
+  // off the list as if reviewed); 我知道了 counts as seen.
   await page.getByRole("button", { name: /返回|看板/ }).first().click();
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "另一个", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "再回复一次" } });
   await expect(focus.getByTestId("focus-entry")).toHaveCount(1, { timeout: 60_000 });
-  await focus.getByTestId("focus-entry").getByRole("button").first().click();
+  // A finished entry may already be open; the row's click only opens or folds it.
+  const row = focus.getByTestId("focus-entry").locator(".focus-row");
+  if ((await row.getAttribute("aria-expanded")) !== "true") await row.click();
+  await expect(focus.getByTestId("focus-snippet")).toContainText("MOCK: 再回复一次");
+  await expect(focus.getByTestId("focus-entry")).toHaveCount(1);
+  await focus.getByTestId("focus-done").click();
   await expect(focus.getByTestId("focus-entry")).toHaveCount(0, { timeout: 15_000 });
 });

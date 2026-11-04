@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -213,5 +213,24 @@ describe("问题页 (2026-10-31)", () => {
     await xiao("POST", "/api/issues", { body: "截图", images: [image.id] });
     const status = async (k: string) => (await fetch(`${url}/api/issues/images/${image.id}?key=${encodeURIComponent(k)}`)).status;
     expect([await status(xiao.key), await status(key), await status(lin.key)]).toEqual([200, 200, 404]);
+  });
+
+  it("screenshots never put on a report go after a while, bytes and all; the ones on a report stay (2026-11-04)", async () => {
+    const { call } = await service();
+    const { IssueStore } = await import("./issues.js");
+    const up = async () => (await call<{ image: { id: string } }>("POST", "/api/issues/images?name=a.png", undefined, { data: PNG, type: "image/png" })).image.id;
+    const used = await up();
+    const orphan = await up();
+    await call("POST", "/api/issues", { body: "带图", images: [used] });
+    expect([existsSync(join(filesDir, used)), existsSync(join(filesDir, orphan))]).toEqual([true, true]);
+    // An hour later with a one-hour limit: only the one never used goes.
+    const later = new IssueStore(store!.db, () => Date.now() + 3600_000 + 1000);
+    expect(later.pruneOrphanImages(3600_000)).toEqual([orphan]);
+    expect(later.pruneOrphanImages(3600_000)).toEqual([]);
+    // The service does it on start and deletes the bytes: a second one started with a 0 ms limit on the same files.
+    const orphan2 = await up();
+    const again = await startRelayServer({ store: store!, filesDir, host: "127.0.0.1", port: 0, orphanImageMs: -1 });
+    await again.close();
+    expect([existsSync(join(filesDir, used)), existsSync(join(filesDir, orphan2))]).toEqual([true, false]);
   });
 });

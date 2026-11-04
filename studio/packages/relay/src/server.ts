@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -41,6 +42,8 @@ export interface RelayServerOptions {
   port?: number;
   /** Where uploaded files are kept (one file per upload, named by its id); none = no files. */
   filesDir?: string;
+  /** Screenshots not on any issue are removed once this old (ms); default a week. Tests set it shorter. */
+  orphanImageMs?: number;
   /** The AMO platform's files (platform.ts: channels, manifests, objects); none = the platform calls answer 404. */
   platformDir?: string;
   /** How often to look for a newer client build (default 5 s) and to send a tick (default TICK_MS). Tests shorten them. */
@@ -171,6 +174,14 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   };
   // 问题页 (2026-10-31, plans/issues.md): its tables in the same database.
   const issues = new IssueStore(store.db);
+  // Screenshots pasted for a report that was never sent: gone after a week, the bytes with them (2026-11-04, the 11-03
+  // audit). At start and every 6 hours.
+  const pruneImages = () => {
+    for (const id of issues.pruneOrphanImages(opts.orphanImageMs ?? 7 * 24 * 3600_000)) if (opts.filesDir) rmSync(join(opts.filesDir, id), { force: true });
+  };
+  pruneImages();
+  const pruneTimer = setInterval(pruneImages, 6 * 3600_000);
+  pruneTimer.unref?.();
   // 待办 (2026-11-01, plans/todo.md): every account's todo lists, in the same database.
   const todo = new TodoStore(store.db);
   const sockets = new Map<string, Set<WebSocket>>();
@@ -535,7 +546,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const id = `ii_${randomBytes(8).toString("hex")}`;
         const image = issues.addImage(me, { id, name: url.searchParams.get("name"), type: url.searchParams.get("type") || req.headers["content-type"], size: data.length });
         mkdirSync(opts.filesDir, { recursive: true });
-        writeFileSync(join(opts.filesDir, id), data);
+        await writeFile(join(opts.filesDir, id), data);
         return send(res, 200, { image });
       }
       const im = /^\/api\/issues\/images\/(ii_[0-9a-f]{16})$/.exec(path);
@@ -672,7 +683,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       if (!data.length) throw new RelayError("bad_request", "文件是空的");
       const id = `f_${randomBytes(8).toString("hex")}`;
       mkdirSync(opts.filesDir, { recursive: true });
-      writeFileSync(join(opts.filesDir, id), data);
+      await writeFile(join(opts.filesDir, id), data);
       let file;
       try {
         const type = url.searchParams.get("type") || String(req.headers["content-type"] ?? "") || "application/octet-stream";
@@ -889,6 +900,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       closing = true;
       clearInterval(watchClient);
       clearInterval(tick);
+      clearInterval(pruneTimer);
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();
       devices.close();

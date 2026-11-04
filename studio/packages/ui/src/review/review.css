@@ -1,24 +1,4 @@
-/* Selection menu and annotation panel (S2-03) */
-.ctx-menu { position: fixed; z-index: 50; min-width: 150px; padding: 4px; border-radius: var(--r-l); border: 1px solid var(--border-strong); background: var(--menu-bg); box-shadow: 0 14px 36px var(--shadow); display: flex; flex-direction: column; }
-.ctx-menu button { text-align: left; padding: 7px 10px; border: none; border-radius: 6px; background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
-.ctx-menu button:hover { background: var(--menu-hover); }
-.ctx-menu button:disabled { color: var(--text-dim); cursor: default; background: transparent; }
-/* Risky items (归档…): deep red words, filled deep red under the pointer or keyboard focus. */
-.ctx-menu button.menu-danger { color: var(--danger-text); }
-.ctx-menu button.menu-danger:hover:not(:disabled), .ctx-menu button.menu-danger:focus-visible { background: var(--danger); color: var(--on-danger); }
-.ctx-menu button.menu-danger:disabled { color: var(--text-dim); }
-/* A submenu opened in place (加入分组 ▸): its items indented under the item that opened it. */
-.ctx-menu .menu-sub-arrow { float: right; margin-left: 12px; color: var(--text-faint); font-size: 11px; }
-.ctx-menu .menu-sub { display: flex; flex-direction: column; padding-left: 8px; }
-.ctx-menu .menu-check { display: inline-block; width: 14px; color: var(--primary); }
-.ctx-menu .menu-rule { border: none; border-top: 1px solid var(--divider); margin: 4px 6px; }
-.ctx-menu button.menu-new { color: var(--primary); }
-/* ActionMenu (2026-10-28): groups with a rule between them, each action's key on its right. */
-.action-menu { min-width: 200px; }
-.action-group { display: flex; flex-direction: column; }
-.action-menu button { display: flex; align-items: center; gap: 24px; }
-.action-menu .menu-key { margin-left: auto; min-width: 18px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text-faint); font-family: var(--font-code); font-size: 11px; line-height: 16px; text-align: center; }
-.action-menu button:disabled .menu-key { opacity: 0.5; }
+/* Annotation panel (S2-03) */
 .anno-panel { flex: 0 0 300px; max-width: 320px; border-left: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: var(--panel-raised); }
 .anno-head { display: flex; align-items: baseline; gap: 8px; }
 .anno-title { font-weight: 600; font-size: var(--fs-sm); }

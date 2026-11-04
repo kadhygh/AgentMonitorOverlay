@@ -35,26 +35,36 @@ interface TranscriptProps {
   keepTurn?: string;
   /** 立即发送 a message still waiting, or 重新发送 one never read (2026-11-02); absent: no buttons (read only). */
   onDelivery?(itemId: string, action: DeliveryAction): void;
+  /**
+   * 立即发送 was asked and the turn has not given way yet (2026-11-03, 问题 #16: the turn can take a while to stop, and
+   * the row still read 「等待送达 · 立即发送」 as if the send had not gone): waiting messages say it is being interrupted.
+   */
+  givingWay?: boolean;
 }
 
 export type DeliveryAction = "now" | "resend";
 
 /** onDelivery for the person's messages, however deep in the turns they are drawn. */
-const DeliveryContext = createContext<TranscriptProps["onDelivery"]>(undefined);
+const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean }>({ onDelivery: undefined, givingWay: false });
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery }: TranscriptProps) {
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false }: TranscriptProps) {
+  const delivery = useMemo(() => ({ onDelivery, givingWay }), [onDelivery, givingWay]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
-  // Turns the person unfolded (or folded again); finished turns start folded.
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
-  useEffect(() => setUnfolded(new Set()), [session?.id]);
+  // Turns the person unfolded or folded, against how finished turns start: folded, except in 详细 (2026-11-04, the
+  // user: the replies in between and the work's headings are what is read there) — 完全展开 does not fold at all.
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setToggled(new Set()), [session?.id, view]);
+  const startsOpen = view === "detailed";
+  const startsOpenRef = useRef(startsOpen);
+  startsOpenRef.current = startsOpen;
 
   // The drawn window: from the turn keyed `key` on (null: all of them), worked out once per session and view; new
   // turns come after it. 完全展开 draws every turn's work, so it holds fewer turns.
-  const unfoldedWork = view === "verbose";
+  const unfoldedWork = view === "verbose" || view === "detailed";
   const [from, setFrom] = useState<{ session: string | undefined; view: TranscriptView; key: string | null } | null>(null);
   const settled = !!from && from.session === session?.id && from.view === view;
   const startAt = (index: number) => segments[index]?.key ?? null;
@@ -89,7 +99,12 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
       const index = segmentsRef.current.findIndex((s) => s.rows.some((r) => (r.kind === "item" ? r.item.id === id : r.members.some((m) => m.id === id))) || s.answer?.id === id || s.inputs.some((i) => i.id === id) || s.tail.some((i) => i.id === id));
       const seg = segmentsRef.current[index];
       if (!seg) return;
-      setUnfolded((cur) => new Set(cur).add(seg.key));
+      setToggled((cur) => {
+        const next = new Set(cur);
+        if (startsOpenRef.current) next.delete(seg.key);
+        else next.add(seg.key);
+        return next;
+      });
       // Earlier than the window: drawn from there on.
       if (index < startRef.current) setFrom((cur) => (cur ? { ...cur, key: seg.key } : cur));
     };
@@ -102,7 +117,7 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   const runningTurn = last?.running ? last.turn : null;
 
   return (
-    <DeliveryContext.Provider value={onDelivery}>
+    <DeliveryContext.Provider value={delivery}>
       {start > 0 && (
         <button ref={earlierRef} type="button" className="turn-earlier" data-testid="turn-earlier" onClick={showEarlier}>
           显示更早的对话（还有 {start} 轮）
@@ -114,12 +129,13 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
         <TurnView
           seg={seg}
           latest={start + i === segments.length - 1}
+          recent={start + i >= segments.length - RECENT_TURNS}
           view={view}
           model={model}
           busy={busy}
-          unfolded={unfolded.has(seg.key)}
+          unfolded={toggled.has(seg.key) !== startsOpen}
           onToggle={() =>
-            setUnfolded((cur) => {
+            setToggled((cur) => {
               const next = new Set(cur);
               if (next.has(seg.key)) next.delete(seg.key);
               else next.add(seg.key);
@@ -143,6 +159,11 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   );
 }
 
+/** The last turns, always drawn (chat.css: the ones before skip drawing while off screen). 问题 #17 (2026-11-04): this was
+ *  "the last two children" in CSS, and while a turn runs its running line is one of them, so the reply on screen as a
+ *  message went out was switched to skipping at that very moment and could stay blank until the next reply came. */
+const RECENT_TURNS = 3;
+
 /** The element that scrolls `el`. */
 function scrollerOf(el: HTMLElement): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
@@ -155,6 +176,7 @@ function scrollerOf(el: HTMLElement): HTMLElement | null {
 function TurnView({
   seg,
   latest,
+  recent,
   view,
   model,
   busy,
@@ -166,6 +188,7 @@ function TurnView({
 }: {
   seg: Segment;
   latest: boolean;
+  recent: boolean;
   view: TranscriptView;
   model: string;
   busy: boolean;
@@ -180,7 +203,7 @@ function TurnView({
   const finished = !seg.running;
   const flat = view === "verbose" || (view === "detailed" && seg.running);
   return (
-    <section className="turn" data-testid="turn" data-key={seg.key} data-running={seg.running || undefined} data-folded={folded || undefined}>
+    <section className="turn" data-testid="turn" data-key={seg.key} data-recent={recent || undefined} data-running={seg.running || undefined} data-folded={folded || undefined}>
       {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} item={item} /> : null))}
       {finished && seg.rows.length > 0 && (
         <button
@@ -351,28 +374,40 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
  * the turn's end; Codex: at its next step), or one whose process went before reading it.
  */
 function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]> }) {
-  const onDelivery = useContext(DeliveryContext);
+  const { onDelivery, givingWay } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
-  const waiting = delivery === "waiting";
+  // `held` (2026-11-04): from an agent or from Studio (中转回复, 值守, 传话…), in the session's inbox until its turn is over;
+  // 立即发送 puts it in now, as a waiting message's does.
+  const held = delivery === "held";
+  const waiting = delivery === "waiting" || held;
+  // 问题 #16: once 立即发送 is under way (this button, or Ctrl+Enter in the composer) the row says so until it is read.
+  const interrupting = delivery === "waiting" && (asked || givingWay);
+  const title = interrupting
+    ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）"
+    : held
+      ? "这条是 AMO 替别处转来的（中转回复、值守、传话、子会话的回报…）：等会话这一轮做完再送进去，不打断它；Studio 重启了也会接着送"
+      : waiting
+        ? "模型还没读到这条：工具调用后或这一轮结束时读到"
+        : "这条消息没送进会话（会话的进程没了，或者送的时候出错了），模型没读到它";
   return (
-    <div className={`msg-delivery ${delivery}`} data-testid="msg-delivery" data-delivery={delivery}>
-      <span className="msg-delivery-state" title={waiting ? "模型还没读到这条：工具调用后或这一轮结束时读到" : "这条消息发出时会话的进程没了，模型没读到它"}>
-        {waiting ? "◐ 等待送达" : "! 没送到"}
+    <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : delivery}>
+      <span className="msg-delivery-state" title={title}>
+        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : waiting ? "◐ 等待送达" : "! 没送到"}
       </span>
-      {onDelivery && (
+      {onDelivery && !interrupting && (
         <button
           type="button"
           className="msg-delivery-btn"
           data-testid={waiting ? "send-now" : "resend"}
           disabled={asked}
-          title={waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
+          title={held ? "不等这一轮结束，现在就送进去：会打断当前这一步，让模型马上读到这条" : waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
           onClick={() => {
             setAsked(true);
             onDelivery(itemId, waiting ? "now" : "resend");
           }}
         >
-          {waiting ? (asked ? "正在发送…" : "立即发送") : asked ? "正在发送…" : "重新发送"}
+          {waiting ? "立即发送" : asked ? "正在发送…" : "重新发送"}
         </button>
       )}
     </div>

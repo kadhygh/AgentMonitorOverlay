@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState, type ReactNode } from "react";
 import { DEFAULT_REMOTE_SECURITY, NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteSecurity, type RemoteStart, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
@@ -7,6 +6,7 @@ import { relativeTime } from "../lib/status.js";
 import { copyStatus, useRemote } from "./remote.js";
 import { AskRows, IncomingTaskRequests } from "./RemoteRequests.js";
 import { PairDialog } from "./PairDialog.js";
+import { Modal } from "../lib/Modal.js";
 
 // 远程 (2026-10-29, plans/remote-page-and-new-task.md §1–3): opened from the top bar (设置 → 远程 before). A dialog since
 // the evening of 10-29 (the user: 「远程包成一个弹窗」; a page of its own before), and 远程设置 a second dialog on top of
@@ -73,38 +73,19 @@ function Presence({ peer, testId }: { peer: RemotePeer | undefined; testId?: str
  * Escape meant for a dialog opened from it (配对, 解除配对, 同意…: portals of their own, outside this one's box).
  */
 function RemoteModal({ label, testId, className, onClose, head, children }: { label: string; testId: string; className: string; onClose(): void; head: ReactNode; children: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null);
-  // Focus comes in when it opens (so Escape closes this one, not the one under it) and goes back when it closes.
-  useEffect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    box.current?.focus();
-    return () => {
-      if (before?.isConnected) before.focus();
-    };
-  }, []);
-  return createPortal(
-    <div
-      className="modal-backdrop remote-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => {
-        if (e.key !== "Escape" || e.defaultPrevented || !box.current?.contains(e.target as Node)) return;
-        e.stopPropagation();
-        onClose();
-      }}
-    >
-      <div ref={box} className={`modal remote-modal ${className}`} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} data-testid={testId}>
-        <div className="modal-head remote-modal-head">
-          <span className="modal-title">{label}</span>
-          <span className="spacer" />
-          {head}
-          <button type="button" className="link-btn" onClick={onClose} aria-label={`关闭${label}`} data-testid={`${testId}-close`}>
-            关闭
-          </button>
-        </div>
-        {children}
+  // Focus comes in when it opens (so Escape closes this one, not the one under it) and goes back when it closes (lib/Modal.tsx).
+  return (
+    <Modal portal backdropClassName="remote-backdrop" className={`remote-modal ${className}`} label={label} testId={testId} onClose={onClose}>
+      <div className="modal-head remote-modal-head">
+        <span className="modal-title">{label}</span>
+        <span className="spacer" />
+        {head}
+        <button type="button" className="link-btn" onClick={onClose} aria-label={`关闭${label}`} data-testid={`${testId}-close`}>
+          关闭
+        </button>
       </div>
-    </div>,
-    document.body,
+      {children}
+    </Modal>
   );
 }
 

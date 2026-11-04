@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { AccountUsage, ModelProfile, Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { IconClock } from "../chat/icons.js";
-import { useSettings } from "../settings/SettingsDialog.js";
+import { useSettings } from "../settings/useSettings.js";
 import { balanceText, money, useBalance, useProfiles } from "../lib/balance.js";
 import { quotaOf } from "../lib/quota.js";
 

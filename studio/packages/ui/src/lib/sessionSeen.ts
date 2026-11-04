@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@amo-studio/protocol";
+import type { Session, Task } from "@amo-studio/protocol";
 import { needsPerson } from "./status.js";
 
 // When the person last looked at each session in the workbench (2026-10-15). Focus lists a session whose reply ended,
@@ -42,7 +42,13 @@ export function markSeen(ids: readonly string[], at = new Date().toISOString(), 
   const data = readSeen(storage);
   for (const id of ids) data.seen[id] = at;
   const entries = Object.entries(data.seen);
-  if (entries.length > MAX_ENTRIES) data.seen = Object.fromEntries(entries.sort((a, b) => b[1].localeCompare(a[1])).slice(0, MAX_ENTRIES));
+  if (entries.length > MAX_ENTRIES) {
+    const sorted = entries.sort((a, b) => b[1].localeCompare(a[1]));
+    data.seen = Object.fromEntries(sorted.slice(0, MAX_ENTRIES));
+    // 2026-11-04: a session dropped here fell back to `since` and, ended after it, came back to Focus as 完成待审核
+    // (the oldest looked-at ones, all at once). What was dropped was seen by then: `since` moves up to it.
+    data.since = maxIso(data.since, sorted[MAX_ENTRIES]![1]);
+  }
   try {
     storage?.setItem(KEY, JSON.stringify(data));
   } catch {
@@ -72,7 +78,7 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
     .filter((s) => !s.archivedAt && s.kind !== "sub" && !folded(s) && (s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error"))
     .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
     .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => endedOf(b).localeCompare(endedOf(a)));
 }
 
 /**
@@ -81,7 +87,7 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
  */
 export function interruptedSince(session: Session, sessions: readonly Session[], data: SeenData): Session[] {
   const after = maxIso(data.since, data.seen[session.id]);
-  return (subsByParent(sessions).get(session.id) ?? []).filter((s) => s.status === "interrupted" && s.updatedAt > after);
+  return (subsByParent(sessions).get(session.id) ?? []).filter((s) => s.status === "interrupted" && endedOf(s) > after);
 }
 
 /** Whether the workbench opening this session is the person coming to deal with it: it waits, or ended unseen. */
@@ -122,9 +128,17 @@ export function runningSubs(id: string, subs: ReadonlyMap<string, readonly Sessi
   return (subs.get(id) ?? []).filter((s) => s.status === "running");
 }
 
-/** When the session or one of its subagents last changed. */
+/** When the session or one of its subagents last ended a turn. */
 function lastChange(s: Session, subs: ReadonlyMap<string, readonly Session[]>): string {
-  return (subs.get(s.id) ?? []).reduce((at, x) => (x.updatedAt > at ? x.updatedAt : at), s.updatedAt);
+  return (subs.get(s.id) ?? []).reduce((at, x) => (endedOf(x) > at ? endedOf(x) : at), endedOf(s));
+}
+
+/**
+ * When its last turn ended (Session.endedAt, 2026-11-04): renaming, settings, archiving and restoring move updatedAt
+ * and made an ended session look just finished. "" when none has ended; updatedAt from a Host before the field.
+ */
+export function endedOf(s: Pick<Session, "updatedAt" | "endedAt">): string {
+  return s.endedAt === undefined ? s.updatedAt : (s.endedAt ?? "");
 }
 
 /** The seen record, following changes made by the other windows. */
@@ -153,6 +167,39 @@ export function noteSeen(ids: readonly string[]): void {
   if (!ids.length) return;
   markSeen(ids);
   window.dispatchEvent(new Event(LOCAL_EVENT));
+}
+
+/**
+ * The seen record with what a copy of another computer's task (远程) had before it was granted here counted as seen
+ * (问题 2026-11-04: after a task was granted to this computer, Focus here listed every session of it that had ended
+ * long before as 完成待审核). Its sessions come with that computer's times, all after this one began keeping; what
+ * ended there before the grant was never this computer's to review. Both times are that computer's clock.
+ */
+export function withGrants(data: SeenData, tasks: readonly Pick<Task, "id" | "remote">[], sessions: readonly Pick<Session, "id" | "taskId">[]): SeenData {
+  const granted = new Map<string, string>();
+  for (const t of tasks) if (t.remote?.grantedAt) granted.set(t.id, t.remote.grantedAt);
+  if (!granted.size) return data;
+  let seen: Record<string, string> | null = null;
+  for (const s of sessions) {
+    const at = s.taskId ? granted.get(s.taskId) : undefined;
+    if (!at || at <= maxIso(data.since, data.seen[s.id])) continue;
+    seen ??= { ...data.seen };
+    seen[s.id] = at;
+  }
+  return seen ? { since: data.since, seen } : data;
+}
+
+/**
+ * A session came back from the archive (问题 2026-11-03: restoring a done task flooded Focus). The Host stamps every
+ * restored session with the time of restoring, so each one that had ended looked like a reply that just ended unseen
+ * — the task's sessions, forks and 委派 ones all at once. Restoring is the person dealing with it, so it counts as
+ * seen; with the session it hangs under, whose last change takes in its subagents' and 委派 sessions' (restored a
+ * moment later each). Since Session.endedAt restoring moves nothing Focus reads, but sessions ended before it carry
+ * updatedAt as their end (migration 24), for an archived one the time it was archived.
+ */
+export function noteRestored(session: Session): void {
+  const under = session.kind === "sub" ? session.parentId : session.parentId ? null : session.startedBy;
+  noteSeen(under ? [session.id, under] : [session.id]);
 }
 
 /**

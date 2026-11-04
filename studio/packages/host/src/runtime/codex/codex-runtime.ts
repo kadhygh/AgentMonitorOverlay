@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ApprovalDecision, Attachment, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, SlashCommand, SlashCommandList, SlashCommandResult, UserDelivery, Workspace, AccountUsage } from "@amo-studio/protocol";
+import { inTurn, type ApprovalDecision, type Attachment, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionOptions, type SlashCommand, type SlashCommandList, type SlashCommandResult, type UserDelivery, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import { codexThreadParams, profileGone } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { codexAutoCompactConfig } from "../compact.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
-import { RuntimeBase, type RuntimeEvents, type SendOptions } from "../runtime.js";
+import { RuntimeBase, STOP_GRACE_MS, type RuntimeEvents, type SendOptions } from "../runtime.js";
 import { withDelivery } from "../items.js";
 import type { CodexServerHandle } from "./server-manager.js";
 import { codexUsage, reviewTarget, STANDARD_TIER, toModelOption, type CodexModel, type CodexSkill, type GetAccountRateLimitsResponse } from "./account.js";
@@ -34,6 +34,8 @@ export interface CodexRuntimeOptions {
   servers: CodexServers;
   profiles: readonly ModelProfile[];
   now?: () => Date;
+  /** 停止 not answered by the app-server this long: Studio takes the turn as stopped (default STOP_GRACE_MS). */
+  stopGraceMs?: number;
   /**
    * Tests only: fixed approval policy and sandbox for every session. Otherwise each session's permission option
    * decides (choices.ts; default "ask": outside the Windows sandbox, every command except known-safe reads waits for
@@ -68,7 +70,7 @@ export class CodexRuntime extends RuntimeBase {
   private readonly events: CodexEvents;
 
   constructor(private readonly options: CodexRuntimeOptions) {
-    super(options.store, "codex", options.now);
+    super(options.store, "codex", options.now, options.profiles);
     const core: CodexCore = {
       ...this.makeCore(),
       sessionState: (id) => this.sessionState(id),
@@ -90,7 +92,7 @@ export class CodexRuntime extends RuntimeBase {
     this.asks.cancelStale();
     // Sessions not running any more (the last Host stopped mid-turn): close what that turn left open.
     for (const s of this.store.listSessions()) {
-      if (s.runtime === "codex" && s.status !== "running" && s.status !== "awaiting-approval" && s.status !== "awaiting-answer") this.settleLeftovers(s.id, false);
+      if (s.runtime === "codex" && !inTurn(s.status)) this.settleTurn(s.id, false);
     }
     options.servers.on("ready", (handle) => {
       this.attach(handle);
@@ -218,13 +220,13 @@ export class CodexRuntime extends RuntimeBase {
     await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId: st.activeTurnId } as never);
   }
 
-  /** 重新发送 (2026-11-02): a message Codex never read goes again, as the same row. */
-  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: "start" | "steer" }> {
+  /** 重新发送 (2026-11-02): a message Codex never read goes again, as the same row; also a held one of Studio's inbox. */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: "start" | "steer" }> {
     this.writable(sessionId);
     const item = this.store.getItem(itemId);
     if (item?.type !== "user" || item.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
-    if (item.delivery !== "unsent") return { mode: this.sessionState(sessionId).activeTurnId ? "steer" : "start" };
-    return this.send(sessionId, item.text, images, [], {}, itemId);
+    if (item.delivery !== "unsent" && item.delivery !== "held") return { mode: this.sessionState(sessionId).activeTurnId ? "steer" : "start" };
+    return this.send(sessionId, item.text, images, [], options, itemId);
   }
 
   /**
@@ -344,8 +346,18 @@ export class CodexRuntime extends RuntimeBase {
     const st = this.sessionState(sessionId);
     if (!st.activeTurnId || !session.runtimeRef) return;
     this.asks.cancelQuestionsOf(sessionId);
+    // 停止's fallback (2026-11-04, plans/message-delivery.md): the app-server is shared by the channel's sessions, so it
+    // is not closed; the turn is taken as stopped here, and what the turn had not read becomes 没送到.
+    const turnId = st.activeTurnId;
+    const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
+    this.armStopGrace(sessionId, grace, () => this.state.get(sessionId)?.activeTurnId === turnId, () => {
+      st.activeTurnId = null;
+      this.settleTurn(sessionId, false);
+      this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 Codex 还没停下，Studio 不再等它，把这一轮记成已停止。发一条消息即可接着对话；还不行的话重启 Studio。` });
+      this.setStatus(sessionId, "idle");
+    }, "taking it as stopped");
     const handle = await this.handleFor(session.profileId);
-    await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId: st.activeTurnId } as never);
+    await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId } as never);
   }
 
   /** Forks with an explicit provider so the fork never falls back to the server default. */
@@ -364,8 +376,7 @@ export class CodexRuntime extends RuntimeBase {
 
   /** Archives the session with its forks and subagents, and archives their threads. */
   async archive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.archiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    const changed = this.archiveTree(sessionId);
     for (const s of changed) {
       if (!s.runtimeRef || s.kind === "sub") continue;
       try {
@@ -379,8 +390,7 @@ export class CodexRuntime extends RuntimeBase {
   }
 
   async unarchive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.unarchiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    const changed = this.unarchiveTree(sessionId);
     for (const s of changed) {
       if (!s.runtimeRef || s.kind === "sub") continue;
       try {
@@ -490,20 +500,10 @@ export class CodexRuntime extends RuntimeBase {
    * The thread is not running (any more): a turn the last Host saw start, and its streaming text and running tools,
    * are over. `notify` adds a line saying the reply was cut off.
    */
-  private settleLeftovers(sessionId: Id, notify: boolean): void {
-    let cut = false;
-    const at = this.now().toISOString();
-    for (const item of this.store.listUnfinishedItems(sessionId)) {
-      if (item.type === "turn" && item.state === "running") {
-        cut = true;
-        this.updateItem(item.id, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state: "interrupted", endedAt: at } : it));
-      } else if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));
-      else if (item.type === "reasoning" && item.streaming) this.updateItem(item.id, (it) => (it.type === "reasoning" ? { ...it, streaming: false } : it));
-      else if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
-      else if (item.type === "compaction" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "compaction" ? { ...it, state: "failed" } : it));
-      // Steered and never read: the turn (and Codex's copy of it) is gone.
-      else if (item.type === "user" && item.delivery === "waiting") this.updateItem(item.id, (it) => (it.type === "user" ? withDelivery(it, "unsent") : it));
-    }
+  private settleTurn(sessionId: Id, notify: boolean): void {
+    // Approvals are not settled here: the app-server replays the ones still wanted after resubscribing (asks.ts).
+    const cut = this.settleLeftovers(sessionId);
+    // Steered and never read (now unsent): the turn (and Codex's copy of it) is gone.
     this.state.get(sessionId)?.sent.clear();
     if (cut && notify) this.appendItem(sessionId, { type: "notice", level: "warning", message: "这一轮回复被中断了（Host 或 Codex 重启）。发一条消息即可接着对话。" });
   }
@@ -553,12 +553,12 @@ export class CodexRuntime extends RuntimeBase {
         const st = this.sessionState(s.id);
         if (!active) {
           st.activeTurnId = null;
-          this.settleLeftovers(s.id, true);
+          this.settleTurn(s.id, true);
         }
         const current = this.store.getSession(s.id)!.status;
-        if (active && current !== "awaiting-approval" && current !== "awaiting-answer") this.setStatus(s.id, "running");
+        if (active && !inTurn(current)) this.setStatus(s.id, "running");
         // Cut off from outside (the Host or the app-server went down mid-turn): red until a message carries it on.
-        if (!active && (current === "running" || current === "awaiting-approval" || current === "awaiting-answer")) this.setStatus(s.id, "interrupted");
+        if (!active && inTurn(current)) this.setStatus(s.id, "interrupted");
       } catch (err) {
         this.emit("log", `thread/resume failed for ${s.id}: ${String(err)}`);
       }
@@ -650,13 +650,6 @@ export class CodexRuntime extends RuntimeBase {
     if (!p) throw profileGone(id);
     if (p.runtime !== "codex") throw new Error(`unknown Codex profile ${id}`);
     return p;
-  }
-
-  private writable(id: Id): Session {
-    const s = this.requireSession(id);
-    if (s.writer === "archived" || s.writer === "terminal-handoff") throw Object.assign(new Error(`session ${id} is read-only (${s.writer})`), { code: "read_only" });
-    if (!s.runtimeRef) throw new Error(`session ${id} has no thread yet`);
-    return s;
   }
 
   private findByThread(threadId: string): Session | undefined {

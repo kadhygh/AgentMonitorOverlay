@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { OPEN_SETTINGS_EVENT } from "./mcp/shared.js";
 import type { Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
@@ -9,7 +10,8 @@ import { useOpenDecisions } from "./collab/DecisionPanel.js";
 import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
-import { SettingsDialog, useSettings, type SettingsPage } from "./settings/SettingsDialog.js";
+import { SettingsDialog, type SettingsPage } from "./settings/SettingsDialog.js";
+import { useSettings } from "./settings/useSettings.js";
 import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
@@ -31,7 +33,7 @@ import { setDutyOpener, useDuty, useDutyWatch } from "./duty/duty.js";
 import { DutyDialog } from "./duty/DutyDialog.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 import { useMascotIcon } from "./focus/mascot.js";
-import { useSessionSeen } from "./lib/sessionSeen.js";
+import { useSessionSeen, withGrants } from "./lib/sessionSeen.js";
 import { remoteButton, useRemote } from "./remote/remote.js";
 import { RemoteDialog } from "./remote/RemoteDialog.js";
 
@@ -108,6 +110,12 @@ export function App() {
   }, []);
   // Open, and on which page when something asked for one; `at` remounts it there.
   const [settingsOpen, setSettingsOpen] = useState<false | { page?: SettingsPage; at: number }>(false);
+  // 设置 on a page asked for from deep inside (the composer's MCP tray: 管理 MCP…).
+  useEffect(() => {
+    const open = (e: Event) => setSettingsOpen({ page: (e as CustomEvent<SettingsPage>).detail, at: Date.now() });
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+  }, []);
   // 远程 (2026-10-29 evening, the user): a dialog over whatever is in front, opened from the top bar or by Focus.
   const [remoteOpen, setRemoteOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -206,7 +214,8 @@ export function App() {
   // A place come back to that is gone (a deleted task, an archived topic or project): the board, everything in scope.
   const ready = host.kind === "ready" ? host.state : null;
   // 「AMO 娘」 (2026-10-26): while she is the 桌宠, the top-left icon and the window's are hers (focus/mascot.ts).
-  const seen = useSessionSeen();
+  const seenHere = useSessionSeen();
+  const seen = ready ? withGrants(seenHere, ready.tasks, ready.sessions) : seenHere;
   const mascot = useMascotIcon(ready?.sessions ?? null, seen);
   useEffect(() => window.amo?.setAppIcon?.(mascot?.file ?? null), [mascot?.file]);
   useEffect(() => {
@@ -323,6 +332,7 @@ export function App() {
         <SettingsDialog
           key={settingsOpen.at}
           link={link}
+          state={state}
           settings={settings}
           {...(settingsOpen.page ? { page: settingsOpen.page } : {})}
           onClose={() => setSettingsOpen(false)}

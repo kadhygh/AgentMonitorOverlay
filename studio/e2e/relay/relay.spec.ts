@@ -679,8 +679,10 @@ test("installed by AMO 平台: no 更新桌面程序 (the platform updates the s
     const fromPlatform = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-user");
     await expect(fromPlatform.page.locator(".view-tabs")).toBeVisible({ timeout: 30_000 });
     await expect(fromPlatform.page.getByRole("button", { name: "没有账号？注册一个" })).toHaveCount(0);
-    // Its MCP and command line use that account too.
-    expect(JSON.parse(readFileSync(join(root, "platform-user", "settings.json"), "utf8"))).toMatchObject({ name: "平台小赵", key: zhao.key });
+    // Its MCP and command line use that account too: a pointer to it, not its key in plain text (0d56e627, 2026-11-04).
+    const settings = JSON.parse(readFileSync(join(root, "platform-user", "settings.json"), "utf8")) as Record<string, unknown>;
+    expect(settings).toMatchObject({ name: "平台小赵", account: "platform" });
+    expect(settings.key).toBeUndefined();
     // Nobody logged in there: where to log in, no form; logged in later, it signs in by itself; logged out there, so here.
     const later = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-later");
     await expect(later.page.getByTestId("platform-login")).toContainText("在 AMO 平台里登录", { timeout: 30_000 });

@@ -24,7 +24,6 @@ export const isGitRange = (v: unknown): v is GitRange => GIT_RANGES.some((r) => 
  */
 export type GitCommentRange = GitRange | "file";
 
-export const isCommentRange = (v: unknown): v is GitCommentRange => v === "file" || isGitRange(v);
 
 /** A project folder as git sees it. Paths in a review are relative to the project folder, which may sit inside the repository. */
 export interface GitStatus {

@@ -22,6 +22,8 @@ export interface MessageDeps {
   recordRateLimit(sessionId: Id, info: { rateLimitType?: string; utilization?: number; resetsAt?: number }): void;
   /** The CLI's init message names the skills (its command list does not tell them apart). */
   noteSkills(sessionId: Id, skills: string[]): void;
+  /** MCP 设置: the process is up; its servers' statuses are read a little later (they connect in the background). */
+  noteMcp(sessionId: Id, live: Live): void;
   /** The `/` command the session was last sent (names the output of a command that runs without the model). */
   lastCommand(sessionId: Id): string | undefined;
   /** The turn is over and nothing waits: the idle close starts counting. */
@@ -271,6 +273,7 @@ export class ClaudeMessages {
       case "init": {
         if (Array.isArray(s.capabilities)) live.capabilities = new Set((s.capabilities as unknown[]).filter((x): x is string => typeof x === "string"));
         if (Array.isArray(s.skills)) this.deps.noteSkills(sessionId, (s.skills as unknown[]).filter((x): x is string => typeof x === "string"));
+        if (Array.isArray(s.mcp_servers) && s.mcp_servers.length) this.deps.noteMcp(sessionId, live);
         return;
       }
       case "commands_changed": {

@@ -280,7 +280,7 @@ describe("CodexRuntime", () => {
     const archived = await runtime.archive(s.id);
     expect(archived.map((x: Session) => x.id).sort()).toEqual([s.id, fork.id].sort());
     expect(servers.fakes.get("p-ds")!.threads.get(s.runtimeRef!)!.archived).toBe(true);
-    await expect(runtime.sendMessage(s.id, "x")).rejects.toThrow(/read-only/);
+    await expect(runtime.sendMessage(s.id, "x")).rejects.toThrow(/已归档/);
     await runtime.unarchive(s.id);
     expect(session(fork.id).writer).toBe("workbench");
     expect(servers.fakes.get("p-ds")!.threads.get(s.runtimeRef!)!.archived).toBe(false);

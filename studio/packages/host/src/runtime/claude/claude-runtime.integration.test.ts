@@ -219,6 +219,21 @@ describe("ClaudeRuntime", () => {
     expect(items(s.id).some((i) => i.type === "error")).toBe(false);
   }, 120_000);
 
+  // 问题 #16 (2026-11-03): as a `priority: "now"` message it waited out a shell command that had run a second or two.
+  it("立即发送 from the composer while a shell command has run a while: the turn gives way at once", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: sleep 30]]" });
+    await until(() => status(s.id) === "awaiting-approval" || items(s.id).some((i) => i.type === "tool" && i.status === "running"), "the command asked for or running");
+    const approval = items(s.id).find((i) => i.type === "approval");
+    if (approval?.type === "approval") await runtime.respondApproval(s.id, approval.approvalId, "accept");
+    await until(() => items(s.id).some((i) => i.type === "tool" && i.status === "running"), "the command running");
+    await new Promise((r) => setTimeout(r, 4000));
+    const sent = Date.now();
+    expect((await runtime.sendMessage(s.id, "while it sleeps", [], { now: true })).mode).toBe("queue");
+    await until(() => agentTexts(s.id).includes("MOCK: while it sleeps") && status(s.id) === "idle", "answered at once", 15_000);
+    expect(Date.now() - sent).toBeLessThan(10_000);
+    expect(items(s.id).find((i) => i.type === "tool")).toMatchObject({ status: "failed" });
+  }, 120_000);
+
   it("停止 with a message waiting: the turn stops and the waiting message runs next (as the CLI's esc does)", async () => {
     const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
     await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");

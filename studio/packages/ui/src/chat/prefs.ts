@@ -8,7 +8,7 @@ export const TRANSCRIPT_VIEW_LABELS: Record<TranscriptView, string> = { compact:
 export const TRANSCRIPT_VIEW_HINTS: Record<TranscriptView, string> = {
   compact: "只看每段工作的类别，不显示思考预览",
   standard: "工作过程收成一行标题，运行中显示正在做什么",
-  detailed: "运行中的工作逐条展开，完成后收起",
+  detailed: "每一轮的过程都摊开：中间的回复、思考、各段工作的标题；运行中的工作逐条展开",
   verbose: "所有工作逐条展开，完成后也不收起",
 };
 

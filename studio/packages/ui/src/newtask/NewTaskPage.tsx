@@ -7,7 +7,7 @@ import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
 import { pickFolder, shortModel } from "../lib/profiles.js";
 import { StartingCover } from "../lib/StartingCover.js";
-import { useSettings } from "../settings/SettingsDialog.js";
+import { useSettings } from "../settings/useSettings.js";
 import { EffortBars, FastToggle, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
 import { draftText, submitDraft, useTaskDraft } from "./draft.js";

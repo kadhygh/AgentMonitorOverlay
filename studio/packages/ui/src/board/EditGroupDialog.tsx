@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { HostApiError } from "../host/client.js";
+import { Modal } from "../lib/Modal.js";
 
 /**
  * 新建分组 / 编辑分组 (项目分组, 2026-10-22): the group's name and the person's own note on it. `onSave` stores it; the
@@ -36,68 +36,58 @@ export function EditGroupDialog({ creating, name: initialName = "", description:
     }
   }
 
-  return createPortal(
-    <div
-      className="modal-backdrop confirm-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          if (!busy) onClose();
-        }
+  return (
+    <Modal
+      portal
+      backdropClassName="confirm-backdrop"
+      className="confirm-modal edit-project"
+      labelledBy="edit-group-title"
+      testId="edit-group"
+      busy={busy}
+      onClose={onClose}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
       }}
     >
-      <form
-        className="modal confirm-modal edit-project"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-group-title"
-        data-testid="edit-group"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <span className="modal-title" id="edit-group-title">
-          {creating ? "新建分组" : "编辑分组"}
+      <span className="modal-title" id="edit-group-title">
+        {creating ? "新建分组" : "编辑分组"}
+      </span>
+      <label className="stack-field">
+        名字
+        <input ref={first} className="field" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} data-testid="edit-group-name" />
+      </label>
+      <label className="stack-field">
+        说明（只给自己看，可以留空）
+        <textarea
+          className="field"
+          rows={3}
+          value={description}
+          maxLength={2000}
+          placeholder={placeholder}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              void save();
+            }
+          }}
+          data-testid="edit-group-description"
+        />
+      </label>
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
         </span>
-        <label className="stack-field">
-          名字
-          <input ref={first} className="field" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} data-testid="edit-group-name" />
-        </label>
-        <label className="stack-field">
-          说明（只给自己看，可以留空）
-          <textarea
-            className="field"
-            rows={3}
-            value={description}
-            maxLength={2000}
-            placeholder={placeholder}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                void save();
-              }
-            }}
-            data-testid="edit-group-description"
-          />
-        </label>
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
-        <div className="settings-row end">
-          <button type="button" className="btn-ghost small" onClick={onClose} disabled={busy}>
-            取消
-          </button>
-          <button type="submit" className="btn-primary small" disabled={busy || !name.trim()} data-testid="edit-group-save">
-            {creating ? "建立" : "保存"}
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body,
+      )}
+      <div className="settings-row end">
+        <button type="button" className="btn-ghost small" onClick={onClose} disabled={busy}>
+          取消
+        </button>
+        <button type="submit" className="btn-primary small" disabled={busy || !name.trim()} data-testid="edit-group-save">
+          {creating ? "建立" : "保存"}
+        </button>
+      </div>
+    </Modal>
   );
 }

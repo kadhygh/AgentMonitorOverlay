@@ -1,29 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Session, TaskNote } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 import { relativeTime } from "../lib/status.js";
 
 /** Progress notes and handoff summaries of a task, kept live. */
 export function useTaskNotes(link: HostLink, taskId: string) {
-  const [notes, setNotes] = useState<readonly TaskNote[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = (first = false) =>
-      call(link, "GET /api/tasks/:id/notes", { id: taskId })
-        .then((list) => !cancelled && setNotes((cur) => (first ? mergeFirstLoad(list, cur) : list)))
-        .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type === "task.note.added" && e.note.taskId === taskId) setNotes((cur) => (cur.some((n) => n.id === e.note.id) ? cur : [...cur, e.note]));
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load(true);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link, taskId]);
+  const [notes] = useLiveResource<readonly TaskNote[]>(
+    {
+      load: () => call(link, "GET /api/tasks/:id/notes", { id: taskId }),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "task.note.added" && e.note.taskId === taskId && !cur.some((n) => n.id === e.note.id) ? [...cur, e.note] : cur),
+    },
+    [link, taskId],
+  );
   return notes;
 }
 

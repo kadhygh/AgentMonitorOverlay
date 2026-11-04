@@ -1,0 +1,67 @@
+/*
+ * Studio's shared controls in one stylesheet (2026-11-04, plans/cleanup-2026-11.md 第 7 步): buttons, the text field,
+ * dialogs and menus were spread over shell.css, task.css, review.css and settings.css, so the 便签 took task.css and
+ * settings.css for their buttons and the platform added its own .btn-ghost:disabled. Imported right after base.css by
+ * every page (main, 便签, Reviewer, 平台). The rules are as they were, in the order they were; the page's own sheets come
+ * after and can still change them (a few co-class rules that never won over these — the dialogs' widths in task.css,
+ * the usage switch, the model menu's min-width — went, so nothing looks different).
+ */
+
+/* Buttons, the text field and the form's error line (were in shell/shell.css) */
+.btn-primary { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.btn-ghost:hover:not(:disabled) { background: var(--panel-raised); }
+.btn-ghost { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; }
+.field { height: var(--ctl); padding: 0 10px; border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: var(--fs-sm); min-width: 0; }
+.form-error { color: var(--error-text); font-size: 12px; }
+
+/* Button variants and link buttons (were in task/task.css) */
+.link-btn { height: 22px; padding: 0 6px; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.link-btn.primary, .btn-ghost.primary { color: var(--primary); }
+.btn-ghost.small { height: var(--ctl-s); padding: 0 9px; font-size: var(--fs-cap); }
+.btn-ghost.dim { color: var(--text-dim); }
+.btn-ghost:disabled { opacity: 0.5; cursor: default; }
+.link-btn.boxed { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; }
+.btn-ghost.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-text); color: var(--danger-soft-text); }
+.ctx-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+
+/* Menus: the right-click and ⋯ menus (lib/ContextMenu.tsx) and ActionMenu (were in review/review.css) */
+.ctx-menu { position: fixed; z-index: 50; min-width: 150px; padding: 4px; border-radius: var(--r-l); border: 1px solid var(--border-strong); background: var(--menu-bg); box-shadow: 0 14px 36px var(--shadow); display: flex; flex-direction: column; }
+.ctx-menu button { text-align: left; padding: 7px 10px; border: none; border-radius: 6px; background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
+.ctx-menu button:hover { background: var(--menu-hover); }
+.ctx-menu button:disabled { color: var(--text-dim); cursor: default; background: transparent; }
+/* Risky items (归档…): deep red words, filled deep red under the pointer or keyboard focus. */
+.ctx-menu button.menu-danger { color: var(--danger-text); }
+.ctx-menu button.menu-danger:hover:not(:disabled), .ctx-menu button.menu-danger:focus-visible { background: var(--danger); color: var(--on-danger); }
+.ctx-menu button.menu-danger:disabled { color: var(--text-dim); }
+/* A submenu opened in place (加入分组 ▸): its items indented under the item that opened it. */
+.ctx-menu .menu-sub-arrow { float: right; margin-left: 12px; color: var(--text-faint); font-size: 11px; }
+.ctx-menu .menu-sub { display: flex; flex-direction: column; padding-left: 8px; }
+.ctx-menu .menu-check { display: inline-block; width: 14px; color: var(--primary); }
+.ctx-menu .menu-rule { border: none; border-top: 1px solid var(--divider); margin: 4px 6px; }
+.ctx-menu button.menu-new { color: var(--primary); }
+/* ActionMenu (2026-10-28): groups with a rule between them, each action's key on its right. */
+.action-menu { min-width: 200px; }
+.action-group { display: flex; flex-direction: column; }
+.action-menu button { display: flex; align-items: center; gap: 24px; }
+.action-menu .menu-key { margin-left: auto; min-width: 18px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text-faint); font-family: var(--font-code); font-size: 11px; line-height: 16px; text-align: center; }
+.action-menu button:disabled .menu-key { opacity: 0.5; }
+
+/* Dialogs (lib/Modal.tsx) and the danger buttons (were in settings/settings.css) */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 80px; z-index: 50; }
+.modal { width: 560px; max-width: calc(100vw - 40px); max-height: calc(100vh - 120px); overflow: auto; border-radius: calc(var(--r-l) + 4px); border: 1px solid var(--border-strong); background: var(--panel); box-shadow: 0 14px 36px var(--shadow); padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+/* Focus goes into the dialog when it opens (lib/Modal.tsx); no ring around the whole box. */
+.modal:focus { outline: none; }
+.modal-head { display: flex; align-items: center; }
+.modal-title { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 700; }
+.btn-primary.small { height: var(--ctl-s); font-size: var(--fs-cap); padding: 0 9px; }
+/* A second dialog over 设置: a decision with risks. */
+.confirm-backdrop { z-index: 60; padding-top: 120px; }
+.confirm-modal { width: 520px; gap: 12px; }
+.btn-danger { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--danger); background: var(--danger); color: var(--on-danger); font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.btn-danger.small { height: var(--ctl-s); font-size: var(--fs-cap); padding: 0 9px; }
+.btn-danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
+.btn-danger:disabled { opacity: 0.6; cursor: default; }
+.btn-ghost.danger { color: var(--error); }
+.btn-ghost.danger:hover:not(:disabled) { border-color: var(--error); }

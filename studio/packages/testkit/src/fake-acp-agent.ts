@@ -9,8 +9,14 @@
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
 //   [[auth]]                 the reply tells whether a key was given, the credentials file of the account patch and the model
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
+//   [[mcp-list]]             the reply names the MCP servers the session was given (session/new or resume)
 //   [[fail]]                 the prompt fails
+//   [[fail-after: MS]]       a pwsh call, then the prompt fails MS later (a turn that errors while messages wait)
+//   [[stuck]]                a pwsh call that never ends, session/cancel or not (停止's fallback)
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
+//   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
+//                            signal): thought, a pwsh call, a reply each; `[[goal: N slow]]`: the last round's call
+//                            runs until session/cancel
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
 // is the default; as in DSH, a model that is not offered cannot be picked. Images (2026-10-26): as DSH does, initialize
 // offers them only when the agent's default model takes them (deepseek-flash here); a prompt's images are counted in
@@ -189,6 +195,13 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     save(all);
     const messageId = randomUUID();
     if (/\[\[fail\]\]/.test(text)) throw new RpcError(-32603, "model request failed: fake failure");
+    const failAfter = /\[\[fail-after: (\d+)\]\]/.exec(text);
+    const stuck = /\[\[stuck\]\]/.test(text);
+    if (failAfter || stuck) {
+      update(a.id, { sessionUpdate: "tool_call", toolCallId: `call-${randomUUID()}`, title: "pwsh", kind: "other", status: "in_progress", rawInput: { command: "ping -n 600 127.0.0.1" } });
+      await new Promise((resolve) => (failAfter ? setTimeout(resolve, Number(failAfter[1])) : undefined));
+      throw new RpcError(-32603, "model request failed: fake failure");
+    }
     update(a.id, { sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: "想一想" } });
     const context = /\[\[context: (\d+)\]\]/.exec(text);
     update(a.id, { sessionUpdate: "usage_update", used: context ? Number(context[1]) : 1000 * s.turns, size: 1_000_000 });
@@ -236,6 +249,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
     if (/\[\[auth\]\]/.test(text)) reply = `AUTH key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} credentials=${CREDENTIALS ?? ""} model=${s.model}`;
+    if (/\[\[mcp-list\]\]/.test(text)) reply = `MCP-LIST ${a.mcp.map((m) => `${m.name}:${m.url ? "http" : "stdio"}`).join(",")}`;
     if (/\[\[env\]\]/.test(text)) reply = `ENV permission=${process.env.DSH_PERMISSION_MODE ?? ""} key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} home=${process.env.DSH_HOME ? "yes" : "no"} model=${s.model} effort=${s.effort}`;
     const mcp = /\[\[mcp: ([a-z_]+)(?: (.*?))?\]\]/s.exec(text);
     if (mcp) {
@@ -248,10 +262,31 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     }
     update(a.id, { sessionUpdate: "agent_message_chunk", messageId: randomUUID(), content: { type: "text", text: reply } });
     writeLog(a.id, s.turns, startedAt);
+    const goal = /\[\[goal: (\d+)( slow)?\]\]/.exec(text);
+    if (goal) setTimeout(() => void goalRounds(a, Number(goal[1]), !!goal[2]), 50);
     return { stopReason: "end_turn" };
   } finally {
     if (!cancelled) a.cancel = null;
     a.prompting = false;
+  }
+}
+
+/** A goal's rounds after the prompt (DSH's goal-round-driver): ACP updates only, outside any prompt. */
+async function goalRounds(a: Active, n: number, slow: boolean): Promise<void> {
+  for (let round = 1; round <= n; round++) {
+    await new Promise((r) => setTimeout(r, 80));
+    const messageId = randomUUID();
+    update(a.id, { sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: `Round ${round}` } });
+    const callId = `call-${randomUUID()}`;
+    update(a.id, { sessionUpdate: "tool_call", toolCallId: callId, title: "pwsh", kind: "other", status: "in_progress", rawInput: { command: `echo round ${round}` } });
+    if (slow && round === n) {
+      await new Promise<void>((resolve) => (a.cancel = resolve));
+      a.cancel = null;
+      update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: "Error: tool call aborted" } }] });
+      return;
+    }
+    update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "completed", content: [{ type: "content", content: { type: "text", text: `round ${round}` } }] });
+    update(a.id, { sessionUpdate: "agent_message_chunk", messageId: randomUUID(), content: { type: "text", text: `ROUND ${round} DONE` } });
   }
 }
 

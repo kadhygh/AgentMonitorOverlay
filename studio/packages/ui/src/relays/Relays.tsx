@@ -1,28 +1,17 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Relay, Task } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { upsertById, useLiveResource } from "../host/live.js";
 
 // 传话 (stage 16, from the stage 15 design): a 主控's message for another task's session waits here for the person —
 // on both tasks' pages and in Focus — unless that task takes relays without asking.
 
 /** The relays the Host lists (pending ones, and those decided in the last day), kept current. */
 export function useRelays(link: HostLink): Relay[] {
-  const [relays, setRelays] = useState<Relay[]>([]);
-  useEffect(() => {
-    let live = true;
-    const load = () => call(link, "GET /api/relays", {}).then((r) => live && setRelays(r)).catch(() => undefined);
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "relay.upserted") setRelays((cur) => (cur.some((r) => r.id === e.relay.id) ? cur.map((r) => (r.id === e.relay.id ? e.relay : r)) : [...cur, e.relay]));
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      live = false;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [relays] = useLiveResource<Relay[]>(
+    { load: () => call(link, "GET /api/relays", {}), initial: [], onEvent: (cur, e) => (e.type === "relay.upserted" ? upsertById(cur, e.relay) : cur) },
+    [link],
+  );
   return relays;
 }
 

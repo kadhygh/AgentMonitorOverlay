@@ -76,7 +76,7 @@
 /* Claude 多账号 (2026-11-03): the accounts not in use, folded under the one in use; each opens with 切换. */
 .usage-acct-who { color: var(--text-dim); }
 .usage-acct-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.usage-acct-who .usage-switch { margin-left: auto; flex: none; height: 22px; padding: 0 8px; font-size: var(--fs-cap); }
+.usage-acct-who .usage-switch { margin-left: auto; flex: none; }
 .usage-others { display: flex; flex-direction: column; border-top: 1px solid var(--divider); }
 .usage-others-toggle {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 0; border: none; background: transparent; color: var(--text-dim);

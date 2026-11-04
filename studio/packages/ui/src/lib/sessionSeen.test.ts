@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleSessions, type Session } from "@amo-studio/protocol";
-import { awaitsPerson, hangsUnderOf, interruptedSince, markSeen, readSeen, subsByParent, unseenSessions } from "./sessionSeen.js";
+import { awaitsPerson, hangsUnderOf, interruptedSince, markSeen, readSeen, subsByParent, unseenSessions, withGrants } from "./sessionSeen.js";
 
 function memory(): Pick<Storage, "getItem" | "setItem"> & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -103,5 +103,51 @@ describe("sessions the person has not looked at", () => {
     const done = at("s3", "completed", "2026-10-28T10:04:00.000Z", { kind: "sub", parentId: "p" });
     const data = { since: "2026-10-01T00:00:00.000Z", seen: { p: "2026-10-28T10:00:00.000Z" } };
     expect(interruptedSince(parent, [parent, old, fresh, done], data).map((s) => s.id)).toEqual(["s2"]);
+  });
+});
+
+describe("a task granted from another computer (远程, 2026-11-04)", () => {
+  it("counts what its sessions had before the grant as seen, and lists what ends after it", () => {
+    const data = { since: "2026-10-01T00:00:00.000Z", seen: {} };
+    const remote = { account: "a", device: "d_a", name: "A", state: "active" as const, profiles: [], allowed: [], grantedAt: "2026-11-04T10:00:00.000Z" };
+    const tasks = [{ id: "copy", remote }, { id: "own" }];
+    const sessions = [
+      at("before", "idle", "2026-11-04T09:00:00.000Z", { taskId: "copy" }),
+      at("after", "completed", "2026-11-04T10:05:00.000Z", { taskId: "copy" }),
+      at("mine", "idle", "2026-11-04T09:00:00.000Z", { taskId: "own" }),
+    ];
+    expect(unseenSessions(sessions, withGrants(data, tasks, sessions)).map((s) => s.id)).toEqual(["after", "mine"]);
+    // Nothing granted: the same record.
+    expect(withGrants(data, [{ id: "own" }], sessions)).toBe(data);
+  });
+});
+
+describe("the seen record kept small", () => {
+  it("does not bring back the sessions it drops (2026-11-04)", () => {
+    const store = memory();
+    store.setItem("amo.sessionSeen", JSON.stringify({ since: "2026-10-01T00:00:00.000Z", seen: {} }));
+    const iso = (i: number) => new Date(Date.UTC(2026, 9, 2) + i * 60_000).toISOString();
+    // 501 sessions, each ended a minute before it was looked at.
+    for (let i = 1; i <= 501; i++) markSeen([`s${i}`], iso(i), store);
+    const data = readSeen(store);
+    expect(Object.keys(data.seen)).toHaveLength(500);
+    expect(data.seen.s1).toBeUndefined();
+    expect(unseenSessions([at("s1", "idle", iso(0.5)), at("s501", "idle", iso(500.5))], data)).toEqual([]);
+    expect(unseenSessions([at("later", "idle", iso(600))], data).map((s) => s.id)).toEqual(["later"]);
+  });
+});
+
+describe("when a turn ended, not when the session last changed (2026-11-04)", () => {
+  it("a rename, a setting or restoring after the last look does not list it; a turn ending does", () => {
+    const data = { since: "2026-11-01T00:00:00.000Z", seen: { s: "2026-11-04T10:00:00.000Z", sub: "2026-11-04T10:00:00.000Z" } };
+    const renamed = at("s", "idle", "2026-11-04T10:30:00.000Z", { endedAt: "2026-11-04T09:50:00.000Z" });
+    expect(unseenSessions([renamed], data)).toEqual([]);
+    expect(unseenSessions([{ ...renamed, endedAt: "2026-11-04T10:20:00.000Z" }], data).map((s) => s.id)).toEqual(["s"]);
+    // No turn ended yet (a fork just made): not listed, whatever its updatedAt.
+    expect(unseenSessions([at("fork", "idle", "2026-11-04T10:30:00.000Z", { endedAt: null })], data)).toEqual([]);
+    // A subagent's end counts for its parent, its rename does not.
+    const sub = at("k", "completed", "2026-11-04T10:40:00.000Z", { kind: "sub", parentId: "s", endedAt: "2026-11-04T09:55:00.000Z" });
+    expect(unseenSessions([renamed, sub], data)).toEqual([]);
+    expect(unseenSessions([renamed, { ...sub, endedAt: "2026-11-04T10:35:00.000Z" }], data).map((s) => s.id)).toEqual(["s"]);
   });
 });

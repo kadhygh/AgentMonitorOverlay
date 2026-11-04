@@ -749,6 +749,8 @@ export type HostEvent = { seq: number } & (
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null; topicId?: Id | null }
   /** 提示词模板 (2026-10-31): one was added, edited or removed. */
   | { type: "prompt-templates.changed"; templateId: Id }
+  /** MCP 设置 (2026-11-04): a server, the global or a project's choices changed, or a session reported statuses. */
+  | { type: "mcp.changed"; workspaceId?: Id; sessionId?: Id }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
@@ -946,6 +948,17 @@ export interface HostRoutes {
   "POST /api/prompt-templates": { req: import("./prompt-templates.js").NewPromptTemplate; res: import("./prompt-templates.js").PromptTemplate };
   "PATCH /api/prompt-templates/:id": { req: import("./prompt-templates.js").PromptTemplatePatch; res: import("./prompt-templates.js").PromptTemplate };
   "DELETE /api/prompt-templates/:id": { req: void; res: { ok: true } };
+  /** MCP 设置 (2026-11-04, plans/mcp.md). */
+  "GET /api/mcp": { req: void; res: import("./mcp.js").McpState };
+  "PUT /api/mcp": { req: { loadLocal?: boolean; choices?: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpState };
+  "POST /api/mcp/servers": { req: import("./mcp.js").NewStudioMcpServer; res: import("./mcp.js").StudioMcpServer };
+  "PATCH /api/mcp/servers/:id": { req: import("./mcp.js").StudioMcpServerPatch; res: import("./mcp.js").StudioMcpServer };
+  "DELETE /api/mcp/servers/:id": { req: void; res: { ok: true } };
+  "GET /api/mcp/projects/:id": { req: void; res: import("./mcp.js").McpProjectState };
+  "PUT /api/mcp/projects/:id": { req: { choices: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpProjectState };
+  "GET /api/sessions/:id/mcp": { req: void; res: import("./mcp.js").McpSessionState };
+  /** `apply`: when the change reaches the session. */
+  "PUT /api/sessions/:id/mcp": { req: { choices: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpSessionState & { apply: import("./mcp.js").McpApply } };
 }
 
 // ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------

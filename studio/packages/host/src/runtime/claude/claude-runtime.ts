@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { createSdkMcpServer, forkSession, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
-import { parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage } from "@amo-studio/protocol";
+import { inTurn, parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage, type McpApply } from "@amo-studio/protocol";
 import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
-import { RuntimeBase, type NewItemBody, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
+import { RuntimeBase, STOP_GRACE_MS, type NewItemBody, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
 import { withDelivery } from "../items.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { claudeAutoCompactEnv } from "../compact.js";
@@ -15,6 +16,7 @@ import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLo
 import { keepsProcess } from "./wake.js";
 import { agentsMdInstructions } from "./project-instructions.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
+import { sameProcessPart, sdkServer, type McpLaunch, type McpSource } from "../mcp-launch.js";
 import { ClaudeAsks } from "./asks.js";
 import { BLOCKED_COMMANDS, claudeCommands } from "./commands.js";
 import type { ClaudeCore } from "./core.js";
@@ -39,7 +41,7 @@ export { askedQuestions, describeToolUse, retryReason } from "./tool-use.js";
 //   canUseTool waits for the person and becomes an approval card (asks.ts);
 // - a message sent while a turn runs waits at the CLI: it is folded into the turn after its next tool call, or runs as
 //   the next turn (CLI 2.1.304; checked 2026-11-02 against the mock). command_lifecycle says when the model got it
-//   (`delivery` on the user item); 立即发送 makes the turn give way to it (sendNow, or `priority: "now"`);
+//   (`delivery` on the user item); 立即发送 makes the turn give way to it (sendNow; not `priority: "now"`, see deliver);
 // - interrupt() ends the turn with error_during_execution, treated as "interrupted"; the query goes on, and messages
 //   still waiting run right after (as the CLI's "esc to interrupt and send");
 // - one query can produce several results (a background subagent's notification starts another turn);
@@ -72,10 +74,12 @@ export interface ClaudeRuntimeOptions {
   mcpTools?: (sessionId: Id) => AmoTool[];
   /** The MCP server's instructions for this session (its role card after the general ones); the general ones when absent. */
   mcpInstructions?: (sessionId: Id) => string;
+  /** MCP 设置 (2026-11-04): the session's other MCP servers. Without it, only amo (strict with the local login, as before). */
+  mcp?: McpSource;
 }
 
-/** How long 停止 waits on the CLI before Studio closes its process (see interrupt). */
-const STOP_GRACE_MS = 15_000;
+/** How long after a process is up its MCP servers' statuses are read (they connect in the background). */
+const MCP_STATUS_DELAY_MS = 8_000;
 
 /**
  * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
@@ -125,7 +129,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly messages: ClaudeMessages;
 
   constructor(private readonly options: ClaudeRuntimeOptions) {
-    super(options.store, "claude", options.now);
+    super(options.store, "claude", options.now, options.profiles);
     const env = options.baseEnv ?? process.env;
     this.local = { dir: options.localClaudeHome ?? localClaudeHome(env), explicit: !!options.localClaudeHome || !!env.CLAUDE_CONFIG_DIR?.trim() };
     this.core = {
@@ -163,6 +167,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       },
       lastCommand: (sessionId) => this.lastCommand.get(sessionId),
       scheduleIdle: (sessionId, live) => this.scheduleIdle(sessionId, live),
+      noteMcp: (sessionId, live) => {
+        if (!this.options.mcp?.noteStatus) return;
+        setTimeout(() => {
+          if (this.live.get(sessionId) !== live) return;
+          void this.mcpStatus(sessionId)
+            .then((list) => list && this.options.mcp?.noteStatus?.(sessionId, list))
+            .catch(() => undefined);
+        }, MCP_STATUS_DELAY_MS).unref?.();
+      },
     });
     this.recoverAfterRestart();
   }
@@ -222,13 +235,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const uuid = randomUUID();
     live.undelivered.set(uuid, itemId);
     this.clearIdle(live);
-    // 立即发送 from the composer (Ctrl+Enter, 2026-11-02): the running turn gives way to it (CLI 2.1.304 ends the turn
-    // at once, aborting a running tool call).
-    const now = options.now === true && mode === "queue";
-    if (now) live.givingWay = true;
     // Goes in once the permission mode is in force, without waiting for it here: a new session's process takes a few
     // seconds to come up, and the caller (开始, 新会话) is not held for it (2026-10-23). Sends queue up in order on it.
-    void live.ready.then(() => live.push({ content, uuid, ...(now ? { priority: "now" as const } : {}) }));
+    void live.ready.then(() => live.push({ content, uuid }));
+    // 立即发送 from the composer (Ctrl+Enter, 2026-11-02): the running turn gives way to it, as the button under a
+    // waiting message does. 2026-11-03 (问题 #16, "it seems to hang a long time"): it went as a `priority: "now"` message,
+    // which CLI 2.1.304 only lets through at once while a shell command is in its first second or two — after that the
+    // turn waited for the command to finish (33–40 s for a 41 s sleep against the mock; the Send now request and 停止
+    // took 0.03–0.1 s at any point, the command ended). So the message goes as any other and is sent now once at the CLI.
+    if (options.now === true && mode === "queue") {
+      void this.sendNow(sessionId, itemId).catch((err: unknown) => this.emit("log", `send now after Ctrl+Enter failed for ${sessionId}: ${String(err)}`));
+    }
     return { mode };
   }
 
@@ -271,14 +288,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
   }
 
-  /** 重新发送 (2026-11-02): a message its process never read goes again, as the same row (no second copy of it). */
-  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  /**
+   * 重新发送 (2026-11-02): a message its process never read goes again, as the same row (no second copy of it). Also
+   * how Studio's inbox sends a held one (2026-11-04).
+   */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
     const item = this.store.getItem(itemId);
     if (item?.type !== "user" || item.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
-    if (item.delivery !== "unsent") return { mode: this.live.get(sessionId)?.running ? "queue" : "start" };
+    if (item.delivery !== "unsent" && item.delivery !== "held") return { mode: this.live.get(sessionId)?.running ? "queue" : "start" };
     const content = messageContent(item.text, images);
-    return this.deliver(session, content, {}, (_mode, delivery) => {
+    return this.deliver(session, content, options, (_mode, delivery) => {
       this.updateItem(itemId, (it) => (it.type === "user" ? withDelivery(it, delivery) : it));
       return itemId;
     });
@@ -295,21 +315,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     live.interrupted = true;
     this.asks.declineAll(live);
     const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
-    const later = (ms: number, then: () => void) => setTimeout(then, ms).unref?.();
-    later(grace, () => {
-      if (this.live.get(sessionId) !== live || !live.running || live.finished) return;
-      this.emit("log", `${sessionId}: the CLI did not stop the turn within ${grace} ms; closing its process`);
+    const stillRunning = () => this.live.get(sessionId) === live && live.running && !live.finished;
+    this.armStopGrace(sessionId, grace, stillRunning, () => {
       this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 Claude 还没停下（它可能卡在某个命令或文件操作上），Studio 关掉了它的进程。发一条消息即可接着对话。` });
       void this.close(sessionId);
-      later(grace, () => {
-        if (live.finished) return;
-        // The process did not go either: its end is handled here, so the session is not left 正在工作.
-        this.emit("log", `${sessionId}: the CLI process did not exit after close; leaving it`);
+      // The process did not go either: its end is handled here, so the session is not left 正在工作.
+      this.armStopGrace(sessionId, grace, () => !live.finished, () => {
         this.finish(sessionId, live, null);
         // The next message starts a new process rather than waiting on this one (nor does the Host's shutdown).
         this.closing.delete(sessionId);
-      });
-    });
+      }, "the CLI process did not exit after close; leaving it");
+    }, "closing its process");
     await Promise.race([live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`)), new Promise((r) => setTimeout(r, grace).unref?.())]);
   }
 
@@ -439,16 +455,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   async archive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.archiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    const changed = this.archiveTree(sessionId);
     await Promise.all(changed.map((s) => this.close(s.id)));
     return changed;
   }
 
   async unarchive(sessionId: Id): Promise<Session[]> {
-    const changed = this.store.unarchiveSubtree(sessionId);
-    for (const s of changed) this.publish({ type: "session.upserted", session: s });
-    return changed;
+    return this.unarchiveTree(sessionId);
   }
 
   async respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {
@@ -601,7 +614,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       for (;;) {
         while (queue.length) {
           const next = queue.shift()!;
-          yield { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, session_id: ref, uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}`, ...(next.priority ? { priority: next.priority } : {}) };
+          yield { type: "user", message: { role: "user", content: next.content }, parent_tool_use_id: null, session_id: ref, uuid: next.uuid as `${string}-${string}-${string}-${string}-${string}` };
         }
         if (ended) return;
         await new Promise<void>((r) => (wake = r));
@@ -609,6 +622,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
     }
 
+    const plan = this.mcpPlan(session.id, home);
     const live = newLive(
       (next) => {
         queue.push(next);
@@ -643,10 +657,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         promptSuggestions: readChatSettings(this.store).promptSuggestions,
         canUseTool: (toolName, toolInput, ctx) => this.asks.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
-        ...this.mcpOptions(session.id),
+        ...this.mcpOptions(session.id, plan, live),
+        // MCP 设置 (2026-11-04): in the person's own config dir the CLI loads their servers itself (OAuth, plugins and
+        // its approvals as in a terminal); those turned off are denied to this process only (managedSettings is the
+        // SDK's policy tier: nothing is written, unlike toggleMcpServer, which writes ~/.claude.json), .mcp.json ones
+        // turned on are approved for it. Elsewhere, or with 加载本机 off, only what Studio passes (strict).
+        ...(plan.strict ? { strictMcpConfig: true } : {}),
+        ...(plan.deny.length ? { managedSettings: { deniedMcpServers: plan.deny.map((serverName) => ({ serverName })) } } : {}),
+        ...(plan.enableJson.length ? { settings: { enabledMcpjsonServers: plan.enableJson } } : {}),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
-        // The local login brings the person's config dir: only Studio's MCP server, not the ones they set up there.
-        ...(home.login === "local" ? { strictMcpConfig: true } : {}),
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
         pathToClaudeCodeExecutable: exe,
         spawnClaudeCodeProcess: spawnClaudeProcess((line) => this.emit("log", `${session.id}: ${line}`)),
@@ -741,6 +760,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private scheduleIdle(sessionId: Id, live: Live): void {
     this.clearIdle(live);
+    // A change of the person's MCP servers waited for this turn: the next message starts a process that has it.
+    if (live.mcpStale && this.canRestart(live) && !keepsProcess(this.store.getSession(sessionId)?.wake, this.now())) {
+      void this.close(sessionId);
+      return;
+    }
     if (live.background.size || live.approvals.size || live.questions.size) return;
     live.idleTimer = setTimeout(() => {
       if (live.running || live.background.size) return;
@@ -771,16 +795,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "claude") continue;
       // Only what was under way, picked out by SQLite (2026-10-20: every item of every session was read and parsed).
-      for (const item of this.store.listUnfinishedItems(s.id)) {
-        if (item.type === "approval" && item.state === "pending") this.updateItem(item.id, (it) => (it.type === "approval" ? { ...it, state: "resolved-elsewhere" } : it));
-        if (item.type === "question" && item.state === "pending") this.asks.cancelQuestion(item.id);
-        if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));
-        if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
-        if (item.type === "background" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "background" ? { ...it, state: "stopped" } : it));
-        if (item.type === "compaction" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "compaction" ? { ...it, state: "failed" } : it));
-        if (item.type === "user" && item.delivery === "waiting") this.updateItem(item.id, (it) => (it.type === "user" ? withDelivery(it, "unsent") : it));
-      }
-      if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
+      for (const item of this.store.listUnfinishedItems(s.id)) if (item.type === "question" && item.state === "pending") this.asks.cancelQuestion(item.id);
+      this.settleLeftovers(s.id, { approvals: true });
+      if (inTurn(s.status)) {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
         this.setStatus(s.id, "interrupted");
       } else if (s.kind === "sub" && s.status === "idle") {
@@ -799,9 +816,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
    * The AMO MCP as an in-process SDK server bound to this session. Reads and writes to the session's own task are
    * allowed up front; everything else still goes through canUseTool.
    */
-  private mcpOptions(sessionId: Id) {
+  private mcpOptions(sessionId: Id, plan: McpLaunch, live: Live) {
     const tools = this.options.mcpTools?.(sessionId) ?? [];
-    if (!tools.length) return {};
+    const others = Object.fromEntries(Object.entries(plan.explicit).map(([name, spec]) => [name, sdkServer(spec)]));
+    if (!tools.length) {
+      live.mcp = { plan, amo: null, dynamic: {} };
+      return Object.keys(others).length ? { mcpServers: others as never } : {};
+    }
     const server = createSdkMcpServer({
       name: AMO_MCP_NAME,
       version: "0.5.0",
@@ -811,7 +832,63 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       // AMO's few, always-used tools up before every first use. They stay in the prompt (2026-10-20).
       alwaysLoad: true,
     });
-    return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
+    live.mcp = { plan, amo: server, dynamic: {} };
+    return { mcpServers: { ...(others as Record<string, never>), [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
+  }
+
+  /** The session's MCP servers now. `native`: it runs in the person's own config dir (the default account's). */
+  private mcpPlan(sessionId: Id, home: ClaudeHome): McpLaunch {
+    const native = home.login === "local" && sameDir(home.dir, this.local.dir);
+    return this.options.mcp?.launch(sessionId, native) ?? { explicit: {}, deny: [], enableJson: [], strict: home.login === "local" };
+  }
+
+  /**
+   * MCP 设置: a change of Studio's servers reaches the running process at once (setMcpServers, amo passed along: it
+   * replaces the whole dynamic set); one of the person's own (denied or approved names, strict) needs a new process —
+   * closed now when idle, else when it gets idle (scheduleIdle); the next message resumes it.
+   */
+  async refreshMcp(sessionId: Id): Promise<McpApply> {
+    const live = this.live.get(sessionId);
+    if (!live?.mcp || !this.options.mcp) return "next-message";
+    const next = this.mcpPlan(sessionId, this.homeOf(sessionId));
+    const started = live.mcp.plan.explicit;
+    // What only a new process takes: the person's own servers, or one given at the start going or changing.
+    const startChanged = Object.entries(started).some(([name, spec]) => JSON.stringify(next.explicit[name]) !== JSON.stringify(spec));
+    if (!sameProcessPart(live.mcp.plan, next) || startChanged) {
+      live.mcpStale = true;
+      if (this.canRestart(live)) {
+        await this.close(sessionId);
+        return "next-message";
+      }
+      return "after-turn";
+    }
+    const dynamic = Object.fromEntries(Object.entries(next.explicit).filter(([name]) => !(name in started)));
+    if (JSON.stringify(sortedEntries(dynamic)) === JSON.stringify(sortedEntries(live.mcp.dynamic))) return "now";
+    const all = Object.fromEntries(Object.entries(dynamic).map(([name, spec]) => [name, sdkServer(spec)])) as Record<string, never>;
+    if (live.mcp.amo) all[AMO_MCP_NAME] = live.mcp.amo as never;
+    const result = await live.q.setMcpServers(all);
+    live.mcp = { ...live.mcp, dynamic };
+    const failed = Object.entries(result.errors ?? {});
+    if (failed.length) this.appendItem(sessionId, { type: "notice", level: "warning", message: `MCP 没连上：${failed.map(([n, e]) => `${n}（${firstLine(e)}）`).join("；")}` });
+    return "now";
+  }
+
+  async mcpStatus(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null> {
+    const live = this.live.get(sessionId);
+    if (!live || live.finished) return null;
+    const list = await withTimeout(live.q.mcpServerStatus(), 5_000);
+    return list
+      .filter((x) => x.name !== AMO_MCP_NAME)
+      .map((x) => {
+        const source = x.source ?? x.scope;
+        return { name: x.name, status: x.status, ...(x.error ? { error: x.error } : {}), ...(source ? { source } : {}) };
+      });
+  }
+
+  /** Nothing of the process's own is under way: no turn, approval, question, background command or running agent. */
+  private canRestart(live: Live): boolean {
+    if (live.running || live.background.size || live.approvals.size || live.questions.size) return false;
+    return ![...live.subs.values()].some((id) => this.store.getSession(id)?.status === "running");
   }
 
   /** Whether the profile is the Claude subscription (the only one the local login applies to). */
@@ -851,7 +928,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const busy = new Set<Id>();
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "claude" || s.archivedAt || s.kind === "sub") continue;
-      if (s.status !== "running" && s.status !== "awaiting-approval" && s.status !== "awaiting-answer") continue;
+      if (!inTurn(s.status)) continue;
       if (sessionClaudeLogin(this.store, s.id) === "local") busy.add(s.id);
     }
     for (const [id, live] of this.live) {
@@ -879,12 +956,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return p;
   }
 
-  private writable(id: Id): Session {
-    const s = this.requireSession(id);
-    if (s.kind === "sub") throw Object.assign(new Error("Claude 的子 agent 不能单独接收消息，请在父会话里继续"), { code: "read_only" });
-    if (s.writer === "archived" || s.writer === "terminal-handoff") throw Object.assign(new Error(`session ${id} is read-only (${s.writer})`), { code: "read_only" });
-    if (!s.runtimeRef) throw new Error(`session ${id} has no Claude session id`);
-    return s;
+  protected override writable(id: Id): Session {
+    if (this.requireSession(id).kind === "sub") throw Object.assign(new Error("Claude 的子 agent 不能单独接收消息，请在父会话里继续"), { code: "read_only" });
+    return super.writable(id);
   }
 }
 
@@ -892,4 +966,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 function messageContent(text: string, images: readonly Attachment[]): SDKUserMessage["message"]["content"] {
   const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
   return blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text;
+}
+
+/** Two config dirs are the same folder (case and slashes aside, as on Windows). */
+function sameDir(a: string, b: string): boolean {
+  const norm = (p: string) => resolvePath(p).replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
+function sortedEntries<T>(v: Record<string, T>): Array<[string, T]> {
+  return Object.entries(v).sort(([a], [b]) => a.localeCompare(b));
 }

@@ -11,7 +11,7 @@ import { Feature } from "../../core/feature.js";
 // mode too, since it goes to a real person — like a 主控's 传话; unless the person turned that off (设置 → 功能 → 中转,
 // 2026-10-30), then it goes at once. Each message carries the session's mark (Via.conv,
 // `studio:<device>:<session>`): when the session comes back, this computer takes the new part and sends it into that
-// session (queued while it works), so the conversation goes on by itself.
+// session (its inbox: in once its turn is over), so the conversation goes on by itself.
 
 const SENDS_KEY = "teamrelay.sends";
 const THREADS_KEY = "teamrelay.threads";
@@ -320,9 +320,13 @@ export class TeamRelayFeature extends Feature {
     return !!s && !s.archivedAt && s.writer !== "archived" && s.writer !== "terminal-handoff" && s.runtime !== "remote";
   }
 
-  /** Into the session (queued while it works); a session that is gone just misses it. */
+  /**
+   * Into the session's inbox (2026-11-04, plans/message-delivery.md): shown there at once, sent once its turn is over,
+   * kept across a restart, 没送到 with 重新发送 when it cannot go in. Before, it went as the person's messages do — steered
+   * into a Codex turn — and one that failed was only a line in host.log, the reply already taken off the relay.
+   */
   private tell(sessionId: Id, message: string): void {
-    void this.f.sessions.sendMessage(sessionId, message).catch((err: unknown) => console.log(`teamrelay: ${String(err)}`));
+    this.f.sessions.inbox.put(sessionId, message).catch((err: unknown) => console.log(`teamrelay: ${String(err)}`));
   }
 }
 

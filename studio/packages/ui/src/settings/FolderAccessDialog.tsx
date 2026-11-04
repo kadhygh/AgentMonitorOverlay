@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { FolderAccessStatus } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
+import { Modal } from "../lib/Modal.js";
 
 // DSH 沙箱权限 (2026-10-23): every project's folder as DeepSeek · DSH's 工作区可写 sandbox needs it, one row each, with
 // 设置权限 and 重新扫描. Opened from 设置 → 项目与目录 and from the hint under 工作区可写 (`focus`: that project's row).
@@ -67,122 +67,110 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
     }
   }
 
-  return createPortal(
-    <div
-      className="modal-backdrop confirm-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
-    >
-      <div className="modal folder-access" role="dialog" aria-modal="true" aria-labelledby="folder-access-title" data-testid="folder-access-dialog">
-        <div className="modal-head">
-          <span className="modal-title" id="folder-access-title">
-            DSH 沙箱权限
-          </span>
-          <span className="spacer" />
-          <button type="button" className="btn-ghost small" disabled={running} onClick={() => void load()} data-testid="folder-access-recheck">
-            重新检查
-          </button>
-          <button type="button" className="btn-ghost small" onClick={onClose}>
-            关闭
-          </button>
-        </div>
-        <div className="folder-access-intro">
-          <p>只有想让 DeepSeek（DSH）在「工作区可写」沙箱里跑时才需要设置；用「完全访问」就不用管这里。</p>
-          <p>
-            「设置权限」做三件事：给你自己加上项目文件夹（含子文件夹）的 Windows 完全控制，原来的权限先备份；把项目标成低完整性，沙箱靠它把写入限制在项目里；把项目里的程序和库（exe、com、dll、node）设回正常（低完整性的库会让 Electron、Chromium 一类程序的窗口崩溃）。不用管理员。
-          </p>
-          <p>
-            之后在项目里新生成的文件都会继承低完整性，新生成的 exe 会降级运行、写不了项目外，新生成的 dll、node 可能加载不了。构建之后点「重新扫描」，或者把构建输出放到项目外的文件夹。「工作区可写」的会话每轮结束时也会自动补扫（同一项目最多 10 分钟一次）。
-          </p>
-        </div>
-        {list && !list.available && <p className="settings-hint">这台机器上 Studio 不处理文件夹权限（只在 Windows 上）。</p>}
-        {list?.available && (
-          <ul className="folder-access-list" data-testid="folder-access-list">
-            {list.folders.map((f) => (
-              <li
-                key={f.workspaceId}
-                ref={f.workspaceId === focus ? focused : undefined}
-                className={f.workspaceId === focus ? "focused" : undefined}
-                data-testid="folder-access-row"
-                data-state={f.state}
-              >
-                <div className="fa-main">
-                  <span className="fa-name">
-                    {f.name}
-                    {f.archived && <span className="fa-archived">已归档 · 权限还没恢复</span>}
-                  </span>
-                  <span className="fa-path" title={f.path}>
-                    {f.path}
-                  </span>
-                  <span className={`fa-detail${f.state === "failed" ? " error" : ""}`} title={f.backup ? `原来的权限备份在 ${f.backup}` : undefined}>
-                    {folderDetail(f)}
-                  </span>
-                </div>
-                <span className={`fa-state ${f.state}`}>{STATE[f.state]}</span>
-                <div className="fa-actions">
-                  {f.archived ? null : f.state === "ready" || (f.state === "running" && f.job === "scan") ? (
-                    <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => void act(f, "scan")} data-testid="folder-access-scan">
-                      {f.state === "running" ? "扫描中…" : "重新扫描"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-primary small"
-                      disabled={busy === f.workspaceId || f.state === "running" || f.state === "unknown"}
-                      onClick={() => setAsking({ folder: f, what: "fix" })}
-                      data-testid="folder-access-fix"
-                    >
-                      {f.state === "running" ? "设置中…" : f.state === "failed" ? "再试一次" : "设置权限"}
-                    </button>
-                  )}
-                  {(f.state === "ready" || f.labelled || (f.state === "running" && f.job === "revert")) && (
-                    <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => setAsking({ folder: f, what: "revert" })} data-testid="folder-access-revert">
-                      {f.state === "running" && f.job === "revert" ? "恢复中…" : "恢复原来的权限"}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {asking && (
-          <ConfirmDialog
-            title={asking.what === "fix" ? `给「${asking.folder.name}」设置 DSH 沙箱权限？` : `恢复「${asking.folder.name}」原来的权限？`}
-            action={asking.what === "fix" ? "设置权限" : "恢复"}
-            danger={asking.what === "fix"}
-            testId="folder-access-confirm"
-            onCancel={() => setAsking(null)}
-            onConfirm={() => {
-              const { folder, what } = asking;
-              setAsking(null);
-              void act(folder, what);
-            }}
-          >
-            {asking.what === "fix" ? (
-              <p className="settings-hint">
-                整个文件夹（{asking.folder.path}）会被标成低完整性。之后在里面<strong>新生成的程序会以低权限运行</strong>：重新构建出来的工具、重装的依赖（例如
-                node_modules 里的 electron）可能起不来，或者写不了项目外的文件，要再点「重新扫描」才恢复。项目里有自己构建、自己运行的程序时，DSH 用「完全访问」更省事。之后可以「恢复原来的权限」。
-              </p>
-            ) : (
-              <p className="settings-hint">
-                去掉 DSH 沙箱的权限和低完整性标签{asking.folder.backup ? "，以及 Studio 当初加的「完全控制」" : ""}，现在的权限先另存一份。之后这个项目里的 DeepSeek 用「工作区可写」时，DSH 会再把它的标签加回来；只用「完全访问」或「只读」就不会。
-              </p>
-            )}
-          </ConfirmDialog>
-        )}
-        {!list && !error && <p className="settings-hint">正在读取各项目的权限…</p>}
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
+  return (
+    <Modal portal backdropClassName="confirm-backdrop" className="folder-access" labelledBy="folder-access-title" testId="folder-access-dialog" onClose={onClose}>
+      <div className="modal-head">
+        <span className="modal-title" id="folder-access-title">
+          DSH 沙箱权限
+        </span>
+        <span className="spacer" />
+        <button type="button" className="btn-ghost small" disabled={running} onClick={() => void load()} data-testid="folder-access-recheck">
+          重新检查
+        </button>
+        <button type="button" className="btn-ghost small" onClick={onClose}>
+          关闭
+        </button>
       </div>
-    </div>,
-    document.body,
+      <div className="folder-access-intro">
+        <p>只有想让 DeepSeek（DSH）在「工作区可写」沙箱里跑时才需要设置；用「完全访问」就不用管这里。</p>
+        <p>
+          「设置权限」做三件事：给你自己加上项目文件夹（含子文件夹）的 Windows 完全控制，原来的权限先备份；把项目标成低完整性，沙箱靠它把写入限制在项目里；把项目里的程序和库（exe、com、dll、node）设回正常（低完整性的库会让 Electron、Chromium 一类程序的窗口崩溃）。不用管理员。
+        </p>
+        <p>
+          之后在项目里新生成的文件都会继承低完整性，新生成的 exe 会降级运行、写不了项目外，新生成的 dll、node 可能加载不了。构建之后点「重新扫描」，或者把构建输出放到项目外的文件夹。「工作区可写」的会话每轮结束时也会自动补扫（同一项目最多 10 分钟一次）。
+        </p>
+      </div>
+      {list && !list.available && <p className="settings-hint">这台机器上 Studio 不处理文件夹权限（只在 Windows 上）。</p>}
+      {list?.available && (
+        <ul className="folder-access-list" data-testid="folder-access-list">
+          {list.folders.map((f) => (
+            <li
+              key={f.workspaceId}
+              ref={f.workspaceId === focus ? focused : undefined}
+              className={f.workspaceId === focus ? "focused" : undefined}
+              data-testid="folder-access-row"
+              data-state={f.state}
+            >
+              <div className="fa-main">
+                <span className="fa-name">
+                  {f.name}
+                  {f.archived && <span className="fa-archived">已归档 · 权限还没恢复</span>}
+                </span>
+                <span className="fa-path" title={f.path}>
+                  {f.path}
+                </span>
+                <span className={`fa-detail${f.state === "failed" ? " error" : ""}`} title={f.backup ? `原来的权限备份在 ${f.backup}` : undefined}>
+                  {folderDetail(f)}
+                </span>
+              </div>
+              <span className={`fa-state ${f.state}`}>{STATE[f.state]}</span>
+              <div className="fa-actions">
+                {f.archived ? null : f.state === "ready" || (f.state === "running" && f.job === "scan") ? (
+                  <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => void act(f, "scan")} data-testid="folder-access-scan">
+                    {f.state === "running" ? "扫描中…" : "重新扫描"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-primary small"
+                    disabled={busy === f.workspaceId || f.state === "running" || f.state === "unknown"}
+                    onClick={() => setAsking({ folder: f, what: "fix" })}
+                    data-testid="folder-access-fix"
+                  >
+                    {f.state === "running" ? "设置中…" : f.state === "failed" ? "再试一次" : "设置权限"}
+                  </button>
+                )}
+                {(f.state === "ready" || f.labelled || (f.state === "running" && f.job === "revert")) && (
+                  <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => setAsking({ folder: f, what: "revert" })} data-testid="folder-access-revert">
+                    {f.state === "running" && f.job === "revert" ? "恢复中…" : "恢复原来的权限"}
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {asking && (
+        <ConfirmDialog
+          title={asking.what === "fix" ? `给「${asking.folder.name}」设置 DSH 沙箱权限？` : `恢复「${asking.folder.name}」原来的权限？`}
+          action={asking.what === "fix" ? "设置权限" : "恢复"}
+          danger={asking.what === "fix"}
+          testId="folder-access-confirm"
+          onCancel={() => setAsking(null)}
+          onConfirm={() => {
+            const { folder, what } = asking;
+            setAsking(null);
+            void act(folder, what);
+          }}
+        >
+          {asking.what === "fix" ? (
+            <p className="settings-hint">
+              整个文件夹（{asking.folder.path}）会被标成低完整性。之后在里面<strong>新生成的程序会以低权限运行</strong>：重新构建出来的工具、重装的依赖（例如
+              node_modules 里的 electron）可能起不来，或者写不了项目外的文件，要再点「重新扫描」才恢复。项目里有自己构建、自己运行的程序时，DSH 用「完全访问」更省事。之后可以「恢复原来的权限」。
+            </p>
+          ) : (
+            <p className="settings-hint">
+              去掉 DSH 沙箱的权限和低完整性标签{asking.folder.backup ? "，以及 Studio 当初加的「完全控制」" : ""}，现在的权限先另存一份。之后这个项目里的 DeepSeek 用「工作区可写」时，DSH 会再把它的标签加回来；只用「完全访问」或「只读」就不会。
+            </p>
+          )}
+        </ConfirmDialog>
+      )}
+      {!list && !error && <p className="settings-hint">正在读取各项目的权限…</p>}
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+    </Modal>
   );
 }

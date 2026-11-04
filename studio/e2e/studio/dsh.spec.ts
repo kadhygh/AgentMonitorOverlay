@@ -30,9 +30,20 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(card).toContainText("New-Item notes.md", { timeout: 30_000 });
   await expect(card).toContainText("the person asked for it");
   await screenshot(studio.app, "stage-17", "S17-dsh-approval", page);
+  // 2026-11-04 (plans/message-delivery.md): a mail forwarded while the turn waits on the person goes into the session's
+  // inbox — shown at once, 「等这一轮结束后送进去」 — and is sent as the next turn once this one is over.
+  const mail = await studio.api<{ id: string }>("POST", "/api/mail", { to: { kind: "session", sessionId: session.id }, text: "记得跑一下测试" });
+  await studio.api("POST", `/api/mail/${mail.id}/forward`, {});
+  const heldLine = page.getByTestId("msg-delivery").filter({ hasText: "等这一轮结束后送进去" });
+  await expect(heldLine).toHaveAttribute("data-delivery", "held");
+  await expect(heldLine.getByRole("button", { name: "立即发送" })).toBeVisible();
+  await screenshot(studio.app, "studio", "inbox-held", page);
   await card.getByRole("button", { name: "批准" }).click();
   await expect(card).toContainText("已批准");
-  await expect(page.getByTestId("msg-agent").last()).toContainText("DONE New-Item notes.md", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "DONE New-Item notes.md" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText("记得跑一下测试", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
 
   // DSH has no fork and no terminal of its own.
   await expect(page.getByTestId("session-fork")).toHaveCount(0);
@@ -50,10 +61,38 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await composer.fill("顺便看看测试");
   await page.getByRole("button", { name: "排队" }).click();
   await expect(page.getByTestId("msg-user").filter({ hasText: "顺便看看测试" })).toBeVisible();
+  // 2026-11-04: it waits (等待送达), and 打断 sends it as the next turn instead of dropping it.
+  await expect(page.getByTestId("msg-delivery").last()).toHaveAttribute("data-delivery", "waiting");
   await screenshot(studio.app, "stage-17", "S17-dsh-queued", page);
   await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-DSH: 顺便看看测试", { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("停止后，排队的 1 条消息没有发出")).toBeVisible();
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+});
+
+test("a DSH goal going on by itself: each round a turn, the answers stay in sight, 打断 stops it (问题 #13)", async () => {
+  // 标准 view: finished turns fold (the tests' default 完全展开 never folds).
+  studio = await launchStudio({ dsh: true, transcriptView: "standard" });
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "DSH 目标", workspaceId: ws.id, firstSession: { profileId: "dsh-mock", text: "一直做 [[goal: 2]]" } });
+  await page.getByTestId("task-card").filter({ hasText: "DSH 目标" }).click();
+  const turns = page.getByTestId("turn");
+  // Round 2 replied and DSH is still taken to be working (its turn ends after a quiet spell): three turns.
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "ROUND 2 DONE" })).toBeVisible({ timeout: 30_000 });
+  await expect(turns).toHaveCount(3);
+  // The person's turn and round 1 are over and folded, their answers outside the fold.
+  await expect(turns.nth(0)).toHaveAttribute("data-folded", "true");
+  await expect(turns.nth(0).getByTestId("msg-agent")).toContainText("MOCK-DSH: 一直做");
+  await expect(turns.nth(1)).toHaveAttribute("data-folded", "true");
+  await expect(turns.nth(1).getByTestId("msg-agent")).toContainText("ROUND 1 DONE");
+  await expect(page.getByRole("button", { name: "打断" })).toBeVisible();
+  await screenshot(studio.app, "stage-17", "S17-dsh-goal-rounds", page);
+  await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
+  await expect(turns.nth(2).getByTestId("turn-fold")).toContainText("已停止");
+  await expect(turns.nth(2).getByTestId("msg-agent")).toContainText("ROUND 2 DONE");
+  await screenshot(studio.app, "stage-17", "S17-dsh-goal-stopped", page);
 });
 
 

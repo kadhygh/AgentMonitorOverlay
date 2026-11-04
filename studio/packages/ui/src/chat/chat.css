@@ -20,6 +20,7 @@
   --chat-brand: #7aaaff;
   --chat-brand-dim: #5686fe;
   --chat-mention: #8db8ff;
+  --chat-cmd: #86c5b9;
   --chat-success: #4ed17e;
   --chat-error: #f25a5a;
   --chat-warn: #dd8629;
@@ -47,6 +48,7 @@
   --chat-brand: #23436f;
   --chat-brand-dim: #182f50;
   --chat-mention: #2a64b0;
+  --chat-cmd: #2c6d63;
   --chat-success: #3b7a4f;
   --chat-error: #a3302b;
   --chat-warn: #93570a;
@@ -75,6 +77,7 @@
     --chat-brand: #23436f;
     --chat-brand-dim: #182f50;
     --chat-mention: #2a64b0;
+    --chat-cmd: #2c6d63;
     --chat-success: #3b7a4f;
     --chat-error: #a3302b;
     --chat-warn: #93570a;
@@ -96,8 +99,9 @@
 }
 .turn { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 /* Turns off screen skip layout and paint (2026-10-15: resizing the window or the session list was slow in long
-   conversations); the last two always render, so following the bottom stays exact. */
-.turn:not(:nth-last-child(-n + 2)) { content-visibility: auto; contain-intrinsic-size: auto 300px; }
+   conversations); the last three (data-recent, Transcript) always render, so following the bottom stays exact and the
+   reply read as a message goes out stays drawn (问题 #17: "the last two children" counted the running line too). */
+.turn:not([data-recent]) { content-visibility: auto; contain-intrinsic-size: auto 300px; }
 .turn-work { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .turn-work > .msg-agent, .turn-work > .msg-user-row, .turn-work > .approval { margin: 6px 0; }
 
@@ -107,6 +111,9 @@
 /* 立即发送 (2026-11-02): under a message the model has not read yet (or never will), what it is and what to do. */
 .msg-delivery { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px; color: var(--chat-caption); }
 .msg-delivery.unsent .msg-delivery-state { color: var(--chat-warn); }
+/* 问题 #16: 立即发送 under way — the turn may take a few seconds to give way; the line breathes so it reads as working. */
+.msg-delivery.interrupting .msg-delivery-state { color: var(--chat-brand); animation: msg-delivery-pulse 1.4s ease-in-out infinite; }
+@keyframes msg-delivery-pulse { 50% { opacity: 0.45; } }
 .msg-delivery-btn { padding: 1px 8px; border: 1px solid var(--chat-hairline); border-radius: 999px; background: transparent; color: var(--chat-brand); font: inherit; cursor: pointer; }
 .msg-delivery-btn:hover:not(:disabled) { background: var(--chat-hover); }
 .msg-delivery-btn:disabled { color: var(--chat-caption); cursor: default; }
@@ -182,7 +189,7 @@
 .pr-title { flex: none; white-space: nowrap; }
 .pr-dot { flex: none; width: 2px; height: 2px; margin: 0 2px; border-radius: 1px; background: var(--chat-caption); }
 .pr-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pr-summary.code { font-family: var(--font-code); font-size: 12px; }
+.pr-summary.code { font-family: var(--font-code); font-size: 12px; color: var(--chat-cmd); }
 .pr-summary.failed { color: var(--chat-error); }
 .pr-meta { flex: none; color: var(--text-faint); font-size: 12px; font-family: var(--font-code); }
 .pr-note { flex: none; margin-left: 4px; font-size: 12px; }
@@ -197,7 +204,7 @@
 .pr-link:hover { filter: brightness(1.15); }
 
 .pr-body { margin: 4px 0 6px 22px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.pr-think-body { color: var(--chat-dim); font-size: 13px; line-height: 21px; border-left: 2px solid var(--chat-hairline); padding-left: 12px; margin-left: 7px; }
+.pr-think-body { color: var(--chat-dim); font-style: italic; font-size: 13px; line-height: 21px; border-left: 2px solid var(--chat-hairline); padding-left: 12px; margin-left: 7px; }
 .pr-think-body .md { gap: 6px; }
 .pr-plan { margin: 0; font-family: var(--font-ui); font-size: 13px; line-height: 22px; color: var(--chat-dim-hover); white-space: pre-wrap; }
 
@@ -362,6 +369,8 @@
 .round-btn.send:disabled { background: var(--chat-hover); color: var(--chat-caption); cursor: default; }
 .round-btn.stop { background: var(--chat-hover); color: var(--chat-label); }
 .round-btn.stop:hover { background: color-mix(in srgb, var(--chat-label) 18%, transparent); }
+/* 停止 pressed, the turn not ended yet (问题 #16): greyed and breathing until it does. */
+.round-btn.stop.stopping, .round-btn.stop.stopping:hover { background: var(--chat-hover); cursor: default; color: var(--chat-caption); animation: msg-delivery-pulse 1.4s ease-in-out infinite; }
 .composer-stats { display: flex; gap: 12px; font-size: 11.5px; color: var(--chat-caption); font-variant-numeric: tabular-nums; }
 .pr-review { font-size: 13px; line-height: 21px; color: var(--chat-dim-hover); white-space: pre-wrap; border-left: 2px solid var(--chat-hairline); padding-left: 12px; margin-left: 7px; }
 

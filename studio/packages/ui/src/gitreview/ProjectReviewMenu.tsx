@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { GitStatus } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { openReview } from "./open.js";
+import { ContextMenu } from "../lib/ContextMenu.js";
 
 export interface ProjectMenuAt {
   workspaceId: string;
@@ -74,21 +75,9 @@ export function ProjectReviewMenu({ link, at, onClose, onArchive, onEdit, groups
     };
   }, [link, at.workspaceId]);
 
-  // Closes on Escape and on any click outside it.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown);
-    };
-  }, [onClose]);
-
   const notGit = status !== null && !status.repo;
   return (
-    <div className="ctx-menu" role="menu" aria-label="项目" style={{ left: at.x, top: at.y }}>
+    <ContextMenu at={at} label="项目" onClose={onClose}>
       <button
         type="button"
         role="menuitem"
@@ -131,6 +120,6 @@ export function ProjectReviewMenu({ link, at, onClose, onArchive, onEdit, groups
           归档项目…
         </button>
       )}
-    </div>
+    </ContextMenu>
   );
 }

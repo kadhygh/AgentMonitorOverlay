@@ -61,7 +61,11 @@ export class CollabFeature extends Feature {
     return this.setMailState(this.requireMail(id), state);
   }
 
-  /** The person puts a message into a conversation; it goes in as a user message, marked as coming from AMO mail. */
+  /**
+   * The person puts a message into a conversation; it goes in as a user message, marked as coming from AMO mail —
+   * through the session's inbox (2026-11-04): an agent's words, so once the session's turn is over (立即发送 on the row
+   * sends it at once).
+   */
   async forwardMail(id: Id, input: { sessionId?: unknown } = {}): Promise<MailMessage> {
     const mail = this.requireMail(id);
     if (mail.state === "forwarded") throw new HostError("conflict", "this message was already forwarded");
@@ -70,7 +74,7 @@ export class CollabFeature extends Feature {
     const session = this.requireSession(target);
     if (mail.to.kind === "task" && session.taskId !== mail.to.taskId) throw new HostError("bad_request", "that session is not part of the task the message was left for");
     if (mail.to.kind === "topic" && session.topicId !== mail.to.topicId) throw new HostError("bad_request", "that session is not one of the topic's own sessions");
-    await this.f.sessions.sendMessage(target, this.mailAsMessage(mail));
+    await this.f.sessions.inbox.put(target, this.mailAsMessage(mail));
     return this.setMailState(mail, "forwarded");
   }
 

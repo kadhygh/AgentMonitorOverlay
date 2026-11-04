@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { PROMPT_TEMPLATE_LIMITS, type PromptTemplate, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { usePromptTemplates } from "./usePromptTemplates.js";
+import { Modal } from "../lib/Modal.js";
 
 // 提示词模板 (2026-10-31): from the composer's @ list (AMO 扩展功能 → 提示词模板…). Search on top, the templates on the
 // left (global ones and this project's), the picked one on the right; 粘进输入框 (or Enter) puts its text where @ was
@@ -69,19 +69,8 @@ export function PromptTemplateDialog({ link, workspaceId, projects, remote, onDo
   const search = useRef<HTMLInputElement>(null);
   const title = useRef<HTMLInputElement>(null);
   useEffect(() => search.current?.focus(), []);
-  // Esc wherever the focus is (after 删除 it may be nowhere in the window): leaves the form, else closes.
-  const editingNow = !!editing;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (editingNow) closeEdit();
-      else onDone(null);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  });
+  // Escape leaves the form, else closes — also when the focus is nowhere (after 删除; lib/Modal.tsx).
+  const escape = () => (editing ? closeEdit() : onDone(null));
 
   const projectName = (id: string | null) => (id ? (projects.find((w) => w.id === id)?.name ?? "某个项目") : "全局");
   const where = (t: Listed) => (t.there ? `在 ${remote?.name} 上 · ${t.workspaceId ? remote?.projectLabel : "全局"}` : projectName(t.workspaceId));
@@ -144,158 +133,155 @@ export function PromptTemplateDialog({ link, workspaceId, projects, remote, onDo
   // The scopes a template can have: everywhere, or one project (this one first).
   const scopes = [...projects].sort((a, b) => Number(b.id === workspaceId) - Number(a.id === workspaceId));
 
-  return createPortal(
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onDone(null)}>
-      <div className="modal prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title" data-testid="prompt-dialog">
-        <span className="modal-title" id="prompt-title">
-          提示词模板
-        </span>
-        <div className="prompt-body">
-          <div className="prompt-side">
-            <input
-              ref={search}
-              className="field"
-              value={query}
-              placeholder="搜索标题或内容"
-              aria-label="搜索模板"
-              disabled={!!editing}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPickedId(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  move(e.key === "ArrowDown" ? 1 : -1);
-                } else if (e.key === "Enter" && !e.nativeEvent.isComposing && picked) {
-                  e.preventDefault();
-                  onDone(picked.body);
-                }
-              }}
-            />
-            <div className="prompt-list" role="listbox" aria-label="模板">
-              {shown.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="option"
-                  aria-selected={t.id === picked?.id}
-                  className="prompt-item"
-                  disabled={!!editing}
-                  onClick={() => setPickedId(t.id)}
-                  onDoubleClick={() => onDone(t.body)}
-                  data-testid="prompt-item"
-                >
-                  <span className="prompt-item-title">{t.title}</span>
-                  <span className="prompt-item-sub">
-                    {where(t)}
-                    {t.by === "agent" ? " · AI 写的" : ""}
-                  </span>
-                </button>
-              ))}
-              {thereError && <span className="settings-hint prompt-empty" data-testid="prompt-there-error">{`${remote?.name} 上的模板读不到：${thereError}`}</span>}
-              {templates && !shown.length && !(only && thereError) && (
-                <span className="settings-hint prompt-empty">
-                  {templates.length ? "没有符合的模板。" : only ? `${remote?.name} 上还没有能用在这里的模板（全局的，或「${remote?.projectLabel}」的）。要在那台电脑上写。` : "还没有模板。点「新建模板」写一条，或者在对话里让 AI 帮你存：「把下面这段存成提示词模板」。"}
+  return (
+    <Modal portal className="prompt-modal" labelledBy="prompt-title" testId="prompt-dialog" onClose={escape} onBackdrop={() => onDone(null)}>
+      <span className="modal-title" id="prompt-title">
+        提示词模板
+      </span>
+      <div className="prompt-body">
+        <div className="prompt-side">
+          <input
+            ref={search}
+            className="field"
+            value={query}
+            placeholder="搜索标题或内容"
+            aria-label="搜索模板"
+            disabled={!!editing}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPickedId(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                move(e.key === "ArrowDown" ? 1 : -1);
+              } else if (e.key === "Enter" && !e.nativeEvent.isComposing && picked) {
+                e.preventDefault();
+                onDone(picked.body);
+              }
+            }}
+          />
+          <div className="prompt-list" role="listbox" aria-label="模板">
+            {shown.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="option"
+                aria-selected={t.id === picked?.id}
+                className="prompt-item"
+                disabled={!!editing}
+                onClick={() => setPickedId(t.id)}
+                onDoubleClick={() => onDone(t.body)}
+                data-testid="prompt-item"
+              >
+                <span className="prompt-item-title">{t.title}</span>
+                <span className="prompt-item-sub">
+                  {where(t)}
+                  {t.by === "agent" ? " · AI 写的" : ""}
                 </span>
-              )}
-            </div>
-          </div>
-          <div className="prompt-main">
-            {editing ? (
-              <div className="prompt-form" data-testid="prompt-form">
-                <input ref={title} className="field" value={editing.title} maxLength={PROMPT_TEMPLATE_LIMITS.title} placeholder="标题，比如：每日巡检" aria-label="模板标题" onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
-                <label className="settings-row">
-                  <span className="settings-label">在哪里出现</span>
-                  <select value={editing.workspaceId ?? ""} aria-label="在哪里出现" onChange={(e) => setEditing({ ...editing, workspaceId: e.target.value || null })}>
-                    <option value="">全局：所有项目</option>
-                    {scopes.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        只在「{w.name}」
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <textarea
-                  className="field prompt-text"
-                  value={editing.body}
-                  maxLength={PROMPT_TEMPLATE_LIMITS.body}
-                  placeholder="选中后粘进输入框的内容"
-                  aria-label="模板内容"
-                  onChange={(e) => setEditing({ ...editing, body: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      void save();
-                    }
-                  }}
-                />
-              </div>
-            ) : picked ? (
-              <div className="prompt-preview" data-testid="prompt-preview">
-                <div className="prompt-preview-head">
-                  <span className="prompt-item-title">{picked.title}</span>
-                  <span className="prompt-item-sub">
-                    {where(picked)}
-                    {picked.by === "agent" ? " · AI 写的" : ""}
-                  </span>
-                  {picked.there ? (
-                    <span className="prompt-preview-actions settings-hint">要改去那台电脑上改</span>
-                  ) : (
-                    <span className="prompt-preview-actions">
-                      <button type="button" className="link-btn" disabled={busy} onClick={() => edit({ id: picked.id, title: picked.title, body: picked.body, workspaceId: picked.workspaceId })}>
-                        编辑
-                      </button>
-                      <button type="button" className="link-btn danger" disabled={busy} onClick={() => void remove(picked)}>
-                        删除
-                      </button>
-                    </span>
-                  )}
-                </div>
-                <pre className="prompt-preview-text">{picked.body}</pre>
-              </div>
-            ) : (
-              <span className="settings-hint prompt-empty">{templates ? "选一条模板看内容。" : "正在读取…"}</span>
+              </button>
+            ))}
+            {thereError && <span className="settings-hint prompt-empty" data-testid="prompt-there-error">{`${remote?.name} 上的模板读不到：${thereError}`}</span>}
+            {templates && !shown.length && !(only && thereError) && (
+              <span className="settings-hint prompt-empty">
+                {templates.length ? "没有符合的模板。" : only ? `${remote?.name} 上还没有能用在这里的模板（全局的，或「${remote?.projectLabel}」的）。要在那台电脑上写。` : "还没有模板。点「新建模板」写一条，或者在对话里让 AI 帮你存：「把下面这段存成提示词模板」。"}
+              </span>
             )}
           </div>
         </div>
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
-        <div className="settings-row end">
+        <div className="prompt-main">
           {editing ? (
-            <>
-              <span className="settings-hint prompt-keys">Ctrl+Enter 保存</span>
-              <button type="button" className="btn-ghost small" onClick={closeEdit}>
-                取消
-              </button>
-              <button type="button" className="btn-primary small" disabled={busy} onClick={() => void save()} data-testid="prompt-save">
-                保存
-              </button>
-            </>
+            <div className="prompt-form" data-testid="prompt-form">
+              <input ref={title} className="field" value={editing.title} maxLength={PROMPT_TEMPLATE_LIMITS.title} placeholder="标题，比如：每日巡检" aria-label="模板标题" onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+              <label className="settings-row">
+                <span className="settings-label">在哪里出现</span>
+                <select value={editing.workspaceId ?? ""} aria-label="在哪里出现" onChange={(e) => setEditing({ ...editing, workspaceId: e.target.value || null })}>
+                  <option value="">全局：所有项目</option>
+                  {scopes.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      只在「{w.name}」
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <textarea
+                className="field prompt-text"
+                value={editing.body}
+                maxLength={PROMPT_TEMPLATE_LIMITS.body}
+                placeholder="选中后粘进输入框的内容"
+                aria-label="模板内容"
+                onChange={(e) => setEditing({ ...editing, body: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    void save();
+                  }
+                }}
+              />
+            </div>
+          ) : picked ? (
+            <div className="prompt-preview" data-testid="prompt-preview">
+              <div className="prompt-preview-head">
+                <span className="prompt-item-title">{picked.title}</span>
+                <span className="prompt-item-sub">
+                  {where(picked)}
+                  {picked.by === "agent" ? " · AI 写的" : ""}
+                </span>
+                {picked.there ? (
+                  <span className="prompt-preview-actions settings-hint">要改去那台电脑上改</span>
+                ) : (
+                  <span className="prompt-preview-actions">
+                    <button type="button" className="link-btn" disabled={busy} onClick={() => edit({ id: picked.id, title: picked.title, body: picked.body, workspaceId: picked.workspaceId })}>
+                      编辑
+                    </button>
+                    <button type="button" className="link-btn danger" disabled={busy} onClick={() => void remove(picked)}>
+                      删除
+                    </button>
+                  </span>
+                )}
+              </div>
+              <pre className="prompt-preview-text">{picked.body}</pre>
+            </div>
           ) : (
-            <>
-              {only ? (
-                <span className="prompt-new" />
-              ) : (
-                <button type="button" className="btn-ghost small prompt-new" onClick={() => edit({ id: null, title: "", body: "", workspaceId: null })} data-testid="prompt-new">
-                  新建模板
-                </button>
-              )}
-              <span className="settings-hint prompt-keys">↑↓ 选，回车粘进输入框</span>
-              <button type="button" className="btn-ghost small" onClick={() => onDone(null)}>
-                取消
-              </button>
-              <button type="button" className="btn-primary small" disabled={!picked} onClick={() => picked && onDone(picked.body)} data-testid="prompt-ok">
-                粘进输入框
-              </button>
-            </>
+            <span className="settings-hint prompt-empty">{templates ? "选一条模板看内容。" : "正在读取…"}</span>
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <div className="settings-row end">
+        {editing ? (
+          <>
+            <span className="settings-hint prompt-keys">Ctrl+Enter 保存</span>
+            <button type="button" className="btn-ghost small" onClick={closeEdit}>
+              取消
+            </button>
+            <button type="button" className="btn-primary small" disabled={busy} onClick={() => void save()} data-testid="prompt-save">
+              保存
+            </button>
+          </>
+        ) : (
+          <>
+            {only ? (
+              <span className="prompt-new" />
+            ) : (
+              <button type="button" className="btn-ghost small prompt-new" onClick={() => edit({ id: null, title: "", body: "", workspaceId: null })} data-testid="prompt-new">
+                新建模板
+              </button>
+            )}
+            <span className="settings-hint prompt-keys">↑↓ 选，回车粘进输入框</span>
+            <button type="button" className="btn-ghost small" onClick={() => onDone(null)}>
+              取消
+            </button>
+            <button type="button" className="btn-primary small" disabled={!picked} onClick={() => picked && onDone(picked.body)} data-testid="prompt-ok">
+              粘进输入框
+            </button>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }

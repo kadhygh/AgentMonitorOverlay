@@ -141,6 +141,11 @@ export interface SessionOptions {
    * person's own Codex config applies); false = chosen off (standard speed is sent). Ignored by other runtimes.
    */
   fast?: boolean;
+  /**
+   * MCP 设置 (2026-11-04): the session's own choices by server name (true on, false off); the rest follow its project and
+   * the global ones. A new session of a task copies them from the task's latest main session.
+   */
+  mcp?: Record<string, boolean>;
 }
 
 /**
@@ -182,7 +187,16 @@ export interface Session {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   archivedAt: Timestamp | null;
+  /**
+   * When its last turn ended (2026-11-04): the status became idle, completed, interrupted or error. Only that writes it,
+   * so Focus's 完成待审核 / 出错 follow it, not updatedAt, which renaming, settings, archiving and restoring move too.
+   * null: no turn has ended yet. Absent: from a Host before it — readers take updatedAt.
+   */
+  endedAt?: Timestamp | null;
 }
+
+/** The statuses a session is in once a turn has ended. */
+export const ENDED_STATUSES: readonly SessionStatus[] = ["idle", "completed", "interrupted", "error"];
 
 /**
  * A Claude session that goes on by itself (stage 15, 2026-10-16). Studio keeps its Claude Code process while this is
@@ -318,8 +332,13 @@ export interface MessageImage {
   path: string;
 }
 
-/** Where a person's message sent mid-turn stands (立即发送, 2026-11-02; see the `user` item). */
-export type UserDelivery = "waiting" | "unsent";
+/**
+ * Where a message stands before the model read it (see the `user` item). `waiting`: sent mid-turn, at the runtime, not
+ * read yet (立即发送, 2026-11-02). `unsent`: its process went (or it could not go in) before the model read it; 重新发送
+ * sends it again. `held` (2026-11-04, plans/message-delivery.md): from an agent or from Studio (中转回复, 值守, 传话,
+ * session_send…), in the session's inbox until the session is free — then it goes in by itself.
+ */
+export type UserDelivery = "waiting" | "unsent" | "held";
 
 /**
  * What a notice offers to do (2026-10-23). `folder-access`: DSH's write sandbox cannot be set up on the session's
@@ -731,7 +750,8 @@ export interface ScheduleProposal {
   decidedAt: Timestamp | null;
 }
 
-/** One step of a task's checklist, from an extension pack's task template (stage 6). */
+/** One step of a task's checklist. They came from extension packs' task templates (stage 6); the packs went on 10-31, so
+ * nothing makes new ones — old tasks keep theirs, readable and tickable (the 11-03 audit: kept as is, plans/cleanup-2026-11.md). */
 export interface ChecklistItem {
   id: Id;
   taskId: Id;
@@ -780,19 +800,6 @@ export interface DecisionRequest {
   createdAt: Timestamp;
   answeredAt: Timestamp | null;
 }
-
-/** Who owns a session. */
-export type SessionOwner = { kind: "task"; taskId: Id } | { kind: "topic"; topicId: Id };
-
-export function sessionOwner(s: Pick<Session, "taskId" | "topicId">): SessionOwner {
-  if (s.taskId) return { kind: "task", taskId: s.taskId };
-  if (s.topicId) return { kind: "topic", topicId: s.topicId };
-  throw new Error("session has no owner");
-}
-
-/** Sessions with the same owner (a task's or a topic's). */
-export const sameOwner = (a: Pick<Session, "taskId" | "topicId">, b: Pick<Session, "taskId" | "topicId">) =>
-  (a.taskId ?? null) === (b.taskId ?? null) && (a.topicId ?? null) === (b.topicId ?? null);
 
 /** One quota window of a subscription (e.g. GPT's 5-hour and weekly limits). */
 export interface UsageWindow {

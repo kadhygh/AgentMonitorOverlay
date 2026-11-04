@@ -1,33 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { CanvasOutline } from "@amo-studio/protocol";
 import { call, copyText, type HostLink } from "../host/client.js";
-import { onHostEvent } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 
 /**
  * "agent 视角": the canvas as an agent reads it (`canvas.read`): structure without coordinates, as an outline or JSON.
  * Refreshes when the canvas, tasks or sessions change.
  */
 export function AgentTab({ link, topicId }: { link: HostLink; topicId: string }) {
-  const [data, setData] = useState<{ outline: string; json: CanvasOutline } | null>(null);
   const [mode, setMode] = useState<"outline" | "json">("outline");
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const load = () => call(link, "GET /api/topics/:id/canvas/outline", { id: topicId }).then((d) => !cancelled && setData(d));
-    const off = onHostEvent((e) => {
-      if (e.type !== "canvas.updated" && e.type !== "task.upserted" && e.type !== "session.upserted" && e.type !== "workspace.upserted") return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(), 150); // coalesce bursts (e.g. a turn updating several sessions)
-    });
-    void load();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      off();
-    };
-  }, [link, topicId]);
+  const [data] = useLiveResource<{ outline: string; json: CanvasOutline } | null>(
+    {
+      load: () => call(link, "GET /api/topics/:id/canvas/outline", { id: topicId }),
+      initial: null,
+      reloadOn: (e) => e.type === "canvas.updated" || e.type === "task.upserted" || e.type === "session.upserted" || e.type === "workspace.upserted",
+      reloadDelay: 150, // coalesce bursts (e.g. a turn updating several sessions)
+    },
+    [link, topicId],
+  );
 
   const text = data ? (mode === "outline" ? data.outline : JSON.stringify(data.json, null, 2)) : "";
 

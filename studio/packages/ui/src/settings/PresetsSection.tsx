@@ -4,12 +4,16 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { optionsSummary, useProfileChoices } from "../lib/choices.js";
 import { pickable, profileLabel } from "../lib/profiles.js";
 import { OptionsPicker } from "../chat/OptionsPicker.js";
+import { useProfiles } from "../lib/balance.js";
+
+const NONE: ModelProfile[] = [];
 
 // 设置 → 常用预设: saved combinations of model profile, 型号, 思考强度 and 权限. They show as chips next to the composer of
 // sessions on the same profile (one click switches) and on the new-task page.
 
 export function PresetsSection({ link, presets }: { link: HostLink; presets: readonly SessionPreset[] }) {
-  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
+  // This computer's models, one live copy per window (lib/balance.ts; 2026-11-04: it read the whole /api/state once).
+  const profiles = useProfiles(link) ?? NONE;
   const [name, setName] = useState("");
   const [profileId, setProfileId] = useState("");
   const [options, setOptions] = useState<SessionOptions>({});
@@ -18,13 +22,8 @@ export function PresetsSection({ link, presets }: { link: HostLink; presets: rea
   const { choices } = useProfileChoices(link, profileId || null);
 
   useEffect(() => {
-    call(link, "GET /api/state")
-      .then((s) => {
-        setProfiles(s.profiles);
-        setProfileId((cur) => cur || s.profiles[0]?.id || "");
-      })
-      .catch(() => undefined);
-  }, [link]);
+    if (!profileId && profiles[0]) setProfileId(profiles[0].id);
+  }, [profiles, profileId]);
 
   async function save(next: SessionPreset[], done: string) {
     setBusy(true);

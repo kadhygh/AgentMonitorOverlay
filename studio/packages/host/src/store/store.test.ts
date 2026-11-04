@@ -43,9 +43,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(23);
+    expect(makeStore(path).schemaVersion()).toBe(24);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(23);
+    expect(makeStore(path).schemaVersion()).toBe(24);
   });
 
   it("refuses data a newer Studio migrated, says so for the person, and leaves the file alone (2026-10-28)", () => {
@@ -125,6 +125,24 @@ describe("Store", () => {
     expect(store.unarchiveSubtree(fork.id).map((s) => s.id)).toEqual([fork.id, sub.id]);
     expect(store.getSession(main.id)?.archivedAt).not.toBeNull();
     expect(store.getSession(sub.id)?.writer).toBe("workbench");
+  });
+
+  it("keeps when a session's turn ended: only a status that ends a turn writes it (2026-11-04)", () => {
+    const store = makeStore();
+    const { main } = seed(store);
+    expect(store.getSession(main.id)?.endedAt).toBeNull();
+    store.updateSession(main.id, { status: "running" });
+    expect(store.getSession(main.id)?.endedAt).toBeNull();
+    const done = store.updateSession(main.id, { status: "idle" });
+    const ended = done.endedAt!;
+    expect(ended).toBe(done.updatedAt);
+    // Renaming, settings, the same status again, archiving and restoring leave it.
+    store.updateSession(main.id, { title: "改个名", options: { model: "x" }, status: "idle" });
+    store.archiveSubtree(main.id);
+    store.unarchiveSubtree(main.id);
+    const s = store.getSession(main.id)!;
+    expect(s.endedAt).toBe(ended);
+    expect(s.updatedAt > ended).toBe(true);
   });
 
   it("assigns monotonic item seq per session and replaces bodies in place", () => {

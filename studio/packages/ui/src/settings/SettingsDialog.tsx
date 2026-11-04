@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import type { StudioSettings } from "@amo-studio/protocol";
+import type { StateSnapshot, StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
 import { ModelsPage } from "./ModelsPage.js";
 import { SubsessionPage } from "./SubsessionPage.js";
@@ -14,6 +13,7 @@ import { StatsPage } from "./StatsPage.js";
 import { useDialogSize } from "./dialogSize.js";
 import { MaintenancePage } from "./MaintenancePage.js";
 import { DutyPage } from "./DutyPage.js";
+import { McpPage } from "./McpPage.js";
 import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
@@ -21,25 +21,6 @@ import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
 import { BotArt, MascotArt, ReaderArt } from "../focus/PixelBot.js";
 import { PET_SKINS, usePetSkin, writePetSkin, type PetSkin } from "../focus/petSkin.js";
 import { pickDirectory } from "../folders/FolderPicker.js";
-
-/** Studio-wide settings from the Host, kept live. */
-export function useSettings(link: HostLink): StudioSettings | null {
-  const [settings, setSettings] = useState<StudioSettings | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    call(link, "GET /api/settings")
-      .then((s) => !cancelled && setSettings(s))
-      .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type === "settings.updated") setSettings(e.settings);
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [link]);
-  return settings;
-}
 
 /** The pages of 设置, one per area, in the left column. */
 const PAGES = [
@@ -50,6 +31,7 @@ const PAGES = [
   { id: "stats", label: "统计" },
   { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
+  { id: "mcp", label: "MCP" },
   { id: "experimental", label: "测试功能" },
   { id: "duty", label: "值守" },
   { id: "scratchpad", label: "便签" },
@@ -66,7 +48,7 @@ let lastPage: SettingsPage = "ui";
  * new tasks, and the common folder for sessions that belong to no single project: the scheduler's rounds, and the default
  * for cross-workspace sessions), 功能 and 便签.
  */
-export function SettingsDialog({ link, settings, page: startPage, onClose, onOpenRemote }: { link: HostLink; settings: StudioSettings | null; /** Opens on this page. */ page?: SettingsPage; onClose(): void; /** 远程 left 设置 for a page of its own (2026-10-29): the line on 界面 opens it. */ onOpenRemote?: () => void }) {
+export function SettingsDialog({ link, state, settings, page: startPage, onClose, onOpenRemote }: { link: HostLink; /** The window's live snapshot (值守's forms offer its tasks, projects and models). */ state: StateSnapshot; settings: StudioSettings | null; /** Opens on this page. */ page?: SettingsPage; onClose(): void; /** 远程 left 设置 for a page of its own (2026-10-29): the line on 界面 opens it. */ onOpenRemote?: () => void }) {
   const [page, setPage] = useState<SettingsPage>(startPage ?? lastPage);
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const view = useTranscriptView();
@@ -283,7 +265,8 @@ export function SettingsDialog({ link, settings, page: startPage, onClose, onOpe
             {page === "experimental" && <ExperimentalSection link={link} on={settings?.experimentalFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
-            {page === "duty" && <DutyPage link={link} />}
+            {page === "duty" && <DutyPage link={link} state={state} />}
+            {page === "mcp" && <McpPage link={link} />}
             {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>
