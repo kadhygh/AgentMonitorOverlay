@@ -14,7 +14,7 @@
 | 3 | 消息投递统一 | ✓ 11-04 合进 master（`6a231509`，分支 `studio/message-delivery`）；方案、用户定的五条和没验证的在 `plans/message-delivery.md` |
 | 4 | 中转登录收口 | ✓ 11-04 `0d56e627`（中转外壳的「下一版」有一条，会随自动打包发到测试通道） |
 | 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
-| 6 | 只增不删的数据 | ◐ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半可以做了（第 3 步已合） |
+| 6 | 只增不删的数据 | ✓ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半 11-04 `48ecf1eb` |
 | 7 | ui 的数据流和共用件 | ✓ 前两批 11-04 合进 master（`36cc5a49`，分支 `studio/ui-dataflow`）；第三批和 base.css 下一轮 |
 | 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；代码下一轮按 8a → 8d 做，新开 worktree |
 
@@ -86,7 +86,13 @@ purge 不删按会话的 kv 键；DSH 日志不轮转不删；中转的孤儿截
 - 聊天记录 `messages`、`task_events` 要不要有保留期：要用户定，这一轮不动。
 - 管理页显示数据目录占用：下一轮。
 - `user_version` 迁移：并进 `plans/host-structure.md` 8d，和拆 `store.ts` 一起做。
-- Host 那一半（purge 时清按会话的 kv 键和 DSH 日志、DSH 日志轮转、kv 键登记）：DSH 日志在 `dsh-runtime.ts` 里，第 3 步正在改这个文件，等它合并后再做。
+
+11-04 晚做了 Host 那一半（`48ecf1eb`）：
+- kv 键登记表 `host/src/store/kv-keys.ts`：66 个键，每个写明作用域（全局 / 按会话 / 按任务 / 按项目 / 按文件夹 / 按 MCP token）、在哪个文件、存的是什么。`kv-keys.test.ts` 扫 Host 源码，用了没登记、登记了没在用的键都会让测试失败。
+- `Store.purge` 删会话、任务、项目时，一起删按它们存的 kv 键（会话 6 种加 MCP token 的反查键，任务的 `remote.review-comments:`，项目的 `mcp:project:`）。
+- DSH 的 stderr 日志（`dsh/logs/`）：单个超过 2 MB 时，进程启动前改名成 `<label>.old.log`（只留一份）；Host 启动 20 秒后删掉 30 天没写过的日志和一天以上的空日志。删掉的会话的日志不再写入，也按这条规则过期。DSH 自己 `home/` 里的会话记录不动。
+- 本机实测：kv 共 631 个键，还没有孤儿（没删过会话）；`dsh/logs` 50 个文件、17 KB，大多是空的 `new-*.log`。
+- 没做的：几个全局键里存的会话 id 列表（`duty.sessions`、`issues.sessions` 各留最近 300 个，`teamrelay.threads`、`sessions.inbox`）删会话时不跟着删，留着只是多几个找不到的 id，不影响使用。
 - todo 类型两份（`protocol/todo.ts` 和 `relay/src/todo-protocol.ts`）：relay 现在依赖 account 不依赖 protocol，合并时再定从哪边出。
 
 ## 第 7 步：ui 的数据流和共用件
