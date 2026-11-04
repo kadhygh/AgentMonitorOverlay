@@ -72,10 +72,20 @@
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 0 | 读代码、写这份方案 | ✓ |
-| 1 | protocol `TURN_STATUSES` / `inTurn`；`RuntimeBase`：重启收尾 `settleLeftovers`、归档、`writable` + `profileGone`、停止兜底；各 runtime 换上 | |
-| 2 | DSH：waiting / unsent / 立即发送 / Ctrl+Enter / 重新发送；停止、出错、退出、归档、重启的处理；停止兜底 | |
-| 3 | 会话收件箱（`delivery: held`、kv 落盘、空闲时送、失败标没送到、重启续送、peer-queue 迁移）；各入口改走它；界面「等这一轮结束后送进去」 | |
-| 4 | CHANGELOG「下一版」、HANDOFF | |
+| 1 | protocol `TURN_STATUSES` / `inTurn`；`RuntimeBase`：重启收尾 `settleLeftovers`、归档 `archiveTree`、`writable` + `profileGone`、停止兜底 `armStopGrace`；各 runtime 换上 | ✓ 8a5ebb0e |
+| 2 | DSH：waiting / unsent / 立即发送 / Ctrl+Enter / 重新发送；停止、出错、退出、归档、重启的处理；停止兜底 | ✓ 8a5ebb0e（和第 1 步一起：DSH 直接用上 RuntimeBase 的新件） |
+| 3 | 会话收件箱 `features/sessions/inbox.ts`（`delivery: held`、kv `sessions.inbox`、空闲时送、失败标没送到 + 说明、重启续送、`sessions.peer-queue` 迁移）；teamrelay、relays、collab、duty、checkReport、sendPeer 改走它；runtime `resend` 收 `held` 和 `now`；界面「等这一轮结束后送进去」+「立即发送」，停止时不把它放回输入框 | ✓ |
+| 4 | CHANGELOG「下一版」三条、HANDOFF | ✓ |
+
+### 做的时候定下的细节
+
+- 收件箱里的行挂在正在跑的那一轮上（`raw.turnId`）：界面按 turnId 分段，不挂的话会把这一轮从中间切开。和 Claude / DSH 的排队消息一样。
+- 收件箱「送」= 对这行调 runtime 的 `resend`（Claude、Codex 原来的重新发送路径，DSH 新加），所以不会多出第二行；送的那一刻会话又忙了，就照人发的走排队 / 插话（带 waiting）。
+- 「立即发送」在 held 的行上 = `resend(…, { now: true })`：Claude 先排进 CLI 再 send_now，Codex 插话再打断，DSH 排队再 cancel。
+- 远程 B 看到的是 A 的行；B 点 held 行的「立即发送」走 `rt.sendNow` → A 的 `sessions.sendNow`，同样处理。
+- 人点了停止之后，收件箱里等着的会在会话空下来后送进去（和 11-02 定的「停下后等待中的消息接着发出」一致）。
+- 值守在老会话里接着做之前已经查过会话不忙，走收件箱时当场就送；`awaiting-review` 现在没有地方会设，只在「忙」里占位。
+- task_message 的工具说明「queued while it works」改成「once its turn is over」。
 
 ## 验证
 

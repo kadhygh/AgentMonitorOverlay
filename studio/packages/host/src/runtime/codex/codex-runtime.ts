@@ -220,13 +220,13 @@ export class CodexRuntime extends RuntimeBase {
     await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId: st.activeTurnId } as never);
   }
 
-  /** 重新发送 (2026-11-02): a message Codex never read goes again, as the same row. */
-  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: "start" | "steer" }> {
+  /** 重新发送 (2026-11-02): a message Codex never read goes again, as the same row; also a held one of Studio's inbox. */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: "start" | "steer" }> {
     this.writable(sessionId);
     const item = this.store.getItem(itemId);
     if (item?.type !== "user" || item.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
-    if (item.delivery !== "unsent") return { mode: this.sessionState(sessionId).activeTurnId ? "steer" : "start" };
-    return this.send(sessionId, item.text, images, [], {}, itemId);
+    if (item.delivery !== "unsent" && item.delivery !== "held") return { mode: this.sessionState(sessionId).activeTurnId ? "steer" : "start" };
+    return this.send(sessionId, item.text, images, [], options, itemId);
   }
 
   /**

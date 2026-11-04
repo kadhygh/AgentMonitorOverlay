@@ -288,14 +288,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
   }
 
-  /** 重新发送 (2026-11-02): a message its process never read goes again, as the same row (no second copy of it). */
-  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  /**
+   * 重新发送 (2026-11-02): a message its process never read goes again, as the same row (no second copy of it). Also
+   * how Studio's inbox sends a held one (2026-11-04).
+   */
+  async resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
     const item = this.store.getItem(itemId);
     if (item?.type !== "user" || item.sessionId !== sessionId) throw Object.assign(new Error(`message ${itemId} not found`), { code: "not_found" });
-    if (item.delivery !== "unsent") return { mode: this.live.get(sessionId)?.running ? "queue" : "start" };
+    if (item.delivery !== "unsent" && item.delivery !== "held") return { mode: this.live.get(sessionId)?.running ? "queue" : "start" };
     const content = messageContent(item.text, images);
-    return this.deliver(session, content, {}, (_mode, delivery) => {
+    return this.deliver(session, content, options, (_mode, delivery) => {
       this.updateItem(itemId, (it) => (it.type === "user" ? withDelivery(it, delivery) : it));
       return itemId;
     });

@@ -216,22 +216,94 @@ describe("session_send (续发)", () => {
     await expect(service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "x" })).rejects.toThrow(/已经归档/);
   });
 
-  it("one in a turn gets it once the turn is over, after its report; several waiting go in together", async () => {
+  it("one in a turn gets it once the turn is over, after its report; shown meanwhile (held); several waiting go in together", async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]", report: true });
     await until(() => store.getSession(s.id)?.status === "running");
     expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2" })).toMatchObject({ delivered: false, waiting: 1 });
     expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2 补一句" })).toMatchObject({ delivered: false, waiting: 2 });
-    expect(userTexts(s.id)).toHaveLength(1);
-    await until(() => userTexts(s.id).length === 2);
-    const second = userTexts(s.id)[1]!;
-    expect(second).toContain("阶段 2");
-    expect(second).toContain("阶段 2 补一句");
-    // The caller hears of the turn that ended.
+    // In the session's inbox (2026-11-04): shown at once, in the running turn, not sent yet.
+    expect(deliveries(s.id)).toEqual([undefined, "held", "held"]);
+    expect(store.listItems(s.id).filter((i) => i.type === "user").slice(1).every((i) => !!i.raw?.turnId)).toBe(true);
+    await until(() => deliveries(s.id).every((d) => d === undefined));
+    expect(userTexts(s.id)[1]).toContain("阶段 2");
+    expect(userTexts(s.id)[2]).toContain("阶段 2 补一句");
+    // The caller hears of the turn that ended (through its own inbox: it was free, so at once).
     await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）这一轮做完了`)));
     await until(() => store.getSession(s.id)?.status === "idle");
-    expect(userTexts(s.id)).toHaveLength(2);
+    expect(userTexts(s.id)).toHaveLength(3);
   });
 });
+
+// 会话收件箱 (2026-11-04, plans/message-delivery.md): what agents and Studio send waits on disk until the session is free.
+describe("the session inbox", () => {
+  it("goes on after a Host restart, and moves session_send's old queue in", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });
+    await until(() => store.getSession(s.id)?.status === "idle");
+    // Busy when the message came; the Host stops before the session is free.
+    store.updateSession(s.id, { status: "running" });
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2" })).toMatchObject({ delivered: false, waiting: 1 });
+    store.updateSession(s.id, { status: "interrupted" });
+    // A Host before the inbox left session_send's own queue.
+    store.setKv("sessions.peer-queue", JSON.stringify({ [s.id]: ["【开启你的会话】\n旧队列里的一条"] }));
+    await servers.close();
+
+    // The next Host (a fake app-server does not keep threads across a restart: what the runtime is asked to send is
+    // recorded instead).
+    servers = new FakeServers(PROFILES);
+    const runtime = new CodexRuntime({ store, servers, profiles: PROFILES });
+    const sent: string[] = [];
+    runtime.resend = async (sessionId: string, itemId: string) => {
+      const it = store.getItem(itemId)!;
+      if (it.type === "user") sent.push(`${sessionId}:${it.text}`);
+      store.replaceItem({ ...it, delivery: undefined } as never);
+      return { mode: "start" };
+    };
+    new HostService(store, runtime, PROFILES, { commonDir: join(root, "common") });
+    await until(() => sent.length === 2);
+    expect(sent[0]).toBe(`${s.id}:${userTexts(s.id)[1]}`);
+    expect(sent[0]).toContain("阶段 2");
+    expect(sent[1]).toContain("旧队列里的一条");
+    expect(deliveries(s.id).every((d) => d === undefined)).toBe(true);
+    expect(store.getKv("sessions.peer-queue")?.value ?? "").toBe("");
+    expect(JSON.parse(store.getKv("sessions.inbox")?.value ?? "[]")).toEqual([]);
+  });
+
+  it("one that cannot go in is 没送到 with a line why; 重新发送 sends it; an archived session's are 没送到", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });
+    await until(() => store.getSession(s.id)?.status === "idle");
+    const rt = service.runtime as { resend?: (...a: unknown[]) => Promise<unknown> };
+    const resend = rt.resend!.bind(rt);
+    rt.resend = async () => {
+      rt.resend = resend;
+      throw new Error("渠道的 Key 没了");
+    };
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2" })).toMatchObject({ delivered: true, waiting: 0 });
+    expect(deliveries(s.id)).toEqual([undefined, "unsent"]);
+    expect(store.listItems(s.id).some((i) => i.type === "notice" && i.message.includes("渠道的 Key 没了"))).toBe(true);
+    const row = store.listItems(s.id).filter((i) => i.type === "user")[1]!;
+    await service.sessions.resend(s.id, row.id);
+    await until(() => deliveries(s.id).every((d) => d === undefined));
+
+    await until(() => store.getSession(s.id)?.status === "idle");
+    store.updateSession(s.id, { status: "running" });
+    await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 3" });
+    store.updateSession(s.id, { status: "idle" });
+    await service.sessions.archive(s.id);
+    await until(() => deliveries(s.id).at(-1) === "unsent");
+  });
+
+  it("立即发送 on a held message puts it in now", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]" });
+    await until(() => store.getSession(s.id)?.status === "running");
+    await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "等不及了" });
+    const row = store.listItems(s.id).filter((i) => i.type === "user")[1]!;
+    expect(row).toMatchObject({ delivery: "held" });
+    await service.sessions.sendNow(s.id, row.id);
+    await until(() => (store.getItem(row.id) as { delivery?: string }).delivery !== "held");
+  });
+});
+
+const deliveries = (sessionId: string) => store.listItems(sessionId).flatMap((i) => (i.type === "user" ? [i.delivery] : []));
 
 describe("session_archive (收会话)", () => {
   it("archives a session the caller started, with what hangs under it; refuses itself, the person's, another's and forPerson ones", async () => {

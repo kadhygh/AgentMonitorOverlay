@@ -368,13 +368,23 @@ function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNulla
   const { onDelivery, givingWay } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
-  const waiting = delivery === "waiting";
+  // `held` (2026-11-04): from an agent or from Studio (中转回复, 值守, 传话…), in the session's inbox until its turn is over;
+  // 立即发送 puts it in now, as a waiting message's does.
+  const held = delivery === "held";
+  const waiting = delivery === "waiting" || held;
   // 问题 #16: once 立即发送 is under way (this button, or Ctrl+Enter in the composer) the row says so until it is read.
-  const interrupting = waiting && (asked || givingWay);
+  const interrupting = delivery === "waiting" && (asked || givingWay);
+  const title = interrupting
+    ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）"
+    : held
+      ? "这条是 AMO 替别处转来的（中转回复、值守、传话、子会话的回报…）：等会话这一轮做完再送进去，不打断它；Studio 重启了也会接着送"
+      : waiting
+        ? "模型还没读到这条：工具调用后或这一轮结束时读到"
+        : "这条消息没送进会话（会话的进程没了，或者送的时候出错了），模型没读到它";
   return (
     <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : delivery}>
-      <span className="msg-delivery-state" title={interrupting ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）" : waiting ? "模型还没读到这条：工具调用后或这一轮结束时读到" : "这条消息发出时会话的进程没了，模型没读到它"}>
-        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : waiting ? "◐ 等待送达" : "! 没送到"}
+      <span className="msg-delivery-state" title={title}>
+        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : waiting ? "◐ 等待送达" : "! 没送到"}
       </span>
       {onDelivery && !interrupting && (
         <button
@@ -382,7 +392,7 @@ function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNulla
           className="msg-delivery-btn"
           data-testid={waiting ? "send-now" : "resend"}
           disabled={asked}
-          title={waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
+          title={held ? "不等这一轮结束，现在就送进去：会打断当前这一步，让模型马上读到这条" : waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
           onClick={() => {
             setAsked(true);
             onDelivery(itemId, waiting ? "now" : "resend");

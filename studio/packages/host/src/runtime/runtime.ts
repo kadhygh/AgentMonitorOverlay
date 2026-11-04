@@ -42,8 +42,11 @@ export interface SessionRuntimeApi {
    * the running turn gives way, as the CLIs' Send now does. Nothing when it is not waiting any more.
    */
   sendNow?(sessionId: Id, itemId: Id): Promise<void>;
-  /** 重新发送 a message its process never read (`delivery: "unsent"`): the same item goes again, with its `images`. */
-  resend?(sessionId: Id, itemId: Id, images: readonly Attachment[]): Promise<{ mode: SendMode }>;
+  /**
+   * 重新发送 a message its process never read (`delivery: "unsent"`), or one of Studio's inbox (`held`, 2026-11-04): the same
+   * item goes again, with its `images`; `now` as for sendMessage.
+   */
+  resend?(sessionId: Id, itemId: Id, images: readonly Attachment[], options?: SendOptions): Promise<{ mode: SendMode }>;
   fork(sessionId: Id, profileId?: Id): Promise<Session>;
   archive(sessionId: Id): Promise<Session[]>;
   unarchive(sessionId: Id): Promise<Session[]>;
@@ -119,10 +122,10 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
     if (!r.sendNow) throw Object.assign(new Error("这种会话不能立即发送：消息会在这一轮结束后发出"), { code: "bad_request" });
     return r.sendNow(sessionId, itemId);
   }
-  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     const r = this.forSession(sessionId);
     if (!r.resend) throw Object.assign(new Error("这种会话不能重新发送消息"), { code: "bad_request" });
-    return r.resend(sessionId, itemId, images);
+    return r.resend(sessionId, itemId, images, options);
   }
   choices(profileId: Id) {
     const profile = this.profiles.find((p) => p.id === profileId);

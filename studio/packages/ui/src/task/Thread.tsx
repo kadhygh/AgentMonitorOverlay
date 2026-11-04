@@ -334,7 +334,7 @@ export function Thread({ link, presets, session, profile, profiles = [], subsess
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // 立即发送 (2026-11-02): Claude and Codex (a remote copy's computer says what it can); DSH waits for the turn's end.
-  const sendsNow = generating && !readOnly && !planReview && !isRevising && session?.runtime !== "dsh";
+  const sendsNow = generating && !readOnly && !planReview && !isRevising;
   // 问题 #16 (2026-11-03): 停止 and 立即发送 ask the model to stop, and it can take a few seconds to (a command or a reply
   // in flight); until the turn ends the composer and the waiting message say so, so it does not read as failed.
   const [haltAsked, setHaltAsked] = useState<{ sessionId: string; kind: "stop" | "now" } | null>(null);
@@ -720,7 +720,7 @@ ${d}` : back));
                 className="composer-hint"
                 {...(blocked ? { "data-testid": "remote-blocked" } : {})}
                 {...(halting && !blocked && !attachHold ? { title: "模型手上的命令或回复收住可能要几秒，这一轮结束前会一直显示" } : {})}
-              >{blocked || attachHold || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
+              >{blocked || attachHold || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && !blocked && (
                 <button

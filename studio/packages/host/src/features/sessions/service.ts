@@ -1,21 +1,23 @@
 import { resolve } from "node:path";
-import { isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { BUSY_STATUSES, isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../guide/role.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
+import { SessionInbox } from "./inbox.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
 /** A session in the middle of a turn: archiving it (closing its process) would cut the turn off (session_archive). */
-const BUSY_STATUSES: ReadonlySet<Session["status"]> = new Set(["running", "awaiting-approval", "awaiting-answer", "awaiting-review"]);
-/** session_send's messages waiting for a session's turn to end: session id → messages. */
-const PEER_QUEUE_KEY = "sessions.peer-queue";
+const busy = (s: Session) => BUSY_STATUSES.includes(s.status);
 
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
 export class SessionsFeature extends Feature {
+  /** Messages from agents and from Studio: held until the session is free (inbox.ts). */
+  readonly inbox = new SessionInbox(this.host);
+
   /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
   private readonly handoffs = new Map<Id, TerminalHandle>();
 
@@ -85,6 +87,9 @@ export class SessionsFeature extends Feature {
   /** 立即发送 (2026-11-02): a message still waiting is read by the model now (see SessionRuntimeApi.sendNow). */
   async sendNow(sessionId: Id, itemId: Id): Promise<void> {
     this.requireSession(sessionId);
+    const item = this.store.getItem(itemId);
+    // One held in the inbox (2026-11-04): it goes now, and the running turn gives way to it.
+    if (item?.type === "user" && item.sessionId === sessionId && item.delivery === "held") return this.inbox.sendNow(sessionId, itemId);
     const rt = this.runtime;
     if (!rt.sendNow) throw new HostError("bad_request", "this Host cannot send a waiting message now");
     await this.wrap(() => rt.sendNow!(sessionId, itemId));
@@ -121,8 +126,13 @@ export class SessionsFeature extends Feature {
     });
   }
 
+  /** A message with what changed about the session's role written after it (composeRoleUpdate). */
+  withRole(text: string, lines: string[]): string {
+    return composeRoleUpdate(text, lines);
+  }
+
   /** What changed about the session's role since it was last told; nothing for one that cannot hear it. */
-  private roleUpdate(sessionId: Id): { lines: string[]; told: () => void } {
+  roleUpdate(sessionId: Id): { lines: string[]; told: () => void } {
     const none = { lines: [], told: () => undefined };
     const s = this.store.getSession(sessionId);
     // A copy of a remote session (远程 step 2): its own computer tells it what changed there.
@@ -363,8 +373,8 @@ export class SessionsFeature extends Feature {
     const s = this.store.getSession(input.sessionId);
     if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能归档：只能归档你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
     if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了`);
-    if (BUSY_STATUSES.has(s.status) && input.stop !== true) throw new HostError("conflict", `会话「${s.title || s.id}」还在跑（${s.status}），归档会打断它这一轮：等它做完再归档，或者带 stop: true 停掉它再归档。`);
-    if (BUSY_STATUSES.has(s.status)) await this.interrupt(s.id).catch(() => undefined);
+    if (busy(s) && input.stop !== true) throw new HostError("conflict", `会话「${s.title || s.id}」还在跑（${s.status}），归档会打断它这一轮：等它做完再归档，或者带 stop: true 停掉它再归档。`);
+    if (busy(s)) await this.interrupt(s.id).catch(() => undefined);
     return this.archive(s.id);
   }
 
@@ -372,8 +382,8 @@ export class SessionsFeature extends Feature {
    * 续发 (session_send, 2026-11-01 — a session running a staged test asked for it: 交付 → 复核 → 发下一阶段 without the
    * person relaying each stage): a session sends another message into one it started with session_start (the same
    * sessions session_archive may take), unasked, marked as from it. One in a turn — running, or waiting on the person —
-   * gets it once that turn is over (kept in the store, so a restart does not lose it); several waiting go in together.
-   * With report, the turn's report reaches the caller first.
+   * gets it once that turn is over (the session's inbox, 2026-11-04: shown there meanwhile, kept across a restart);
+   * several waiting go in together. With report, the turn's report reaches the caller first.
    */
   async sendPeer(fromSessionId: Id, input: { sessionId?: unknown; text?: unknown }): Promise<{ session: Session; delivered: boolean; waiting: number }> {
     const from = this.requireSession(fromSessionId);
@@ -383,41 +393,8 @@ export class SessionsFeature extends Feature {
     if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能往里发：只能发给你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
     if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了：要接着做就用 session_start 开个新的。`);
     const text = boundedText(input.text, "text", 20_000);
-    const queue = this.peerQueue();
-    queue[s.id] = [...(queue[s.id] ?? []), `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`];
-    this.savePeerQueue(queue);
-    const delivered = await this.flushPeer(s.id);
-    return { session: this.requireSession(s.id), delivered, waiting: delivered ? 0 : (this.peerQueue()[s.id]?.length ?? 0) };
-  }
-
-  private peerQueue(): Record<Id, string[]> {
-    try {
-      return JSON.parse(this.store.getKv(PEER_QUEUE_KEY)?.value ?? "{}") as Record<Id, string[]>;
-    } catch {
-      return {};
-    }
-  }
-
-  private savePeerQueue(queue: Record<Id, string[]>): void {
-    this.store.setKv(PEER_QUEUE_KEY, JSON.stringify(Object.fromEntries(Object.entries(queue).filter(([, list]) => list.length))));
-  }
-
-  /** What waits for a session goes in once it is out of its turn (taken off the queue first: sent once). */
-  private async flushPeer(sessionId: Id): Promise<boolean> {
-    const s = this.store.getSession(sessionId);
-    const queue = this.peerQueue();
-    const waiting = queue[sessionId];
-    if (!waiting?.length) return false;
-    if (!s || s.archivedAt) {
-      delete queue[sessionId];
-      this.savePeerQueue(queue);
-      return false;
-    }
-    if (BUSY_STATUSES.has(s.status)) return false;
-    delete queue[sessionId];
-    this.savePeerQueue(queue);
-    await this.sendMessage(sessionId, waiting.join("\n\n---\n\n"));
-    return true;
+    const { delivered, waiting } = await this.inbox.put(s.id, `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`);
+    return { session: this.requireSession(s.id), delivered, waiting };
   }
 
   /**
@@ -515,11 +492,9 @@ export class SessionsFeature extends Feature {
     this.f.on("event", (e) => {
       if (e.type !== "session.upserted") return;
       if (e.session.reportTo) this.checkReport(e.session);
-      // session_send's waiting messages: after the turn's report, so the caller hears of the turn first.
-      if (this.peerQueue()[e.session.id]) void this.flushPeer(e.session.id).catch(() => undefined);
     });
-    // Left waiting by the last Host.
-    for (const id of Object.keys(this.peerQueue())) void this.flushPeer(id).catch(() => undefined);
+    // The inbox (session_send's messages among them) after the reports: the caller hears of the turn first.
+    this.inbox.watch();
   }
 
   private checkReport(s: Session): void {
@@ -543,7 +518,8 @@ export class SessionsFeature extends Feature {
       const excerpt = reply.length > REPORT_MAX ? `${reply.slice(0, REPORT_MAX)}…（后面省略；完整的用 session_tree 或打开会话看）` : reply;
       text = mailed ? `【你开的会话${name}这一轮做完了，它已经用留言把结果发给你】` : `【你开的会话${name}这一轮做完了】\n${excerpt || "（它没有回复文字）"}`;
     }
-    void this.sendMessage(to, text).catch(() => {
+    // Into the caller's inbox (2026-11-04): it goes in once the caller is free, rather than into its running turn.
+    this.inbox.put(to, text).catch(() => {
       // The caller is gone or archived: it can still read it as mail.
       try {
         this.f.collab.sendMail(s.id, { kind: "session", sessionId: to }, text);
