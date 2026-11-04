@@ -65,7 +65,9 @@ try {
  */
 const TARGETS = {
   ...Object.fromEntries(Object.entries(TOOLS).filter(([, t]) => t.platform).map(([id, t]) => [id, { id, label: t.description, pkg: t.pkg, paths: t.packages.map((p) => `studio/packages/${p}`) }])),
-  "relay-service": { id: "relay-service", label: "中转服务", pkg: "relay", paths: ["studio/packages/relay", "studio/packages/relay-ui"], service: true },
+  // locate and base.css (2026-11-04): the one-file service bundles @amo-studio/locate/download (mirror.ts), and relay-ui's
+  // build takes Studio's base.css; a change only there went unnoticed before.
+  "relay-service": { id: "relay-service", label: "中转服务", pkg: "relay", paths: ["studio/packages/relay", "studio/packages/relay-ui", "studio/packages/locate", "studio/packages/ui/src/styles/base.css"], service: true },
   // Not a platform tool: TestFlight installs it (plans/ios.md). Its paths: what goes into the iOS app.
   ios: { id: "ios", label: "iOS 版", ios: true, versionFile: join(studio, "mobile", "iosApp", "Version.xcconfig"), changelog: join(studio, "mobile", "iosApp", "CHANGELOG.md"), paths: ["studio/mobile/shared", "studio/mobile/iosApp", "studio/mobile/build.gradle.kts", "studio/mobile/settings.gradle.kts", "studio/mobile/gradle.properties", "studio/mobile/gradle"] },
 };
@@ -228,7 +230,18 @@ function writeVersion(t, version) {
   writeFileSync(pj, t.ios ? withMarketingVersion(text, version) : t.service ? text.replace(VERSION_RE, `export const RELAY_VERSION = "${version}";`) : text.replace(/"version": "[^"]+"/, `"version": "${version}"`));
   // An empty 「下一版」 stays on top for the next change.
   writeFileSync(cl, log.replace(next, `${eol}${NEXT}${eol}${eol}## ${version}（${today()}）${eol}`));
-  return [pj, cl];
+  return [pj, cl, ...writeLockVersion(t, version)];
+}
+
+/** The tool's entry in package-lock.json follows its package.json (2026-11-04: five of them had fallen behind); [] when it has none. */
+function writeLockVersion(t, version) {
+  if (t.ios || t.service) return [];
+  const lock = join(studio, "package-lock.json");
+  const text = readFileSync(lock, "utf8");
+  const entry = new RegExp(`("packages/${t.pkg}": \\{\\r?\\n\\s*"name": "[^"]+",\\r?\\n\\s*"version": ")[^"]+(")`);
+  if (!entry.test(text)) return [];
+  writeFileSync(lock, text.replace(entry, `$1${version}$2`));
+  return [lock];
 }
 
 /** Commits the release and lands it on master: directly in the main checkout, by a fast-forward from the 值守 directory. */
@@ -496,9 +509,11 @@ async function publishService(w, plan, t) {
     sha = commit(w, fresh.flatMap((p) => writeVersion(p.t, p.to)), `chore(release): 中转服务 ${fresh[0].to}${has("--skip-tests") ? "（没跑测试）" : ""}`);
     console.log(`\n已提交 ${sha.slice(0, 7)}，在 master 上`);
   }
-  // The desktop client's zip only when its shell changed since the last deploy.
+  // The desktop client's zip only when its shell changed since the last deploy: relay-app, the shell API, and the
+  // workspace packages its program folder carries besides relay (2026-11-04: account, traymenu, locate were missed).
   const tag = lastTag(t);
-  const shell = !tag || git("diff", "--name-only", tag, sha, "--", "studio/packages/relay-app", "studio/packages/relay/src/shell-api.ts") !== "";
+  const shellPaths = ["studio/packages/relay-app", "studio/packages/relay/src/shell-api.ts", ...TOOLS.relay.packages.filter((p) => !["relay-app", "relay"].includes(p)).map((p) => `studio/packages/${p}`)];
+  const shell = !tag || git("diff", "--name-only", tag, sha, "--", ...shellPaths) !== "";
   run(process.execPath, [join(studio, "scripts", "relay-release.mjs"), ...(shell ? ["--shell"] : [])], { shell: false });
   run(process.execPath, [join(studio, "scripts", "relay-mac.mjs"), "deploy"], { shell: false });
   git("tag", tagOf(t, plan[0].to), sha);
