@@ -10,7 +10,7 @@ export const exampleWorkspaces: Workspace[] = [
 
 export const exampleProfiles: ModelProfile[] = [
   { id: "codex-default", label: "Codex", runtime: "codex", provider: null, model: null },
-  { id: "codex-deepseek-flash", label: "DeepSeek Flash", runtime: "codex", provider: "amo-deepseek", model: "deepseek-flash", reasoningEffort: "low", credentialId: "deepseek-v4" },
+  { id: "codex-fast", label: "Codex Fast", runtime: "codex", provider: null, model: "gpt-5-codex-mini", reasoningEffort: "low" },
 ];
 
 export const exampleTasks: Task[] = [
@@ -19,7 +19,7 @@ export const exampleTasks: Task[] = [
 ];
 
 const session = (over: Partial<Session> & Pick<Session, "id" | "createdAt">): Session => ({
-  taskId: "task-1", topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "codex-deepseek-flash", workspaceId: "ws-alpha",
+  taskId: "task-1", topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "codex-fast", workspaceId: "ws-alpha",
   title: "", status: "idle", writer: "workbench", runtimeRef: null, options: {}, updatedAt: over.createdAt, archivedAt: null, ...over,
 });
 

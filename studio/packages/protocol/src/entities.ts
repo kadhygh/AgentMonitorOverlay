@@ -750,7 +750,8 @@ export interface ScheduleProposal {
   decidedAt: Timestamp | null;
 }
 
-/** One step of a task's checklist, from an extension pack's task template (stage 6). */
+/** One step of a task's checklist. They came from extension packs' task templates (stage 6); the packs went on 10-31, so
+ * nothing makes new ones — old tasks keep theirs, readable and tickable (the 11-03 audit: kept as is, plans/cleanup-2026-11.md). */
 export interface ChecklistItem {
   id: Id;
   taskId: Id;
@@ -799,19 +800,6 @@ export interface DecisionRequest {
   createdAt: Timestamp;
   answeredAt: Timestamp | null;
 }
-
-/** Who owns a session. */
-export type SessionOwner = { kind: "task"; taskId: Id } | { kind: "topic"; topicId: Id };
-
-export function sessionOwner(s: Pick<Session, "taskId" | "topicId">): SessionOwner {
-  if (s.taskId) return { kind: "task", taskId: s.taskId };
-  if (s.topicId) return { kind: "topic", topicId: s.topicId };
-  throw new Error("session has no owner");
-}
-
-/** Sessions with the same owner (a task's or a topic's). */
-export const sameOwner = (a: Pick<Session, "taskId" | "topicId">, b: Pick<Session, "taskId" | "topicId">) =>
-  (a.taskId ?? null) === (b.taskId ?? null) && (a.topicId ?? null) === (b.topicId ?? null);
 
 /** One quota window of a subscription (e.g. GPT's 5-hour and weekly limits). */
 export interface UsageWindow {

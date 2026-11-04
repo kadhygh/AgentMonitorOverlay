@@ -71,8 +71,15 @@ export class CodexEvents {
 
   handlerFailed(method: string, threadId: string | undefined, err: unknown): void {
     this.core.log(`failed to handle ${method}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-    const s = threadId ? this.core.findByThread(threadId) : undefined;
-    if (s) this.notice(s.id, "warning", `Studio 处理 Codex 的一条消息（${method}）时出错，这条可能没显示出来：${firstLineOf(err instanceof Error ? err.message : String(err))}。详情在 host.log。`, `handler-error:${method}`);
+    // 2026-11-04: this is where a failed message ends, so it must not throw itself — it runs in the RPC client's event
+    // handler, and a throw there is an uncaught exception. Seen: a message arriving while the Host shuts down (the store
+    // closed: "database is not open"), which made the full unit run exit 1 and stopped 自动打包 (AMO 中转 0.9.7).
+    try {
+      const s = threadId ? this.core.findByThread(threadId) : undefined;
+      if (s) this.notice(s.id, "warning", `Studio 处理 Codex 的一条消息（${method}）时出错，这条可能没显示出来：${firstLineOf(err instanceof Error ? err.message : String(err))}。详情在 host.log。`, `handler-error:${method}`);
+    } catch (again) {
+      this.core.log(`could not note the failure of ${method} in its session: ${again instanceof Error ? again.message : String(again)}`);
+    }
   }
 
   onNotification(handle: CodexServerHandle, n: ServerNotification): void {

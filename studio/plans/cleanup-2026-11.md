@@ -11,12 +11,12 @@
 | 0 | 先定的事 | 见下面「第 0 步」 |
 | 1 | 文档对齐 | ✓ 11-04 |
 | 2 | 发布脚本漏判 | ✓ 11-04 `dbc97045` |
-| 3 | 消息投递统一 | ○ |
-| 4 | 中转登录收口 | ○ |
-| 5 | 清死代码和重复定义 | ○ |
-| 6 | 只增不删的数据 | ○ |
-| 7 | ui 的数据流和共用件 | ○ |
-| 8 | Host 结构重排 | ○ 只写方案 |
+| 3 | 消息投递统一 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-delivery`，分支 `studio/message-delivery`，方案 `plans/message-delivery.md` |
+| 4 | 中转登录收口 | ✓ 11-04 `0d56e627`（中转外壳的「下一版」有一条，会随自动打包发到测试通道） |
+| 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
+| 6 | 只增不删的数据 | ◐ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半等第 3 步合并后做 |
+| 7 | ui 的数据流和共用件 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-ui`，分支 `studio/ui-dataflow` |
+| 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；代码等第 3 步合并后按 8a → 8d 做 |
 
 ## 第 0 步：先定的事
 
@@ -53,13 +53,41 @@
 
 见第 0 步的决定。`relay-ui/src/Login.tsx`、`relay-app` 的 `accounts.json` / `relay:save-account`、`relay/src/client.ts` 的 `writeSettings`（MCP 身份明文）。顺带确认 DSH、Codex 进程环境里的 Key 会不会被带给 agent 跑的命令。
 
+11-04 做了（`0d56e627`）：
+- 核对后：平台装的中转从 10-29 起就只显示「在 AMO 平台里登录」（`relay-ui/src/main.tsx` 的 `PlatformLogin`），自己的登录框只给手动解压、没装平台的客户端。这正是第 0 步定的过渡例外，不用改界面，写进了 AGENTS.md 第 7 条。
+- 真正的问题是 `settings.json` 里的明文 key：平台账号登录时改成只记 `{ server, name, account: "platform" }`，MCP 和 `amo-relay` 用 `loadSettings` 现解 `account.json`（两个文件都没变时用缓存）；以前写下的明文在外壳启动时换掉。`@amo-studio/relay` 因此依赖 `@amo-studio/account`，`release.mjs` 的中转服务范围也加上了它。
+- 验证：`client.test.ts` 3 条；typecheck；relay、relay-app、account 单测 90 条；打出来的 `amo-relay.mjs` 配一个引用文件，用本机真实的平台账号（DPAPI）`whoami` 通过，0.46 秒。
+- 没验证：平台装的中转外壳真跑一次（等自动打包发出 0.9.7 后，用户打开中转、再看 `settings.json` 里没有 key）；MCP 在真实 Claude 会话里调用。
+- 还没查：DSH、Codex 进程环境里的 Key 会不会带给 agent 的命令（放进第 3 步的会话一起看，或下一轮）。
+
 ## 第 5 步：清死代码和重复定义
 
 token 模式残留（`ClaudeLogin`、`claude.login:` 键、token 分支）；`protocol/examples.ts` 的 `codex-deepseek-flash`；没人用的导出；`URGENCY` 两份、todo 类型两份；`base.css` 浅色主题整块复制；没人用的 CSS 类；`smoke:stage*`、`relay-service.ps1`、`bench-session-open.mjs`。会动 runtime 的（`BUSY_STATUSES`）并进第 3 步。
 
+11-04 做了（主工作区，提交进 master）：
+- `URGENCY` 只留 protocol 一份，导出 `mostUrgentStatus`，MCP 读模型改用它。
+- 删了没人用的 `sessionOwner` / `SessionOwner` / `sameOwner`、`isCommentRange`。
+- `examples.ts` 的样例渠道换成中性的 `codex-fast`。
+- `smoke-stage1/4/5/7.mjs` 跑不起来了（用的渠道 11-03 已删），挪进 `docs/archive/scripts/`，去掉 `smoke:stage*` 命令。
+- checklist 的注释写明现状（不拆，第 0 步）。
+
+核对后**不动**的（审查说是残留，实际在用）：`ClaudeLogin = "token"` 是 API Key 渠道用的 Studio 自己的配置目录，不是 10-27 删掉的 token 模式；`scripts/relay-service.ps1` 是 relay README 写明的退路（Mac 出问题时在本机起服务）；`bench-session-open.mjs` 是手动用的测量脚本；`RemoteCommandBodies`、`HostEventType` 这类类型别名留着当协议说明。交给别的步骤的：没人用的 CSS 类和 `base.css` 的重复变量（第 7 步的会话在改 ui）；todo 类型两份（relay 不依赖 protocol，合并要动中转服务的依赖，放进第 6 步和中转一起做）。
+
 ## 第 6 步：只增不删的数据
 
 purge 不删按会话的 kv 键；DSH 日志不轮转不删；中转的孤儿截图和上传没有清理、没有保留期、20 MB 同步写；中转数据库没有 `user_version`。kv 约 60 个键没有登记。
+
+11-04 做了中转那一半（`6280aeb4`，**没部署**：`npm run release -- relay-service` 会重启中转几秒，等用户说）：
+- 问题页从没挂到问题上的截图，一周后连文件一起删（`IssueStore.pruneOrphanImages`，服务启动时和每 6 小时一次）；
+- 上传的文件和截图改成异步写盘（`fs/promises`），不再卡住服务。
+- 验证：relay 单测 78 条（新加一条：没用上的图连文件删掉，用上的留着）。
+
+留到后面的：
+- 聊天记录 `messages`、`task_events` 要不要有保留期：要用户定，这一轮不动。
+- 管理页显示数据目录占用：下一轮。
+- `user_version` 迁移：并进 `plans/host-structure.md` 8d，和拆 `store.ts` 一起做。
+- Host 那一半（purge 时清按会话的 kv 键和 DSH 日志、DSH 日志轮转、kv 键登记）：DSH 日志在 `dsh-runtime.ts` 里，第 3 步正在改这个文件，等它合并后再做。
+- todo 类型两份（`protocol/todo.ts` 和 `relay/src/todo-protocol.ts`）：relay 现在依赖 account 不依赖 protocol，合并时再定从哪边出。
 
 ## 第 7 步：ui 的数据流和共用件
 

@@ -65,9 +65,10 @@ try {
  */
 const TARGETS = {
   ...Object.fromEntries(Object.entries(TOOLS).filter(([, t]) => t.platform).map(([id, t]) => [id, { id, label: t.description, pkg: t.pkg, paths: t.packages.map((p) => `studio/packages/${p}`) }])),
-  // locate and base.css (2026-11-04): the one-file service bundles @amo-studio/locate/download (mirror.ts), and relay-ui's
+  // locate, account and base.css (2026-11-04): the one-file service bundles @amo-studio/locate/download (mirror.ts) and
+  // @amo-studio/account (client.ts reads the platform account for the MCP), and relay-ui's
   // build takes Studio's base.css; a change only there went unnoticed before.
-  "relay-service": { id: "relay-service", label: "中转服务", pkg: "relay", paths: ["studio/packages/relay", "studio/packages/relay-ui", "studio/packages/locate", "studio/packages/ui/src/styles/base.css"], service: true },
+  "relay-service": { id: "relay-service", label: "中转服务", pkg: "relay", paths: ["studio/packages/relay", "studio/packages/relay-ui", "studio/packages/locate", "studio/packages/account", "studio/packages/ui/src/styles/base.css"], service: true },
   // Not a platform tool: TestFlight installs it (plans/ios.md). Its paths: what goes into the iOS app.
   ios: { id: "ios", label: "iOS 版", ios: true, versionFile: join(studio, "mobile", "iosApp", "Version.xcconfig"), changelog: join(studio, "mobile", "iosApp", "CHANGELOG.md"), paths: ["studio/mobile/shared", "studio/mobile/iosApp", "studio/mobile/build.gradle.kts", "studio/mobile/settings.gradle.kts", "studio/mobile/gradle.properties", "studio/mobile/gradle"] },
 };

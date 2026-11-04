@@ -203,6 +203,18 @@ export class IssueStore {
     return { id: input.id, name, type, size: input.size };
   }
 
+  /**
+   * Screenshots uploaded but never put on an issue or comment (pasted, then the report was not sent), older than `age`
+   * ms: their rows go, and their ids come back for the service to delete the bytes (2026-11-04, the 11-03 audit: they
+   * stayed on the team server for good).
+   */
+  pruneOrphanImages(age: number): string[] {
+    const before = this.now() - age;
+    const ids = (this.db.prepare("SELECT id FROM issue_images WHERE entry IS NULL AND created_at < ?").all(before) as Row[]).map((r) => String(r.id));
+    if (ids.length) this.db.prepare("DELETE FROM issue_images WHERE entry IS NULL AND created_at < ?").run(before);
+    return ids;
+  }
+
   /** A screenshot, for who uploaded it or may see the issue it is on. */
   image(who: IssueViewer, id: string): IssueImage {
     const row = this.db.prepare("SELECT i.*, x.author AS issue_author FROM issue_images i LEFT JOIN issue_entries e ON e.id = i.entry LEFT JOIN issues x ON x.number = e.issue WHERE i.id = ?").get(id) as Row | undefined;
