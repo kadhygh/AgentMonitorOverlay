@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Session, TeamSend, TeamThread } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { upsertById, useLiveResource } from "../host/live.js";
 
 // 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): what a session asks to send through AMO 中转 waits here for the
 // person — on its task's page and in Focus — every time, auto mode or not (it goes to a real person, as them). Once
@@ -9,43 +9,19 @@ import { onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** The sends the Host lists (pending ones, and those decided in the last day), kept current. */
 export function useTeamSends(link: HostLink | null): TeamSend[] {
-  const [sends, setSends] = useState<TeamSend[]>([]);
-  useEffect(() => {
-    if (!link) return;
-    let live = true;
-    const load = () => call(link, "GET /api/teamrelay/sends", {}).then((r) => live && setSends(r)).catch(() => undefined);
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "teamsend.upserted") setSends((cur) => (cur.some((s) => s.id === e.send.id) ? cur.map((s) => (s.id === e.send.id ? e.send : s)) : [...cur, e.send]));
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      live = false;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [sends] = useLiveResource<TeamSend[]>(
+    { load: link ? () => call(link, "GET /api/teamrelay/sends", {}) : null, initial: [], onEvent: (cur, e) => (e.type === "teamsend.upserted" ? upsertById(cur, e.send) : cur) },
+    [link],
+  );
   return sends;
 }
 
 /** The 中转 sessions this computer's sessions sent, as last seen, kept current. */
 export function useTeamThreads(link: HostLink | null): TeamThread[] {
-  const [threads, setThreads] = useState<TeamThread[]>([]);
-  useEffect(() => {
-    if (!link) return;
-    let live = true;
-    const load = () => call(link, "GET /api/teamrelay/threads", {}).then((r) => live && setThreads(r)).catch(() => undefined);
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "teamthreads.changed") setThreads(e.threads);
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      live = false;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [threads] = useLiveResource<TeamThread[]>(
+    { load: link ? () => call(link, "GET /api/teamrelay/threads", {}) : null, initial: [], onEvent: (cur, e) => (e.type === "teamthreads.changed" ? e.threads : cur) },
+    [link],
+  );
   return threads;
 }
 

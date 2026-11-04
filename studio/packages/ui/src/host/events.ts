@@ -15,7 +15,7 @@ export function emitHostEvent(event: HostEvent): void {
   for (const l of listeners) l(event);
 }
 
-/** Fired when the event socket reconnects, so views reload what they may have missed. */
+/** Fired when the event socket reconnects, so views reload what they may have missed (host/live.ts does it for them). */
 const reconnectListeners = new Set<() => void>();
 export function onHostReconnect(listener: () => void): () => void {
   reconnectListeners.add(listener);
@@ -23,15 +23,4 @@ export function onHostReconnect(listener: () => void): () => void {
 }
 export function emitHostReconnect(): void {
   for (const l of reconnectListeners) l();
-}
-
-/**
- * A list's first snapshot, merged with what its event listener already received. The response can arrive after
- * events for changes the snapshot did not see yet (seen with a slow first load: an item added right away vanished), so
- * event-delivered items win and the ones the snapshot lacks are kept. On a reconnect, replace the list instead.
- */
-export function mergeFirstLoad<T extends { id: string }>(loaded: readonly T[], live: readonly T[]): T[] {
-  const byId = new Map(live.map((x) => [x.id, x]));
-  const ids = new Set(loaded.map((x) => x.id));
-  return [...loaded.map((x) => byId.get(x.id) ?? x), ...live.filter((x) => !ids.has(x.id))];
 }

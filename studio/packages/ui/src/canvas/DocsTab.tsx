@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { TopicDoc } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { removeById, upsertById, useLiveResource } from "../host/live.js";
 import { Markdown } from "../lib/markdown.js";
 import { formatWhen } from "../attach/refs.js";
 
@@ -11,30 +11,19 @@ import { formatWhen } from "../attach/refs.js";
  * projects, marked with 文件标记; a document here can name their paths.
  */
 export function DocsTab({ link, topicId, readOnly = false }: { link: HostLink; topicId: string; readOnly?: boolean }) {
-  const [docs, setDocs] = useState<TopicDoc[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [docs] = useLiveResource<TopicDoc[] | null>(
+    {
+      load: () => call(link, "GET /api/topics/:id/docs", { id: topicId }),
+      initial: null,
+      onEvent: (cur, e) => (!cur ? cur : e.type === "topicdoc.upserted" && e.doc.topicId === topicId ? upsertById(cur, e.doc) : e.type === "topicdoc.removed" && e.topicId === topicId ? removeById(cur, e.docId) : cur),
+      onError: (err) => setError(err instanceof HostApiError ? err.message : String(err)),
+    },
+    [link, topicId],
+  );
   const [open, setOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; title: string; body: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    const load = () =>
-      call(link, "GET /api/topics/:id/docs", { id: topicId })
-        .then((d) => live && setDocs(d))
-        .catch((err: unknown) => live && setError(err instanceof HostApiError ? err.message : String(err)));
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "topicdoc.upserted" && e.doc.topicId === topicId) setDocs((cur) => (cur ? (cur.some((d) => d.id === e.doc.id) ? cur.map((d) => (d.id === e.doc.id ? e.doc : d)) : [...cur, e.doc]) : cur));
-      if (e.type === "topicdoc.removed" && e.topicId === topicId) setDocs((cur) => cur?.filter((d) => d.id !== e.docId) ?? cur);
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      live = false;
-      off();
-      offReconnect();
-    };
-  }, [link, topicId]);
 
   const save = async () => {
     if (!editing) return;

@@ -1,33 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { answerValues, type DecisionRequest, type QuestionReply, type Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { keepWhere, useLiveResource } from "../host/live.js";
 import { PromptCard } from "../chat/questions/QuestionCard.js";
 
 /** Open decision requests across all tasks, kept live. */
 export function useOpenDecisions(link: HostLink) {
-  const [open, setOpen] = useState<readonly DecisionRequest[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = (first = false) =>
-      call(link, "GET /api/decisions", {}, undefined, { state: "open" })
-        .then((list) => !cancelled && setOpen((cur) => (first ? mergeFirstLoad(list, cur) : list)))
-        .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type !== "decision.upserted") return;
-      setOpen((cur) => {
-        const rest = cur.filter((d) => d.id !== e.decision.id);
-        return e.decision.state === "open" ? [...rest, e.decision] : rest;
-      });
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load(true);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [open] = useLiveResource<readonly DecisionRequest[]>(
+    {
+      load: () => call(link, "GET /api/decisions", {}, undefined, { state: "open" }),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "decision.upserted" ? keepWhere(cur, e.decision, e.decision.state === "open") : cur),
+    },
+    [link],
+  );
   return open;
 }
 

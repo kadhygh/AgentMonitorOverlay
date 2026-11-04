@@ -1,32 +1,16 @@
-import { useEffect, useState } from "react";
 import { peerPresence, type RemoteGrant, type RemoteState, type Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 
 // 远程 (2026-10-29): the Host's remote state, kept live (remote.updated is not in the event log, so a reconnect reads
 // it again). The remote page and the top bar's 「远程」 (its own page since 2026-10-29, 设置 → 远程 before), the board and
 // task page for remote tasks, and Focus's pairing and task requests all read it.
 
 export function useRemote(link: HostLink | null): RemoteState | null {
-  const [remote, setRemote] = useState<RemoteState | null>(null);
-  useEffect(() => {
-    if (!link?.url) return;
-    let cancelled = false;
-    const load = () =>
-      call(link, "GET /api/remote")
-        .then((r) => !cancelled && setRemote(r))
-        .catch(() => undefined);
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "remote.updated") setRemote(e.remote);
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link?.url, link?.token]); // eslint-disable-line react-hooks/exhaustive-deps -- the link by its address
+  const [remote] = useLiveResource<RemoteState | null>(
+    { load: link?.url ? () => call(link, "GET /api/remote") : null, initial: null, onEvent: (cur, e) => (e.type === "remote.updated" ? e.remote : cur) },
+    [link?.url, link?.token], // the link by its address
+  );
   return remote;
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { newTodoId, sortTodo, TODO_SHARED_LIST, TODO_TEXT_LIMIT, todoDeviceList, todoOrderBetween, todoOrderOnTop, type TodoEntry, type TodoLink, type TodoOp, type TodoView } from "@amo-studio/protocol";
 import { HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 import { useHostState } from "../host/useHostState.js";
 import { pageFromKey } from "../scratchpad/logic.js";
 import { openPlatform, todoChange, todoOpenBound, todoSyncNow, todoUnbind, todoView } from "./api.js";
@@ -54,29 +54,24 @@ export function TodoApp() {
 
 /** The view as the program has it, live; changes go through it. */
 function useTodoView(link: HostLink) {
-  const [view, setView] = useState<TodoView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useLiveResource<TodoView | null>(
+    {
+      load: () => todoView(link),
+      initial: null,
+      onEvent: (cur, e) => {
+        const ev = e as unknown as { type: string; todo?: TodoView };
+        return ev.type === "todo.updated" && ev.todo ? ev.todo : cur;
+      },
+      onError: (err) => setError(message(err)),
+    },
+    [link],
+  );
   useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      todoView(link)
-        .then((v) => !cancelled && setView(v))
-        .catch((err: unknown) => !cancelled && setError(message(err)));
-    const off = onHostEvent((e) => {
-      const ev = e as unknown as { type: string; todo?: TodoView };
-      if (ev.type === "todo.updated" && ev.todo) setView(ev.todo);
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load();
     // Shown again: fetch what the other devices did meanwhile.
     const onFocus = () => void todoSyncNow(link).catch(() => undefined);
     window.addEventListener("focus", onFocus);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-      window.removeEventListener("focus", onFocus);
-    };
+    return () => window.removeEventListener("focus", onFocus);
   }, [link]);
   const change = useCallback(
     (ops: TodoOp[]) => {

@@ -10,7 +10,8 @@ import { useOpenDecisions } from "./collab/DecisionPanel.js";
 import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
-import { SettingsDialog, useSettings, type SettingsPage } from "./settings/SettingsDialog.js";
+import { SettingsDialog, type SettingsPage } from "./settings/SettingsDialog.js";
+import { useSettings } from "./settings/useSettings.js";
 import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
@@ -329,6 +330,7 @@ export function App() {
         <SettingsDialog
           key={settingsOpen.at}
           link={link}
+          state={state}
           settings={settings}
           {...(settingsOpen.page ? { page: settingsOpen.page } : {})}
           onClose={() => setSettingsOpen(false)}

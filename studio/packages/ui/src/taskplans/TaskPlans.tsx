@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isCommon, type ModelProfile, type PlannedTask, type Task, type TaskPlan, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { upsertById, useLiveResource } from "../host/live.js";
 import { effortLabel } from "../lib/choices.js";
 
 // 拆任务提案 (stage 16, from the stage 15 design): a 主控 proposes tasks; the person looks at them here, changes what
@@ -9,21 +9,10 @@ import { effortLabel } from "../lib/choices.js";
 
 /** The proposals the Host lists (open ones, and those decided in the last day), kept current. */
 export function useTaskPlans(link: HostLink): TaskPlan[] {
-  const [plans, setPlans] = useState<TaskPlan[]>([]);
-  useEffect(() => {
-    let live = true;
-    const load = () => call(link, "GET /api/task-plans", {}).then((p) => live && setPlans(p)).catch(() => undefined);
-    void load();
-    const off = onHostEvent((e) => {
-      if (e.type === "taskplan.upserted") setPlans((cur) => (cur.some((p) => p.id === e.plan.id) ? cur.map((p) => (p.id === e.plan.id ? e.plan : p)) : [...cur, e.plan]));
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    return () => {
-      live = false;
-      off();
-      offReconnect();
-    };
-  }, [link]);
+  const [plans] = useLiveResource<TaskPlan[]>(
+    { load: () => call(link, "GET /api/task-plans", {}), initial: [], onEvent: (cur, e) => (e.type === "taskplan.upserted" ? upsertById(cur, e.plan) : cur) },
+    [link],
+  );
   return plans;
 }
 

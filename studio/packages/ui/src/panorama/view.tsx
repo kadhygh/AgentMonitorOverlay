@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 import { PanoramaPage } from "./PanoramaPage.js";
 import type { ViewDef } from "../shell/views.js";
 
@@ -39,24 +38,14 @@ export const panoramaView: ViewDef<"panorama"> = {
 
 /** The topic canvas's dependencies, read only (P1, 2026-11-02: 全景 draws them as arcs, it never changes the canvas). */
 function PanoramaTopic({ link, topicId, render }: { link: HostLink; topicId: string; render(dependencies: readonly { from: string; to: string }[]): React.ReactNode }) {
-  const [deps, setDeps] = useState<readonly { from: string; to: string }[]>([]);
-  useEffect(() => {
-    let alive = true;
-    const pick = (edges: readonly { from: string; to: string }[]) => edges.map((e) => ({ from: e.from, to: e.to }));
-    const load = () =>
-      void call(link, "GET /api/topics/:id/canvas", { id: topicId })
-        .then((doc) => alive && setDeps(pick(doc.edges)))
-        .catch(() => undefined);
-    load();
-    const off = onHostEvent((e) => {
-      if (e.type === "canvas.updated" && e.canvas.id === topicId) setDeps(pick(e.canvas.edges));
-    });
-    const offReconnect = onHostReconnect(load);
-    return () => {
-      alive = false;
-      off();
-      offReconnect();
-    };
-  }, [link, topicId]);
+  const pick = (edges: readonly { from: string; to: string }[]) => edges.map((e) => ({ from: e.from, to: e.to }));
+  const [deps] = useLiveResource<readonly { from: string; to: string }[]>(
+    {
+      load: () => call(link, "GET /api/topics/:id/canvas", { id: topicId }).then((doc) => pick(doc.edges)),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "canvas.updated" && e.canvas.id === topicId ? pick(e.canvas.edges) : cur),
+    },
+    [link, topicId],
+  );
   return <>{render(deps)}</>;
 }

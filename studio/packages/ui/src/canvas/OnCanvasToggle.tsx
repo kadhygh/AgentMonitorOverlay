@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Id } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { useLiveResource } from "../host/live.js";
 
 interface OnCanvasToggleProps {
   link: HostLink;
@@ -16,27 +16,17 @@ interface OnCanvasToggleProps {
  * are always there; others only when the person ticks this. Hiding keeps the task in the topic.
  */
 export function OnCanvasToggle({ link, taskId, topicId, disabled, onError }: OnCanvasToggleProps) {
-  const [placed, setPlaced] = useState<boolean | null>(null);
+  const has = (nodes: ReadonlyArray<{ kind: string }>) => nodes.some((n) => n.kind === "task" && (n as { taskId?: Id }).taskId === taskId);
+  const [placed, setPlaced] = useLiveResource<boolean | null>(
+    {
+      load: () => call(link, "GET /api/topics/:id/canvas", { id: topicId }).then((doc) => has(doc.nodes)),
+      initial: null,
+      onEvent: (cur, e) => (e.type === "canvas.updated" && e.canvas.id === topicId ? has(e.canvas.nodes) : cur),
+    },
+    [link, taskId, topicId],
+  );
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    const has = (nodes: ReadonlyArray<{ kind: string }>) => nodes.some((n) => n.kind === "task" && (n as { taskId?: Id }).taskId === taskId);
-    const load = () =>
-      void call(link, "GET /api/topics/:id/canvas", { id: topicId })
-        .then((doc) => alive && setPlaced(has(doc.nodes)))
-        .catch(() => undefined);
-    load();
-    const off = onHostEvent((e) => {
-      if (e.type === "canvas.updated" && e.canvas.id === topicId) setPlaced(has(e.canvas.nodes));
-    });
-    const offReconnect = onHostReconnect(load);
-    return () => {
-      alive = false;
-      off();
-      offReconnect();
-    };
-  }, [link, taskId, topicId]);
 
   async function toggle(onCanvas: boolean) {
     const before = placed;

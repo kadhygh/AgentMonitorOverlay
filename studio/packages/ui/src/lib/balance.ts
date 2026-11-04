@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChannelBalance, ModelProfile } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent } from "../host/events.js";
+import { sharedLive } from "../host/shared.js";
 
 // Balances of the channels whose site tells them (设置 → 模型, 左下角额度, Focus), and the profile list kept live.
 
@@ -50,21 +50,9 @@ export function useBalance(link: HostLink, profile: ModelProfile | undefined): {
 /** This computer's own profiles: not the (hidden) models of remote tasks' computers (远程 step 2), only there for names. */
 const own = (list: readonly ModelProfile[]): ModelProfile[] => list.filter((p) => p.runtime !== "remote");
 
-/** Every model profile of this computer, following `profiles.updated`. */
-export function useProfiles(link: HostLink): ModelProfile[] | null {
-  const [profiles, setProfiles] = useState<ModelProfile[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    call(link, "GET /api/state")
-      .then((s) => live && setProfiles(own(s.profiles)))
-      .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type === "profiles.updated") setProfiles(own(e.profiles));
-    });
-    return () => {
-      live = false;
-      off();
-    };
-  }, [link]);
-  return profiles;
-}
+/** Every model profile of this computer, following `profiles.updated` (one copy per window, host/shared.ts). */
+export const useProfiles = sharedLive<ModelProfile[]>((link) => ({
+  // There is no route for the profiles alone; one /api/state per window now (2026-11-04), not one per reader.
+  load: () => call(link, "GET /api/state").then((s) => own(s.profiles)),
+  onEvent: (cur, e) => (e.type === "profiles.updated" ? own(e.profiles) : cur),
+}));

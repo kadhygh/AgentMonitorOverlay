@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { DutyItem, DutyState, Id } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { watchLive } from "../host/live.js";
 
 // 值守 outside 设置 (2026-10-31, the user: 「studio里应该需要一个查看duty的界面，并且如果有task/session开启了duty 能够看到
 // duty标记」): one copy of the Host's DutyState for the top bar's button and panel, the board's cards, the task head and
@@ -22,18 +22,14 @@ function subscribe(l: () => void): () => void {
 export function useDutyWatch(link: HostLink | null): void {
   useEffect(() => {
     if (!link) return;
-    let cancelled = false;
-    const load = () => void call(link, "GET /api/duty").then((d) => !cancelled && set(d), () => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type === "duty.updated") set(e.duty);
-    });
-    const offReconnect = onHostReconnect(load);
-    load();
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
+    const w = watchLive<DutyState | null>(
+      () => ({ load: () => call(link, "GET /api/duty"), initial: null, onEvent: (cur, e) => (e.type === "duty.updated" ? e.duty : cur) }),
+      (next) => {
+        const value = next(current);
+        if (value && value !== current) set(value);
+      },
+    );
+    return w.stop;
   }, [link]);
 }
 

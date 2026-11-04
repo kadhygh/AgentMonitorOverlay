@@ -12,7 +12,7 @@ import { EditProjectDialog } from "./EditProjectDialog.js";
 import { EditTopicDialog } from "./EditTopicDialog.js";
 import { useDragWidth, useNavWidthVar } from "../lib/dragWidth.js";
 import { FoldIcon } from "../task/SessionTree.js";
-import { useSettings } from "../settings/SettingsDialog.js";
+import { useSettings } from "../settings/useSettings.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { needsPerson } from "../lib/status.js";
 import { fromProjectGroups, fromTopicGroups, groupEntries, groupOwners, joinGroup, moveGroup, toProjectGroups, toTopicGroups, type NavGroup } from "./navGroups.js";

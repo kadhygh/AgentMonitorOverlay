@@ -1,33 +1,20 @@
-import { useEffect, useState } from "react";
 import type { MailMessage, Session, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { upsertById, useLiveResource } from "../host/live.js";
 
 /** Mail left for a task or any of its sessions, kept live. */
 export function useTaskMail(link: HostLink, task: Task, sessions: readonly Session[]) {
-  const [mail, setMail] = useState<readonly MailMessage[]>([]);
   const sessionIds = sessions.filter((s) => s.taskId === task.id).map((s) => s.id).join(",");
-
-  useEffect(() => {
-    let cancelled = false;
-    const mine = new Set(sessionIds.split(",").filter(Boolean));
-    const forThisTask = (m: MailMessage) => (m.to.kind === "task" ? m.to.taskId === task.id : m.to.kind === "session" && mine.has(m.to.sessionId));
-    const load = (first = false) =>
-      call(link, "GET /api/mail", {}, undefined, { forTask: task.id })
-        .then((list) => !cancelled && setMail((cur) => (first ? mergeFirstLoad(list, cur) : list)))
-        .catch(() => undefined);
-    const off = onHostEvent((e) => {
-      if (e.type !== "mail.upserted" || !forThisTask(e.mail)) return;
-      setMail((cur) => (cur.some((m) => m.id === e.mail.id) ? cur.map((m) => (m.id === e.mail.id ? e.mail : m)) : [...cur, e.mail]));
-    });
-    const offReconnect = onHostReconnect(() => void load());
-    void load(true);
-    return () => {
-      cancelled = true;
-      off();
-      offReconnect();
-    };
-  }, [link, task.id, sessionIds]);
+  const mine = new Set(sessionIds.split(",").filter(Boolean));
+  const forThisTask = (m: MailMessage) => (m.to.kind === "task" ? m.to.taskId === task.id : m.to.kind === "session" && mine.has(m.to.sessionId));
+  const [mail] = useLiveResource<readonly MailMessage[]>(
+    {
+      load: () => call(link, "GET /api/mail", {}, undefined, { forTask: task.id }),
+      initial: [],
+      onEvent: (cur, e) => (e.type === "mail.upserted" && forThisTask(e.mail) ? upsertById(cur, e.mail) : cur),
+    },
+    [link, task.id, sessionIds],
+  );
 
   return mail;
 }

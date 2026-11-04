@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DUTY_DONE_MARK, projectWorkspaces, type DutyAction, type DutyCheckOne, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type ModelProfile, type StateSnapshot } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { onHostEvent } from "../host/events.js";
 import { defaultModel, effortLabel, useProfileChoices } from "../lib/choices.js";
-import { dutyTree } from "../duty/duty.js";
+import { dutyTree, setDuty, useDuty } from "../duty/duty.js";
 
 // 设置 → 值守 (2026-10-31, plans/issues.md): items that run at set times — start a session with a set prompt, run a
 // command, or one of Studio's own jobs. The list says when each runs next and how its last run went; 立即运行 runs one
@@ -62,30 +61,22 @@ export function actionText(a: DutyAction, ctx: DutyCtx): string {
   return `${check ? `${check}；` : ""}开会话：${profile(a.profileId)}${a.fallbackProfileId ? `，额度不够时用 ${profile(a.fallbackProfileId)}` : ""}，${where}${a.untilDone ? "；做完了 AI 可以关掉它" : ""}`;
 }
 
-export function DutyPage({ link }: { link: HostLink }) {
-  const [state, setState] = useState<DutyState | null>(null);
-  const [snapshot, setSnapshot] = useState<StateSnapshot | null>(null);
+/**
+ * `state` is the window's live snapshot (tasks, projects, models), so a task made since the page opened is offered too;
+ * the items are the shell's copy (duty/duty.ts), kept live and read again after a reconnect (2026-11-04: the page used
+ * to read both itself, once, and the snapshot again each time a form opened).
+ */
+export function DutyPage({ link, state: snapshot }: { link: HostLink; state: StateSnapshot }) {
+  const state = useDuty();
   const [editing, setEditing] = useState<DutyItem | "new" | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const fail = (err: unknown) => setMessage({ text: err instanceof HostApiError ? err.message : String(err), error: true });
 
-  useEffect(() => {
-    call(link, "GET /api/duty").then(setState, fail);
-    call(link, "GET /api/state").then(setSnapshot, fail);
-    return onHostEvent((e) => {
-      if (e.type === "duty.updated") setState(e.duty);
-    });
-  }, [link]);
-  // The tasks and projects as they are when a form opens (a task made since the page opened is offered too).
-  useEffect(() => {
-    if (editing) call(link, "GET /api/state").then(setSnapshot, fail);
-  }, [link, editing]);
-
-  const profiles =(snapshot?.profiles ?? []).filter((p) => !p.hidden && p.runtime !== "remote");
+  const profiles = snapshot.profiles.filter((p) => !p.hidden && p.runtime !== "remote");
   const ctx: DutyCtx = { profiles, snapshot, builtins: state?.builtins ?? [], checks: state?.checks ?? [] };
   const act = (run: () => Promise<DutyState>) => {
     setMessage(null);
-    run().then(setState, fail);
+    run().then(setDuty, fail);
   };
 
   return (
@@ -131,14 +122,14 @@ export function DutyPage({ link }: { link: HostLink }) {
                   {run && <span>{when(run.startedAt)}{run.summary && run.ok !== null ? ` · ${run.summary}` : ""}</span>}
                   {item.enabled && state.next[item.id] && !running && <span className="settings-hint">下次 {when(state.next[item.id])}</span>}
                 </div>
-                {editing !== "new" && editing?.id === item.id && <DutyForm link={link} ctx={ctx} items={state.items} item={item} onDone={(s) => { if (s) setState(s); setEditing(null); }} />}
+                {editing !== "new" && editing?.id === item.id && <DutyForm link={link} ctx={ctx} items={state.items} item={item} onDone={(s) => { if (s) setDuty(s); setEditing(null); }} />}
               </li>
             );
           })}
         </ul>
       )}
       {editing === "new" ? (
-        <DutyForm link={link} ctx={ctx} items={state?.items ?? []} item={null} onDone={(s) => { if (s) setState(s); setEditing(null); }} />
+        <DutyForm link={link} ctx={ctx} items={state?.items ?? []} item={null} onDone={(s) => { if (s) setDuty(s); setEditing(null); }} />
       ) : (
         <div className="settings-row">
           <button type="button" className="btn-primary small" onClick={() => setEditing("new")} data-testid="duty-new">

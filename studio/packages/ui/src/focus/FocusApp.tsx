@@ -10,7 +10,7 @@ import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayCard, useRelays } from "../relays/Relays.js";
 import { TeamSendCard, useTeamSends } from "../teamrelay/TeamRelay.js";
 import { useWaitingQuestionList } from "../canvas/useCallouts.js";
-import { useSettings } from "../settings/SettingsDialog.js";
+import { useSettings } from "../settings/useSettings.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { usePetSkin } from "./petSkin.js";
