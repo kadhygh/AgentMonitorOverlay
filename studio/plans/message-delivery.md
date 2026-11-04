@@ -74,7 +74,7 @@
 | 0 | 读代码、写这份方案 | ✓ |
 | 1 | protocol `TURN_STATUSES` / `inTurn`；`RuntimeBase`：重启收尾 `settleLeftovers`、归档 `archiveTree`、`writable` + `profileGone`、停止兜底 `armStopGrace`；各 runtime 换上 | ✓ 8a5ebb0e |
 | 2 | DSH：waiting / unsent / 立即发送 / Ctrl+Enter / 重新发送；停止、出错、退出、归档、重启的处理；停止兜底 | ✓ 8a5ebb0e（和第 1 步一起：DSH 直接用上 RuntimeBase 的新件） |
-| 3 | 会话收件箱 `features/sessions/inbox.ts`（`delivery: held`、kv `sessions.inbox`、空闲时送、失败标没送到 + 说明、重启续送、`sessions.peer-queue` 迁移）；teamrelay、relays、collab、duty、checkReport、sendPeer 改走它；runtime `resend` 收 `held` 和 `now`；界面「等这一轮结束后送进去」+「立即发送」，停止时不把它放回输入框 | ✓ |
+| 3 | 会话收件箱 `features/sessions/inbox.ts`（`delivery: held`、kv `sessions.inbox`、空闲时送、失败标没送到 + 说明、重启续送、`sessions.peer-queue` 迁移）；teamrelay、relays、collab、duty、checkReport、sendPeer 改走它；runtime `resend` 收 `held` 和 `now`；界面「等这一轮结束后送进去」+「立即发送」，停止时不把它放回输入框 | ✓ 2e56d5f3、7602fbc7 |
 | 4 | CHANGELOG「下一版」三条、HANDOFF | ✓ |
 
 ### 做的时候定下的细节
@@ -89,10 +89,35 @@
 
 ## 验证
 
-- typecheck；host 单测（低优先级，`--maxWorkers=4`）：dsh-runtime.integration、claude / codex runtime、sessions/peer、teamrelay、duty、relays、collab、canvasreview。
-- 新加：DSH 停止后排队的接着发、出错 / 进程退出 / Host 重启后排队的变「没送到」、立即发送、重新发送；收件箱落盘、Host 重启后续送、送不进去变「没送到」可重新发送；teamrelay 回复在会话忙时等着、失败可重试。
-- e2e 只跑 claude、dsh、duty、中转进会话相关的 spec。
+做完跑的（2026-11-04，全部 BelowNormal，vitest `--maxWorkers=4`）：
+
+- `npm run typecheck`：过。
+- vitest host + ui + protocol 全量：138 个文件、934 条全过。中途两次没过，都查了：
+  - `sessions/peer` 的「几条一起送」在满载下 5 秒超时。原因是收件箱送第二条前盲等 3 秒；改成看到上一条起的那一轮就送（7602fbc7），两条用例给 15 秒。
+  - DSH「session_start with write…」在全量并行时超时过两次。master 的代码 A/B 跑过、单跑过、之后全量也过，判断是负载，记为偶发。
+- 新加的用例：
+  - dsh-runtime.integration：停止后排队的接着发；立即发送和 Ctrl+Enter；`[[fail-after]]` 出错 → 没送到 → 重新发送；`[[stuck]]` 停不下 → 15 秒关进程 → 没送到；Host 重启 → 没送到 → 重新发送。
+  - sessions/peer「the session inbox」：重启后续送；`sessions.peer-queue` 迁移；送不进去 → 没送到 + 说明 → 重新发送；归档 → 没送到；held 行上的立即发送。
+  - teamrelay：会话忙时回复等着，失败一次后重新发送。
+- e2e（只跑相关的）：`dsh`、`claude`、`duty`、`teamrelay`、`relays`、`mailbox`、`handoff-mail` 全过。
+  - dsh.spec 新加一步：会话等批准时转进一封留言，看到「◐ 等这一轮结束后送进去」和「立即发送」，批准后它作为下一轮送进去。截图在 `screenshots/studio/inbox-held.png`。
+- 看截图时发现输入框底栏的「MCP 0」压在提示文字上，Claude 也一样（11-04 加的 MCP 标签）。改成选项条不缩、提示文字省略（`pickers.css`），重跑 dsh、claude 两个 spec 看过截图。
 
 ## 没验证的
 
-（做完填）
+- 真的 DSH（`dsh --profile acp`）、真的 Codex app-server、真的 Claude CLI：只用了 testkit 的假 agent。最该在真环境看的三处：
+  - DSH 立即发送：`session/cancel` 之后真 DSH 是不是很快结束这一轮。
+  - Codex 停止兜底：真卡住时 15 秒后把这一轮记成已停止，之后 app-server 再发来这一轮的事件会不会乱。
+  - Claude 重启后 turn 改成 interrupted 的显示。
+- 远程 B 在 held 行上点「立即发送」：代码走 `rt.sendNow` → A 的 `sessions.sendNow`，没有用例。
+- 中转服务那边没动；中转回复进会话只在 Studio 一侧测了（teamrelay 单测 + e2e）。
+- 全套 e2e 没跑（按要求只跑相关的）。
+- 老的 `sessions.peer-queue` 迁移只有单测，没有拿真实的旧数据目录试。
+
+## 要用户定的
+
+1. DSH 停止时排队的消息：现在是接着作为下一轮发出（和 Claude / Codex 11-02 定的一致），任务说明写的是变「没送到」。
+2. 转进对话的留言、子会话的汇报现在也进收件箱：会话在跑时等这一轮结束再送，不再插进正在跑的这一轮。要不要这样。
+3. 人点停止后，收件箱里等着的会在会话空下来后马上送进去。要不要改成停止后先不送、等人再发一句。
+4. `awaiting-review` 现在没有地方会设，还留在 `BUSY_STATUSES` 里；要不要删。
+5. 读老的 `sessions.peer-queue` 的迁移代码，过一两个版本后删。
