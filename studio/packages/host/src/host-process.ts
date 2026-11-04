@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { HOST_DEFAULT_PORT, type ModelProfile } from "@amo-studio/protocol";
+import { HOST_DEFAULT_PORT, inTurn, type ModelProfile } from "@amo-studio/protocol";
 import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
@@ -71,6 +71,8 @@ export interface StartHostOptions {
   dshFolderScanMs?: number;
   /** Tests: how long a turn DSH runs by itself waits after its last reply, and after anything else, to end. */
   dshAutoQuietMs?: number;
+  /** Tests: how long 停止 waits on a runtime before Studio stops waiting (default STOP_GRACE_MS; Codex and DSH). */
+  stopGraceMs?: number;
   dshAutoStallMs?: number;
   /**
    * 远程 (2026-10-29): connect to the team server as this computer's device with the AMO platform's login. Studio's
@@ -228,6 +230,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       store,
       servers,
       profiles,
+      ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
       ...(manager ? { identities } : {}),
       roleInstructions: (draft): string | undefined => {
         try {
@@ -291,6 +294,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.dshFolderAccess !== undefined ? { folderAccess: options.dshFolderAccess } : {}),
       ...(options.dshFolderScanMs !== undefined ? { folderScanEveryMs: options.dshFolderScanMs } : {}),
       ...(options.dshAutoQuietMs !== undefined ? { autoQuietMs: options.dshAutoQuietMs } : {}),
+      ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
       ...(options.dshAutoStallMs !== undefined ? { autoStallMs: options.dshAutoStallMs } : {}),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
@@ -307,7 +311,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.
       restartProfileServer: async (profileId) => {
         if (!manager?.handle(profileId)) return true;
-        const busy = liveStore.listSessions().some((s) => s.profileId === profileId && (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer"));
+        const busy = liveStore.listSessions().some((s) => s.profileId === profileId && inTurn(s.status));
         if (busy) return false;
         await manager.stop(profileId);
         return true;

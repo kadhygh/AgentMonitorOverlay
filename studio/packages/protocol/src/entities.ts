@@ -332,8 +332,13 @@ export interface MessageImage {
   path: string;
 }
 
-/** Where a person's message sent mid-turn stands (立即发送, 2026-11-02; see the `user` item). */
-export type UserDelivery = "waiting" | "unsent";
+/**
+ * Where a message stands before the model read it (see the `user` item). `waiting`: sent mid-turn, at the runtime, not
+ * read yet (立即发送, 2026-11-02). `unsent`: its process went (or it could not go in) before the model read it; 重新发送
+ * sends it again. `held` (2026-11-04, plans/message-delivery.md): from an agent or from Studio (中转回复, 值守, 传话,
+ * session_send…), in the session's inbox until the session is free — then it goes in by itself.
+ */
+export type UserDelivery = "waiting" | "unsent" | "held";
 
 /**
  * What a notice offers to do (2026-10-23). `folder-access`: DSH's write sandbox cannot be set up on the session's

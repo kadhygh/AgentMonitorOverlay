@@ -106,16 +106,6 @@ export class DshTranscript {
     if (note && !error) this.core.appendItem(this.sessionId, { type: "notice", level: "warning", message: note }, { method: "session/prompt", turnId: turn.turnId });
   }
 
-  /** After a Host restart: the turn that was running, its tools and its approvals are over. */
-  settleAfterRestart(): void {
-    const at = this.core.now().toISOString();
-    for (const item of this.core.store.listUnfinishedItems(this.sessionId)) {
-      if (item.type === "turn" && item.state === "running") this.core.updateItem(item.id, (it) => (it.type === "turn" ? { ...it, state: "interrupted", endedAt: at } : it));
-      else if (item.type === "tool" && item.status === "running") this.core.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "declined" } : it));
-      else if (item.type === "approval" && item.state === "pending") this.core.updateItem(item.id, (it) => (it.type === "approval" ? { ...it, state: "declined" } : it));
-    }
-  }
-
   update(u: AcpUpdate): void {
     switch (u.sessionUpdate) {
       case "agent_message_chunk":

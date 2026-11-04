@@ -11,6 +11,8 @@
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
 //   [[mcp-list]]             the reply names the MCP servers the session was given (session/new or resume)
 //   [[fail]]                 the prompt fails
+//   [[fail-after: MS]]       a pwsh call, then the prompt fails MS later (a turn that errors while messages wait)
+//   [[stuck]]                a pwsh call that never ends, session/cancel or not (停止's fallback)
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
 //   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
 //                            signal): thought, a pwsh call, a reply each; `[[goal: N slow]]`: the last round's call
@@ -193,6 +195,13 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     save(all);
     const messageId = randomUUID();
     if (/\[\[fail\]\]/.test(text)) throw new RpcError(-32603, "model request failed: fake failure");
+    const failAfter = /\[\[fail-after: (\d+)\]\]/.exec(text);
+    const stuck = /\[\[stuck\]\]/.test(text);
+    if (failAfter || stuck) {
+      update(a.id, { sessionUpdate: "tool_call", toolCallId: `call-${randomUUID()}`, title: "pwsh", kind: "other", status: "in_progress", rawInput: { command: "ping -n 600 127.0.0.1" } });
+      await new Promise((resolve) => (failAfter ? setTimeout(resolve, Number(failAfter[1])) : undefined));
+      throw new RpcError(-32603, "model request failed: fake failure");
+    }
     update(a.id, { sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: "想一想" } });
     const context = /\[\[context: (\d+)\]\]/.exec(text);
     update(a.id, { sessionUpdate: "usage_update", used: context ? Number(context[1]) : 1000 * s.turns, size: 1_000_000 });

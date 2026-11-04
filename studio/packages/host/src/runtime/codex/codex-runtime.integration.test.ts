@@ -225,7 +225,7 @@ describe("Codex runtime against the real app-server", () => {
   it("archives the session with its fork and blocks further writes", async () => {
     const archived = await host.runtime.archive(mainId);
     expect(archived.map((s) => s.kind).sort()).toEqual(["fork", "main"]);
-    await expect(host.runtime.sendMessage(mainId, "nope")).rejects.toThrow(/read-only/);
+    await expect(host.runtime.sendMessage(mainId, "nope")).rejects.toThrow(/已归档/);
     const restored = await host.runtime.unarchive(mainId);
     expect(restored).toHaveLength(2);
     await host.runtime.sendMessage(mainId, "after unarchive");
