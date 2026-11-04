@@ -5,7 +5,9 @@
 //
 // 动作：["move", k, fx?, fy?] 光标移到 k（fx / fy 是落点在元素里的比例，默认 0.5）；["click", k] 移过去点一下；
 // ["type", k, 文字] 逐字打进 k；["show", k] / ["hide", k]；["hl", k] / ["unhl", k] 高亮框；["on", k, class] /
-// ["off", k, class]；["text", k, 文字]；["wait", 毫秒]。
+// ["off", k, class]；["text", k, 文字]；["style", k, CSS 属性, 值]；["wait", 毫秒]。
+// def.world = [宽, 高]（展示页的开场）：界面按这个真实尺寸画，演示区域上的 --fit 是把它整个放进来的缩放比例，
+// 场景自己用 CSS 变量做镜头的推拉（showcase/sc-intro.js）。
 // 跳到第 n 步 = 重画界面、前面的步骤瞬间做完、再动画播第 n 步，所以上一步、点圆点跳步都不用写反向动作。
 // 字幕里 [[按钮名]] 画成按钮样子（和正文一样，单测会核对它在源码里还在），`代码`、**粗体** 照常。
 (function () {
@@ -35,7 +37,8 @@
 
   if (typeof document === "undefined") return; // 单测在 Node 里只收集 scene 定义
 
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  // 不看「减少动态效果」（prefers-reduced-motion）：演示本身就是内容。2026-10-30 用户的 Windows 关了「动画效果」，
+  // 展示页只剩最后一帧、看着像没做完；同事的电脑多半也这样。动画只是光标移动和淡入，没有闪烁、视差。
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const CURSOR = '<svg class="cursor" data-cursor viewBox="0 0 20 24" width="20" height="24" aria-hidden="true"><path d="M2 1.5v17.2l4.4-4.1 3 6.7 3-1.4-3-6.6h6.1Z"/></svg>';
 
@@ -47,17 +50,30 @@
       this.gen = 0; // 每次跳步、暂停都加一，正在播的动画看到变了就停
       this.playing = false;
       this.auto = true; // 还没被人点过：进出视口时自动播 / 停
-      // 展示页（showcase）的「自动循环、无控件」模式：只有演示区域，进视口循环播，离开就停；减少动态效果时停在
-      // def.poster 那一步（默认最后一步）。每步播完停 step.hold 毫秒（默认 500），一轮播完停 def.loopGap 再从头来。
+      // 展示页（showcase）的「自动循环、无控件」模式：只有演示区域，进视口循环播，离开就停。每步播完停 step.hold 毫秒（默认 500），一轮播完停 def.loopGap 再从头来。
+      // def.once：只播一遍，停在最后的样子，右下角出「重播」（2026-10-30 用户：第 1 屏动画不要循环）。
+      // def.chapters = [[第几步, "名字"], …]：上面一排章节，点一章从那里播（开场分成几页翻着讲，10-30 用户：切镜头会晕）。
       this.loop = fig.dataset.mode === "loop";
       if (this.loop) {
-        fig.innerHTML = `<div class="stage" role="img" aria-label="${esc(def.title)}（示意动画）" style="--h:${def.height || 340}px;--hn:${def.narrowHeight || def.height || 340}px"></div>`;
+        const chapters = def.chapters ? `<div class="chapters" role="group" aria-label="跳到某一段">${def.chapters.map(([, name], c) => `<button type="button" aria-current="${c ? "false" : "step"}"><b>${c + 1}</b>${esc(name)}</button>`).join("")}</div>` : "";
+        // 章节的第三项是教程里讲这一段的位置：下面的「在教程里看」跟着当前章节换（10-30 用户：每一页都要能跳到教程）。
+        const more = def.chapters?.some((c) => c[2]) ? `<div class="ch-foot"><a class="ch-more" href="${esc(def.chapters[0][2] ?? "tutorial.html")}">在教程里看：<span>${esc(def.chapters[0][1])}</span> →</a></div>` : "";
+        fig.innerHTML = `${chapters}<div class="stage" role="img" aria-label="${esc(def.title)}（示意动画）" style="--h:${def.height || 340}px;--hn:${def.narrowHeight || def.height || 340}px"></div>${def.once ? '<button type="button" class="replay" hidden>↻ 重播</button>' : ""}${more}`;
         this.stage = fig.querySelector(".stage");
+        this.btnReplay = fig.querySelector(".replay");
+        const restart = (from) => {
+          this.done = false;
+          if (this.btnReplay) this.btnReplay.hidden = true;
+          void this.cycle(from);
+        };
+        this.btnReplay?.addEventListener("click", () => restart(0));
+        this.chapters = fig.querySelector(".chapters");
+        this.chapters?.querySelectorAll("button").forEach((b, c) => b.addEventListener("click", () => restart(def.chapters[c][0])));
         this.reset();
-        if (reduced.matches) void this.goto(def.poster ?? def.steps.length - 1, { instant: true });
         let lastW = 0;
         new ResizeObserver(() => {
           const w = this.stage.clientWidth;
+          if (def.world) this.stage.style.setProperty("--fit", String(Math.min(w / def.world[0], this.stage.clientHeight / def.world[1])));
           if (Math.abs(w - lastW) < 2) return;
           lastW = w;
           if (this.i >= 0 && !this.playing) void this.goto(this.i, { instant: true });
@@ -98,9 +114,6 @@
       }).observe(this.stage);
     }
 
-    get fast() {
-      return reduced.matches;
-    }
     el(k) {
       return this.stage.querySelector(`[data-k="${k}"]`);
     }
@@ -194,6 +207,8 @@
           return void el?.classList.remove(x);
         case "text":
           return void (el && (el.textContent = x));
+        case "style": // ["style", k, "--w", "40%"]：改一个 CSS 属性（比如额度条的长度）
+          return void el?.style.setProperty(x, y);
         case "wait":
           if (!instant) await sleep(k);
           return;
@@ -202,7 +217,7 @@
     async runStep(n, instant, gen) {
       for (const a of this.def.steps[n].do || []) {
         if (gen !== this.gen) return false;
-        await this.act(a, instant || this.fast, gen);
+        await this.act(a, instant, gen);
       }
       return gen === this.gen;
     }
@@ -236,20 +251,42 @@
       this.playing = false;
       this.caption();
     }
-    /** 展示页：从头播到尾，停一下，再从头，直到 stop()。 */
-    async cycle() {
+    /** 展示页：从头播到尾，停一下，再从头，直到 stop()。from：从第几步播（点了上面的章节），前面的瞬间做完。 */
+    async cycle(from = 0) {
       const gen = ++this.gen;
       this.playing = true;
       while (gen === this.gen) {
         this.reset();
-        await sleep(this.def.startHold ?? 400);
-        for (let n = 0; n < this.def.steps.length; n++) {
+        for (let k = 0; k < from; k++) await this.runStep(k, true, gen);
+        await sleep(from ? 250 : (this.def.startHold ?? 400));
+        for (let n = from; n < this.def.steps.length; n++) {
           if (gen !== this.gen) return;
+          this.chapter(n);
           this.i = n;
           if (!(await this.runStep(n, false, gen))) return;
           await sleep(this.def.steps[n].hold ?? 500);
         }
+        if (this.def.once) {
+          this.playing = false;
+          this.done = true;
+          this.btnReplay.hidden = false;
+          return;
+        }
         await sleep(this.def.loopGap ?? 1400);
+        from = 0;
+      }
+    }
+    /** 上面的章节条：亮起第 n 步所在的那一章。 */
+    chapter(n) {
+      if (!this.chapters) return;
+      let cur = 0;
+      this.def.chapters.forEach(([at], c) => n >= at && (cur = c));
+      this.chapters.querySelectorAll("button").forEach((b, c) => b.setAttribute("aria-current", c === cur ? "step" : "false"));
+      const more = this.fig.querySelector(".ch-more");
+      const [, name, href] = this.def.chapters[cur];
+      if (more && href) {
+        more.href = href;
+        more.querySelector("span").textContent = name;
       }
     }
     stop() {
@@ -281,13 +318,14 @@
       }
       T.demos.set(def.id, new Demo(fig, def));
     });
-    // 进到屏幕里才自动播，离开就停；被人点过的演示交给人控制。减少动态效果时不自动播。
+    // 进到屏幕里才自动播，离开就停；被人点过的演示交给人控制。
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           const d = T.demos.get(e.target.dataset.scene);
-          if (!d || reduced.matches) continue;
+          if (!d) continue;
           if (d.loop) {
+            if (d.done) continue;
             if (e.isIntersecting && !d.playing) void d.cycle();
             else if (!e.isIntersecting && d.playing) d.stop();
             continue;

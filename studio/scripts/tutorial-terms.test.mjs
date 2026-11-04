@@ -66,7 +66,7 @@ describe("tutorial", () => {
   it("keeps the showcase short: a title of at most 10, a subtitle of at most 20 (a Latin word counts one)", () => {
     const { screens } = showcaseScreens(readFileSync(join(tutorialDir, "showcase.md"), "utf8"));
     const len = (s) => s.replace(/[A-Za-z0-9_.]+/g, "a").replace(/\s/g, "").length;
-    expect(screens.length).toBeGreaterThanOrEqual(7);
+    expect(screens.length).toBeGreaterThanOrEqual(4);
     for (const s of screens) {
       expect(len(s.title), s.title).toBeLessThanOrEqual(10);
       expect(len(s.sub), s.sub).toBeLessThanOrEqual(20);

@@ -1,46 +1,36 @@
 # AMO 展示
 
 <!-- 展示页（npm run tutorial:build 生成 out/html/showcase.html）。每屏：## 标题（10 个字以内）{#id}，下一行副标题
-     （20 个字以内），::scene 放循环动画（showcase/*.js），::more 是右下角「怎么用 →」链到的教程章节。最后一屏用
-     ::cta 加按钮列表。按钮名、功能名写成 [[…]]，和教程一样会被单测核对。 -->
+     （20 个字以内），::scene 放动画（showcase/*.js），::more 是右下角「怎么用 →」链到的教程章节。
+     ::intro：这一屏是开场，标题和副标题在动画里出现，页面上只留给读屏软件；::kicker 是标题上面的小字；
+     「! 」开头的行是标题下面的提醒（远程的安全）。最后一屏用 ::cta 加按钮列表。
+     2026-10-30 用户定的结构：① 开场（多 AI、Focus、额度）② 专题 › 任务 › 会话 + 画布 ③ 工具：Reviewer + 便签（都和审阅有关）
+     ④ 测试中：中转 + 远程，强调远程的安全。每屏的动画分几章，每章下面链到教程里讲它的那一节（showcase/*.js 的 chapters）。 -->
 
 ## 所有 AI，一个工作台 {#hero}
-Claude、Codex、DeepSeek 同时在看板上跑
-::scene sc-board
-::more tutorial.html#ch1
+Claude、Codex、DeepSeek，第三方 API 也能接
+::intro
+::scene sc-intro
 
-## 只在需要你时叫你 {#focus}
-Focus 小窗只列要你批准、回答的事
-::scene sc-focus
-::more tutorial.html#ch1-approve
+## 专题 › 任务 › 会话 {#topic}
+常规是项目 › 会话；AMO 多包了两层
+::scene sc-topic
 
-## 专题 › 任务 › 会话 {#layers}
-一个专题跨几个项目，一个任务开几段会话
-::scene sc-layers
-::more tutorial.html#ch0-map
+## 审 AI 的活，又快又准 {#review}
+::kicker 工具 · 不装 Studio 也能单独用
+Reviewer 带你直奔关键行，便签边看边记
+::scene sc-tools
 
-## 画布上看全局 {#canvas}
-状态、依赖、AI 的提问都在一张图上
-::scene sc-canvas
-::more tutorial.html
-
-## 直接带你看关键几行 {#review}
-AI 打开 Review，你写批注复制回对话
-::scene sc-review
-::more tutorial.html#ch1-review
-
-## 卡住了就去问人 {#relay}
-策划的 AI 经中转问程序，拿到回复接着改
-::scene sc-relay
-::more tutorial.html
-
-## 换台电脑接着用 {#remote}
-局域网中，在多设备之间流转自由使用
-::scene sc-remote
-::more tutorial.html
+## 跨人、跨设备接着干 {#remote}
+::kicker 测试中
+中转找人确认，远程把任务交给另一台电脑
+! 只在局域网里用，只配对你自己的电脑
+! 远程会话的命令以这台电脑上你的身份运行
+! 别的账号建的任务默认先等你同意；授权随时能收回
+::scene sc-cross
 
 ## 从装平台开始 {#start}
-Studio、中转、Reviewer 都从平台装和更新
+Studio、Reviewer、便签、中转都从平台装和更新
 ::cta
 - [下载 AMO 平台](http://172.16.8.85:47120/)
 - [看详细教程](tutorial.html)

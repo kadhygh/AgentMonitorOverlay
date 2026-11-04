@@ -292,10 +292,13 @@ export function showcaseScreens(source) {
       const [head, ...rest] = block.split("\n");
       const m = HEADING.exec(`## ${head}`);
       const lines = rest.map((l) => l.trim()).filter(Boolean);
-      const screen = { title: m[2], id: m[3] ?? null, sub: "", scene: null, more: null, cta: [] };
+      const screen = { title: m[2], id: m[3] ?? null, sub: "", scene: null, more: null, cta: [], intro: false, kicker: "", warn: [] };
       for (const l of lines) {
         let d;
-        if ((d = /^::scene\s+([\w-]+)$/.exec(l))) screen.scene = d[1];
+        if (l === "::intro") screen.intro = true;
+        else if ((d = /^::kicker\s+(.+)$/.exec(l))) screen.kicker = d[1];
+        else if ((d = /^!\s+(.+)$/.exec(l))) screen.warn.push(d[1]);
+        else if ((d = /^::scene\s+([\w-]+)$/.exec(l))) screen.scene = d[1];
         else if ((d = /^::more\s+(\S+)$/.exec(l))) screen.more = d[1];
         else if ((d = /^-\s+\[([^\]]+)\]\(([^)\s]+)\)$/.exec(l))) screen.cta.push({ text: d[1], href: d[2] });
         else if (!l.startsWith("::") && !screen.sub) screen.sub = l;
@@ -319,10 +322,12 @@ export function buildShowcase({ dir = tutorialDir, out = join(studio, "out", "ht
         : s.cta.length
           ? `<div class="cta reveal">${s.cta.map((c) => `<a href="${esc(c.href)}">${esc(c.text)}</a>`).join("")}</div>`
           : "";
-      return `<section class="screen${n === 0 ? " hero" : ""}"${s.id ? ` id="${s.id}"` : ""}>
-<h2 class="reveal">${inline(s.title)}</h2>
-<p class="sub reveal">${inline(s.sub)}</p>
-${media}
+      // ::intro：标题和副标题在开场动画里出现，页面上只留给读屏软件。
+      const head = s.intro ? ' class="sr"' : ' class="reveal"';
+      return `<section class="screen${n === 0 ? " hero" : ""}${s.intro ? " intro" : ""}"${s.id ? ` id="${s.id}"` : ""}>
+${s.kicker ? `<p class="kicker reveal">${inline(s.kicker)}</p>\n` : ""}<h2${head}>${inline(s.title)}</h2>
+<p${head.replace("reveal", "sub reveal").replace('"sr"', '"sub sr"')}>${inline(s.sub)}</p>
+${s.warn.length ? `<ul class="warn reveal">${s.warn.map((w) => `<li>${inline(w)}</li>`).join("")}</ul>\n` : ""}${media}
 </section>`;
     })
     .join("\n");

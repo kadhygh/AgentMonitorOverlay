@@ -1,6 +1,6 @@
 // npm run tutorial:shots — screenshots of out/html/tutorial.html for checking the layout (not for the tutorial
 // itself): the whole page light, dark and 360 px wide, and every demo stopped at its middle step (light, dark,
-// narrow). Headless, with reduced motion so nothing plays by itself.
+// narrow). Headless, and nothing plays by itself.
 // Output: screenshots/tutorial/.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +21,16 @@ try {
     ["dark", 1100, "dark"],
     ["narrow", 360, "light"],
   ]) {
-    const ctx = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width < 500 ? 2 : 1, colorScheme: scheme, reducedMotion: "reduce" });
+    const ctx = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: width < 500 ? 2 : 1, colorScheme: scheme });
+    // The demos play whatever the reduced-motion setting says (engine.js): an IntersectionObserver that never fires
+    // keeps them from starting on scroll.
+    await ctx.addInitScript(() => {
+      window.IntersectionObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    });
     const tab = await ctx.newPage();
     tab.on("pageerror", (e) => problems.push(`${name}: ${e.message}`));
     await tab.goto(page);

@@ -1,4 +1,4 @@
-// 展示页本身：深色开始，右上角切浅色；每一屏滚到时淡入（减少动态效果时直接显示）。
+// 展示页本身：深色开始，右上角切浅色；每一屏滚到时淡入（不看「减少动态效果」，原因见 engine.js）。
 (function () {
   const root = document.documentElement;
   const btn = document.querySelector(".theme");
@@ -9,7 +9,7 @@
   });
   label();
   const screens = document.querySelectorAll(".screen");
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) return screens.forEach((s) => s.classList.add("in"));
+  if (!("IntersectionObserver" in window)) return screens.forEach((s) => s.classList.add("in"));
   const io = new IntersectionObserver(
     (entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))),
     { threshold: 0.18 },
