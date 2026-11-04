@@ -75,8 +75,8 @@ test("Codex: the / menu, compaction, review mode and retries", async () => {
   const compaction = page.getByTestId("compaction");
   await expect(compaction).toHaveAttribute("data-state", "completed", { timeout: 60_000 });
   await expect(compaction).toContainText(/上下文已压缩（之前约 [\d.]+k? tok）/);
-  // Codex's own warning after compacting is a notice row.
-  await expect(page.getByTestId("msg-notice").filter({ hasText: "multiple compactions" })).toBeVisible();
+  // Codex's own warning after compacting (「multiple compactions…」) is gone from Codex 0.166 (2026-11-03); that a
+  // warning becomes a notice row is codex-cli.test's, with the fake app-server.
   await idle(page);
   await expect(page.getByTestId("compact-button")).toBeEnabled();
   await screenshot(app, "stage-12", "S12-E-compaction", page);
