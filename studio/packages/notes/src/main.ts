@@ -564,7 +564,8 @@ async function start(): Promise<void> {
     studio: () => server?.studioLinked() ?? false,
   });
   server = await startNotesServer({ store, shell: notesShell, uiDir });
-  writeFileSync(runningFile(), JSON.stringify({ url: server.url, token: server.token, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));
+  // exe (2026-11-04): AMO 平台 knows from it that its 便签 runs, without asking Windows for every process.
+  writeFileSync(runningFile(), JSON.stringify({ url: server.url, token: server.token, pid: process.pid, exe: process.execPath, startedAt: new Date().toISOString() }, null, 2));
 
   ipcMain.handle("amo:host", () => ({ url: server!.url, token: server!.token }));
   ipcMain.handle("amo:copy", (_event, text: string) => {

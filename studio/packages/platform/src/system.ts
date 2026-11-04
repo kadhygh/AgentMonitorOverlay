@@ -125,6 +125,11 @@ export type StudioStop =
   | { ok: false; reason: "running"; running: number }
   | { ok: false; reason: "not-running" | "unsupported" | "failed"; message: string };
 
+/** The Host's pid from the data dir's host.json, or null (关闭 Studio waits for it as well as the shell). */
+export function studioHostPid(dataDir: string | null): number | null {
+  return dataDir ? (hostOf(dataDir)?.pid ?? null) : null;
+}
+
 /** The Studio shell's pid from the data dir's shell.json (written by Studio since 2026-10-29), or null. */
 export function studioShellPid(dataDir: string): number | null {
   try {

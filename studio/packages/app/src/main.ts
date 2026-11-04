@@ -294,12 +294,13 @@ function createTray(): void {
 
 /**
  * shell.json in the data dir (2026-10-29): this shell's pid, so the AMO platform's 重启 Studio can wait for it to end
- * before starting the new version (otherwise the new one would only find this one by the single-instance lock).
+ * before starting the new version (otherwise the new one would only find this one by the single-instance lock). Its exe
+ * since 2026-11-04: the platform then knows the installed Studio runs (and which version) without asking Windows.
  */
 const shellFile = join(dataDir, "shell.json");
 function writeShellFile(): void {
   try {
-    writeFileSync(shellFile, JSON.stringify({ pid: process.pid, version: STUDIO_VERSION, startedAt: new Date().toISOString() }, null, 2));
+    writeFileSync(shellFile, JSON.stringify({ pid: process.pid, exe: process.execPath, version: STUDIO_VERSION, startedAt: new Date().toISOString() }, null, 2));
   } catch {
     // the platform then only waits for the Host
   }

@@ -688,7 +688,31 @@ function createTray(): void {
 // shows its window. (A running client from before this rule only shows its window; quit it from the tray once.)
 const me = { exe: process.execPath };
 
+/**
+ * running.json in its home (2026-11-04, the user: 关闭 on AMO 平台's card was slow): this client's pid and exe, so the
+ * platform knows it runs — and when it has quit — without asking Windows for every process. Only the running one
+ * writes it; it goes when it quits (a file left by a crash names a pid that no longer lives).
+ */
+const runningFile = join(home, "running.json");
+function writeRunning(): void {
+  try {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(runningFile, JSON.stringify({ pid: process.pid, exe: process.execPath, startedAt: new Date().toISOString() }, null, 2));
+  } catch {
+    // the platform then asks Windows, as before
+  }
+}
+function removeRunning(): void {
+  try {
+    if ((JSON.parse(readFileSync(runningFile, "utf8")) as { pid?: unknown }).pid === process.pid) rmSync(runningFile, { force: true });
+  } catch {
+    // not there, or another client's
+  }
+}
+
 function start(): void {
+  writeRunning();
+  app.on("will-quit", removeRunning);
   app.on("second-instance", (_e, argv, _cwd, data) => {
     const other = (data as { exe?: string } | undefined)?.exe;
     // 退出中转 from AMO 平台's tray or card (2026-10-29), whichever copy asks.

@@ -52,14 +52,15 @@ export function planLaunch(tool: string, entry: { dir: string; exe: string } | u
 }
 
 /** Starts it on its own; a .cmd/.bat (the tests' stand-in tools) goes through cmd.exe. */
-export function startDetached(spec: LaunchSpec): Promise<void> {
+export function startDetached(spec: LaunchSpec): Promise<number | undefined> {
   const script = /\.(cmd|bat)$/i.test(spec.file);
   const child = script
     ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${spec.file}"`, ...spec.args], { cwd: spec.cwd, env: spec.env, detached: true, stdio: "ignore", windowsHide: true, windowsVerbatimArguments: true })
     : spawn(spec.file, spec.args, { cwd: spec.cwd, env: spec.env, detached: true, stdio: "ignore" });
   child.unref();
   return new Promise((resolve, reject) => {
-    child.once("spawn", () => resolve());
+    // Its pid (running.ts's layer 2); a .cmd's is cmd.exe's, which the tests' stand-ins are.
+    child.once("spawn", () => resolve(child.pid));
     child.once("error", reject);
   });
 }
