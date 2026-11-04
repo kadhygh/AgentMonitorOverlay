@@ -213,6 +213,9 @@ export interface CanvasOutline {
 
 const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
 
+/** The status a task shows for its live sessions: the most urgent one (the canvas outline and the AMO MCP read model). */
+export const mostUrgentStatus = (live: Array<Pick<Session, "status">>): SessionStatus | null => URGENCY.find((u) => live.some((s) => s.status === u)) ?? null;
+
 /**
  * The structure an agent needs, without coordinates: groups with their tasks, reference cards and notes, dependencies,
  * and tasks not yet placed. `tasks` are the topic's live tasks; `others` all tasks (archived too) and topics, to say
@@ -236,7 +239,7 @@ export function canvasOutline(
       id: task.id,
       title: task.title || "未命名任务",
       column: task.column,
-      status: URGENCY.find((u) => live.some((s) => s.status === u)) ?? null,
+      status: mostUrgentStatus(live),
       workspace: taskWhere(task, workspaces),
       dependsOn: deps.filter((d) => d.to === task.id).map((d) => d.from),
       ...(task.description ? { description: task.description } : {}),

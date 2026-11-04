@@ -1,11 +1,10 @@
-import { buildSessionTree, isCommon, RUNTIME_LABELS, taskWhere, topicWorkspaceIds, type Id, type ModelProfile, type Session, type SessionNode, type SessionStatus, type Task, type TaskColumn, type Topic } from "@amo-studio/protocol";
+import { buildSessionTree, isCommon, mostUrgentStatus, RUNTIME_LABELS, taskWhere, topicWorkspaceIds, type Id, type ModelProfile, type Session, type SessionNode, type SessionStatus, type Task, type TaskColumn, type Topic } from "@amo-studio/protocol";
 import type { HostService } from "../service.js";
 import type { McpCaller } from "./tools.js";
 
 // What agents read through the AMO MCP: plain structures, no coordinates, no full transcripts. Read-only by design;
 // writing tools come in stage 5.
 
-const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
 const EXCERPT = 300;
 
 export class NotFoundError extends Error {}
@@ -31,7 +30,7 @@ export class ReadModel {
 
   private status(taskId: Id): SessionStatus | null {
     const live = this.live(taskId);
-    return URGENCY.find((u) => live.some((s) => s.status === u)) ?? null;
+    return mostUrgentStatus(live);
   }
 
   private where(task: Task): string {

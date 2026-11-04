@@ -11,11 +11,11 @@
 | 0 | 先定的事 | 见下面「第 0 步」 |
 | 1 | 文档对齐 | ✓ 11-04 |
 | 2 | 发布脚本漏判 | ✓ 11-04 `dbc97045` |
-| 3 | 消息投递统一 | ○ |
+| 3 | 消息投递统一 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-delivery`，分支 `studio/message-delivery`，方案 `plans/message-delivery.md` |
 | 4 | 中转登录收口 | ○ |
-| 5 | 清死代码和重复定义 | ○ |
+| 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
 | 6 | 只增不删的数据 | ○ |
-| 7 | ui 的数据流和共用件 | ○ |
+| 7 | ui 的数据流和共用件 | ◐ 11-04 开工：worktree `.claude/worktrees/cleanup-ui`，分支 `studio/ui-dataflow` |
 | 8 | Host 结构重排 | ○ 只写方案 |
 
 ## 第 0 步：先定的事
@@ -56,6 +56,15 @@
 ## 第 5 步：清死代码和重复定义
 
 token 模式残留（`ClaudeLogin`、`claude.login:` 键、token 分支）；`protocol/examples.ts` 的 `codex-deepseek-flash`；没人用的导出；`URGENCY` 两份、todo 类型两份；`base.css` 浅色主题整块复制；没人用的 CSS 类；`smoke:stage*`、`relay-service.ps1`、`bench-session-open.mjs`。会动 runtime 的（`BUSY_STATUSES`）并进第 3 步。
+
+11-04 做了（主工作区，提交进 master）：
+- `URGENCY` 只留 protocol 一份，导出 `mostUrgentStatus`，MCP 读模型改用它。
+- 删了没人用的 `sessionOwner` / `SessionOwner` / `sameOwner`、`isCommentRange`。
+- `examples.ts` 的样例渠道换成中性的 `codex-fast`。
+- `smoke-stage1/4/5/7.mjs` 跑不起来了（用的渠道 11-03 已删），挪进 `docs/archive/scripts/`，去掉 `smoke:stage*` 命令。
+- checklist 的注释写明现状（不拆，第 0 步）。
+
+核对后**不动**的（审查说是残留，实际在用）：`ClaudeLogin = "token"` 是 API Key 渠道用的 Studio 自己的配置目录，不是 10-27 删掉的 token 模式；`scripts/relay-service.ps1` 是 relay README 写明的退路（Mac 出问题时在本机起服务）；`bench-session-open.mjs` 是手动用的测量脚本；`RemoteCommandBodies`、`HostEventType` 这类类型别名留着当协议说明。交给别的步骤的：没人用的 CSS 类和 `base.css` 的重复变量（第 7 步的会话在改 ui）；todo 类型两份（relay 不依赖 protocol，合并要动中转服务的依赖，放进第 6 步和中转一起做）。
 
 ## 第 6 步：只增不删的数据
 
