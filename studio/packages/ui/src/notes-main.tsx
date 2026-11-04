@@ -9,6 +9,7 @@ import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
 // The controls the 便签 windows use (buttons, fields), then their own styles.
 import "./styles/base.css";
+import "./styles/controls.css";
 import "./shell/shell.css";
 import "./task/task.css";
 import "./settings/settings.css";

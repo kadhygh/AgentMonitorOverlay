@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { ModelProfile, Session, SubsessionNote } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
@@ -7,6 +6,7 @@ import { normalPick, type ModelPick } from "../lib/recents.js";
 import { EffortBars, pickLabel } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { subSessionArgs, type SubSessionSpec } from "./mentions.js";
+import { Modal } from "../lib/Modal.js";
 
 // 开子会话… (2026-10-26): from the composer's @ list, how the model is to start sub-sessions — model, effort,
 // permission, whether their results come back. Confirmed, the composer gets「@子会话N」 and the message says what it means.
@@ -97,76 +97,64 @@ export function SubSessionDialog({
     onDone(spec);
   };
 
-  return createPortal(
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onDone(null)}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onDone(null);
-        }
-      }}
-    >
-      <div className="modal subsession-modal" role="dialog" aria-modal="true" aria-labelledby="subsession-title" data-testid="subsession-dialog">
-        <span className="modal-title" id="subsession-title">
-          开子会话
-        </span>
-        <span className="settings-hint">在输入框里放一个「@子会话N」，发出去时告诉模型：开子会话要用 AMO 的 session_start，带这些设置。什么时候开、做什么，你在消息里说。</span>
-        <div className="subsession-field">
-          <span className="settings-label">模型</span>
-          <ModelRow link={link} profiles={profiles} pick={pick} onPick={setPick} drawer={drawer} onToggleDrawer={() => setDrawer(!drawer)} small />
-        </div>
-        <div className="subsession-field">
-          <span className="settings-label">思考强度</span>
-          {model && model.efforts.length > 0 ? (
-            <EffortBars efforts={model.efforts} value={chosenEffort ?? null} fallback={model.defaultEffort} onChange={setEffort} small />
-          ) : (
-            <span className="settings-hint">{choices ? "这个模型没有思考强度可选" : "正在读取…"}</span>
-          )}
-          {chosenEffort && (
-            <button type="button" className="link-btn" onClick={() => setEffort(undefined)}>
-              用默认
+  return (
+    <Modal portal className="subsession-modal" labelledBy="subsession-title" testId="subsession-dialog" onClose={() => onDone(null)}>
+      <span className="modal-title" id="subsession-title">
+        开子会话
+      </span>
+      <span className="settings-hint">在输入框里放一个「@子会话N」，发出去时告诉模型：开子会话要用 AMO 的 session_start，带这些设置。什么时候开、做什么，你在消息里说。</span>
+      <div className="subsession-field">
+        <span className="settings-label">模型</span>
+        <ModelRow link={link} profiles={profiles} pick={pick} onPick={setPick} drawer={drawer} onToggleDrawer={() => setDrawer(!drawer)} small />
+      </div>
+      <div className="subsession-field">
+        <span className="settings-label">思考强度</span>
+        {model && model.efforts.length > 0 ? (
+          <EffortBars efforts={model.efforts} value={chosenEffort ?? null} fallback={model.defaultEffort} onChange={setEffort} small />
+        ) : (
+          <span className="settings-hint">{choices ? "这个模型没有思考强度可选" : "正在读取…"}</span>
+        )}
+        {chosenEffort && (
+          <button type="button" className="link-btn" onClick={() => setEffort(undefined)}>
+            用默认
+          </button>
+        )}
+      </div>
+      <div className="subsession-field">
+        <span className="settings-label">权限</span>
+        <div className="settings-row" role="group" aria-label="权限">
+          {LEVELS.map((l) => (
+            <button key={l.label} type="button" className="chip small" title={l.hint} aria-pressed={(permission ?? null) === l.id} onClick={() => setPermission(l.id ?? undefined)}>
+              {l.label}
             </button>
-          )}
-        </div>
-        <div className="subsession-field">
-          <span className="settings-label">权限</span>
-          <div className="settings-row" role="group" aria-label="权限">
-            {LEVELS.map((l) => (
-              <button key={l.label} type="button" className="chip small" title={l.hint} aria-pressed={(permission ?? null) === l.id} onClick={() => setPermission(l.id ?? undefined)}>
-                {l.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <label className="settings-row feature-row">
-          <input type="checkbox" checked={report} onChange={(e) => setReport(e.currentTarget.checked)} data-testid="subsession-report" />
-          <span className="feature-text">
-            <span>结果回到这个对话</span>
-            <span className="settings-hint">子会话每一轮做完，它的回复会作为消息回来（被停下、出错也会说）</span>
-          </span>
-        </label>
-        {note && (
-          <span className="settings-hint" data-testid="subsession-note">
-            你在 设置 → 子会话 写的说明会一起带上：{note}
-          </span>
-        )}
-        {spec && (
-          <span className="subsession-preview" data-testid="subsession-preview">
-            {subSessionArgs(spec)}
-          </span>
-        )}
-        <div className="settings-row end">
-          <button type="button" className="btn-ghost small" onClick={() => onDone(null)}>
-            取消
-          </button>
-          <button ref={confirm} type="button" className="btn-primary small" disabled={!spec} onClick={done} data-testid="subsession-ok">
-            放进输入框
-          </button>
+          ))}
         </div>
       </div>
-    </div>,
-    document.body,
+      <label className="settings-row feature-row">
+        <input type="checkbox" checked={report} onChange={(e) => setReport(e.currentTarget.checked)} data-testid="subsession-report" />
+        <span className="feature-text">
+          <span>结果回到这个对话</span>
+          <span className="settings-hint">子会话每一轮做完，它的回复会作为消息回来（被停下、出错也会说）</span>
+        </span>
+      </label>
+      {note && (
+        <span className="settings-hint" data-testid="subsession-note">
+          你在 设置 → 子会话 写的说明会一起带上：{note}
+        </span>
+      )}
+      {spec && (
+        <span className="subsession-preview" data-testid="subsession-preview">
+          {subSessionArgs(spec)}
+        </span>
+      )}
+      <div className="settings-row end">
+        <button type="button" className="btn-ghost small" onClick={() => onDone(null)}>
+          取消
+        </button>
+        <button ref={confirm} type="button" className="btn-primary small" disabled={!spec} onClick={done} data-testid="subsession-ok">
+          放进输入框
+        </button>
+      </div>
+    </Modal>
   );
 }

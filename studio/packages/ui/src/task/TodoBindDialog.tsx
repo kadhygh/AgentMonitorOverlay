@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { sortTodo, TODO_SHARED_LIST, todoDeviceList, type TodoEntry, type TodoLink, type TodoView } from "@amo-studio/protocol";
 import { scratchpadBridge } from "../scratchpad/bridge.js";
 import { showToast } from "../lib/toast.js";
+import { Modal } from "../lib/Modal.js";
 
 // 绑定到待办 (2026-11-02, 问题 #10, the user: bound from the task's or the session's ⋯ here, not in 便签). A dialog lists
 // the open items of the 便签 program's 待办 (本机, 共通, the other devices); a click binds that item to this task (or
@@ -43,11 +44,6 @@ export function TodoBindDialog({ view: first, target, onClose }: { view: TodoVie
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   // 本机 first, then 共通, then the other devices (as the 待办 window's tabs); only what is not done.
   const groups = useMemo(() => {
@@ -84,49 +80,47 @@ export function TodoBindDialog({ view: first, target, onClose }: { view: TodoVie
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal todo-bind-dialog" role="dialog" aria-modal="true" aria-label="绑定到待办" data-testid="todo-bind-dialog">
-        <span className="modal-title">绑定到待办 · {target.sessionId ? target.sessionTitle || "会话" : target.taskTitle || "未命名任务"}</span>
-        <span className="settings-hint">选一条便签里的待办，绑定到{what}。绑定后，在便签的待办里点这条后面的标签，Studio 就打开{what}。绑定只记在这台电脑上。</span>
-        <input className="todo-bind-search" type="search" placeholder="搜索待办" aria-label="搜索待办" value={query} autoFocus onChange={(e) => setQuery(e.target.value)} />
-        <div className="todo-bind-list" role="list">
-          {groups.map((g) => (
-            <div key={g.list} className="todo-bind-group" role="group" aria-label={g.name}>
-              <div className="todo-bind-label">{g.name}</div>
-              {g.items.map((item) => {
-                const l = view.links[item.id];
-                const here = sameTarget(l, target);
-                return (
-                  <div key={item.id} className="todo-bind-row" role="listitem" data-bound={here ? "" : undefined} data-testid="todo-bind-item">
-                    <button type="button" className="todo-bind-pick" disabled={busy || here} title={here ? `已经绑定到${what}` : l ? `改绑到${what}（现在绑定在「${tagOf(l)}」）` : `绑定到${what}`} onClick={() => void bind(item, false)}>
-                      <span className="todo-bind-box" aria-hidden="true">{here ? "✓" : ""}</span>
-                      <span className="todo-bind-text">{item.text}</span>
-                      {l && <span className="todo-bind-tag">{here ? "已绑定在这里" : `已绑定：${tagOf(l)}`}</span>}
+    <Modal className="todo-bind-dialog" label="绑定到待办" testId="todo-bind-dialog" onClose={onClose}>
+      <span className="modal-title">绑定到待办 · {target.sessionId ? target.sessionTitle || "会话" : target.taskTitle || "未命名任务"}</span>
+      <span className="settings-hint">选一条便签里的待办，绑定到{what}。绑定后，在便签的待办里点这条后面的标签，Studio 就打开{what}。绑定只记在这台电脑上。</span>
+      <input className="todo-bind-search" type="search" placeholder="搜索待办" aria-label="搜索待办" value={query} autoFocus onChange={(e) => setQuery(e.target.value)} />
+      <div className="todo-bind-list" role="list">
+        {groups.map((g) => (
+          <div key={g.list} className="todo-bind-group" role="group" aria-label={g.name}>
+            <div className="todo-bind-label">{g.name}</div>
+            {g.items.map((item) => {
+              const l = view.links[item.id];
+              const here = sameTarget(l, target);
+              return (
+                <div key={item.id} className="todo-bind-row" role="listitem" data-bound={here ? "" : undefined} data-testid="todo-bind-item">
+                  <button type="button" className="todo-bind-pick" disabled={busy || here} title={here ? `已经绑定到${what}` : l ? `改绑到${what}（现在绑定在「${tagOf(l)}」）` : `绑定到${what}`} onClick={() => void bind(item, false)}>
+                    <span className="todo-bind-box" aria-hidden="true">{here ? "✓" : ""}</span>
+                    <span className="todo-bind-text">{item.text}</span>
+                    {l && <span className="todo-bind-tag">{here ? "已绑定在这里" : `已绑定：${tagOf(l)}`}</span>}
+                  </button>
+                  {here && (
+                    <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void bind(item, true)} data-testid="todo-bind-unbind">
+                      解除绑定
                     </button>
-                    {here && (
-                      <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void bind(item, true)} data-testid="todo-bind-unbind">
-                        解除绑定
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-          {!groups.length && <div className="settings-hint">没有找到「{query.trim()}」。</div>}
-        </div>
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
-        <div className="description-dialog-actions">
-          <span className="spacer" />
-          <button type="button" className="btn-ghost" onClick={onClose}>
-            关闭
-          </button>
-        </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {!groups.length && <div className="settings-hint">没有找到「{query.trim()}」。</div>}
       </div>
-    </div>
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <div className="description-dialog-actions">
+        <span className="spacer" />
+        <button type="button" className="btn-ghost" onClick={onClose}>
+          关闭
+        </button>
+      </div>
+    </Modal>
   );
 }

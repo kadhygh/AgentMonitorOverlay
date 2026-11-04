@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { isCommon, peerPresence, REMOTE_PERMISSION_LABEL, RUNTIME_LABELS, type ModelProfile, type RemotePeer, type RemoteState, type RemoteTaskRequest, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
+import { Modal } from "../lib/Modal.js";
 
 // 远程 step 4 (2026-10-29, plans/remote-session.md 方式 2): B asks one of the person's other computers (A) to run a task;
 // A's person picks where it goes and the model, and allows or refuses it. On B: the requests sent (等它同意 / 拒绝了 /
@@ -11,31 +11,19 @@ import { relativeTime } from "../lib/status.js";
 // the request dialog is gone; A still answers requests from an older B here, and B keeps showing what it sent before.
 
 export function Dialog({ title, testId, busy, onClose, children, head, className = "" }: { title: string; testId: string; busy: boolean; onClose(): void; children: ReactNode; /** Beside the title, on the right. */ head?: ReactNode; className?: string }) {
-  return createPortal(
-    <div
-      className="modal-backdrop confirm-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          if (!busy) onClose();
-        }
-      }}
-    >
-      <div className={`modal confirm-modal remote-request-modal ${className}`} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
-        {head ? (
-          <div className="remote-dialog-head">
-            <span className="modal-title">{title}</span>
-            <span className="spacer" />
-            {head}
-          </div>
-        ) : (
+  return (
+    <Modal portal backdropClassName="confirm-backdrop" className={`confirm-modal remote-request-modal ${className}`} label={title} testId={testId} busy={busy} onClose={onClose}>
+      {head ? (
+        <div className="remote-dialog-head">
           <span className="modal-title">{title}</span>
-        )}
-        {children}
-      </div>
-    </div>,
-    document.body,
+          <span className="spacer" />
+          {head}
+        </div>
+      ) : (
+        <span className="modal-title">{title}</span>
+      )}
+      {children}
+    </Modal>
   );
 }
 

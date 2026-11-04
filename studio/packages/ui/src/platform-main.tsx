@@ -6,6 +6,7 @@ import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
 // Studio's tokens and controls (buttons, fields), then the platform's own styles.
 import "./styles/base.css";
+import "./styles/controls.css";
 import "./shell/shell.css";
 import "./platform/platform.css";
 import { applyTheme } from "./lib/theme.js";

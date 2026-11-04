@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { Modal } from "../lib/Modal.js";
 
 // 书签说明 (2026-10-20): adding a bookmark first asks for its note, in a small dialog (the note may stay empty). × or
 // Esc closes it without adding the bookmark (2026-10-23). For every window, like the toasts: askBookmarkNote() from
@@ -51,63 +51,54 @@ function NoteDialog({ ask }: { ask: Ask }) {
     emit();
   };
   const confirm = () => close(note.trim());
-  return createPortal(
+  return (
     // Esc closes it without a bookmark (and stays here, not closing what is underneath); a click outside does nothing.
-    <div
-      className="modal-backdrop confirm-backdrop bookmark-note-backdrop"
-      onKeyDown={(e) => {
-        if (e.key !== "Escape") return;
-        e.stopPropagation();
+    <Modal
+      portal
+      backdropClassName="confirm-backdrop bookmark-note-backdrop"
+      className="confirm-modal bookmark-note"
+      labelledBy="bookmark-note-title"
+      testId="bookmark-note"
+      closeOnBackdrop={false}
+      onClose={() => close(null)}
+      onSubmit={(e) => {
         e.preventDefault();
-        close(null);
+        confirm();
       }}
     >
-      <form
-        className="modal confirm-modal bookmark-note"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bookmark-note-title"
-        data-testid="bookmark-note"
-        onSubmit={(e) => {
-          e.preventDefault();
-          confirm();
-        }}
-      >
-        <div className="modal-head">
-          <span className="modal-title" id="bookmark-note-title">
-            书签说明
-          </span>
-          <span className="spacer" />
-          <button type="button" className="icon-btn" aria-label="不加书签" title="不加书签（Esc）" onClick={() => close(null)} data-testid="bookmark-note-cancel">
-            ×
-          </button>
-        </div>
-        <span className="bookmark-note-subject" title={ask.subject}>
-          {ask.subject}
+      <div className="modal-head">
+        <span className="modal-title" id="bookmark-note-title">
+          书签说明
         </span>
-        <textarea
-          ref={box}
-          className="field"
-          rows={4}
-          value={note}
-          maxLength={2000}
-          placeholder="这个书签记的是什么（可以留空）"
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              confirm();
-            }
-          }}
-          data-testid="bookmark-note-text"
-        />
-        <div className="settings-row end">
-          <button type="submit" className="btn-primary small" title="确认（Ctrl+Enter）" data-testid="bookmark-note-ok">
-            确认
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body,
+        <span className="spacer" />
+        <button type="button" className="icon-btn" aria-label="不加书签" title="不加书签（Esc）" onClick={() => close(null)} data-testid="bookmark-note-cancel">
+          ×
+        </button>
+      </div>
+      <span className="bookmark-note-subject" title={ask.subject}>
+        {ask.subject}
+      </span>
+      <textarea
+        ref={box}
+        className="field"
+        rows={4}
+        value={note}
+        maxLength={2000}
+        placeholder="这个书签记的是什么（可以留空）"
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            confirm();
+          }
+        }}
+        data-testid="bookmark-note-text"
+      />
+      <div className="settings-row end">
+        <button type="submit" className="btn-primary small" title="确认（Ctrl+Enter）" data-testid="bookmark-note-ok">
+          确认
+        </button>
+      </div>
+    </Modal>
   );
 }

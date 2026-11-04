@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { AMO_CHANNEL_KEYS, BALANCE_TEMPLATES, CHANNEL_KIND_LABEL, type BalanceConfig, type BalanceTemplate, type ChannelBalance, type ChannelInput, type ChannelKind, type ModelChannel } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { balanceText } from "../lib/balance.js";
+import { Modal } from "../lib/Modal.js";
 
 // 设置 → 模型 → 添加渠道 / 编辑: a third-party Claude (Anthropic-compatible, run by Claude Code) or Codex (Responses API,
 // run by Codex) endpoint — its name, address, key and model — and how to ask its site for the balance (CC Switch's
@@ -164,206 +164,194 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
   const toggleModel = (m: string) => set({ models: (typed.includes(m) ? typed.filter((x) => x !== m) : [...typed, m]).join("\n") });
 
   const tpl = BALANCE_TEMPLATES.find((t) => t.id === d.template);
-  return createPortal(
-    <div
-      className="modal-backdrop confirm-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
-    >
-      <div className="modal channel-modal" role="dialog" aria-modal="true" aria-labelledby="channel-title" data-testid="channel-dialog">
-        <span className="modal-title" id="channel-title">
-          {editing ? `编辑渠道「${channel.label}」` : "添加第三方渠道"}
-        </span>
-        {!editing && (
-          <div className="kind-choices" role="radiogroup" aria-label="渠道类型">
-            {(["claude", "codex", "dsh"] as const).map((k) => (
-              <button key={k} type="button" role="radio" aria-checked={d.kind === k} className="kind-choice" onClick={() => set({ kind: k, keyFrom: null })} data-testid={`channel-kind-${k}`}>
-                {CHANNEL_KIND_LABEL[k]}
-                <span className="kind-sub">{k === "claude" ? "用 Claude Code 跑" : k === "codex" ? "用 Codex 跑" : "用 DSH 跑"}</span>
+  return (
+    <Modal portal backdropClassName="confirm-backdrop" className="channel-modal" labelledBy="channel-title" testId="channel-dialog" onClose={onClose}>
+      <span className="modal-title" id="channel-title">
+        {editing ? `编辑渠道「${channel.label}」` : "添加第三方渠道"}
+      </span>
+      {!editing && (
+        <div className="kind-choices" role="radiogroup" aria-label="渠道类型">
+          {(["claude", "codex", "dsh"] as const).map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={d.kind === k} className="kind-choice" onClick={() => set({ kind: k, keyFrom: null })} data-testid={`channel-kind-${k}`}>
+              {CHANNEL_KIND_LABEL[k]}
+              <span className="kind-sub">{k === "claude" ? "用 Claude Code 跑" : k === "codex" ? "用 Codex 跑" : "用 DSH 跑"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="channel-form">
+        <label className="channel-field">
+          <span>名字</span>
+          <input ref={first} className="field" value={d.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} placeholder={d.kind === "claude" ? "例如 中转 Claude" : d.kind === "dsh" ? "例如 中转 DeepSeek" : "例如 GPT-Dxx"} aria-label="渠道名字" data-testid="channel-label" />
+        </label>
+        <label className="channel-field">
+          <span>网址</span>
+          <input className="field mono" value={d.baseUrl} spellCheck={false} onChange={(e) => set({ baseUrl: e.target.value })} placeholder={PLACEHOLDER[d.kind]} aria-label="渠道网址" data-testid="channel-url" />
+        </label>
+        <label className="channel-field">
+          <span>API Key</span>
+          <span className="channel-key">
+            <input
+              className="field"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={d.key}
+              onChange={(e) => set({ key: e.target.value })}
+              placeholder={keyFromLabel ? `正在用${keyFromLabel}；粘贴新 Key 改用它` : channel?.keySaved ? "已保存；粘贴新 Key 以替换" : "sk-…"}
+              aria-label="API Key"
+              data-testid="channel-key"
+            />
+            {amoKeys.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                className="chip small"
+                aria-pressed={d.keyFrom === k.id}
+                title={`不另存 Key，直接读旧 AMO 保存的那份（只读）${d.baseUrl ? "" : `；网址填 ${k.baseUrl}`}`}
+                onClick={() => set({ keyFrom: d.keyFrom === k.id ? null : k.id, key: "", ...(d.baseUrl ? {} : { baseUrl: k.baseUrl }) })}
+              >
+                沿用{k.label}
               </button>
             ))}
-          </div>
-        )}
-        <div className="channel-form">
-          <label className="channel-field">
-            <span>名字</span>
-            <input ref={first} className="field" value={d.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} placeholder={d.kind === "claude" ? "例如 中转 Claude" : d.kind === "dsh" ? "例如 中转 DeepSeek" : "例如 GPT-Dxx"} aria-label="渠道名字" data-testid="channel-label" />
-          </label>
-          <label className="channel-field">
-            <span>网址</span>
-            <input className="field mono" value={d.baseUrl} spellCheck={false} onChange={(e) => set({ baseUrl: e.target.value })} placeholder={PLACEHOLDER[d.kind]} aria-label="渠道网址" data-testid="channel-url" />
-          </label>
-          <label className="channel-field">
-            <span>API Key</span>
-            <span className="channel-key">
-              <input
-                className="field"
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                value={d.key}
-                onChange={(e) => set({ key: e.target.value })}
-                placeholder={keyFromLabel ? `正在用${keyFromLabel}；粘贴新 Key 改用它` : channel?.keySaved ? "已保存；粘贴新 Key 以替换" : "sk-…"}
-                aria-label="API Key"
-                data-testid="channel-key"
-              />
-              {amoKeys.map((k) => (
-                <button
-                  key={k.id}
-                  type="button"
-                  className="chip small"
-                  aria-pressed={d.keyFrom === k.id}
-                  title={`不另存 Key，直接读旧 AMO 保存的那份（只读）${d.baseUrl ? "" : `；网址填 ${k.baseUrl}`}`}
-                  onClick={() => set({ keyFrom: d.keyFrom === k.id ? null : k.id, key: "", ...(d.baseUrl ? {} : { baseUrl: k.baseUrl }) })}
-                >
-                  沿用{k.label}
-                </button>
-              ))}
-            </span>
-          </label>
-          {d.kind !== "dsh" && (
-            <label className="channel-field">
-              <span>模型</span>
-              <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
-            </label>
-          )}
-          {d.kind === "dsh" && (
-            <>
-              <div className="channel-field">
-                <span>模型</span>
-                <span className="channel-models">
-                  <textarea
-                    className="field mono"
-                    rows={3}
-                    value={d.models}
-                    spellCheck={false}
-                    onChange={(e) => set({ models: e.target.value })}
-                    placeholder={"第三方叫这些模型的名字，一行一个，第一个是默认\n例如 deepseek/deepseek-v4-pro\n留空用 DSH 自带的（deepseek-v4-pro 等官方名字）"}
-                    aria-label="模型列表"
-                    data-testid="channel-models"
-                  />
-                  <button type="button" className="btn-ghost small" disabled={busy || !d.baseUrl.trim()} onClick={() => void readModels()} title="向网址要它的模型列表（GET 网址/v1/models），点选加进来" data-testid="channel-models-read">
-                    从网址读取
-                  </button>
-                </span>
-              </div>
-              {siteModels && siteModels.length > 0 && (
-                <div className="channel-site-models" role="group" aria-label="网址上的模型" data-testid="channel-site-models">
-                  {siteModels.map((m) => (
-                    <button key={m} type="button" className="chip small mono" aria-pressed={typed.includes(m)} onClick={() => toggleModel(m)}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <span className="settings-hint" data-testid="channel-dsh-hint">
-                DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）。第三方的模型名和官方不一样时（比如 deepseek/deepseek-v4-pro），在上面列出来，DSH 就按这些名字发请求。
-              </span>
-            </>
-          )}
-          {d.kind === "claude" && (
-            <>
-              <label className="channel-field">
-                <span>快速模型</span>
-                <input className="field mono" value={d.smallModel} spellCheck={false} onChange={(e) => set({ smallModel: e.target.value })} placeholder="后台小任务用的（ANTHROPIC_DEFAULT_HAIKU_MODEL），可留空" aria-label="快速模型" />
-              </label>
-              <div className="channel-field">
-                <span>Key 的传法</span>
-                <span className="settings-row">
-                  {(
-                    [
-                      ["bearer", "Authorization: Bearer（多数中转）"],
-                      ["x-api-key", "x-api-key（官方 API 风格）"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button key={id} type="button" className="chip small" aria-pressed={d.claudeAuth === id} onClick={() => set({ claudeAuth: id })}>
-                      {label}
-                    </button>
-                  ))}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="channel-balance">
-          <span className="settings-label">余额查询</span>
-          <div className="settings-row" role="radiogroup" aria-label="余额查询方式">
-            {[{ id: "none" as const, label: "不查", hint: "不查询余额" }, ...BALANCE_TEMPLATES].map((t) => (
-              <button key={t.id} type="button" role="radio" className="chip small" aria-checked={d.template === t.id} aria-pressed={d.template === t.id} title={t.hint} onClick={() => set({ template: t.id })} data-testid={`balance-${t.id}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-          {tpl && <span className="settings-hint">{tpl.hint}</span>}
-          {(d.template === "newapi" || d.template === "sub2api" || d.template === "openai" || d.template === "general") && (
-            <label className="channel-field">
-              <span>{d.template === "newapi" ? "面板网址" : "查询网址"}</span>
-              <input className="field mono" value={d.balanceUrl} spellCheck={false} onChange={(e) => set({ balanceUrl: e.target.value })} placeholder="留空用上面的网址" aria-label="查询网址" />
-            </label>
-          )}
-          {d.template === "newapi" && (
-            <>
-              <label className="channel-field">
-                <span>用户 ID</span>
-                <input className="field" value={d.userId} onChange={(e) => set({ userId: e.target.value })} placeholder="面板 → 个人设置里的 ID" aria-label="用户 ID" />
-              </label>
-              <label className="channel-field">
-                <span>系统访问令牌</span>
-                <input className="field" type="password" autoComplete="off" value={d.accessToken} onChange={(e) => set({ accessToken: e.target.value })} placeholder={channel?.accessTokenSaved ? "已保存；粘贴新令牌以替换" : "面板 → 个人设置 → 生成系统访问令牌"} aria-label="系统访问令牌" />
-              </label>
-            </>
-          )}
-          {d.template === "custom" && (
-            <>
-              <label className="channel-field">
-                <span>查询地址</span>
-                <input className="field mono" value={d.balanceUrl} spellCheck={false} onChange={(e) => set({ balanceUrl: e.target.value })} placeholder="{{baseUrl}}/api/balance（GET，自动带 Bearer Key）" aria-label="查询地址" data-testid="balance-url" />
-              </label>
-              <div className="channel-paths">
-                <input className="field mono" value={d.remainingPath} onChange={(e) => set({ remainingPath: e.target.value })} placeholder="剩余：data.balance" aria-label="剩余的位置" data-testid="balance-remaining-path" />
-                <input className="field mono" value={d.usedPath} onChange={(e) => set({ usedPath: e.target.value })} placeholder="已用：data.used" aria-label="已用的位置" />
-                <input className="field mono" value={d.totalPath} onChange={(e) => set({ totalPath: e.target.value })} placeholder="总额：data.total" aria-label="总额的位置" />
-                <input className="field" value={d.divisor} onChange={(e) => set({ divisor: e.target.value })} placeholder="除以（可空）" aria-label="除数" />
-                <input className="field" value={d.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="单位 USD" aria-label="单位" />
-              </div>
-            </>
-          )}
-          {d.template !== "none" && (
-            <div className="settings-row">
-              <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void runTest()} data-testid="balance-test">
-                测试查询
-              </button>
-              {test && (
-                <span className={test.ok ? "credential-state saved" : "form-error"} role="status" data-testid="balance-test-result">
-                  {balanceText(test)}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
           </span>
+        </label>
+        {d.kind !== "dsh" && (
+          <label className="channel-field">
+            <span>模型</span>
+            <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
+          </label>
         )}
-        <span className="settings-hint">Key 和令牌只存进 Windows 凭据管理器；Studio 启动会话时放进它的环境变量，不写任何文件。</span>
-        <div className="settings-row end">
-          <button type="button" className="btn-ghost small" onClick={onClose}>
-            取消
-          </button>
-          <button type="button" className="btn-primary small" disabled={busy || !d.label.trim() || !d.baseUrl.trim()} onClick={() => void save()} data-testid="channel-save">
-            {editing ? "保存" : "添加"}
-          </button>
-        </div>
+        {d.kind === "dsh" && (
+          <>
+            <div className="channel-field">
+              <span>模型</span>
+              <span className="channel-models">
+                <textarea
+                  className="field mono"
+                  rows={3}
+                  value={d.models}
+                  spellCheck={false}
+                  onChange={(e) => set({ models: e.target.value })}
+                  placeholder={"第三方叫这些模型的名字，一行一个，第一个是默认\n例如 deepseek/deepseek-v4-pro\n留空用 DSH 自带的（deepseek-v4-pro 等官方名字）"}
+                  aria-label="模型列表"
+                  data-testid="channel-models"
+                />
+                <button type="button" className="btn-ghost small" disabled={busy || !d.baseUrl.trim()} onClick={() => void readModels()} title="向网址要它的模型列表（GET 网址/v1/models），点选加进来" data-testid="channel-models-read">
+                  从网址读取
+                </button>
+              </span>
+            </div>
+            {siteModels && siteModels.length > 0 && (
+              <div className="channel-site-models" role="group" aria-label="网址上的模型" data-testid="channel-site-models">
+                {siteModels.map((m) => (
+                  <button key={m} type="button" className="chip small mono" aria-pressed={typed.includes(m)} onClick={() => toggleModel(m)}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="settings-hint" data-testid="channel-dsh-hint">
+              DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）。第三方的模型名和官方不一样时（比如 deepseek/deepseek-v4-pro），在上面列出来，DSH 就按这些名字发请求。
+            </span>
+          </>
+        )}
+        {d.kind === "claude" && (
+          <>
+            <label className="channel-field">
+              <span>快速模型</span>
+              <input className="field mono" value={d.smallModel} spellCheck={false} onChange={(e) => set({ smallModel: e.target.value })} placeholder="后台小任务用的（ANTHROPIC_DEFAULT_HAIKU_MODEL），可留空" aria-label="快速模型" />
+            </label>
+            <div className="channel-field">
+              <span>Key 的传法</span>
+              <span className="settings-row">
+                {(
+                  [
+                    ["bearer", "Authorization: Bearer（多数中转）"],
+                    ["x-api-key", "x-api-key（官方 API 风格）"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button key={id} type="button" className="chip small" aria-pressed={d.claudeAuth === id} onClick={() => set({ claudeAuth: id })}>
+                    {label}
+                  </button>
+                ))}
+              </span>
+            </div>
+          </>
+        )}
       </div>
-    </div>,
-    document.body,
+
+      <div className="channel-balance">
+        <span className="settings-label">余额查询</span>
+        <div className="settings-row" role="radiogroup" aria-label="余额查询方式">
+          {[{ id: "none" as const, label: "不查", hint: "不查询余额" }, ...BALANCE_TEMPLATES].map((t) => (
+            <button key={t.id} type="button" role="radio" className="chip small" aria-checked={d.template === t.id} aria-pressed={d.template === t.id} title={t.hint} onClick={() => set({ template: t.id })} data-testid={`balance-${t.id}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tpl && <span className="settings-hint">{tpl.hint}</span>}
+        {(d.template === "newapi" || d.template === "sub2api" || d.template === "openai" || d.template === "general") && (
+          <label className="channel-field">
+            <span>{d.template === "newapi" ? "面板网址" : "查询网址"}</span>
+            <input className="field mono" value={d.balanceUrl} spellCheck={false} onChange={(e) => set({ balanceUrl: e.target.value })} placeholder="留空用上面的网址" aria-label="查询网址" />
+          </label>
+        )}
+        {d.template === "newapi" && (
+          <>
+            <label className="channel-field">
+              <span>用户 ID</span>
+              <input className="field" value={d.userId} onChange={(e) => set({ userId: e.target.value })} placeholder="面板 → 个人设置里的 ID" aria-label="用户 ID" />
+            </label>
+            <label className="channel-field">
+              <span>系统访问令牌</span>
+              <input className="field" type="password" autoComplete="off" value={d.accessToken} onChange={(e) => set({ accessToken: e.target.value })} placeholder={channel?.accessTokenSaved ? "已保存；粘贴新令牌以替换" : "面板 → 个人设置 → 生成系统访问令牌"} aria-label="系统访问令牌" />
+            </label>
+          </>
+        )}
+        {d.template === "custom" && (
+          <>
+            <label className="channel-field">
+              <span>查询地址</span>
+              <input className="field mono" value={d.balanceUrl} spellCheck={false} onChange={(e) => set({ balanceUrl: e.target.value })} placeholder="{{baseUrl}}/api/balance（GET，自动带 Bearer Key）" aria-label="查询地址" data-testid="balance-url" />
+            </label>
+            <div className="channel-paths">
+              <input className="field mono" value={d.remainingPath} onChange={(e) => set({ remainingPath: e.target.value })} placeholder="剩余：data.balance" aria-label="剩余的位置" data-testid="balance-remaining-path" />
+              <input className="field mono" value={d.usedPath} onChange={(e) => set({ usedPath: e.target.value })} placeholder="已用：data.used" aria-label="已用的位置" />
+              <input className="field mono" value={d.totalPath} onChange={(e) => set({ totalPath: e.target.value })} placeholder="总额：data.total" aria-label="总额的位置" />
+              <input className="field" value={d.divisor} onChange={(e) => set({ divisor: e.target.value })} placeholder="除以（可空）" aria-label="除数" />
+              <input className="field" value={d.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="单位 USD" aria-label="单位" />
+            </div>
+          </>
+        )}
+        {d.template !== "none" && (
+          <div className="settings-row">
+            <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void runTest()} data-testid="balance-test">
+              测试查询
+            </button>
+            {test && (
+              <span className={test.ok ? "credential-state saved" : "form-error"} role="status" data-testid="balance-test-result">
+                {balanceText(test)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <span className="settings-hint">Key 和令牌只存进 Windows 凭据管理器；Studio 启动会话时放进它的环境变量，不写任何文件。</span>
+      <div className="settings-row end">
+        <button type="button" className="btn-ghost small" onClick={onClose}>
+          取消
+        </button>
+        <button type="button" className="btn-primary small" disabled={busy || !d.label.trim() || !d.baseUrl.trim()} onClick={() => void save()} data-testid="channel-save">
+          {editing ? "保存" : "添加"}
+        </button>
+      </div>
+    </Modal>
   );
 }

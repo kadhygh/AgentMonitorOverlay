@@ -1,9 +1,10 @@
-import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { CALLOUT_DETAIL_MAX, ITEM_CARD, REVIEW_STATUSES, type CanvasCallout, type CanvasItem, type Id, type ReviewStatus, type Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { Markdown } from "../lib/markdown.js";
 import { DeleteButton } from "./DeleteButton.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { Modal } from "../lib/Modal.js";
 
 // 画布审阅 (2026-10-27, plans/review-canvas.md): a review's items as cards, the agents' remarks and questions pinned to
 // cards as bubbles, the window a question is answered in, and the sidebar's 沟通 list.
@@ -215,11 +216,6 @@ export function CalloutDialog({ link, callout: c, where, author, onOpenSession, 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
   const act = async (run: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -237,80 +233,78 @@ export function CalloutDialog({ link, callout: c, where, author, onOpenSession, 
   const gone = !author || !!author.archivedAt;
   const answered = c.state === "answered" && c.answer;
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal callout-dialog" role="dialog" aria-modal="true" aria-label={question ? "画布上的问题" : "画布上的说明"} data-testid="callout-dialog">
-        <span className="modal-title">
-          {question ? "问题" : "说明"} · {where}
+    <Modal className="callout-dialog" label={question ? "画布上的问题" : "画布上的说明"} testId="callout-dialog" onClose={onClose}>
+      <span className="modal-title">
+        {question ? "问题" : "说明"} · {where}
+      </span>
+      <span className="settings-hint">
+        {author ? `来自会话「${nameOf(author)}」` : c.sessionId ? "写它的会话已经不在了" : "人写的"} · {relativeTime(c.createdAt)}
+      </span>
+      {c.deep && c.state === "open" && (
+        <span className="callout-deep" role="note">
+          AI 觉得这个问题比较复杂，建议到对话里看它的解释再回答。
         </span>
-        <span className="settings-hint">
-          {author ? `来自会话「${nameOf(author)}」` : c.sessionId ? "写它的会话已经不在了" : "人写的"} · {relativeTime(c.createdAt)}
-        </span>
-        {c.deep && c.state === "open" && (
-          <span className="callout-deep" role="note">
-            AI 觉得这个问题比较复杂，建议到对话里看它的解释再回答。
-          </span>
-        )}
-        <div className="callout-dialog-text">{c.text}</div>
-        {c.detail && (
-          <div className="callout-dialog-detail">
-            <Markdown source={c.detail} />
-          </div>
-        )}
-        {answered && (
-          <div className="callout-dialog-answer" data-testid="callout-dialog-answer">
-            <span className="side-subheading">你的回答 · {relativeTime(c.answer!.at)}</span>
-            <span>{c.answer!.text}</span>
-            <span className="side-note">{c.answer!.sent === "none" ? "会话已不在，回答没有发出去（AI 下次读画布时能看到）" : "已发给会话"}</span>
-          </div>
-        )}
-        {question && !answered && c.options?.length ? (
-          <div className="callout-options" role="group" aria-label="可选的回答">
-            {c.options.map((o) => (
-              <button key={o} type="button" className={text === o ? "btn-ghost small is-picked" : "btn-ghost small"} aria-pressed={text === o} onClick={() => setText(o)}>
-                {o}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <textarea
-          className="side-textarea"
-          aria-label={question ? "你的回答" : "回一句"}
-          placeholder={answered ? "再补充一句（也会发给会话）" : question ? (c.options?.length ? "选一个，或写你的回答" : "写你的回答") : "回一句（会发给写这条说明的会话）；不用回就收起"}
-          value={text}
-          rows={question && !answered ? 4 : 2}
-          maxLength={CALLOUT_DETAIL_MAX}
-          autoFocus={!c.deep}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        {gone && c.sessionId && <span className="side-note">写它的会话已经不在了：回答只会留在画布上。</span>}
-        {error && (
-          <span className="form-error" role="alert">
-            {error}
-          </span>
-        )}
-        <div className="description-dialog-actions">
-          <span className="settings-hint">Ctrl+Enter 发送 · Esc 稍后</span>
-          <span className="spacer" />
-          {onOpenSession && (
-            <button type="button" className={c.deep && c.state === "open" ? "btn-primary" : "btn-ghost"} onClick={onOpenSession} data-testid="callout-open-session">
-              去对话里看
-            </button>
-          )}
-          <button type="button" className="btn-ghost" disabled={busy} onClick={putAway} data-testid="callout-close">
-            收起
-          </button>
-          <button type="button" className={c.deep && c.state === "open" ? "btn-ghost" : "btn-primary"} disabled={busy || !text.trim()} onClick={send} data-testid="callout-send">
-            {answered ? "补充" : question ? "发送回答" : "回复"}
-          </button>
+      )}
+      <div className="callout-dialog-text">{c.text}</div>
+      {c.detail && (
+        <div className="callout-dialog-detail">
+          <Markdown source={c.detail} />
         </div>
+      )}
+      {answered && (
+        <div className="callout-dialog-answer" data-testid="callout-dialog-answer">
+          <span className="side-subheading">你的回答 · {relativeTime(c.answer!.at)}</span>
+          <span>{c.answer!.text}</span>
+          <span className="side-note">{c.answer!.sent === "none" ? "会话已不在，回答没有发出去（AI 下次读画布时能看到）" : "已发给会话"}</span>
+        </div>
+      )}
+      {question && !answered && c.options?.length ? (
+        <div className="callout-options" role="group" aria-label="可选的回答">
+          {c.options.map((o) => (
+            <button key={o} type="button" className={text === o ? "btn-ghost small is-picked" : "btn-ghost small"} aria-pressed={text === o} onClick={() => setText(o)}>
+              {o}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <textarea
+        className="side-textarea"
+        aria-label={question ? "你的回答" : "回一句"}
+        placeholder={answered ? "再补充一句（也会发给会话）" : question ? (c.options?.length ? "选一个，或写你的回答" : "写你的回答") : "回一句（会发给写这条说明的会话）；不用回就收起"}
+        value={text}
+        rows={question && !answered ? 4 : 2}
+        maxLength={CALLOUT_DETAIL_MAX}
+        autoFocus={!c.deep}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            send();
+          }
+        }}
+      />
+      {gone && c.sessionId && <span className="side-note">写它的会话已经不在了：回答只会留在画布上。</span>}
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <div className="description-dialog-actions">
+        <span className="settings-hint">Ctrl+Enter 发送 · Esc 稍后</span>
+        <span className="spacer" />
+        {onOpenSession && (
+          <button type="button" className={c.deep && c.state === "open" ? "btn-primary" : "btn-ghost"} onClick={onOpenSession} data-testid="callout-open-session">
+            去对话里看
+          </button>
+        )}
+        <button type="button" className="btn-ghost" disabled={busy} onClick={putAway} data-testid="callout-close">
+          收起
+        </button>
+        <button type="button" className={c.deep && c.state === "open" ? "btn-ghost" : "btn-primary"} disabled={busy || !text.trim()} onClick={send} data-testid="callout-send">
+          {answered ? "补充" : question ? "发送回答" : "回复"}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -1,7 +1,8 @@
-import { useEffect, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { projectWorkspaces, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { togglePin, usePins, type PinKind } from "../lib/pins.js";
+import { ContextMenu } from "../lib/ContextMenu.js";
 import { moveNav, navOrder, useNavOrder } from "./navOrder.js";
 import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
@@ -662,18 +663,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope
 
 /** Right-click menu of a topic in the left column. */
 function TopicMenu({ at, onClose, onEdit, onArchive, groups }: { at: { x: number; y: number }; onClose(): void; onEdit(): void; onArchive(): void; groups: MenuGroups }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown);
-    };
-  }, [onClose]);
   return (
-    <div className="ctx-menu" role="menu" aria-label="专题" style={{ left: at.x, top: at.y }}>
+    <ContextMenu at={at} label="专题" onClose={onClose}>
       <button
         type="button"
         role="menuitem"
@@ -700,35 +691,25 @@ function TopicMenu({ at, onClose, onEdit, onArchive, groups }: { at: { x: number
       >
         归档专题…
       </button>
-    </div>
+    </ContextMenu>
   );
 }
 
 /** Right-click menu of a group's heading: 编辑分组 and 解散分组 (its projects or topics stay, out of any group). */
 function GroupMenu({ at, onClose, onEdit, onDissolve }: { at: { x: number; y: number }; onClose(): void; onEdit(): void; onDissolve(): void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown);
-    };
-  }, [onClose]);
   const pick = (run: () => void) => () => {
     run();
     onClose();
   };
   return (
-    <div className="ctx-menu" role="menu" aria-label="分组" style={{ left: at.x, top: at.y }}>
+    <ContextMenu at={at} label="分组" onClose={onClose}>
       <button type="button" role="menuitem" title="改分组的名字，写一段说明" onClick={pick(onEdit)} data-testid="edit-group-item">
         编辑分组…
       </button>
       <button type="button" role="menuitem" title="去掉这个分组；里面的项目或专题都留着，回到没分组的那一段" onClick={pick(onDissolve)} data-testid="dissolve-group">
         解散分组
       </button>
-    </div>
+    </ContextMenu>
   );
 }
 

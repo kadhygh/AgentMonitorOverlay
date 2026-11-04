@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AccountPage, Face } from "./AccountPage.js";
 import { bridge, call, formatBytes, openTool, serverLabel, type Channel, type OpenResult, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 import { EnvironmentPage } from "./EnvironmentPage.js";
+import { useMenuDismiss } from "../lib/ContextMenu.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
 // page (with 注册 for people without an account) until there is an account, then 工具 / 环境 / 目录 / 设置, and 账号 at the
@@ -641,25 +642,10 @@ interface MenuItem {
   danger?: boolean;
 }
 
-/** A tool's 「⋯」: the actions not needed every day, in a small menu under the button (closes on a click outside or Esc). */
+/** A tool's 「⋯」: the actions not needed every day, in a small menu under the button. */
 function MoreMenu({ items, label, disabled }: { items: MenuItem[]; label: string; disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const down = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", down);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", down);
-      document.removeEventListener("keydown", key);
-    };
-  }, [open]);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
@@ -669,7 +655,7 @@ function MoreMenu({ items, label, disabled }: { items: MenuItem[]; label: string
         ⋯
       </button>
       {open && (
-        <div className="pf-menu" role="menu" aria-label={`${label} 的更多操作`}>
+        <MoreMenuList wrap={wrap} label={label} onClose={() => setOpen(false)}>
           {items.map((i) => (
             <button
               key={i.label}
@@ -686,8 +672,18 @@ function MoreMenu({ items, label, disabled }: { items: MenuItem[]; label: string
               {i.note && <span className="pf-menu-note">{i.note}</span>}
             </button>
           ))}
-        </div>
+        </MoreMenuList>
       )}
+    </div>
+  );
+}
+
+/** The open menu, closed as Studio's menus are (lib/ContextMenu.tsx); a press on the ⋯ button is its own toggle. */
+function MoreMenuList({ wrap, label, onClose, children }: { wrap: RefObject<HTMLDivElement | null>; label: string; onClose(): void; children: ReactNode }) {
+  useMenuDismiss(wrap, onClose);
+  return (
+    <div className="pf-menu" role="menu" aria-label={`${label} 的更多操作`}>
+      {children}
     </div>
   );
 }

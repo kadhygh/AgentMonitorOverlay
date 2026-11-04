@@ -70,17 +70,10 @@
 .remote-banner-detail { margin: 0; padding: 0 14px 9px 60px; color: var(--text-dim); line-height: 1.6; }
 
 /* The box after 归档任务 (stage 14). */
-.archived-dialog { width: 440px; gap: 12px; }
 .archived-dialog-head { display: flex; align-items: center; gap: 10px; }
 .archived-dialog-head .archive-icon { color: var(--text-dim); }
 .archived-dialog-body { margin: 0; font-size: var(--fs-body); line-height: 1.6; color: var(--text); }
 .archived-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.archived-dialog-backdrop { align-items: center; padding-top: 0; }
-.link-btn { height: 22px; padding: 0 6px; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
-.link-btn.primary, .btn-ghost.primary { color: var(--primary); }
-.btn-ghost.small { height: var(--ctl-s); padding: 0 9px; font-size: var(--fs-cap); }
-.btn-ghost.dim { color: var(--text-dim); }
-.btn-ghost:disabled { opacity: 0.5; cursor: default; }
 .thread-col { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); position: relative; }
 .thread-head { display: flex; align-items: center; gap: 10px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
 .thread-title { font-weight: 600; }
@@ -115,7 +108,6 @@
 /* 显示全部 under a long diff or output shown in part (2026-10-20). */
 .show-all { display: block; width: 100%; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; text-align: center; }
 .show-all:hover { color: var(--text); background: var(--chip); }
-.link-btn.boxed { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; }
 
 /* Reply jumps (S2-06) */
 .thread-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
@@ -224,7 +216,6 @@
 /* 归档 (任务, 会话, 完成 column, 2026-10-28, the user's pick 「B」): the face of the buttons beside it, only the glyph in
    deep red; red-tinted under the pointer. */
 .soft-danger svg { color: var(--danger-text); }
-.btn-ghost.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-text); color: var(--danger-soft-text); }
 .bar-btn.soft-danger:hover:not(:disabled) { background: var(--danger-soft-bg); border-color: var(--danger-soft-border); color: var(--danger-soft-text); }
 .thread-head .head-sep { height: 18px; margin: 0; }
 /* 追踪 (2026-11-03, 问题 #15): on while the task is pinned in Focus — tinted, the target's centre filled, 「追踪中」. */
@@ -232,7 +223,6 @@
 .bar-btn.track.on { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
 .bar-btn.track.on .dot { fill: currentColor; }
 .bar-btn.track.on:hover:not(:disabled) { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 16%, transparent); }
-.ctx-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 /* A narrow window keeps the icons and drops the words. */
 @media (max-width: 1000px) {
   .bar-btn .bar-label { display: none; }
@@ -288,12 +278,10 @@
 /* A task's description (stage 16): under the head, and its dialog (also opened from the canvas). */
 .task-desc { display: flex; align-items: flex-start; gap: 10px; margin: -4px 0 8px; padding: 8px 12px; border-left: 3px solid var(--border-strong); background: var(--panel-raised); }
 .task-desc-text { margin: 0; flex: 1; font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; color: var(--text); max-height: 6.4em; overflow: auto; }
-.description-dialog { width: 520px; gap: 10px; }
 .description-dialog textarea { min-height: 140px; }
 .description-dialog-actions { display: flex; align-items: center; gap: 8px; }
 .description-dialog-actions .spacer { flex: 1; }
 /* 绑定到待办 (2026-11-02, 问题 #10): the 便签's open 待办 by list, one click binds. */
-.todo-bind-dialog { width: 520px; gap: 10px; }
 .todo-bind-search { padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-sm); outline: none; }
 .todo-bind-search:focus { border-color: var(--primary); }
 .todo-bind-list { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; }

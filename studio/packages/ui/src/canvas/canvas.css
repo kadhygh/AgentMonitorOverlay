@@ -184,7 +184,6 @@
 .callout-x:hover { background: var(--chip) !important; color: var(--text) !important; }
 .canvas-tools .canvas-asking { border-color: var(--attention); color: var(--attention); background: var(--attention-bg); font-weight: 600; }
 
-.callout-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; }
 .callout-dialog-text { font-family: var(--font-display); font-size: 15px; font-weight: 600; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .callout-dialog-detail { max-height: 40vh; overflow-y: auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); font-size: 13px; }
 .callout-deep { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--note-text); font-size: 12.5px; }

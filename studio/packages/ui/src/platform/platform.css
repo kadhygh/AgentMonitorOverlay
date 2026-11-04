@@ -95,9 +95,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-section.last { border-bottom: none; }
 .pf-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
-/* Small controls (Studio's look, kept here so the page needs no other stylesheet) */
+/* Small controls (the rest of Studio's buttons come from styles/controls.css) */
 .btn-ghost.pf-small { height: var(--ctl-s); padding: 0 10px; font-size: var(--fs-cap); }
-.btn-ghost:disabled { opacity: 0.5; cursor: default; }
 .pf-link { height: 26px; padding: 0 8px; border: none; border-radius: var(--r-m); background: transparent; color: var(--primary); font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
 .pf-link:hover:not(:disabled) { background: var(--tint); }
 .pf-link:disabled { color: var(--text-faint); cursor: default; }

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Modal } from "../lib/Modal.js";
 
 // Archived tasks and sessions (stage 14): the date they were archived, their icon, and the box after 归档任务.
 
@@ -24,34 +24,25 @@ export function ArchiveIcon({ size = 16 }: { size?: number }) {
  * 关闭 to stay on the now read-only page.
  */
 export function TaskArchivedDialog({ title, sessions, backLabel, onBack, onClose }: { title: string; sessions: number; backLabel: string; onBack(): void; onClose(): void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
   return (
-    <div className="modal-backdrop archived-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal archived-dialog" role="dialog" aria-modal="true" aria-labelledby="archived-dialog-title" data-testid="task-archived-dialog">
-        <div className="archived-dialog-head">
-          <ArchiveIcon size={20} />
-          <span className="modal-title" id="archived-dialog-title">
-            任务已归档
-          </span>
-        </div>
-        <p className="archived-dialog-body">
-          已归档任务「<b>{title}</b>」{sessions > 0 ? `和它的 ${sessions} 个会话` : ""}。它不再出现在看板和画布上，可以在看板最后一列底部的「已归档」里找到并恢复。
-        </p>
-        <div className="archived-dialog-actions">
-          <button type="button" className="btn-ghost" onClick={onClose} data-testid="archived-dialog-close">
-            关闭
-          </button>
-          <button type="button" className="btn-primary" onClick={onBack} autoFocus data-testid="archived-dialog-back">
-            返回{backLabel}
-          </button>
-        </div>
+    <Modal backdropClassName="archived-dialog-backdrop" className="archived-dialog" labelledBy="archived-dialog-title" testId="task-archived-dialog" onClose={onClose}>
+      <div className="archived-dialog-head">
+        <ArchiveIcon size={20} />
+        <span className="modal-title" id="archived-dialog-title">
+          任务已归档
+        </span>
       </div>
-    </div>
+      <p className="archived-dialog-body">
+        已归档任务「<b>{title}</b>」{sessions > 0 ? `和它的 ${sessions} 个会话` : ""}。它不再出现在看板和画布上，可以在看板最后一列底部的「已归档」里找到并恢复。
+      </p>
+      <div className="archived-dialog-actions">
+        <button type="button" className="btn-ghost" onClick={onClose} data-testid="archived-dialog-close">
+          关闭
+        </button>
+        <button type="button" className="btn-primary" onClick={onBack} autoFocus data-testid="archived-dialog-back">
+          返回{backLabel}
+        </button>
+      </div>
+    </Modal>
   );
 }
