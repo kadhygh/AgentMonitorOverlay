@@ -58,7 +58,7 @@
 - 真正的问题是 `settings.json` 里的明文 key：平台账号登录时改成只记 `{ server, name, account: "platform" }`，MCP 和 `amo-relay` 用 `loadSettings` 现解 `account.json`（两个文件都没变时用缓存）；以前写下的明文在外壳启动时换掉。`@amo-studio/relay` 因此依赖 `@amo-studio/account`，`release.mjs` 的中转服务范围也加上了它。
 - 验证：`client.test.ts` 3 条；typecheck；relay、relay-app、account 单测 90 条；打出来的 `amo-relay.mjs` 配一个引用文件，用本机真实的平台账号（DPAPI）`whoami` 通过，0.46 秒。
 - 没验证：平台装的中转外壳真跑一次（等自动打包发出 0.9.7 后，用户打开中转、再看 `settings.json` 里没有 key）；MCP 在真实 Claude 会话里调用。
-- 还没查：DSH、Codex 进程环境里的 Key 会不会带给 agent 的命令（放进第 3 步的会话一起看，或下一轮）。
+- 11-04 夜查了（读代码，没改）：DSH、Codex、Claude 进程环境里的 Key 都不会带给 agent 执行的命令。Codex：`runtime/profiles.ts` 给 app-server 加 `shell_environment_policy.ignore_default_excludes=false` 和 `exclude=[渠道的 env_key…, AMO MCP token, MCP 服务器的密钥]`（S4-09）。Claude：`claude-env.ts` 的 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（S4-09 实测过 `env` 不再打出 key）。DSH：命令由 DSH 自己的 `subprocess-local` 起，`childEnv` → `scrubbedParentEnv` 去掉名字含 KEY / PASSWORD / SECRET / TOKEN 和 `DSH_` 开头的变量（`G:\PROJECT\deepseek-harness` 的 `packages/subprocess/subprocess/src/index.ts`），`DEEPSEEK_API_KEY` 在内；AMO MCP 的身份走请求头，不在环境变量里。DSH 这条要跟着 DSH 更新留意。
 
 ## 第 5 步：清死代码和重复定义
 

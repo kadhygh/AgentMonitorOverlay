@@ -152,7 +152,9 @@ describe("session_start (开会话)", () => {
     await service.sessions.renameSession(s.id, "改个名");
     await new Promise((r) => setTimeout(r, 300));
     expect(reports(s)).toHaveLength(3);
-  });
+    // A whole [[slow]] turn is 3 s, and since the inbox (2026-11-04) each report waits for the caller's own turn to end:
+    // about 5.1 s alone, over vitest's 5 s (the release's unit run stopped on it).
+  }, 15_000);
 
   it("permission across CLIs (10-29): Claude's write is 帮我审批, the caller's own when left out, never wider than it", () => {
     const claude = { permissions: CLAUDE_PERMISSIONS, defaultPermission: "default" };
