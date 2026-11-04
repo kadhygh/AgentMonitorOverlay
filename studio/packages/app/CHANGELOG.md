@@ -4,6 +4,8 @@
 
 ## 下一版
 
+## 0.9.35（2026-11-04）
+
 - Studio 里的 Claude 会话现在会加载你本机 Claude Code 配置好的 MCP（`~/.claude.json` 里的，`claude mcp add` 加的就在这里，还有项目里的 `.mcp.json`），和在终端里开 Claude Code 一样。以前 Studio 启动 Claude 时只给它自带的 amo，你配好的 Figma 之类在 Studio 里用不上。中转的 `amo-relay` 和 Studio 自带的中转功能重复，默认不启用。
 - 设置里新加一页「MCP」：可以关掉「加载本机已配置的 MCP」；可以粘贴 MCP 文档里给的 JSON，在 Studio 里加 MCP（Claude、DeepSeek、Codex 都能用，密钥存在 Windows 凭据管理器里，AI 看不到）；每个 MCP 默认开不开也在这里设。
 - 「编辑项目」里可以给这个项目单独开关某个 MCP，项目自己的 `.mcp.json` 里 Claude Code 还没批准过的，也在这里打开。
