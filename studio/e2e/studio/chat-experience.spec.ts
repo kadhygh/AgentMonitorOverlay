@@ -128,3 +128,18 @@ test("Claude thinking shows as its own row", async () => {
   await thinking.getByRole("button").click();
   await expect(thinking.locator(".pr-think-body")).toContainText("这是一条测试消息");
 });
+
+test("详细 shows a thought in full without a click; a click folds it", async () => {
+  studio = await launchStudio({ transcriptView: "detailed" });
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api("POST", "/api/tasks", { title: "思考", workspaceId: ws.id, firstSession: { profileId: "claude-mock", text: "[[think]] hi" } });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: [[think]] hi", { timeout: 60_000 });
+  await page.getByTestId("turn-fold").click();
+  const thinking = page.getByTestId("reasoning");
+  await expect(thinking.locator(".pr-think-body")).toContainText("这是一条测试消息");
+  await screenshot(app, "studio", "thinking-detailed", page);
+  await thinking.getByRole("button").click();
+  await expect(thinking.locator(".pr-think-body")).toHaveCount(0);
+});
