@@ -62,6 +62,7 @@ const items = (host: RunningHost, id: string) => call<SessionItem[]>(host, "GET"
 const status = async (host: RunningHost, id: string) => (await call<StateSnapshot>(host, "GET", "/api/state")).sessions.find((s) => s.id === id)?.status;
 const replies = (list: SessionItem[]) => list.filter((i) => i.type === "agent").map((i) => (i.type === "agent" ? i.markdown : ""));
 const idle = (host: RunningHost, id: string) => until(() => status(host, id), (s) => s === "idle");
+const userRow = (list: SessionItem[], text: string) => list.find((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user" && i.text === text);
 
 async function start(host: RunningHost, text: string): Promise<Session> {
   const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
@@ -179,18 +180,20 @@ describe("DSH runtime", () => {
     expect(list.filter((i) => i.type === "turn").map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["completed", "interrupted", "completed", "completed", "completed"]);
   });
 
-  it("queues a message sent while a turn runs; stopping ends the turn and drops the queue", async () => {
+  it("queues a message sent while a turn runs (waiting); 停止 ends the turn and the message goes on as the next (2026-11-04)", async () => {
     const host = await boot();
     const s = await start(host, "[[slow]]");
     await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
     const sent = await call<{ mode: string }>(host, "POST", `/api/sessions/${s.id}/messages`, { text: "还有一件事" });
     expect(sent.mode).toBe("queue");
+    expect(userRow(await items(host, s.id), "还有一件事")).toMatchObject({ delivery: "waiting" });
     await call(host, "POST", `/api/sessions/${s.id}/interrupt`);
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 还有一件事"));
     await idle(host, s.id);
     const list = await items(host, s.id);
-    expect(list.find((i) => i.type === "turn")).toMatchObject({ state: "interrupted" });
+    expect(list.filter((i) => i.type === "turn").map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["interrupted", "completed"]);
     expect(list.find((i) => i.type === "tool")).toMatchObject({ status: "failed" });
-    expect(list.some((i) => i.type === "notice" && i.message.includes("排队的 1 条消息没有发出"))).toBe(true);
+    expect(userRow(list, "还有一件事")?.delivery).toBeUndefined();
 
     // A queued message is sent once the turn ends.
     await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[ask: x]]" });
@@ -551,6 +554,73 @@ describe("DSH runtime", () => {
     const { session } = await task("[[endpoint]]");
     await until(() => items(host, session.id), (l) => replies(l).length === 1);
     expect(replies(await items(host, session.id))[0]).toMatch(/^ENDPOINT base= key=sk-typed model=\["deepseek-official","deepseek-v4-flash"\]$/);
+  });
+
+  it("立即发送 and Ctrl+Enter: the running turn gives way and the waiting message goes at once (2026-11-04)", async () => {
+    const host = await boot();
+    const s = await start(host, "[[slow]]");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "先看这个" });
+    const row = userRow(await items(host, s.id), "先看这个")!;
+    expect(row.delivery).toBe("waiting");
+    await call(host, "POST", `/api/sessions/${s.id}/items/${row.id}/send-now`);
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 先看这个"));
+    await idle(host, s.id);
+    expect((await items(host, s.id)).filter((i) => i.type === "turn").map((t) => (t.type === "turn" ? t.state : ""))).toEqual(["interrupted", "completed"]);
+
+    // Ctrl+Enter (`now`) while a turn runs: the same, in one step.
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[slow]]" });
+    await until(() => status(host, s.id), (v) => v === "running");
+    await until(() => items(host, s.id), (l) => l.filter((i) => i.type === "tool").length === 2);
+    expect((await call<{ mode: string }>(host, "POST", `/api/sessions/${s.id}/messages`, { text: "马上读", now: true })).mode).toBe("queue");
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 马上读"));
+    await idle(host, s.id);
+  });
+
+  it("a turn that fails, or a process closed after 停止 went unanswered, leaves the waiting messages 没送到; 重新发送 sends them (2026-11-04)", async () => {
+    const host = await boot({ stopGraceMs: 500 });
+    const s = await start(host, "[[fail-after: 800]]");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "第二件事" });
+    await until(() => status(host, s.id), (v) => v === "error");
+    const lost = userRow(await items(host, s.id), "第二件事")!;
+    expect(lost.delivery).toBe("unsent");
+    expect(await call<{ mode: string }>(host, "POST", `/api/sessions/${s.id}/items/${lost.id}/resend`)).toMatchObject({ mode: "start" });
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 第二件事"));
+    await idle(host, s.id);
+    // The same row went again: no second copy.
+    expect((await items(host, s.id)).filter((i) => i.type === "user" && i.text === "第二件事")).toHaveLength(1);
+    expect(userRow(await items(host, s.id), "第二件事")?.delivery).toBeUndefined();
+
+    // 停止 on a DSH that does not stop: its process is closed, the turn reads as stopped, what waited is 没送到.
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[stuck]]" });
+    await until(() => items(host, s.id), (l) => l.filter((i) => i.type === "tool").length === 2);
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "第三件事" });
+    await call(host, "POST", `/api/sessions/${s.id}/interrupt`);
+    await idle(host, s.id);
+    const list = await items(host, s.id);
+    expect(list.filter((i) => i.type === "turn").at(-1)).toMatchObject({ state: "interrupted" });
+    expect(list.some((i) => i.type === "notice" && i.message.includes("DSH 还没停下"))).toBe(true);
+    expect(list.some((i) => i.type === "error" && list.indexOf(i) > list.indexOf(userRow(list, "[[stuck]]")!))).toBe(false);
+    expect(userRow(list, "第三件事")).toMatchObject({ delivery: "unsent" });
+  });
+
+  it("a message waiting when the Host stops is 没送到 after the restart, and can be sent again (2026-11-04)", async () => {
+    let host = await boot();
+    const s = await start(host, "[[slow]]");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "还没读到" });
+    await running.pop()!.shutdown();
+
+    host = await boot();
+    const list = await items(host, s.id);
+    expect(await status(host, s.id)).toBe("interrupted");
+    expect(list.find((i) => i.type === "turn")).toMatchObject({ state: "interrupted" });
+    const row = userRow(list, "还没读到")!;
+    expect(row.delivery).toBe("unsent");
+    await call(host, "POST", `/api/sessions/${s.id}/items/${row.id}/resend`);
+    await until(() => items(host, s.id), (l) => replies(l).includes("MOCK-DSH: 还没读到"));
+    await idle(host, s.id);
   });
 
   it("fails a turn when DSH fails it", async () => {

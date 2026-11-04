@@ -4,7 +4,16 @@ import type { Id, Session, SessionStatus, Workspace } from "./entities.js";
 // means someone is at it: a session in that workspace is running, waits for the person (approval or review), or is in a
 // terminal (the person may be typing there while Studio shows it idle).
 
-export const BUSY_STATUSES: readonly SessionStatus[] = ["running", "awaiting-approval", "awaiting-answer", "awaiting-review"];
+/**
+ * In the middle of a turn: working, or the turn waits on the person (an approval, a question). What the runtimes, the
+ * Host and the board mean by "the session is at it" (2026-11-04, plans/message-delivery.md: each had its own copy).
+ */
+export const TURN_STATUSES: readonly SessionStatus[] = ["running", "awaiting-approval", "awaiting-answer"];
+
+export function inTurn(status: SessionStatus): boolean {
+  return TURN_STATUSES.includes(status);
+}
+
 
 export interface WorkspaceActivity {
   workspaceId: Id;
@@ -15,7 +24,8 @@ export interface WorkspaceActivity {
 
 export function sessionKeepsBusy(s: Session): boolean {
   if (s.archivedAt) return false;
-  return BUSY_STATUSES.includes(s.status) || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
+  // awaiting-review no longer counts (2026-11-04, the user agreed): nothing sets it on a session.
+  return inTurn(s.status) || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
 }
 
 export function workspaceActivity(workspaceId: Id, sessions: readonly Session[]): WorkspaceActivity {

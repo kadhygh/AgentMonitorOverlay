@@ -70,6 +70,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-result { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--r-m); font-size: var(--fs-sm); }
 .pf-result span { flex: 1 1 auto; }
 .pf-result.ok { background: var(--tint); color: var(--text); }
+.pf-result.busy { background: var(--tint); color: var(--text-dim, var(--text)); }
 .pf-result.warn { border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--text); }
 .pf-result.error { border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error-text); }
 .pf-x { width: 22px; height: 22px; border: none; background: transparent; color: var(--text-dim); font-size: 15px; line-height: 1; cursor: pointer; border-radius: var(--r-s); }

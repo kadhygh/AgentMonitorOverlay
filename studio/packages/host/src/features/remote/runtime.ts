@@ -53,10 +53,10 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     if (!this.inner.sendNow) throw new HostError("bad_request", "这种会话不能立即发送");
     return this.inner.sendNow(sessionId, itemId);
   }
-  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
     if (this.remote(sessionId)) return this.copies().resend(sessionId, itemId);
     if (!this.inner.resend) throw new HostError("bad_request", "这种会话不能重新发送消息");
-    return this.inner.resend(sessionId, itemId, images);
+    return this.inner.resend(sessionId, itemId, images, options);
   }
   interrupt(sessionId: Id): Promise<void> {
     if (this.remote(sessionId)) return this.copies().interrupt(sessionId);

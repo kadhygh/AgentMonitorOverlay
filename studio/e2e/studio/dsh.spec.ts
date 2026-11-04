@@ -30,9 +30,20 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(card).toContainText("New-Item notes.md", { timeout: 30_000 });
   await expect(card).toContainText("the person asked for it");
   await screenshot(studio.app, "stage-17", "S17-dsh-approval", page);
+  // 2026-11-04 (plans/message-delivery.md): a mail forwarded while the turn waits on the person goes into the session's
+  // inbox — shown at once, 「等这一轮结束后送进去」 — and is sent as the next turn once this one is over.
+  const mail = await studio.api<{ id: string }>("POST", "/api/mail", { to: { kind: "session", sessionId: session.id }, text: "记得跑一下测试" });
+  await studio.api("POST", `/api/mail/${mail.id}/forward`, {});
+  const heldLine = page.getByTestId("msg-delivery").filter({ hasText: "等这一轮结束后送进去" });
+  await expect(heldLine).toHaveAttribute("data-delivery", "held");
+  await expect(heldLine.getByRole("button", { name: "立即发送" })).toBeVisible();
+  await screenshot(studio.app, "studio", "inbox-held", page);
   await card.getByRole("button", { name: "批准" }).click();
   await expect(card).toContainText("已批准");
-  await expect(page.getByTestId("msg-agent").last()).toContainText("DONE New-Item notes.md", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "DONE New-Item notes.md" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText("记得跑一下测试", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
 
   // DSH has no fork and no terminal of its own.
   await expect(page.getByTestId("session-fork")).toHaveCount(0);
@@ -50,10 +61,13 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await composer.fill("顺便看看测试");
   await page.getByRole("button", { name: "排队" }).click();
   await expect(page.getByTestId("msg-user").filter({ hasText: "顺便看看测试" })).toBeVisible();
+  // 2026-11-04: it waits (等待送达), and 打断 sends it as the next turn instead of dropping it.
+  await expect(page.getByTestId("msg-delivery").last()).toHaveAttribute("data-delivery", "waiting");
   await screenshot(studio.app, "stage-17", "S17-dsh-queued", page);
   await page.getByRole("button", { name: "打断" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-DSH: 顺便看看测试", { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("停止后，排队的 1 条消息没有发出")).toBeVisible();
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
 });
 
 test("a DSH goal going on by itself: each round a turn, the answers stay in sight, 打断 stops it (问题 #13)", async () => {

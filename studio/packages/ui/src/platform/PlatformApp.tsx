@@ -585,12 +585,14 @@ function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: Too
       {t.result && (
         <div className={`pf-result ${t.result.tone}`} role={t.result.tone === "error" ? "alert" : "status"} data-testid={`tool-${t.id}-result`}>
           <span>
-            {t.result.tone === "ok" ? "✓ " : "! "}
+            {t.result.tone === "ok" ? "✓ " : t.result.tone === "busy" ? "◐ " : "! "}
             {t.result.text}
           </span>
-          <button type="button" className="pf-x" aria-label="知道了" title="知道了" onClick={() => void call("dismiss", t.id)}>
-            ×
-          </button>
+          {t.result.tone !== "busy" && (
+            <button type="button" className="pf-x" aria-label="知道了" title="知道了" onClick={() => void call("dismiss", t.id)}>
+              ×
+            </button>
+          )}
         </div>
       )}
       {openError && (

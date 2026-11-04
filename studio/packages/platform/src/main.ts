@@ -7,6 +7,7 @@ import { badgedImage, TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { RelayAttentionReader, trayLook, type RelayAttention, type TrayLook } from "./relay-attention.js";
 import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { Platform, type PlatformShell } from "./platform.js";
+import { logTiming } from "./running.js";
 import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
 import type { OpenResult, PlatformCalls, PlatformView } from "./view.js";
 import { trayClickAction, trayMenu, type TrayAction, type TrayItem, type TrayState } from "./tray.js";
@@ -114,6 +115,7 @@ async function restart(spec: LaunchSpec): Promise<void> {
     return;
   }
   app.releaseSingleInstanceLock();
+  logTiming(process.env, `重启平台：旧平台（进程 ${process.pid}）启动新平台`);
   try {
     await startDetached(spec);
   } catch (err) {
@@ -451,7 +453,10 @@ async function waitForPrevious(): Promise<void> {
       return false;
     }
   };
+  const started = Date.now();
   for (const until = Date.now() + 15_000; alive() && Date.now() < until; ) await new Promise((r) => setTimeout(r, 100));
+  // 2026-11-04 (the user: 重启平台 felt slow): how long the old one took to go, in platform.log.
+  logTiming(process.env, `重启平台：等旧平台（进程 ${pid}）退出 ${Date.now() - started} ms${alive() ? "，15 秒后还在" : ""}`);
 }
 
 /** This run's own arguments: after the exe when packaged; after this script when run by electron (the tests add theirs before it). */
@@ -503,5 +508,7 @@ void forwardToNewer().then(async (forwarded) => {
   app.on("before-quit", () => {
     quitting = true;
   });
-  void app.whenReady().then(start);
+  void app.whenReady()
+    .then(start)
+    .then(() => afterPid(process.argv) && logTiming(process.env, `重启平台：新平台就绪，从启动起 ${Math.round(process.uptime() * 1000)} ms`));
 });

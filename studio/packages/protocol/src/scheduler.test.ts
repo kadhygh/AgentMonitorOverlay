@@ -11,8 +11,8 @@ describe("workspace activity", () => {
     expect(workspaceActivity("w1", [s({}), s({ status: "completed" }), s({ status: "error" })])).toEqual({ workspaceId: "w1", idle: true, busy: 0 });
   });
 
-  it("is busy while a session runs, waits for approval or review, or is in a terminal", () => {
-    for (const over of [{ status: "running" }, { status: "awaiting-approval" }, { status: "awaiting-review" }, { writer: "terminal-handoff" }, { writer: "terminal-shared" }] as Partial<Session>[]) {
+  it("is busy while a session runs, waits for approval, or is in a terminal", () => {
+    for (const over of [{ status: "running" }, { status: "awaiting-approval" }, { writer: "terminal-handoff" }, { writer: "terminal-shared" }] as Partial<Session>[]) {
       expect(workspaceActivity("w1", [s(over)]).idle, JSON.stringify(over)).toBe(false);
     }
   });

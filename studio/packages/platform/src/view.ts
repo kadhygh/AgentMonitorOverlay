@@ -53,8 +53,8 @@ export interface ToolView {
   /** A short line under the status (e.g. Studio already brings the Reviewer). */
   hint: string | null;
   task: TaskView | null;
-  /** How the last action on it ended, until the next one. */
-  result: { tone: "ok" | "warn" | "error"; text: string } | null;
+  /** How the last action on it ended, until the next one; busy: one under way (正在关闭…). */
+  result: { tone: "ok" | "warn" | "error" | "busy"; text: string } | null;
   /** Studio only: whether its Host runs and how many sessions it has going (read only). */
   studio: StudioHealthView | null;
 }

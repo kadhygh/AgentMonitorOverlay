@@ -80,14 +80,17 @@ function firstLine(text: string): string {
 }
 
 export function ReasoningRow({ item, view }: { item: ReasoningItem; view: TranscriptView }) {
-  const [open, setOpen] = useState(false);
+  // 详细 and 完全展开 show a thought in full, as the CLI does (2026-11-04, the user: a model sometimes answers a message
+  // sent mid-turn inside its thinking, and folded to one line it was missed); a click still folds it. 简洁 / 标准 fold it.
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? (view === "detailed" || view === "verbose");
   const label = item.streaming ? "思考中" : item.durationMs ? `已思考 ${formatDuration(item.durationMs)}` : "已思考";
   // The preview is the first finished line: a line still being written would flicker.
   const settled = item.streaming ? item.text.slice(0, item.text.lastIndexOf("\n") + 1) : item.text;
   const preview = view === "compact" ? "" : firstLine(settled);
   return (
     <div className="pr pr-think" data-testid="reasoning" data-streaming={item.streaming || undefined}>
-      <RowButton icon={<IconThink />} open={open} expandable={!!item.text.trim()} onToggle={() => setOpen((v) => !v)}>
+      <RowButton icon={<IconThink />} open={open} expandable={!!item.text.trim()} onToggle={() => setToggled(!open)}>
         <Shimmer active={item.streaming} className="pr-title">
           {label}
         </Shimmer>
@@ -98,7 +101,7 @@ export function ReasoningRow({ item, view }: { item: ReasoningItem; view: Transc
           </>
         )}
       </RowButton>
-      {open && (
+      {open && item.text.trim() && (
         <div className="pr-body pr-think-body">
           <Markdown source={item.text} />
         </div>

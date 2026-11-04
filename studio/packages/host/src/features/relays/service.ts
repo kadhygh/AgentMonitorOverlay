@@ -68,8 +68,10 @@ export class RelaysFeature extends Feature {
       if (!target || target.archivedAt) throw new HostError("bad_request", "the task is gone or archived");
       const session = latestMain(this.store.listSessions({ taskId: target.id }));
       let sessionId: Id;
+      let held = false;
       if (session) {
-        await this.f.sessions.sendMessage(session.id, message);
+        // The session's inbox (2026-11-04): it goes in once the session's turn is over, not into the running one.
+        held = !(await this.f.sessions.inbox.put(session.id, message)).delivered;
         sessionId = session.id;
       } else {
         const workspace = this.requireWorkspace(target.workspaceId);
@@ -77,7 +79,7 @@ export class RelaysFeature extends Feature {
         sessionId = (await this.f.tasks.startSession({ taskId: target.id, topicId: null }, workspace, { profileId, text: message })).id;
       }
       const delivered = this.save({ ...this.requireRelay(id), state: "delivered", decidedAt: new Date().toISOString(), sessionId });
-      this.tellLead(relay, `传话已送到「${target.title || "未命名任务"}」。`);
+      this.tellLead(relay, held ? `传话已放进「${target.title || "未命名任务"}」的会话，它这一轮做完就送进去。` : `传话已送到「${target.title || "未命名任务"}」。`);
       return delivered;
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startHost, type RunningHost } from "@amo-studio/host";
@@ -132,10 +132,33 @@ async function start(): Promise<void> {
   await openFromArgs(process.argv);
 }
 
+/**
+ * running.json in its home (2026-11-04, the user: AMO 平台 was slow to tell what runs): this one's pid and exe, so the
+ * platform knows it runs without asking Windows for every process; it goes when this one quits.
+ */
+const runningFile = join(home, "running.json");
+function writeRunning(): void {
+  try {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(runningFile, JSON.stringify({ pid: process.pid, exe: process.execPath, startedAt: new Date().toISOString() }, null, 2));
+  } catch {
+    // the platform then asks Windows, as before
+  }
+}
+function removeRunning(): void {
+  try {
+    if ((JSON.parse(readFileSync(runningFile, "utf8")) as { pid?: unknown }).pid === process.pid) rmSync(runningFile, { force: true });
+  } catch {
+    // not there, or another one's
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   // One runs already: it opens what this start asked for (second-instance) and this one ends.
   app.quit();
 } else {
+  writeRunning();
+  app.on("will-quit", removeRunning);
   app.on("second-instance", (_event, argv) => void openFromArgs(argv));
   // Started without a folder it waits for amo-review; it ends with its last window once one was opened.
   let hadWindow = false;

@@ -64,12 +64,14 @@ async function setup(signedIn = true) {
     const task = store.createTask({ title, workspaceId: alpha.id });
     return store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p", workspaceId: alpha.id, title: "", status: "idle", writer: "workbench", runtimeRef: null });
   };
-  // What goes into sessions, instead of a model turn.
+  // What goes into sessions (their inbox, 2026-11-04), instead of a model turn; `realInbox` puts the real one back.
   const told: Array<{ sessionId: string; text: string }> = [];
-  service.sessions.sendMessage = async (sessionId: string, text: string) => {
+  const inboxPut = service.sessions.inbox.put.bind(service.sessions.inbox);
+  service.sessions.inbox.put = async (sessionId: string, text: string) => {
     told.push({ sessionId, text });
-    return { mode: "turn" } as never;
+    return { delivered: true, waiting: 0 };
   };
+  const realInbox = () => (service.sessions.inbox.put = inboxPut);
   const events: HostEvent[] = [];
   service.on("event", (e) => events.push(e));
   service.remote.start({ env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }) });
@@ -88,7 +90,7 @@ async function setup(signedIn = true) {
     return { text: out.content.map((c) => c.text).join(""), error: !!out.isError };
   };
   await until(() => service.remote.teamLogin(), (l) => !signedIn || !!l, "the platform's login");
-  return { service, store, told, events, session, coderClient, tool, relay, relayStore, root };
+  return { service, store, told, events, session, coderClient, tool, relay, relayStore, root, realInbox, alpha };
 }
 
 describe("会话里用中转", () => {
@@ -168,6 +170,39 @@ describe("会话里用中转", () => {
     const out = await setup(false);
     const t = out.session("任务");
     expect((await out.tool(t.id, "team_ask", { to: "程序老李", title: "x", body: "y" })).text).toContain("在 AMO 平台里登录");
+  });
+
+  it("a reply for a session at work waits in its inbox (shown, not steered in); one that cannot go in is 没送到, and 重新发送 sends it (2026-11-04)", async () => {
+    const { service, store, coderClient, tool, realInbox, alpha } = await setup();
+    realInbox();
+    const task = store.createTask({ title: "背包上限", workspaceId: alpha.id });
+    const asking = await service.tasks.addSession(task.id, { profileId: "p" });
+    await tool(asking.id, "team_ask", { to: "程序老李", title: "背包上限存哪", body: "打算写死。" });
+    await service.teamRelay.send(service.teamRelay.sends()[0]!.id);
+    const [thread] = await coderClient.threads();
+    // At work (a turn of its own): the reply is shown at once, held until the turn is over.
+    store.updateSession(asking.id, { status: "running" });
+    await coderClient.send(thread!.id, { kind: "reply", body: "放服务端配置表。" });
+    const row = () => store.listItems(asking.id).find((i) => i.type === "user" && i.text.includes("【中转回复】"));
+    await until(row, (r) => !!r, "the reply in the session");
+    expect(row()).toMatchObject({ delivery: "held" });
+    expect((await coderClient.threads())[0]?.request?.pickedAt).not.toBeNull();
+
+    // The turn ends; the runtime fails it once: 没送到 and a line why — not lost after the relay marked it taken.
+    const rt = service.runtime as { resend?: (...a: unknown[]) => Promise<unknown> };
+    const resend = rt.resend!.bind(rt);
+    rt.resend = async () => {
+      rt.resend = resend;
+      throw new Error("Codex 起不来");
+    };
+    service.publish({ type: "session.upserted", session: store.updateSession(asking.id, { status: "idle" }) });
+    await until(row, (r) => r?.type === "user" && r.delivery === "unsent", "没送到");
+    expect(store.listItems(asking.id).some((i) => i.type === "notice" && i.message.includes("Codex 起不来"))).toBe(true);
+
+    // 重新发送: the same row goes in.
+    await service.sessions.resend(asking.id, row()!.id);
+    await until(row, (r) => r?.type === "user" && r.delivery === undefined, "sent again");
+    expect(store.listItems(asking.id).filter((i) => i.type === "user" && i.text.includes("【中转回复】"))).toHaveLength(1);
   });
 
   it("with 不用先问我 on (设置 → 功能 → 中转) it goes at once; 远程 being off does not stop 中转 (2026-10-30)", async () => {

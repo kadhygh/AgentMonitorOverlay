@@ -51,6 +51,19 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-04 · 消息投递统一（分支 `studio/message-delivery`，worktree `.claude\worktrees\cleanup-delivery`，没合并）**：11 月梳理第 3 步，方案和进度在 `plans/message-delivery.md`。
+- 会话收件箱 `features/sessions/inbox.ts`：中转回复和说明、值守接着做、传话、邮件转发、session_send、session_start 的回报不再像人发的那样插进正在跑的一轮，而是先显示成 `delivery: "held"`（「等这一轮结束后送进去」），会话空下来再用 runtime 的 `resend` 送进去；kv `sessions.inbox` 落盘，重启接着送，旧的 `sessions.peer-queue` 启动时搬进来；送不进去变「没送到」加一行原因。人发的（界面、远程 B、画布回答、批注）照旧。
+- DSH 补上 waiting / 立即发送 / Ctrl+Enter / 重新发送；出错、进程退出、归档、Host 重启时排队的变「没送到」；停止后排队的接着发（同 11-02 对 Claude / Codex 的决定）。
+- `RuntimeBase`：`writable`（中文、`profileGone`）、`archiveTree`、`settleLeftovers`、`armStopGrace`（DSH 关进程、Codex 本地记成已停止）；protocol `TURN_STATUSES` / `inTurn`。
+- 用户定的五条（方案「用户定的」）：人点了停止的会话，收件箱先不送，等人下一条消息一起送（`SessionInbox.pause / resume`）；`awaiting-review` 不再算「忙」，`BUSY_STATUSES` 删了。
+- 验证和没验证的见方案文件末尾；最该在真环境里看的：真 DSH 收到 session/cancel 后多快停、真 Codex 卡住时的停止兜底、Claude 重启后被中断的那一轮怎么显示。新代码要等 Host 下次重启才生效（由人点）。
+
+**2026-11-04 · 项目梳理第一轮（master + 两个 worktree）**：11-03 只读审查的结论和推进顺序在 `plans/cleanup-2026-11.md`，用户 11-04 定「都照做，按流程推进一轮」。
+- 已提交进 master：第 1 步文档对齐（`63413744`：本文件「当前状态」、AGENTS.md、发布命令统一成 `npm run release`，10-26～10-31 挪进 `docs/history/handoff-2026-10-late.md`）；第 2 步发布脚本漏判（`dbc97045`：中转服务的范围补 locate / account / base.css，外壳 zip 的触发补包，`package-lock` 跟着升版本）；第 5 步清死代码中不碰 runtime 的部分（`ff7d4a2f`）；第 4 步中转给 AI 用的身份不再存明文 key（`0d56e627`，中转外壳「下一版」有一条，会随自动打包发测试通道）；第 6 步中转服务的孤儿截图清理和异步写盘（`6280aeb4`，**没部署**，等用户说再 `release -- relay-service`）；第 8 步只写了方案 `plans/host-structure.md`。
+- 在做（子会话，各自的 worktree，合并前用户点头）：第 3 步消息投递统一（`.claude/worktrees/cleanup-delivery`，分支 `studio/message-delivery`，方案 `plans/message-delivery.md`）；第 7 步 ui 数据流和共用件（`.claude/worktrees/cleanup-ui`，分支 `studio/ui-dataflow`）。
+- 等用户：删除已合并的 5 个 worktree、6 个空 agent worktree、`release/` 旧包、`studio/Microsoft/`（自动审批拦下了删除，清单在方案第 0 步）；中转服务部署。
+- 审查里核对后不成立、没改的：`ClaudeLogin = "token"`（API Key 渠道在用）、`relay-service.ps1`（README 写明的退路）、平台装的中转客户端早已只认平台登录。
+
 **2026-11-04 · MCP 设置（master）**：同事反馈 Figma MCP 在 Studio 的 Claude 会话里用不了。原因是本机登录时固定传了 `strictMcpConfig`（10-14，4cef30ce），只挡了 MCP，skills、CLAUDE.md 等一直照常加载。用户定的做法和细节见 `plans/mcp.md`：全局在设置 → 「MCP」；项目在「编辑项目」；会话在输入框下的「MCP」按钮，新会话沿用同一任务上一个会话的选择；AI 用 `mcp_server_save` 加 MCP，每次都要人批准；Codex 在下次启动时生效；`amo-relay` 默认不启用。
 - Host：`features/mcp/`（`local.ts` 只读 `~/.claude.json` 和 `.mcp.json`，带 Claude Code 自己的批准状态；`service.ts` 负责三级合并和各运行时的启动参数 `launch`，Studio 加的 MCP 的密钥存在凭据管理器 `mcp-<id>` 里）；`runtime/mcp-launch.ts`。Claude 在人自己的配置目录里运行时不加 strict，让 CLI 自己加载本机 MCP（OAuth、插件、批准都照它原来的办法），关掉的用 `managedSettings.deniedMcpServers` 挡掉（只作用于这个进程，不写文件；不用 `toggleMcpServer`，它会写 `~/.claude.json`），`.mcp.json` 里打开的用 flag 级 `settings.enabledMcpjsonServers` 批准；其他情况仍加 strict，由 Studio 显式传进去。运行中改：Studio 加的用 `setMcpServers`。实测启动时传入的 MCP 用它去不掉（CLI 2.1.304），所以这类改动和本机 MCP 的改动一样，等进程空闲后关掉，下一条消息再 resume。DSH 的做法和改权限一样（`release`，下一条消息 resume）。Codex 用 `-c mcp_servers.*`，密钥通过 `env_vars`、`env_http_headers` 走环境变量，并加进 `shell_environment_policy.exclude`。`store/rows.ts` 的 `parseOptions` 现在会保留 `options.mcp`。e2e 和 `bin.ts` 测试模式改读 `AMO_STUDIO_TEST_CLAUDE_CONFIG`（默认是数据目录里的 `test-claude.json`），不碰真的 `~/.claude.json`。
 - 验证：单测 `features/mcp/mcp.test.ts`（读配置、三级合并、密钥遮盖、Codex 参数）；集成测试 `runtime/claude/mcp.integration.test.ts`，用真实 SDK 和 CLI 加一个测试用的 stdio MCP 跑：运行中加、删动态加的，amo 一直可用；启动时传入的 MCP 要等重启；deny 生效；重启后接着同一段对话。DSH 集成测试新加一条（假 agent 的 `[[mcp-list]]`）。e2e `mcp-settings.spec.ts`，截图 `screenshots/studio/mcp-*.png`。全量 vitest 只有 AMO 工具数量的断言要改，已经改了。

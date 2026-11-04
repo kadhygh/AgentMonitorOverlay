@@ -86,7 +86,9 @@ kbd {
 
 /* ---- the session's status line and its trays ------------------------------------------------------------------- */
 
-.session-options { position: static; display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+/* flex: none (2026-11-04): shrunk below its chips (MCP N came on 11-04) they ran over the composer hint beside it; the
+   hint is the one to give way (it ellipsizes). */
+.session-options { position: static; display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; flex-wrap: wrap; }
 .composer-card { position: relative; }
 .status-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .seg-btn {
