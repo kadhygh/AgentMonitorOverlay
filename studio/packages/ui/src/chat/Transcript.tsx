@@ -120,6 +120,7 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
         <TurnView
           seg={seg}
           latest={start + i === segments.length - 1}
+          recent={start + i >= segments.length - RECENT_TURNS}
           view={view}
           model={model}
           busy={busy}
@@ -149,6 +150,11 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
   );
 }
 
+/** The last turns, always drawn (chat.css: the ones before skip drawing while off screen). 问题 #17 (2026-11-04): this was
+ *  "the last two children" in CSS, and while a turn runs its running line is one of them, so the reply on screen as a
+ *  message went out was switched to skipping at that very moment and could stay blank until the next reply came. */
+const RECENT_TURNS = 3;
+
 /** The element that scrolls `el`. */
 function scrollerOf(el: HTMLElement): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
@@ -161,6 +167,7 @@ function scrollerOf(el: HTMLElement): HTMLElement | null {
 function TurnView({
   seg,
   latest,
+  recent,
   view,
   model,
   busy,
@@ -172,6 +179,7 @@ function TurnView({
 }: {
   seg: Segment;
   latest: boolean;
+  recent: boolean;
   view: TranscriptView;
   model: string;
   busy: boolean;
@@ -186,7 +194,7 @@ function TurnView({
   const finished = !seg.running;
   const flat = view === "verbose" || (view === "detailed" && seg.running);
   return (
-    <section className="turn" data-testid="turn" data-key={seg.key} data-running={seg.running || undefined} data-folded={folded || undefined}>
+    <section className="turn" data-testid="turn" data-key={seg.key} data-recent={recent || undefined} data-running={seg.running || undefined} data-folded={folded || undefined}>
       {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} item={item} /> : null))}
       {finished && seg.rows.length > 0 && (
         <button
