@@ -45,7 +45,7 @@
 
 ### 已知问题
 
-- `packages/host/src/runtime/codex/server-manager.test.ts` 以前偶发失败，原因不是端口释放慢：app-server 启动后会在后台 `git fetch` OpenAI 的插件市场，这个 git 继承了监听端口；如果它恰好在杀进程的那一刻启动，`taskkill /T` 就漏掉它，端口一直被占到 GitHub 返回为止。11-03 起这个测试用 `-c features.plugins=false` 启动 app-server（单独连跑 8 次、全量都通过）。Studio 实际运行的 app-server 照旧会同步插件；碰到这种情况会换个端口重启，功能上没问题。自动打包时这个测试还是被排除在外（`release.mjs`），要不要放回去，等它稳定一阵再定。
+- `packages/host/src/runtime/codex/server-manager.test.ts` 以前偶发失败，原因不是端口释放慢：app-server 启动后会在后台 `git fetch` OpenAI 的插件市场，这个 git 继承了监听端口；如果它恰好在杀进程的那一刻启动，`taskkill /T` 就漏掉它，端口一直被占到 GitHub 返回为止。11-03 起这个测试用 `-c features.plugins=false` 启动 app-server（单独连跑 8 次、全量都通过）。Studio 实际运行的 app-server 照旧会同步插件；碰到这种情况会换个端口重启，功能上没问题。自动打包时这个测试还是被排除在外（`release.mjs`），要不要放回去，等它稳定一阵再定。同一个 git 也会拿着 Electron 的输出管道不放，让 e2e 的 `app.close()` 等到超时（GitHub 慢时 12 条里卡 4 条）：11-05 起 e2e 的 `launchStudio` 在每个用例的 `codex-home` 写 `[features] plugins = false`（`1873e821`）。
 - 端到端里 Claude 的 mock 配置没法向 Claude Code 要型号列表（会超时），所以测试模式给 mock 配了内置列表（`packages/host/src/bin.ts`）。
 - Studio 里 agent 的命令 PATH 去掉了 WindowsApps，用不到应用商店版的 `pwsh`、`python3`、`winget`（本机 `python`、`node`、`git` 不受影响）。
 
