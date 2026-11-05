@@ -3,5 +3,5 @@ import { route, type Route } from "../../http/route.js";
 
 /** The HTTP routes of this feature (see protocol/src/api.ts for each route's request and response). */
 export function statsRoutes(service: HostService): Route[] {
-  return [route("GET", "/api/stats/tokens", () => service.stats.tokens())];
+  return [route("GET /api/stats/tokens", () => service.stats.tokens())];
 }

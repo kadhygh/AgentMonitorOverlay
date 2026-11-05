@@ -15,7 +15,7 @@ import { Backoff } from "./link.js";
 import { fitItem } from "./grants.js";
 import { amoToolsFor } from "../../mcp/tools.js";
 import { FEATURES } from "../index.js";
-import { route } from "../../http/route.js";
+import { untypedRoute } from "../../http/route.js";
 
 // 远程, step 2 (plans/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
 // approvals, 打断 and new sessions run on A, a revoked grant stays readable on B, and catch-up goes by seq. Two Hosts
@@ -173,8 +173,8 @@ describe("remote tasks between two Hosts (step 2)", () => {
     expect(() => guard(b, "POST", "/api/sessions/:id/fork", { id: session.id })).toThrow("A-PC 上的远程任务");
     expect(() => guard(b, "POST", "/api/sessions/:id/messages", { id: session.id })).not.toThrow();
     // A write added later that does not say whether a copy takes it is refused, not run here (2026-11-05, 8a).
-    expect(() => b.service.remote.guardRoute(route("POST", "/api/sessions/:id/something-new", () => ({ ok: true })), { id: session.id })).toThrow("A-PC 上的远程任务");
-    expect(() => b.service.remote.guardRoute(route("POST", "/api/sessions/:id/something-new", () => ({ ok: true }), { remoteCopy: "forward" }), { id: session.id })).not.toThrow();
+    expect(() => b.service.remote.guardRoute(untypedRoute("POST", "/api/sessions/:id/something-new", () => ({ ok: true })), { id: session.id })).toThrow("A-PC 上的远程任务");
+    expect(() => b.service.remote.guardRoute(untypedRoute("POST", "/api/sessions/:id/something-new", () => ({ ok: true }), { remoteCopy: "forward" }), { id: session.id })).not.toThrow();
     await expect(b.service.sessions.fork(session.id)).rejects.toThrow("远程任务的会话不能在这台电脑上分支");
     // A's own tasks are never B's to reach.
     const other = await a.service.tasks.createTask({ title: "没授权的" });
