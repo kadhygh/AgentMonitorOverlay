@@ -51,6 +51,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 开发界面目录，发 Studio 0.9.39（master）**
+- 「设置 → 测试功能 → 开发界面目录」（`74d262c5`）：Host 从填的目录（某个 worktree 的 `studio\packages\ui\dist`）给窗口载入界面，那边 build 后在窗口里点「重新载入」就生效，不发版、不重启 Host。只放在内存里，重启 Studio 就回到安装版；从那个目录只送界面会用到的几类文件；开着时窗口顶上有提示条（重新载入 / 恢复安装版），托盘菜单多一项「恢复安装版界面」，留给界面坏到窗口打不开的情况。只换界面，Host 和 MCP 的改动照样要发版。用户 11-05 要这个，是为了全景的界面可以一轮轮迭代。
+- 顺手修：`stopHost` 在 Host 已经在退出时往断了的 IPC 通道发消息，主进程抛未捕获的 ERR_IPC_CHANNEL_CLOSED（负载高时 tray.spec 的「完全退出」在桌面上弹了错误框）。
+- 验证：typecheck；全量单测 1266 条通过，5 条在负载下超时（remote views、查看包的 git、DSH clone、Claude cli-features），单独跑 41 条全过；e2e dev-ui（新）、tray、settings、features 共 12 条。主工作区有别人的未跟踪文件 `studio/scripts/tmp-q.mjs`，所以 0.9.39 是在值守目录里发的（`e61aef4c`）。
+
 **2026-11-05 晚 · 发消息看得见、梳理第 7 步第三批（master）**
 - 实机试「停止后收件箱先不送」（Studio 0.9.37，DSH 会话中途切成完全权限再停止）：攒着的消息 ✓，DSH 停下约 40 ms ✓，停下后的提示、不自己接着跑 ✓，立即发送 ✓；✗ 停下后人发的一条消息没了——没有行、没有报错、输入框已清空，host.log 和 DSH 日志里都没有，同样步骤在假 DSH 上 113 ms 就过。原因没查到，最像是请求没到 Host 的 runtime 调用或卡在它前面。先让下次留下痕迹（`c69d57ca`）：输入框 3 秒没回应显示「正在发送…」，30 秒把文字放回并提示；Host 发消息失败或超过 5 秒写 host.log，runtime 自己的 log 行也接进 host.log（以前没人听）。再遇到时先看 host.log 里那个会话的行。
 - 顺带的副作用：那次 DSH 子会话里的 agent 跑了一次 ACL 修复，给 `G:\PROJECT\AgentMonitorOverlay` 加了当前用户的 WRITE_OWNER。以后开 DSH 子会话用 `permission: full`，或先让用户配好 DSH 的沙箱权限。
