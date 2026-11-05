@@ -36,6 +36,11 @@ export function remoteRoutes(service: HostService): Route[] {
     // 远程创建 (2026-10-29): 远端允许的项目 on A; on B, a paired device's catalog and creating a task on it.
     route("PUT", "/api/remote/allowed-projects", ({ body }) => service.remote.setAllowedProjects(body)),
     route("PUT", "/api/remote/security", ({ body }) => service.remote.setSecurity(body)),
+    route("PUT", "/api/remote/usage-share", ({ body }) => {
+      const on = obj(body).on;
+      if (typeof on !== "boolean") throw new HostError("bad_request", "on must be true or false");
+      return service.remote.setUsageShare(peer(body), on);
+    }),
     route("GET", "/api/remote/tasks/:id/prompt-templates", ({ params }) => service.remote.copies.templates(service.requireTask(params.id!))),
     route("GET", "/api/remote/tasks/:id/files-key", ({ params }) => {
       if (!service.requireTask(params.id!).remote) throw new HostError("not_found", "这不是远程任务");

@@ -1200,6 +1200,8 @@ export interface HostRoutes {
   "PUT /api/remote/allowed-projects": { req: import("./remote.js").RemoteAllowedProjects; res: import("./remote.js").RemoteState };
   /** 安全 (2026-10-29): which paired devices' tasks start without a yes here. */
   "PUT /api/remote/security": { req: import("./remote.js").RemoteSecurity; res: import("./remote.js").RemoteState };
+  /** 远程额度 (2026-11-06), on A: whether a paired device of another account sees this computer's quota (off: it is cleared there at once). */
+  "PUT /api/remote/usage-share": { req: { account: string; device: string; on: boolean }; res: import("./remote.js").RemoteState };
   /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
   "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
   /** 远程创建, on B (问题 #1): the device's templates for a task created there in that project (rt.createTemplates). `?account=&device=&workspace=` (no workspace: the common folder) */

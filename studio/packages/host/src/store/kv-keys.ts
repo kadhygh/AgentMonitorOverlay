@@ -73,6 +73,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "remote.allowed", scope: "global", owner: "features/remote/grants.ts", what: "授权：允许的设备" },
   { key: "remote.allowedProjects", scope: "global", owner: "features/remote/create.ts", what: "别的设备可以在哪些项目里开任务" },
   { key: "remote.security", scope: "global", owner: "features/remote/create.ts", what: "远程的安全设置" },
+  { key: "remote.usageShare", scope: "global", owner: "features/remote/usage.ts", what: "能看这台电脑模型额度的别的账号的设备（远程额度）" },
   { key: "remote.taskRequests", scope: "global", owner: "features/remote/requests.ts", what: "别的设备要开的任务" },
   { key: "remote.asks", scope: "global", owner: "features/remote/requests.ts", what: "别的设备的开任务请求（本机这边）" },
   { key: "remote.asks.hidden", scope: "global", owner: "features/remote/requests.ts", what: "藏起来的开任务请求" },

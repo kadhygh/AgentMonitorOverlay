@@ -108,6 +108,12 @@ export interface RemoteState {
    * read it (pushed, never asked for). Optional: an older Host has none.
    */
   usage?: RemotePeerUsage[];
+  /**
+   * As A (远程额度, 2026-11-06, the user): paired devices of other accounts the person let see this computer's quota
+   * (远程 → 已配对的设备 →「让它看我的模型额度」, off by default). Devices of this computer's own account see it anyway.
+   * Optional: an older Host has none.
+   */
+  usageShare?: Array<{ account: string; device: string }>;
 }
 
 /**

@@ -52,6 +52,11 @@
 .remote-card.attention { border-color: var(--attention-border); background: var(--attention-bg); }
 .remote-card-title { font-size: var(--fs-sm); font-weight: 600; }
 .remote-card-actions { margin-top: 2px; }
+/* 远程额度 (2026-11-06): 「让它看我的模型额度」, the box beside a two-line text (what it does under the name). */
+.remote-usage-share { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; font-size: var(--fs-sm); cursor: pointer; }
+.remote-usage-share input { flex: none; margin: 3px 0 0; }
+.remote-usage-share > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.remote-usage-share[data-mine="1"] { cursor: default; }
 
 .remote-conn { font-weight: 600; }
 .remote-conn-online { color: var(--running-text); }

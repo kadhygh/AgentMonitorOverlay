@@ -9,8 +9,12 @@ import type { RemoteContext, RemoteGrants } from "./grants.js";
 // to a device, pushed to it whenever it changes. Never asked for: nothing here reads an account or a site for B (the
 // runtimes' cachedUsage, ChannelsFeature.cachedBalance). As B: what came, in memory, for the task page's 远程 line.
 //
-// Only to a device of this computer's own account (sharesUsage): the quota is the subscription of the person who owns
-// A, so a device of another account (配对 for 「安全」's other accounts) gets none. The user may widen this later.
+// To whom (sharesUsage; the user, 2026-11-06): a device of this computer's own account, always; a paired device of
+// another account only once the person ticked 「让它看我的模型额度」 for it on the 远程 dialog (kv `remote.usageShare`,
+// off by default) — the quota is the subscription of the person who owns A. Unticked, it is told an empty push at once
+// (and again whenever it asks for its list), so what it had goes.
+
+const SHARE_KEY = "remote.usageShare";
 
 /** How often A looks whether its cached quota changed (memory only: no account is asked). Changes go out together. */
 const POLL_MS = 10_000;
@@ -19,9 +23,9 @@ const SOON_MS = 1_000;
 
 const keyOf = (d: DeviceRef) => `${d.account}\n${d.device}`;
 
-/** Whether this computer's quota may go to `to`: only another device of the same account. */
-export function sharesUsage(ownAccount: string | null, to: DeviceRef): boolean {
-  return !!ownAccount && to.account === ownAccount;
+/** Whether this computer's quota may go to `to`: a device of the same account, or one the person let see it (`shared`). */
+export function sharesUsage(ownAccount: string | null, to: DeviceRef, shared: readonly DeviceRef[] = []): boolean {
+  return (!!ownAccount && to.account === ownAccount) || shared.some((d) => d.account === to.account && d.device === to.device);
 }
 
 /** What one profile's cached quota says: the account in use, only when it was read and has windows. */
@@ -45,12 +49,11 @@ export class RemoteUsageSender {
   constructor(
     private readonly ctx: RemoteContext,
     private readonly grants: RemoteGrants,
-    private readonly pollMs = POLL_MS,
   ) {}
 
-  start(): void {
+  start(pollMs = POLL_MS): void {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), this.pollMs);
+    this.timer = setInterval(() => this.tick(), pollMs);
     this.timer.unref?.();
   }
 
@@ -62,8 +65,45 @@ export class RemoteUsageSender {
     this.told.clear();
   }
 
-  /** The device asked for its list or a task (it came back, restarted, or got a new copy): it hears it all again. */
+  /** The devices of other accounts the person let see the quota (远程 dialog). */
+  shared(): DeviceRef[] {
+    try {
+      const v = JSON.parse(this.ctx.host.store.getKv(SHARE_KEY)?.value ?? "[]") as unknown;
+      return Array.isArray(v) ? v.flatMap((d): DeviceRef[] => (d && typeof d.account === "string" && typeof d.device === "string" ? [{ account: d.account, device: d.device }] : [])) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Lets `to` see the quota or not. Off: told an empty push now, so it drops what it had; on: told soon. */
+  setShared(to: DeviceRef, on: boolean): void {
+    const rest = this.shared().filter((d) => keyOf(d) !== keyOf(to));
+    this.ctx.host.store.setKv(SHARE_KEY, JSON.stringify(on ? [...rest, { account: to.account, device: to.device }] : rest));
+    if (on) this.again(to);
+    else if (!sharesUsage(this.ctx.ownAccount(), to)) this.clear(to);
+  }
+
+  /** May `to` see the quota now. */
+  private allows(to: DeviceRef): boolean {
+    return sharesUsage(this.ctx.ownAccount(), to, this.shared());
+  }
+
+  /** An empty push to `to` (when it is there): whatever it has of this computer's quota goes. */
+  private clear(to: DeviceRef): void {
+    this.told.delete(keyOf(to));
+    this.sent.delete(keyOf(to));
+    const link = this.ctx.link();
+    if (!link || link.state !== "online" || !this.ctx.peer(to)?.online) return;
+    const push: RemotePush = { type: "usage", usage: [], balances: [] };
+    link.send({ type: "relay", to: { account: to.account, device: to.device }, id: `p_${randomBytes(8).toString("hex")}`, kind: REMOTE_KINDS.push, body: push });
+  }
+
+  /**
+   * The device asked for its list or a task (it came back, restarted, or got a new copy): it hears it all again — or,
+   * not allowed (any more), an empty push, in case it still has numbers from before it was unticked while away.
+   */
   again(from: DeviceRef): void {
+    if (!this.allows(from)) return this.clear(from);
     this.told.delete(keyOf(from));
     if (this.soon || !this.timer) return;
     this.soon = setTimeout(() => {
@@ -102,7 +142,7 @@ export class RemoteUsageSender {
     return ids;
   }
 
-  /** Each device of this account with a grant, online: told what changed since it was last told. */
+  /** Each device allowed (sharesUsage) with a grant, online: told what changed since it was last told. */
   tick(): void {
     const link = this.ctx.link();
     if (!link || link.state !== "online") {
@@ -110,8 +150,9 @@ export class RemoteUsageSender {
       return;
     }
     const own = this.ctx.ownAccount();
+    const shared = this.shared();
     const devices = new Map<string, DeviceRef>();
-    for (const g of this.grants.list()) if (sharesUsage(own, g)) devices.set(keyOf(g), { account: g.account, device: g.device });
+    for (const g of this.grants.list()) if (sharesUsage(own, g, shared)) devices.set(keyOf(g), { account: g.account, device: g.device });
     for (const key of [...this.told.keys()]) if (!devices.has(key)) this.told.delete(key);
     for (const [key, to] of devices) {
       if (!this.ctx.peer(to)?.online) {

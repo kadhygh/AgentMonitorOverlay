@@ -389,6 +389,9 @@ export function RemoteDialog({
                       <span className="settings-hint">
                         {owner && guest ? "互相允许" : owner ? "这台电脑允许了它" : "它允许了这台电脑"} · {fmtTime(p.pairedAt)} 配对
                       </span>
+                      {/* 远程额度 (2026-11-06, the user): only a device this computer allowed can be granted tasks, so only it
+                          can be shown the quota; the same account's always is (said so, not hidden). */}
+                      {owner && <UsageShare peer={p} own={remote.account?.name ?? null} shared={(remote.usageShare ?? []).some((d) => peerKey(d) === key)} busy={busy} onChange={(on) => void run(() => call(link, "PUT /api/remote/usage-share", {}, { account: p.account, device: p.device, on }), on ? `${p.name} 的远程任务页上会显示这台电脑的额度` : `${p.name} 不再显示这台电脑的额度，已经发过去的清掉了`)} />}
                       {pr && pr !== "busy" && (
                         <span className={pr.ok ? "remote-ping ok" : "remote-ping error"} role="status" data-testid="remote-ping-result">
                           {pr.message}
@@ -580,6 +583,25 @@ const START_LABEL: Record<RemoteStart, string> = { run: "直接开跑", confirm:
  * creates here starts at once by default; a device of another account waits for a yes here by default. Requests always
  * wait, and what this computer grants is its own choice, so neither is set here.
  */
+/**
+ * 远程额度 (2026-11-06, the user): 「让它看我的模型额度」 on a paired device's card. Another account's device: off until
+ * ticked here; this computer's own account's: ticked and fixed, saying why.
+ */
+function UsageShare({ peer, own, shared, busy, onChange }: { peer: RemotePeer; own: string | null; shared: boolean; busy: boolean; onChange(on: boolean): void }) {
+  const mine = !!own && peer.account === own;
+  return (
+    <label className="remote-usage-share" data-testid="remote-usage-share" data-mine={mine ? "1" : "0"}>
+      <input type="checkbox" checked={mine || shared} disabled={mine || busy} onChange={(e) => onChange(e.target.checked)} data-testid="remote-usage-share-box" />
+      <span>
+        让它看我的模型额度
+        <span className="settings-hint">
+          {mine ? "同一个账号，默认能看：" : ""}它的远程任务页上会显示这台电脑已经读到的 Claude / GPT 额度和渠道余额（只是数字，不会替它去查）
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function Security({ security, account, busy, onSave }: { security: RemoteSecurity; account: string; busy: boolean; onSave(next: RemoteSecurity): void }) {
   const [next, setNext] = useState<RemoteSecurity>(security);
   const changed = next.sameAccount !== security.sameAccount || next.otherAccount !== security.otherAccount;

@@ -97,7 +97,7 @@ export class RemoteFeature extends Feature {
   /** 远程创建 as A (2026-10-29): what paired devices may pick creating a task here, and creating it. */
   readonly creates = new RemoteCreates(this.context, this.grants, this.taskRequests);
   /** 远程额度 (2026-11-06): as A, this computer's cached quota to its own account's devices; as B, what they pushed. */
-  private usageOut: RemoteUsageSender | null = null;
+  private readonly usageOut = new RemoteUsageSender(this.context, this.grants);
   readonly usage = new RemoteUsageCopies();
   readonly asks = new TaskAsks(this.context, (peer, kind, body, timeoutMs, offline) => this.copies.ask(peer, kind, body, timeoutMs, offline));
   private readonly onHostEvent = (e: HostEvent) => {
@@ -122,8 +122,7 @@ export class RemoteFeature extends Feature {
     // The catch-up progress (读条, 2026-11-01): only the state, not what paired devices may pick (changed() announces that).
     this.copies.onProgress = () => this.host.emit("event", { type: "remote.updated", remote: this.state(), seq: this.store.lastEventSeq() });
     this.usage.onChange = this.copies.onProgress;
-    this.usageOut = new RemoteUsageSender(this.context, this.grants, options.usagePollMs);
-    this.usageOut.start();
+    this.usageOut.start(options.usagePollMs);
     this.ownsTeam = !this.teamLink.started;
     this.teamLink.start(options);
     // Files fetched for copies that are gone (step 3).
@@ -141,8 +140,7 @@ export class RemoteFeature extends Feature {
     this.teamLink.off("account", this.onAccount);
     this.teamLink.off("device", this.onDevice);
     this.creates.stop();
-    this.usageOut?.stop();
-    this.usageOut = null;
+    this.usageOut.stop();
     this.link?.stop();
     this.link = null;
     this.opts = null;
@@ -303,7 +301,7 @@ export class RemoteFeature extends Feature {
     if (!this.pairs().some((p) => same(p, f.from))) return { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
     if (f.kind === "ping") return { kind: "pong", body: { at: Date.now() } };
     // 远程额度: a device asking for its list or a task (back, restarted, or a new copy) hears the quota again.
-    if (f.kind === REMOTE_KINDS.list || f.kind === REMOTE_KINDS.task) this.usageOut?.again(f.from);
+    if (f.kind === REMOTE_KINDS.list || f.kind === REMOTE_KINDS.task) this.usageOut.again(f.from);
     const body = f.body && typeof f.body === "object" ? (f.body as Record<string, unknown>) : {};
     const failed = (err: unknown): Answer =>
       err instanceof HostError ? { kind: "error", body: { code: err.code, message: err.message } } : { kind: "error", body: { code: "runtime_error", message: err instanceof Error ? err.message : String(err) } };
@@ -424,6 +422,8 @@ export class RemoteFeature extends Feature {
       if (p.role === "owner") {
         this.grants.dropPeer(p);
         this.taskRequests.dropPeer(p);
+        // Paired again later, it starts unticked.
+        if (this.usageOut.shared().some((d) => same(d, p))) this.usageOut.setShared(p, false);
       } else {
         this.copies.revokePeer(p, "配对已解除");
         this.usage.forget(p);
@@ -518,6 +518,7 @@ export class RemoteFeature extends Feature {
       security: this.creates.security(),
       syncing: this.copies.syncState(),
       usage: this.usage.list(),
+      usageShare: this.usageOut.shared(),
     };
   }
 
@@ -672,6 +673,19 @@ export class RemoteFeature extends Feature {
 
   setSecurity(body: unknown): RemoteState {
     this.creates.setSecurity(body);
+    return this.state();
+  }
+
+  /**
+   * 远程额度 (2026-11-06, the user): whether a paired device of another account sees this computer's quota on its
+   * copies' pages (off by default; a device of this account always does). Off: it drops what it had at once.
+   */
+  setUsageShare(to: DeviceRef, on: boolean): RemoteState {
+    const p = this.pairs().find((x) => same(x, to) && x.role === "owner");
+    if (!p) throw new HostError("not_found", "没有和这台设备配对（要这台电脑允许过它）");
+    if (this.account && p.account === this.account.name) throw new HostError("bad_request", "同一个账号的设备默认就能看额度，不用设置");
+    this.usageOut.setShared(to, on);
+    this.changed();
     return this.state();
   }
 

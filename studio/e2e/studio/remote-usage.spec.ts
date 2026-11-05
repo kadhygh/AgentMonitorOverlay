@@ -131,4 +131,50 @@ test("B's task page shows the quota A has read for the task's model, folded and 
   await banner.getByTestId("remote-banner-toggle").click();
   await screenshot(b.app, "studio", "remote-usage-narrow-open", b.page);
   await banner.getByTestId("remote-banner-toggle").click();
+
+  // Another account's device (the user, 2026-11-06: 别的账号的设备默认看不到，A 上打开开关才推). C pairs with A and is
+  // granted the task: nothing of A's quota until A ticks 「让它看我的模型额度」 on C's card; unticked, it is gone on C.
+  const otherKey = store.register("同事", "pw-cccc").key;
+  const c = await launchStudio({ env: { AMO_HOME: await home("同事", otherKey, "C 同事的电脑") } });
+  studios.push(c);
+  await c.api("PUT", "/api/remote/enabled", { enabled: true });
+  const cDevice = (await until(() => c.api<RemoteState>("GET", "/api/remote"), (s) => s.connection.state === "online", "C online")).device!.id;
+  await c.api("POST", "/api/remote/pair", { account: "我", device: aState.device!.id });
+  const askedC = await until(() => a.api<RemoteState>("GET", "/api/remote"), (s) => s.incoming.length === 1, "A sees C's request");
+  await a.api("POST", `/api/remote/requests/${askedC.incoming[0]!.id}/answer`, { allow: true });
+  await until(() => c.api<RemoteState>("GET", "/api/remote"), (s) => s.peers[0]?.online === true, "C sees A online");
+  await a.api("POST", "/api/remote/grants", { taskId: task.id, account: "同事", device: cDevice });
+  await until(() => c.api<{ tasks: Task[] }>("GET", "/api/state"), (s) => s.tasks.some((t) => t.id === task.id), "C's copy");
+
+  // A's 远程 dialog: B's card ticked and fixed (same account), C's not ticked.
+  await a.page.getByTestId("topbar-remote").click();
+  const dialog = a.page.getByRole("dialog", { name: "远程", exact: true });
+  const cardB = dialog.getByTestId("remote-peer").filter({ hasText: "B 笔记本" });
+  const cardC = dialog.getByTestId("remote-peer").filter({ hasText: "C 同事的电脑" });
+  await expect(cardB.getByTestId("remote-usage-share")).toContainText("同一个账号，默认能看");
+  await expect(cardB.getByTestId("remote-usage-share-box")).toBeChecked();
+  await expect(cardB.getByTestId("remote-usage-share-box")).toBeDisabled();
+  await expect(cardC.getByTestId("remote-usage-share")).toContainText("它的远程任务页上会显示这台电脑已经读到的 Claude / GPT 额度和渠道余额");
+  await expect(cardC.getByTestId("remote-usage-share-box")).not.toBeChecked();
+  await cardC.scrollIntoViewIfNeeded();
+  await screenshot(a.app, "studio", "remote-usage-share", a.page);
+  await theme(a.page, "dark");
+  await screenshot(a.app, "studio", "remote-usage-share-dark", a.page);
+  await theme(a.page, "light");
+  await new Promise((r) => setTimeout(r, 500));
+  expect((await c.api<RemoteState>("GET", "/api/remote")).usage ?? []).toEqual([]);
+
+  // Ticked: C has it, and its task page shows it.
+  await cardC.getByTestId("remote-usage-share-box").click();
+  await expect(cardC.getByTestId("remote-usage-share-box")).toBeChecked();
+  await expect(dialog.getByTestId("remote-message")).toContainText("C 同事的电脑 的远程任务页上会显示这台电脑的额度");
+  await until(() => c.api<RemoteState>("GET", "/api/remote"), (s) => (s.usage?.[0]?.usage.length ?? 0) > 0, "C has A's quota");
+  await c.page.getByTestId("task-card").filter({ hasText: "远程看额度" }).click();
+  await expect(c.page.getByTestId("remote-banner").getByTestId("remote-banner-win")).toHaveCount(2);
+
+  // Unticked: gone on C at once.
+  await cardC.getByTestId("remote-usage-share-box").click();
+  await expect(cardC.getByTestId("remote-usage-share-box")).not.toBeChecked();
+  await until(() => c.api<RemoteState>("GET", "/api/remote"), (s) => (s.usage ?? []).length === 0, "C cleared");
+  await expect(c.page.getByTestId("remote-banner").getByTestId("remote-banner-quota")).toHaveCount(0);
 });

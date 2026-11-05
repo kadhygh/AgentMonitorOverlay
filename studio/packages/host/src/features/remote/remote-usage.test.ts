@@ -146,10 +146,44 @@ describe("远程额度", () => {
   });
 });
 
+describe("远程额度 for another account's device (the user, 2026-11-06: 默认关，A 上打开开关才推)", () => {
+  it("not ticked: nothing; ticked: it gets the quota; unticked: it is cleared at once", async () => {
+    const { a, b, c, aDevice, toB, toC } = await three();
+    vi.spyOn(a.codex, "cachedUsage").mockImplementation((pid) => (pid === "p" ? read("2026-11-06T08:00:00.000Z") : null));
+    const { task } = await a.service.tasks.createTask({ title: "远程任务", firstSession: { profileId: "p", text: "第一句" } });
+    a.remote.grant(task.id, toB);
+    a.remote.grant(task.id, toC);
+    await until(() => c.store.getTask(task.id), (t) => t?.remote?.state === "active", "C's copy");
+    // The same account's device has it; the other account's, not ticked, has nothing.
+    await until(() => b.state().usage ?? [], (u) => u.length === 1, "B has A's quota");
+    await pause(200);
+    expect(c.state().usage).toEqual([]);
+    expect(a.state().usageShare).toEqual([]);
+
+    // Ticked on A: C hears it, under its copy's model id.
+    expect(a.remote.setUsageShare(toC, true).usageShare).toEqual([toC]);
+    const got = await until(() => c.state().usage ?? [], (u) => u.length === 1, "C has A's quota");
+    expect(got[0]).toMatchObject({ device: aDevice, usage: [{ profileId: remoteProfileId(aDevice, "p"), windows: [{ usedPercent: 62 }] }] });
+
+    // Unticked: an empty push at once — the numbers did not change, so the poll alone would never clear it.
+    expect(a.remote.setUsageShare(toC, false).usageShare).toEqual([]);
+    await until(() => c.state().usage ?? [], (u) => u.length === 0, "C cleared");
+    await pause(200);
+    expect(c.state().usage).toEqual([]);
+    expect(b.state().usage).toHaveLength(1);
+
+    // Only for a paired device of another account.
+    expect(() => a.remote.setUsageShare(toB, true)).toThrow(/同一个账号/);
+    expect(() => a.remote.setUsageShare({ account: "同事", device: "nope" }, true)).toThrow(/没有和这台设备配对/);
+  });
+});
+
 describe("远程额度 pieces", () => {
-  it("only a device of the same account shares the quota", () => {
+  it("a device of the same account shares the quota; another account's only once let", () => {
     expect(sharesUsage("台式机的我", { account: "台式机的我", device: "d2" })).toBe(true);
     expect(sharesUsage("台式机的我", { account: "同事", device: "d3" })).toBe(false);
+    expect(sharesUsage("台式机的我", { account: "同事", device: "d3" }, [{ account: "同事", device: "d3" }])).toBe(true);
+    expect(sharesUsage("台式机的我", { account: "同事", device: "d4" }, [{ account: "同事", device: "d3" }])).toBe(false);
     expect(sharesUsage(null, { account: "台式机的我", device: "d2" })).toBe(false);
   });
 
