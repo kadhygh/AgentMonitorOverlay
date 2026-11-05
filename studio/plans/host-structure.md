@@ -63,6 +63,37 @@
 2. 各主题导出自己的 `XxxRoutes`（remote、duty、issues、mcp……），`HostRoutes` `extends` 它们，`api.ts` 只留公共的。
 3. 重新生成 Codex 的协议类型，去掉 `as never`（先确认是不是生成的类型旧了）。
 
+### 8b 动手前的核对（2026-11-06，对 master `6eda890d`）
+
+11-05 以后进 master 的（子会话 setup、中转跳转 `POST /api/ui/open`、远程额度 `PUT /api/remote/usage-share`、命令行适配的 `shellHelp`）都已经在 `HostRoutes` 里声明了，方向不用改。和方案对不上的几处：
+
+- 路由现在是 **213 条**（方案写的 196 条是 11-03 数的），`HostRoutes` 声明的也正好是这 213 条，一一对应。
+- **issues 没有 Host 路由**（问题页只有 MCP 工具，HTTP 在中转服务上），所以没有 `IssuesRoutes`。
+- `codex-runtime.ts` 里的 `as never` 是 **19 处**（加上 `events.ts` 1 处），生成的类型确实旧了：`VERSION.ts` 是 codex-cli 0.161.0，本机装的是 0.166.0。
+- 「一次改一个 feature、新旧写法并存」不需要：改写法只是把 `route("GET", "/api/x", …)` 的前两个参数合成一个键，213 条一次 sed 改完，类型检查就是逐条核对。
+
+### 8b 做到哪（2026-11-06，分支 `studio/host-8b`，没合进 master）
+
+做完了 1–3：
+
+1. `http/route.ts`：`route("GET /api/duty", handle, options?)`。键必须是 `HostRoutes` 里有的；`ctx.params` 按路径里的 `:名字` 有类型（`Record<"id" | "itemId", string>`，写错名字编译不过）；handler 的返回值必须是声明的 `res`（声明为 `Blob` 的路由返回 `FileReply`），或者 `JsonReply`（自带状态码的回答，现在只有 `/api/shutdown` 的 409）。**请求体仍是 `unknown`**：它来自外面，handler 照旧用 `obj` / `str` 自己检查，类型上不假装它已经是 `req`。旧写法删了，只留 `untypedRoute(method, path, …)` 给需要一条 `HostRoutes` 里没有的路由的测试（`remote-tasks.test.ts`）。
+2. 16 个主题在自己的 protocol 文件里声明路由：`RemoteRoutes`（remote.ts）、`DutyRoutes`、`McpRoutes`、`GitReviewRoutes`（含提交历史）、`ViewPackRoutes`、`FileRoutes`、`OpenInRoutes`、`MarkRoutes`（文件标记和书签）、`PromptTemplateRoutes`、`ChatFileRoutes`、`QuestionRoutes`、`CliRoutes`、`DataRoutes`、`ChannelRoutes`、`MaintenanceRoutes`，以及 `CanvasRoutes`（canvas.ts：画布和画布审阅的气泡，从主块里挪过去）。`HostRoutes extends` 这 16 个，自己只留公共的：state、health、shutdown、项目、设置、Claude Code / DSH / Claude 多账号、任务、专题、专题文档、任务方案、传话、会话、批注、便签、待办、邮件、决定、清单、调度、中转进会话、`ui/open`。以后新功能有自己的 protocol 文件就在那里加 `XxxRoutes` 并加进 `extends`，不要再在 `api.ts` 末尾追加 `interface HostRoutes {…}`。
+3. 用 `npm run gen:codex` 从 codex-cli 0.166.0 重新生成（43 个文件有变化、新增 23 个；`ReviewDelivery` 只剩 `"inline"`，正是 `review/start` 发的）。`codex-runtime.ts` 的 19 处和 `events.ts` 的 1 处 `as never` 去掉了。挡路的不是 Codex 不收的参数，而是 Host 自己的辅助函数类型写得宽：线程的 `config` 改成 `CodexConfig`（`runtime/profiles.ts`，即 `ThreadStartParams["config"]`；`codexThreadParams`、`codexAutoCompactConfig`、`McpIdentities.threadConfig`、`identityConfig` 用它），turn 的输入和排队的 steer 输入（`state.ts`）是 `codex.v2.UserInput[]`，`sandboxPolicy` 是 `codex.v2.SandboxPolicy`，`summary: "auto"` 是字面量，`reviewTarget` 返回 `codex.v2.ReviewTarget`。
+
+查出的不一致：**没有**。类型改严以后 213 条 handler 的返回值都和 `HostRoutes` 声明的一致；另用编译器 API 确认没有一条 handler 的返回类型是 `any`（否则检查是空的）。这说明的是「结构上兼容」：Host 多返回的字段 TypeScript 不拦（只有对象字面量才拦）。顺手把三处放错位置的注释放回原处（`PUT /api/settings` 的 `commonDir`、`PATCH /api/sessions/:id` 和 `…/options`、渠道的 `models-test` 和 `balance-test`）。
+
+行为不变的依据：第 3 步前后 Host 编译出的 JavaScript 逐字节相同（两边都编译了对比；protocol 只有没人读的 `CODEX_PROTOCOL_SOURCE` 字符串变了）。生成的 Codex 类型只是类型，Studio 照旧跑用户自己装的 Codex，版本旧的也一样。第 1 步改了 213 处调用的写法（JS 跟着变），路由的方法、路径、选项和 handler 都没动；第 2 步只动类型。
+
+和方案的偏差：
+
+- 没做「新旧写法并存、一次一个 feature」（见核对）。
+- 请求体没有类型化（`Ctx<K>.body` 是 `unknown`）。routes.ts 里还有 19 处 `obj(body) as never`（或 `(body ?? {}) as never`）把请求体直接交给 service（tasks、marks、topicdocs、taskplans、prompttemplates、gitreview 等），service 自己检查字段。要把它们改成按 `RouteRequest<K>` 校验，得动 service 的签名，和 8c 冲突，留到 8c 之后。
+- `rpc-client.ts` 的 `ResponseMap` 只列了 Host 用的方法，几处响应用 `as unknown as` 取 Host 读的那几个字段（`model/list`、`skills/list`、`account/rateLimits/read`、`review/start`），没动；测试里的 `as never`（假 app-server 的参数）也没动。
+- 动到了 8c 范围外、但不是 feature 构造的几个文件：`runtime/profiles.ts`、`runtime/compact.ts`、`mcp/identity.ts`、`runtime/codex/{account,state,events}.ts`，都只改类型注解。
+- 单测改动（不是断言）：`remote-tasks.test.ts` 那条「没声明 `remoteCopy` 的新路由对副本拒绝」要一条 `HostRoutes` 里没有的路由，改用 `untypedRoute` 构造。
+
+验证（都在低优先级下跑）：`npm run typecheck`；vitest `--maxWorkers=6`，198 个文件、1317 条通过（4 条本来就 skip）；`npm run build`；e2e `--workers=3` 47 条：studio 的 `chat`、`chat-experience`、`chat-files`、`session-start`、`newtask`、`remote*`（8 个 spec）、`teamrelay`、`decisions`、`mcp`、`mcp-settings`、`options`，relay 的 `issues-page`。没跑全量 e2e；没在真的 Codex 会话里试（JS 没变，所以没必要）。
+
 ## 8c feature 之间的依赖
 
 现状：tasks ↔ sessions、sessions ↔ collab 互相调；`sessionMoving` 写在 `tasks/service.ts` 却被 duty 和 http 引用；`guide/role` 被 5 个 feature 引用。
