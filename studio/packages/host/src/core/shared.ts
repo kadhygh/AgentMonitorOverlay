@@ -1,4 +1,4 @@
-import type { SessionOptions, HostErrorCode, HostEvent, Session } from "@amo-studio/protocol";
+import { inTurn, type SessionOptions, type HostErrorCode, type HostEvent, type Session } from "@amo-studio/protocol";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -29,6 +29,18 @@ export const MAX_PRESETS = 30;
  * leaves it out. The one place this is asked (plans/host-structure.md 8a, 2026-11-05).
  */
 export const isRemoteCopy = (s: Pick<Session, "runtime"> | null | undefined): boolean => s?.runtime === "remote";
+
+/**
+ * Whether a session is still at it, for 进行中 ⇄ 待审阅: running, waiting for the person in the middle of a turn
+ * (approval, a question), about to go on by itself (its /loop, a usage limit that resets), or in a terminal. Also how
+ * many sessions are at work (http/server.ts) and whether 值守 may go on in one; here since 2026-11-06 (it was in
+ * features/tasks, plans/host-structure.md 8c).
+ */
+export function sessionMoving(s: Session): boolean {
+  if (s.archivedAt) return false;
+  if (inTurn(s.status)) return true;
+  return !!s.wake?.loop || !!s.wake?.limit || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
+}
 
 /** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */
 export function optionValue(v: unknown, field: string): string | undefined {

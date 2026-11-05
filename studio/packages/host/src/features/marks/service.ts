@@ -40,7 +40,7 @@ export function projectOf(path: string, workspaces: readonly Workspace[]): Id | 
  * 书签 (2026-10-19): marks are kept under a topic (null: 未归专题), and passages of conversations are bookmarked too;
  * the same file (and range) or passage can be under two topics, once each.
  */
-export class MarksFeature extends Feature {
+export class MarksFeature extends Feature<"openIn"> {
   /** All marks, a project's, or (`"other"`) those outside every project; with whether each still exists. */
   list(workspace?: unknown): FileMark[] {
     this.rehome();

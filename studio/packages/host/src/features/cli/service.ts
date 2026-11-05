@@ -14,7 +14,7 @@ const REVIEW_COMMAND: SlashCommand = { name: "review", description: "打开这�
  * CLI features in the conversation (stage 12, S12-E): the `/` menu (Studio's commands plus the runtime's), running a
  * command, background commands (stop, output) and the conversation settings.
  */
-export class CliFeature extends Feature {
+export class CliFeature extends Feature<"gitReview"> {
   async listCommands(sessionId: Id): Promise<SlashCommandList> {
     const session = this.requireSession(sessionId);
     const [runtime, repo] = await Promise.all([

@@ -4,7 +4,7 @@ import { HostError, boundedText, MAX_NOTE_CHARS, MAX_QUESTION_CHARS, MAX_OPTION_
 import { Feature } from "../../core/feature.js";
 
 /** Collaboration (stage 5): notes and handoffs, mail, decision requests, checklists. */
-export class CollabFeature extends Feature {
+export class CollabFeature extends Feature<"sessions"> {
   taskNotes(taskId: Id): TaskNote[] {
     this.requireTask(taskId);
     return this.store.listTaskNotes(taskId);
@@ -120,7 +120,7 @@ export class CollabFeature extends Feature {
    * conversation as a message (the inbox: held while the session is not free, see sessions/inbox.ts).
    */
   watchAnswers(): void {
-    this.f.on("event", (e) => {
+    this.host.on("event", (e) => {
       if (e.type === "session.upserted" && this.answersFor.has(e.session.id) && !inTurn(e.session.status)) this.forwardAnswers(e.session);
     });
     // Answers a Host before a restart had not handed on yet (a decision without mailId predates this: left as it was).

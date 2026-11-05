@@ -2,7 +2,7 @@ import { isCommon, TASK_DESCRIPTION_MAX, TASK_PLAN_MAX_TASKS, wouldCycle, type I
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { roleFacts } from "../guide/role.js";
+import { roleFacts } from "../../core/role.js";
 
 const SUMMARY_MAX = 2000;
 const FIRST_MESSAGE_MAX = 20_000;
@@ -15,7 +15,7 @@ const DECIDED_SHOWN_MS = 24 * 3600_000;
  * the tasks, puts them on the canvas (a group per project when they span several) with their dependencies, starts
  * them or leaves them in 待办, and tells the 主控 which tasks they became — or dismisses it, with a note.
  */
-export class TaskPlansFeature extends Feature {
+export class TaskPlansFeature extends Feature<"canvases" | "collab" | "sessions" | "tasks"> {
   list(): TaskPlan[] {
     const since = Date.now() - DECIDED_SHOWN_MS;
     return this.store.listTaskPlans().filter((p) => p.state === "open" || Date.parse(p.decidedAt ?? p.createdAt) > since);
@@ -154,7 +154,7 @@ export class TaskPlansFeature extends Feature {
   }
 
   private profileByRef(ref: string): ModelProfile {
-    return this.f.profileByRef(ref);
+    return this.host.profileByRef(ref);
   }
 }
 

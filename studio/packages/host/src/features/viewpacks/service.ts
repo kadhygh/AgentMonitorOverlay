@@ -12,7 +12,7 @@ import type { RemoteGrants } from "../remote/grants.js";
  * sending again within a few seconds adds to the pack it just sent — an agent opening a then b gets one window with
  * both, not b over a.
  */
-export class ViewPacksFeature extends Feature {
+export class ViewPacksFeature extends Feature<"remote"> {
   get(id: Id): ViewPack {
     const pack = this.store.getViewPack(id);
     if (!pack) throw new HostError("not_found", `查看包 ${id} not found`);

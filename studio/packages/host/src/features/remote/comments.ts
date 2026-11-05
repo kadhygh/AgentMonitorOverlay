@@ -1,5 +1,6 @@
 import { composeRemoteReviewMessage, sortComments, type GitReviewComment, type Id, type NewGitReviewComment, type Task } from "@amo-studio/protocol";
-import type { HostService } from "../../service.js";
+import type { FeatureHost } from "../../core/feature.js";
+import type { RemoteUses } from "./service.js";
 import { HostError } from "../../core/shared.js";
 
 // 远程 Reviewer 的批注 (plans/remote-reviewer.md step 3, 2026-11-02, the user): B's comments on a remote task's files
@@ -23,7 +24,7 @@ const ROUTES: Array<{ method: string; re: RegExp; name: "list" | "add" | "copy" 
 ];
 
 export class RemoteComments {
-  constructor(private readonly host: () => HostService) {}
+  constructor(private readonly host: () => FeatureHost<RemoteUses>) {}
 
   private get store() {
     return this.host().store;

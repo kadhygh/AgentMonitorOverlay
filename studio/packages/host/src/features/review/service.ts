@@ -6,7 +6,7 @@ import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Review (stage 2): annotations sent back to a session. The scratchpad has its own feature since stage 11. */
-export class ReviewFeature extends Feature {
+export class ReviewFeature extends Feature<"sessions"> {
   annotations(sessionId: Id): Annotation[] {
     this.requireSession(sessionId);
     return this.store.listAnnotations(sessionId);

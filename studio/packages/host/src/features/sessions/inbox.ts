@@ -1,6 +1,7 @@
 import { inTurn, type Id, type Session, type SessionItem } from "@amo-studio/protocol";
 import { newId, type SessionItemInput } from "../../store/store.js";
-import { Feature } from "../../core/feature.js";
+import { Feature, type FeatureHost } from "../../core/feature.js";
+import type { SessionsFeature } from "./service.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 
 // 会话收件箱 (2026-11-04, plans/message-delivery.md): messages from agents and from Studio itself — a 中转 reply, 值守
@@ -21,6 +22,14 @@ const PEER_QUEUE_KEY = "sessions.peer-queue";
 const TURN_SEEN_MS = 3000;
 
 export class SessionInbox extends Feature {
+  constructor(
+    host: FeatureHost,
+    /** The feature the inbox is part of (it sends through it). */
+    private readonly sessions: SessionsFeature,
+  ) {
+    super(host);
+  }
+
   private known: Set<Id> | null = null;
   /** One delivery at a time per session; `again`: something came meanwhile, look once more after it. */
   private readonly flushing = new Map<Id, Promise<void>>();
@@ -65,11 +74,11 @@ export class SessionInbox extends Feature {
     if (s.kind === "sub") throw new HostError("read_only", "子 agent 不能单独接收消息");
     if (!text.trim()) throw new HostError("bad_request", "text is required");
     if (isRemoteCopy(s)) {
-      await this.f.sessions.sendMessage(sessionId, text);
+      await this.sessions.sendMessage(sessionId, text);
       return { delivered: true, waiting: 0 };
     }
-    const role = this.f.sessions.roleUpdate(sessionId);
-    const item = this.append(s, this.f.sessions.withRole(text, role.lines));
+    const role = this.sessions.roleUpdate(sessionId);
+    const item = this.append(s, this.sessions.withRole(text, role.lines));
     role.told();
     this.remember(sessionId);
     if (this.paused.has(sessionId)) this.tellPaused(sessionId);
@@ -90,7 +99,7 @@ export class SessionInbox extends Feature {
   /** Watches sessions get free; sends what the last Host left held, and moves session_send's old queue in. */
   watch(): void {
     this.migratePeerQueue();
-    this.f.on("event", (e) => {
+    this.host.on("event", (e) => {
       if (e.type === "session.upserted" && this.ids().has(e.session.id)) void this.flush(e.session.id).catch(() => undefined);
     });
     for (const id of this.ids()) void this.flush(id).catch(() => undefined);

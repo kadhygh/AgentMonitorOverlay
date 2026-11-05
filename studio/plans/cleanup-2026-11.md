@@ -16,7 +16,7 @@
 | 5 | 清死代码和重复定义 | ✓ 11-04（不碰 runtime 的部分；见下） |
 | 6 | 只增不删的数据 | ✓ 中转那一半 11-04 `6280aeb4`（没部署）；Host 那一半 11-04 `48ecf1eb` |
 | 7 | ui 的数据流和共用件 | ✓ 前两批 11-04 合进 master（`36cc5a49`，分支 `studio/ui-dataflow`）；第三批 11-05 在 master 上做完；base.css 用户定不做 |
-| 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；8a 11-05 合进 master；8b 11-06 在分支 `studio/host-8b`（没合）；8c、8d 见方案 |
+| 8 | Host 结构重排 | ✓ 方案 `plans/host-structure.md`（11-04）；8a 11-05 合进 master；8b 11-06 在分支 `studio/host-8b`（没合）；8c 11-06 在分支 `studio/host-8c`（没合，依赖声明 + 依赖图单测，见方案「8c 做到哪」）；8d 见方案 |
 
 ## 第 0 步：先定的事
 

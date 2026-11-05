@@ -174,6 +174,6 @@ export class DshFeature extends Feature {
 
   private profilesChanged(): void {
     this.options.channels?.refresh();
-    this.publish({ type: "profiles.updated", profiles: this.f.allProfiles() });
+    this.publish({ type: "profiles.updated", profiles: this.host.allProfiles() });
   }
 }

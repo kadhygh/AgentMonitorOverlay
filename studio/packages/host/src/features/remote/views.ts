@@ -22,7 +22,8 @@ import {
   type ViewPack,
 } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
-import type { HostService } from "../../service.js";
+import type { FeatureHost } from "../../core/feature.js";
+import type { RemoteUses } from "./service.js";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext } from "./grants.js";
 import { insideFolder, real, slash, underTaskFolder } from "./files.js";
@@ -40,7 +41,7 @@ import { insideFolder, real, slash, underTaskFolder } from "./files.js";
 
 /** What A answers a Reviewer read of a granted task with. */
 export interface ViewScope {
-  host: HostService;
+  host: FeatureHost<RemoteUses>;
   task: Task;
   /** The task's folder (its project's). */
   root: string;

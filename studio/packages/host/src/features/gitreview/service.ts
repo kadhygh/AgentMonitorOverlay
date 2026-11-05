@@ -39,7 +39,7 @@ const LINE_TEXT_MAX = 2_000;
  * Git Review (stage 11, S11-D): a project's changes as git sees them (status, changed files of a range, one file's
  * diff), comments on their lines, and sending the comments to a session as one message grouped by file.
  */
-export class GitReviewFeature extends Feature {
+export class GitReviewFeature extends Feature<"projects" | "remote" | "sessions"> {
   async status(workspaceId: Id): Promise<GitStatus> {
     return this.git(() => readStatus(this.requireWorkspace(workspaceId).path));
   }

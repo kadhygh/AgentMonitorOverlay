@@ -4,7 +4,7 @@ import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { roleUpdate } from "../guide/role.js";
+import { roleUpdate } from "../../core/role.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
@@ -17,9 +17,9 @@ export const SLOW_SEND_MS = 5000;
 const busy = (s: Session) => inTurn(s.status);
 
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
-export class SessionsFeature extends Feature {
+export class SessionsFeature extends Feature<"attachments" | "collab" | "config" | "remote" | "review" | "tasks"> {
   /** Messages from agents and from Studio: held until the session is free (inbox.ts). */
-  readonly inbox = new SessionInbox(this.host);
+  readonly inbox = new SessionInbox(this.host, this);
 
   /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
   private readonly handoffs = new Map<Id, TerminalHandle>();
@@ -335,7 +335,7 @@ export class SessionsFeature extends Feature {
     // 子会话设定 (2026-11-05): what the person set up with @ 开子会话… wins over what the agent writes.
     const setup = this.setupOf(from.id, input.setup);
     let picked: { profileId: Id; model?: string } = setup
-      ? { profileId: this.f.requireProfile(setup.profileId).id, ...(setup.model ? { model: setup.model } : {}) }
+      ? { profileId: this.requireProfile(setup.profileId).id, ...(setup.model ? { model: setup.model } : {}) }
       : typeof input.model === "string" && input.model.trim()
         ? await this.modelByRef(input.model.trim())
         : { profileId: from.profileId };
@@ -380,7 +380,7 @@ export class SessionsFeature extends Feature {
       if (fast !== undefined) {
         const runs = await this.modelOption(profileId, picked.model);
         if (runs?.fast) options = { ...options, fast };
-        else if (fast && setup?.fast === undefined && agentFast === true) throw new HostError("bad_request", `${this.f.requireProfile(profileId).label}（${runs?.label ?? picked.model ?? "默认型号"}）没有 Fast：去掉 fast 再开`);
+        else if (fast && setup?.fast === undefined && agentFast === true) throw new HostError("bad_request", `${this.requireProfile(profileId).label}（${runs?.label ?? picked.model ?? "默认型号"}）没有 Fast：去掉 fast 再开`);
       }
     }
     const elsewhere = workspace.id !== task.workspaceId;
@@ -458,7 +458,7 @@ export class SessionsFeature extends Feature {
    * brought down to the caller's level.
    */
   private async peerPermission(from: Session, profileId: Id, level: PermissionLevel | null, personChose = false): Promise<string | undefined> {
-    const runtime = this.f.requireProfile(profileId).runtime;
+    const runtime = this.requireProfile(profileId).runtime;
     if (!isPeerRuntime(runtime)) return undefined;
     const choices = await this.f.config.choices(profileId).catch(() => null);
     if (personChose && level) return peerPermission(null, runtime, level, choices);
@@ -526,7 +526,7 @@ export class SessionsFeature extends Feature {
   /** Keeps 子会话设定 sent with a message to this session (POST /api/sessions/:id/messages, a task's first session). */
   rememberSetups(sessionId: Id, setups: readonly SubsessionSetup[]): void {
     this.requireSession(sessionId);
-    for (const s of setups) this.f.requireProfile(s.profileId);
+    for (const s of setups) this.requireProfile(s.profileId);
     rememberSetups(this.store, sessionId, setups);
   }
 
@@ -535,7 +535,7 @@ export class SessionsFeature extends Feature {
     if (!choices?.models.length) return want;
     const model = chosen ?? fillDefaults({}, choices, readModelPrefs(this.store)[profileId]).model;
     const runs = choices.models.find((m) => m.id === model) ?? choices.models.find((m) => m.isDefault) ?? choices.models[0]!;
-    const name = `${this.f.requireProfile(profileId).label}（${runs.label}）`;
+    const name = `${this.requireProfile(profileId).label}（${runs.label}）`;
     if (!runs.efforts.length) throw new HostError("bad_request", `${name} 没有思考强度可选，去掉 effort 再开`);
     const hit = runs.efforts.find((e) => e.toLowerCase() === want.toLowerCase());
     if (!hit) throw new HostError("bad_request", `${name} 的 effort 只能是：${runs.efforts.join(", ")}`);
@@ -549,12 +549,12 @@ export class SessionsFeature extends Feature {
    */
   async modelByRef(ref: string): Promise<{ profileId: Id; model?: string }> {
     try {
-      return { profileId: this.f.profileByRef(ref).id };
+      return { profileId: this.host.profileByRef(ref).id };
     } catch (err) {
       const slash = ref.indexOf("/");
-      const named = slash > 0 ? this.f.profiles.find((p) => !p.hidden && [p.id, p.label].some((x) => x.toLowerCase() === ref.slice(0, slash).trim().toLowerCase())) : undefined;
+      const named = slash > 0 ? this.profiles.find((p) => !p.hidden && [p.id, p.label].some((x) => x.toLowerCase() === ref.slice(0, slash).trim().toLowerCase())) : undefined;
       const want = (named ? ref.slice(slash + 1) : ref).trim().toLowerCase();
-      for (const p of named ? [named] : this.f.profiles.filter((x) => !x.hidden)) {
+      for (const p of named ? [named] : this.profiles.filter((x) => !x.hidden)) {
         const choices = await this.f.config.choices(p.id).catch(() => null);
         const m = choices?.models.find((x) => x.id.toLowerCase() === want || x.label.toLowerCase() === want);
         if (m) return m.isDefault ? { profileId: p.id } : { profileId: p.id, model: m.id };
@@ -583,7 +583,7 @@ export class SessionsFeature extends Feature {
    * has not ended. Which turn was told last is kept, so a restart neither repeats nor loses one.
    */
   watchReports(): void {
-    this.f.on("event", (e) => {
+    this.host.on("event", (e) => {
       if (e.type !== "session.upserted") return;
       if (e.session.reportTo) this.checkReport(e.session);
     });

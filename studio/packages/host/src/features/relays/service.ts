@@ -2,7 +2,7 @@ import { RELAY_TEXT_MAX, type Id, type Relay, type Session } from "@amo-studio/p
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { refTopics, roleFacts } from "../guide/role.js";
+import { refTopics, roleFacts } from "../../core/role.js";
 
 /** How long a decided relay stays listed. */
 const DECIDED_SHOWN_MS = 24 * 3600_000;
@@ -13,7 +13,7 @@ const DECIDED_SHOWN_MS = 24 * 3600_000;
  * Focus, unless the task takes relays without asking (relayAuto); then it goes into the task's latest main session
  * (queued while a turn runs), or a new one with the 主控's model when it has none. The 主控 hears how it went by mail.
  */
-export class RelaysFeature extends Feature {
+export class RelaysFeature extends Feature<"collab" | "sessions" | "tasks"> {
   list(): Relay[] {
     const since = Date.now() - DECIDED_SHOWN_MS;
     return this.store.listRelays().filter((r) => r.state === "pending" || Date.parse(r.decidedAt ?? r.createdAt) > since);

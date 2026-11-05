@@ -11,7 +11,16 @@ import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITA
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
-export class ConfigFeature extends Feature {
+export class ConfigFeature extends Feature<"claudeAccounts" | "scratchpad"> {
+  /**
+   * Every change of the Claude accounts (a sign-in's progress included) reaches the windows with the settings. Here
+   * rather than in ClaudeAccountsFeature since 2026-11-06 (plans/host-structure.md 8c): the settings are this
+   * feature's, and claudeAccounts no longer needs config back. Still once the Host is built (a microtask, as there).
+   */
+  watchClaudeAccounts(): void {
+    queueMicrotask(() => this.f.claudeAccounts.accounts.onChange(() => this.publish({ type: "settings.updated", settings: this.settings() })));
+  }
+
   settings(): StudioSettings {
     const dir = this.options.localClaudeHome ?? localClaudeHome();
     return {

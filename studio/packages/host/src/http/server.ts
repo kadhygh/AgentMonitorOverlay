@@ -11,8 +11,7 @@ import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
 import { FEATURES } from "../features/index.js";
-import { sessionMoving } from "../features/tasks/service.js";
-import { isRemoteCopy } from "../core/shared.js";
+import { isRemoteCopy, sessionMoving } from "../core/shared.js";
 import { FileReply, JsonReply, route, str, obj, type Route, type RouteContext } from "./route.js";
 
 export type { RouteContext } from "./route.js";

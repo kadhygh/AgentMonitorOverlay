@@ -6,7 +6,7 @@ import { HostError, boundedText, MAX_NOTE_CHARS, MAX_QUESTION_CHARS, PROPOSALS_P
 import { Feature } from "../../core/feature.js";
 
 /** Whole-picture todos, the scheduler and its proposals (stage 7). */
-export class PlanningFeature extends Feature {
+export class PlanningFeature extends Feature<"canvases" | "tasks"> {
   /** Todos being turned into tasks right now. */
   private readonly converting = new Set<Id>();
 

@@ -80,7 +80,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "remote.dismissed", scope: "global", owner: "features/remote/copies.ts", what: "不再显示的远程任务副本" },
   { key: "remote.images", scope: "global", owner: "features/remote/copy-images.ts", what: "远程会话里的图片 → 本机的附件" },
   // Per session, task, project: deleted with it (Store.purge)
-  { key: "role-stamp:", scope: "session", owner: "features/guide/role.ts", what: "会话上次看到的角色卡" },
+  { key: "role-stamp:", scope: "session", owner: "core/role.ts", what: "会话上次看到的角色卡" },
   { key: "annotation-seq:", scope: "session", owner: "features/review/service.ts", what: "批注编号" },
   { key: "report-turn:", scope: "session", owner: "features/sessions/service.ts", what: "已汇报过的那一轮" },
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },

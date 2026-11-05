@@ -1,11 +1,10 @@
 import { spawn, execFile } from "node:child_process";
 import { DUTY_CHECKS_MAX, DUTY_DONE_MARK, DUTY_MIN_EVERY, type DutyAction, type DutyCheck, type DutyCheckOne, type DutyItem, type DutyItemInput, type DutyRun, type DutySchedule, type DutyState, type Id, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
-import { HostError } from "../../core/shared.js";
+import { HostError, sessionMoving } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { withoutHostEnv } from "../../runtime/agent-env.js";
 import { lowerAgentPriority } from "../../runtime/priority.js";
-import { sessionMoving } from "../tasks/service.js";
 
 // 值守 (duty, 2026-10-31, plans/issues.md): items that run at set times — every so many seconds, or once a day — and do
 // one thing: start a session with a set prompt (in a task, or a new task each time), run a command line, or run one of
@@ -87,7 +86,7 @@ interface Running {
   repliesBefore?: number;
 }
 
-export class DutyFeature extends Feature {
+export class DutyFeature extends Feature<"sessions" | "tasks"> {
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly running = new Map<Id, Running>();
   private readonly jobs = new Map<string, DutyJob>();

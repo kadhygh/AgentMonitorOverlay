@@ -4,7 +4,7 @@ import { HostError, boundedText } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Topics (专题): their own sessions, archiving with their tasks. */
-export class TopicsFeature extends Feature {
+export class TopicsFeature extends Feature<"tasks"> {
   createTopic(input: { title?: unknown; workspaceIds?: unknown }): Topic {
     const title = boundedText(input?.title, "title", 100);
     const topic = this.store.createTopic({ title, workspaceIds: this.projectIds(input.workspaceIds) });

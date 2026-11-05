@@ -17,7 +17,7 @@ const statusLabel = (s: ReviewStatus) => REVIEW_STATUSES.find((x) => x.id === s)
  * remarks and questions pinned to its cards, the person's answers sent back to the asking session, and a session to
  * talk one item over (就这条展开聊).
  */
-export class CanvasReviewFeature extends Feature {
+export class CanvasReviewFeature extends Feature<"canvases" | "sessions" | "tasks"> {
   callouts(topicId: Id): CanvasCallout[] {
     this.requireTopic(topicId);
     return this.store.listCallouts(topicId, CLOSED_LISTED);

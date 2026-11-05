@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, OutsideSessionList, OutsideSessionPreview, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
 import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX, TASK_FIRST_MESSAGE_MAX } from "@amo-studio/protocol";
-import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, sessionMoving, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { checkSetups } from "../sessions/setups.js";
 
 /** Tasks: creating, renaming, moving, archiving, their sessions; bringing older data into structure v2. */
-export class TasksFeature extends Feature {
+export class TasksFeature extends Feature<"canvases" | "config" | "mcp" | "remote" | "sessions"> {
   /** How long a task's sessions must all have stood still before it moves to 待审阅 (a turn often follows another at once). */
   reviewSettleMs = 4000;
   private readonly movingBefore = new Map<Id, boolean>();
@@ -24,7 +24,7 @@ export class TasksFeature extends Feature {
    */
   watchColumns(): void {
     for (const s of this.store.listSessions()) this.movingBefore.set(s.id, sessionMoving(s));
-    this.f.on("event", (e) => {
+    this.host.on("event", (e) => {
       if (e.type !== "session.upserted") return;
       const s = e.session;
       const moving = sessionMoving(s);
@@ -343,14 +343,4 @@ function firstMessageOf(v: unknown): string {
   const text = v.trim();
   if (text.length > TASK_FIRST_MESSAGE_MAX) throw new HostError("bad_request", `a first message is limited to ${TASK_FIRST_MESSAGE_MAX} characters`);
   return text;
-}
-
-/**
- * Whether a session is still at it, for 进行中 ⇄ 待审阅: running, waiting for the person in the middle of a turn
- * (approval, a question), about to go on by itself (its /loop, a usage limit that resets), or in a terminal.
- */
-export function sessionMoving(s: Session): boolean {
-  if (s.archivedAt) return false;
-  if (inTurn(s.status)) return true;
-  return !!s.wake?.loop || !!s.wake?.limit || s.writer === "terminal-handoff" || s.writer === "terminal-shared";
 }

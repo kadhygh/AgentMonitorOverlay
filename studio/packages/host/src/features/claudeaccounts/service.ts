@@ -3,7 +3,6 @@ import { ClaudeAccounts } from "../../runtime/claude/accounts.js";
 import { localClaudeHome } from "../../runtime/claude/claude-login.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import type { HostService } from "../../service.js";
 
 /**
  * Claude 多账号 (2026-11-03): 设置 → 模型 → Claude adds accounts and signs them in; 额度 (bottom left) and that page
@@ -11,12 +10,7 @@ import type { HostService } from "../../service.js";
  */
 export class ClaudeAccountsFeature extends Feature {
   private own: ClaudeAccounts | null = null;
-
-  constructor(host: HostService) {
-    super(host);
-    // Every change (a sign-in's progress included) reaches the windows with the settings.
-    queueMicrotask(() => this.accounts.onChange(() => this.publish({ type: "settings.updated", settings: this.f.config.settings() })));
-  }
+  // Its changes reach the windows with the settings: ConfigFeature.watchClaudeAccounts (HostService starts it).
 
   /** The Host's, or (tests without a Claude runtime) one for the person's own dir only. */
   get accounts(): ClaudeAccounts {

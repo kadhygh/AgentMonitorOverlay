@@ -6,7 +6,7 @@ import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Projects (workspaces): registering, archiving and removing them. */
-export class ProjectsFeature extends Feature {
+export class ProjectsFeature extends Feature<"tasks"> {
   addWorkspace(input: { path: string; name?: string }): Workspace {
     if (!input.path?.trim()) throw new HostError("bad_request", "path is required");
     const path = resolve(input.path.trim());

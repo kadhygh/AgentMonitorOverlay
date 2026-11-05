@@ -23,7 +23,7 @@ export const TEAM_NOT_SIGNED_IN = "要先在 AMO 平台里登录团队服务器�
 
 type Questions = TeamSend["questions"];
 
-export class TeamRelayFeature extends Feature {
+export class TeamRelayFeature extends Feature<"config" | "sessions"> {
   private running = false;
   private abort: AbortController | null = null;
   private scanning: Promise<void> | null = null;

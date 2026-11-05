@@ -14,7 +14,7 @@ const SAFE_NEWLINES_KEY = "settings:scratchpad-safe-newlines";
  * The scratchpad (便签, stage 11; stage 2's draft area grown up): numbered pages of text and pasted images, shared by
  * the scratchpad window and the task page. Every change is announced, so all windows follow.
  */
-export class ScratchpadFeature extends Feature {
+export class ScratchpadFeature extends Feature<"attachments"> {
   scratchpad(): Scratchpad {
     const kv = this.store.getKv(DOC_KEY);
     return visibleScratchpad(this.stored(), kv?.updatedAt ?? this.store.getKv(SCRATCHPAD_KEY)?.updatedAt ?? null);

@@ -45,6 +45,7 @@ import { RemoteFeature } from "./features/remote/service.js";
 import { RemoteRuntime } from "./features/remote/runtime.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
 import { TeamLink } from "./core/teamlink.js";
+import type { Feature, FeatureName } from "./core/feature.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -55,49 +56,49 @@ export { HostError, PROPOSALS_PER_ROUND, TERMINAL_TOKEN_ENV, type HostServiceEve
 export class HostService extends EventEmitter<HostServiceEvents> {
   /** Studio windows listening to the event socket (the HTTP server counts them): 外部打开 Review needs one. */
   liveWindows = 0;
-  readonly projects = new ProjectsFeature(this);
-  readonly config = new ConfigFeature(this);
+  readonly projects: ProjectsFeature = new ProjectsFeature(this);
+  readonly config: ConfigFeature = new ConfigFeature(this);
   /** Claude 多账号 (2026-11-03): the Claude subscription's accounts, signing in and switching. */
-  readonly claudeAccounts = new ClaudeAccountsFeature(this);
-  readonly tasks = new TasksFeature(this);
-  readonly topics = new TopicsFeature(this);
-  readonly sessions = new SessionsFeature(this);
-  readonly planning = new PlanningFeature(this);
-  readonly collab = new CollabFeature(this);
-  readonly canvases = new CanvasFeature(this);
-  readonly canvasReview = new CanvasReviewFeature(this);
-  readonly review = new ReviewFeature(this);
-  readonly promptTemplates = new PromptTemplatesFeature(this);
+  readonly claudeAccounts: ClaudeAccountsFeature = new ClaudeAccountsFeature(this);
+  readonly tasks: TasksFeature = new TasksFeature(this);
+  readonly topics: TopicsFeature = new TopicsFeature(this);
+  readonly sessions: SessionsFeature = new SessionsFeature(this);
+  readonly planning: PlanningFeature = new PlanningFeature(this);
+  readonly collab: CollabFeature = new CollabFeature(this);
+  readonly canvases: CanvasFeature = new CanvasFeature(this);
+  readonly canvasReview: CanvasReviewFeature = new CanvasReviewFeature(this);
+  readonly review: ReviewFeature = new ReviewFeature(this);
+  readonly promptTemplates: PromptTemplatesFeature = new PromptTemplatesFeature(this);
   /** MCP 设置 (2026-11-04): which MCP servers sessions get besides amo. */
-  readonly mcp = new McpFeature(this);
-  readonly attachments = new AttachmentsFeature(this);
-  readonly scratchpad = new ScratchpadFeature(this);
-  readonly gitReview = new GitReviewFeature(this);
-  readonly viewPacks = new ViewPacksFeature(this);
-  readonly files = new FilesFeature(this);
-  readonly openIn = new OpenInFeature(this);
-  readonly marks = new MarksFeature(this);
-  readonly topicDocs = new TopicDocsFeature(this);
-  readonly taskPlans = new TaskPlansFeature(this);
-  readonly relays = new RelaysFeature(this);
-  readonly chatFiles = new ChatFilesFeature(this);
-  readonly cli = new CliFeature(this);
-  readonly data = new DataFeature(this);
-  readonly stats = new StatsFeature(this);
-  readonly channels = new ChannelsFeature(this);
-  readonly dsh = new DshFeature(this);
-  readonly maintenance = new MaintenanceFeature(this);
+  readonly mcp: McpFeature = new McpFeature(this);
+  readonly attachments: AttachmentsFeature = new AttachmentsFeature(this);
+  readonly scratchpad: ScratchpadFeature = new ScratchpadFeature(this);
+  readonly gitReview: GitReviewFeature = new GitReviewFeature(this);
+  readonly viewPacks: ViewPacksFeature = new ViewPacksFeature(this);
+  readonly files: FilesFeature = new FilesFeature(this);
+  readonly openIn: OpenInFeature = new OpenInFeature(this);
+  readonly marks: MarksFeature = new MarksFeature(this);
+  readonly topicDocs: TopicDocsFeature = new TopicDocsFeature(this);
+  readonly taskPlans: TaskPlansFeature = new TaskPlansFeature(this);
+  readonly relays: RelaysFeature = new RelaysFeature(this);
+  readonly chatFiles: ChatFilesFeature = new ChatFilesFeature(this);
+  readonly cli: CliFeature = new CliFeature(this);
+  readonly data: DataFeature = new DataFeature(this);
+  readonly stats: StatsFeature = new StatsFeature(this);
+  readonly channels: ChannelsFeature = new ChannelsFeature(this);
+  readonly dsh: DshFeature = new DshFeature(this);
+  readonly maintenance: MaintenanceFeature = new MaintenanceFeature(this);
   /**
    * The AMO platform's login and this computer's device (2026-11-05, plans/host-structure.md 8a): 远程, 会话里用中转 and
    * the 问题页 speak to the team server through it. Started by host-process.ts (or by remote.start, in tests).
    */
   readonly teamLink = new TeamLink();
-  readonly remote = new RemoteFeature(this);
+  readonly remote: RemoteFeature = new RemoteFeature(this);
   /** 会话里用中转 (2026-10-30): sessions ask people on the team through AMO 中转; replies come back into them. */
-  readonly teamRelay = new TeamRelayFeature(this);
-  readonly issues = new IssuesFeature(this);
+  readonly teamRelay: TeamRelayFeature = new TeamRelayFeature(this);
+  readonly issues: IssuesFeature = new IssuesFeature(this);
   /** 值守 (2026-10-31): items that start a session, run a command or one of Studio's jobs at set times. */
-  readonly duty = new DutyFeature(this);
+  readonly duty: DutyFeature = new DutyFeature(this);
   /** The runtimes of this computer, plus "remote" for copies of tasks paired devices granted it (远程 step 2). */
   readonly runtime: SessionRuntimeApi;
 
@@ -134,6 +135,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.runtime = router;
     router.on("event", (e) => this.emit("event", e));
     router.on("log", (line) => this.log(line));
+    this.config.watchClaudeAccounts();
     this.tasks.ensureStructure();
     this.sessions.watchReports();
     this.collab.watchAnswers();
@@ -254,3 +256,9 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     }
   }
 }
+
+// FeatureName (core/feature.ts) names exactly the features above: a new one must be added there so others can declare it.
+type FeatureFields = { [K in keyof HostService]-?: HostService[K] extends Feature<never> ? K : never }[keyof HostService];
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const featureNamesListed: Same<FeatureFields, FeatureName> = true;
+void featureNamesListed;

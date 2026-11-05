@@ -20,7 +20,7 @@ interface PurgeSet {
  * everything that belongs only to them (Store.purge); nothing live may hang on them (a restored fork of a deleted
  * session, a restored task of a deleted project). Files in projects and the CLIs' own records are never touched.
  */
-export class DataFeature extends Feature {
+export class DataFeature extends Feature<"attachments" | "projects"> {
   archived(): ArchivedEntry[] {
     const workspaces = this.store.listWorkspaces();
     const topics = this.store.listTopics();

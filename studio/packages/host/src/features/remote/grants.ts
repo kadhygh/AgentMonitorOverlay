@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
-import type { HostService } from "../../service.js";
+import type { FeatureHost } from "../../core/feature.js";
+import type { RemoteUses } from "./service.js";
 import { HostError, boundedText } from "../../core/shared.js";
 import type { DeviceLink } from "./link.js";
 import { attachedPaths, itemForPeer, readRemoteFile, type FileRoots } from "./files.js";
@@ -18,7 +19,7 @@ const ALLOWED_KEY = "remote.allowed";
 
 /** What the remote parts need of the feature that holds the connection. */
 export interface RemoteContext {
-  host: HostService;
+  host: FeatureHost<RemoteUses>;
   link(): DeviceLink | null;
   /** This computer's name, for what the other side reads. */
   deviceName(): string;

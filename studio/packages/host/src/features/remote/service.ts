@@ -53,10 +53,16 @@ export interface RemoteOptions extends TeamLinkOptions {
   usagePollMs?: number;
 }
 
+/**
+ * The features remote and its parts (the context's host: grants, copies, views, uploads…) use: what A answers about a
+ * granted task reads the Review, packs, files and templates there, and starts or sends into its sessions.
+ */
+export type RemoteUses = "attachments" | "channels" | "chatFiles" | "gitReview" | "openIn" | "promptTemplates" | "sessions" | "tasks" | "viewPacks";
+
 const iso = (ms: number) => new Date(ms).toISOString();
 const same = (a: DeviceRef, b: DeviceRef) => a.account === b.account && a.device === b.device;
 
-export class RemoteFeature extends Feature {
+export class RemoteFeature extends Feature<RemoteUses> {
   private opts: RemoteOptions | null = null;
   /** The login this feature last connected for (a new key, server or name connects again). */
   private seen: Account | null = null;

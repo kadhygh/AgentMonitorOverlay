@@ -100,6 +100,65 @@
 
 做法：每个 feature 声明它用到哪些 feature（构造时传进去，而不是拿整个 `this.f`），先只做声明和检查（一个单测列出依赖图、禁止新增环），再逐步把公共判断（`sessionMoving`、role）挪到 `core/`。不追求一次拆干净。
 
+### 8c 动手前的核对（2026-11-06，对 master `6eda890d`，之后 rebase 到 `10aed435`，8b 已在里面）
+
+方向不用改。对不上的几处：
+
+- **跨 feature 的路不止 `this.f`**。远程的部件（grants、copies、views、uploads、requests、create、usage、comments）通过 context 拿整个 HostService，用到 9 个 feature（`ctx.host.sessions` 之类）；`guide/role.ts` 的函数收 HostService，读 `service.config`；`sessions/inbox.ts` 的 `SessionInbox` 自己也是 Feature，通过 `this.f.sessions` 调回它所在的 feature；`this.f` 上还用了 Host 的方法（`on`、`allProfiles`、`profileByRef`、`profiles`、`requireProfile`），不是 feature。这些都要一起收，否则声明了也漏。
+- **环比方案写的多**。除了 tasks ⇄ sessions、sessions ⇄ collab，还有 config ⇄ claudeaccounts、sessions ⇄ review、sessions ⇄ remote、tasks ⇄ remote、gitreview ⇄ remote、viewpacks ⇄ remote；经过它们 projects 也在环里（归档项目要归档任务；给一个文件夹打开 Review 会把它加成项目）。
+- **「被 5 个 feature 引用」**：`guide/role` 的引用者是 relays、sessions、taskplans 三个 service，加上 tasks、topicdocs 的 `mcp.ts`（另有 host-process、mcp/amo-mcp）。`sessionMoving` 被 duty 和 http/server 引用，对得上。
+- **「构造时传进去」做不到字面的意思**：feature 是 HostService 的字段，互相有环，构造 tasks 时 sessions 还没有。所以仍然传 Host，只是按声明收窄它的类型（见下面 1），效果一样：feature 只拿得到它声明的。
+- 子会话 setup、「等你决定」晚回答、中转跳转、远程额度、命令行适配这几块进来以后没有新的跨 feature 调用方式，都落在上面的几种里。
+
+### 8c 做到哪（2026-11-06，分支 `studio/host-8c`，没合进 master）
+
+1. **声明**（`core/feature.ts`）：`Feature<D>`，`D` 是它用到的 feature 名字（HostService 上的字段名），例如 `class DutyFeature extends Feature<"sessions" | "tasks">`；`this.f` 是 `Pick<HostService, D>`，`this.host` 是 `FeatureHost<D>`（Host 去掉所有 feature，再加上 `D`），所以用没声明的 feature 编译不过。feature 文件夹里不是 feature 的模块要用 Host 时收 `FeatureHost<…>`（`guide/role.ts` 的 `FeatureHost<"config">`，远程 context 的 `FeatureHost<RemoteUses>`）。名字列表 `FeatureName` 在 `core/feature.ts`，`service.ts` 末尾有一条类型检查保证它和 HostService 的 feature 字段一一对应；HostService 的 feature 字段改成写明类型（不写会因为互相引用推不出类型）。`this.f.on` 这类 Host 方法改成 `this.host.…`。`SessionInbox` 构造时直接拿它所在的 `SessionsFeature`。
+2. **检查**（`src/features/feature-deps.test.ts`）：从源码读每个文件夹的 `Feature<…>` / `FeatureHost<…>` 和对别的 feature 文件的值 import（`import type`、`routes.ts` / `mcp.ts`、测试不算；import 一个本身不碰任何 feature 的文件也不算，比如 `gitreview/git.ts`、`sessions/setups.ts`），得出按文件夹的依赖图。五条：图和 `GRAPH` 一致（多了一条依赖失败，说去哪里加、成环时怎么改；少了一条也失败，让人删掉）；环都在 `KNOWN_CYCLES` 里（新环失败，不让加白名单，说怎么改成单向）；`KNOWN_CYCLES` 里的环还在（拆开了让人更新）；声明了都用到；feature 文件夹里（除 API 文件）不 import `HostService`。都故意改坏试过：加依赖、加环、白名单多写、import HostService、import 纯工具文件（不算）。
+3. **公共判断挪进 `core/`**：`sessionMoving` → `core/shared.ts`（duty、http/server、tasks 从那里拿）；角色的判断（`roleFacts`、`subjectFacts`、`refTopics`、`leadsTopic`）和「上次告诉会话的角色」（`recordRole`、`noteOwnDescription`、`roleUpdate`，kv `role-stamp:`）→ `core/role.ts`，只要 store；`guide/role.ts` 留角色卡的文字（`roleCard`、`roleCardFor`），把挪走的再导出一遍，MCP、host-process 和测试的 import 不用改。relays、sessions、taskplans 因此不再依赖 guide。
+4. **拆掉的环**：config ⇄ claudeaccounts。账号变化时发 `settings.updated` 原来在 `ClaudeAccountsFeature` 的构造里（用 `this.f.config.settings()`），挪到 `ConfigFeature.watchClaudeAccounts()`，HostService 构造时调，仍然排在 microtask 里，时机不变。
+
+现在的依赖图（`GRAPH`，按文件夹）：
+
+| feature | 用到 |
+|---|---|
+| canvasreview | canvas、sessions、tasks |
+| cli | gitreview |
+| collab | sessions |
+| config | claudeaccounts、scratchpad |
+| datamgmt | attachments、projects |
+| duty | sessions、tasks |
+| gitreview | projects、remote、sessions |
+| guide | config |
+| marks | openin |
+| planning | canvas、tasks |
+| projects | tasks |
+| relays | collab、sessions、tasks |
+| remote | attachments、channels、chatfiles、gitreview、openin、prompttemplates、sessions、tasks、viewpacks |
+| review | sessions |
+| scratchpad | attachments |
+| sessions | attachments、collab、config、remote、review、tasks |
+| taskplans | canvas、collab、sessions、tasks |
+| tasks | canvas、config、mcp、remote、sessions |
+| teamrelay | config、sessions |
+| topics | tasks |
+| viewpacks | remote |
+
+其余（attachments、canvas、channels、chatfiles、claudeaccounts、dsh、files、issues、maintenance、mcp、openin、prompttemplates、stats、topicdocs）不用别的 feature；issues 对 duty 只有 `import type`，接值守靠 `service.ts` 里的 `duty.registerCheck(issues.dutyCheck())`。
+
+白名单里剩下的环（`KNOWN_CYCLES`）：一组 {collab、gitreview、projects、remote、review、sessions、tasks、viewpacks}。里面两两互相用的：tasks ⇄ sessions、sessions ⇄ collab、sessions ⇄ review、sessions ⇄ remote、tasks ⇄ remote、gitreview ⇄ remote、viewpacks ⇄ remote；projects 经 tasks → remote → gitreview → projects 进来。下一步可以拆的（都要改调用方式，没在这一轮做）：
+- gitreview / viewpacks ⇄ remote：两边都只用 `remote.grants` 的「在这台还是配对的设备上打开」（`showsElsewhere` / `openRoute` / `pushOpen`），可以抽成一个 core 里的接口，由 remote 实现、在 `service.ts` 接上。
+- sessions ⇄ review：`referencedAnnotations` 只读 store、写批注，挪进 core 或 sessions 后 review 只剩单向。
+- sessions ⇄ collab：sessions 只在报告送不进收件箱时退回成留言（`collab.sendMail`），可以改成回调。
+- tasks ⇄ sessions、tasks / sessions ⇄ remote 是主干（开会话、副本转发），等前面几条拆完再看。
+
+和方案的偏差：
+- 「构造时传进去」改成「按声明收窄 Host 的类型」（理由见核对）。
+- 依赖图按文件夹算，routes.ts 和 mcp.ts 不算（它们拿整个 Host，是 API；8b 管它们的类型）。
+- 除了方案里的 `sessionMoving` 和 role，还拆了 config ⇄ claudeaccounts（只挪了一处订阅）。其余的环都留着。
+- 测试断言没改；只加了 `feature-deps.test.ts`。
+
+验证（低优先级）：rebase 到 `10aed435` 后 `npm run typecheck`；vitest `--maxWorkers=6` 200 个文件，1322 条通过、2 条失败（`remote-tasks.test.ts` 两条「连不上团队服务器 127.0.0.1:66xx」，当时另有两个会话在跑测试；单独重跑这个文件 27 条全过）；`npm run build`；e2e `--workers=3` 45 条全过（studio 的 chat*、session-start、newtask、remote*（8 个 spec）、teamrelay、decisions、mailbox、handoff-mail、duty、mcp*）。rebase 前的一次全量里 `dsh-runtime.integration.test.ts` 的「session_start with write in a folder not set up」卡了 216 秒后 afterEach 超时（临时目录 EPERM），连续两次；之后单独跑、整个文件跑（20 秒，25 条）都过，master 上整个文件也过，没再复现，原因没查清。没跑全量 e2e；没在真的 Studio 里试。
+
 ## 8d 大文件
 
 - `dsh-runtime.ts`（约 1050 行）：文件夹 ACL（`setupFolder` / `revertFolder` / `scanFolder` / `autoScan` / `fixFolderAccess` 和 kv `dsh-folder:`）、账号和 Key 的启动配置拆出去，照 Claude 已经拆出 live、asks、messages 的样子。
