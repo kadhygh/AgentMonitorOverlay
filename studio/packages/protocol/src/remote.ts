@@ -755,3 +755,69 @@ export function composeRemoteReviewMessage(comments: Parameters<typeof composeGi
     device ? `${device} 上的${REMOTE_TASK_FOLDER}` : REMOTE_TASK_FOLDER,
   );
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 远程 (2026-10-29, plans/remote-session.md): this computer as a device, pairing, granted tasks, remote creation. */
+export interface RemoteRoutes {
+  "GET /api/remote": { req: void; res: RemoteState };
+  /** Renames this computer (device.json, shared with the AMO platform). */
+  "PUT /api/remote/device": { req: { name: string }; res: RemoteState };
+  /** 2026-10-30: turns remote on or off for the account logged in now (on needs the AMO platform's login). */
+  "PUT /api/remote/enabled": { req: { enabled: boolean }; res: RemoteState };
+  /**
+   * Asks account `account` to pair with this computer; a device of it allows or refuses. `device` (远程页的配对弹窗,
+   * 2026-10-29): only that device of the account, picked from GET /api/remote/devices/online.
+   */
+  "POST /api/remote/pair": { req: { account: string; device?: string }; res: RemoteState };
+  /** The other devices of this computer's account connected to the team server now (the pair dialog lists them). */
+  "GET /api/remote/devices/online": { req: void; res: RemoteOnlineDevices };
+  /** Allows or refuses a request to pair with this computer. */
+  "POST /api/remote/requests/:id/answer": { req: { allow: boolean }; res: RemoteState };
+  /** Withdraws a request this computer sent, or puts a refusal away. */
+  "DELETE /api/remote/requests/:id": { req: void; res: RemoteState };
+  /** Ends the pairing with a device (both sides forget it). */
+  "POST /api/remote/unpair": { req: { account: string; device: string }; res: RemoteState };
+  /** 测试连接: a round trip to a paired device through the server. */
+  "POST /api/remote/ping": { req: { account: string; device: string }; res: RemotePingResult };
+  /** Tries to connect now (after a failure, without waiting for the next attempt). */
+  "POST /api/remote/reconnect": { req: void; res: RemoteState };
+  /** Step 2: grants a task (and every session in it) to a device this computer allowed to pair. */
+  "POST /api/remote/grants": { req: { taskId: Id; account: string; device: string }; res: RemoteState };
+  /** Step 2: takes a grant back (the device keeps what it has, readable, and reaches the task no more). */
+  "POST /api/remote/grants/revoke": { req: { taskId: Id; account: string; device: string }; res: RemoteState };
+  /** Step 2: 远端允许的默认配置. */
+  "PUT /api/remote/allowed": { req: RemoteAllowed; res: RemoteState };
+  /**
+   * Step 3, on B: a file of a remote task, fetched from the computer it runs on (or found unchanged) and kept in this
+   * computer's data folder. `fetchId` names the remote.file events that say how far it came.
+   */
+  "POST /api/remote/files": { req: { taskId: Id; path: string; cwd?: string; fetchId?: string }; res: RemoteFetchedFile };
+  /** Step 4, on B: asks a paired device (one that allowed this computer) to run a task — only while it is online. */
+  "POST /api/remote/asks": { req: { account: string; device: string; title: string; text: string }; res: RemoteState };
+  /** Step 4, on B: takes a request back (still waiting), or puts an answer away. */
+  "DELETE /api/remote/asks/:id": { req: void; res: RemoteState };
+  /** Step 4, on A: allows a request — the task is made where asked, its session starts with the request, and it is granted. */
+  "POST /api/remote/task-requests/:id/accept": { req: RemoteAcceptInput; res: RemoteState };
+  /** Step 4, on A: refuses a request, saying why (or not). */
+  "POST /api/remote/task-requests/:id/refuse": { req: { reason?: string }; res: RemoteState };
+  /** 远程创建 (2026-10-29), on A: 远端允许的项目 — where paired devices may create tasks on this computer. */
+  "PUT /api/remote/allowed-projects": { req: RemoteAllowedProjects; res: RemoteState };
+  /** 安全 (2026-10-29): which paired devices' tasks start without a yes here. */
+  "PUT /api/remote/security": { req: RemoteSecurity; res: RemoteState };
+  /** 远程额度 (2026-11-06), on A: whether a paired device of another account sees this computer's quota (off: it is cleared there at once). */
+  "PUT /api/remote/usage-share": { req: { account: string; device: string; on: boolean }; res: RemoteState };
+  /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
+  "GET /api/remote/catalog": { req: void; res: RemoteCatalog };
+  /** 远程创建, on B (问题 #1): the device's templates for a task created there in that project (rt.createTemplates). `?account=&device=&workspace=` (no workspace: the common folder) */
+  "GET /api/remote/catalog/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
+  /** A remote copy's templates as its own computer offers them (rt.templates). */
+  "GET /api/remote/tasks/:id/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
+  /**
+   * 远程 Reviewer (2026-11-02): the key a remote copy's pictures are served under (/api/remote/files/<key>/…), for the
+   * Markdown and HTML a 查看包 of it shows rendered.
+   */
+  "GET /api/remote/tasks/:id/files-key": { req: void; res: { key: string } };
+  /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
+  "POST /api/remote/create": { req: RemoteCreateAsk & { account: string; device: string; /** Pictures uploaded here (POST /api/attachments); files go in the text's 引用文件 block. */ attachments?: Id[] }; res: RemoteCreateResult };
+}

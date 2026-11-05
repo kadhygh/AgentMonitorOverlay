@@ -1,4 +1,4 @@
-import { CANVAS_COLORS, CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, isCanvasColor, isReviewStatus, REVIEW_BODY_MAX, REVIEW_STATUSES, REVIEW_TITLE_MAX, type CanvasCallout, type CanvasColor, type CanvasDoc, type CanvasLink, type CanvasNode, type Id, type ReviewStatus, type Session, type SessionStatus, type Task, type Topic, type Workspace } from "./entities.js";
+import { CANVAS_COLORS, CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, isCanvasColor, isReviewStatus, REVIEW_BODY_MAX, REVIEW_STATUSES, REVIEW_TITLE_MAX, type CanvasCallout, type CanvasColor, type CanvasDoc, type CanvasLink, type CanvasNode, type Id, type ReviewStatus, type Session, type SessionStatus, type Task, type Timestamp, type Topic, type Workspace } from "./entities.js";
 import { taskWhere } from "./scope.js";
 
 // Canvas rules shared by Host (validation on save), UI ("agent 视角") and the read-only MCP in stage 4.
@@ -367,4 +367,37 @@ export function canvasOutline(
     ...(json.callouts.length ? [["卡片上的说明和问题（没收起的）", ...json.callouts.map(calloutLine)].join("\n")] : []),
   ];
   return { outline: parts.join("\n\n"), json };
+}
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** A topic's canvas, and 画布审阅's bubbles on it (2026-10-27). */
+export interface CanvasRoutes {
+  /** A topic's canvas. */
+  "GET /api/topics/:id/canvas": { req: void; res: CanvasDoc };
+  /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
+  "PUT /api/topics/:id/canvas": { req: CanvasDoc; res: CanvasDoc };
+  /** Structure without coordinates, for agents (`canvas_read`) and the "agent 视角" tab. */
+  "GET /api/topics/:id/canvas/outline": { req: void; res: { outline: string; json: CanvasOutline } };
+  /**
+   * "显示在画布上": shows (`true`) or hides a task's card on its topic's canvas; returns that canvas. Tasks created on the
+   * canvas are always shown; ones created elsewhere only when the person asks. Hiding keeps the task and its dependencies.
+   */
+  "PUT /api/tasks/:id/canvas": { req: { onCanvas: boolean }; res: CanvasDoc };
+  /** 画布审阅 (2026-10-27): the bubbles on a topic's canvas — every open or answered one, and the last closed ones. */
+  "GET /api/topics/:id/callouts": { req: void; res: CanvasCallout[] };
+  /**
+   * Questions waiting for the person, per topic: how many, and the oldest (the left column shows 「? N」 on the topic;
+   * Focus lists them and opens the oldest).
+   */
+  "GET /api/callouts/waiting": { req: void; res: Record<Id, { count: number; first: { id: Id; text: string; createdAt: Timestamp } }> };
+  /** The person answers a question (sent to its session as a message) or writes on a remark. */
+  "POST /api/callouts/:id/answer": { req: { text: string }; res: CanvasCallout };
+  /** Puts a bubble away. */
+  "POST /api/callouts/:id/close": { req: void; res: CanvasCallout };
+  /**
+   * 就这条展开聊: a new session to talk one item over, in the task of the session that laid it out (else the topic's
+   * 主控), beside that session; returns it. `profileId`: its model (the laying session's otherwise).
+   */
+  "POST /api/topics/:id/canvas/items/:itemId/discuss": { req: { profileId?: Id }; res: Session };
 }

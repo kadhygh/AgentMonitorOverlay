@@ -66,3 +66,23 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
   if (!m) return null;
   return { name: m[1]!, args: (m[2] ?? "").trim() };
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** CLI features in the conversation (stage 12, S12-E): / commands, compaction, background commands. */
+export interface CliRoutes {
+  /** The `/` menu for a session: Studio's commands, the runtime's (Claude Code's list, Codex review), its skills. */
+  "GET /api/sessions/:id/commands": { req: void; res: SlashCommandList };
+  /**
+   * Runs a command by name (without the slash): `compact` compacts the context (Claude: `/compact <args>`, Codex:
+   * thread/compact/start), Codex `code-review` starts review mode, a skill runs with `args`, any other Claude command
+   * is sent as `/name args`. 409 while a Codex turn runs and the command cannot join it.
+   */
+  "POST /api/sessions/:id/commands": { req: { name: string; args?: string }; res: SlashCommandResult };
+  /** Stops a background command of the session (Claude: stop_task). */
+  "POST /api/sessions/:id/background/:taskId/stop": { req: void; res: { ok: true } };
+  /** The tail of a background command's output. */
+  "GET /api/sessions/:id/background/:taskId/output": { req: void; res: BackgroundOutput };
+  "GET /api/settings/chat": { req: void; res: ChatSettings };
+  "PUT /api/settings/chat": { req: Partial<ChatSettings>; res: ChatSettings };
+}

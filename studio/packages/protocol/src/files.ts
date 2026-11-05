@@ -104,3 +104,17 @@ export function highlightRuns(path: string, indices: readonly number[]): Array<{
   }
   return runs;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** The file selector and "@ 文件" (stage 11, S11-B). */
+export interface FileRoutes {
+  /**
+   * The project's files: `git ls-files` (tracked and untracked-not-ignored) in a git repository, otherwise a bounded
+   * walk that skips node_modules, .git, dist, build and the like. Listed once and cached briefly. `?q=` filters with
+   * `fuzzyMatch` (best first, with the matched indices); `?limit=` caps the rows (default 50, at most 200).
+   */
+  "GET /api/workspaces/:id/files": { req: void; res: ProjectFiles };
+  /** Recently changed files: git's working-tree changes, or the newest by modification time. `?limit=` (default 8). */
+  "GET /api/workspaces/:id/files/recent": { req: void; res: ProjectFiles };
+}

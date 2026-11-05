@@ -134,3 +134,23 @@ export function parseFileMarkDrag(data: string): FileMarkDrag | null {
     return null;
   }
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** File marks (stage 12, S12-D): files and folders marked with a note, per project; 书签 (2026-10-19). */
+export interface MarkRoutes {
+  /** All marks, or one project's (`?workspace=<id>`, or `?workspace=other` for those outside every project). */
+  "GET /api/file-marks": { req: void; res: FileMark[] };
+  /** Marks a file or folder; the same path and line range again returns the existing mark (`created: false`). */
+  "POST /api/file-marks": { req: NewFileMark; res: { mark: FileMark; created: boolean } };
+  "PATCH /api/file-marks/:id": { req: FileMarkPatch; res: FileMark };
+  "DELETE /api/file-marks/:id": { req: void; res: { ok: true } };
+  // 书签 (2026-10-19): file marks and passages of conversations, under topics.
+  /** All bookmarks, or one topic's (`?topic=<id>`, or `?topic=none` for 未归专题); in their order. */
+  "GET /api/bookmarks": { req: void; res: Bookmark[] };
+  /** Bookmarks a passage of a reply; the same passage under the same topic gives the one already there. */
+  "POST /api/chat-marks": { req: NewChatMark; res: { mark: ChatMark; created: boolean } };
+  /** Note, topic or order of either kind (a line range only for files). */
+  "PATCH /api/bookmarks/:id": { req: FileMarkPatch; res: Bookmark };
+  "DELETE /api/bookmarks/:id": { req: void; res: { ok: true } };
+}

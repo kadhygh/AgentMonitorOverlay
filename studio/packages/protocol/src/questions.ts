@@ -314,3 +314,14 @@ export function formContent(fields: readonly FormField[], raw: Record<string, un
   }
   return { content };
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** Questions in the conversation (stage 12, S12-B). */
+export interface QuestionRoutes {
+  /**
+   * Answers a pending `question` item (by its item id): the answers, the form's values, the plan review's verdict, or
+   * `dismiss` to close it without answering. 409 when it is no longer pending.
+   */
+  "POST /api/sessions/:id/questions/:itemId/answer": { req: QuestionReply; res: { ok: true } };
+}

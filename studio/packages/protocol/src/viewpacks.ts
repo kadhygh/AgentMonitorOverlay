@@ -150,3 +150,16 @@ export function viewItemDetail(item: ViewItem): string {
   const marks = item.highlights?.length ? `${item.highlights.length} 处重点` : "";
   return [files, marks].filter(Boolean).join(" · ");
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 查看包 (2026-10-23). */
+export interface ViewPackRoutes {
+  /** 查看包 (2026-10-23): make one (or add to the one the same session sent a moment ago) and show it. */
+  "POST /api/viewpacks": { req: ViewOpenRequest; res: ViewOpenResult };
+  "GET /api/viewpacks/:id": { req: void; res: ViewPack };
+  /** The packs a session sent, newest first (`?sessionId=`). */
+  "GET /api/viewpacks": { req: void; res: ViewPack[] };
+  /** A proposal item as a diff of its original and its proposed content. */
+  "GET /api/viewpacks/:id/items/:itemId/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
+}

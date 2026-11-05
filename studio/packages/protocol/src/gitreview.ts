@@ -351,3 +351,47 @@ export interface GitCommitChanges {
   files: GitChangedFile[];
   truncated: boolean;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/**
+ * Git Review (S11-D). Paths are relative to the project folder; `?range=` is a GitRange (`working` by default). A
+ * folder that is not a git repository answers with `repo: false`, not an error.
+ */
+export interface GitReviewRoutes {
+  "GET /api/workspaces/:id/git/status": { req: void; res: GitStatus };
+  /** Changed files of a range, sorted by path. */
+  "GET /api/workspaces/:id/git/changes": { req: void; res: GitChanges };
+  /**
+   * One file's diff in a range: `?path=` (and `?oldPath=` for renames). What the list already knows saves git calls:
+   * `?base=` is the commit it compared with (rangeBase), `?untracked=1|0` whether git tracks the file.
+   */
+  "GET /api/workspaces/:id/git/diff": { req: void; res: GitFileDiff };
+  /** Line comments of the project, drafts and sent, oldest first. */
+  "GET /api/workspaces/:id/review-comments": { req: void; res: GitReviewComment[] };
+  "POST /api/workspaces/:id/review-comments": { req: NewGitReviewComment; res: GitReviewComment };
+  /** Drafts only (409 once sent). */
+  "PATCH /api/review-comments/:id": { req: { note: string }; res: GitReviewComment };
+  "DELETE /api/review-comments/:id": { req: void; res: { ok: true } };
+  /**
+   * 复制注释 (2026-10-23, in place of 发给会话): the drafts (all, or `ids`) as one text grouped by file — what was sent to
+   * a session before — for the person to paste; they are marked sent (no session).
+   */
+  "POST /api/workspaces/:id/review-comments/copy": {
+    req: { ids?: Id[] };
+    res: { text: string; sent: GitReviewComment[] };
+  };
+  /** Sends the drafts (all, or `ids`) to a session as one message grouped by file, then marks them sent. */
+  "POST /api/workspaces/:id/review-comments/send": {
+    req: { sessionId: Id; ids?: Id[] };
+    res: { mode: "start" | "steer" | "queue"; sent: GitReviewComment[] };
+  };
+  // Commit history (stage 13, S13-B): the branch's commits and one commit's changes, read-only.
+  /** HEAD's history, newest first; `?limit=` (default and most GIT_LOG_MAX). */
+  "GET /api/workspaces/:id/git/log": { req: void; res: GitLog };
+  /** One commit's changed files against its first parent: `?sha=` (7 to 64 hex digits). */
+  "GET /api/workspaces/:id/git/commit": { req: void; res: GitCommitChanges };
+  "POST /api/review/open": { req: ReviewOpenRequest; res: ReviewOpenResult };
+  /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
+  "GET /api/workspaces/:id/git/commit-diff": { req: void; res: GitFileDiff };
+}

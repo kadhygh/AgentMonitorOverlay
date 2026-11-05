@@ -25,3 +25,14 @@ export interface NewPromptTemplate {
 export type PromptTemplatePatch = Partial<NewPromptTemplate>;
 
 export const PROMPT_TEMPLATE_LIMITS = { count: 200, title: 80, body: 20000 } as const;
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 提示词模板 (2026-10-31). */
+export interface PromptTemplateRoutes {
+  /** Every template, or (`?workspace=<id>`) those a composer in that project offers: the global ones and the project's (`global`: only the global ones). */
+  "GET /api/prompt-templates": { req: void; res: PromptTemplate[] };
+  "POST /api/prompt-templates": { req: NewPromptTemplate; res: PromptTemplate };
+  "PATCH /api/prompt-templates/:id": { req: PromptTemplatePatch; res: PromptTemplate };
+  "DELETE /api/prompt-templates/:id": { req: void; res: { ok: true } };
+}

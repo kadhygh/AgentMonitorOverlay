@@ -99,3 +99,15 @@ export interface DutyState {
   /** The checks a session item can run first. */
   checks: Array<{ name: string; label: string; description: string }>;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 值守 (2026-10-31, plans/issues.md): items that run at set times — a session, a command, or one of Studio's jobs. */
+export interface DutyRoutes {
+  "GET /api/duty": { req: void; res: DutyState };
+  "POST /api/duty/items": { req: DutyItemInput; res: DutyState };
+  "PATCH /api/duty/items/:id": { req: DutyItemInput; res: DutyState };
+  "DELETE /api/duty/items/:id": { req: void; res: DutyState };
+  /** Runs it now (not when it is running already). */
+  "POST /api/duty/items/:id/run": { req: void; res: DutyState };
+}

@@ -38,3 +38,12 @@ export interface MaintenanceTerminalResult {
   command: string;
   cwd: string;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 设置 → 维护 (2026-10-20): how Studio was started, a model's CLI in a terminal at the repo. */
+export interface MaintenanceRoutes {
+  "GET /api/maintenance": { req: void; res: MaintenanceInfo };
+  /** Opens a terminal in the Studio repo running the person's own CLI (Claude Code or Codex); 400 when not run from source or the CLI is not found. */
+  "POST /api/maintenance/terminal": { req: MaintenanceTerminalRequest; res: MaintenanceTerminalResult };
+}

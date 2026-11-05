@@ -35,3 +35,15 @@ export interface PurgeSummary {
   /** Pasted images in them (preview); after the deletion, the ones removed because nothing else used them. */
   attachments: number;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** 设置 → 数据管理 (2026-10-14): archived things and deleting them for good. */
+export interface DataRoutes {
+  /** Archived projects, topics, tasks and sessions (top level only), most recently archived first. */
+  "GET /api/data/archived": { req: void; res: ArchivedEntry[] };
+  /** What deleting `?kind=&id=` would take with it; 409 when it is not archived or something live hangs on it. */
+  "GET /api/data/purge": { req: void; res: PurgeSummary };
+  /** Deletes it for good. */
+  "POST /api/data/purge": { req: { kind: DataKind; id: Id }; res: PurgeSummary };
+}

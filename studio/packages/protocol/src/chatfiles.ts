@@ -24,3 +24,11 @@ export interface FsExistsResult {
   /** Every asked path, as written: what it resolved to, or null when there is nothing there (or it cannot be told). */
   found: Record<string, ExistingPath | null>;
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** Files named in a conversation (stage 12, S12-C): which exist, so only those become links. */
+export interface ChatFileRoutes {
+  /** Which of the paths exist (at most MAX_EXISTS_PATHS); relative ones resolve against `cwd` or the project. */
+  "POST /api/fs/exists": { req: FsExistsRequest; res: FsExistsResult };
+}

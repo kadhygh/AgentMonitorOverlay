@@ -1,5 +1,21 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
 import type { AccountUsage, Annotation, FolderAccessStatus, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { CanvasRoutes } from "./canvas.js";
+import type { ChannelRoutes } from "./channels.js";
+import type { ChatFileRoutes } from "./chatfiles.js";
+import type { CliRoutes } from "./cli.js";
+import type { DataRoutes } from "./datamgmt.js";
+import type { DutyRoutes } from "./duty.js";
+import type { FileRoutes } from "./files.js";
+import type { GitReviewRoutes } from "./gitreview.js";
+import type { MaintenanceRoutes } from "./maintenance.js";
+import type { MarkRoutes } from "./marks.js";
+import type { McpRoutes } from "./mcp.js";
+import type { OpenInRoutes } from "./openin.js";
+import type { PromptTemplateRoutes } from "./prompt-templates.js";
+import type { QuestionRoutes } from "./questions.js";
+import type { RemoteRoutes } from "./remote.js";
+import type { ViewPackRoutes } from "./viewpacks.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -534,8 +550,29 @@ export interface CredentialStatus {
   writable: boolean;
 }
 
-/** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
-export interface HostRoutes {
+/**
+ * Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. The routes
+ * of a topic with a protocol file of its own are declared there (8b, 2026-11-06: remote.ts's RemoteRoutes and the
+ * like); the shared ones (workspaces, tasks, topics, sessions, settings…) are here. Host's `route()` checks each
+ * route against this (packages/host/src/http/route.ts).
+ */
+export interface HostRoutes
+  extends CanvasRoutes,
+    ChannelRoutes,
+    ChatFileRoutes,
+    CliRoutes,
+    DataRoutes,
+    DutyRoutes,
+    FileRoutes,
+    GitReviewRoutes,
+    MaintenanceRoutes,
+    MarkRoutes,
+    McpRoutes,
+    OpenInRoutes,
+    PromptTemplateRoutes,
+    QuestionRoutes,
+    RemoteRoutes,
+    ViewPackRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
   /**
    * Whether the Host answers (the shell's keepalive). No token needed (2026-10-28). `running`: sessions at work, counted
@@ -617,11 +654,11 @@ export interface HostRoutes {
   "PUT /api/claude-accounts/current": { req: { id: Id }; res: ClaudeAccountsState };
   /** Removes an added account: its login and dir (the shared records stay with the default account). Not the default or current one. */
   "DELETE /api/claude-accounts/:id": { req: void; res: ClaudeAccountsState };
-  /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
   /** Raw bytes in the body (not JSON), the type in `content-type`, the file name in `?name=`. */
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
+  /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
   "PUT /api/settings": { req: { commonDir?: string; devUiDir?: string | null; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; experimentalFeatures?: ExperimentalFeature[]; teamAutoSend?: boolean; shellHelp?: boolean; scratchpadShortcut?: string; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }>; topicGroups?: Array<Omit<TopicGroup, "id"> & { id?: Id }>; subsessionNotes?: SubsessionNote[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
@@ -695,9 +732,9 @@ export interface HostRoutes {
   /** Claude (stage 15): stop the session's loop, or switch going on by itself after a usage limit (Session.wake). */
   "POST /api/sessions/:id/wake": { req: { stopLoop: true } | { autoContinue: boolean }; res: Session };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
-  /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
   /** Renames the session in its runtime too (Codex thread name, Claude session title). */
   "PATCH /api/sessions/:id": { req: { title: string }; res: Session };
+  /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
   "PATCH /api/sessions/:id/options": { req: { model?: string | null; effort?: string | null; permission?: string | null; fast?: boolean | null }; res: Session };
   /** Archives the session together with its forks and subagents; returns every session changed. */
   "POST /api/sessions/:id/archive": { req: void; res: Session[] };
@@ -756,33 +793,6 @@ export interface HostRoutes {
   /** Approves (optionally with an edited prompt or model): the todo becomes a task and its first session starts. */
   "POST /api/proposals/:id/approve": { req: { prompt?: string; profileId?: Id }; res: { proposal: ScheduleProposal; task: Task; session: Session } };
   "POST /api/proposals/:id/reject": { req: void; res: ScheduleProposal };
-  /** A topic's canvas. */
-  "GET /api/topics/:id/canvas": { req: void; res: CanvasDoc };
-  /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
-  "PUT /api/topics/:id/canvas": { req: CanvasDoc; res: CanvasDoc };
-  /** Structure without coordinates, for agents (`canvas_read`) and the "agent 视角" tab. */
-  "GET /api/topics/:id/canvas/outline": { req: void; res: { outline: string; json: import("./canvas.js").CanvasOutline } };
-  /**
-   * "显示在画布上": shows (`true`) or hides a task's card on its topic's canvas; returns that canvas. Tasks created on the
-   * canvas are always shown; ones created elsewhere only when the person asks. Hiding keeps the task and its dependencies.
-   */
-  "PUT /api/tasks/:id/canvas": { req: { onCanvas: boolean }; res: CanvasDoc };
-  /** 画布审阅 (2026-10-27): the bubbles on a topic's canvas — every open or answered one, and the last closed ones. */
-  "GET /api/topics/:id/callouts": { req: void; res: import("./entities.js").CanvasCallout[] };
-  /**
-   * Questions waiting for the person, per topic: how many, and the oldest (the left column shows 「? N」 on the topic;
-   * Focus lists them and opens the oldest).
-   */
-  "GET /api/callouts/waiting": { req: void; res: Record<Id, { count: number; first: { id: Id; text: string; createdAt: Timestamp } }> };
-  /** The person answers a question (sent to its session as a message) or writes on a remark. */
-  "POST /api/callouts/:id/answer": { req: { text: string }; res: import("./entities.js").CanvasCallout };
-  /** Puts a bubble away. */
-  "POST /api/callouts/:id/close": { req: void; res: import("./entities.js").CanvasCallout };
-  /**
-   * 就这条展开聊: a new session to talk one item over, in the task of the session that laid it out (else the topic's
-   * 主控), beside that session; returns it. `profileId`: its model (the laying session's otherwise).
-   */
-  "POST /api/topics/:id/canvas/items/:itemId/discuss": { req: { profileId?: Id }; res: Session };
   /** 会话里用中转 (2026-10-30): what sessions asked to send through 中转 — pending ones, and those decided in the last day. */
   "GET /api/teamrelay/sends": { req: void; res: import("./entities.js").TeamSend[] };
   /** The person says send it: it goes to 中转 as them (AI 代发). */
@@ -971,258 +981,4 @@ export function composeAnnotationMessage(annotations: ReadonlyArray<{ quote: str
     return `${quoted}\n${a.note.trim()}`;
   });
   return `针对你上面的回复，我有 ${annotations.length} 条批注：\n\n${parts.join("\n\n")}`;
-}
-
-/**
- * Git Review (S11-D), merged into HostRoutes above. Paths are relative to the project folder; `?range=` is a GitRange
- * (`working` by default). A folder that is not a git repository answers with `repo: false`, not an error.
- */
-export interface HostRoutes {
-  "GET /api/workspaces/:id/git/status": { req: void; res: import("./gitreview.js").GitStatus };
-  /** Changed files of a range, sorted by path. */
-  "GET /api/workspaces/:id/git/changes": { req: void; res: import("./gitreview.js").GitChanges };
-  /**
-   * One file's diff in a range: `?path=` (and `?oldPath=` for renames). What the list already knows saves git calls:
-   * `?base=` is the commit it compared with (rangeBase), `?untracked=1|0` whether git tracks the file.
-   */
-  "GET /api/workspaces/:id/git/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
-  /** Line comments of the project, drafts and sent, oldest first. */
-  "GET /api/workspaces/:id/review-comments": { req: void; res: import("./gitreview.js").GitReviewComment[] };
-  "POST /api/workspaces/:id/review-comments": { req: import("./gitreview.js").NewGitReviewComment; res: import("./gitreview.js").GitReviewComment };
-  /** Drafts only (409 once sent). */
-  "PATCH /api/review-comments/:id": { req: { note: string }; res: import("./gitreview.js").GitReviewComment };
-  "DELETE /api/review-comments/:id": { req: void; res: { ok: true } };
-  /**
-   * 复制注释 (2026-10-23, in place of 发给会话): the drafts (all, or `ids`) as one text grouped by file — what was sent to
-   * a session before — for the person to paste; they are marked sent (no session).
-   */
-  "POST /api/workspaces/:id/review-comments/copy": {
-    req: { ids?: Id[] };
-    res: { text: string; sent: import("./gitreview.js").GitReviewComment[] };
-  };
-  /** Sends the drafts (all, or `ids`) to a session as one message grouped by file, then marks them sent. */
-  "POST /api/workspaces/:id/review-comments/send": {
-    req: { sessionId: Id; ids?: Id[] };
-    res: { mode: "start" | "steer" | "queue"; sent: import("./gitreview.js").GitReviewComment[] };
-  };
-}
-
-// ---- project files (stage 11, S11-B): the file selector and "@ 文件" ----------------------------------------------
-// Declared as a second part of HostRoutes (interfaces merge), so this feature's routes stay together.
-export interface HostRoutes {
-  /**
-   * The project's files: `git ls-files` (tracked and untracked-not-ignored) in a git repository, otherwise a bounded
-   * walk that skips node_modules, .git, dist, build and the like. Listed once and cached briefly. `?q=` filters with
-   * `fuzzyMatch` (best first, with the matched indices); `?limit=` caps the rows (default 50, at most 200).
-   */
-  "GET /api/workspaces/:id/files": { req: void; res: import("./files.js").ProjectFiles };
-  /** Recently changed files: git's working-tree changes, or the newest by modification time. `?limit=` (default 8). */
-  "GET /api/workspaces/:id/files/recent": { req: void; res: import("./files.js").ProjectFiles };
-}
-
-// ---- files outside Studio (stage 12, S12-0): open in an editor or the file manager, quick looks -----------------
-export interface HostRoutes {
-  /** Which editors this machine has. */
-  "GET /api/open-in/apps": { req: void; res: import("./openin.js").OpenInApps };
-  /** Opens an existing file or folder (404 when it does not exist). */
-  "POST /api/open-in": { req: import("./openin.js").OpenInRequest; res: import("./openin.js").OpenInResult };
-  /** Reads a text file for a quick look: `?path=` (absolute, or relative with `?workspaceId=`). */
-  "GET /api/fs/text": { req: void; res: import("./openin.js").TextFile };
-  /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
-  "GET /api/fs/raw": { req: void; res: Blob };
-}
-
-// ---- file marks (stage 12, S12-D): files and folders marked with a note, per project --------------------------------
-export interface HostRoutes {
-  /** All marks, or one project's (`?workspace=<id>`, or `?workspace=other` for those outside every project). */
-  "GET /api/file-marks": { req: void; res: import("./marks.js").FileMark[] };
-  /** Marks a file or folder; the same path and line range again returns the existing mark (`created: false`). */
-  "POST /api/file-marks": { req: import("./marks.js").NewFileMark; res: { mark: import("./marks.js").FileMark; created: boolean } };
-  "PATCH /api/file-marks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").FileMark };
-  "DELETE /api/file-marks/:id": { req: void; res: { ok: true } };
-  // 书签 (2026-10-19): file marks and passages of conversations, under topics.
-  /** All bookmarks, or one topic's (`?topic=<id>`, or `?topic=none` for 未归专题); in their order. */
-  "GET /api/bookmarks": { req: void; res: import("./marks.js").Bookmark[] };
-  /** Bookmarks a passage of a reply; the same passage under the same topic gives the one already there. */
-  "POST /api/chat-marks": { req: import("./marks.js").NewChatMark; res: { mark: import("./marks.js").ChatMark; created: boolean } };
-  /** Note, topic or order of either kind (a line range only for files). */
-  "PATCH /api/bookmarks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").Bookmark };
-  "DELETE /api/bookmarks/:id": { req: void; res: { ok: true } };
-  // 提示词模板 (2026-10-31).
-  /** Every template, or (`?workspace=<id>`) those a composer in that project offers: the global ones and the project's (`global`: only the global ones). */
-  "GET /api/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
-  "POST /api/prompt-templates": { req: import("./prompt-templates.js").NewPromptTemplate; res: import("./prompt-templates.js").PromptTemplate };
-  "PATCH /api/prompt-templates/:id": { req: import("./prompt-templates.js").PromptTemplatePatch; res: import("./prompt-templates.js").PromptTemplate };
-  "DELETE /api/prompt-templates/:id": { req: void; res: { ok: true } };
-  /** MCP 设置 (2026-11-04, plans/mcp.md). */
-  "GET /api/mcp": { req: void; res: import("./mcp.js").McpState };
-  "PUT /api/mcp": { req: { loadLocal?: boolean; choices?: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpState };
-  "POST /api/mcp/servers": { req: import("./mcp.js").NewStudioMcpServer; res: import("./mcp.js").StudioMcpServer };
-  "PATCH /api/mcp/servers/:id": { req: import("./mcp.js").StudioMcpServerPatch; res: import("./mcp.js").StudioMcpServer };
-  "DELETE /api/mcp/servers/:id": { req: void; res: { ok: true } };
-  "GET /api/mcp/projects/:id": { req: void; res: import("./mcp.js").McpProjectState };
-  "PUT /api/mcp/projects/:id": { req: { choices: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpProjectState };
-  "GET /api/sessions/:id/mcp": { req: void; res: import("./mcp.js").McpSessionState };
-  /** `apply`: when the change reaches the session. */
-  "PUT /api/sessions/:id/mcp": { req: { choices: import("./mcp.js").McpChoices }; res: import("./mcp.js").McpSessionState & { apply: import("./mcp.js").McpApply } };
-}
-
-// ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------
-export interface HostRoutes {
-  /** Which of the paths exist (at most MAX_EXISTS_PATHS); relative ones resolve against `cwd` or the project. */
-  "POST /api/fs/exists": { req: import("./chatfiles.js").FsExistsRequest; res: import("./chatfiles.js").FsExistsResult };
-}
-
-// ---- questions in the conversation (stage 12, S12-B) -----------------------------------------------------------
-export interface HostRoutes {
-  /**
-   * Answers a pending `question` item (by its item id): the answers, the form's values, the plan review's verdict, or
-   * `dismiss` to close it without answering. 409 when it is no longer pending.
-   */
-  "POST /api/sessions/:id/questions/:itemId/answer": { req: import("./questions.js").QuestionReply; res: { ok: true } };
-}
-
-// ---- CLI features in the conversation (stage 12, S12-E): / commands, compaction, background commands ------------
-export interface HostRoutes {
-  /** The `/` menu for a session: Studio's commands, the runtime's (Claude Code's list, Codex review), its skills. */
-  "GET /api/sessions/:id/commands": { req: void; res: import("./cli.js").SlashCommandList };
-  /**
-   * Runs a command by name (without the slash): `compact` compacts the context (Claude: `/compact <args>`, Codex:
-   * thread/compact/start), Codex `code-review` starts review mode, a skill runs with `args`, any other Claude command
-   * is sent as `/name args`. 409 while a Codex turn runs and the command cannot join it.
-   */
-  "POST /api/sessions/:id/commands": { req: { name: string; args?: string }; res: import("./cli.js").SlashCommandResult };
-  /** Stops a background command of the session (Claude: stop_task). */
-  "POST /api/sessions/:id/background/:taskId/stop": { req: void; res: { ok: true } };
-  /** The tail of a background command's output. */
-  "GET /api/sessions/:id/background/:taskId/output": { req: void; res: import("./cli.js").BackgroundOutput };
-  "GET /api/settings/chat": { req: void; res: import("./cli.js").ChatSettings };
-  "PUT /api/settings/chat": { req: Partial<import("./cli.js").ChatSettings>; res: import("./cli.js").ChatSettings };
-}
-
-// ---- commit history (stage 13, S13-B): the branch's commits and one commit's changes, read-only -------------------
-export interface HostRoutes {
-  /** HEAD's history, newest first; `?limit=` (default and most GIT_LOG_MAX). */
-  "GET /api/workspaces/:id/git/log": { req: void; res: import("./gitreview.js").GitLog };
-  /** One commit's changed files against its first parent: `?sha=` (7 to 64 hex digits). */
-  "GET /api/workspaces/:id/git/commit": { req: void; res: import("./gitreview.js").GitCommitChanges };
-  "POST /api/review/open": { req: import("./gitreview.js").ReviewOpenRequest; res: import("./gitreview.js").ReviewOpenResult };
-  /** 查看包 (2026-10-23): make one (or add to the one the same session sent a moment ago) and show it. */
-  "POST /api/viewpacks": { req: import("./viewpacks.js").ViewOpenRequest; res: import("./viewpacks.js").ViewOpenResult };
-  "GET /api/viewpacks/:id": { req: void; res: import("./viewpacks.js").ViewPack };
-  /** The packs a session sent, newest first (`?sessionId=`). */
-  "GET /api/viewpacks": { req: void; res: import("./viewpacks.js").ViewPack[] };
-  /** A proposal item as a diff of its original and its proposed content. */
-  "GET /api/viewpacks/:id/items/:itemId/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
-  /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
-  "GET /api/workspaces/:id/git/commit-diff": { req: void; res: import("./gitreview.js").GitFileDiff };
-}
-
-// ---- 设置 → 数据管理 (2026-10-14): archived things and deleting them for good (datamgmt.ts) -----------------------
-export interface HostRoutes {
-  /** Archived projects, topics, tasks and sessions (top level only), most recently archived first. */
-  "GET /api/data/archived": { req: void; res: import("./datamgmt.js").ArchivedEntry[] };
-  /** What deleting `?kind=&id=` would take with it; 409 when it is not archived or something live hangs on it. */
-  "GET /api/data/purge": { req: void; res: import("./datamgmt.js").PurgeSummary };
-  /** Deletes it for good. */
-  "POST /api/data/purge": { req: { kind: import("./datamgmt.js").DataKind; id: Id }; res: import("./datamgmt.js").PurgeSummary };
-}
-
-// ---- 设置 → 模型 (2026-10-15): the person's own channels, hiding a channel from the pickers, balances (channels.ts) --
-export interface HostRoutes {
-  "GET /api/channels": { req: void; res: import("./channels.js").ModelChannel[] };
-  "POST /api/channels": { req: import("./channels.js").ChannelInput; res: import("./channels.js").ModelChannel };
-  "PATCH /api/channels/:id": { req: import("./channels.js").ChannelInput; res: import("./channels.js").ModelChannel };
-  /** Only a channel no session uses; otherwise hide it. */
-  "DELETE /api/channels/:id": { req: void; res: { ok: true } };
-  /** Asks a balance with settings not saved yet (the 添加/编辑 dialog's 测试); `id` fills in what is stored. */
-  /** DSH channel (2026-10-19): the model names the site lists (GET {baseUrl}/v1/models), for the dialog's 从网址读取. */
-  "POST /api/channels/models-test": { req: { id?: Id; baseUrl?: string; key?: string; keyFrom?: string | null }; res: { models: string[] } };
-  "POST /api/channels/balance-test": { req: { id?: Id; kind?: import("./channels.js").ChannelKind; baseUrl?: string; balance: import("./channels.js").BalanceConfig; key?: string; keyFrom?: string | null; accessToken?: string }; res: import("./channels.js").ChannelBalance };
-  "PUT /api/profiles/:id/hidden": { req: { hidden: boolean }; res: ModelProfile[] };
-  /** `?refresh=1` asks the site again; otherwise the last answer within a minute. */
-  "GET /api/profiles/:id/balance": { req: void; res: import("./channels.js").ChannelBalance };
-  /** 问题 #14: Claude 订阅's and GPT's request address as the person's Claude Code / Codex setup has it; null for other profiles. */
-  "GET /api/profiles/:id/endpoint": { req: void; res: import("./channels.js").ProfileEndpoint | null };
-}
-
-// ---- 设置 → 维护 (2026-10-20): how Studio was started, a model's CLI in a terminal at the repo (maintenance.ts) ------
-export interface HostRoutes {
-  "GET /api/maintenance": { req: void; res: import("./maintenance.js").MaintenanceInfo };
-  /** Opens a terminal in the Studio repo running the person's own CLI (Claude Code or Codex); 400 when not run from source or the CLI is not found. */
-  "POST /api/maintenance/terminal": { req: import("./maintenance.js").MaintenanceTerminalRequest; res: import("./maintenance.js").MaintenanceTerminalResult };
-}
-
-// ---- 远程 (2026-10-29, its own page since 10-29 evening; plans/remote-session.md step 1): this computer as a device, pairing (remote.ts) ---------
-export interface HostRoutes {
-  "GET /api/remote": { req: void; res: import("./remote.js").RemoteState };
-  /** Renames this computer (device.json, shared with the AMO platform). */
-  "PUT /api/remote/device": { req: { name: string }; res: import("./remote.js").RemoteState };
-  /** 2026-10-30: turns remote on or off for the account logged in now (on needs the AMO platform's login). */
-  "PUT /api/remote/enabled": { req: { enabled: boolean }; res: import("./remote.js").RemoteState };
-  /**
-   * Asks account `account` to pair with this computer; a device of it allows or refuses. `device` (远程页的配对弹窗,
-   * 2026-10-29): only that device of the account, picked from GET /api/remote/devices/online.
-   */
-  "POST /api/remote/pair": { req: { account: string; device?: string }; res: import("./remote.js").RemoteState };
-  /** The other devices of this computer's account connected to the team server now (the pair dialog lists them). */
-  "GET /api/remote/devices/online": { req: void; res: import("./remote.js").RemoteOnlineDevices };
-  /** Allows or refuses a request to pair with this computer. */
-  "POST /api/remote/requests/:id/answer": { req: { allow: boolean }; res: import("./remote.js").RemoteState };
-  /** Withdraws a request this computer sent, or puts a refusal away. */
-  "DELETE /api/remote/requests/:id": { req: void; res: import("./remote.js").RemoteState };
-  /** Ends the pairing with a device (both sides forget it). */
-  "POST /api/remote/unpair": { req: { account: string; device: string }; res: import("./remote.js").RemoteState };
-  /** 测试连接: a round trip to a paired device through the server. */
-  "POST /api/remote/ping": { req: { account: string; device: string }; res: import("./remote.js").RemotePingResult };
-  /** Tries to connect now (after a failure, without waiting for the next attempt). */
-  "POST /api/remote/reconnect": { req: void; res: import("./remote.js").RemoteState };
-  /** Step 2: grants a task (and every session in it) to a device this computer allowed to pair. */
-  "POST /api/remote/grants": { req: { taskId: Id; account: string; device: string }; res: import("./remote.js").RemoteState };
-  /** Step 2: takes a grant back (the device keeps what it has, readable, and reaches the task no more). */
-  "POST /api/remote/grants/revoke": { req: { taskId: Id; account: string; device: string }; res: import("./remote.js").RemoteState };
-  /** Step 2: 远端允许的默认配置. */
-  "PUT /api/remote/allowed": { req: import("./remote.js").RemoteAllowed; res: import("./remote.js").RemoteState };
-  /**
-   * Step 3, on B: a file of a remote task, fetched from the computer it runs on (or found unchanged) and kept in this
-   * computer's data folder. `fetchId` names the remote.file events that say how far it came.
-   */
-  "POST /api/remote/files": { req: { taskId: Id; path: string; cwd?: string; fetchId?: string }; res: import("./remote.js").RemoteFetchedFile };
-  /** Step 4, on B: asks a paired device (one that allowed this computer) to run a task — only while it is online. */
-  "POST /api/remote/asks": { req: { account: string; device: string; title: string; text: string }; res: import("./remote.js").RemoteState };
-  /** Step 4, on B: takes a request back (still waiting), or puts an answer away. */
-  "DELETE /api/remote/asks/:id": { req: void; res: import("./remote.js").RemoteState };
-  /** Step 4, on A: allows a request — the task is made where asked, its session starts with the request, and it is granted. */
-  "POST /api/remote/task-requests/:id/accept": { req: import("./remote.js").RemoteAcceptInput; res: import("./remote.js").RemoteState };
-  /** Step 4, on A: refuses a request, saying why (or not). */
-  "POST /api/remote/task-requests/:id/refuse": { req: { reason?: string }; res: import("./remote.js").RemoteState };
-  /** 远程创建 (2026-10-29), on A: 远端允许的项目 — where paired devices may create tasks on this computer. */
-  "PUT /api/remote/allowed-projects": { req: import("./remote.js").RemoteAllowedProjects; res: import("./remote.js").RemoteState };
-  /** 安全 (2026-10-29): which paired devices' tasks start without a yes here. */
-  "PUT /api/remote/security": { req: import("./remote.js").RemoteSecurity; res: import("./remote.js").RemoteState };
-  /** 远程额度 (2026-11-06), on A: whether a paired device of another account sees this computer's quota (off: it is cleared there at once). */
-  "PUT /api/remote/usage-share": { req: { account: string; device: string; on: boolean }; res: import("./remote.js").RemoteState };
-  /** 远程创建, on B: what a paired device (one that allowed this computer) lets this computer pick creating a task there. `?account=&device=` */
-  "GET /api/remote/catalog": { req: void; res: import("./remote.js").RemoteCatalog };
-  /** 远程创建, on B (问题 #1): the device's templates for a task created there in that project (rt.createTemplates). `?account=&device=&workspace=` (no workspace: the common folder) */
-  "GET /api/remote/catalog/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
-  /** A remote copy's templates as its own computer offers them (rt.templates). */
-  "GET /api/remote/tasks/:id/prompt-templates": { req: void; res: import("./prompt-templates.js").PromptTemplate[] };
-  /**
-   * 远程 Reviewer (2026-11-02): the key a remote copy's pictures are served under (/api/remote/files/<key>/…), for the
-   * Markdown and HTML a 查看包 of it shows rendered.
-   */
-  "GET /api/remote/tasks/:id/files-key": { req: void; res: { key: string } };
-  /** 远程创建, on B: creates a task on that device, granted to this computer and running; answers once the copy is here (or after a while). */
-  "POST /api/remote/create": { req: import("./remote.js").RemoteCreateAsk & { account: string; device: string; /** Pictures uploaded here (POST /api/attachments); files go in the text's 引用文件 block. */ attachments?: Id[] }; res: import("./remote.js").RemoteCreateResult };
-}
-
-// ---- 值守 (2026-10-31, plans/issues.md): items that run at set times — a session, a command, or one of Studio's jobs ---------
-export interface HostRoutes {
-  "GET /api/duty": { req: void; res: import("./duty.js").DutyState };
-  "POST /api/duty/items": { req: import("./duty.js").DutyItemInput; res: import("./duty.js").DutyState };
-  "PATCH /api/duty/items/:id": { req: import("./duty.js").DutyItemInput; res: import("./duty.js").DutyState };
-  "DELETE /api/duty/items/:id": { req: void; res: import("./duty.js").DutyState };
-  /** Runs it now (not when it is running already). */
-  "POST /api/duty/items/:id/run": { req: void; res: import("./duty.js").DutyState };
 }

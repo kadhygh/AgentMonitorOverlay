@@ -143,3 +143,19 @@ export function mcpSummary(spec: McpServerSpec): string {
   if (spec.type === "stdio") return [spec.command ?? "", ...(spec.args ?? [])].filter(Boolean).join(" ");
   return spec.url ?? "";
 }
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** MCP 设置 (2026-11-04, plans/mcp.md). */
+export interface McpRoutes {
+  "GET /api/mcp": { req: void; res: McpState };
+  "PUT /api/mcp": { req: { loadLocal?: boolean; choices?: McpChoices }; res: McpState };
+  "POST /api/mcp/servers": { req: NewStudioMcpServer; res: StudioMcpServer };
+  "PATCH /api/mcp/servers/:id": { req: StudioMcpServerPatch; res: StudioMcpServer };
+  "DELETE /api/mcp/servers/:id": { req: void; res: { ok: true } };
+  "GET /api/mcp/projects/:id": { req: void; res: McpProjectState };
+  "PUT /api/mcp/projects/:id": { req: { choices: McpChoices }; res: McpProjectState };
+  "GET /api/sessions/:id/mcp": { req: void; res: McpSessionState };
+  /** `apply`: when the change reaches the session. */
+  "PUT /api/sessions/:id/mcp": { req: { choices: McpChoices }; res: McpSessionState & { apply: McpApply } };
+}

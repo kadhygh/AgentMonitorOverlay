@@ -53,3 +53,17 @@ export const PREVIEW_IMAGE_TYPES: Readonly<Record<string, string>> = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
 };
+
+// ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
+
+/** Files outside Studio (stage 12, S12-0): open in an editor or the file manager, quick looks. */
+export interface OpenInRoutes {
+  /** Which editors this machine has. */
+  "GET /api/open-in/apps": { req: void; res: OpenInApps };
+  /** Opens an existing file or folder (404 when it does not exist). */
+  "POST /api/open-in": { req: OpenInRequest; res: OpenInResult };
+  /** Reads a text file for a quick look: `?path=` (absolute, or relative with `?workspaceId=`). */
+  "GET /api/fs/text": { req: void; res: TextFile };
+  /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
+  "GET /api/fs/raw": { req: void; res: Blob };
+}
