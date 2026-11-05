@@ -8,6 +8,7 @@ import { copyText, shell } from "./env.js";
 import { fullUi } from "./features.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
+import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { SettingsDialog, type SettingsPart } from "./Settings.js";
@@ -35,7 +36,8 @@ type Dialogs =
   | { kind: "transfer"; task: TaskView; thread?: Thread }
   | { kind: "flow" }
   | { kind: "settings"; part?: SettingsPart }
-  | { kind: "file"; id: string; scripts: boolean };
+  | { kind: "file"; id: string; scripts: boolean }
+  | { kind: "help"; section?: HelpSection };
 
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings } = useSession(session);
@@ -119,7 +121,18 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       }),
     [session, me],
   );
-  useEffect(() => shell?.onOpenThread((id) => setOpenId(id)), []);
+  // A notification clicked, or AMO Studio's 在中转里打开 (2026-11-05: --open-thread, also the one the shell started with).
+  const openThread = (id: string) => {
+    const t = threads.find((x) => x.id === id);
+    setView(t && t.kind !== "request" ? "chat" : "queue");
+    setOpenId(id);
+  };
+  const openThreadRef = useRef(openThread);
+  openThreadRef.current = openThread;
+  useEffect(() => {
+    shell?.onOpenThread((id) => (openThreadRef.current(id), void shell?.takeOpenThread?.()));
+    void shell?.takeOpenThread?.().then((id) => id && openThreadRef.current(id));
+  }, []);
 
   const showTask = (id: string, pane: TaskPane = "overview") => {
     setView("tasks");
@@ -290,7 +303,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   let main;
   if (view === "queue" && open?.kind === "request")
-    main = <SessionView key={open.id} session={session} thread={open} toast={toast} onOpenTask={full ? (id) => showTask(id, open.id) : undefined} onTakeover={full ? (t) => { const task = tasks.find((x) => x.id === t.request?.taskId); if (task) setDialog({ kind: "transfer", task, thread: t }); } : undefined} />;
+    main = <SessionView key={open.id} session={session} thread={open} toast={toast} onOpenTask={full ? (id) => showTask(id, open.id) : undefined} onHelp={(section) => setDialog({ kind: "help", section: section as HelpSection })} onTakeover={full ? (t) => { const task = tasks.find((x) => x.id === t.request?.taskId); if (task) setDialog({ kind: "transfer", task, thread: t }); } : undefined} />;
   else if (view === "tasks" && openTask)
     main = (
       <TaskPage
@@ -389,6 +402,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             onCopyUsage={() => void copyUsage()}
             onProfile={() => setDialog({ kind: "settings", part: "profile" })}
             onSettings={() => setDialog({ kind: "settings" })}
+            onHelp={() => setDialog({ kind: "help" })}
           />
         </aside>
         <main className="main-col">{main}</main>
@@ -424,6 +438,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           onOpenFile={(id) => setDialog({ kind: "file", id, scripts: settings.flowScripts !== false && !!flowDoc && /\.html?$/i.test(flowDoc.name) })}
         />
       )}
+      {dialog?.kind === "help" && <HelpDialog section={dialog.section} onClose={() => setDialog(null)} />}
       {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>

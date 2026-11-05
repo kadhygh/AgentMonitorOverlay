@@ -98,6 +98,8 @@ export function sessionStatus(t: ThreadView, me: string, now = Date.now(), limit
   const r = t.request!;
   const stuckMs = limits ? limits.aiStuckMinutes * 60_000 : AI_STUCK_MS;
   const asker = `${r.from}${r.byAi ? " 的 AI" : ""}`;
+  // 已接手，不用回复 (2026-11-05): closed by the person asked taking it on.
+  if (r.state === "done" && r.takenAt) return { text: r.to === me ? "你已接手 · 不用回复" : `${r.to} 已接手 · 不用回复`, dot: "done", needsMe: false, warn: false };
   if (r.state === "done") return { text: "已完成", dot: "done", needsMe: false, warn: false };
   if (r.waitingOn !== me) {
     if (r.state === "returned" && r.handler === "ai") return { text: r.pickedAt ? `${r.from} 的 AI 处理中` : `已返回给 ${r.from}`, dot: "run", needsMe: false, warn: false };

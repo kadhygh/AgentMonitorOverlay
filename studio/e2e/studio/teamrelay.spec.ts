@@ -77,6 +77,10 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
 
   // Whom it waits on: on the task's page and its card.
   await expect(banner.getByTestId("team-wait")).toContainText("等 程序老李 回复（中转）");
+  // 在中转里打开 (2026-11-05): starts the relay client with --open-thread (recorded here, nothing started).
+  await screenshot(app, "teamrelay", "T1b-waiting-open-in-relay", page);
+  await banner.getByTestId("team-wait").getByTestId("open-in-relay").click();
+  await expect.poll(() => app.evaluate(() => (globalThis as { __amoRelayOpened?: Array<{ threadId: string }> }).__amoRelayOpened?.map((o) => o.threadId))).toEqual([thread!.id]);
   await page.getByRole("button", { name: /返回看板|看板/ }).first().click();
   await expect(page.getByTestId("task-card").filter({ hasText: "背包扩容" }).getByTestId("card-team-wait")).toContainText("等 程序老李 回复（中转）");
   await screenshot(app, "teamrelay", "T2-card-waiting", page);

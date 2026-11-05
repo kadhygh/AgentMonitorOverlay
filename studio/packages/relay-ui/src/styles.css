@@ -347,6 +347,29 @@ button.box-row:hover:not(:disabled) { border-color: var(--border-strong); backgr
 .link-btn { color: var(--primary); font-size: var(--fs-sm); }
 .selbtn { position: fixed; z-index: 80; }
 
+/* The viewer as a panel, not a modal (2026-11-05, plans/relay-round-2026-11-05.md): what is behind stays readable and
+   clickable; moved by its head, sized by its left edge and corner (FloatPanel in Dialog.tsx). */
+.float-panel { position: fixed; z-index: 50; max-width: none; max-height: none; box-shadow: 0 18px 48px var(--shadow), 0 0 0 1px var(--border-strong); }
+.float-panel > .dialog-head { cursor: move; user-select: none; touch-action: none; }
+.float-panel[data-full] > .dialog-head { cursor: default; }
+.float-panel-left { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; touch-action: none; }
+.float-panel-corner { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 58%, transparent 58%, transparent 70%, var(--border-strong) 70%, var(--border-strong) 78%, transparent 78%); }
+.viewer-body { position: relative; }
+/* The note being written: Reviewer's FloatBox (its own styles come with it, ui/src/review/floatbox.css). */
+.relay-note-draft { z-index: 60; }
+.relay-note-draft textarea { width: 100%; min-height: 72px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--bg); color: var(--text); font: inherit; }
+.relay-note-draft .acts { display: flex; align-items: center; gap: 6px; }
+.relay-note-draft .anno-bubble-quote { margin: 0; padding: 2px 0 2px 8px; border-left: 3px solid var(--attention); color: var(--text-dim); font-size: var(--fs-cap); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+
+/* 说明 (2026-11-05): the ? by a session's state, and the page it opens. */
+.help-q { width: 18px; height: 18px; min-height: 0; padding: 0; border-radius: 50%; font-size: 11px; font-weight: 700; line-height: 1; color: var(--text-dim); }
+.dialog.help { width: 760px; }
+.help-body { display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 220px); overflow-y: auto; }
+.help-nav { display: flex; flex-wrap: wrap; gap: 4px 14px; position: sticky; top: 0; padding: 0 0 8px; background: var(--panel); border-bottom: 1px solid var(--border); z-index: 1; }
+.help-part h3 { margin: 0 0 4px; font-family: var(--font-display); font-size: var(--fs-title); }
+.help-part.hot h3 { color: var(--primary); }
+.take-what { margin: 0; line-height: 1.6; }
+
 /* ---- dialogs and fields, second take (2026-10-27): lighter lines, one height for controls and buttons, choices as
    buttons (.pick) instead of drop-downs, dialogs in three bands. Later rules here win over the ones above. */
 button { border-color: var(--border); }

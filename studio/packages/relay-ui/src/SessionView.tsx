@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { FileChip, FileViewer, loadNotedFiles, PickFiles, useThreadFiles, useUpload } from "./Files.js";
 import { sessionStatus, waitedText } from "./bits.js";
-import { copyText } from "./env.js";
+import { Dialog, Field } from "./Dialog.js";
+import { copyText, shell } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
 import { carriedNotes, fileNotesText, newRepliesText, notePlaces, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type NotePlaces, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
@@ -21,6 +22,8 @@ export function SessionView(props: {
   /** 接手任务… for a session under a task. */
   onTakeover?: (thread: ThreadView) => void;
   onOpenTask?: (taskId: string) => void;
+  /** The 说明 page at a section (the ? by the status). */
+  onHelp?: (section: string) => void;
 }) {
   const { session, thread, toast } = props;
   const { settings, tasks } = useSession(session);
@@ -48,6 +51,23 @@ export function SessionView(props: {
     } catch (err) {
       toast(errorText(err));
     }
+  };
+  // 已接手，不用回复 (2026-11-05, the user): for the person asked, while it is in their hands — even when a reply is needed.
+  const [taking, setTaking] = useState(false);
+  const take = myTurn && r.to === me && r.state === "open" ? () => setTaking(true) : undefined;
+  // 在 Studio 里打开 (J1): a session one of this computer's Studio sessions sent, while Studio runs.
+  const [inStudio, setInStudio] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setInStudio(false);
+    if (r.from === me && r.conv && shell?.studioHas) void shell.studioHas(r.conv).then((v) => alive && setInStudio(v));
+    return () => {
+      alive = false;
+    };
+  }, [r.from, r.conv, me]);
+  const openStudio = async () => {
+    const why = r.conv ? await shell?.openInStudio?.(r.conv) : "这个会话不是 AMO Studio 发的";
+    toast(why ?? "已在 Studio 里打开发起这个会话的对话");
   };
   // The notes on the session's files go along (2026-11-05, the user: 复制给 AI 里没有我的批注): before, only the ones a
   // reply carried did, so the asker's own, ones written after replying or before it, and unticked ones were left out.
@@ -111,6 +131,11 @@ export function SessionView(props: {
                 接手任务…
               </button>
             )}
+            {take && (
+              <button type="button" onClick={take} title="看过了，不需要回复：会话结束，事情由你来做">
+                已接手，不用回复
+              </button>
+            )}
             {!r.needsReply && (
               <button type="button" onClick={() => void act("done", "会话已完成")}>
                 标记完成
@@ -121,7 +146,7 @@ export function SessionView(props: {
       />
     );
   } else if (myTurn && r.to === me && r.state === "open") {
-    dock = <ReplyForm session={session} thread={thread} questions={askQuestions ?? []} files={files} onOpenFile={setViewing} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} />;
+    dock = <ReplyForm session={session} thread={thread} questions={askQuestions ?? []} files={files} onOpenFile={setViewing} onDone={() => toast(`已返回给 ${asker}`)} onMarkDone={() => void act("done", "会话已完成")} onTakeover={takeover} onTake={take} />;
   } else if (r.to === me && againOpen) {
     dock = <ReplyForm session={session} thread={thread} questions={lastQuestions} files={files} onOpenFile={setViewing} again onDone={() => (setAgainOpen(false), toast(`已再次返回给 ${asker}`))} onCancel={() => setAgainOpen(false)} />;
   } else if (myTurn && r.state === "returned" && r.handler === "person") {
@@ -162,7 +187,7 @@ export function SessionView(props: {
     dock = (
       <div className="dock">
         <div className="acts">
-          <span className="why">已完成</span>
+          <span className="why">{r.takenAt ? `${r.to === me ? "你" : r.to}已接手，不用回复，会话已结束` : "已完成"}</span>
           <button type="button" onClick={() => void act("reopen", `已重新打开，会话回到 ${r.to} 手里`)}>
             重新打开
           </button>
@@ -196,12 +221,22 @@ export function SessionView(props: {
               {asker} → {r.to}
             </span>
             <span className={`chip ${status.warn ? "attn" : ""}`}>{status.text}</span>
+            {props.onHelp && (
+              <button type="button" className="help-q" title="这个状态是什么意思" aria-label="这个状态是什么意思" onClick={() => props.onHelp!("states")}>
+                ?
+              </button>
+            )}
             {r.verdict && <span className={`chip v-${r.verdict}`}>{VERDICT_LABEL[r.verdict]}</span>}
-            {r.needsReply && <span className="chip">需要回复</span>}
+            {r.needsReply && r.takenAt == null && <span className="chip">需要回复</span>}
           </div>
         </div>
         <div className="head-actions">
-          <button type="button" onClick={() => void copyAll()} title="复制整个会话（含逐条回答），贴给 AI">
+          {inStudio && (
+            <button type="button" onClick={() => void openStudio()} title="这个会话是这台电脑上的 AMO Studio 发的：去 Studio 里发起它的那个对话">
+              在 Studio 里打开
+            </button>
+          )}
+          <button type="button" onClick={() => void copyAll()} title="复制整个会话（含逐条回答和附件上的批注），贴给 AI">
             复制给 AI
           </button>
         </div>
@@ -218,6 +253,7 @@ export function SessionView(props: {
         </div>
       )}
       {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
+      {taking && <TakeDialog session={session} thread={thread} onClose={() => setTaking(false)} toast={toast} />}
       <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
       {dock}
     </section>
@@ -301,6 +337,8 @@ function ReplyForm(props: {
   onMarkDone?: () => void;
   onCancel?: () => void;
   onTakeover?: () => void;
+  /** 已接手，不用回复. */
+  onTake?: () => void;
 }) {
   const { session, thread, questions } = props;
   const me = session.me.name;
@@ -399,7 +437,7 @@ function ReplyForm(props: {
         {error && <span className="error tiny">{error}</span>}
       </div>
       <div className="acts">
-        <span className="why">{r.needsReply ? `${r.byAi ? "AI 发来的会话一定要回复" : "发起人要求回复"}；完成由发起方标记` : "不需要回复的话，也可以直接标记完成"}</span>
+        <span className="why">{r.needsReply ? `${r.byAi ? "AI 发来的会话要回复" : "发起人要求回复"}；看过了不用回，点「已接手，不用回复」` : "不需要回复的话，也可以直接标记完成"}</span>
         {props.onCancel && (
           <button type="button" onClick={props.onCancel}>
             取消
@@ -408,6 +446,11 @@ function ReplyForm(props: {
         {props.onTakeover && (
           <button type="button" onClick={props.onTakeover} title="把任务流转到你手里，弹窗里写状态和原因">
             接手任务…
+          </button>
+        )}
+        {props.onTake && (
+          <button type="button" onClick={props.onTake} title="看过了，不需要回复：会话结束，事情由你来做">
+            已接手，不用回复
           </button>
         )}
         {!r.needsReply && props.onMarkDone && (
@@ -421,6 +464,62 @@ function ReplyForm(props: {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * 已接手，不用回复 (2026-11-05, the user): the person asked has seen it, needs to say nothing back and takes it from here;
+ * the session ends. A note can go along; to the asking AI only when ticked — most sessions an AI sent after a round of
+ * work (a review asked for) need no message back, and one would make it run again.
+ */
+function TakeDialog({ session, thread, onClose, toast }: { session: Session; thread: ThreadView; onClose: () => void; toast: (t: string) => void }) {
+  const r = thread.request!;
+  const toAi = r.byAi && r.handler === "ai";
+  const [note, setNote] = useState("");
+  const [tell, setTell] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await session.client.session(thread.id, "take", { note: note.trim() || undefined, tellAi: toAi && tell && !!note.trim() });
+      toast(toAi && tell && note.trim() ? `已接手，附言转给了 ${r.from} 的 AI` : `已接手，会话结束；${r.from}${toAi ? " 的 AI" : ""}不用再等回复`);
+      onClose();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title="已接手，不用回复"
+      sub={thread.title}
+      onClose={onClose}
+      foot={
+        <>
+          {error && <span className="error tiny">{error}</span>}
+          <span className="grow" />
+          <button type="button" onClick={onClose}>
+            取消
+          </button>
+          <button type="button" className="primary" disabled={busy} onClick={() => void go()}>
+            已接手
+          </button>
+        </>
+      }
+    >
+      <p className="muted tiny take-what">看过了、不需要回复时用：会话就此结束，后面的事由你来做。{r.from} 那边会看到「{session.me.name} 已接手」；需要时任何一方都能重新打开。</p>
+      <Field label="附言" hint="可以不写">
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="比如：接口我来改，改完在群里说" autoFocus />
+      </Field>
+      {toAi && (
+        <label className="check tiny" title={note.trim() ? undefined : "先写附言"}>
+          <input type="checkbox" checked={tell && !!note.trim()} disabled={!note.trim()} onChange={(e) => setTell(e.target.checked)} />
+          把附言转给 {r.from} 的 AI（它会收到这条附言，再跑一轮）
+        </label>
+      )}
+    </Dialog>
   );
 }
 

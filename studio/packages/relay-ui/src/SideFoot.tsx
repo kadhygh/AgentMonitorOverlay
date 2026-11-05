@@ -40,6 +40,8 @@ export interface FootActions {
   onCopyUsage: () => void;
   onProfile: () => void;
   onSettings: () => void;
+  /** 说明 (2026-11-05): what the states and buttons mean. */
+  onHelp: () => void;
 }
 
 export function SideFoot(props: { session: Session; mine: number; handed: number; waiting: number; updates: Updates; shellUpdate: ShellUpdate | null; flowNew: boolean; flowShortcuts: boolean } & FootActions) {
@@ -92,6 +94,10 @@ export function SideFoot(props: { session: Session; mine: number; handed: number
         <button type="button" className="shortcut" onClick={props.onCopyUsage} title="复制本机用法文档的位置，贴给 agent，它会自己去读，用命令行收发会话；不占它平时的上下文">
           <Ico d="M6 6 H14.5 V14.5 H6 Z M3.5 11.5 V3.5 H11.5" />
           <span className="grow">复制用法</span>
+        </button>
+        <button type="button" className="shortcut" onClick={props.onHelp} title="会话的状态和按钮是什么意思">
+          <Ico d="M9 15.5 A6.5 6.5 0 1 1 9 2.5 A6.5 6.5 0 1 1 9 15.5 M6.8 7 A2.2 2.2 0 1 1 9 9.2 V10.6 M9 12.8 V13" />
+          <span className="grow">说明</span>
         </button>
       </div>
       <div className="me-row">

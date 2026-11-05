@@ -35,16 +35,6 @@
 .sel-bar button { flex: 1; height: 26px; padding: 0 10px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-cap); cursor: pointer; white-space: nowrap; }
 .sel-bar button:hover:not(:disabled) { background: var(--menu-hover); }
 .sel-bar button:disabled { color: var(--text-faint); cursor: default; }
-/* 批注小窗 (FloatBox, 2026-10-31 问题 #2): the conversation's bubble and Reviewer's comment boxes. */
-.float-note { position: absolute; z-index: 16; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; min-width: 240px; padding: 10px; border: 1px solid var(--border-strong); border-radius: calc(var(--r-l) + 2px); background: var(--panel); box-shadow: 0 12px 32px var(--shadow); font-family: var(--font-ui); font-size: var(--fs-sm); line-height: var(--lh); color: var(--text); animation: toast-in 0.12s ease-out; }
-.float-note-head { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; margin: -4px -4px 0; padding: 2px 4px; border-radius: var(--r-m); cursor: move; user-select: none; touch-action: none; font-size: var(--fs-cap); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.float-note-head:hover { background: var(--chip); }
-.float-note-grip { letter-spacing: -1px; }
-.float-note-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; border-bottom-right-radius: calc(var(--r-l) + 2px); background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 58%, transparent 58%, transparent 70%, var(--border-strong) 70%, var(--border-strong) 78%, transparent 78%); }
-/* Sized by hand: its text box takes the room. */
-.float-note textarea { box-sizing: border-box; resize: none; }
-.float-note[data-sized] textarea { flex: 1 1 auto; min-height: 40px; }
-.float-note[data-sized] > form { flex: 1 1 auto; min-height: 0; }
 .anno-bubble-quote { margin: 0; padding: 2px 0 2px 8px; border-left: 3px solid var(--attention); color: var(--text-dim); font-size: var(--fs-cap); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .anno-bubble textarea { width: 100%; min-height: 64px; resize: none; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--bg); color: var(--text); font: inherit; font-size: var(--fs-sm); line-height: var(--lh); }
 .anno-bubble textarea:focus { outline: none; border-color: var(--primary); }

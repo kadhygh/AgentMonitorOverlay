@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createServer } from "node:http";
 import { promisify } from "node:util";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,14 +57,14 @@ test.afterAll(async () => {
 
 const startServer = (port: number) => relay.startRelayServer({ store, publicDir, filesDir: join(root, "files"), host: "127.0.0.1", port, name: "测试组", clientWatchMs: 300 });
 
-async function launch(who: string, extraArgs: string[] = []): Promise<{ app: ElectronApplication; page: Page; home: string }> {
+async function launch(who: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; home: string }> {
   const home = join(root, who);
   const launched = programLaunch("relay-app", join(studio, "packages", "relay-app", "dist", "main.js"));
   const app = await _electron.launch({
     executablePath: launched.executablePath,
     args: [...launched.args, "--server", server.url, ...extraArgs],
     // AMO_HOME: the platform's folder (account.json), empty unless the test logs in there — never this machine's own.
-    env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1" },
+    env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1", ...extraEnv },
   });
   apps.push(app);
   const page = await app.firstWindow();
@@ -123,7 +124,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".msg.kind-request")).toContainText("最低 3s");
   await expect(b.page.locator(".msg .tag.ai")).toContainText("AI 代发");
   await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
-  await expect(b.page.locator(".reply-form .why")).toContainText("AI 发来的会话一定要回复");
+  await expect(b.page.locator(".reply-form .why")).toContainText("AI 发来的会话要回复；看过了不用回，点「已接手，不用回复」");
   await b.page.locator(".reply-form .opt", { hasText: "能" }).click();
   await b.page.locator(".reply-form .rq").nth(1).locator("input").fill("两天");
   await b.page.getByPlaceholder("补充说明（支持 Markdown）").fill("配置在 `skill.xlsx`，我来加列。");
@@ -208,7 +209,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   }, "每秒 12 发");
   await b.page.getByRole("button", { name: "写批注" }).click();
   await b.page.getByPlaceholder("写意见，比如：这里配成表更好调").fill("升速曲线建议配表");
-  await b.page.locator(".note.new").getByRole("button", { name: "保存" }).click();
+  await b.page.getByTestId("relay-note-draft").getByRole("button", { name: "保存" }).click();
   await expect(b.page.locator(".notes-pane .note").first()).toContainText("每秒 12 发");
   await expect(b.page.locator(".notes-pane .note").first()).toContainText("升速曲线建议配表");
   await shot(b.app, "15-viewer");
@@ -474,7 +475,7 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   for (const p of [a.page, b.page]) {
     await expect(p.locator(".view-tab")).toHaveText(["待处理", "聊天", "成员"]);
     await expect(p.getByRole("button", { name: /＋ 新/ })).toHaveCount(0);
-    await expect(p.locator(".shortcut")).toHaveText(["复制用法"]);
+    await expect(p.locator(".shortcut")).toHaveText(["复制用法", "说明"]);
   }
   await a.page.getByRole("button", { name: "复制用法" }).click();
   const usageFile = join(a.home, "AMO中转用法.md");
@@ -562,6 +563,154 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await expect(b.page.getByRole("button", { name: "发起会话" })).toHaveCount(0);
   await shot(b.app, "32-tight-member");
   expect(pageErrors).toEqual([]);
+});
+
+test("2026-11-05: the viewer is a panel with Reviewer's note box; 已接手，不用回复; 在 Studio 里打开 and --open-thread; 说明", async () => {
+  // A Studio Host on this computer, as far as the planner's client can tell: host.json and host-token in a data dir,
+  // /api/health and /api/ui/open answered here (never the person's own Studio: the client is pointed at this one).
+  const DEVICE = "d_0123456789abcdef01234567";
+  const studioData = join(root, "studio-data");
+  mkdirSync(studioData, { recursive: true });
+  const opened: Array<{ auth?: string; body: string }> = [];
+  const fakeHost = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      if (req.url === "/api/health") return res.end(JSON.stringify({ ok: true, pid: 1, running: 0, version: "dev" }));
+      if (req.url === "/api/ui/open" && req.method === "POST") {
+        opened.push({ auth: req.headers.authorization, body });
+        return res.end(JSON.stringify({ taskId: "t-1", sessionId: "s-gatling" }));
+      }
+      res.statusCode = 404;
+      res.end("{}");
+    });
+  });
+  await new Promise<void>((r) => fakeHost.listen(0, "127.0.0.1", () => r()));
+  const hostPort = (fakeHost.address() as { port: number }).port;
+  writeFileSync(join(studioData, "host.json"), JSON.stringify({ url: `http://127.0.0.1:${hostPort}`, port: hostPort, pid: 1 }));
+  writeFileSync(join(studioData, "host-token"), "tok-e2e");
+  mkdirSync(join(root, "planner4", "amo-home"), { recursive: true });
+  writeFileSync(join(root, "planner4", "amo-home", "device.json"), JSON.stringify({ id: DEVICE, name: "策划的电脑" }));
+
+  try {
+    const a = await launch("planner4", [], { AMO_STUDIO_DATA_DIR: studioData });
+    await register(a.page, "策划小孙", "策划", false);
+    const b = await launch("coder4");
+    await register(b.page, "程序老钱", "程序 · 战斗", false);
+    const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+    // The planner's Studio session asks twice (as AMO Studio does: AI 代发, the session's mark).
+    const planner = new relay.RelayClient(server.url, store.login("策划小孙", "pw-1234").key);
+    const via = { kind: "ai", client: "AMO Studio", conv: `studio:${DEVICE}:s-gatling` } as const;
+    const first = (await planner.ask({ to: "程序老钱", title: "射速改完了，请审", body: "射速、过热都按文档改完了，见附件。", via })).thread;
+    await planner.upload({ threadId: first.id }, "gatling.md", new TextEncoder().encode("# 加特林\n\n基础射速每秒 12 发。\n\n连续射击 6 秒进入过热。"), "text/markdown", { ai: true });
+    const second = (await planner.ask({ to: "程序老钱", title: "过热的数值也审一下", body: "过热阈值按表来。", via })).thread;
+
+    // The viewer: a panel, not a modal — nothing covers the conversation; it moves by its head.
+    await row(b.page, "射速改完了，请审").click();
+    await b.page.locator(".atts .att", { hasText: "gatling.md" }).click();
+    const panel = b.page.locator(".dialog.viewer");
+    await expect(panel.locator(".md-doc")).toContainText("基础射速每秒 12 发");
+    await expect(b.page.locator(".overlay")).toHaveCount(0);
+    const before = (await panel.boundingBox())!;
+    const head = panel.locator(".dialog-head");
+    const hb = (await head.boundingBox())!;
+    await b.page.mouse.move(hb.x + 60, hb.y + hb.height / 2);
+    await b.page.mouse.down();
+    await b.page.mouse.move(hb.x - 140, hb.y + hb.height / 2 + 30, { steps: 6 });
+    await b.page.mouse.up();
+    const after = (await panel.boundingBox())!;
+    expect(after.x).toBeLessThan(before.x - 100);
+    expect(after.y).toBeGreaterThan(before.y + 20);
+    // The conversation behind it still takes clicks.
+    await expect(b.page.locator(".page-head .head-title")).toHaveText("射速改完了，请审");
+
+    // A note: written in Reviewer's 批注小窗 next to the words, moved aside, saved with Ctrl+Enter.
+    const pick = (quote: string) =>
+      b.page.evaluate((quote) => {
+        const root = document.querySelector(".md-doc")!;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const i = n.textContent!.indexOf(quote);
+          if (i < 0) continue;
+          const range = document.createRange();
+          range.setStart(n, i);
+          range.setEnd(n, i + quote.length);
+          getSelection()!.removeAllRanges();
+          getSelection()!.addRange(range);
+          root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+          return;
+        }
+      }, quote);
+    // Esc in the note box drops the note, not the viewer.
+    await pick("基础射速");
+    await b.page.getByRole("button", { name: "写批注" }).click();
+    await b.page.getByTestId("relay-note-draft").locator("textarea").press("Escape");
+    await expect(b.page.getByTestId("relay-note-draft")).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await pick("6 秒进入过热");
+    await b.page.getByRole("button", { name: "写批注" }).click();
+    const box = b.page.getByTestId("relay-note-draft");
+    await expect(box).toContainText("6 秒进入过热");
+    const db = (await b.page.getByTestId("relay-note-draft-drag").boundingBox())!;
+    await b.page.mouse.move(db.x + 20, db.y + db.height / 2);
+    await b.page.mouse.down();
+    await b.page.mouse.move(db.x + 120, db.y + db.height / 2 + 60, { steps: 5 });
+    await b.page.mouse.up();
+    expect((await box.boundingBox())!.x).toBeGreaterThan(db.x + 60);
+    await box.locator("textarea").fill("6 秒偏短，策划确认过就行");
+    await shot(b.app, "36-viewer-panel");
+    await box.locator("textarea").press("Control+Enter");
+    await expect(box).toHaveCount(0);
+    await expect(b.page.locator(".notes-pane .note").first()).toContainText("6 秒偏短");
+    await panel.locator(".x").click();
+    await expect(panel).toHaveCount(0);
+
+    // 已接手，不用回复: an AI's session, closed by the person asked; the note goes to the AI only when ticked.
+    await b.page.locator(".reply-form").getByRole("button", { name: "已接手，不用回复" }).click();
+    const take = b.page.getByRole("dialog", { name: "已接手，不用回复" });
+    await expect(take.getByRole("checkbox")).toBeDisabled();
+    await take.locator("textarea").fill("看过了，没问题，我这边合进去。");
+    await take.getByRole("checkbox").check();
+    await shot(b.app, "37-take-dialog");
+    await take.getByRole("button", { name: "已接手", exact: true }).click();
+    await expect.poll(async () => (await planner.threads()).find((t) => t.id === first.id)?.request).toMatchObject({ state: "done", tellAi: true });
+    // Taken quietly: nothing for the AI.
+    await row(b.page, "过热的数值也审一下").click();
+    await b.page.locator(".reply-form").getByRole("button", { name: "已接手，不用回复" }).click();
+    await b.page.getByRole("dialog", { name: "已接手，不用回复" }).getByRole("button", { name: "已接手", exact: true }).click();
+    await expect.poll(async () => (await planner.threads()).find((t) => t.id === second.id)?.request).toMatchObject({ state: "done", tellAi: false });
+    await expect(b.page.locator(".strip.calm")).toContainText("没有等你处理的");
+
+    // The planner sees who took it on; the ? explains the state; 在 Studio 里打开 asks this computer's Studio.
+    await a.page.locator(".nav-fold", { hasText: "已完成" }).click();
+    await expect(row(a.page, "射速改完了，请审")).toContainText("程序老钱 已接手 · 不用回复");
+    await row(a.page, "射速改完了，请审").click();
+    await expect(a.page.getByText("需要回复", { exact: true })).toHaveCount(0);
+    await expect(a.page.locator(".event").last()).toContainText("已接手，不用回复（附言转给了发起的 AI）：看过了，没问题");
+    await a.page.getByRole("button", { name: "在 Studio 里打开" }).click();
+    await expect.poll(() => opened.length).toBe(1);
+    expect(opened[0]).toEqual({ auth: "Bearer tok-e2e", body: JSON.stringify({ sessionId: "s-gatling" }) });
+    await expect(a.page.locator(".toast")).toContainText("已在 Studio 里打开");
+    await shot(a.app, "38-taken-planner");
+    await a.page.getByRole("button", { name: "这个状态是什么意思" }).click();
+    const help = a.page.getByRole("dialog", { name: "中转怎么用" });
+    await expect(help.locator('[data-help="states"]')).toContainText("已接手 · 不用回复");
+    await shot(a.app, "39-help");
+    await a.page.keyboard.press("Escape");
+    // The coder's client has no Studio here (and did not ask): no button.
+    await b.page.locator(".nav-fold", { hasText: "已完成" }).click();
+    await row(b.page, "射速改完了，请审").click();
+    await expect(b.page.locator(".page-head .head-title")).toHaveText("射速改完了，请审");
+    await expect(b.page.getByRole("button", { name: "在 Studio 里打开" })).toHaveCount(0);
+
+    // 在中转里打开 from Studio: a second start with --open-thread goes to that session.
+    await row(a.page, "射速改完了，请审").click();
+    await a.app.evaluate(({ app }, id) => app.emit("second-instance", {}, ["AMO Relay.exe", "--open-thread", id], "", {}), second.id);
+    await expect(a.page.locator(".page-head .head-title")).toHaveText("过热的数值也审一下");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await new Promise((r) => fakeHost.close(r));
+  }
 });
 
 test("what waits shows outside the window: the taskbar flashes with the count, the tray blinks with it; started by the platform, in attention.json", async () => {

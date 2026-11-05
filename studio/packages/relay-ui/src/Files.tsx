@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { anchorOf, findAnchor, flatten, HIGHLIGHT_CSS, paint } from "./anchors.js";
 import { timeText } from "./bits.js";
-import { Dialog, Pick } from "./Dialog.js";
+import { FloatBox } from "../../ui/src/review/FloatBox.js";
+import { FloatPanel, Pick } from "./Dialog.js";
 import { copyText } from "./env.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
@@ -188,6 +189,8 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
   const [notes, setNotes] = useState<FileNote[]>([]);
   const [live, setLive] = useState(scripts);
   const [draft, setDraft] = useState<{ quote: string; prefix: string; suffix: string } | null>(null);
+  const [draftAt, setDraftAt] = useState<{ x: number; y: number } | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [draftBody, setDraftBody] = useState("");
   const [hot, setHot] = useState<string | null>(null);
   const [placed, setPlaced] = useState<Placed[]>([]);
@@ -361,11 +364,46 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
       </div>
     );
 
+  // The note being written: Reviewer's own 批注小窗 (FloatBox, one copy of it), under the words picked; moved by its head,
+  // sized by its corner (2026-11-05, the user: 标记批注不是 Reviewer 里那种可以四处拖动的编辑窗口).
+  const draftBox = draft && draftAt && (
+    <FloatBox
+      style={{ left: draftAt.x, top: draftAt.y }}
+      width={320}
+      title="写批注"
+      label="写批注"
+      testId="relay-note-draft"
+      className="relay-note-draft"
+      resetKey={draft}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setDraft(null);
+        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          void save();
+        }
+      }}
+    >
+      <p className="anno-bubble-quote">{draft.quote}</p>
+      <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={4} placeholder="写意见，比如：这里配成表更好调" autoFocus />
+      <div className="acts">
+        <span className="muted tiny grow">Ctrl+Enter 保存 · Esc 取消</span>
+        <button type="button" className="small" onClick={() => setDraft(null)}>
+          取消
+        </button>
+        <button type="button" className="small primary" disabled={!draftBody.trim()} onClick={() => void save()}>
+          保存
+        </button>
+      </div>
+    </FloatBox>
+  );
+
   return (
-    <Dialog
+    <FloatPanel
       className="viewer"
-      bare
       onClose={onClose}
+      label={file?.name ?? "文件"}
       title={
         <span className="viewer-title">
           {file?.name ?? "文件"}
@@ -387,29 +425,16 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
         </span>
       }
     >
-      <div className="viewer-body">
+      <div className="viewer-body" ref={bodyRef}>
         <div className="doc-pane" onScroll={() => setSelBtn(null)}>
           {body}
         </div>
+        {draftBox}
         <aside className="notes-pane">
           <div className="nav-label">
             批注<span className="count">{found.length}</span>
             <span className="rule" />
           </div>
-          {draft && (
-            <div className="note new">
-              <span className="quote">{draft.quote}</span>
-              <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={3} placeholder="写意见，比如：这里配成表更好调" autoFocus />
-              <div className="acts">
-                <button type="button" className="small" onClick={() => setDraft(null)}>
-                  取消
-                </button>
-                <button type="button" className="small primary" disabled={!draftBody.trim()} onClick={() => void save()}>
-                  保存
-                </button>
-              </div>
-            </div>
-          )}
           {found.map(({ note: n, range }) => (
             <div key={n.id} className={`note ${hot === n.id ? "hot" : ""}`} onClick={() => setHot(hot === n.id ? null : n.id)}>
               <span className="quote">{n.quote}</span>
@@ -475,6 +500,11 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
           style={{ left: selBtn.x, top: selBtn.y }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
+            // The box opens under the words, inside the panel's body (kept on screen sideways).
+            const box = bodyRef.current?.getBoundingClientRect();
+            const x = box ? Math.max(8, Math.min(selBtn.x - box.left, box.width - 330)) : 8;
+            const y = box ? Math.max(8, selBtn.y - box.top) : 8;
+            setDraftAt({ x, y });
             setDraft(selBtn.anchor);
             setSelBtn(null);
           }}
@@ -482,6 +512,6 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
           写批注
         </button>
       )}
-    </Dialog>
+    </FloatPanel>
   );
 }

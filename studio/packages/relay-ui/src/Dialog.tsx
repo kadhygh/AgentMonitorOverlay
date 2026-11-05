@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from "react";
 import { Avatar, Who } from "./bits.js";
 import { TASK_STATUSES, type TaskStatus } from "./shared.js";
 
@@ -28,6 +28,75 @@ export function Dialog(props: { title: ReactNode; onClose: () => void; children:
         {props.bare ? props.children : <div className="dialog-body">{props.children}</div>}
         {props.foot && <div className="dialog-foot">{props.foot}</div>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A panel over the page that is not modal (2026-11-05, the user: 审核的窗口会遮挡后面的内容，也无法拖拽): no backdrop, so
+ * what is behind stays readable and clickable; moved by its head, sized by its left edge and its corner, 铺满 / 还原.
+ * It opens on the right part of the window, the conversation still showing on the left. Esc closes it unless something
+ * inside took the key (a note being written).
+ */
+export function FloatPanel(props: { title: ReactNode; onClose: () => void; children: ReactNode; className?: string; label?: string }) {
+  const { onClose } = props;
+  const first = () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const left = Math.max(16, Math.round(w * 0.3));
+    return { x: left, y: 48, w: Math.max(480, w - left - 16), h: Math.max(320, h - 64) };
+  };
+  const [rect, setRect] = useState(first);
+  const [full, setFull] = useState(false);
+  const drag = useRef<{ kind: "move" | "left" | "corner"; x: number; y: number; r: typeof rect } | null>(null);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  const start = (kind: "move" | "left" | "corner") => (e: RPointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || full) return;
+    // Buttons in the head stay buttons.
+    if (kind === "move" && (e.target as HTMLElement).closest("button, select, input, a")) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { kind, x: e.clientX, y: e.clientY, r: rect };
+  };
+  const move = (e: RPointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    if (d.kind === "move") setRect({ ...d.r, x: Math.min(Math.max(d.r.x + dx, 80 - d.r.w), W - 80), y: Math.min(Math.max(d.r.y + dy, 0), H - 40) });
+    else if (d.kind === "left") {
+      const w = Math.max(420, d.r.w - dx);
+      setRect({ ...d.r, x: d.r.x + d.r.w - w, w });
+    } else setRect({ ...d.r, w: Math.max(420, d.r.w + dx), h: Math.max(260, d.r.h + dy) });
+  };
+  const end = () => (drag.current = null);
+  const style = full ? { left: 8, top: 8, width: "calc(100vw - 16px)", height: "calc(100vh - 16px)" } : { left: rect.x, top: rect.y, width: rect.w, height: rect.h };
+  return (
+    <div className={`dialog float-panel ${props.className ?? ""}`} role="dialog" aria-label={props.label ?? (typeof props.title === "string" ? props.title : undefined)} style={style} data-full={full ? "" : undefined}>
+      <div className="dialog-head" title={full ? undefined : "按住拖动"} onPointerDown={start("move")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onDoubleClick={(e) => !(e.target as HTMLElement).closest("button, select, input, a") && setFull(!full)}>
+        <div className="dialog-titles">
+          <b>{props.title}</b>
+        </div>
+        <button type="button" className="small" onClick={() => setFull(!full)} title={full ? "回到原来的大小和位置" : "铺满窗口（双击标题栏也行）"}>
+          {full ? "还原" : "铺满"}
+        </button>
+        <button type="button" className="x" onClick={onClose} title="关闭 (Esc)">
+          ×
+        </button>
+      </div>
+      {props.children}
+      {!full && (
+        <>
+          <span className="float-panel-left" aria-hidden="true" title="拖动调整宽度" onPointerDown={start("left")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+          <span className="float-panel-corner" aria-hidden="true" title="拖动调整大小" onPointerDown={start("corner")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+        </>
+      )}
     </div>
   );
 }
