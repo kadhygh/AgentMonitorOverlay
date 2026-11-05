@@ -69,6 +69,12 @@
 .remote-banner-caret { flex: none; color: var(--text-faint); font-size: 14px; line-height: 1; transition: transform 0.15s; }
 .remote-banner-caret.open { transform: rotate(180deg); }
 .remote-banner-detail { margin: 0; padding: 0 14px 9px 60px; color: var(--text-dim); line-height: 1.6; }
+/* 远程额度 (2026-11-06): A's quota of the task's models — a word beside each model folded, the left column's rows open. */
+.remote-banner-quota { font-family: var(--font-code); }
+.remote-banner-quota.hot { color: var(--error-text); }
+.remote-banner .remote-banner-usage { max-height: none; overflow: visible; margin: 0 14px 8px 60px; padding: 0; max-width: 520px; }
+/* A copy's model names carry the runtime (「Claude · Claude」): a wider name column than the left column's. */
+.remote-banner-usage .usage-acct { grid-template-columns: 130px minmax(0, 1fr); }
 
 /* The box after 归档任务 (stage 14). */
 .archived-dialog-head { display: flex; align-items: center; gap: 10px; }

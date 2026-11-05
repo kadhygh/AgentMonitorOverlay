@@ -63,6 +63,11 @@ export interface SessionRuntimeApi {
   answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void>;
   /** A subscription's quota use, for profiles that have one; null otherwise. `refresh`: ask the account now. */
   usage?(profileId: Id, refresh: boolean): Promise<AccountUsage | AccountUsage[] | null>;
+  /**
+   * 远程额度 (2026-11-06): what usage() last read, from memory only — never asks the account (usage(false) still does
+   * for a Claude account read never before). Null when nothing was read.
+   */
+  cachedUsage?(profileId: Id): AccountUsage | AccountUsage[] | null;
   /** Codex only: where an attached TUI connects. */
   attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }>;
   setWriter(sessionId: Id, writer: Session["writer"]): Session;
@@ -92,7 +97,7 @@ export interface SessionRuntimeApi {
 }
 
 /** The optional operations: a router made `around` one runtime offers only those that runtime has. */
-const OPTIONAL = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus", "outsideSessions", "outsidePreview", "checkResume"] as const;
+const OPTIONAL = ["usage", "cachedUsage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus", "outsideSessions", "outsidePreview", "checkResume"] as const;
 
 /**
  * Routes calls to the runtime of the session, or of the profile for new sessions. The Host's own (host-process.ts) has
@@ -213,6 +218,10 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | AccountUsage[] | null> {
     const r = this.forProfile(profileId);
     return r?.usage ? r.usage(profileId, refresh) : null;
+  }
+  cachedUsage(profileId: Id): AccountUsage | AccountUsage[] | null {
+    const r = this.forProfile(profileId);
+    return r?.cachedUsage ? r.cachedUsage(profileId) : null;
   }
   rename(sessionId: Id, title: string) {
     return this.forSession(sessionId).rename(sessionId, title);

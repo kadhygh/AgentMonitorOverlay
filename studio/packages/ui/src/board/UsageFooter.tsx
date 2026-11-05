@@ -43,13 +43,13 @@ const claudeBusy = (sessions: readonly Session[]) =>
   sessions.some((s) => s.runtime === "claude" && s.profileId === "claude-subscription" && !s.archivedAt && s.kind !== "sub" && (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer"));
 
 /** The highest known use of an account; null when it told no percentages. */
-const peak = (u: AccountUsage) => {
+export const peak = (u: AccountUsage) => {
   const known = u.windows.flatMap((w) => (w.usedPercent === null ? [] : [w.usedPercent]));
   return known.length ? Math.max(...known) : null;
 };
 
 /** The time now, again every 30 seconds (the countdowns go to the minute). */
-function useNow(on: boolean): Date {
+export function useNow(on: boolean): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!on) return;
@@ -200,8 +200,8 @@ export function UsageFooter({ link, live, sessions = [] }: { link: HostLink; liv
   );
 }
 
-/** One subscription account in the open list: its windows (what is left, when it resets); `action`: 切换. */
-function UsageAccount({ usage: u, now, action }: { usage: AccountUsage; now: Date; action?: ReactNode }) {
+/** One subscription account in the open list: its windows (what is left, when it resets); `action`: 切换. Also the 远程 line's (RemoteBanner). */
+export function UsageAccount({ usage: u, now, action }: { usage: AccountUsage; now: Date; action?: ReactNode }) {
   const other = !!u.account && !u.account.current;
   return (
     <div className={other ? "usage-acct other" : "usage-acct"} data-testid="usage-account" data-account={u.account?.id} data-current={u.account ? (u.account.current ? "1" : "0") : undefined}>

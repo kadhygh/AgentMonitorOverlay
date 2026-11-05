@@ -461,6 +461,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return this.usageTracker.usage(profile, refresh);
   }
 
+  /** 远程额度 (2026-11-06): what usage() last read, without asking the account. */
+  cachedUsage(profileId: Id): AccountUsage | AccountUsage[] | null {
+    const profile = this.options.profiles.find((p) => p.id === profileId);
+    if (!profile || !this.isSubscription(profile)) return null;
+    return this.usageTracker.cached(profile);
+  }
+
   /** The session's title in its transcript (what `claude --resume` lists); a session without a transcript yet keeps it here only. */
   async rename(sessionId: Id, title: string): Promise<Session> {
     const session = this.requireSession(sessionId);

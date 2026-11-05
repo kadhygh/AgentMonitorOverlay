@@ -42,6 +42,25 @@ export class ClaudeUsageTracker {
     return { profileId: profile.id, label: profile.label, windows, note, updatedAt: this.updatedAt.get(key) ?? null };
   }
 
+  /**
+   * 远程额度 (2026-11-06): what usage() would answer, from memory only — an account never read has nothing (usage()
+   * would ask it). Same shape as usage(): one entry, or one per account (current first) when there are several.
+   */
+  cached(profile: ModelProfile): AccountUsage | AccountUsage[] | null {
+    if (readClaudeLogin(this.store) !== "local") {
+      const key = `${profile.id}|${this.opts.accounts.currentId()}`;
+      const windows = [...(this.windows.get(key)?.values() ?? [])];
+      return windows.length ? { profileId: profile.id, label: profile.label, windows, note: null, updatedAt: this.updatedAt.get(key) ?? null } : null;
+    }
+    const homes = this.opts.accounts.homes();
+    if (homes.length === 1) return this.account.get(`${profile.id}|${homes[0]!.id}`)?.value ?? null;
+    const list = homes.flatMap((h) => {
+      const v = this.account.get(`${profile.id}|${h.id}`)?.value;
+      return v ? [{ ...v, account: { id: h.id, label: h.label, current: h.current } }] : [];
+    });
+    return list.length ? [...list.filter((u) => u.account.current), ...list.filter((u) => !u.account.current)] : null;
+  }
+
   private async accountUsage(profile: ModelProfile, home: { id: string; dir: string; explicit: boolean; current: boolean }, refresh: boolean): Promise<AccountUsage> {
     const key = `${profile.id}|${home.id}`;
     const cached = this.account.get(key);

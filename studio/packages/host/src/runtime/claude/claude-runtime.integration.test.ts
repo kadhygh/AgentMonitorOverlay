@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AccountUsage, ModelProfile, SessionItem, Task, Workspace } from "@amo-studio/protocol";
 import { MOCK_CLAUDE_MODEL, TINY_PNG_BASE64, removeTempDir, startMockAnthropic, type ClaudeMockServer, mockClaudeProvider } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
@@ -324,9 +324,16 @@ describe("ClaudeRuntime", () => {
     try {
       // A token way chosen before it was removed counts for nothing outside tests: the local login is used.
       writeClaudeLogin(store, "token");
+      // 远程额度 (2026-11-06): what is cached (synchronous: the account is not asked), never read yet — nothing.
+      const fetched = vi.spyOn(globalThis, "fetch");
+      expect(local.cachedUsage("claude-sub")).toBeNull();
+      expect(fetched).not.toHaveBeenCalled();
+      fetched.mockRestore();
       // The local login reads the quota: 5 小时 and 每周 with their resets, as Claude Code's /usage reads them.
       const usage = (await local.usage("claude-sub", true)) as AccountUsage;
       expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
+      // Once read, the cache has it.
+      expect(local.cachedUsage("claude-sub")).toEqual(usage);
       expect(Date.parse(usage!.windows[0]!.resetsAt!) - Date.now()).toBeGreaterThan(90 * 60_000);
       const s = await local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "from my login" });
       await until(() => agentTexts(s.id).includes("MOCK: from my login") && status(s.id) === "idle", "local reply");

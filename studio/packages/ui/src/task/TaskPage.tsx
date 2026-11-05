@@ -576,7 +576,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         setToast({ text });
       }} />}
 
-      {copy && <RemoteBanner task={task} copy={copy} sessions={own} profiles={profiles} />}
+      {copy && <RemoteBanner task={task} copy={copy} sessions={own} profiles={profiles} usage={remote?.usage?.find((u) => u.account === task.remote?.account && u.device === task.remote?.device)} />}
       {granted.length > 0 && (
         <div className="remote-banner granted" role="status" data-testid="granted-banner">
           <span className="remote-badge">已授权</span>

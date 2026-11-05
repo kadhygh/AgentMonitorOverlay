@@ -301,6 +301,11 @@ export class CodexRuntime extends RuntimeBase {
     return this.usageCache.get(profileId) ?? { profileId, label: profile.label, windows: [], note: "展开刷新后显示", updatedAt: null };
   }
 
+  /** 远程额度 (2026-11-06): only what was read before (account/rateLimits/updated, or a refresh). */
+  cachedUsage(profileId: Id): AccountUsage | null {
+    return this.usageCache.get(profileId) ?? null;
+  }
+
   /** `thread/name/set`: the name the TUI and `codex resume` show as well. */
   async rename(sessionId: Id, title: string): Promise<Session> {
     const session = this.requireSession(sessionId);

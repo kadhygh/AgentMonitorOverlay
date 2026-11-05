@@ -3,7 +3,8 @@
 // Needs the AMO platform's login (%APPDATA%\AMO\account.json): Studio has no login of its own.
 
 import type { ApprovalDecision } from "./api.js";
-import type { Id, Session, SessionItem, TaskColumn, Timestamp } from "./entities.js";
+import type { AccountUsage, Id, Session, SessionItem, TaskColumn, Timestamp } from "./entities.js";
+import type { ChannelBalance } from "./channels.js";
 import type { QuestionReply } from "./questions.js";
 import { composeGitReviewMessage } from "./gitreview.js";
 
@@ -102,6 +103,31 @@ export interface RemoteState {
    * up on after being away, once it has taken more than a moment; empty otherwise. Optional: an older Host has none.
    */
   syncing?: RemoteSyncing[];
+  /**
+   * As B (远程额度, 2026-11-06): the quota of the models the copies' sessions run on, as the computers they run on last
+   * read it (pushed, never asked for). Optional: an older Host has none.
+   */
+  usage?: RemotePeerUsage[];
+}
+
+/**
+ * 远程额度 (2026-11-06, the user: 被控端追踪了这个模型的额度，就直接显示被控端的信息): what A has read of its own
+ * quota, for the models of the tasks it granted this device — cached numbers only (A never asks its accounts for B), and
+ * only accounts with numbers. Profile ids are A's in the push; B keeps them as its copies' (remoteProfileId).
+ */
+export interface RemoteUsage {
+  /** Subscriptions (Claude, GPT): the account in use, as A last read it (updatedAt set, at least one window). */
+  usage: AccountUsage[];
+  /** Channels with a balance query: A's last answer that worked. */
+  balances: ChannelBalance[];
+}
+
+/** One paired device's quota as this computer last heard it (in memory: gone when this Host restarts until A pushes again). */
+export interface RemotePeerUsage extends RemoteUsage {
+  account: string;
+  device: string;
+  /** When it came. */
+  receivedAt: Timestamp;
 }
 
 /** One paired device's tasks being brought up to date here: `done` of `total` tasks; `taskId` the one under way. */
@@ -379,7 +405,13 @@ export type RemotePush =
    * 远程 Reviewer (2026-11-02): an agent of the task opened a 查看包 (`packId`, at `itemId`) or a Review of the task's
    * project (`review`) for the person, in a turn this device's message started: it shows here. An older B ignores it.
    */
-  | { type: "open"; taskId: Id; sessionId: Id; packId?: Id; itemId?: Id; review?: import("./gitreview.js").ReviewOpenTarget };
+  | { type: "open"; taskId: Id; sessionId: Id; packId?: Id; itemId?: Id; review?: import("./gitreview.js").ReviewOpenTarget }
+  /**
+   * 远程额度 (2026-11-06): A's cached quota of the models the tasks granted to this device run on, all of it each time
+   * (it replaces what B had). Sent when it changes, and again after B asks for its list or a task. Only to a device of
+   * A's own account. An older B ignores it.
+   */
+  | ({ type: "usage" } & RemoteUsage);
 
 // ---- Step 3 (2026-10-29): B looks at a remote task's files ---------------------------------------------------------
 // A link in a remote task's conversation opens in B's viewer: B's Host asks A for the file (rt.file), A checks it is under

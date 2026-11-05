@@ -97,6 +97,12 @@ export class ChannelsFeature extends Feature {
     return value;
   }
 
+  /** 远程额度 (2026-11-06): the profile's last balance answer that worked, without asking the site; null when none. */
+  cachedBalance(profileId: string): ChannelBalance | null {
+    const v = this.balances.get(profileId)?.value;
+    return v?.ok ? v : null;
+  }
+
   /**
    * 问题 #14: where Claude 订阅 (the person's Claude Code) and GPT (their Codex) send requests, read from their setup
    * each time it is asked; null for every other profile (Studio sets their address itself and the page shows it).

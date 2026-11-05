@@ -13,6 +13,7 @@ import { RemoteCopies } from "./copies.js";
 import { TaskAsks, TaskRequests } from "./requests.js";
 import { RemoteCreates } from "./create.js";
 import { sendAlong, UploadInbox } from "./uploads.js";
+import { RemoteUsageCopies, RemoteUsageSender } from "./usage.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login and device.json, read by the Host's team link (core/teamlink.ts since 2026-11-05) — and the devices paired with
@@ -48,6 +49,8 @@ export interface RemoteOptions extends TeamLinkOptions {
   backoff?: Backoff;
   /** 测试连接's wait for the answer (default 10 s). */
   pingTimeoutMs?: number;
+  /** 远程额度: how often A looks whether its cached quota changed (default 10 s). */
+  usagePollMs?: number;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -93,6 +96,9 @@ export class RemoteFeature extends Feature {
   /** Step 4 as B: tasks this computer asked paired devices to run. */
   /** 远程创建 as A (2026-10-29): what paired devices may pick creating a task here, and creating it. */
   readonly creates = new RemoteCreates(this.context, this.grants, this.taskRequests);
+  /** 远程额度 (2026-11-06): as A, this computer's cached quota to its own account's devices; as B, what they pushed. */
+  private usageOut: RemoteUsageSender | null = null;
+  readonly usage = new RemoteUsageCopies();
   readonly asks = new TaskAsks(this.context, (peer, kind, body, timeoutMs, offline) => this.copies.ask(peer, kind, body, timeoutMs, offline));
   private readonly onHostEvent = (e: HostEvent) => {
     try {
@@ -115,6 +121,9 @@ export class RemoteFeature extends Feature {
     this.copies.onList = (peer, list) => this.asks.sync(peer, list.requests);
     // The catch-up progress (读条, 2026-11-01): only the state, not what paired devices may pick (changed() announces that).
     this.copies.onProgress = () => this.host.emit("event", { type: "remote.updated", remote: this.state(), seq: this.store.lastEventSeq() });
+    this.usage.onChange = this.copies.onProgress;
+    this.usageOut = new RemoteUsageSender(this.context, this.grants, options.usagePollMs);
+    this.usageOut.start();
     this.ownsTeam = !this.teamLink.started;
     this.teamLink.start(options);
     // Files fetched for copies that are gone (step 3).
@@ -132,6 +141,8 @@ export class RemoteFeature extends Feature {
     this.teamLink.off("account", this.onAccount);
     this.teamLink.off("device", this.onDevice);
     this.creates.stop();
+    this.usageOut?.stop();
+    this.usageOut = null;
     this.link?.stop();
     this.link = null;
     this.opts = null;
@@ -267,6 +278,8 @@ export class RemoteFeature extends Feature {
       if (push && push.type === "request") this.asks.apply(f.from, push.request);
       // 2026-10-30: the new-task page showing that device takes it as it is (ui/src/newtask/RemoteDraft.tsx).
       else if (push && push.type === "catalog") this.host.emit("event", { type: "remote.catalog", account: f.from.account, device: f.from.device, catalog: push.catalog, seq: this.store.lastEventSeq() });
+      // 远程额度 (2026-11-06): what that device has read of its quota.
+      else if (push && push.type === "usage") this.usage.receive(f.from, push);
       else this.copies.apply(f.from, f.body);
       return;
     }
@@ -289,6 +302,8 @@ export class RemoteFeature extends Feature {
     // The server forwards between devices it has as paired; this computer's own list has the last word.
     if (!this.pairs().some((p) => same(p, f.from))) return { kind: "error", body: { code: "not_paired", message: "对方那边已经没有这个配对了" } };
     if (f.kind === "ping") return { kind: "pong", body: { at: Date.now() } };
+    // 远程额度: a device asking for its list or a task (back, restarted, or a new copy) hears the quota again.
+    if (f.kind === REMOTE_KINDS.list || f.kind === REMOTE_KINDS.task) this.usageOut?.again(f.from);
     const body = f.body && typeof f.body === "object" ? (f.body as Record<string, unknown>) : {};
     const failed = (err: unknown): Answer =>
       err instanceof HostError ? { kind: "error", body: { code: err.code, message: err.message } } : { kind: "error", body: { code: "runtime_error", message: err instanceof Error ? err.message : String(err) } };
@@ -411,6 +426,7 @@ export class RemoteFeature extends Feature {
         this.taskRequests.dropPeer(p);
       } else {
         this.copies.revokePeer(p, "配对已解除");
+        this.usage.forget(p);
         this.asks.dropPeer(p);
       }
     }
@@ -501,6 +517,7 @@ export class RemoteFeature extends Feature {
       allowedProjects: this.creates.allowedProjects(),
       security: this.creates.security(),
       syncing: this.copies.syncState(),
+      usage: this.usage.list(),
     };
   }
 
