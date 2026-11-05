@@ -12,6 +12,7 @@ import { CommentDraft } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey, setDraftText, useEditing } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
+import { isSelectAllKey, typingIn, useSelectAll } from "../gitreview/selectAll.js";
 import { relativeIn, remoteLinkPath } from "./logic.js";
 import { passageKit, type PassageAnchor } from "./passageKit.js";
 import { frameDoc, headingSlug, resolveLink, sourceCandidates, sourceLine, type FrameMessage, type ToFrame } from "./passages.js";
@@ -274,6 +275,23 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
   }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ctrl+A selects the document only, not the comments beside it or the window's buttons (2026-11-05). Markdown is
+  // drawn whole, so the browser copies the selection itself; an HTML page is selected in its frame, which takes the
+  // focus so that Ctrl+C copies there. Inside the frame, Ctrl+A is the page's own.
+  useSelectAll(active && kind === "markdown", () => doc.current);
+  useEffect(() => {
+    if (!active || kind !== "html") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isSelectAllKey(e) || typingIn(e.target) || !frame.current) return;
+      e.preventDefault();
+      getSelection()?.removeAllRanges();
+      frame.current.focus();
+      toFrame({ type: "selectAll" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** To a passage: in the document (`inDoc`, from the list) or in the list (a click on its highlight). */
   function goTo(id: string, inDoc: boolean) {

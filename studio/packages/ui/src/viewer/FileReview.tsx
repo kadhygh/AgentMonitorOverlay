@@ -8,6 +8,7 @@ import { dropDraft, editDraftKey, newDraftKey } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { cycle, diffRows, placeComments } from "../gitreview/logic.js";
 import { revealRow } from "../gitreview/reveal.js";
+import { fileText, useSelectAll } from "../gitreview/selectAll.js";
 import { OverviewRuler } from "../gitreview/OverviewRuler.js";
 import { markRuns, type RulerKind } from "../gitreview/overview.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
@@ -140,6 +141,9 @@ export function FileReview({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, markRows, active_]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ctrl+A selects the code only, and Ctrl+C then copies the whole file: lines far from the view are not drawn.
+  useSelectAll(active, () => scroller.current?.querySelector<HTMLElement>(".gr-lines") ?? null, () => fileText(file.text ?? ""));
+
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     try {
@@ -247,6 +251,9 @@ export function FileReview({
         </span>
         <span>
           <kbd className="gr-key">Ctrl F</kbd> 查找
+        </span>
+        <span>
+          <kbd className="gr-key">Ctrl A</kbd> 全选代码，复制整个文件
         </span>
       </div>
       {/* The project's drafts (written here or in Review) go out from here too; shown once there are some. */}

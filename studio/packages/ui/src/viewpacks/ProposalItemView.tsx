@@ -6,6 +6,7 @@ import { DiffView } from "../gitreview/DiffView.js";
 import { dropDraft, newDraftKey } from "../gitreview/drafts.js";
 import { changeStarts, cycle, diffRows, step, type DiffMode } from "../gitreview/logic.js";
 import { revealRow } from "../gitreview/reveal.js";
+import { diffText, useSelectAll } from "../gitreview/selectAll.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { proposalMessage, type ProposalComment } from "./logic.js";
 
@@ -106,6 +107,8 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active, changeRows, markRows, activeRow, rows.length]);
+  // Ctrl+A selects the proposed diff only; Ctrl+C copies all of it, marked + / - (as in Git Review, 2026-11-05).
+  useSelectAll(active, () => scroller.current?.querySelector<HTMLElement>(".gr-lines") ?? null, () => diffText(rows));
 
   /** 复制注释 / 复制并关闭 (2026-10-23, in place of 发回会话): the comments as one text, for the person to paste. */
   async function copy(close: boolean) {

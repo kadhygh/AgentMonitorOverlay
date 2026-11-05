@@ -10,6 +10,7 @@ import { useVsCode } from "../files/FileLinks.js";
 import { fileName, folderOf } from "../files/paths.js";
 import { ReviewPage } from "../gitreview/ReviewApp.js";
 import { useIsGitRepo } from "../gitreview/open.js";
+import { useSelectAll } from "../gitreview/selectAll.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { sessionChoices } from "../gitreview/logic.js";
 import { FileReview } from "./FileReview.js";
@@ -134,6 +135,10 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
     () => target.sessionId ?? (workspace ? (sessionChoices(state, workspace.id)[0]?.id ?? null) : null),
     [openKey, workspace?.id], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  // Ctrl+A in what is neither code nor rendered (an image, a file too large, a message): what is shown there, not the
+  // window's buttons (2026-11-05); FileReview and RenderedReview keep it to their own text.
+  const plain = useRef<HTMLDivElement>(null);
+  useSelectAll(mode === "file" && !code && !(renderable && rendered && loaded.state === "ok"), () => plain.current);
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
@@ -277,7 +282,7 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
               {...(remote ? { remote: { taskId: remote.taskId, rel: remote.rel, key: remote.key, host: link } } : {})}
             />
           ) : (
-            <div className="vw-content">
+            <div className="vw-content" ref={plain}>
               <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={readVersion} />
             </div>
           )}

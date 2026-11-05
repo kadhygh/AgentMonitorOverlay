@@ -21,6 +21,7 @@ import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type Revi
 import { changeStarts, cycle, diffRows, draftCounts, nextOf, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
 import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
 import { revealRow } from "./reveal.js";
+import { diffText, useSelectAll } from "./selectAll.js";
 import { commentsChanged, SendBar, useReviewComments } from "./comments.js";
 import { dropDraft, editDraftKey, newDraftKey } from "./drafts.js";
 import { FindBar } from "./FindBar.js";
@@ -526,6 +527,10 @@ export function ReviewPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [order, changeRows, markRows, active, rows.length, inactive, picking, commit, changes, fileKeys]);
 
+  // Ctrl+A selects the file's diff, not the file list and its key hints; Ctrl+C then copies all of its rows, drawn or
+  // not, marked + / - as a diff (2026-11-05).
+  useSelectAll(!inactive && !picking, () => scroller.current?.querySelector<HTMLElement>(".gr-lines") ?? null, () => diffText(rows));
+
   const status = changes?.status;
   const listProps = {
     layout: prefs.layout,
@@ -600,7 +605,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim" data-testid="review-keys">{fileKeys === "ctrl" ? "Ctrl+J / K" : "J / K"} 切换文件，L / ;（或 N / P）跳到改动，Tab 跳到批注，W / S 上下翻页，A 只看改动，D 完整文件，E 单栏 / 左右对照，Q 切换范围，R 刷新，H 历史</div>
+            <div className="gr-files-hint gr-dim" data-testid="review-keys">{fileKeys === "ctrl" ? "Ctrl+J / K" : "J / K"} 切换文件，L / ;（或 N / P）跳到改动，Tab 跳到批注，W / S 上下翻页，A 只看改动，D 完整文件，E 单栏 / 左右对照，Q 切换范围，R 刷新，H 历史，Ctrl+A 全选这个文件的改动</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}

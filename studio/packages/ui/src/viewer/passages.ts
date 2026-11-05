@@ -135,7 +135,7 @@ export type FrameMessage =
 /** A place to pin on the page: `n` is the label on its pin, `draft` the one being written. */
 export type PointMark = PassageAnchor & { id: string; n: string; point: GitCommentPoint; draft?: boolean };
 
-export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; points: PointMark[]; hot: string | null } | { type: "go"; id: string } | { type: "clear" };
+export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; points: PointMark[]; hot: string | null } | { type: "go"; id: string } | { type: "clear" } | { type: "selectAll" };
 
 /** Elements whose content is not markup: what is inside is left alone. */
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript", "iframe", "noembed", "noframes", "plaintext"]);
@@ -471,6 +471,8 @@ function frameMain(makeKit: typeof passageKit) {
       const box = r.getBoundingClientRect();
       window.scrollBy({ top: box.top - Math.max(40, (innerHeight - box.height) / 2) });
     } else if (d.type === "clear") getSelection()?.removeAllRanges();
+    // Ctrl+A pressed outside the page (2026-11-05): its text, not the viewer's buttons and comments.
+    else if (d.type === "selectAll" && document.body) getSelection()?.selectAllChildren(document.body);
   });
 
   const report = () => {
