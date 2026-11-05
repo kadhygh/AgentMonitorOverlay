@@ -30,6 +30,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 
 ## 怎么干活
 
+- **改一个功能前先查导航索引**（在 `studio/` 下）：`node scripts/guide.mjs --query 关键词`（无参数列目录，`--id 主题` 看全文）。它给出功能在哪、常见改动要改哪几处、代码锚点、下一步读哪份文档；查到后至少读一份它指的代码或文档再动手，不要停在索引这一层。查不到不等于没有这个功能：去搜代码（`git grep`），确认是索引的缺口就在 `studio/docs/guide/` 补一个主题。锚点失效（`scripts/guide.test.mjs` 会报）就改指到现在的代码或删掉。分层的做法见 `studio/plans/doc-architecture.md`。
 - 用中文和用户交流。界面文字也是中文，用户看得到的写法要具体、直白。
 - **用户要求才提交、推送**，提交信息照最近几条的风格写。不要自己合并或删除别人的分支和 worktree。
   - 例外（2026-10-31 用户定，维护节奏见 `studio/plans/release.md`），只限这两条车道：
@@ -53,6 +54,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 | 位置 | 内容 |
 |---|---|
 | `studio/HANDOFF.md` | 当前状态和还开着的事，新会话先读 |
+| `studio/docs/guide/` | 导航索引（`node scripts/guide.mjs` 查）：功能在哪、要改哪几处、代码锚点、下一步读什么 |
 | `studio/plans/` | 各个主题的方案和进度；`amo-lan-platform.md` 是平台方案；做完的阶段计划在 `plans/done/` |
 | `studio/docs/history/`、`studio/docs/archive/` | 11-06 之前 HANDOFF「最近的改动」的原文；/loop 时期的 STATUS、ROADMAP 等（只查历史时看） |
 | `studio/packages/relay/README.md` | 中转的部署、发布、命令 |

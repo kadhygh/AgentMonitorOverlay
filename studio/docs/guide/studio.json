@@ -1,0 +1,517 @@
+{
+  "schemaVersion": 1,
+  "topics": [
+    {
+      "id": "host.structure",
+      "label": "Host 进程和 feature 框架",
+      "aliases": ["Host", "HostService", "feature", "Feature<", "FEATURES", "feature-deps", "host-process", "常驻后台"],
+      "category": "host",
+      "purpose": "Studio 的常驻后台（会话都在里面）：host-process 组装 Store、渠道、三个 runtime 和 RuntimeRouter，再建 HostService；HostService 持有约 37 个 feature（features/<名字>/service.ts），每个 feature 在类上声明它用到的别的 feature，依赖图由测试守着。",
+      "steps": [
+        "新 feature：建 features/<名字>/（service.ts 里 `class XxxFeature extends Feature<\"用到的 feature\">`，routes.ts、可选 mcp.ts），在 HostService 上加字段，在 features/index.ts 的 FEATURES 加一行。",
+        "一个 feature 要用另一个：加进它的 Feature<…>，再把这条边加进 feature-deps.test.ts 的 GRAPH；成环的不让加白名单。",
+        "feature 文件夹里的模块用 Host 时收 FeatureHost<…>，不 import HostService。",
+        "改了 Host 代码，开发版要 `npm run host:stop` 再 `npm start`（先问用户，见 AGENTS.md）。"
+      ],
+      "anchors": [
+        { "label": "进程组装", "path": "studio/packages/host/src/host-process.ts", "anchor": "export async function startHost" },
+        { "label": "HostService", "path": "studio/packages/host/src/service.ts", "anchor": "export class HostService" },
+        { "label": "Feature 基类和 FeatureHost", "path": "studio/packages/host/src/core/feature.ts", "anchor": "FeatureHost" },
+        { "label": "feature 清单", "path": "studio/packages/host/src/features/index.ts", "anchor": "export const FEATURES" },
+        { "label": "依赖图测试", "path": "studio/packages/host/src/features/feature-deps.test.ts", "anchor": "KNOWN_CYCLES" }
+      ],
+      "related": ["workflow.newRoute", "workflow.newMcpTool", "host.store", "runtime.common"],
+      "next": ["studio/plans/host-structure.md"]
+    },
+    {
+      "id": "host.store",
+      "label": "数据库、迁移和 kv 键",
+      "aliases": ["Store", "studio.db", "migrations", "MIGRATIONS", "kv", "kv-keys", "purge", "数据目录"],
+      "category": "host",
+      "purpose": "Host 的 SQLite（数据目录里的 studio.db）：表结构靠只增不减的迁移，零散设置和状态放 kv；每个 kv 键前缀都要登记在 kv-keys.ts，彻底删除数据时按它连带清掉。数据目录在程序文件夹外（AGENTS.md 架构约束第 2 条）。",
+      "steps": [
+        "加表或列：在 MIGRATIONS 末尾追加一条，不改已有的。",
+        "加 kv 键：在 kv-keys.ts 登记前缀和作用范围（kv-keys.test.ts 会查漏登记的）。"
+      ],
+      "anchors": [
+        { "label": "Store", "path": "studio/packages/host/src/store/store.ts", "anchor": "export class Store" },
+        { "label": "迁移", "path": "studio/packages/host/src/store/migrations.ts", "anchor": "export const MIGRATIONS" },
+        { "label": "kv 键登记", "path": "studio/packages/host/src/store/kv-keys.ts", "anchor": "kvPrefixes" },
+        { "label": "数据目录怎么定", "path": "studio/packages/app/src/paths.ts", "anchor": "export function resolveDataDir" }
+      ],
+      "related": ["host.structure", "studio.settingsMisc"],
+      "next": ["studio/packages/host/src/store/kv-keys.test.ts"]
+    },
+    {
+      "id": "host.agentMcp",
+      "label": "给 agent 的 AMO MCP 工具和角色卡",
+      "aliases": ["amo MCP", "amo_guide", "amo_whoami", "角色卡", "roleCard", "tool-kit", "amoToolsFor", "MCP 工具"],
+      "category": "host",
+      "purpose": "Studio 给每个会话的 amo MCP 服务：各 feature 的 mcp.ts 提供工具（task_*、canvas_*、session_start、issue_* …），mcp/tools.ts 汇总并按会话身份筛选；amo_guide 的说明文字和 amo_whoami 的角色卡在 features/guide。",
+      "anchors": [
+        { "label": "MCP 服务", "path": "studio/packages/host/src/mcp/amo-mcp.ts", "anchor": "export function createAmoMcpServer" },
+        { "label": "汇总和筛选", "path": "studio/packages/host/src/mcp/tools.ts", "anchor": "amoToolsFor" },
+        { "label": "工具写法", "path": "studio/packages/host/src/mcp/tool-kit.ts", "anchor": "export interface AmoTool" },
+        { "label": "amo_guide 的文字", "path": "studio/packages/host/src/features/guide/guide.ts", "anchor": "GUIDE" },
+        { "label": "角色卡", "path": "studio/packages/host/src/features/guide/role.ts", "anchor": "export function roleCard" },
+        { "label": "角色判断", "path": "studio/packages/host/src/core/role.ts", "anchor": "roleFacts" }
+      ],
+      "related": ["workflow.newMcpTool", "studio.topics", "studio.mcpServers"],
+      "next": ["studio/plans/done/stage-15.md"]
+    },
+    {
+      "id": "studio.sessions",
+      "label": "会话：发消息、收件箱、子会话",
+      "aliases": ["session", "SessionsFeature", "会话收件箱", "SessionInbox", "立即发送", "子会话", "session_start", "session_send", "消息投递", "@子会话", "subsession"],
+      "category": "host",
+      "purpose": "会话的生命周期和消息：新建、发送、排队（一轮在跑时）、立即发送、停止；agent 和 Studio 自己往会话里送的东西（中转回复、值守、传话）统一走会话收件箱；session_start 开的子会话和 @ 子会话的设定（setup）。具体怎么跑交给 runtime。",
+      "steps": [
+        "新的「往会话里送一句话」的来源：走 SessionInbox，不要直接调 runtime 发送（人停下的会话要先压着，见 message-delivery 方案）。",
+        "子会话的默认设定：sessions/setups.ts（kv subsession-setup:），界面在 设置 → 子会话。"
+      ],
+      "anchors": [
+        { "label": "SessionsFeature", "path": "studio/packages/host/src/features/sessions/service.ts", "anchor": "export class SessionsFeature" },
+        { "label": "会话收件箱", "path": "studio/packages/host/src/features/sessions/inbox.ts", "anchor": "export class SessionInbox" },
+        { "label": "子会话设定", "path": "studio/packages/host/src/features/sessions/setups.ts", "anchor": "export function checkSetups" },
+        { "label": "session_start 等工具", "path": "studio/packages/host/src/features/sessions/mcp.ts", "anchor": "session_start" },
+        { "label": "对话区", "path": "studio/packages/ui/src/chat/Transcript.tsx", "anchor": "export const Transcript" },
+        { "label": "子会话设置页", "path": "studio/packages/ui/src/settings/SubsessionPage.tsx" }
+      ],
+      "related": ["runtime.common", "ui.chat", "studio.relays", "studio.teamRelay"],
+      "next": ["studio/plans/message-delivery.md", "studio/plans/send-now.md", "studio/plans/subsession-mention-2026-11-05.md"]
+    },
+    {
+      "id": "studio.tasks",
+      "label": "任务和看板",
+      "aliases": ["task", "TasksFeature", "看板", "board", "任务页", "说明", "交接", "handoff", "worktree"],
+      "category": "host",
+      "purpose": "任务（一个项目里的一件事，有自己的会话、看板列、说明、进度、交接）和项目、看板。Studio 从不替人建分支或合并（用户 10 月定）。",
+      "anchors": [
+        { "label": "TasksFeature", "path": "studio/packages/host/src/features/tasks/service.ts", "anchor": "export class TasksFeature" },
+        { "label": "ProjectsFeature", "path": "studio/packages/host/src/features/projects/service.ts", "anchor": "export class ProjectsFeature" },
+        { "label": "看板", "path": "studio/packages/ui/src/board/Board.tsx", "anchor": "export function Board" },
+        { "label": "任务页", "path": "studio/packages/ui/src/task/TaskPage.tsx", "anchor": "export function TaskPage" },
+        { "label": "实体类型", "path": "studio/packages/protocol/src/entities.ts" }
+      ],
+      "related": ["studio.sessions", "studio.topics", "studio.collab", "ui.newTask"],
+      "next": ["studio/plans/done/stage-16.md"]
+    },
+    {
+      "id": "studio.topics",
+      "label": "专题、主控、传话和拆任务",
+      "aliases": ["topic", "专题", "主控", "lead", "topic_doc", "专题文档", "task_plan_propose", "TaskPlansFeature", "TopicDocsFeature"],
+      "category": "host",
+      "purpose": "专题把相关任务（可跨项目）放在一张画布上；标成主控的任务协调专题：提议拆任务（人在画布上确认后才建）、写专题文档、给别的任务传话。",
+      "anchors": [
+        { "label": "TopicsFeature", "path": "studio/packages/host/src/features/topics/service.ts", "anchor": "export class TopicsFeature" },
+        { "label": "专题文档", "path": "studio/packages/host/src/features/topicdocs/service.ts", "anchor": "export class TopicDocsFeature" },
+        { "label": "主控提议拆任务", "path": "studio/packages/host/src/features/taskplans/service.ts", "anchor": "export class TaskPlansFeature" },
+        { "label": "主控是谁", "path": "studio/packages/host/src/core/role.ts", "anchor": "leadsTopic" }
+      ],
+      "related": ["studio.canvas", "studio.relays", "host.agentMcp"],
+      "next": ["studio/plans/done/stage-15.md", "studio/plans/done/stage-16.md", "studio/plans/canvas-workflow.md"]
+    },
+    {
+      "id": "studio.relays",
+      "label": "传话（主控给别的任务的会话说话）",
+      "aliases": ["传话", "RelaysFeature", "task_message", "relayAuto"],
+      "category": "host",
+      "purpose": "主控（或专题自己的会话）让 Studio 在专题里另一个任务的会话里说一句：人在主窗口或 Focus 确认（任务设了不用确认就直接送），送进那个任务最新的主会话，结果用邮件告诉主控。不是 AMO 中转（那个是 studio.teamRelay）。",
+      "anchors": [
+        { "label": "RelaysFeature", "path": "studio/packages/host/src/features/relays/service.ts", "anchor": "export class RelaysFeature" },
+        { "label": "界面", "path": "studio/packages/ui/src/relays/Relays.tsx" }
+      ],
+      "related": ["studio.topics", "studio.collab", "studio.sessions"],
+      "next": ["studio/plans/done/stage-16.md"]
+    },
+    {
+      "id": "studio.collab",
+      "label": "进度、交接、邮件、等你决定、清单",
+      "aliases": ["collab", "CollabFeature", "mailbox", "邮件", "decision_request", "等你决定", "handoff_submit", "checklist", "task_note_add"],
+      "category": "host",
+      "purpose": "任务之间、agent 和人之间的协作数据：进度备注、交接、邮件（mailbox_*）、要人拍板的问题（等你决定）、任务清单。",
+      "anchors": [
+        { "label": "CollabFeature", "path": "studio/packages/host/src/features/collab/service.ts", "anchor": "export class CollabFeature" },
+        { "label": "给 agent 的工具", "path": "studio/packages/host/src/features/collab/mcp.ts", "anchor": "decision_request" }
+      ],
+      "related": ["studio.tasks", "studio.relays", "studio.sessions"],
+      "next": ["studio/plans/done/stage-5.md"]
+    },
+    {
+      "id": "studio.canvas",
+      "label": "画布和画布审阅",
+      "aliases": ["canvas", "画布", "CanvasFeature", "canvas_items_post", "画布审阅", "callout", "气泡", "引用卡片", "分组"],
+      "category": "host",
+      "purpose": "专题的画布：任务卡、分组、依赖、便签、颜色、引用卡片；审阅时的编号条目（#n）和 AI 钉在卡片上的提示 / 提问。agent 只在人要求时动画布（用户 10-30 定）。",
+      "anchors": [
+        { "label": "CanvasFeature", "path": "studio/packages/host/src/features/canvas/service.ts", "anchor": "export class CanvasFeature" },
+        { "label": "画布审阅", "path": "studio/packages/host/src/features/canvasreview/service.ts", "anchor": "export class CanvasReviewFeature" },
+        { "label": "数据结构", "path": "studio/packages/protocol/src/canvas.ts" },
+        { "label": "画布页", "path": "studio/packages/ui/src/canvas/CanvasPage.tsx" },
+        { "label": "画布状态", "path": "studio/packages/ui/src/canvas/useCanvas.ts" }
+      ],
+      "related": ["studio.topics", "ui.shell"],
+      "next": ["studio/plans/review-canvas.md", "studio/plans/canvas-workflow.md"]
+    },
+    {
+      "id": "studio.remote",
+      "label": "远程会话（在另一台设备上用本机的任务）",
+      "aliases": ["remote", "远程", "RemoteFeature", "被控端", "授权", "grant", "配对", "DeviceLink", "远程额度", "远程副本", "remoteCopy"],
+      "category": "host",
+      "purpose": "A 把任务授权给 B，B 通过团队服务器的设备通道（中转的 devices 协议）看和操作 A 的任务与会话，模型调用都在 A。B 上是远程副本（remote runtime），写操作按路由的 remoteCopy 转给 A 或在本机做。被控端额度：A 定时把缓存里的额度推给 B。",
+      "steps": [
+        "加一条远程副本能用的写路由：在路由上写 remoteCopy（见 workflow.newRoute）。",
+        "改被控端额度：A 侧 RemoteUsageSender（usage.ts），B 侧 RemoteUsageCopies，见 flow.remoteUsage。"
+      ],
+      "anchors": [
+        { "label": "RemoteFeature", "path": "studio/packages/host/src/features/remote/service.ts", "anchor": "export class RemoteFeature" },
+        { "label": "授权", "path": "studio/packages/host/src/features/remote/grants.ts", "anchor": "export class RemoteGrants" },
+        { "label": "设备通道", "path": "studio/packages/host/src/features/remote/link.ts", "anchor": "export class DeviceLink" },
+        { "label": "B 上的远程副本 runtime", "path": "studio/packages/host/src/features/remote/runtime.ts", "anchor": "export class RemoteRuntime" },
+        { "label": "团队登录", "path": "studio/packages/host/src/core/teamlink.ts", "anchor": "export class TeamLink" },
+        { "label": "协议", "path": "studio/packages/protocol/src/remote.ts", "anchor": "RemoteRoutes" },
+        { "label": "远程对话框", "path": "studio/packages/ui/src/remote/RemoteDialog.tsx" },
+        { "label": "服务器上的设备中转", "path": "studio/packages/relay/src/devices.ts", "anchor": "export class DeviceHub" }
+      ],
+      "related": ["flow.remoteUsage", "tool.account", "tool.relayService", "tool.mobile"],
+      "next": ["studio/plans/remote-session.md", "studio/plans/remote-page-and-new-task.md", "studio/plans/remote-reviewer.md"]
+    },
+    {
+      "id": "studio.teamRelay",
+      "label": "会话里用 AMO 中转（team_ask）",
+      "aliases": ["teamrelay", "team_ask", "中转进会话", "TeamRelayFeature", "team_followup"],
+      "category": "host",
+      "purpose": "会话里的 agent 以用户的名义、标成 AI 代发，用中转问团队里的人；人在 Studio 里确认才发，回复自动回到发起的会话（经会话收件箱）。",
+      "anchors": [
+        { "label": "TeamRelayFeature", "path": "studio/packages/host/src/features/teamrelay/service.ts", "anchor": "export class TeamRelayFeature" },
+        { "label": "给 agent 的工具", "path": "studio/packages/host/src/features/teamrelay/mcp.ts", "anchor": "team_ask" },
+        { "label": "界面", "path": "studio/packages/ui/src/teamrelay/TeamRelay.tsx" }
+      ],
+      "related": ["tool.relayService", "studio.sessions", "tool.account"],
+      "next": ["studio/plans/relay-in-sessions.md"]
+    },
+    {
+      "id": "studio.duty",
+      "label": "值守（定时命令和定时会话）",
+      "aliases": ["duty", "值守", "DutyFeature", "duty_save", "自动打包", "日常值守", "检查", "builtin check"],
+      "category": "host",
+      "purpose": "设置 → 值守：按时间跑命令，或先跑检查、有发现才开会话；可以挂在另一项下面。维护节奏（日常值守、自动打包）就建在它上面。",
+      "anchors": [
+        { "label": "DutyFeature", "path": "studio/packages/host/src/features/duty/service.ts", "anchor": "export class DutyFeature" },
+        { "label": "协议和路由", "path": "studio/packages/protocol/src/duty.ts", "anchor": "DutyRoutes" },
+        { "label": "设置页", "path": "studio/packages/ui/src/settings/DutyPage.tsx" }
+      ],
+      "related": ["tool.issues", "infra.release"],
+      "next": ["studio/plans/release.md", "studio/plans/maintenance.md"]
+    },
+    {
+      "id": "studio.mcpServers",
+      "label": "MCP 设置（会话用哪些 MCP 服务）",
+      "aliases": ["MCP 设置", "McpFeature", "mcp_server_save", ".mcp.json", "mcpServers"],
+      "category": "host",
+      "purpose": "设置 → MCP、项目对话框、会话上的开关：Studio 自己的、用户 Claude Code 里的（~/.claude.json、项目 .mcp.json）MCP 服务，各会话开哪些；启动 runtime 时带上。",
+      "anchors": [
+        { "label": "McpFeature", "path": "studio/packages/host/src/features/mcp/service.ts", "anchor": "export class McpFeature" },
+        { "label": "读用户自己的配置", "path": "studio/packages/host/src/features/mcp/local.ts", "anchor": "export function userServers" },
+        { "label": "启动时带上", "path": "studio/packages/host/src/runtime/mcp-launch.ts" },
+        { "label": "设置页", "path": "studio/packages/ui/src/settings/McpPage.tsx" }
+      ],
+      "related": ["host.agentMcp", "runtime.common"],
+      "next": ["studio/plans/mcp.md"]
+    },
+    {
+      "id": "studio.gitReview",
+      "label": "Git Review 和批注发回会话（Host 侧）",
+      "aliases": ["gitreview", "GitReview", "review_open", "diff", "批注", "annotation", "ReviewFeature"],
+      "category": "host",
+      "purpose": "Host 读 git（状态、diff、提交范围）给 Reviewer 窗口用；批注发回会话（review）。界面和独立程序见 tool.reviewer。",
+      "anchors": [
+        { "label": "git 读取", "path": "studio/packages/host/src/features/gitreview/git.ts", "anchor": "export async function readStatus" },
+        { "label": "GitReviewFeature", "path": "studio/packages/host/src/features/gitreview/service.ts" },
+        { "label": "批注发回", "path": "studio/packages/host/src/features/review/service.ts", "anchor": "export class ReviewFeature" },
+        { "label": "协议", "path": "studio/packages/protocol/src/gitreview.ts", "anchor": "GitReviewRoutes" }
+      ],
+      "related": ["tool.reviewer", "studio.viewPacks"],
+      "next": ["studio/plans/reviewer-standalone.md", "studio/plans/done/stage-12.md"]
+    },
+    {
+      "id": "studio.viewPacks",
+      "label": "查看包（view_open）",
+      "aliases": ["查看包", "view pack", "viewpacks", "view_open", "改动预览", "proposal"],
+      "category": "host",
+      "purpose": "agent 一次给人看一组东西：文件加重点行、git 改动、改动预览（没落盘的建议）。每种条目是一个 kind 模块，查看包存下来，短时间内重复的合并。",
+      "anchors": [
+        { "label": "ViewPacksFeature", "path": "studio/packages/host/src/features/viewpacks/service.ts", "anchor": "export class ViewPacksFeature" },
+        { "label": "条目种类", "path": "studio/packages/host/src/features/viewpacks/kinds" },
+        { "label": "协议", "path": "studio/packages/protocol/src/viewpacks.ts" },
+        { "label": "界面", "path": "studio/packages/ui/src/viewpacks/PackViewer.tsx" }
+      ],
+      "related": ["tool.reviewer", "studio.gitReview"],
+      "next": ["studio/packages/ui/src/viewpacks/kinds.tsx"]
+    },
+    {
+      "id": "studio.promptTemplates",
+      "label": "提示词模板",
+      "aliases": ["提示词模板", "prompt template", "prompt_template_save", "PromptTemplatesFeature"],
+      "category": "host",
+      "purpose": "人存的常用提示词（全局或按项目），从输入框 @ 列表里挑；AI 可以存，删要人批准。取代了扩展包（10-31）。维护用的几份原文在 docs/prompt-templates/。",
+      "anchors": [
+        { "label": "PromptTemplatesFeature", "path": "studio/packages/host/src/features/prompttemplates/service.ts", "anchor": "export class PromptTemplatesFeature" },
+        { "label": "协议", "path": "studio/packages/protocol/src/prompt-templates.ts" },
+        { "label": "维护模板原文", "path": "studio/docs/prompt-templates/maintenance-iterate.md" }
+      ],
+      "related": ["studio.duty"],
+      "next": ["studio/plans/prompt-templates.md"]
+    },
+    {
+      "id": "studio.channels",
+      "label": "模型渠道、账号和额度",
+      "aliases": ["渠道", "channel", "额度", "quota", "余额", "balance", "Claude 多账号", "ClaudeAccounts", "profile", "UsageFooter"],
+      "category": "host",
+      "purpose": "会话能选的模型（profile）：内置的、用户加的第三方渠道（设置 → 模型）、Claude 多账号；订阅额度和渠道余额的读取与缓存，左下角额度、额度页显示。Claude 只用本机 Claude Code 登录。",
+      "anchors": [
+        { "label": "渠道注册表", "path": "studio/packages/host/src/runtime/channels.ts", "anchor": "export class ChannelRegistry" },
+        { "label": "ChannelsFeature（余额）", "path": "studio/packages/host/src/features/channels/service.ts", "anchor": "cachedBalance" },
+        { "label": "问余额", "path": "studio/packages/host/src/runtime/balance.ts", "anchor": "export async function askBalance" },
+        { "label": "Claude 订阅额度", "path": "studio/packages/host/src/runtime/claude/claude-usage.ts", "anchor": "fetchClaudeUsage" },
+        { "label": "Claude 多账号", "path": "studio/packages/host/src/runtime/claude/accounts.ts", "anchor": "export class ClaudeAccounts" },
+        { "label": "内置 profile", "path": "studio/packages/host/src/runtime/profiles.ts", "anchor": "BUILTIN" },
+        { "label": "额度栏", "path": "studio/packages/ui/src/board/UsageFooter.tsx" }
+      ],
+      "related": ["runtime.claude", "runtime.codex", "runtime.dsh", "flow.remoteUsage", "studio.config"],
+      "next": ["studio/plans/done/stage-14.md"]
+    },
+    {
+      "id": "studio.config",
+      "label": "设置、常用预设、功能开关",
+      "aliases": ["设置", "settings", "ConfigFeature", "预设", "功能开关", "测试功能", "命令行适配", "SettingsDialog"],
+      "category": "host",
+      "purpose": "Studio 设置的读写（模型凭据、模型选择、常用预设、功能和测试功能的开关、命令行适配等）和设置窗口各页。",
+      "anchors": [
+        { "label": "ConfigFeature", "path": "studio/packages/host/src/features/config/service.ts", "anchor": "export class ConfigFeature" },
+        { "label": "开关和 kv 名", "path": "studio/packages/host/src/core/shared.ts", "anchor": "EXPERIMENTAL" },
+        { "label": "给 agent 命令的环境（命令行适配）", "path": "studio/packages/host/src/runtime/agent-env.ts" },
+        { "label": "设置窗口", "path": "studio/packages/ui/src/settings/SettingsDialog.tsx", "anchor": "export function SettingsDialog" },
+        { "label": "读设置", "path": "studio/packages/ui/src/settings/useSettings.ts" }
+      ],
+      "related": ["studio.channels", "studio.settingsMisc", "ui.shell"],
+      "next": ["studio/packages/app/CHANGELOG.md"]
+    },
+    {
+      "id": "studio.settingsMisc",
+      "label": "设置里的维护、统计、数据管理",
+      "aliases": ["维护终端", "MaintenanceFeature", "统计", "StatsFeature", "数据管理", "DataFeature", "彻底删除"],
+      "category": "host",
+      "purpose": "设置 → 维护（在源码目录开用户自己的 claude / codex 终端，不带 Studio 的模型和环境）、统计（每次打开从会话的轮次现算 token，不存）、数据管理（只删已归档的，连同只属于它的数据）。",
+      "anchors": [
+        { "label": "维护", "path": "studio/packages/host/src/features/maintenance/service.ts", "anchor": "export class MaintenanceFeature" },
+        { "label": "统计", "path": "studio/packages/host/src/features/stats/service.ts", "anchor": "export class StatsFeature" },
+        { "label": "数据管理", "path": "studio/packages/host/src/features/datamgmt/service.ts", "anchor": "export class DataFeature" },
+        { "label": "统计页", "path": "studio/packages/ui/src/settings/StatsPage.tsx" }
+      ],
+      "related": ["studio.config", "host.store"],
+      "next": ["studio/docs/history/handoff-2026-10.md"]
+    },
+    {
+      "id": "studio.files",
+      "label": "文件：附件、@ 文件、书签、Studio 里的便签页、外部打开",
+      "aliases": ["附件", "attachments", "@ 文件", "chatfiles", "书签", "marks", "文件标记", "scratchpad", "openin", "VS Code 打开"],
+      "category": "host",
+      "purpose": "会话和便签页里贴的图（存在数据目录 attachments/）、文件选择器和 @ 文件、对话里提到的路径哪些存在、书签（按专题，文件和对话片段）、Studio 里的便签页（scratchpad，和独立的 AMO 便签不是一个东西）、用 VS Code / 资源管理器打开。",
+      "anchors": [
+        { "label": "附件", "path": "studio/packages/host/src/features/attachments/service.ts", "anchor": "export class AttachmentsFeature" },
+        { "label": "项目文件列表", "path": "studio/packages/host/src/features/files/service.ts", "anchor": "export class FilesFeature" },
+        { "label": "对话里的路径", "path": "studio/packages/host/src/features/chatfiles/service.ts", "anchor": "export class ChatFilesFeature" },
+        { "label": "书签", "path": "studio/packages/host/src/features/marks/service.ts", "anchor": "export class MarksFeature" },
+        { "label": "Studio 便签页", "path": "studio/packages/host/src/features/scratchpad/service.ts", "anchor": "export class ScratchpadFeature" },
+        { "label": "外部打开", "path": "studio/packages/host/src/features/openin/service.ts", "anchor": "export class OpenInFeature" }
+      ],
+      "related": ["ui.chat", "tool.notes"],
+      "next": ["studio/plans/done/stage-11.md", "studio/plans/done/stage-12.md"]
+    },
+    {
+      "id": "studio.cli",
+      "label": "对话里的命令（/ 菜单、后台命令）",
+      "aliases": ["/ 菜单", "slash", "CliFeature", "后台命令", "background command"],
+      "category": "host",
+      "purpose": "对话里的 / 菜单（Studio 的命令加 runtime 自己的）、运行命令、后台命令的停止和输出、对话设置。",
+      "anchors": [
+        { "label": "CliFeature", "path": "studio/packages/host/src/features/cli/service.ts", "anchor": "export class CliFeature" },
+        { "label": "协议", "path": "studio/packages/protocol/src/cli.ts" },
+        { "label": "界面", "path": "studio/packages/ui/src/chat/cli" }
+      ],
+      "related": ["ui.chat", "runtime.claude"],
+      "next": ["studio/plans/done/stage-12.md"]
+    },
+    {
+      "id": "studio.planning",
+      "label": "全局待办、调度和提议",
+      "aliases": ["planning", "PlanningFeature", "scheduler", "调度", "提议", "proposals"],
+      "category": "host",
+      "purpose": "全局待办、调度器和它给出的提议（stage 7），看板上的提议面板。",
+      "anchors": [
+        { "label": "PlanningFeature", "path": "studio/packages/host/src/features/planning/service.ts", "anchor": "export class PlanningFeature" },
+        { "label": "调度", "path": "studio/packages/host/src/scheduler/brief.ts" },
+        { "label": "协议", "path": "studio/packages/protocol/src/scheduler.ts" }
+      ],
+      "related": ["studio.tasks"],
+      "next": ["studio/plans/done/stage-7.md"]
+    },
+    {
+      "id": "runtime.common",
+      "label": "runtime 公共层：路由、发送、自动压缩",
+      "aliases": ["runtime", "RuntimeRouter", "RuntimeBase", "agent-env", "自动压缩", "auto compact", "items"],
+      "category": "runtime",
+      "purpose": "三个模型后端（Codex、Claude、DSH）共用的接口和路由：RuntimeRouter 按 profile 把会话交给对应 runtime（远程副本交给 remote runtime）；会话行（items）、自动压缩、agent 命令的环境变量和 PATH。",
+      "anchors": [
+        { "label": "接口和路由", "path": "studio/packages/host/src/runtime/runtime.ts", "anchor": "export class RuntimeRouter" },
+        { "label": "会话行", "path": "studio/packages/host/src/runtime/items.ts" },
+        { "label": "自动压缩", "path": "studio/packages/host/src/runtime/compact.ts" },
+        { "label": "agent 命令的环境", "path": "studio/packages/host/src/runtime/agent-env.ts" }
+      ],
+      "related": ["runtime.claude", "runtime.codex", "runtime.dsh", "studio.sessions"],
+      "next": ["studio/plans/host-structure.md"]
+    },
+    {
+      "id": "runtime.claude",
+      "label": "Claude runtime（Claude Agent SDK）",
+      "aliases": ["Claude", "ClaudeRuntime", "claude-agent-sdk", "Claude Code", "subagent", "子 agent", "接续已有会话", "outside", "Fast"],
+      "category": "runtime",
+      "purpose": "Claude 会话：用本机 Claude Code 的登录（token 模式 10-27 去掉了），经 Claude Agent SDK 跑；审批和提问、子 agent 的日志、转录、额度、多账号环境、接续终端或桌面版里已有的 Claude 会话。",
+      "anchors": [
+        { "label": "ClaudeRuntime", "path": "studio/packages/host/src/runtime/claude/claude-runtime.ts", "anchor": "export class ClaudeRuntime" },
+        { "label": "环境变量", "path": "studio/packages/host/src/runtime/claude/claude-env.ts" },
+        { "label": "子 agent", "path": "studio/packages/host/src/runtime/claude/subagents.ts" },
+        { "label": "接续已有会话", "path": "studio/packages/host/src/runtime/claude/outside.ts" },
+        { "label": "提问", "path": "studio/packages/host/src/runtime/claude/questions.integration.test.ts" }
+      ],
+      "related": ["runtime.common", "studio.channels", "ui.newTask"],
+      "next": ["studio/plans/resume-cli-sessions.md", "studio/plans/done/stage-12.md"]
+    },
+    {
+      "id": "runtime.codex",
+      "label": "Codex runtime（codex app-server）",
+      "aliases": ["Codex", "CodexRuntime", "app-server", "CodexServerManager", "gen:codex", "codex 协议类型"],
+      "category": "runtime",
+      "purpose": "Codex 会话：Studio 起用户装的 codex 的 app-server，走 JSON-RPC；协议类型从本机 codex 生成（protocol 包 `npm run gen:codex`）；每条命令都问（不开沙箱）。",
+      "steps": [
+        "Codex 升级后协议变了：在 packages/protocol 跑 `npm run gen:codex`，再 typecheck 看 codex-runtime.ts / events.ts 哪里不合。"
+      ],
+      "anchors": [
+        { "label": "CodexRuntime", "path": "studio/packages/host/src/runtime/codex/codex-runtime.ts", "anchor": "export class CodexRuntime" },
+        { "label": "app-server 进程", "path": "studio/packages/host/src/runtime/codex/server-manager.ts", "anchor": "export class CodexServerManager" },
+        { "label": "事件转会话行", "path": "studio/packages/host/src/runtime/codex/events.ts" },
+        { "label": "生成协议类型", "path": "studio/packages/protocol/scripts/gen-codex.mjs" }
+      ],
+      "related": ["runtime.common", "studio.channels"],
+      "next": ["studio/plans/host-structure.md"]
+    },
+    {
+      "id": "runtime.dsh",
+      "label": "DSH runtime（DeepSeek Harness，ACP）",
+      "aliases": ["DSH", "DeepSeek", "DshRuntime", "ACP", "Dxx-DS", "DeepSeek Harness"],
+      "category": "runtime",
+      "purpose": "DeepSeek 会话：经 ACP 跑 DSH（桌面版装了就用它的，否则用源码 clone）；DSH 自己开的子 agent 从它的会话日志里读出来，挂成子会话；日志轮转。",
+      "anchors": [
+        { "label": "DshRuntime", "path": "studio/packages/host/src/runtime/dsh/dsh-runtime.ts", "anchor": "export class DshRuntime" },
+        { "label": "ACP 连接", "path": "studio/packages/host/src/runtime/dsh/acp.ts", "anchor": "export class AcpConnection" },
+        { "label": "子 agent", "path": "studio/packages/host/src/runtime/dsh/subagents.ts", "anchor": "export class DshSubagents" },
+        { "label": "会话日志", "path": "studio/packages/host/src/runtime/dsh/session-log.ts" },
+        { "label": "设置 → DSH", "path": "studio/packages/host/src/features/dsh/service.ts", "anchor": "export class DshFeature" }
+      ],
+      "related": ["runtime.common", "studio.channels"],
+      "next": ["studio/plans/done/stage-17-dsh.md"]
+    },
+    {
+      "id": "app.shell",
+      "label": "Studio 外壳（Electron 主进程）",
+      "aliases": ["app", "Electron", "main.ts", "托盘", "tray", "窗口", "host-link", "数据目录", "running.json", "完全退出"],
+      "category": "app",
+      "purpose": "Studio 的 Electron 主进程：连上或拉起 Host、建各窗口（主窗口、Focus、画布、书签、机器人）、托盘（× 只关窗口，完全退出连 Host 一起关）、数据目录、拉起便签和中转、写 running.json 给平台看。Studio 的 CHANGELOG 在这个包。",
+      "anchors": [
+        { "label": "主进程", "path": "studio/packages/app/src/main.ts" },
+        { "label": "连 Host", "path": "studio/packages/app/src/host-link.ts", "anchor": "export async function connectHost" },
+        { "label": "数据目录和 running.json", "path": "studio/packages/app/src/paths.ts", "anchor": "studioRunningFile" },
+        { "label": "拉起便签", "path": "studio/packages/app/src/notes-link.ts", "anchor": "installNotesLink" },
+        { "label": "打开中转", "path": "studio/packages/app/src/relay-link.ts", "anchor": "openInRelay" },
+        { "label": "改动说明", "path": "studio/packages/app/CHANGELOG.md" }
+      ],
+      "related": ["ui.focus", "tool.platform", "tool.notes"],
+      "next": ["studio/plans/remote-session.md"]
+    },
+    {
+      "id": "ui.shell",
+      "label": "Studio 界面骨架和读 Host 数据",
+      "aliases": ["ui", "App.tsx", "VIEWS", "useLiveResource", "HostLink", "client.ts", "Modal", "界面"],
+      "category": "ui",
+      "purpose": "所有窗口的 React 界面（ui 包，Vite 构建）：视图表 VIEWS、读 Host 数据的统一做法（host/live.ts 的 useLiveResource，事件推来再更新）、按路由键有类型的 call()、公共控件（lib/Modal 等）。",
+      "anchors": [
+        { "label": "主窗口", "path": "studio/packages/ui/src/App.tsx", "anchor": "export function App" },
+        { "label": "视图表", "path": "studio/packages/ui/src/features.ts", "anchor": "export const VIEWS" },
+        { "label": "读 Host 数据", "path": "studio/packages/ui/src/host/live.ts", "anchor": "export function useLiveResource" },
+        { "label": "调路由", "path": "studio/packages/ui/src/host/client.ts" },
+        { "label": "弹窗外壳", "path": "studio/packages/ui/src/lib/Modal.tsx" }
+      ],
+      "related": ["ui.chat", "ui.focus", "workflow.newRoute"],
+      "next": ["studio/plans/cleanup-2026-11.md"]
+    },
+    {
+      "id": "ui.chat",
+      "label": "对话区",
+      "aliases": ["对话", "Transcript", "chat", "详细", "完全展开", "思考", "审批", "提问", "questions"],
+      "category": "ui",
+      "purpose": "会话的对话区：轮次和折叠（详细 / 完全展开）、思考、工具行、审批和提问、会话选项栏、输入框。",
+      "anchors": [
+        { "label": "对话区", "path": "studio/packages/ui/src/chat/Transcript.tsx", "anchor": "export const Transcript" },
+        { "label": "轮次折叠", "path": "studio/packages/ui/src/chat/turns.ts" },
+        { "label": "会话选项栏", "path": "studio/packages/ui/src/chat/SessionOptionsBar.tsx" },
+        { "label": "会话行数据", "path": "studio/packages/ui/src/host/useSessionItems.ts" }
+      ],
+      "related": ["studio.sessions", "studio.cli", "ui.shell"],
+      "next": ["studio/plans/done/stage-9-chat.md"]
+    },
+    {
+      "id": "ui.focus",
+      "label": "Focus 窗口（浮窗）",
+      "aliases": ["Focus", "FocusApp", "置顶", "pin", "机器人", "bot", "等你"],
+      "category": "ui",
+      "purpose": "常驻的小浮窗：哪些会话在跑、哪些在等人（审批、提问、确认），置顶一个任务，机器人形象。",
+      "anchors": [
+        { "label": "Focus 界面", "path": "studio/packages/ui/src/focus/FocusApp.tsx", "anchor": "export function FocusApp" },
+        { "label": "进行中", "path": "studio/packages/ui/src/focus/FocusWorking.tsx" },
+        { "label": "置顶", "path": "studio/packages/ui/src/focus/pins.ts" },
+        { "label": "Focus 窗口", "path": "studio/packages/app/src/focus-window.ts", "anchor": "export function createFocusWindow" }
+      ],
+      "related": ["app.shell", "studio.relays"],
+      "next": ["studio/plans/done/stage-14.md"]
+    },
+    {
+      "id": "ui.newTask",
+      "label": "新建任务页",
+      "aliases": ["新建任务", "NewTaskPage", "接续已有会话", "ResumePicker", "远程新建"],
+      "category": "ui",
+      "purpose": "新建任务：选项目、模型、强度，第一句话；接续终端或 Claude 桌面版里已有的会话；给远程电脑新建任务。",
+      "anchors": [
+        { "label": "新建任务页", "path": "studio/packages/ui/src/newtask/NewTaskPage.tsx", "anchor": "export function NewTaskPage" },
+        { "label": "接续已有会话", "path": "studio/packages/ui/src/newtask/ResumePicker.tsx" },
+        { "label": "远程新建", "path": "studio/packages/ui/src/newtask/RemoteDraft.tsx" }
+      ],
+      "related": ["runtime.claude", "studio.remote", "studio.tasks"],
+      "next": ["studio/plans/resume-cli-sessions.md", "studio/plans/remote-page-and-new-task.md"]
+    },
+    {
+      "id": "ui.panorama",
+      "label": "全景（userlayer）",
+      "aliases": ["全景", "panorama", "userlayer", "datalayer", "地形岛", "地铁"],
+      "category": "ui",
+      "purpose": "全景视图：把所有专题、任务、会话画成一张图（数据层 datalayer、布局、渲染器）。三层（userlayer / datalayer / agentlayer）的原型在 plans/userlayer/。",
+      "anchors": [
+        { "label": "全景页", "path": "studio/packages/ui/src/panorama/PanoramaPage.tsx", "anchor": "export function PanoramaPage" },
+        { "label": "数据层", "path": "studio/packages/ui/src/panorama/datalayer.ts" },
+        { "label": "布局", "path": "studio/packages/ui/src/panorama/layout.ts" }
+      ],
+      "related": ["ui.shell"],
+      "next": ["studio/plans/userlayer/framework.md", "studio/plans/userlayer/panorama.md"]
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "topics": [
+    {
+      "id": "tool.reviewer",
+      "label": "AMO Reviewer（Git Review 和查看器）",
+      "aliases": ["Reviewer", "Git Review", "查看器", "viewer", "HTML 批注", "位置批注", "amo-review", "ReviewApp", "ViewerApp"],
+      "category": "tool",
+      "purpose": "Git Review 和文件查看器（含 HTML 的位置批注），可以单独用，Studio 里也带着同一份（AGENTS.md 架构约束第 4 条：只有一份）。独立程序是 reviewer 包的 Electron 入口，界面在 ui 包，后台用 Host。",
+      "anchors": [
+        { "label": "独立程序入口", "path": "studio/packages/reviewer/src/main.ts", "anchor": "parseArgs" },
+        { "label": "Review 窗口", "path": "studio/packages/reviewer/src/review-window.ts", "anchor": "export function setupReviewWindows" },
+        { "label": "查看器窗口", "path": "studio/packages/reviewer/src/viewer-window.ts", "anchor": "export function setupViewerWindows" },
+        { "label": "Review 界面", "path": "studio/packages/ui/src/gitreview/ReviewApp.tsx", "anchor": "export function ReviewApp" },
+        { "label": "查看器界面", "path": "studio/packages/ui/src/viewer/ViewerApp.tsx", "anchor": "export function ViewerApp" },
+        { "label": "批注组件", "path": "studio/packages/ui/src/review/AnnotationPanel.tsx" },
+        { "label": "命令行入口", "path": "studio/scripts/amo-review.mjs" },
+        { "label": "改动说明", "path": "studio/packages/reviewer/CHANGELOG.md" }
+      ],
+      "related": ["studio.gitReview", "studio.viewPacks", "infra.e2e"],
+      "next": ["studio/plans/reviewer-standalone.md"]
+    },
+    {
+      "id": "tool.notes",
+      "label": "AMO 便签和待办",
+      "aliases": ["便签", "notes", "AMO Notes", "待办", "todo", "TodoApp", "快捷键", "托盘便签"],
+      "category": "tool",
+      "purpose": "托盘常驻的随手记，自己的进程和托盘、单实例，设置在 %APPDATA%，可以单独用，Studio 会顺带启动它；待办是便签里的另一个窗口，列表都存在团队服务器（中转服务的 todo）。不是 Studio 里的便签页（studio.files 的 scratchpad）。",
+      "anchors": [
+        { "label": "主进程", "path": "studio/packages/notes/src/main.ts" },
+        { "label": "本地服务", "path": "studio/packages/notes/src/server.ts", "anchor": "export function startNotesServer" },
+        { "label": "存储", "path": "studio/packages/notes/src/store.ts", "anchor": "export class NotesStore" },
+        { "label": "待办同步", "path": "studio/packages/notes/src/todo.ts", "anchor": "export class TodoSync" },
+        { "label": "待办界面", "path": "studio/packages/ui/src/todo/TodoApp.tsx" },
+        { "label": "服务器上的待办", "path": "studio/packages/relay/src/todo.ts", "anchor": "export class TodoStore" },
+        { "label": "Studio 拉起它", "path": "studio/packages/app/src/notes-link.ts", "anchor": "installNotesLink" },
+        { "label": "改动说明", "path": "studio/packages/notes/CHANGELOG.md" }
+      ],
+      "related": ["tool.relayService", "app.shell"],
+      "next": ["studio/plans/notes-standalone.md", "studio/plans/todo.md"]
+    },
+    {
+      "id": "tool.relayService",
+      "label": "AMO 中转服务（团队服务器）",
+      "aliases": ["中转", "relay", "中转服务", "RelayServer", "团队服务器", "Mac mini", "relay-service", "relay inbox", "中转 MCP"],
+      "category": "tool",
+      "purpose": "跑在 Mac mini 上的局域网服务：策划的 AI 把要确认的事发给程序、人和人聊天；同时是平台的发布点（清单、文件）、设备通道（远程会话、手机）、问题页、待办、Claude Code / Codex 镜像。服务器上只有一份，部署只走 `npm run release -- relay-service`（会重启几秒，先问用户）。",
+      "anchors": [
+        { "label": "HTTP 服务", "path": "studio/packages/relay/src/server.ts", "anchor": "export async function startRelayServer" },
+        { "label": "存储", "path": "studio/packages/relay/src/store.ts", "anchor": "export class RelayStore" },
+        { "label": "会话协议", "path": "studio/packages/relay/src/protocol.ts", "anchor": "dueForAi" },
+        { "label": "AI 用的 MCP", "path": "studio/packages/relay/src/mcp.ts", "anchor": "export async function createRelayMcp" },
+        { "label": "设备通道", "path": "studio/packages/relay/src/devices.ts", "anchor": "export class DeviceHub" },
+        { "label": "平台的清单和文件", "path": "studio/packages/relay/src/platform.ts", "anchor": "manifestServed" },
+        { "label": "工具镜像", "path": "studio/packages/relay/src/mirror.ts" },
+        { "label": "命令行", "path": "studio/packages/relay/src/bin.ts" },
+        { "label": "改动说明（中转服务）", "path": "studio/packages/relay/CHANGELOG.md" }
+      ],
+      "related": ["tool.relayClient", "tool.issues", "studio.teamRelay", "studio.remote", "infra.release"],
+      "next": ["studio/packages/relay/README.md", "studio/plans/relay.md", "studio/plans/relay-tasks.md"]
+    },
+    {
+      "id": "tool.relayClient",
+      "label": "AMO 中转客户端（界面和外壳）",
+      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread"],
+      "category": "tool",
+      "purpose": "中转的桌面客户端：外壳（relay-app，平台装、平台更新）加载从服务器热更新的界面（relay-ui）；和 Studio 互相跳转（中转 → Studio 找数据目录调 Host 的 /api/ui/open，Studio → 中转带 --open-thread 启动）。",
+      "anchors": [
+        { "label": "外壳主进程", "path": "studio/packages/relay-app/src/main.ts" },
+        { "label": "加载服务器上的界面", "path": "studio/packages/relay-app/src/loader.ts" },
+        { "label": "跳到 Studio", "path": "studio/packages/relay-app/src/studio-link.ts", "anchor": "export async function openInStudio" },
+        { "label": "界面入口", "path": "studio/packages/relay-ui/src/main.tsx" },
+        { "label": "会话页", "path": "studio/packages/relay-ui/src/SessionView.tsx" },
+        { "label": "改动说明（外壳）", "path": "studio/packages/relay-app/CHANGELOG.md" }
+      ],
+      "related": ["tool.relayService", "app.shell", "tool.platform"],
+      "next": ["studio/plans/relay-round-2026-11-05.md", "studio/plans/relay-tasks.md"]
+    },
+    {
+      "id": "tool.issues",
+      "label": "问题页（AMO 自己的问题）",
+      "aliases": ["问题页", "issues", "issue_reply", "IssueStore", "发布打包", "需要确认", "卡住了", "维护者", "审核"],
+      "category": "tool",
+      "purpose": "团队服务器上的问题页：人报 AMO 的问题，维护值守用 issue_* 工具读、回复、改状态；人点「发布打包」要测试包，自动打包修好后标已发布。别人报的要维护者审核放行。",
+      "anchors": [
+        { "label": "服务器存储", "path": "studio/packages/relay/src/issues.ts", "anchor": "export class IssueStore" },
+        { "label": "问题页", "path": "studio/packages/relay/src/issues-page.ts", "anchor": "export function issuesPage" },
+        { "label": "Host 侧工具", "path": "studio/packages/host/src/features/issues/mcp.ts", "anchor": "issuesTools" },
+        { "label": "值守检查 issues.pending", "path": "studio/packages/host/src/features/issues/service.ts", "anchor": "name: \"issues.pending\"" }
+      ],
+      "related": ["studio.duty", "infra.release", "tool.relayService"],
+      "next": ["studio/plans/issues.md", "studio/plans/release.md"]
+    },
+    {
+      "id": "tool.platform",
+      "label": "AMO 平台（安装、更新、登录、环境）",
+      "aliases": ["平台", "platform", "AMO Platform", "安装", "更新", "自更新", "updates.json", "programs.json", "环境页", "安装 Claude Code", "镜像"],
+      "category": "tool",
+      "purpose": "托盘常驻：从团队服务器装、更新、设置各工具（按版本一个文件夹），登录（只有平台有登录界面），环境页装 Claude Code / Codex（团队服务器镜像或官方）。只通过工具已支持的方式和它们打交道（AGENTS.md 架构约束第 1、3、7 条）。",
+      "anchors": [
+        { "label": "Platform", "path": "studio/packages/platform/src/platform.ts", "anchor": "export class Platform" },
+        { "label": "安装", "path": "studio/packages/platform/src/installer.ts" },
+        { "label": "清单校验", "path": "studio/packages/platform/src/manifest.ts", "anchor": "export function checkManifest" },
+        { "label": "自更新", "path": "studio/packages/platform/src/self-update.ts" },
+        { "label": "工具开着没有", "path": "studio/packages/platform/src/running.ts" },
+        { "label": "环境页：Claude Code", "path": "studio/packages/platform/src/claude-install.ts", "anchor": "export async function installClaude" },
+        { "label": "环境页：镜像", "path": "studio/packages/platform/src/tool-mirror.ts", "anchor": "export async function mirrorInfo" },
+        { "label": "界面", "path": "studio/packages/ui/src/platform/PlatformApp.tsx" },
+        { "label": "改动说明", "path": "studio/packages/platform/CHANGELOG.md" }
+      ],
+      "related": ["flow.platformChangelog", "infra.release", "tool.account", "tool.relayService"],
+      "next": ["studio/plans/amo-lan-platform.md", "studio/plans/claude-code-mirror.md"]
+    },
+    {
+      "id": "tool.account",
+      "label": "团队账号和设备号",
+      "aliases": ["account", "account.json", "device.json", "登录", "设备号", "DPAPI", "TeamLink"],
+      "category": "tool",
+      "purpose": "登录只在平台（AGENTS.md 架构约束第 7 条）：账号存在 %APPDATA%\\AMO\\account.json（按 Windows 用户加密），各工具用共用的 account 包读；device.json 是本机设备号，谁先用到谁创建。Host 里由 core/teamlink.ts 统一连团队服务器。",
+      "anchors": [
+        { "label": "读账号", "path": "studio/packages/account/src/account.ts", "anchor": "export function readAccount" },
+        { "label": "设备号", "path": "studio/packages/account/src/device.ts", "anchor": "export function ensureDevice" },
+        { "label": "加密", "path": "studio/packages/account/src/dpapi.ts" },
+        { "label": "Host 的团队连接", "path": "studio/packages/host/src/core/teamlink.ts", "anchor": "export class TeamLink" }
+      ],
+      "related": ["tool.platform", "studio.remote", "studio.teamRelay"],
+      "next": ["studio/plans/amo-lan-platform.md"]
+    },
+    {
+      "id": "tool.mobile",
+      "label": "手机版（Android / iOS，KMP）",
+      "aliases": ["Android", "iOS", "手机", "mobile", "APK", "TestFlight", "KMP", "Kotlin"],
+      "category": "tool",
+      "purpose": "手机上的 AMO Studio：Kotlin Multiplatform（shared + app + iosApp），登录后经中转的设备通道连电脑，用 Host 的 rt.* 命令看和操作任务与会话。APK 发到团队服务器，iOS 走 TestFlight（`npm run release -- ios`）。",
+      "anchors": [
+        { "label": "工程说明", "path": "studio/mobile/README.md" },
+        { "label": "iOS 版本号", "path": "studio/mobile/iosApp/Version.xcconfig" },
+        { "label": "发 APK", "path": "studio/scripts/android-publish.mjs", "anchor": "export function androidRelease" },
+        { "label": "发 iOS", "path": "studio/scripts/ios-release.mjs", "anchor": "export async function releaseIos" },
+        { "label": "测试用的假电脑", "path": "studio/scripts/android-fixture.mjs" },
+        { "label": "手机用的命令", "path": "studio/packages/protocol/src/remote.ts", "anchor": "rt.rename" }
+      ],
+      "related": ["studio.remote", "tool.relayService"],
+      "next": ["studio/plans/ios.md", "studio/plans/android-mobile-redesign.md"]
+    }
+  ]
+}
