@@ -22,6 +22,17 @@ a{color:var(--accent)}
 .screen figure.demo{margin:0;border:1px solid var(--line);border-radius:18px;background:var(--frame);box-shadow:var(--shadow);overflow:hidden;padding:0}
 .screen .more{display:block;margin-top:14px;text-align:right;font-size:14px;color:var(--text-3);text-decoration:none}
 .screen .more:hover{color:var(--accent)}
+/* 快速开始（11-05）：两张步骤卡 */
+.qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:20px;width:100%;max-width:980px;margin-top:40px;text-align:left}
+.qs-card{display:flex;flex-direction:column;padding:24px 26px 20px;border:1px solid var(--line);border-radius:18px;background:var(--frame);box-shadow:var(--shadow)}
+.qs-card h3{margin:0 0 12px;font:500 22px/1.3 var(--serif)}
+.qs-card ol{flex:1;margin:0;padding-left:1.4em;font:15px/1.75 var(--sans);color:var(--text-2)}
+.qs-card li{margin:6px 0;padding-left:4px}
+.qs-card li::marker{color:var(--accent);font-weight:600}
+.qs-card code{padding:1px 6px;border:1px solid var(--line);border-radius:5px;font:13.5px var(--mono,monospace);color:var(--text);white-space:nowrap}
+.qs-card .more{display:block;margin-top:12px;text-align:right;font-size:14px;color:var(--text-3);text-decoration:none}
+.qs-card .more:hover{color:var(--accent)}
+@media (max-width:620px){.qs-card{padding:20px 18px 16px}.qs-card code{white-space:normal;word-break:break-all}}
 .cta{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:36px}
 .cta a{display:inline-flex;align-items:center;height:46px;padding:0 24px;border-radius:999px;border:1px solid var(--line);color:var(--text);text-decoration:none;font:500 15.5px var(--sans)}
 .cta a:first-child{background:var(--accent-fill);border-color:var(--accent-fill);color:#fff}
@@ -353,6 +364,16 @@ footer ul{margin:6px 0 0;padding-left:18px}
 .fw-row.done{border-left-color:var(--running)}
 .fw-row.done .fw-w{color:var(--running-text)}
 .fw-detail{display:none;padding:0 14px 12px}
+/* 置顶（11-05）：focus/FocusWorking.tsx 的图钉，悬停才出来；置顶的那行挪到最上面一组「置顶 1」 */
+.fw-list{display:flex;flex-direction:column}
+.fw-ghead{order:-2;margin-top:8px;font-size:13px;font-weight:600;color:var(--text-dim)}
+.fw-row.pin{order:-1;animation:s-appear .35s ease-out}
+.fw-text{flex:1}
+.fw-pin{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:3px;color:var(--text-dim);opacity:0;transition:opacity .2s}
+.fw-pin svg{fill:none}
+.fw-row.hov .fw-pin{opacity:1;background:var(--selected)}
+.fw-row.pin .fw-pin{opacity:1;color:var(--running)}
+.fw-row.pin .fw-pin svg circle{fill:currentColor}
 .fw-row.open .fw-detail{display:block;animation:s-appear .25s ease-out}
 .fw-snip{margin:0 0 10px;font-size:14.5px;line-height:1.6;color:var(--text-dim)}
 .fw-snip code{padding:2px 6px;background:var(--panel);border:1px solid var(--border);font:13.5px var(--font-code);color:var(--text)}
@@ -737,6 +758,12 @@ footer ul{margin:6px 0 0;padding-left:18px}
 .cx-appr code{padding:5px 8px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r-s)}
 .cx-appr .s-btn{width:fit-content}
 .pg-safe{padding:40px 60px 150px;background:var(--bg-nav)}
+.cx-pend{margin-top:10px;padding:8px 12px;border:1px dashed var(--attention-border);border-radius:var(--r-m);color:var(--attention);font-size:14px}
+.cx-out{margin-top:4px;font:13px var(--font-code);color:var(--running-text)}
+.cx-rb{display:flex;align-items:center;gap:8px;margin:-4px 0 12px;font-size:13.5px;color:var(--text-dim)}
+.cx-win{position:relative}
+.cx-in{position:absolute;left:14px;right:14px;bottom:14px;min-height:46px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:var(--r-l);background:var(--panel);font-size:14.5px}
+.cx-in:empty::before{content:"继续推进这个会话，回车发送";color:var(--text-faint)}
 .cx-win.sf{width:720px;height:100%}
 .sf-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-m);background:var(--panel)}
 .sf-row>span:first-child{display:grid}

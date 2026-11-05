@@ -207,13 +207,14 @@
       { hold: 3400, do: [["off", "aProj", "lit-t"], ...cap("一个任务里，开多个会话"), ["on", "aProj", "lit-s"], ...focusCard("L3", ["L1", "L2"])] },
       { hold: 3800, do: [["off", "aProj", "lit-s"], ...cap("为什么：你跟进的是事，不是对话"), ...focusCard("L4", ["L1", "L2", "L3"])] },
       // 3 任务：强模型带弱模型
-      { hold: 400, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("任务：强模型带弱模型", "主模型定方案、审结果，细活交给便宜的模型当子会话")] },
-      { hold: 900, do: [["show", "tool"], ["wait", 350], ["show", "s2"], ["text", "sessN", "2"]] },
-      { hold: 1700, do: [["show", "back"], ["wait", 700], ["show", "review"]] },
+      // 11-05 用户：这一章和下一章太快——每步一句字幕、停 3 秒上下，和前两章一样
+      { hold: 2600, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("任务：强模型带弱模型", "主模型定方案、审结果，细活交给便宜的模型当子会话")] },
+      { hold: 2800, do: [...cap("主会话开一个子会话", "把「改 12 张表」这种重复的细活，交给 DeepSeek"), ["wait", 300], ["show", "tool"], ["wait", 600], ["show", "s2"], ["text", "sessN", "2"]] },
+      { hold: 3200, do: [...cap("子会话做完，结果自动回到主会话", "主模型接着审：发现一处列名写错，让子会话改掉"), ["wait", 300], ["show", "back"], ["wait", 1400], ["show", "review"]] },
       // 4 专题：一个仓库几条线
-      { hold: 300, do: [["hide", "cap"], ...flip("p2", "p3"), ["wait", 550], ...cap("一个仓库开三个 worktree，各当一个项目"), ...[0, 1, 2].flatMap((i) => [["on", `w${i}`, "lit"], ["show", `pj${i}`], ["wait", 300]])] },
-      { hold: 300, do: [["wait", 600], ...cap("专题管几条线：各在自己的 worktree 里改", "互不干扰，分别验证，最后合到一起"), ["show", "wTopic"], ...[0, 1, 2].flatMap((i) => [["on", `pj${i}`, "lit"], ["show", `t${i}`], ["wait", 300]])] },
-      { hold: 1500, do: [] },
+      { hold: 2600, do: [["hide", "cap"], ...flip("p2", "p3"), ["wait", 550], ...cap("一个仓库开三个 worktree，各当一个项目", "各在自己的分支上改：main、drop、ui"), ...[0, 1, 2].flatMap((i) => [["on", `w${i}`, "lit"], ["show", `pj${i}`], ["wait", 500]])] },
+      { hold: 2800, do: [...cap("专题管几条线", "三个任务各在自己的 worktree 里改，互不干扰"), ["show", "wTopic"], ...[0, 1, 2].flatMap((i) => [["on", `pj${i}`, "lit"], ["show", `t${i}`], ["wait", 500]])] },
+      { hold: 3000, do: [...cap("分别验证，最后合到一起", "合并验证在主目录 MyGame 里做；建分支、合并由你定，Studio 不动 git")] },
       // 5 画布：跟主控说一句，它排好
       { hold: 300, do: [["hide", "cap"], ...flip("p3", "p4"), ["wait", 550], ...cap("画布：跟 AI 说一句，它排成图", "", "br"), ["type", "input", "把 3.2 的任务按 worktree 分组排到画布上，标出谁等谁"], ["wait", 250], ["text", "input", ""], ["show", "ask"]] },
       { hold: 300, do: [["show", "ct1"], ["wait", 260], ["show", "ct2"], ["wait", 260], ["show", "ct3"], ["wait", 260], ["show", "appr"]] },

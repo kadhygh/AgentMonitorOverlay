@@ -10,6 +10,15 @@
 2. **账号**：用团队服务器（AMO 中转）的账号登录。还没有账号，在登录页点 [[没有账号？注册一个]]。
 3. **模型的登录**：Studio 用的是你本机 Claude Code 和 Codex 的登录，和终端里是同一个账号、同一份额度。平台的 [[环境]] 页能查它们装没装、是不是最新；没装的给 [[去下载]]。Claude Code 没登录过的话，在终端运行一次 `claude` 登录。
 
+## 不装平台：从源码跑 {#ch1-source}
+
+会用 AI 编程、自己能处理环境问题的，可以不装平台，直接从源码跑 Studio（下面第 1、2 步跳过，从第 3 步接着看）：
+
+1. 装好 Node 24 LTS 和 Git。模型的登录和上面一样：Claude Code 在终端里登录过；用 Codex 的先 `npm i -g @openai/codex` 并登录。
+2. `git clone https://github.com/kadhygh/AgentMonitorOverlay.git`
+3. 双击 `studio\start-studio.cmd`：需要时先装依赖，然后编译、打开 Studio。数据放在 `studio\.data`。
+4. 也可以在 `studio` 里用命令：`npm ci`，再 `npm start`。
+
 ## 第 1 步 · 登录平台，装上 Studio {#ch1-install}
 
 ::scene platform-install

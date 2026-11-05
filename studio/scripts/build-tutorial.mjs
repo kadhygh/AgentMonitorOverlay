@@ -280,7 +280,8 @@ ${scripts.replace(/<\/script/gi, "<\\/script")}
 
 /**
  * showcase.md → screens: `## 标题 {#id}`, the next line the subtitle, `::scene id` (a looping demo), `::more href`
- * (「怎么用 →」), or `::cta` and a list of `- [按钮](href)`. HTML comments are notes for whoever edits it.
+ * (「怎么用 →」), or `::cta` and a list of `- [按钮](href)`. `::card 标题` starts a card of numbered steps (`1. …`; a
+ * `::more href` after it is the card's own link) — the 快速开始 screen (2026-11-05). HTML comments are notes for whoever edits it.
  */
 export function showcaseScreens(source) {
   const text = source.replace(/<!--[\s\S]*?-->/g, "");
@@ -292,14 +293,17 @@ export function showcaseScreens(source) {
       const [head, ...rest] = block.split("\n");
       const m = HEADING.exec(`## ${head}`);
       const lines = rest.map((l) => l.trim()).filter(Boolean);
-      const screen = { title: m[2], id: m[3] ?? null, sub: "", scene: null, more: null, cta: [], intro: false, kicker: "", warn: [] };
+      const screen = { title: m[2], id: m[3] ?? null, sub: "", scene: null, more: null, cta: [], intro: false, kicker: "", warn: [], cards: [] };
+      const card = () => screen.cards[screen.cards.length - 1];
       for (const l of lines) {
         let d;
         if (l === "::intro") screen.intro = true;
         else if ((d = /^::kicker\s+(.+)$/.exec(l))) screen.kicker = d[1];
         else if ((d = /^!\s+(.+)$/.exec(l))) screen.warn.push(d[1]);
         else if ((d = /^::scene\s+([\w-]+)$/.exec(l))) screen.scene = d[1];
-        else if ((d = /^::more\s+(\S+)$/.exec(l))) screen.more = d[1];
+        else if ((d = /^::card\s+(.+)$/.exec(l))) screen.cards.push({ title: d[1], steps: [], more: null });
+        else if ((d = /^\d+\.\s+(.+)$/.exec(l)) && card()) card().steps.push(d[1]);
+        else if ((d = /^::more\s+(\S+)$/.exec(l))) (card() ?? screen).more = d[1];
         else if ((d = /^-\s+\[([^\]]+)\]\(([^)\s]+)\)$/.exec(l))) screen.cta.push({ text: d[1], href: d[2] });
         else if (!l.startsWith("::") && !screen.sub) screen.sub = l;
       }
@@ -319,9 +323,14 @@ export function buildShowcase({ dir = tutorialDir, out = join(studio, "out", "ht
     .map((s, n) => {
       const media = s.scene
         ? `<div class="shot reveal"><figure class="demo" data-scene="${s.scene}" data-mode="loop"></figure>${s.more ? `<a class="more" href="${esc(s.more)}">怎么用 →</a>` : ""}</div>`
-        : s.cta.length
-          ? `<div class="cta reveal">${s.cta.map((c) => `<a href="${esc(c.href)}">${esc(c.text)}</a>`).join("")}</div>`
-          : "";
+        : [
+            s.cards.length
+              ? `<div class="qs reveal">${s.cards
+                  .map((c) => `<div class="qs-card"><h3>${inline(c.title)}</h3><ol>${c.steps.map((t) => `<li>${inline(t)}</li>`).join("")}</ol>${c.more ? `<a class="more" href="${esc(c.more)}">详细步骤 →</a>` : ""}</div>`)
+                  .join("")}</div>`
+              : "",
+            s.cta.length ? `<div class="cta reveal">${s.cta.map((c) => `<a href="${esc(c.href)}">${esc(c.text)}</a>`).join("")}</div>` : "",
+          ].join("");
       // ::intro：标题和副标题在开场动画里出现，页面上只留给读屏软件。
       const head = s.intro ? ' class="sr"' : ' class="reveal"';
       return `<section class="screen${n === 0 ? " hero" : ""}${s.intro ? " intro" : ""}"${s.id ? ` id="${s.id}"` : ""}>

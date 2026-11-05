@@ -2,8 +2,9 @@
 //   1 中转：策划的 AI 拿不准，用 relay_session_open 问程序；程序在中转客户端里「回复并返回给 … 的 AI」；AI 用
 //     relay_session_wait 拿到回复接着改（packages/relay/src/mcp.ts、relay-ui）
 //   2 远程配对：笔记本上「配对一台设备」列出同账号在线的设备，发起配对；台式机「收到的配对请求」里允许（remote/PairDialog）
-//   3 授权一个任务：台式机上 授权给… 笔记本；笔记本看板上出现它，「在 台式机 上运行」；笔记本发话、批命令，命令在台式机上跑
-//     （task/GrantDialog.tsx 的提醒原话）
+//   3 授权一个任务：台式机上 授权给… 笔记本；笔记本看板上出现它，「在 台式机 上运行」（task/GrantDialog.tsx 的提醒原话）。
+//     然后一页两边同步干活（11-05 用户：授权后要演一段同步干活的界面）：笔记本上发话，两边同时出现；AI 要跑命令，
+//     笔记本上批准，命令在台式机上跑，结果和回复两边都看得到
 //   4 安全：远程设置里同账号「直接开跑」、别的账号「先等我确认」（默认，protocol remote.ts DEFAULT_REMOTE_SECURITY）；
 //     别的账号建任务先在 Focus 等你「同意并开始」；授权随时「收回」
 // 11-04：远程也有了手机端（studio/mobile，Android 版测试中），页面上的说法从「电脑」改成「设备」，画出来的界面文字照旧
@@ -27,7 +28,7 @@
       [0, "中转：AI 卡住了直接问人", "tutorial.html#ch8"],
       [3, "远程：只配对你自己的设备", "tutorial.html#ch9-pair"],
       [5, "授权一个任务，换台设备接着用", "tutorial.html#ch9-grant"],
-      [8, "! 安全：别的账号先等你同意，随时收回", "tutorial.html#ch9-safety"],
+      [10, "! 安全：别的账号先等你同意，随时收回", "tutorial.html#ch9-safety"],
     ],
     html: `<div class="ic-cam"><div class="pgs">
       <section class="pg pg-two cur" data-k="p0">
@@ -81,17 +82,40 @@
           "AMO Studio · 任务「掉落表改版」",
           `<div class="cx-h">把「掉落表改版」授权给…</div>
            <div class="cx-dev"><b>笔记本</b><span class="s-sp"></span><span class="s-btn pri" data-k="grant">授权</span></div>
-           <ul class="cx-warn"><li>会话还在这台电脑上跑：命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。只授权给你自己的其他设备。</li></ul>
-           <div class="cx-run" data-k="ran" data-off>▸ 运行命令 · <code>python -m pytest tests/test_drop.py</code><span class="s-faint"> · 在这台电脑上</span></div>`,
+           <ul class="cx-warn"><li>会话还在这台电脑上跑：命令以这台电脑上你的用户身份运行，用的是这台电脑的模型账号。只授权给你自己的其他设备。</li></ul>`,
         )}
-        <div class="cx-wire lan"><span class="lab">局域网</span><i class="cx-dot back" data-k="dot4"></i></div>
+        <div class="cx-wire lan"><span class="lab">局域网</span><i class="cx-dot" data-k="dot4"></i></div>
         ${win(
           "nb2",
           "笔记本",
-          "AMO Studio",
-          `<div class="cx-card" data-k="gcard" data-off><span class="cx-badge">远程</span><b>掉落表改版</b><span class="s-faint">在 台式机 上运行</span></div>
-           <div class="tk-user" data-k="nbMsg" data-off>再跑一遍掉落的测试</div>
-           <div class="cx-appr" data-k="nbAppr" data-off><div><b>请求执行命令</b><span class="cx-w">等待你的确认</span></div><code>python -m pytest tests/test_drop.py</code><span class="s-btn att" data-k="nbOk">批准</span></div>`,
+          "AMO Studio · 看板",
+          `<div class="cx-card" data-k="gcard" data-off><span class="cx-badge">远程</span><b>掉落表改版</b><span class="s-faint">在 台式机 上运行</span></div>`,
+        )}
+      </section>
+
+      <section class="pg pg-two" data-k="p2b">
+        ${win(
+          "dt3",
+          "台式机",
+          "任务「掉落表改版」· 运行中",
+          `<div class="tk-user" data-k="dMsg" data-off><span class="s-faint">来自 笔记本</span><br>再跑一遍掉落的测试，顺便核一下 Boss_03</div>
+           <p data-k="dAi1" data-off>好，先跑一遍掉落的测试。</p>
+           <div class="cx-pend" data-k="dWait" data-off>请求执行命令 · 等 笔记本 确认</div>
+           <div class="cx-run" data-k="dRun" data-off>▸ 运行命令 · <code>python -m pytest tests/test_drop.py</code><span class="s-faint"> · 在这台电脑上</span><div class="cx-out">6 passed in 1.42s</div></div>
+           <p data-k="dAi2" data-off>6 个都过了。Boss_03 的权重也核了：紫装 4.6%，和表里一致。</p>`,
+        )}
+        <div class="cx-wire lan"><span class="lab">同步</span><i class="cx-dot back" data-k="dot5"></i><i class="cx-dot" data-k="dot6"></i></div>
+        ${win(
+          "nb3",
+          "笔记本",
+          "任务「掉落表改版」",
+          `<div class="cx-rb"><span class="cx-badge">远程</span>在 台式机 上运行</div>
+           <div class="tk-user" data-k="nbMsg" data-off>再跑一遍掉落的测试，顺便核一下 Boss_03</div>
+           <p data-k="nbAi1" data-off>好，先跑一遍掉落的测试。</p>
+           <div class="cx-appr" data-k="nbAppr" data-off><div><b>请求执行命令</b><span class="cx-w">等待你的确认</span></div><code>python -m pytest tests/test_drop.py</code><span class="s-btn att" data-k="nbOk">批准</span></div>
+           <div class="cx-run" data-k="nbRun" data-off>▸ 运行命令 · <code>python -m pytest tests/test_drop.py</code><span class="s-faint"> · 在 台式机 上</span><div class="cx-out">6 passed in 1.42s</div></div>
+           <p data-k="nbAi2" data-off>6 个都过了。Boss_03 的权重也核了：紫装 4.6%，和表里一致。</p>
+           <div class="cx-in" data-k="nbIn"></div>`,
         )}
       </section>
 
@@ -124,11 +148,14 @@
       { hold: 300, do: [["hide", "cap"], ...flip("p0", "p1"), ["wait", 550], ...cap("远程：只配对你自己的设备", "同一个账号、同一个局域网里的电脑，手机也行")] },
       { hold: 1400, do: [["click", "pair"], ["show", "pairWait"], ["on", "dot3", "go"], ["wait", 650], ["show", "req"], ["click", "allow"], ["hide", "req"], ["show", "paired2"], ["hide", "pairWait"], ["show", "paired1"]] },
       // 3 授权一个任务
-      { hold: 300, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("授权一个任务，换台设备接着用", "笔记本、手机都行；会话还在原来那台跑，命令和模型账号都是那台的"), ["click", "grant"], ["show", "gcard"]] },
-      { hold: 300, do: [["wait", 300], ["show", "nbMsg"], ["wait", 400], ["show", "nbAppr"]] },
-      { hold: 1400, do: [["click", "nbOk"], ["hide", "nbAppr"], ["on", "dot4", "go"], ["wait", 650], ["show", "ran"]] },
+      { hold: 2400, do: [["hide", "cap"], ...flip("p1", "p2"), ["wait", 550], ...cap("授权一个任务，换台设备接着用", "笔记本、手机都行；会话还在原来那台跑，命令和模型账号都是那台的"), ["click", "grant"], ["on", "dot4", "go"], ["wait", 650], ["show", "gcard"]] },
+      // 两边同步干活
+      { hold: 900, do: [["hide", "cap"], ...flip("p2", "p2b"), ["wait", 550], ...cap("两边同步：笔记本上发话，台式机上跑", "对话、批准、结果，两边同时看得到"), ["type", "nbIn", "再跑一遍掉落的测试，顺便核一下 Boss_03"], ["wait", 250], ["text", "nbIn", ""], ["show", "nbMsg"], ["on", "dot5", "go"], ["wait", 650], ["show", "dMsg"]] },
+      { hold: 1600, do: [["show", "dAi1"], ["show", "nbAi1"], ["wait", 700], ["show", "dWait"], ["show", "nbAppr"]] },
+      { hold: 2400, do: [...cap("在笔记本上批准，命令在台式机上跑", "以台式机上你的身份运行，用台式机的模型账号"), ["click", "nbOk"], ["hide", "nbAppr"], ["off", "dot5", "go"], ["wait", 30], ["on", "dot5", "go"], ["wait", 650], ["hide", "dWait"], ["show", "dRun"], ["wait", 900], ["on", "dot6", "go"], ["wait", 650], ["show", "nbRun"]] },
+      { hold: 2800, do: [["show", "dAi2"], ["wait", 400], ["show", "nbAi2"]] },
       // 4 安全
-      { hold: 900, do: [["hide", "cap"], ...flip("p2", "p3"), ["wait", 550], ...cap("! 安全：别的账号先等你同意", "只在局域网里用，只配对你自己的设备"), ["on", "cap", "warn"]] },
+      { hold: 900, do: [["hide", "cap"], ...flip("p2b", "p3"), ["wait", 550], ...cap("! 安全：别的账号先等你同意", "只在局域网里用，只配对你自己的设备"), ["on", "cap", "warn"]] },
       { hold: 300, do: [["show", "fq"], ["wait", 900], ["click", "agree"], ["hide", "fq"]] },
       { hold: 1800, do: [...cap("! 安全：授权随时收回", "收回后那边只剩已经同步的记录，不能再操作"), ["on", "cap", "warn"], ["click", "revoke"], ["hide", "grantRow"], ["show", "revoked"]] },
     ],
