@@ -116,3 +116,29 @@
 .quick-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--panel-raised); }
 .quick-hints { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-faint); }
 .quick-hints > span, .quick-hints .link-btn { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---- 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md) ----------------------------------------------------- */
+
+.draft-resume-btn { margin-left: auto; }
+.draft-side + .draft-resume-btn, .draft-resume-btn + .draft-side { margin-left: 0; }
+.resume-modal .prompt-body { height: 420px; }
+.resume-group { display: flex; flex-direction: column; gap: 2px; }
+.resume-group + .resume-group { margin-top: 8px; }
+.resume-group-name { padding: 2px 8px; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.04em; }
+.resume-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-sm); }
+.resume-facts dt { color: var(--text-faint); }
+.resume-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.resume-path { font-family: var(--font-code); font-size: 12px; }
+.resume-tail { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.resume-msg { display: flex; flex-direction: column; gap: 2px; }
+.resume-role { font-size: var(--fs-cap); color: var(--text-faint); }
+.resume-msg.user .resume-text { color: var(--text); font-weight: 500; }
+.resume-text { font-size: 13px; line-height: var(--lh); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-dim); }
+/* The picked session on the draft page, above the first sentence. */
+.draft-resume { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border-strong); border-left: 3px solid var(--primary); border-radius: var(--r-m); background: var(--tint); }
+.draft-resume-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.draft-resume-title { font-weight: 600; overflow-wrap: anywhere; }
+.draft-resume-sub { font-size: var(--fs-sm); color: var(--text-dim); }
+.draft-resume-head .link-btn:first-of-type { margin-left: auto; }
+.draft-resume-note { font-size: var(--fs-sm); color: var(--text-dim); overflow-wrap: anywhere; }
+.draft-resume-note code { font-family: var(--font-code); font-size: 12px; }

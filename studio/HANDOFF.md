@@ -51,6 +51,12 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 接续已有会话（Claude；master，未提交）**
+- 新建任务页的「接续已有会话…」：把终端或 Claude 桌面版里开的 Claude 会话接成一个新任务。10-30 放弃过，11-05 用户又要做（有人想从 Claude 桌面版换到 AMO，几个长会话是固定流程，不想写成文档）。范围和查到的事实见 `plans/resume-cli-sessions.md`：入口只在新建任务页，先只做 Claude，一次接一个。
+- 做法：`runtime/claude/outside.ts` 用 SDK 的 `listSessions({ includeProgrammatic: false })` 列出会话（Studio 自己的 `sdk-ts` 本来就不在里面），去掉 Studio 已有的 `runtimeRef` 和接过的原会话（kv `claude-adopted:<id>`），按目录对到项目，用 `entrypoint` 区分终端和桌面版。接续时 `POST /api/tasks` 带 `firstSession.resumeFrom`，一律用 `forkSession` 复制一份，原会话不动，再用 `importTranscript` 导入最后一次压缩之后的对话。建任务前先查能不能接（`checkResume`），接不了不会留下空任务。接口：`GET /api/claude/outside-sessions`、`…/:id/preview`。
+- 验证：集成测试 `outside.integration.test.ts`（造了桌面版和终端的记录：列出、预览、接续后模型收到原来的对话、原文件没动、不再列出、各种拒绝）；e2e `resume-outside.spec.ts`，`newtask.spec.ts` 也跑了（9 条全过）；tasks、remote、Claude runtime、newtask 的单测 168 条通过；截图 `screenshots/resume-outside/` 看过。本机实测：在别的目录续接复制出来的会话，CLI 能找到，上下文也是连着的（这次调用了一次真模型）。
+- **没验证**：真实 Claude 桌面版写出的记录（本机没装，`claude-desktop` 这个值是从 Claude Code 程序里读出来的）；桌面版自己的会话列表里会不会也出现复制件；真实的长会话接过来后界面卡不卡（本机 37MB 的会话压缩后读出 293 条，读取 140ms）。
+
 **2026-11-05 · 开发界面目录，发 Studio 0.9.39（master）**
 - 「设置 → 测试功能 → 开发界面目录」（`74d262c5`）：Host 从填的目录（某个 worktree 的 `studio\packages\ui\dist`）给窗口载入界面，那边 build 后在窗口里点「重新载入」就生效，不发版、不重启 Host。只放在内存里，重启 Studio 就回到安装版；从那个目录只送界面会用到的几类文件；开着时窗口顶上有提示条（重新载入 / 恢复安装版），托盘菜单多一项「恢复安装版界面」，留给界面坏到窗口打不开的情况。只换界面，Host 和 MCP 的改动照样要发版。用户 11-05 要这个，是为了全景的界面可以一轮轮迭代。
 - 顺手修：`stopHost` 在 Host 已经在退出时往断了的 IPC 通道发消息，主进程抛未捕获的 ERR_IPC_CHANNEL_CLOSED（负载高时 tray.spec 的「完全退出」在桌面上弹了错误框）。

@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, McpApply, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, McpApply, OutsideSessionList, OutsideSessionPreview, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
 import { parseRemoteProfileId } from "@amo-studio/protocol";
 import type { SendMode, SendOptions, SessionRuntimeApi } from "../../runtime/runtime.js";
 import type { Store } from "../../store/store.js";
@@ -19,7 +19,7 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
     private readonly copies: () => RemoteCopies,
   ) {
     // What the runtimes here do not offer, this one does not either (features ask whether a runtime has it).
-    const optional = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus"] as const;
+    const optional = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus", "outsideSessions", "outsidePreview", "checkResume"] as const;
     for (const k of optional) if (!inner[k]) (this as unknown as Record<string, unknown>)[k] = undefined;
   }
 
@@ -34,6 +34,15 @@ export class RemoteAwareRuntime implements SessionRuntimeApi {
   }
   choices(profileId: Id) {
     return this.inner.choices(profileId);
+  }
+  outsideSessions(): Promise<OutsideSessionList> {
+    return this.inner.outsideSessions!();
+  }
+  outsidePreview(ref: string): Promise<OutsideSessionPreview | null> {
+    return this.inner.outsidePreview!(ref);
+  }
+  checkResume(profileId: Id, ref: string): Promise<void> {
+    return this.inner.checkResume!(profileId, ref);
   }
   setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     if (this.remote(sessionId)) throw no("换模型或权限");

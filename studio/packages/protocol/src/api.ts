@@ -34,6 +34,48 @@ export interface NewSessionInput {
   attachments?: Id[];
   /** Model, effort and permissions; the profile's defaults otherwise. */
   options?: SessionOptions;
+  /**
+   * 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): the id of a Claude session started outside Studio (a terminal,
+   * the Claude desktop app; GET /api/claude/outside-sessions). The session goes on from a copy of it, its conversation
+   * imported; the original is left as it is. Claude subscription only.
+   */
+  resumeFrom?: string;
+}
+
+/** 接续已有会话 (2026-11-05): a Claude session started outside Studio, as GET /api/claude/outside-sessions lists it. */
+export interface OutsideSession {
+  /** Claude Code's session id. */
+  id: string;
+  /** Its title (/rename), else Claude Code's summary or first prompt. */
+  title: string;
+  firstPrompt?: string;
+  /** The folder it worked in. */
+  cwd: string;
+  /** The project whose folder is that one or holds it (the deepest); null when none does. */
+  workspaceId: Id | null;
+  /** Where it was started: `cli` (a terminal), `desktop` (the Claude desktop app), `other` (an IDE, …). */
+  source: "cli" | "desktop" | "other";
+  lastModified: Timestamp;
+  createdAt?: Timestamp;
+  /** Size of its transcript in bytes. */
+  bytes?: number;
+  gitBranch?: string;
+}
+
+export interface OutsideSessionList {
+  sessions: OutsideSession[];
+  /** Why nothing can be listed (the Claude subscription does not use the local Claude Code login); absent when it can. */
+  unavailable?: string;
+}
+
+/** The end of an outside session's conversation, for recognising it before 接续. */
+export interface OutsideSessionPreview {
+  /** The last messages (text only), oldest first. */
+  messages: Array<{ role: "user" | "assistant"; text: string }>;
+  /** How many messages the conversation has since its last compaction (what is imported). */
+  total: number;
+  /** It was compacted: what comes before the last compaction is not imported. */
+  compacted: boolean;
 }
 
 /** A model a profile can run, as its CLI lists it. */
@@ -510,6 +552,12 @@ export interface HostRoutes {
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.
    */
   "GET /api/usage": { req: void; res: AccountUsage[] };
+  /**
+   * 接续已有会话 (2026-11-05): Claude sessions started outside Studio (a terminal, the Claude desktop app) that are not
+   * Studio's and were not taken on yet, most recent first. Start one with `firstSession.resumeFrom` (POST /api/tasks).
+   */
+  "GET /api/claude/outside-sessions": { req: void; res: OutsideSessionList };
+  "GET /api/claude/outside-sessions/:id/preview": { req: void; res: OutsideSessionPreview };
   /** Claude 多账号 (2026-11-03): the accounts (also in `settings.claudeAccounts`, which follows every change). */
   "GET /api/claude-accounts": { req: void; res: ClaudeAccountsState };
   /** 添加账号: a new account dir, and Claude Code's sign-in started for it (the browser opens; `login.url` otherwise). */

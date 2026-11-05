@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { createSdkMcpServer, forkSession, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
-import { inTurn, parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage, type McpApply } from "@amo-studio/protocol";
+import { createSdkMcpServer, forkSession, getSessionInfo, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { inTurn, parseSlashCommand, type ApprovalDecision, type Attachment, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionReply, type Session, type SessionItem, type SessionOptions, type UserDelivery, type SlashCommandList, type SlashCommandResult, type Workspace, type AccountUsage, type McpApply, type OutsideSessionList, type OutsideSessionPreview } from "@amo-studio/protocol";
 import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
@@ -31,6 +31,7 @@ import { ClaudeTurns } from "./turns.js";
 import { ClaudeUsageTracker } from "./usage-tracker.js";
 import { ClaudeAccounts } from "./accounts.js";
 import { ClaudeWake } from "./wake-control.js";
+import { adoptedKey, isCompactSummary, listOutsideSessions, previewOutsideSession, sameFolder } from "./outside.js";
 
 export { claudeCommands, localCommandText } from "./commands.js";
 export { askedQuestions, describeToolUse, retryReason } from "./tool-use.js";
@@ -182,8 +183,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   // ---- operations -------------------------------------------------------------------------------------------------
 
-  async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
+  async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions; resumeFrom?: string }): Promise<Session> {
     const profile = this.profile(input.profileId);
+    if (input.resumeFrom) return this.resumeOutside(input, profile, input.resumeFrom);
     // Fail early (missing provider, key or login) rather than on the first message.
     const home = this.newHome(profile);
     claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv);
@@ -200,6 +202,79 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       options: input.options ?? {},
     });
     rememberSessionLogin(this.store, session.id, home.login);
+    if (input.text) await this.sendMessage(session.id, input.text);
+    return this.store.getSession(session.id)!;
+  }
+
+  /**
+   * 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): Claude sessions started outside Studio (a terminal, the
+   * Claude desktop app), read where the local login's sessions are. Only the subscription on the local login sees them.
+   */
+  async outsideSessions(): Promise<OutsideSessionList> {
+    const home = this.outsideHome();
+    if (!home) return { sessions: [], unavailable: "Claude 订阅没有用本机 Claude Code 的登录，看不到终端和 Claude desktop app 里的会话" };
+    return { sessions: await listOutsideSessions(home, this.store, this.store.listWorkspaces()) };
+  }
+
+  async outsidePreview(ref: string): Promise<OutsideSessionPreview | null> {
+    const home = this.outsideHome();
+    return home ? previewOutsideSession(home, ref) : null;
+  }
+
+  /** The config dir outside sessions are in: the current account's (every account links the default dir's `projects`). */
+  private outsideHome(): ClaudeHome | null {
+    const profile = this.options.profiles.find((p) => p.runtime === "claude" && this.isSubscription(p));
+    return profile && this.newHome(profile).login === "local" ? this.accountHome() : null;
+  }
+
+  /** Whether a new session of this profile can go on from that outside session; throws why not (before a task is made). */
+  async checkResume(profileId: Id, ref: string): Promise<void> {
+    await this.outsideSource(profileId, ref);
+  }
+
+  private async outsideSource(profileId: Id, ref: string) {
+    const home = this.isSubscription(this.profile(profileId)) ? this.outsideHome() : null;
+    if (!home) throw Object.assign(new Error("接续已有会话只能用 Claude 订阅（本机 Claude Code 的登录）"), { code: "bad_request" });
+    if (this.store.getKv(adoptedKey(ref)) || this.store.findSessionByRuntimeRef("claude", ref)) throw Object.assign(new Error("这个会话已经在 Studio 里了"), { code: "conflict" });
+    const info = await withConfigDir(home, () => getSessionInfo(ref));
+    if (!info) throw Object.assign(new Error("找不到这个会话的对话记录（可能已被删除）"), { code: "not_found" });
+    return { home, info };
+  }
+
+  /**
+   * A new session that goes on from an outside one: always from a copy (forkSession, no model call), so the original is
+   * left as it is — it may still be open in the desktop app, and two writers on one transcript would break it. The copy
+   * sits beside the original (its folder is the original's); the CLI finds it by id from the project folder Studio runs
+   * it in (checked 2026-11-05). The conversation since its last compaction is imported, as the model will see it.
+   */
+  private async resumeOutside(input: { taskId: Id | null; topicId: Id | null; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }, profile: ModelProfile, ref: string): Promise<Session> {
+    const { home, info } = await this.outsideSource(profile.id, ref);
+    const original = (info.customTitle || info.summary || info.firstPrompt || "").trim().slice(0, 100);
+    const title = (input.title?.trim() || original || "接续的会话").slice(0, 100);
+    const forked = await withConfigDir(home, () => forkSession(ref, { title }));
+    const session = this.createSession({
+      taskId: input.taskId,
+      topicId: input.topicId,
+      parentId: null,
+      kind: "main",
+      profileId: profile.id,
+      workspaceId: input.workspace.id,
+      title,
+      runtimeRef: forked.sessionId,
+      options: input.options ?? {},
+    });
+    rememberSessionLogin(this.store, session.id, home.login);
+    this.store.setKv(adoptedKey(ref), session.id);
+    const messages = await withConfigDir(home, () => getSessionMessages(forked.sessionId));
+    const compacted = messages.some(isCompactSummary);
+    const where = info.cwd && !sameFolder(info.cwd, input.workspace.path) ? `原来在 ${info.cwd} 里工作，接过来后在项目目录 ${input.workspace.path} 里继续。` : "";
+    const parts = [
+      `接续自 Studio 之外的会话「${original || ref}」（${ref.slice(0, 8)}）。原会话没有改动，这里是它的一份副本。`,
+      where,
+      compacted ? "原会话压缩过上下文：下面只有最后一次压缩之后的对话，模型那边也只记得压缩摘要和之后的内容。" : "",
+    ];
+    this.appendItem(session.id, { type: "notice", level: "info", message: parts.filter(Boolean).join("") });
+    importTranscript(this.core, session.id, input.workspace.path, messages.filter((m) => !isCompactSummary(m)));
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }

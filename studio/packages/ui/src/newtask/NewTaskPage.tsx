@@ -24,6 +24,15 @@ import { withFileRefs } from "../attach/refs.js";
 import { useRemote } from "../remote/remote.js";
 import { RemoteDraft } from "./RemoteDraft.js";
 import { remoteModeShown } from "./remoteTargets.js";
+import { ResumePicker, SOURCE_LABEL } from "./ResumePicker.js";
+import { relativeTime } from "../lib/status.js";
+import type { OutsideSession } from "@amo-studio/protocol";
+
+/** 接续已有会话 runs on this profile only: the outside sessions are the local Claude Code login's. */
+const CLAUDE_SUBSCRIPTION = "claude-subscription";
+
+/** The same folder, case and slashes aside (Windows paths as the Host gives them). */
+const sameDir = (a: string, b: string) => a.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase() === b.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -78,6 +87,10 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
   const presets = useSettings(link)?.presets ?? [];
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
+  // 接续已有会话 (2026-11-05): the outside session picked; not kept in the draft (it may be taken on elsewhere meanwhile).
+  const [resume, setResume] = useState<OutsideSession | null>(null);
+  const [pickingResume, setPickingResume] = useState(false);
+  const subscription = profiles.find((p) => p.id === CLAUDE_SUBSCRIPTION && !p.hidden && !p.unavailable);
 
   // A fresh draft starts where the page was opened from (in a topic, with its one preferred project); a draft with text
   // keeps its own choices.
@@ -119,19 +132,22 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
 
   async function submit(file: boolean) {
     if (busy) return;
-    if (!draft.text.trim()) return setError(file ? "写一句话再放进待办。" : "写一句话再开始。");
+    if (resume && file) return setError("接续的会话不能放进待办：直接点「接续」，第一句话可以不写。");
+    if (resume && draft.pick.profileId !== CLAUDE_SUBSCRIPTION) return setError("接续已有会话只能用 Claude 订阅：先在下面选回它。");
+    if (!resume && !draft.text.trim()) return setError(file ? "写一句话再放进待办。" : "写一句话再开始。");
     if (!file && !draft.pick.profileId) return setError("先选一个模型。");
     if (file && !attach.empty) return setError("放进待办不带图片和文件：先移除它们，或者直接开始。");
     if (attach.uploading) return setError("图片还在上传，稍等一下。");
     if (attach.failed) return setError("有图片上传失败，移除后再开始。");
     setBusy(true);
-    if (!file) setStarting(`正在启动 ${shortModel(profiles.find((p) => p.id === draft.pick.profileId))}…`);
+    if (!file) setStarting(resume ? "正在接续会话…" : `正在启动 ${shortModel(profiles.find((p) => p.id === draft.pick.profileId))}…`);
     setError("");
     try {
       const text = withFileRefs(draftText(draft), attach.files.map(attach.refOf));
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
       const { refs: _refs, ...rest } = draft;
-      const created = await submitDraft(link, { ...rest, text }, file, onCanvas, images);
+      const created = await submitDraft(link, { ...rest, text, ...(resume && !rest.title.trim() ? { title: resume.title } : {}) }, file, onCanvas, images, resume?.id);
+      setResume(null);
       attach.reset();
       reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
@@ -142,8 +158,18 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     }
   }
 
-  async function addProject() {
-    const dir = await pickFolder();
+  /** A session picked in 接续已有会话: the task's name and project from it, the Claude subscription as the model. */
+  function pickResume(s: OutsideSession) {
+    setPickingResume(false);
+    setResume(s);
+    setError("");
+    update({ title: s.title.slice(0, 100), ...(subscription ? { pick: { profileId: subscription.id, model: null } } : {}) });
+    if (s.workspaceId) rows.pickProject(s.workspaceId);
+    requestAnimationFrame(() => input.current?.focus());
+  }
+
+  async function addProject(path?: string) {
+    const dir = path ?? (await pickFolder());
     if (!dir) return;
     try {
       const ws = await call(link, "POST /api/workspaces", {}, { path: dir });
@@ -186,6 +212,11 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
         <div className="draft">
           <div className="draft-ask-row">
             <h1 className="draft-ask">要推进什么？</h1>
+            {!remoteMode && subscription && (
+              <button type="button" className="btn-ghost small draft-resume-btn" onClick={() => setPickingResume(true)} title="把终端或 Claude 桌面版里开的 Claude 会话接过来，在这里接着做" data-testid="draft-resume-open">
+                接续已有会话…
+              </button>
+            )}
             {remoteShown && (
               <span className="perm draft-side" role="group" aria-label="在哪台电脑上" data-testid="draft-side">
                 <button type="button" aria-pressed={!remoteMode} onClick={() => setSide("here")}>
@@ -251,6 +282,42 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
             </label>
           </div>
 
+          {resume && (
+            <div className="draft-resume" data-testid="draft-resume">
+              <div className="draft-resume-head">
+                <span className="pick-lab">接续</span>
+                <span className="draft-resume-title">{resume.title}</span>
+                <span className="draft-resume-sub">
+                  {SOURCE_LABEL[resume.source]} · {relativeTime(resume.lastModified)}
+                </span>
+                <button type="button" className="link-btn" onClick={() => setPickingResume(true)}>
+                  换一个
+                </button>
+                <button type="button" className="link-btn" onClick={() => setResume(null)} data-testid="draft-resume-clear">
+                  不接续了
+                </button>
+              </div>
+              {(() => {
+                const project = projects.find((w) => w.id === draft.projectId);
+                if (project && sameDir(project.path, resume.cwd)) return null;
+                return (
+                  <span className="draft-resume-note" data-testid="draft-resume-where">
+                    原来在 <code>{resume.cwd}</code> 里工作，接过来后在{project ? <>项目目录 <code>{project.path}</code></> : "公共目录"}里继续。
+                    {!resume.workspaceId && (
+                      <>
+                        {" "}
+                        <button type="button" className="link-btn" onClick={() => void addProject(resume.cwd)} data-testid="draft-resume-add-project">
+                          把原目录添加为项目
+                        </button>
+                      </>
+                    )}
+                  </span>
+                );
+              })()}
+              <span className="draft-resume-note">接过来的是一份副本，原会话不动。第一句话可以不写：不写就只接过来，等你发消息。</span>
+            </div>
+          )}
+
           <div
             className={dragging ? "draft-composer dropping" : "draft-composer"}
             onDragOver={(e) => {
@@ -270,7 +337,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
               value={draft.text}
               rows={3}
               aria-label="第一句话"
-              placeholder="比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 引用项目、任务或文件。"
+              placeholder={resume ? "接过来后先说的话，可以不写。打 @ 引用项目、任务或文件。" : "比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 引用项目、任务或文件。"}
               onChange={(e) => {
                 update({ text: e.target.value });
                 mentions.track(e.target);
@@ -320,11 +387,11 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
                 <span className="drawer-note">正在读取这个模型的选项…</span>
               )}
               <span className="spacer" />
-              <button type="button" className="btn-ghost" onClick={() => void submit(true)} disabled={busy} title="只建任务，放进待办，不开会话">
+              <button type="button" className="btn-ghost" onClick={() => void submit(true)} disabled={busy || !!resume} title={resume ? "接续的会话不能放进待办" : "只建任务，放进待办，不开会话"}>
                 放进待办 <kbd>Ctrl ↵</kbd>
               </button>
-              <button type="button" className="btn-primary" onClick={() => void submit(false)} disabled={busy || !draft.pick.profileId}>
-                {busy ? "正在开始…" : "开始"} <kbd>↵</kbd>
+              <button type="button" className="btn-primary" onClick={() => void submit(false)} disabled={busy || !draft.pick.profileId} data-testid="draft-start">
+                {busy ? (resume ? "正在接续…" : "正在开始…") : resume ? "接续" : "开始"} <kbd>↵</kbd>
               </button>
             </div>
             {/* DeepSeek · DSH with 工作区可写 in a project not set up for its sandbox (2026-10-23). */}
@@ -402,6 +469,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
           }}
         />
       )}
+      {pickingResume && <ResumePicker link={link} projects={projects} projectId={draft.projectId} onPick={pickResume} onClose={() => setPickingResume(false)} />}
       {starting && <StartingCover label={starting} />}
     </section>
   );

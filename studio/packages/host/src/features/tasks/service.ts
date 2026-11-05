@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Id, NewSessionInput, OutsideSessionList, OutsideSessionPreview, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
 import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -147,6 +147,9 @@ export class TasksFeature extends Feature {
       this.requireProfile(input.firstSession.profileId);
       if (input.firstSession.workspaceId && input.firstSession.workspaceId !== workspace.id) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
       this.firstImages(input.firstSession);
+      const resumeFrom = this.resumeFrom(input.firstSession);
+      // 接续已有会话: refused before the task is made (the session is gone, already taken on, not the subscription).
+      if (resumeFrom) await this.wrap(() => this.runtime.checkResume?.(input.firstSession!.profileId, resumeFrom) ?? Promise.resolve());
     }
     if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
     const title = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || "";
@@ -293,12 +296,32 @@ export class TasksFeature extends Feature {
     }
     const images = this.firstImages(input);
     // A first message with images goes as an ordinary message once the session exists (the runtimes start with text only).
-    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text && !images.length ? { text: input.text } : {}), options }));
+    const resumeFrom = this.resumeFrom(input);
+    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text && !images.length ? { text: input.text } : {}), options, ...(resumeFrom ? { resumeFrom } : {}) }));
     if (images.length) await this.f.sessions.sendMessage(session.id, input.text ?? "", images);
     // The owner's updatedAt moves with its sessions so the board can sort by activity.
     if (owner.taskId) this.publish({ type: "task.upserted", task: this.store.updateTask(owner.taskId, {}) });
     else if (owner.topicId) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(owner.topicId, {}) });
     return session;
+  }
+
+  /** 接续已有会话 (2026-11-05): Claude sessions started outside Studio that a new task can go on from. */
+  outsideSessions(): Promise<OutsideSessionList> {
+    return this.wrap(() => this.runtime.outsideSessions?.() ?? Promise.resolve({ sessions: [], unavailable: "这个 Studio 没有 Claude" }));
+  }
+
+  async outsidePreview(ref: string): Promise<OutsideSessionPreview> {
+    const preview = await this.wrap(() => this.runtime.outsidePreview?.(ref) ?? Promise.resolve(null));
+    if (!preview) throw new HostError("not_found", "找不到这个会话的对话记录");
+    return preview;
+  }
+
+  /** 接续已有会话 (2026-11-05): the outside Claude session a new one goes on from, checked; undefined when none. */
+  private resumeFrom(input: NewSessionInput): string | undefined {
+    if (input.resumeFrom === undefined || input.resumeFrom === null) return undefined;
+    if (typeof input.resumeFrom !== "string" || !/^[0-9a-f-]{36}$/i.test(input.resumeFrom)) throw new HostError("bad_request", "resumeFrom must be a Claude session id");
+    if (this.requireProfile(input.profileId).runtime !== "claude") throw new HostError("bad_request", "接续已有会话只能用 Claude");
+    return input.resumeFrom;
   }
 }
 

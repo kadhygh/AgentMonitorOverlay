@@ -122,7 +122,8 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
  * `onCanvas`: a task in a topic also goes on that topic's canvas ("显示在画布上"). `attachments`: uploaded images that go
  * with the first message (not when only filing).
  */
-export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, onCanvas = false, attachments: readonly string[] = []): Promise<{ task: Task; session: Session | null }> {
+/** `resumeFrom` (接续已有会话, 2026-11-05): the outside Claude session the first session goes on from; the text may be empty then. */
+export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, onCanvas = false, attachments: readonly string[] = [], resumeFrom?: string): Promise<{ task: Task; session: Session | null }> {
   const text = draftText(draft);
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
@@ -132,7 +133,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     ...(draft.lead ? { lead: true } : {}),
     ...(file
       ? {}
-      : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}) } }),
+      : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(resumeFrom ? { resumeFrom } : {}) } }),
   });
   if (!file) {
     rememberProfile(draft.pick.profileId);

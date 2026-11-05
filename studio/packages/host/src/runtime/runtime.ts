@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage, McpApply } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage, McpApply, OutsideSessionList, OutsideSessionPreview } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 import { withDelivery } from "./items.js";
 import { profileGone } from "./profiles.js";
@@ -21,7 +21,14 @@ export interface RuntimeEvents {
 }
 
 export interface SessionRuntimeApi {
-  startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session>;
+  /** `resumeFrom` (Claude only, 接续已有会话 2026-11-05): an outside Claude session the new one goes on from (a copy of it). */
+  startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions; resumeFrom?: string }): Promise<Session>;
+  /** Claude only (接续已有会话, 2026-11-05): sessions started outside Studio that a new task can go on from. */
+  outsideSessions?(): Promise<OutsideSessionList>;
+  /** Claude only: the end of one of those, to recognise it; null when it has no conversation. */
+  outsidePreview?(ref: string): Promise<OutsideSessionPreview | null>;
+  /** Claude only: throws why a new session of the profile cannot go on from that outside session. */
+  checkResume?(profileId: Id, ref: string): Promise<void>;
   /** Models (with efforts) and permission settings the profile's CLI offers. */
   choices(profileId: Id): Promise<ProfileChoices>;
   /** Switches the session's model, effort or permissions (Claude: at once; Codex: from the next turn). */
@@ -116,6 +123,20 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}) {
     return this.forSession(sessionId).sendMessage(sessionId, text, images, options);
+  }
+  outsideSessions(): Promise<OutsideSessionList> {
+    const r = this.runtimes.claude;
+    if (!r?.outsideSessions) return Promise.resolve({ sessions: [], unavailable: "这个 Studio 没有 Claude" });
+    return r.outsideSessions();
+  }
+  outsidePreview(ref: string): Promise<OutsideSessionPreview | null> {
+    const r = this.runtimes.claude;
+    return r?.outsidePreview ? r.outsidePreview(ref) : Promise.resolve(null);
+  }
+  async checkResume(profileId: Id, ref: string): Promise<void> {
+    const r = this.runtimes.claude;
+    if (!r?.checkResume) throw Object.assign(new Error("这个 Studio 没有 Claude"), { code: "bad_request" });
+    return r.checkResume(profileId, ref);
   }
   sendNow(sessionId: Id, itemId: Id): Promise<void> {
     const r = this.forSession(sessionId);
