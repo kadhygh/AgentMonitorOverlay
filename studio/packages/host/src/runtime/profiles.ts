@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BalanceConfig, McpServerSpec, ModelProfile } from "@amo-studio/protocol";
+import type { BalanceConfig, codex, McpServerSpec, ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "./credentials.js";
 import { AUTO_APPROVED_WRITE_TOOLS, PROMPTED_WRITE_TOOLS } from "../mcp/names.js";
 
@@ -189,9 +189,12 @@ export function codexServerSpec(
   return { profileId: profile.id, configArgs, env, missingCredentials };
 }
 
+/** A thread's `config` (thread/start, fork, resume): Codex config keys with JSON values. */
+export type CodexConfig = NonNullable<codex.v2.ThreadStartParams["config"]>;
+
 /** Explicit provider and model for thread/start and thread/fork, so a fork never silently changes provider. */
-export function codexThreadParams(profile: ModelProfile): { modelProvider?: string; model?: string; config?: Record<string, unknown> } {
-  const out: { modelProvider?: string; model?: string; config?: Record<string, unknown> } = {};
+export function codexThreadParams(profile: ModelProfile): { modelProvider?: string; model?: string; config?: CodexConfig } {
+  const out: { modelProvider?: string; model?: string; config?: CodexConfig } = {};
   if (profile.provider) out.modelProvider = profile.provider;
   if (profile.model) out.model = profile.model;
   if (profile.reasoningEffort) out.config = { model_reasoning_effort: profile.reasoningEffort };

@@ -343,7 +343,7 @@ export class CodexEvents {
     }
     if (kind === "fork") {
       void this.core.handleFor(profileId)
-        .then((h) => h.client.request("thread/resume", { threadId: thread.id } as never))
+        .then((h) => h.client.request("thread/resume", { threadId: thread.id }))
         .catch((err: unknown) => this.core.log(`could not follow fork ${thread.id}: ${String(err)}`));
     }
     return session;

@@ -1,4 +1,4 @@
-import type { AccountUsage, ModelOption, ModelProfile, TurnRetry } from "@amo-studio/protocol";
+import type { AccountUsage, codex, ModelOption, ModelProfile, TurnRetry } from "@amo-studio/protocol";
 
 // What a Codex app-server says about the account and its models (stage 16 split out of codex-runtime.ts): models and
 // their fast tier, the quota, skills, /code-review targets and why a turn retries.
@@ -48,12 +48,12 @@ export interface CodexSkill {
 }
 
 /** `/code-review` arguments: nothing (uncommitted changes), `base <branch>`, `commit <sha>`, or review instructions. */
-export function reviewTarget(args: string): Record<string, unknown> {
+export function reviewTarget(args: string): codex.v2.ReviewTarget {
   const text = args.trim();
   const base = /^base\s+(\S+)$/i.exec(text);
-  if (base) return { type: "baseBranch", branch: base[1] };
+  if (base) return { type: "baseBranch", branch: base[1]! };
   const commit = /^commit\s+([0-9a-f]{4,40})$/i.exec(text);
-  if (commit) return { type: "commit", sha: commit[1], title: null };
+  if (commit) return { type: "commit", sha: commit[1]!, title: null };
   return text ? { type: "custom", instructions: text } : { type: "uncommittedChanges" };
 }
 

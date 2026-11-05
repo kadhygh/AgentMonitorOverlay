@@ -1,4 +1,4 @@
-import type { Id, ModelProfile, QuestionPrompt, Session } from "@amo-studio/protocol";
+import type { codex, Id, ModelProfile, QuestionPrompt, Session } from "@amo-studio/protocol";
 import type { RuntimeCore } from "../runtime.js";
 import type { ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
@@ -36,7 +36,7 @@ export interface SessionState {
    * ends first, so Studio sends it again as the next turn. `start` — a turn 重新发送 started for a message shown before.
    * The echo (`userMessage` with that clientId) settles the row instead of adding one.
    */
-  sent: Map<string, { itemId: Id; kind: "steer" | "start"; input: Array<Record<string, unknown>> }>;
+  sent: Map<string, { itemId: Id; kind: "steer" | "start"; input: codex.v2.UserInput[] }>;
 }
 
 export function newSessionState(): SessionState {

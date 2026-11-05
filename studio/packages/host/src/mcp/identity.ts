@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { Id } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
+import type { CodexConfig } from "../runtime/profiles.js";
 import { MCP_SESSION_PREFIX, MCP_TOKEN_PREFIX } from "../store/kv-keys.js";
 
 // Who is calling the AMO MCP. A Codex thread sends its own token in a header that Studio set at thread/start (and sets
@@ -41,7 +42,7 @@ export class McpIdentities {
   }
 
   /** Thread config that makes the AMO MCP send this token. */
-  static threadConfig(token: string): Record<string, unknown> {
+  static threadConfig(token: string): CodexConfig {
     return { "mcp_servers.amo.http_headers": { [MCP_SESSION_HEADER]: token } };
   }
 }

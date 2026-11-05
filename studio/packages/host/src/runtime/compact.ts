@@ -1,5 +1,6 @@
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, DEFAULT_AUTO_COMPACT_TOKENS, type AutoCompactChoice } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
+import type { CodexConfig } from "./profiles.js";
 
 // 自动压缩点 (设置 → 模型, 2026-10-17): the context size at which a session summarises its conversation by itself. Both
 // CLIs otherwise wait until the context nears the model's whole window (1M for the Claude subscription), and every
@@ -63,7 +64,7 @@ export function claudeAutoCompactEnv(store: Store, profileId: string): Record<st
 }
 
 /** For a Codex thread's config (thread/start, thread/fork, thread/resume). */
-export function codexAutoCompactConfig(store: Store, profileId: string | undefined): Record<string, unknown> {
+export function codexAutoCompactConfig(store: Store, profileId: string | undefined): CodexConfig {
   const tokens = readAutoCompact(store, profileId);
   return tokens === null ? {} : { model_auto_compact_token_limit: tokens };
 }
