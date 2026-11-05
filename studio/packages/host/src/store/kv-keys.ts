@@ -4,9 +4,10 @@
 //
 // scope: what one value belongs to. "global": one value for the Host. "session" / "task" / "workspace": the key is
 // the prefix + that id, and Store.purge deletes it with what it belongs to. "folder" / "token": the prefix + a folder
-// path or an MCP token (the token's key goes with its session, see Store.purge).
+// path or an MCP token (the token's key goes with its session, see Store.purge). "outside": the prefix + the id of a
+// Claude session started outside Studio (接续已有会话, 2026-11-05).
 
-export type KvScope = "global" | "session" | "task" | "workspace" | "folder" | "token";
+export type KvScope = "global" | "session" | "task" | "workspace" | "folder" | "token" | "outside";
 
 export interface KvKey {
   /** The whole key, or for a scope other than global the prefix the id is appended to. */
@@ -82,6 +83,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "report-turn:", scope: "session", owner: "features/sessions/service.ts", what: "已汇报过的那一轮" },
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },
   { key: "claude-handoff-seen:", scope: "session", owner: "runtime/claude/transcripts.ts", what: "已读过的子会话交回" },
+  { key: "claude-adopted:", scope: "outside", owner: "runtime/claude/outside.ts", what: "接续已有会话：已经接过的原会话 → 接着做的 Studio 会话" },
   { key: "mcp-identity:session:", scope: "session", owner: "mcp/identity.ts", what: "会话的 MCP token" },
   { key: "mcp-identity:token:", scope: "token", owner: "mcp/identity.ts", what: "MCP token → 会话（跟着会话删）" },
   { key: "remote.review-comments:", scope: "task", owner: "features/remote/comments.ts", what: "远程任务的 Review 批注" },
