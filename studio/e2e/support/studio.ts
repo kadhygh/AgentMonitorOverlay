@@ -52,6 +52,11 @@ export async function launchStudio(
   const codexHome = join(root, "codex-home");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(codexHome, { recursive: true });
+  // No plugin marketplace sync (2026-11-05): with a fresh CODEX_HOME every Codex app-server the test starts clones
+  // github.com/openai/plugins in the background, and that git inherits the Electron process's stdio. When GitHub is
+  // slow it outlives the app, so app.close() (which waits for those pipes to close) hung for the whole 90 s afterEach
+  // timeout. The same switch as server-manager.test.ts.
+  writeFileSync(join(codexHome, "config.toml"), "[features]\nplugins = false\n");
   const mock = options.mockModel === false ? null : await startMockModel();
   const claudeMock = options.mockModel === false ? null : await startMockAnthropic();
   const mockEnv: Record<string, string> = mock
