@@ -48,18 +48,23 @@ interface TranscriptProps {
    * the row still read 「等待送达 · 立即发送」 as if the send had not gone): waiting messages say it is being interrupted.
    */
   givingWay?: boolean;
+  /**
+   * A DSH session whose subagents still run (2026-11-06): DSH's turn ends only once they have, so a message waits for
+   * them; the row says so.
+   */
+  waitsForSubagents?: boolean;
 }
 
 export type DeliveryAction = "now" | "resend";
 
 /** onDelivery for the person's messages, however deep in the turns they are drawn. */
-const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean }>({ onDelivery: undefined, givingWay: false });
+const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean; waitsForSubagents: boolean }>({ onDelivery: undefined, givingWay: false, waitsForSubagents: false });
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false }: TranscriptProps) {
-  const delivery = useMemo(() => ({ onDelivery, givingWay }), [onDelivery, givingWay]);
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false, waitsForSubagents = false }: TranscriptProps) {
+  const delivery = useMemo(() => ({ onDelivery, givingWay, waitsForSubagents }), [onDelivery, givingWay, waitsForSubagents]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded or folded, against how finished turns start: folded, except in 详细 (2026-11-04, the
@@ -382,7 +387,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
  * the turn's end; Codex: at its next step), or one whose process went before reading it.
  */
 function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]> }) {
-  const { onDelivery, givingWay } = useContext(DeliveryContext);
+  const { onDelivery, givingWay, waitsForSubagents } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
   // `held` (2026-11-04): from an agent or from Studio (中转回复, 值守, 传话…), in the session's inbox until its turn is over;
@@ -391,17 +396,20 @@ function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNulla
   const waiting = delivery === "waiting" || held;
   // 问题 #16: once 立即发送 is under way (this button, or Ctrl+Enter in the composer) the row says so until it is read.
   const interrupting = delivery === "waiting" && (asked || givingWay);
+  const forSubagents = delivery === "waiting" && waitsForSubagents;
   const title = interrupting
     ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）"
     : held
       ? "这条是 AMO 替别处转来的（中转回复、值守、传话、子会话的回报…）：等会话这一轮做完再送进去，不打断它；Studio 重启了也会接着送"
-      : waiting
+      : forSubagents
+        ? "DSH 要等它开的子 agent 都跑完，这一轮才结束，这条要等那时才送到。「立即发送」会打断这一轮。不想等的话，让它用 AMO 的子会话（session_start）开子 agent"
+        : waiting
         ? "模型还没读到这条：工具调用后或这一轮结束时读到"
         : "这条消息没送进会话（会话的进程没了，或者送的时候出错了），模型没读到它";
   return (
     <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : delivery}>
       <span className="msg-delivery-state" title={title}>
-        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : waiting ? "◐ 等待送达" : "! 没送到"}
+        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : forSubagents ? "◐ 等子 agent 跑完后送到" : waiting ? "◐ 等待送达" : "! 没送到"}
       </span>
       {onDelivery && !interrupting && (
         <button

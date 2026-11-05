@@ -9,7 +9,7 @@ import { annotationNumber, type AnnotationRefs } from "../review/annotationRefs.
 export function composerPlaceholder(s: { readOnly: boolean; claudeSub: boolean; isRevising: boolean; planReview: boolean; generating: boolean; queues: boolean; waitsForTurn?: boolean }): string {
   return s.readOnly
     ? s.claudeSub
-      ? "Claude 的子 agent 不能单独接收消息，请在父会话里继续。"
+      ? "子 agent 不能单独接收消息，请在父会话里继续。"
       : "会话已交给终端，工作台暂时只读。"
     : s.isRevising
       ? "写下要修改的地方，回车发给 Claude（计划会按你的意见重写）"

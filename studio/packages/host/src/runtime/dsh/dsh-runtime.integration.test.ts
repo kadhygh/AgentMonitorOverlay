@@ -87,6 +87,34 @@ afterEach(async () => {
 });
 
 describe("DSH runtime", () => {
+  it("shows a subagent DSH starts itself as a child session filled from its log, while it runs (2026-11-06)", async () => {
+    const host = await boot();
+    const s = await start(host, "[[subagent: 1500]]");
+    const sessions = async () => (await call<StateSnapshot>(host, "GET", "/api/state")).sessions;
+    const child = await until(async () => (await sessions()).find((x) => x.parentId === s.id), (c) => !!c);
+    expect(child).toMatchObject({ kind: "sub", runtime: "dsh", title: "数文件" });
+    // While it runs: its command shows in its own session, before the parent's turn is over.
+    const running = await until(() => items(host, child!.id), (l) => l.some((i) => i.type === "tool" && i.input === "Get-ChildItem src"));
+    expect(await status(host, s.id)).toBe("running");
+    expect((await sessions()).find((x) => x.id === child!.id)?.status).toBe("running");
+    expect(running.find((i) => i.type === "user")).toMatchObject({ text: "数一数 src 下的文件" });
+    await idle(host, s.id);
+    const done = await until(() => items(host, child!.id), (l) => l.some((i) => i.type === "turn" && i.state === "completed"));
+    expect((await sessions()).find((x) => x.id === child!.id)).toMatchObject({ status: "completed", runtimeRef: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+    expect(done.map((i) => i.type)).toEqual(["user", "turn", "reasoning", "tool", "agent"]);
+    expect(done.find((i) => i.type === "tool")).toMatchObject({ kind: "list", status: "completed", detail: "a.ts\nb.ts" });
+    expect(replies(done)).toEqual(["共 2 个文件"]);
+    expect(done.find((i) => i.type === "turn")).toMatchObject({ usage: { input: 100, output: 50 } });
+    // The parent: a ▸ row (no tool row), what the agent sent back, and its own reply.
+    const parent = await items(host, s.id);
+    expect(parent.filter((i) => i.type === "tool")).toEqual([]);
+    expect(parent.find((i) => i.type === "subagent")).toMatchObject({ childSessionId: child!.id, summary: "数文件", usage: { input: 100, output: 50 } });
+    expect(parent.find((i) => i.type === "notice")).toMatchObject({ message: "子 agent「数文件」发回了消息：共 2 个文件" });
+    expect(replies(parent).at(-1)).toMatch(/^SUB DONE /);
+    // It takes no messages of its own.
+    await expect(call(host, "POST", `/api/sessions/${child!.id}/messages`, { text: "你好" })).rejects.toThrow(/409.*子 agent 不能单独接收消息/);
+  });
+
   it("fills in the tokens and speed of turns that ended without them, from DSH's log, without touching others (2026-10-27)", async () => {
     const host = await boot();
     const s = await start(host, "你好");

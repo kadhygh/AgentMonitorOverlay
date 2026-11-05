@@ -38,6 +38,7 @@ import {
 const ACCOUNT_SIGN_IN = "DSH 桌面版还没有登录 DeepSeek 账号：打开 DeepSeek Harness 桌面版登录，或者在 设置 → 模型 → DeepSeek 里改用 API Key";
 const NO_KEY = "还没有 DeepSeek 的 API Key：在 设置 → 模型 → DeepSeek 里填上，或者改用 DSH 桌面版登录的账号";
 import { blockText, DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
+import { DshSubagents } from "./subagents.js";
 import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 import { withoutHostEnv } from "../agent-env.js";
 import { acpServer, type McpSource } from "../mcp-launch.js";
@@ -244,9 +245,12 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly folderChecks = new Map<string, Promise<FolderAccessState | null>>();
   /** The setup or scan on each folder (by lower-cased path) in this run: running, or how the last one went. */
   private readonly folderJobs = new Map<string, { job: "setup" | "scan" | "revert"; state: "running" | "done" | "failed"; error?: string }>();
+  /** DSH's own subagents, from their logs (2026-11-06; ACP sends nothing of them). */
+  private readonly subagents: DshSubagents;
 
   constructor(private readonly options: DshRuntimeOptions) {
     super(options.store, "dsh", options.now, options.profiles);
+    this.subagents = new DshSubagents({ core: this.makeCore(), home: join(options.dir, "home"), turnRef: (id) => this.live.get(id)?.transcript.turnRef() ?? {} });
     this.folderAccess =
       options.folderAccess !== undefined ? options.folderAccess : options.agent || process.platform !== "win32" ? null : windowsFolderAccess(join(options.dir, "acl-backup"));
     // The last Host stopped mid-turn: the turn is over (its process went with the Host), and what waited for it was
@@ -534,6 +538,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   async closeAll(): Promise<void> {
     this.closing = true;
     await Promise.all([...this.live.keys()].map((id) => this.release(id)));
+    this.subagents.close();
+  }
+
+  /** A DSH subagent's session is shown from DSH's log: its parent talks to it (DSH's send_message). */
+  protected override writable(id: Id): Session {
+    const s = super.writable(id);
+    if (s.kind === "sub") throw Object.assign(new Error("DSH 的子 agent 不能单独接收消息，请在父会话里继续"), { code: "read_only" });
+    return s;
   }
 
   // ---- processes --------------------------------------------------------------------------------------------------
@@ -616,7 +628,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path, this.subagents), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
@@ -636,6 +648,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     });
     conn.on("exit", (code) => {
       if (this.live.get(session.id) === live) this.live.delete(session.id);
+      // Its subagents ran in this process: what they last wrote is read, those still running stopped with it.
+      this.subagents.stopTree(session.id);
       if (live.idleTimer) clearTimeout(live.idleTimer);
       if (!this.closing && live.inflight) this.emit("log", `DSH process of ${session.id} exited mid-turn (${code})`);
       // A turn DSH ran by itself is cut off with its process (a Host shutdown leaves it to the next start).

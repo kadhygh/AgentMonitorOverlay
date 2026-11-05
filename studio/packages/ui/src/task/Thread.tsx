@@ -8,6 +8,7 @@ import { ReplyNav } from "./ReplyNav.js";
 import { navHistory } from "../shell/navHistory.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { Transcript, type DeliveryAction } from "../chat/Transcript.js";
+import { SubagentStatusContext } from "../chat/ProcessRows.js";
 import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
 import { sessionStats, type ApprovalItem } from "../chat/turns.js";
@@ -307,8 +308,9 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
     });
   };
 
-  // A Claude subagent has no conversation of its own; it is followed from its parent session.
-  const claudeSub = session?.runtime === "claude" && session.kind === "sub";
+  // A Claude subagent has no conversation of its own; it is followed from its parent session. So is a DSH one
+  // (2026-11-06): Studio shows it from DSH's log; messages to it go through its parent (DSH's send_message).
+  const claudeSub = (session?.runtime === "claude" || session?.runtime === "dsh") && session.kind === "sub";
   // 远程 (step 2): a copy of another computer's session — its subagents follow their parent there too, a revoked one is
   // only read, and while that computer is away nothing goes out (what is typed stays).
   const isRemote = session?.runtime === "remote";
@@ -322,6 +324,12 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   // opening it counts as seeing it; or Focus just sent the person here for it. Not when it opens at a place of its own
   // (后退, a bookmarked passage).
   const seenData = useSessionSeen();
+  // The ▸ rows' subagents, by session id (their status shows on the row).
+  const waitsForSubagents = session?.runtime === "dsh" && sessions.some((s) => s.parentId === session.id && s.kind === "sub" && s.status === "running");
+  const subagentStatus = useMemo(() => {
+    const byId = new Map(sessions.filter((s) => s.kind === "sub").map((s) => [s.id, s.status]));
+    return (id: string) => byId.get(id);
+  }, [sessions]);
   const arrival = useRef<{ id: string | null; awaits: boolean }>({ id: null, awaits: false });
   if (session && arrival.current.id !== session.id) arrival.current = { id: session.id, awaits: initialScroll === undefined && !atPassage && (awaitsPerson(session, sessions, seenData) || (cameFromFocus(session.id) && session.status !== "running")) };
   useEffect(() => {
@@ -582,7 +590,9 @@ ${d}` : back));
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
-                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver } : {})} givingWay={halting === "now"} />
+                <SubagentStatusContext.Provider value={subagentStatus}>
+                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} />
+                </SubagentStatusContext.Provider>
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>

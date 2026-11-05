@@ -70,6 +70,35 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
 });
 
+test("a subagent DSH starts itself: a ▸ row with its status, its own session read from DSH's log (2026-11-06)", async () => {
+  studio = await launchStudio({ dsh: true });
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "DSH 子 agent", workspaceId: ws.id, firstSession: { profileId: "dsh-mock", text: "[[subagent: 8000]]" } });
+  await page.getByTestId("task-card").filter({ hasText: "DSH 子 agent" }).click();
+  const row = page.getByTestId("msg-subagent");
+  await expect(row).toContainText("数文件", { timeout: 30_000 });
+  await expect(row.getByTestId("subagent-status")).toHaveText("◐ 进行中");
+  // A message meanwhile waits for the subagent: DSH's turn ends only once it has, and the row says so.
+  const composer = page.getByLabel("输入消息");
+  await composer.fill("顺便说一句");
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-delivery").last()).toContainText("等子 agent 跑完后送到");
+  await screenshot(studio.app, "studio", "dsh-subagent-running", page);
+  // Its own session: what it does, as it goes; it takes no messages of its own.
+  await row.getByRole("button", { name: "查看" }).click();
+  await expect(page.getByTestId("thread-head")).toContainText("数文件");
+  await expect(page.getByLabel("输入消息")).toHaveAttribute("placeholder", "子 agent 不能单独接收消息，请在父会话里继续。");
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "共 2 个文件" })).toBeVisible({ timeout: 30_000 });
+  await screenshot(studio.app, "studio", "dsh-subagent-session", page);
+  await page.getByTestId("nav-back").click();
+  await expect(row.getByTestId("subagent-status")).toHaveText("✓ 已完成", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").filter({ hasText: "SUB DONE" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-DSH: 顺便说一句", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+  await screenshot(studio.app, "studio", "dsh-subagent-done", page);
+});
+
 test("a DSH goal going on by itself: each round a turn, the answers stay in sight, 打断 stops it (问题 #13)", async () => {
   // 标准 view: finished turns fold (the tests' default 完全展开 never folds).
   studio = await launchStudio({ dsh: true, transcriptView: "standard" });

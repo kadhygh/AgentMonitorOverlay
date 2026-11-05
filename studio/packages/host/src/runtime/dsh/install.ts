@@ -64,6 +64,10 @@ export type DshPermissionMode = "read-only" | "workspace-write" | "danger-full-a
 export const DSH_SHELL_TOOLS = new Set(["pwsh", "bash", "powershell", "shell"]);
 /** DSH names an MCP tool `mcp__<server>__<tool>`. */
 export const DSH_MCP_PREFIX = "mcp__";
+/** DSH's tools that start a subagent in the background (subagents.ts). */
+export const DSH_SUBAGENT_TOOLS = new Set(["subagent", "subagent_fork"]);
+/** DSH's tool an agent sends another (its parent, its subagent) a message with. */
+export const DSH_SEND_MESSAGE = "send_message";
 
 /** The settings store, as far as DSH needs it. */
 export interface KvStore {

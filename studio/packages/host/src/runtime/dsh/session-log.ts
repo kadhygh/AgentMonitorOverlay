@@ -61,8 +61,22 @@ const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
  * lies inside compressed data); a last frame still being written is left out.
  */
 export function zstdFrames(raw: Buffer): string {
+  return zstdFramesFrom(raw, 0).text;
+}
+
+/**
+ * The frames from byte `from` on, and where the last whole one ends (2026-11-06: a DSH subagent's log is read again
+ * as it grows, from where the last read stopped). From 0 a log whose first frame cannot be read throws; from further
+ * on what cannot be read yet is left for the next read.
+ */
+export function zstdFramesFrom(raw: Buffer, from: number): { text: string; end: number } {
   const out: Buffer[] = [];
-  let start = 0;
+  let start = from;
+  // Not at a frame (read while one was being written): on from the next.
+  if (from > 0 && from < raw.length && !raw.subarray(from, from + 4).equals(ZSTD_MAGIC)) {
+    start = raw.indexOf(ZSTD_MAGIC, from);
+    if (start < 0) return { text: "", end: from };
+  }
   while (start < raw.length) {
     let end = raw.indexOf(ZSTD_MAGIC, start + 4);
     for (;;) {
@@ -71,7 +85,7 @@ export function zstdFrames(raw: Buffer): string {
         break;
       } catch (err) {
         if (end < 0) {
-          if (out.length) return Buffer.concat(out).toString("utf8");
+          if (out.length || from > 0) return { text: Buffer.concat(out).toString("utf8"), end: start };
           throw err;
         }
         end = raw.indexOf(ZSTD_MAGIC, end + 4);
@@ -79,7 +93,7 @@ export function zstdFrames(raw: Buffer): string {
     }
     start = end < 0 ? raw.length : end;
   }
-  return Buffer.concat(out).toString("utf8");
+  return { text: Buffer.concat(out).toString("utf8"), end: start };
 }
 
 /** The stats of the last turn in a log's text (exported for tests). */

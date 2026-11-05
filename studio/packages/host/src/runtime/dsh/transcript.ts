@@ -3,7 +3,8 @@ import type { DshTurnStats } from "./session-log.js";
 import { newId } from "../../store/store.js";
 import type { RuntimeCore } from "../runtime.js";
 import { classifyCommand, fileDiff, formatInput, head, shortPath, tail, textDiff } from "../items.js";
-import { DSH_MCP_PREFIX, DSH_SHELL_TOOLS } from "./install.js";
+import { DSH_MCP_PREFIX, DSH_SEND_MESSAGE, DSH_SHELL_TOOLS, DSH_SUBAGENT_TOOLS } from "./install.js";
+import type { DshSubagents } from "./subagents.js";
 
 // A DSH session's ACP updates as Studio rows (stage 17). DSH sends whole committed messages, not token deltas: an
 // assistant message comes as one chunk per block (thought, text) with the message's id, a tool call as `tool_call`
@@ -32,11 +33,14 @@ export class DshTranscript {
   /** The message being written: later blocks of the same message (or plain text right after it) join it. */
   private last: { type: "agent" | "reasoning"; messageId: string | undefined; itemId: Id } | null = null;
   private readonly tools = new Map<string, { itemId: Id; name: string; rawInput: unknown }>();
+  /** Subagent calls waiting for their agent's id (subagents.ts: a ▸ row and a child session, not a tool row). */
+  private readonly subCalls = new Set<string>();
 
   constructor(
     private readonly core: RuntimeCore,
     private readonly sessionId: Id,
     private readonly cwd?: string,
+    private readonly subs?: DshSubagents,
   ) {}
 
   /** `raw.turnId` for items of the running turn. */
@@ -129,12 +133,28 @@ export class DshTranscript {
         if (!u.toolCallId) return;
         this.last = null;
         const name = u.title ?? "tool";
+        if (this.subs && DSH_SUBAGENT_TOOLS.has(name)) {
+          this.subCalls.add(u.toolCallId);
+          this.subs.begin(this.sessionId, u.toolCallId, u.rawInput, this.turnRef());
+          return;
+        }
+        if (name === DSH_SEND_MESSAGE) this.subs?.messageTo(this.sessionId, u.rawInput);
         const fields = describeDshTool(name, u.rawInput, this.cwd);
         const item = this.core.appendItem(this.sessionId, { type: "tool", ...fields, status: toolStatus(u.status) ?? "running" }, { method: "tool_call", itemId: u.toolCallId, ...this.turnRef() });
         this.tools.set(u.toolCallId, { itemId: item.id, name, rawInput: u.rawInput });
         return;
       }
       case "tool_call_update": {
+        if (u.toolCallId && this.subCalls.has(u.toolCallId)) {
+          if (u.rawInput !== undefined) this.subs?.describe(this.sessionId, u.toolCallId, u.rawInput);
+          const status = toolStatus(u.status);
+          if (status && status !== "running") {
+            this.subCalls.delete(u.toolCallId);
+            const output = toolOutput(u.content) || (u.rawOutput !== undefined ? (formatInput(u.rawOutput) ?? "") : "");
+            this.subs?.settle(this.sessionId, u.toolCallId, status === "completed", output);
+          }
+          return;
+        }
         const t = u.toolCallId ? this.tools.get(u.toolCallId) : undefined;
         if (!t) return;
         const status = toolStatus(u.status);

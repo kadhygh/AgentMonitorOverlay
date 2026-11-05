@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "@amo-studio/testkit";
-import { allTurnStats, dshTurnStats, turnStats, zstdFrames } from "./session-log.js";
+import { allTurnStats, dshTurnStats, turnStats, zstdFrames, zstdFramesFrom } from "./session-log.js";
 
 // A DSH session's speed and tokens from its own log (2026-10-22), measured as DSH's session-stats does.
 
@@ -83,5 +83,16 @@ describe("DSH turn stats", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "session.v4.jsonl.zstd"), whole);
     expect(dshTurnStats(root, "acp-1")?.decode).toEqual({ ms: 1500, tokens: 300 });
+  });
+
+  it("reads on from where the last read stopped, a frame still being written left for the next (2026-11-06)", () => {
+    const frames = ["a\n", "b\n", "c\n"].map((l) => zstdCompressSync(Buffer.from(l)));
+    const first = zstdFramesFrom(Buffer.concat([frames[0]!, frames[1]!.subarray(0, 5)]), 0);
+    expect(first).toEqual({ text: "a\n", end: frames[0]!.length });
+    const whole = Buffer.concat(frames);
+    expect(zstdFramesFrom(whole, first.end)).toEqual({ text: "b\nc\n", end: whole.length });
+    // Started inside a frame (a log read while it was being written): on from the next one.
+    expect(zstdFramesFrom(whole, 2).text).toBe("b\nc\n");
+    expect(zstdFramesFrom(whole, whole.length)).toEqual({ text: "", end: whole.length });
   });
 });

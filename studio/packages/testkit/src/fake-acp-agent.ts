@@ -14,6 +14,9 @@
 //   [[fail-after: MS]]       a pwsh call, then the prompt fails MS later (a turn that errors while messages wait)
 //   [[stuck]]                a pwsh call that never ends, session/cancel or not (停止's fallback)
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
+//   [[subagent: MS]]         DSH's `subagent` tool: the call returns the agent's id at once; the agent's own log is
+//                            written frame by frame over MS (a command, its reply sent back with send_message), and
+//                            the prompt waits for it, as DSH's does (2026-11-06). ACP says nothing of the agent.
 //   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
 //                            signal): thought, a pwsh call, a reply each; `[[goal: N slow]]`: the last round's call
 //                            runs until session/cancel
@@ -22,7 +25,7 @@
 // offers them only when the agent's default model takes them (deepseek-flash here); a prompt's images are counted in
 // the reply, and a prompt with images is refused when they were not offered.
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
@@ -247,6 +250,15 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
       update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: "Error: tool call aborted" } }] });
       return { stopReason: "cancelled" };
     }
+    const sub = /\[\[subagent: (\d+)\]\]/.exec(text);
+    if (sub) {
+      const callId = `call-${randomUUID()}`;
+      const childId = randomUUID();
+      update(a.id, { sessionUpdate: "tool_call", toolCallId: callId, title: "subagent", kind: "other", status: "in_progress", rawInput: { description: "数文件", prompt: "数一数 src 下的文件" } });
+      update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "completed", content: [{ type: "content", content: { type: "text", text: `started subagent ${childId}` } }] });
+      await subagentRun(a.id, childId, Number(sub[1]));
+      reply = `SUB DONE ${childId}`;
+    }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
     if (/\[\[auth\]\]/.test(text)) reply = `AUTH key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} credentials=${CREDENTIALS ?? ""} model=${s.model}`;
     if (/\[\[mcp-list\]\]/.test(text)) reply = `MCP-LIST ${a.mcp.map((m) => `${m.name}:${m.url ? "http" : "stdio"}`).join(",")}`;
@@ -269,6 +281,26 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     if (!cancelled) a.cancel = null;
     a.prompting = false;
   }
+}
+
+/** A DSH subagent's run as its log shows it: one zstd frame per event, appended as DSH does, over `ms`. */
+async function subagentRun(parentId: string, childId: string, ms: number): Promise<void> {
+  const dir = join(home, "sessions", "--fake-cwd--", childId);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "session.v4.jsonl.zstd");
+  const put = (type: string, data: Record<string, unknown>) => appendFileSync(file, zstdCompressSync(Buffer.from(`${JSON.stringify({ type, seq: 0, time: Date.now(), data })}\n`)));
+  const wait = (f: number) => new Promise((r) => setTimeout(r, ms * f));
+  appendFileSync(file, zstdCompressSync(Buffer.from(`${JSON.stringify({ type: "session", version: 4, id: childId, parentSession: parentId, origin: "subagent" })}\n`)));
+  put("agent/inbox/spliced", { target: "next-turn", start: 0, inserted: [{ content: [{ type: "text", text: "数一数 src 下的文件" }, { type: "text", text: `Your parent agent id is "${parentId}". Before you finish, send your result with send_message.` }], source: { kind: "user" }, role: "user" }] });
+  put("turn/start", { turn: 1 });
+  put("assistant/message", { turn: 1, step: 1, message: { role: "assistant", content: [{ type: "reasoning", text: "先列文件" }] }, usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+  put("tool/call", { turn: 1, step: 1, callId: "c-1", name: "pwsh", arguments: JSON.stringify({ command: "Get-ChildItem src" }) });
+  await wait(0.5);
+  put("tool/result", { turn: 1, step: 1, message: { role: "tool", toolCallId: "c-1", content: [{ type: "text", text: "a.ts\nb.ts" }], isError: false } });
+  put("tool/call", { turn: 1, step: 2, callId: "c-2", name: "send_message", arguments: JSON.stringify({ agent_id: parentId, message: "共 2 个文件" }) });
+  put("tool/result", { turn: 1, step: 2, message: { role: "tool", toolCallId: "c-2", content: [{ type: "text", text: "sent" }], isError: false } });
+  await wait(0.5);
+  put("turn/end", { turn: 1, reason: { kind: "completed" } });
 }
 
 /** A goal's rounds after the prompt (DSH's goal-round-driver): ACP updates only, outside any prompt. */

@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { packIdOf, reviewTargetOf } from "../viewpacks/logic.js";
 import { openReview } from "../gitreview/open.js";
 import { openViewer } from "../viewer/open.js";
-import type { FileDiff } from "@amo-studio/protocol";
+import type { FileDiff, SessionStatus } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import {
   ACTIVITY_ICON,
@@ -394,13 +394,44 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
   );
 }
 
+/**
+ * A subagent's session status, for its ▸ row (2026-11-06, the user: a DSH session's subagent showed nothing of whether it
+ * still ran). The thread gives it from the sessions it has; elsewhere the row shows none.
+ */
+export const SubagentStatusContext = createContext<(sessionId: string) => SessionStatus | undefined>(() => undefined);
+
+function subagentStatusText(status: SessionStatus | undefined): string | null {
+  switch (status) {
+    case "running":
+      return "◐ 进行中";
+    case "awaiting-approval":
+    case "awaiting-answer":
+    case "awaiting-review":
+      return "! 等你处理";
+    case "completed":
+      return "✓ 已完成";
+    case "interrupted":
+      return "! 已中断";
+    case "error":
+      return "! 出错了";
+    default:
+      return null;
+  }
+}
+
 function SubagentRow({ item, onJump }: { item: Extract<ProcessMember, { type: "subagent" }>; onJump(id: string): void }) {
+  const status = subagentStatusText(useContext(SubagentStatusContext)(item.childSessionId));
   return (
     <div className="pr pr-sub" data-testid="msg-subagent">
       <RowButton icon={<IconAgent />} open={false} expandable={false} onToggle={() => undefined}>
         <span className="pr-title">子智能体</span>
         <span className="pr-dot" />
         <span className="pr-summary">{item.summary}</span>
+        {status && (
+          <span className="pr-meta" data-testid="subagent-status">
+            {status}
+          </span>
+        )}
         {item.usage && (
           <span className="pr-meta" title="这个子 agent 自己用掉的 token" data-testid="subagent-usage">
             用量 {formatTokens(item.usage.input + item.usage.output)}
