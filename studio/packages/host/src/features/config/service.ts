@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
@@ -18,6 +18,7 @@ export class ConfigFeature extends Feature {
       presets: this.presets(),
       disabledFeatures: this.disabledFeatures(),
       experimentalFeatures: this.experimentalFeatures(),
+      devUiDir: this.devUiDir(),
       teamAutoSend: this.teamAutoSend(),
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
@@ -33,6 +34,16 @@ export class ConfigFeature extends Feature {
       subsessionNotes: this.subsessionNotes(),
     };
   }
+
+  /**
+   * 设置 → 测试功能 → 开发界面目录 (2026-11-05): the UI build the Host serves instead of the installed one, so 全景's view
+   * can be tried from a worktree with a reload and no release. In memory only: a broken build is undone by restarting
+   * Studio. null when off, or when the folder lost its index.html (a build halfway, the worktree removed).
+   */
+  devUiDir(): string | null {
+    return this.devUi && existsSync(join(this.devUi, "index.html")) ? this.devUi : null;
+  }
+  private devUi: string | null = null;
 
   /** 设置 → 子会话: the notes on models as sub-sessions, for accounts that still exist (the role card reads them). */
   subsessionNotes(): SubsessionNote[] {
@@ -192,7 +203,7 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; experimentalFeatures?: unknown; teamAutoSend?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; devUiDir?: unknown; presets?: unknown; disabledFeatures?: unknown; experimentalFeatures?: unknown; teamAutoSend?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
     if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.topicGroups !== undefined) this.store.setKv(TOPIC_GROUPS_KEY, JSON.stringify(this.checkTopicGroups(input.topicGroups)));
@@ -251,6 +262,16 @@ export class ConfigFeature extends Feature {
       const ids = input.disabledFeatures;
       if (!Array.isArray(ids) || ids.some((id) => !known.includes(id as OptionalFeature))) throw new HostError("bad_request", `disabledFeatures must list some of: ${known.join(", ")}`);
       this.store.setKv(DISABLED_FEATURES_KEY, JSON.stringify(known.filter((id) => ids.includes(id))));
+    }
+    if (input.devUiDir !== undefined) {
+      const dir = input.devUiDir;
+      if (dir === null || dir === "") this.devUi = null;
+      else {
+        if (typeof dir !== "string" || !isAbsolute(dir.trim())) throw new HostError("bad_request", "开发界面目录要写完整路径，比如 G:\\PROJECT\\xxx\\studio\\packages\\ui\\dist");
+        const root = resolve(dir.trim());
+        if (!existsSync(join(root, "index.html"))) throw new HostError("bad_request", `这个目录里没有 index.html（界面要先构建）：${root}`);
+        this.devUi = root;
+      }
     }
     if (input.experimentalFeatures !== undefined) {
       const known = EXPERIMENTAL_FEATURES.map((f) => f.id);

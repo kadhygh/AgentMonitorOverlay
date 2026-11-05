@@ -196,8 +196,11 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   };
 
   const serveUi = (req: IncomingMessage, res: ServerResponse, path: string) => {
-    if (!options.uiDir || (req.method !== "GET" && req.method !== "HEAD")) return false;
-    const root = resolve(options.uiDir);
+    // 设置 → 测试功能 → 开发界面目录 (2026-11-05): a UI build from a worktree instead of the installed one, while it is set.
+    const dev = options.service.config.devUiDir();
+    const dir = dev ?? options.uiDir;
+    if (!dir || (req.method !== "GET" && req.method !== "HEAD")) return false;
+    const root = resolve(dir);
     let decoded: string;
     try {
       decoded = decodeURIComponent(path);
@@ -208,6 +211,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     if (!file.startsWith(root + sep) && file !== root) return false;
     if (!existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
     if (!existsSync(file)) return false;
+    // The person may name any folder there: only the kinds of file a UI build is made of are served from it.
+    if (dev && !MIME[extname(file)]) return false;
     res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
     createReadStream(file).pipe(res);
     return true;

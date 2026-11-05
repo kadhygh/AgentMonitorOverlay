@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectHost, HostStartError, keepHostAlive, readHostJson, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
+import { connectHost, HostStartError, keepHostAlive, putHostJson, readHostJson, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { remoteInUse, remoteQuitNote, type RemoteState } from "@amo-studio/protocol";
 import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
@@ -258,15 +258,31 @@ function watchRemoteUse(): void {
   setInterval(() => void look(), Number(process.env.AMO_STUDIO_REMOTE_WATCH_MS) || 20_000).unref();
 }
 
-function trayItems(): Array<{ label: string; click: () => void } | { type: "separator" }> {
-  return [{ label: "打开 Studio", click: showMain }, { type: "separator" }, { label: "完全退出", click: () => void quitCompletely() }];
+function trayItems(devUi = false): Array<{ label: string; click: () => void } | { type: "separator" }> {
+  return [{ label: "打开 Studio", click: showMain }, ...(devUi ? [{ label: "恢复安装版界面", click: () => void leaveDevUi() }] : []), { type: "separator" as const }, { label: "完全退出", click: () => void quitCompletely() }];
+}
+
+/**
+ * 设置 → 测试功能 → 开发界面目录 (2026-11-05): the windows' UI comes from a worktree's build; when that build does not
+ * even draw the window (so its own 恢复安装版 cannot be clicked), the tray puts the installed one back and reloads.
+ */
+async function devUiOn(): Promise<boolean> {
+  const conn = host;
+  if (!conn) return false;
+  const s = await readHostJson<{ devUiDir?: string | null }>(conn, "/api/settings", 800);
+  return !!s?.devUiDir;
+}
+async function leaveDevUi(): Promise<void> {
+  const conn = host;
+  if (!conn || !(await putHostJson(conn, "/api/settings", { devUiDir: null }))) return;
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && w.webContents.getURL().startsWith(conn.url)) w.webContents.reload();
 }
 
 /** The menu on a right-click (2026-10-29, the user: like 便签's, not Windows' own; @amo-studio/traymenu). */
 const trayWindow = new TrayMenu({ label: "AMO Studio 菜单" });
-function openTrayMenu(): void {
+async function openTrayMenu(): Promise<void> {
   const entries: MenuEntry[] = [{ kind: "title", label: "AMO Studio" }];
-  for (const i of trayItems()) entries.push("label" in i ? { kind: "item", label: i.label, strong: i.click === showMain, run: i.click } : { kind: "rule" });
+  for (const i of trayItems(await devUiOn())) entries.push("label" in i ? { kind: "item", label: i.label, strong: i.click === showMain, run: i.click } : { kind: "rule" });
   trayWindow.open(entries);
 }
 
@@ -289,7 +305,7 @@ function createTray(): void {
   tray = new Tray(trayImage());
   tray.setToolTip("AMO Studio");
   tray.on("click", showMain);
-  tray.on("right-click", openTrayMenu);
+  tray.on("right-click", () => void openTrayMenu());
 }
 
 /**

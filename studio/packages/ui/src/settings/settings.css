@@ -262,3 +262,9 @@
 .claude-account-code, .claude-account-add, .claude-account-rename { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .claude-account-code .field, .claude-account-add .field { flex: 1 1 220px; min-width: 0; }
 .claude-account-rename .field { width: 200px; }
+
+/* 设置 → 测试功能 → 开发界面目录 (2026-11-05): the field, and the strip over the window while it is in use. */
+.dev-ui-input { flex: 1; min-width: 0; }
+.dev-ui-bar { display: flex; align-items: center; gap: 8px; padding: 3px 10px; background: var(--attention-bg); border-bottom: 1px solid var(--attention-border); color: var(--text); font-size: var(--fs-sm); flex: none; }
+.dev-ui-bar-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-ui-bar code { font-family: var(--font-code); }

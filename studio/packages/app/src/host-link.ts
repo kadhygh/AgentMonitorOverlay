@@ -272,6 +272,16 @@ export async function readHostJson<T>(conn: HostConnection, path: string, timeou
   }
 }
 
+/** PUT one of the Host's JSON routes (with the token); false when it does not take it. */
+export async function putHostJson(conn: HostConnection, path: string, body: unknown, timeoutMs = 3000): Promise<boolean> {
+  try {
+    const res = await fetch(`${conn.url}${path}`, { method: "PUT", headers: { authorization: `Bearer ${conn.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Waits until the process ends; false when it still runs after `timeoutMs`. */
 export async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   for (const until = Date.now() + timeoutMs; Date.now() < until; ) {
@@ -294,6 +304,10 @@ export function stopHost(conn: HostConnection): Promise<void> {
       clearTimeout(timer);
       resolve();
     });
-    child.send?.("shutdown");
+    // The Host may be on its way out already (完全退出 asked it over HTTP): its IPC channel closes before its exit code
+    // is known, and a send then threw ERR_IPC_CHANNEL_CLOSED uncaught in the main process — a dialog on the desktop
+    // during a loaded e2e run (2026-11-05). Without a channel, or when the send fails, the process is ended instead.
+    if (!child.connected || !child.send) child.kill();
+    else child.send("shutdown", (err) => err && child.kill());
   });
 }

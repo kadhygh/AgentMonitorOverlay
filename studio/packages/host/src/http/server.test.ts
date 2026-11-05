@@ -315,6 +315,38 @@ describe("Host API", () => {
     }
   });
 
+  it("serves a 开发界面目录 instead of the installed UI while it is set, only UI files, and forgets it with the Host", async () => {
+    const uiDir = join(root, "ui");
+    const devDir = join(root, "dev");
+    mkdirSync(uiDir);
+    mkdirSync(join(devDir, "assets"), { recursive: true });
+    writeFileSync(join(uiDir, "index.html"), "<title>installed</title>");
+    writeFileSync(join(devDir, "index.html"), "<title>dev</title>");
+    writeFileSync(join(devDir, "assets", "x.js"), "export const dev = 1;");
+    writeFileSync(join(devDir, "notes.txt"), "not a UI file");
+    const runtime = new CodexRuntime({ store, servers, profiles: PROFILES });
+    const svc = new HostService(store, runtime, PROFILES);
+    const ui = await startHostServer({ service: svc, token: TOKEN, uiDir });
+    const put = (body: unknown) => fetch(`${ui.url}/api/settings`, { method: "PUT", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      expect(svc.config.settings().devUiDir).toBeNull();
+      expect((await put({ devUiDir: "relative\\dist" })).status).toBe(400);
+      expect((await put({ devUiDir: uiDir + "-missing" })).status).toBe(400);
+      expect((await put({ devUiDir: devDir })).status).toBe(200);
+      expect(svc.config.settings().devUiDir).toBe(devDir);
+      expect(await (await fetch(`${ui.url}/`)).text()).toContain("dev");
+      expect(await (await fetch(`${ui.url}/assets/x.js`)).text()).toContain("dev = 1");
+      expect(await (await fetch(`${ui.url}/notes.txt`)).text()).not.toContain("not a UI file");
+      expect((await put({ devUiDir: null })).status).toBe(200);
+      expect(await (await fetch(`${ui.url}/`)).text()).toContain("installed");
+      await put({ devUiDir: devDir });
+      // In memory only: a new Host (a restart) serves the installed UI again.
+      expect(new HostService(store, runtime, PROFILES).config.settings().devUiDir).toBeNull();
+    } finally {
+      await ui.close();
+    }
+  });
+
   it("keeps notes and handoffs on a task, written by the person or by the task's own sessions", async () => {
     const { task, session } = await createTask("notes");
     const other = await createTask("other");

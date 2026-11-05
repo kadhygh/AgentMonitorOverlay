@@ -12,6 +12,7 @@ import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, type SettingsPage } from "./settings/SettingsDialog.js";
 import { useSettings } from "./settings/useSettings.js";
+import { DevUiBar } from "./settings/DevUi.js";
 import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
@@ -295,6 +296,7 @@ export function App() {
         remote={{ ...remoteButton(remoteState), current: remoteOpen, open: () => setRemoteOpen(true) }}
         duty={{ on: duty?.items.filter((i) => i.enabled).length ?? 0, total: duty?.items.length ?? 0, running: (duty?.running.length ?? 0) > 0, open: () => setDutyOpen(true) }}
       />
+      <DevUiBar link={link} dir={settings?.devUiDir ?? null} />
       <div className="body">
         <ScopeNav
           link={link}

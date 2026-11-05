@@ -5,6 +5,7 @@ import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/th
 import { ModelsPage } from "./ModelsPage.js";
 import { SubsessionPage } from "./SubsessionPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
+import { DevUiSection } from "./DevUi.js";
 import { ExperimentalSection } from "./ExperimentalSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
@@ -262,7 +263,12 @@ export function SettingsDialog({ link, state, settings, page: startPage, onClose
             )}
             {page === "common" && <FolderAccessSection link={link} />}
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} />}
-            {page === "experimental" && <ExperimentalSection link={link} on={settings?.experimentalFeatures ?? []} />}
+            {page === "experimental" && (
+              <>
+                <ExperimentalSection link={link} on={settings?.experimentalFeatures ?? []} />
+                <DevUiSection link={link} dir={settings?.devUiDir ?? null} />
+              </>
+            )}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
             {page === "duty" && <DutyPage link={link} state={state} />}
