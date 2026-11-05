@@ -830,7 +830,7 @@ ${d}` : back));
         <SubSessionDialog
           link={link}
           profiles={profiles}
-          session={session}
+          defaultPick={{ profileId: session.profileId, model: session.options.model ?? null }}
           notes={subsessionNotes}
           onDone={(spec) => {
             const caret = mentions.finishSubsession(spec);

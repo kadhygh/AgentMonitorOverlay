@@ -301,6 +301,32 @@ test("@ in the first sentence refers to a task (and its sessions) without changi
   expect(made.workspaceId).toBe((await studio.api<StudioSettings>("GET", "/api/settings")).commonWorkspace.id);
 });
 
+test("@ 开子会话… on the new-task page: the setup goes with the first sentence and survives leaving the page (2026-11-05)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  const text = page.getByLabel("第一句话");
+  await text.pressSequentially("先查原因 @子");
+  const suggest = page.getByTestId("suggest");
+  await expect(suggest.getByRole("option", { name: /开子会话…/ })).toBeVisible();
+  await text.press("Enter");
+  const dialog = page.getByTestId("subsession-dialog");
+  await expect(dialog).toBeVisible();
+  await screenshot(studio.app, "studio", "newtask-subsession-dialog", page);
+  await dialog.getByTestId("subsession-ok").click();
+  await expect(text).toHaveValue("先查原因 @子会话1 ");
+  // Back to the board and in again: the pick is kept with the draft.
+  await page.getByRole("button", { name: "返回看板" }).click();
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await expect(text).toHaveValue("先查原因 @子会话1 ");
+  await text.press("End");
+  await text.press("Enter");
+  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先查原因 @子会话1", { timeout: 30_000 });
+  const bubble = page.getByTestId("msg-user").first();
+  await expect(bubble.getByTestId("msg-mention")).toHaveText(["@子会话1"]);
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveAttribute("title", /session_start/);
+});
+
 test("设置 → 默认路径: 选择文件夹 starts there when adding a project (2026-10-17, in place of 默认项目)", async () => {
   studio = await launchStudio();
   const { page } = studio;

@@ -3,7 +3,7 @@ import type { ModelProfile, Session, SessionOptions, Task } from "@amo-studio/pr
 import { call, type HostLink } from "../host/client.js";
 import { defaultProfile, rememberProfile, rememberWorkspace, repick } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
-import { withMentionRefs, type MentionPick } from "../attach/mentions.js";
+import { withMentionRefs, type MentionPick, type SubSessionSpec } from "../attach/mentions.js";
 import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // The task being written: one draft, shared by the draft task page and the quick bar (Ctrl N), kept across restarts
@@ -55,10 +55,20 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
   }
 }
 
-/** Stored picks that still make sense (a project, task or session with its id). */
+const isSpec = (v: unknown): v is SubSessionSpec => {
+  const o = v as Partial<SubSessionSpec> | null;
+  return !!o && typeof o === "object" && typeof o.model === "string" && typeof o.modelName === "string" && typeof o.report === "boolean";
+};
+
+/** Stored picks that still make sense (a project, task or session with its id, or a sub-session setup). */
 function cleanRefs(refs: object): Record<string, MentionPick> {
   const out: Record<string, MentionPick> = {};
   for (const [name, p] of Object.entries(refs) as Array<[string, Partial<MentionPick> | null]>) {
+    // 开子会话 (2026-11-05: offered on the new-task page too): its setup, as the dialog made it.
+    if (p && typeof p === "object" && p.kind === "subsession" && "spec" in p && isSpec(p.spec)) {
+      out[name] = { kind: "subsession", spec: p.spec };
+      continue;
+    }
     if (!p || typeof p !== "object" || !("id" in p) || typeof p.id !== "string") continue;
     if (p.kind === "task") out[name] = { kind: "task", id: p.id };
     else if (p.kind === "session") out[name] = { kind: "session", id: p.id, taskId: typeof p.taskId === "string" ? p.taskId : null };

@@ -17,6 +17,7 @@ import { useDraftChoices } from "./useDraftChoices.js";
 import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
+import { SubSessionDialog } from "../attach/SubSessionDialog.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { IconPaperclip } from "../attach/icons.js";
@@ -84,7 +85,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
   const attach = useAttachments(link);
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const presets = useSettings(link)?.presets ?? [];
+  const settings = useSettings(link);
+  const presets = settings?.presets ?? [];
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
   // 接续已有会话 (2026-11-05): the outside session picked; not kept in the draft (it may be taken on elsewhere meanwhile).
@@ -126,6 +128,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     onFile: (path) => attach.addFiles([path]),
     onFind: (query) => setFinding({ query }),
     onMark: (ref) => attach.addRefs([ref]),
+    // 2026-11-05: the task's first session may start sub-sessions, so 开子会话… is offered here too.
+    subsession: true,
   });
 
   const where = `${draft.projectId ? `在 ${projects.find((w) => w.id === draft.projectId)?.name ?? "?"} 里运行` : "不指定项目：在公共目录里运行"}${topic ? ` · 放进「${topic.title}」` : ""}`;
@@ -462,6 +466,21 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
           projects={projects}
           onDone={(body) => {
             const caret = mentions.finishTemplate(body);
+            requestAnimationFrame(() => {
+              input.current?.focus();
+              if (caret !== null) input.current?.setSelectionRange(caret, caret);
+            });
+          }}
+        />
+      )}
+      {mentions.askingSubsession && (
+        <SubSessionDialog
+          link={link}
+          profiles={profiles}
+          defaultPick={draft.pick}
+          notes={settings?.subsessionNotes ?? []}
+          onDone={(spec) => {
+            const caret = mentions.finishSubsession(spec);
             requestAnimationFrame(() => {
               input.current?.focus();
               if (caret !== null) input.current?.setSelectionRange(caret, caret);

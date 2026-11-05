@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModelProfile, Session, SubsessionNote } from "@amo-studio/protocol";
+import type { ModelProfile, SubsessionNote } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { normalPick, type ModelPick } from "../lib/recents.js";
@@ -39,7 +39,7 @@ const remember = (r: Remembered): void => writeStoredJson(KEY, r);
 export function SubSessionDialog({
   link,
   profiles,
-  session,
+  defaultPick,
   notes = [],
   onDone,
 }: {
@@ -47,14 +47,14 @@ export function SubSessionDialog({
   profiles: readonly ModelProfile[];
   /** 设置 → 子会话: the person's notes on models as sub-sessions; the chosen model's goes with the setup. */
   notes?: readonly SubsessionNote[];
-  /** The session the composer writes to: its model is the first choice. */
-  session: Session;
+  /** The first choice when nothing usable is remembered: the composer's session's model, or the new task's. */
+  defaultPick: ModelPick;
   /** The setup, or null when cancelled. */
   onDone(spec: SubSessionSpec | null): void;
 }) {
   const last = readRemembered();
   const lastOk = !!last && profiles.some((p) => p.id === last.pick.profileId && !p.hidden);
-  const [pick, setPick] = useState<ModelPick>(() => (lastOk ? last!.pick : normalPick({ profileId: session.profileId, model: session.options.model ?? null })));
+  const [pick, setPick] = useState<ModelPick>(() => (lastOk ? last!.pick : normalPick(defaultPick)));
   const [effort, setEffort] = useState<string | undefined>(undefined);
   const [permission, setPermission] = useState<Level | undefined>(lastOk ? last!.permission : undefined);
   const [report, setReport] = useState(lastOk ? last!.report : true);

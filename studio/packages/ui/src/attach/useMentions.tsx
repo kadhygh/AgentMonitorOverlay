@@ -44,6 +44,11 @@ export function useComposerMentions(input: {
   picks?: { value: ReadonlyMap<string, MentionPick>; set(next: ReadonlyMap<string, MentionPick>): void };
   /** 提示词模板… (default: yes; not in a one-line field). */
   templates?: boolean;
+  /**
+   * 开子会话… with no session of its own (2026-11-05: the new-task page — the task's first session is a main session
+   * that may start sub-sessions). A session's composer decides from `current`.
+   */
+  subsession?: boolean;
 }) {
   const { link, text, setText, tasks, sessions, current } = input;
   const [caret, setCaret] = useState<number | null>(null);
@@ -70,7 +75,7 @@ export function useComposerMentions(input: {
   const [commitAt, setCommitAt] = useState<number | null>(null);
   // 提示词模板…: likewise for the template's text.
   const [templateAt, setTemplateAt] = useState<number | null>(null);
-  const subsession = !!current && current.kind !== "sub" && !!current.taskId && !current.archivedAt;
+  const subsession = current ? current.kind !== "sub" && !!current.taskId && !current.archivedAt : !!input.subsession;
   const commit = !!current && !current.archivedAt;
   const template = input.templates !== false && !current?.archivedAt;
 
