@@ -465,6 +465,10 @@ describe("launch and the machine", () => {
     await platform.init();
     await platform.login(server.url, "小王", "secret");
     await platform.install("studio");
+    // 2026-11-05 自动打包（Studio 0.9.43）里这条两次都失败在下面的 card().studio 上（card() 是 undefined），单独跑、全量重跑都过：
+    // 登录或取频道没成功时工具列表是空的。先把它们说出来，下次失败能看出是哪一步。
+    const before = platform.view();
+    expect({ loginError: before.loginError, connection: before.connection.state, tools: before.tools.map((t) => t.id), installed: before.tools.find((t) => t.id === "studio")?.installed }).toEqual({ loginError: null, connection: "online", tools: expect.arrayContaining(["studio"]), installed: "0.9.0" });
     const card = () => platform.view().tools.find((t) => t.id === "studio")!;
     // No data dir: nothing to ask.
     expect(card().studio).toEqual({ hostUp: false, sessions: null, version: null, restart: "none", restarting: false });
