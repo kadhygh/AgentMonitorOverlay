@@ -2,7 +2,7 @@
 
 > 状态：四件都做完了，在分支 `studio/relay-round-1105` 上（第 1 件 `33b308c6`，服务和 Studio、外壳 `227c5510`，界面和 e2e 是之后那个提交），**没合进 master、没部署、没发布**。按用户定的「全做完再一起发」：合进 master 后中转服务（`npm run release -- relay-service`）、中转外壳、Studio 一起发。用户原话见文末。
 >
-> 做法上和方案的出入：「已接手」时 Studio 里那条显示一天后自己消失（`TAKEN_SHOWN_MS`）；刚登录时列表和实时连接之间来的会话会丢（e2e 撞到的老问题），顺手修了（`relay-ui/src/session.ts`：先连再拉列表，拉的过程中收到的会话保留）。
+> 做法上和方案的出入：「已接手」时 Studio 里那条显示一天后自己消失（`TAKEN_SHOWN_MS`）；刚登录时列表和实时连接之间来的会话会丢（e2e 撞到的老问题），顺手修了（`relay-ui/src/session.ts`：先连再拉列表，拉的过程中收到的会话保留）。中转找开着的 Studio：`AMO_STUDIO_DATA_DIR`、平台的 `studioDataDir`，再加 Studio 外壳写的 `%APPDATA%\AMO Studio\running.json`（数据目录的指针，退出时删）；一开始用过 `/api/health` 带数据目录，rebase 时撤掉了——health 不要 token，10-28 定的只给数量、不给内容。
 
 ## 用户的决定（2026-11-05）
 

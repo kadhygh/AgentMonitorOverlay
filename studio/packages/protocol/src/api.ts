@@ -537,7 +537,7 @@ export interface HostRoutes {
    * AMO platform to ask before it updates Studio. `version` (2026-10-29): the Studio that started this Host ("dev" from
    * the sources), so the platform can tell a Host older than the Studio it has installed.
    */
-  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number; version: string; /** host.json and host-token are here (2026-11-05). */ dataDir?: string } };
+  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number; version: string } };
   /**
    * Stops the Host (2026-10-29: the tray's 完全退出, the platform's 重启 Studio). Token needed. With sessions at work it
    * answers 409 `{ ok: false, running }` unless `interrupt` is true (the person agreed to cut them). Accepted, the Host

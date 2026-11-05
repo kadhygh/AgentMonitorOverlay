@@ -1,5 +1,5 @@
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // Where Studio keeps its data. Order: AMO_STUDIO_DATA_DIR; in a build installed by AMO 平台, the data dir set there; in the portable build, the choice saved next to the exe
 // (amo-studio.json), else `data/` next to the exe; in development, studio/.data. A portable copy carries its data with
@@ -83,4 +83,39 @@ export function acceptDataDir(choice: string, portableDir: string): { dataDir: s
   const rel = relative(portableDir, dataDir);
   const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
   return { dataDir, saved: inside ? rel : dataDir };
+}
+
+/**
+ * Where a running Studio says its data dir is (2026-11-05, 中转's 在 Studio 里打开; plans/relay-round-2026-11-05.md):
+ * %APPDATA%\AMO Studio\running.json (AMO_STUDIO_HOME moves it), {pid, exe, dataDir}, written once the Host is up and
+ * removed at quit, like 中转's and 便签's running.json. Only the path: host.json and host-token stay in the data dir, which
+ * is this Windows user's. /api/health stays without it (open, numbers only — 2026-10-28). In test mode only with
+ * AMO_STUDIO_HOME set, so a test Studio never points this machine's tools at its temp data.
+ */
+export function studioRunningFile(env: Record<string, string | undefined>): string | null {
+  if (env.AMO_STUDIO_HOME) return join(resolve(env.AMO_STUDIO_HOME), "running.json");
+  if (env.AMO_STUDIO_TEST === "1" || !env.APPDATA) return null;
+  return join(env.APPDATA, "AMO Studio", "running.json");
+}
+
+export function writeStudioRunning(env: Record<string, string | undefined>, info: { pid: number; exe: string; dataDir: string }): void {
+  const file = studioRunningFile(env);
+  if (!file) return;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `${JSON.stringify({ ...info, startedAt: new Date().toISOString() }, null, 2)}\n`);
+  } catch {
+    // 在 Studio 里打开 then finds Studio only by AMO_STUDIO_DATA_DIR or the platform's data dir
+  }
+}
+
+/** Removed only when it is still this process's (another Studio may have started since). */
+export function removeStudioRunning(env: Record<string, string | undefined>, pid: number): void {
+  const file = studioRunningFile(env);
+  if (!file) return;
+  try {
+    if ((JSON.parse(readFileSync(file, "utf8")) as { pid?: unknown }).pid === pid) rmSync(file, { force: true });
+  } catch {
+    // not there
+  }
 }

@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "@amo-studio/testkit";
-import { acceptDataDir, platformDataDir, readPortableConfig, resolveDataDir, writePortableConfig } from "./paths.js";
+import { acceptDataDir, platformDataDir, readPortableConfig, removeStudioRunning, resolveDataDir, studioRunningFile, writePortableConfig, writeStudioRunning } from "./paths.js";
 
 let root: string | undefined;
 afterEach(() => {
@@ -70,5 +70,22 @@ describe("acceptDataDir", () => {
     } finally {
       removeTempDir(outside);
     }
+  });
+});
+
+describe("studio running pointer (2026-11-05, 中转's 在 Studio 里打开)", () => {
+  it("writes where the data dir is, removes only its own, and never from a test Studio without AMO_STUDIO_HOME", () => {
+    const home = join(portable(), "studio-home");
+    const env = { AMO_STUDIO_HOME: home, AMO_STUDIO_TEST: "1" };
+    writeStudioRunning(env, { pid: 11, exe: "AMO Studio.exe", dataDir: "D:/studio-data" });
+    const file = join(home, "running.json");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ pid: 11, exe: "AMO Studio.exe", dataDir: "D:/studio-data" });
+    removeStudioRunning(env, 12);
+    expect(existsSync(file)).toBe(true);
+    removeStudioRunning(env, 11);
+    expect(existsSync(file)).toBe(false);
+    const appData = join(tmpdir(), "Roaming");
+    expect(studioRunningFile({ AMO_STUDIO_TEST: "1", APPDATA: appData })).toBeNull();
+    expect(studioRunningFile({ APPDATA: appData })).toBe(join(appData, "AMO Studio", "running.json"));
   });
 });

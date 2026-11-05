@@ -5,15 +5,13 @@ import { platformFile, readDevice } from "@amo-studio/account";
 // 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): a session a Studio session on this computer sent
 // carries its mark, `studio:<device>:<session>` (Via.conv). When the device is this one's and Studio runs, the button
 // asks Studio's Host to show that session (POST /api/ui/open; the workbench acts on it). Studio is found through its
-// data dir: AMO_STUDIO_DATA_DIR, the one AMO 平台 set (platform.json), else the Host on its usual port says where its
-// data dir is (/api/health, open). host.json and host-token there are this Windows user's; the token never leaves
-// this process (the content only asks yes/no and go).
+// data dir: AMO_STUDIO_DATA_DIR, the one AMO 平台 set (platform.json), else the one a running Studio wrote down in
+// %APPDATA%\AMO Studio\running.json (AMO_STUDIO_HOME; app/src/paths.ts studioRunningFile). Not /api/health: it is
+// open and gives numbers only (2026-10-28). host.json and host-token there are this Windows user's; the token never
+// leaves this process (the content only asks yes/no and go).
 
 type Env = Record<string, string | undefined>;
 type Fetch = typeof fetch;
-
-/** The Host's default port (host/src/bin.ts). */
-export const STUDIO_PORT = 47900;
 
 /** The device and session a Studio mark names; null for any other mark. */
 export function parseStudioMark(conv: string): { device: string; sessionId: string } | null {
@@ -38,12 +36,22 @@ function hostIn(dataDir: string): StudioHost | null {
   }
 }
 
-async function alive(url: string, f: Fetch): Promise<{ dataDir?: string } | null> {
+async function alive(url: string, f: Fetch): Promise<boolean> {
   try {
     const res = await f(`${url}/api/health`, { signal: AbortSignal.timeout(1500) });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { ok?: unknown; dataDir?: unknown };
-    return body.ok === true ? { ...(typeof body.dataDir === "string" ? { dataDir: body.dataDir } : {}) } : null;
+    return res.ok && ((await res.json()) as { ok?: unknown }).ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The data dir a running Studio wrote down (a Studio from the sources, a portable copy). */
+function runningDataDir(env: Env): string | null {
+  const home = env.AMO_STUDIO_HOME ? resolve(env.AMO_STUDIO_HOME) : env.APPDATA ? join(env.APPDATA, "AMO Studio") : null;
+  if (!home) return null;
+  try {
+    const dir = (JSON.parse(readFileSync(join(home, "running.json"), "utf8")) as { dataDir?: unknown }).dataDir;
+    return typeof dir === "string" && dir ? resolve(dir) : null;
   } catch {
     return null;
   }
@@ -59,14 +67,13 @@ export async function findStudio(env: Env = process.env, f: Fetch = fetch): Prom
   } catch {
     // no platform
   }
-  for (const dir of dirs) {
+  const running = runningDataDir(env);
+  if (running) dirs.push(running);
+  for (const dir of new Set(dirs)) {
     const host = hostIn(dir);
     if (host && (await alive(host.url, f))) return host;
   }
-  // A Studio from the sources or a portable copy: its Host on the usual port says where its data dir is.
-  const usual = await alive(`http://127.0.0.1:${STUDIO_PORT}`, f);
-  const host = usual?.dataDir ? hostIn(usual.dataDir) : null;
-  return host && host.url.endsWith(`:${STUDIO_PORT}`) ? host : null;
+  return null;
 }
 
 /** The session behind this mark is on this computer and Studio runs. */

@@ -64,7 +64,7 @@ async function launch(who: string, extraArgs: string[] = [], extraEnv: Record<st
     executablePath: launched.executablePath,
     args: [...launched.args, "--server", server.url, ...extraArgs],
     // AMO_HOME: the platform's folder (account.json), empty unless the test logs in there — never this machine's own.
-    env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_RELAY_TEST: "1", ...extraEnv },
+    env: { ...process.env, AMO_RELAY_HOME: home, AMO_HOME: join(home, "amo-home"), AMO_STUDIO_HOME: join(home, "studio-home"), AMO_RELAY_TEST: "1", ...extraEnv },
   });
   apps.push(app);
   const page = await app.firstWindow();

@@ -29,7 +29,7 @@ function machine(opts: { port?: number } = {}) {
   const f = (async (input: string, init?: RequestInit) => {
     calls.push({ url: input, auth: (init?.headers as Record<string, string> | undefined)?.authorization, body: init?.body as string | undefined });
     if (!up) throw new Error("refused");
-    if (input === `${url}/api/health`) return new Response(JSON.stringify({ ok: true, dataDir: data }));
+    if (input === `${url}/api/health`) return new Response(JSON.stringify({ ok: true, pid: 1, running: 0, version: "dev" }));
     if (input === `${url}/api/ui/open`) return known ? new Response(JSON.stringify({ taskId: "t1", sessionId: "s-1" })) : new Response(JSON.stringify({ error: { code: "not_found", message: "没有会话 s-1（可能已经删掉了）" } }), { status: 404 });
     throw new Error("refused");
   }) as typeof fetch;
@@ -61,10 +61,20 @@ describe("studio-link", () => {
     expect(await openInStudio(`studio:${DEVICE}:s-1`, env, m.f)).toBe("Studio 没开着");
   });
 
-  it("finds a Studio from the sources by its Host on the usual port, which says where its data dir is", async () => {
+  it("finds a Studio from the sources or a portable copy by the data dir it wrote down, or the platform's", async () => {
     const m = machine({ port: 47900 });
-    expect(await findStudio({ AMO_HOME: m.amo }, m.f)).toEqual({ url: m.url, token: "tok-123" });
+    const studioHome = join(m.amo, "..", "studio-home");
+    const env = { AMO_HOME: m.amo, AMO_STUDIO_HOME: studioHome };
+    // Nothing says where: not found (the Host's /api/health does not say, it only counts).
+    expect(await findStudio(env, m.f)).toBeNull();
+    mkdirSync(studioHome, { recursive: true });
+    writeFileSync(join(studioHome, "running.json"), JSON.stringify({ pid: 1, exe: "AMO Studio.exe", dataDir: m.data }));
+    expect(await findStudio(env, m.f)).toEqual({ url: m.url, token: "tok-123" });
+    rmSync(join(studioHome, "running.json"));
     writeFileSync(join(m.amo, "platform.json"), JSON.stringify({ studioDataDir: m.data }));
-    expect(await findStudio({ AMO_HOME: m.amo }, m.f)).toEqual({ url: m.url, token: "tok-123" });
+    expect(await findStudio(env, m.f)).toEqual({ url: m.url, token: "tok-123" });
+    // Written down but gone (Studio crashed): its Host does not answer.
+    m.down();
+    expect(await findStudio(env, m.f)).toBeNull();
   });
 });

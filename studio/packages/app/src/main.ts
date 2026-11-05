@@ -8,7 +8,7 @@ import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { platformDataDir, resolveDataDir } from "./paths.js";
+import { platformDataDir, removeStudioRunning, resolveDataDir, writeStudioRunning } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
 import { findRelayExe, openInRelay } from "./relay-link.js";
@@ -321,8 +321,11 @@ function writeShellFile(): void {
   } catch {
     // the platform then only waits for the Host
   }
+  // Where this Studio's data dir is, for 中转's 在 Studio 里打开 (2026-11-05; paths.ts studioRunningFile).
+  writeStudioRunning(process.env, { pid: process.pid, exe: process.execPath, dataDir });
 }
 function removeShellFile(): void {
+  removeStudioRunning(process.env, process.pid);
   try {
     const was = JSON.parse(readFileSync(shellFile, "utf8")) as { pid?: unknown };
     if (was.pid === process.pid) rmSync(shellFile, { force: true });

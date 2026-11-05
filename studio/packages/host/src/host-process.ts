@@ -334,7 +334,6 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.uiDir ? { uiDir: options.uiDir } : {}),
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
       ...(options.version ? { version: options.version } : {}),
-      dataDir: options.dataDir,
       // 完全退出 / 重启 Studio (2026-10-29): the mark first, so a shell that sees the Host go quiet knows it was asked to
       // stop (host-link.ts) and quits with it instead of starting it again; then the same shutdown as SIGTERM.
       onShutdown: (running) => {

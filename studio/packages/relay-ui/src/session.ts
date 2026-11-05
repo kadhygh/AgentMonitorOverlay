@@ -44,6 +44,8 @@ export class Session {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private deadTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  /** The socket has opened since start (the list is loaded again then). */
+  private opened = false;
   /** Loads of the list going on: the threads events touched meanwhile. */
   private touched = new Set<Set<string>>();
   /** The thread on screen: its messages count as read while the window has focus. */
@@ -80,8 +82,10 @@ export class Session {
 
   async start(): Promise<void> {
     this.closed = false;
-    // The socket first, then the list (2026-11-05): a session asked between the list's answer and the socket's opening
-    // was lost until the next reload; now what the socket brings during the load is kept (see reload).
+    // The list now, for the first screen, and once more when the socket opens (2026-11-05): a session asked between the
+    // list's answer and the socket's opening was lost until the next reload. What the socket brings while a load is on
+    // its way is kept (see reload).
+    this.opened = false;
     this.connect();
     await this.reload();
   }
@@ -134,7 +138,8 @@ export class Session {
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
-      const missed = this.retry > 0;
+      const missed = this.retry > 0 || !this.opened;
+      this.opened = true;
       this.retry = 0;
       this.alive(ws);
       this.set({ connection: "online", offlineSince: null, retryAt: null });
