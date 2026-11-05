@@ -51,6 +51,11 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 放进待办留住第一句话；平台重启 Studio 的兜底（master `738cbc51`，发 Studio 0.9.41、平台 0.9.24）**
+- 放进待办：`submitDraft` 以前只发标题，正文丢了；主控拆任务时不马上开始的任务也丢了 `firstMessage`。现在存在 `tasks.first_message`（migration 25，上限 `TASK_FIRST_MESSAGE_MAX` 20 000）：卡片显示「还没有会话 · 第一句话已写好」，任务页的空会话区显示全文，新建第一个会话时放进输入框（`writeSessionDraft`），然后 PATCH `firstMessage: ""` 清掉。
+- 重启卡住：0.9.39 那次重启，旧的 0.9.36 窗口进程已经放开了单实例锁，后台也已经停了，但窗口进程一直没退出，平台等满 60 秒报错。原因没查出来：进程在探测后自己消失了。改法：后台停了以后，窗口进程 10 秒还没退出，平台就结束它（`killProcess`），再打开新版，并在结果里写明；重启期间「打开」「关闭」被拒绝并变灰，卡片显示「正在重启」。Studio 退出时每一步都马上写进 `logs/resize-trace.log`（before-quit / every window closed / will-quit / quit / process exit），will-quit 之后 10 秒还在就 `app.exit(0)`。下次再卡，看这个日志就知道卡在哪一步。
+- 验证：typecheck；全量 vitest 1274 条通过；build；e2e newtask/taskpage/board/platform 27 条通过；看过截图 `screenshots/studio/filed-first-message.png`。没有在真机上复现「旧窗口不退出」，兜底只在单测里验证过（`platform.test.ts`）。
+
 **2026-11-05 · 接续已有会话（Claude；master `57e59239`、`2608ad3e`，发 Studio 0.9.40）**
 - 新建任务页的「接续已有会话…」：把终端或 Claude 桌面版里开的 Claude 会话接成一个新任务。10-30 放弃过，11-05 用户又要做（有人想从 Claude 桌面版换到 AMO，几个长会话是固定流程，不想写成文档）。范围和查到的事实见 `plans/resume-cli-sessions.md`：入口只在新建任务页，先只做 Claude，一次接一个。
 - 做法：`runtime/claude/outside.ts` 用 SDK 的 `listSessions({ includeProgrammatic: false })` 列出会话（Studio 自己的 `sdk-ts` 本来就不在里面），去掉 Studio 已有的 `runtimeRef` 和接过的原会话（kv `claude-adopted:<id>`），按目录对到项目，用 `entrypoint` 区分终端和桌面版。接续时 `POST /api/tasks` 带 `firstSession.resumeFrom`，一律用 `forkSession` 复制一份，原会话不动，再用 `importTranscript` 导入最后一次压缩之后的对话。建任务前先查能不能接（`checkResume`），接不了不会留下空任务。接口：`GET /api/claude/outside-sessions`、`…/:id/preview`。
