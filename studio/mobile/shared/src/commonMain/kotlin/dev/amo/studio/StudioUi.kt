@@ -323,18 +323,19 @@ private fun taskTone(t: RemoteTask): Tone {
 // ---- 登录
 
 @Composable private fun Login(state: StudioState, repo: StudioRepository) {
-    var server by rememberSaveable { mutableStateOf("http://172.16.8.85:47120") }
+    // Empty, no team server's address (2026-11-05, the user: the source is public now, people run their own relay).
+    var server by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("AMO Studio", style = MaterialTheme.typography.headlineMedium)
         Text("登录团队账号，在电脑上确认配对后，就能在手机上看进度、回消息、审批。", color = LocalAmoColors.current.dim, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(4.dp))
-        Field(server, { server = it }, "服务器地址", "login-server")
+        Field(server, { server = it }, "服务器地址", "login-server", hint = "比如 192.168.1.20:47120")
         Field(name, { name = it }, "账号", "login-name")
         OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth().testTag("login-password"))
         PrimaryButton(if (state.busy) "正在登录…" else "登录", "login-submit", !state.busy && server.isNotBlank() && name.isNotBlank() && password.isNotBlank(), Modifier.fillMaxWidth()) { repo.login(server.trim(), name.trim(), password); password = "" }
-        Text("在公司 Wi-Fi 或 Tailscale 上都连这个服务器地址。", color = LocalAmoColors.current.dim, style = MaterialTheme.typography.bodySmall)
+        Text("填中转服务的地址（和电脑上 AMO 平台登录的是同一个）；Wi-Fi 或 Tailscale 都行。",color = LocalAmoColors.current.dim, style = MaterialTheme.typography.bodySmall)
     }
 }
 

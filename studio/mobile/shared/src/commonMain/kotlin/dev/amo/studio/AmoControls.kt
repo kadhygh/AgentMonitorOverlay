@@ -132,6 +132,6 @@ internal fun AmoTextButton(onClick: () -> Unit, modifier: Modifier = Modifier, e
         }
     }
 }
-@Composable internal fun Field(value: String, change: (String) -> Unit, label: String, tag: String = label, enabled: Boolean = true) { OutlinedTextField(value, change, label = { Text(label) }, singleLine = true, enabled = enabled, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth().testTag(tag)) }
+@Composable internal fun Field(value: String, change: (String) -> Unit, label: String, tag: String = label, enabled: Boolean = true, hint: String? = null) { OutlinedTextField(value, change, label = { Text(label) }, placeholder = hint?.let { { Text(it) } }, singleLine = true, enabled = enabled, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth().testTag(tag)) }
 @Composable internal fun Empty(text: String, modifier: Modifier = Modifier) { Text(text, modifier.padding(horizontal = 20.dp, vertical = 24.dp), color = LocalAmoColors.current.dim) }
 @Composable internal fun ScrollPage(content: @Composable ColumnScope.() -> Unit) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), content = content) }

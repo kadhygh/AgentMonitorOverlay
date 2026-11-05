@@ -43,7 +43,8 @@ AI 标出要看的几处，便签边看边记
 1. 这台电脑开服务：在 `studio` 里运行 `npm run relay -- serve --passphrase 你的口令`，防火墙放行 47120 端口
 2. `npm run platform` 打开平台，服务器地址填这台电脑的局域网 IP 加 `:47120`，填口令注册账号并登录
 3. Studio 顶栏「远程」→ 打开远程功能
-4. 手机连同一个 Wi-Fi，装安卓 App，用同一个地址和账号登录，选这台电脑配对，回电脑上允许
+4. 安卓 App 自己打：`studio\mobile\build.ps1`（要 JDK 17、Android SDK 36）
+5. 手机连同一个 Wi-Fi，装上 App，用同一个地址和账号登录，选这台电脑配对，回电脑上允许
 ::more tutorial.html#ch9-self
 ::cta
 - [看详细教程](tutorial.html)
