@@ -1,0 +1,47 @@
+# The showcase and the tutorial on GitHub Pages (2026-11-05, the user: put them up there, README links to them).
+# npm run tutorial:build writes two self-contained HTML files from studio/docs/tutorial; the showcase becomes the
+# site's index.html. The build needs no npm packages, only Node. Pages must be set to「GitHub Actions」once
+# (Settings → Pages → Build and deployment → Source).
+name: tutorial pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "studio/docs/tutorial/**"
+      - "studio/scripts/build-tutorial.mjs"
+      - "studio/packages/ui/src/styles/base.css"
+      - ".github/workflows/tutorial-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build
+        run: |
+          node studio/scripts/build-tutorial.mjs
+          mkdir -p site
+          cp studio/out/html/showcase.html site/index.html
+          cp studio/out/html/tutorial.html site/tutorial.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -4,6 +4,10 @@ AMO Studio 是一个 Windows 桌面工作台，用来推进有 AI agent 参与�
 
 随它一起的还有两个可以单独使用的小程序：**AMO Reviewer**（Git Review 和查看器）和 **AMO 便签**。
 
+**[看动画展示和快速开始 →](https://kadhygh.github.io/AgentMonitorOverlay/)**　·　[详细教程](https://kadhygh.github.io/AgentMonitorOverlay/tutorial.html)
+
+[![AMO 展示页：几个模型同时在跑的看板](docs/images/showcase.png)](https://kadhygh.github.io/AgentMonitorOverlay/)
+
 ![看板](docs/images/board.png)
 
 ## 功能一览

@@ -51,6 +51,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 展示页和教程合进 master，放上 GitHub Pages**：用户定：展示页用 GitHub Pages 放出去，README 放截图链过去。`.github/workflows/tutorial-pages.yml`：master 上 `studio/docs/tutorial/**`、`build-tutorial.mjs`、`ui/src/styles/base.css` 一变就重新构建（只要 Node，不装依赖），展示页当 `index.html`，教程是 `tutorial.html`，地址 `https://kadhygh.github.io/AgentMonitorOverlay/`。仓库设置里 Pages 的来源要选一次「GitHub Actions」。README 顶上加了入口和封面图 `docs/images/showcase.png`（开场里三个模型同时在跑的看板那一帧）。
+
 **2026-11-05 · 放进待办留住第一句话；平台重启 Studio 的兜底（master `738cbc51`，发 Studio 0.9.41、平台 0.9.24）**
 - 放进待办：`submitDraft` 以前只发标题，正文丢了；主控拆任务时不马上开始的任务也丢了 `firstMessage`。现在存在 `tasks.first_message`（migration 25，上限 `TASK_FIRST_MESSAGE_MAX` 20 000）：卡片显示「还没有会话 · 第一句话已写好」，任务页的空会话区显示全文，新建第一个会话时放进输入框（`writeSessionDraft`），然后 PATCH `firstMessage: ""` 清掉。
 - 重启卡住：0.9.39 那次重启，旧的 0.9.36 窗口进程已经放开了单实例锁，后台也已经停了，但窗口进程一直没退出，平台等满 60 秒报错。原因没查出来：进程在探测后自己消失了。改法：后台停了以后，窗口进程 10 秒还没退出，平台就结束它（`killProcess`），再打开新版，并在结果里写明；重启期间「打开」「关闭」被拒绝并变灰，卡片显示「正在重启」。Studio 退出时每一步都马上写进 `logs/resize-trace.log`（before-quit / every window closed / will-quit / quit / process exit），will-quit 之后 10 秒还在就 `app.exit(0)`。下次再卡，看这个日志就知道卡在哪一步。
