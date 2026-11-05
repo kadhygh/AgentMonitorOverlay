@@ -191,8 +191,11 @@ export class CodexAsks {
     }
     for (const q of [...this.questions.values()]) {
       if (q.profileId !== profileId || String(q.requestId) !== requestId) continue;
-      // Answered in an attached terminal: what it answered is not known here.
-      this.closeQuestion(q, "answered");
+      // Answered in an attached terminal (what it answered is not known here) — or, with no terminal, dropped by Codex:
+      // app-server aborts a turn's pending requests when the turn ends or is interrupted and sends this before
+      // turn/completed (bespoke_event_handling.rs abort_pending_server_requests, 2026-11-05). Before, that showed
+      // 「已在别处回答」 for a question nobody answered.
+      this.closeQuestion(q, this.core.store.getSession(q.sessionId)?.writer === "terminal-shared" ? "answered" : "cancelled");
       this.afterAnswer(q.sessionId);
     }
   }

@@ -3,7 +3,7 @@ import type { DecisionRequest, MailMessage, Session, Task, Workspace } from "@am
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // Decision requests: agents ask through the AMO MCP; the person answers on the task page or in the Focus window; the
-// answer goes back to the asking session as mail.
+// answer goes back to the asking session as mail, or as a message once its turn is over.
 
 let studio: Studio | undefined;
 
@@ -46,7 +46,12 @@ test("agents ask for decisions; the person answers on the task page and in Focus
   await expect.poll(async () => (await studio!.api<MailMessage[]>("GET", `/api/mail?sessionId=${a.session.id}`)).map((m) => m.text)).toEqual([
     "针对你的问题「按关卡拆还是按怪物拆？」，我的决定：按关卡",
   ]);
-  await expect(page.getByTestId("mail-card")).toContainText("来自 我");
+  // Its turn had ended before the answer (decision_request does not hold it): the answer goes into the conversation as
+  // a message, instead of waiting unread in the mailbox with nothing happening (2026-11-05).
+  await expect(page.getByTestId("thread")).toContainText("针对你的问题「按关卡拆还是按怪物拆？」，我的决定：按关卡", { timeout: 30_000 });
+  await expect.poll(async () => (await studio!.api<MailMessage[]>("GET", `/api/mail?sessionId=${a.session.id}`)).map((m) => m.state)).toEqual(["forwarded"]);
+  await expect(page.getByTestId("mail-card")).toHaveCount(0);
+  await screenshot(app, "studio", "decision-late-answer", page);
 
   // A Claude session asks without options. Focus cannot take keyboard focus, so it sends the person to the workbench.
   await studio.api("POST", "/api/tasks", {
@@ -68,6 +73,12 @@ test("agents ask for decisions; the person answers on the task page and in Focus
   const there = page.getByTestId("question-card");
   await there.getByPlaceholder("写下你的答案，回车继续，Shift+回车换行").fill("保留到下个版本");
   await there.getByRole("button", { name: "提交", exact: true }).click();
+  // That turn had ended: the answer goes in as a message, the session takes it up and replies, and Focus says so
+  // (2026-11-05; before, the answer waited in the mailbox and nothing happened).
+  const answered = focus.getByTestId("focus-entry");
+  await expect(answered).toContainText("针对你的问题「旧键名保留多久？」，我的决定：保留到下个版本", { timeout: 30_000 });
+  await expect(focus.getByTestId("focus-decision")).toHaveCount(0);
+  await answered.getByRole("button", { name: "我知道了" }).click();
   await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
   expect(await open()).toEqual([]);
 
@@ -135,5 +146,9 @@ for (const profileId of ["codex-mock", "claude-mock", "dsh-mock"]) {
       `针对你的问题「${question}」，我的决定：只启动 dev 工程，先不要改主工程`,
       "针对你的问题「生成前要备份吗？」，我的决定：备份",
     ]));
+    // Both were answered after their turns ended: each goes into the conversation as a message, in every runtime.
+    for (const text of [`针对你的问题「${question}」，我的决定：只启动 dev 工程，先不要改主工程`, "针对你的问题「生成前要备份吗？」，我的决定：备份"]) {
+      await expect(page.getByTestId("thread")).toContainText(text, { timeout: 30_000 });
+    }
   });
 }

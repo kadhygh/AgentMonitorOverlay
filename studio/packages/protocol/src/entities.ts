@@ -806,6 +806,8 @@ export interface DecisionRequest {
   answer: string | null;
   createdAt: Timestamp;
   answeredAt: Timestamp | null;
+  /** The mail the answer went back as (2026-11-05): still unread once the turn is over, it goes in as a message. */
+  mailId?: Id;
 }
 
 /** One quota window of a subscription (e.g. GPT's 5-hour and weekly limits). */

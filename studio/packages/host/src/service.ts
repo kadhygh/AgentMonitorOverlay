@@ -125,6 +125,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     runtime.on("log", (line) => this.log(line));
     this.tasks.ensureStructure();
     this.sessions.watchReports();
+    this.collab.watchAnswers();
     this.tasks.watchColumns();
     this.duty.registerCheck(this.issues.dutyCheck());
   }

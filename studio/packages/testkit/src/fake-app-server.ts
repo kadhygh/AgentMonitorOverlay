@@ -673,7 +673,13 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     "turn/interrupt": (_client, params) => {
       const t = requireThread(params);
       if (t.activeTurn && t.activeTurn.id === params.turnId) t.activeTurn.interrupted = true;
-      for (const [id, p] of pending) if (p.threadId === t.id) { pending.delete(id); p.resolve({ decision: "cancel", action: "cancel" }); }
+      // Like app-server's abort_pending_server_requests: each request of the turn is resolved, told before turn/completed.
+      for (const [id, p] of pending) {
+        if (p.threadId !== t.id) continue;
+        pending.delete(id);
+        notify(t.id, "serverRequest/resolved", { threadId: t.id, requestId: id });
+        p.resolve({ decision: "cancel", action: "cancel" });
+      }
       return {};
     },
   };

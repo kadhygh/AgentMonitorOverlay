@@ -113,6 +113,22 @@ describe("Codex questions", () => {
     expect(question(s.id)).toMatchObject({ state: "dismissed" });
   });
 
+  it("a question Codex drops with its turn shows as cancelled, not answered elsewhere; a late answer is refused (2026-11-05)", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask]]" });
+    await until(() => status(s.id) === "awaiting-answer", "awaiting-answer");
+    const q = question(s.id)!;
+    // The turn stops on Codex's side (an attached terminal, or Codex itself): app-server resolves the request first
+    // (serverRequest/resolved), then turn/completed. Studio's own 停止 is not used: it cancels before asking.
+    const handle = await servers.ensure("p-ds");
+    const turnId = items(s.id).find((i): i is Extract<SessionItem, { type: "turn" }> => i.type === "turn")!.turnId;
+    await handle.client.request("turn/interrupt", { threadId: store.getSession(s.id)!.runtimeRef, turnId } as never);
+    await until(() => status(s.id) === "idle", "idle");
+    expect(question(s.id)).toMatchObject({ state: "cancelled" });
+    // The card is gone with it; an answer that still comes is refused rather than sent to a request that is over
+    // (app-server would only log "could not find callback").
+    await expect(runtime.answerQuestion(s.id, q.id, { action: "answer", answers: [{ id: "target", selected: ["测试环境"] }] })).rejects.toThrow(/not pending/);
+  });
+
   it("cancels questions a previous Host left pending", async () => {
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask]]" });
     await until(() => status(s.id) === "awaiting-answer", "awaiting-answer");

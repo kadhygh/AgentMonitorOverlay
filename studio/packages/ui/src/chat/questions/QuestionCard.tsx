@@ -60,7 +60,7 @@ function useSender(link: HostLink, sessionId: string, itemId: string, onReply?: 
 type Interaction = "blocking" | "mail" | "message";
 const INTERACTION = {
   blocking: { label: "阻断式 · 等待回答", hint: "本次提问等待你回答后才会继续；关闭弹窗只隐藏问题。" },
-  mail: { label: "非阻断 · 留言返回", hint: "提问不会阻断当前回合；答案作为 AMO 留言返回给发起会话。" },
+  mail: { label: "非阻断 · 留言返回", hint: "提问不会阻断当前回合；答案作为 AMO 留言返回给发起会话。这一轮已经结束、或结束时它还没读，答案会作为一条新消息发进会话。" },
   message: { label: "非阻断 · 下一条消息返回", hint: "提问不会阻断当前回合；答案作为你的下一条消息发回会话。" },
 } as const;
 

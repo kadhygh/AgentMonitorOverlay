@@ -402,6 +402,41 @@ describe("Host API", () => {
     expect(mail[0]).toMatchObject({ fromSessionId: null, text: "针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡" });
   });
 
+  it("an answer that comes after the asking turn ended goes into the session as a message (2026-11-05)", async () => {
+    const { session } = await createTask("decide");
+    const status = () => service.store.getSession(session.id)!.status;
+    const turnStarts = () => servers.fakes.get("p-ds")!.calls.filter((c) => c.method === "turn/start").map((c) => JSON.stringify((c.params as { input: unknown }).input));
+    await until(() => status() === "idle", "the first turn to end");
+    // Answered once the turn is over: before, it sat in the mailbox unread and nothing happened.
+    const late = service.collab.requestDecisionFromSession(session.id, "掉落表按关卡拆还是按怪物拆？", ["按关卡", "按怪物"]);
+    await ok("POST", `/api/decisions/${late.id}/answer`, { answer: "按关卡" });
+    await until(() => turnStarts().some((t) => t.includes("针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡")), "the answer as a message");
+    expect(service.store.getMail(service.collab.decisions().find((d) => d.id === late.id)!.mailId!)).toMatchObject({ state: "forwarded" });
+    await until(() => status() === "idle", "idle again");
+
+    // Answered while the turn runs: mail for mailbox_read; not read by the end of the turn, it goes in then.
+    await ok("POST", `/api/sessions/${session.id}/messages`, { text: "[[busy: 600]]" });
+    await until(() => status() === "running", "running");
+    const during = service.collab.requestDecisionFromSession(session.id, "重试几次？", ["3 次", "5 次"]);
+    await ok("POST", `/api/decisions/${during.id}/answer`, { answer: "5 次" });
+    const duringMail = service.collab.decisions().find((d) => d.id === during.id)!.mailId!;
+    expect(service.store.getMail(duringMail)).toMatchObject({ state: "unread" });
+    expect(turnStarts().some((t) => t.includes("重试几次？"))).toBe(false);
+    await until(() => turnStarts().some((t) => t.includes("针对你的问题「重试几次？」，我的决定：5 次")), "the unread answer after the turn");
+    expect(service.store.getMail(duringMail)).toMatchObject({ state: "forwarded" });
+    await until(() => status() === "idle", "idle after the answer");
+
+    // Read with mailbox_read during the turn: not sent a second time.
+    await ok("POST", `/api/sessions/${session.id}/messages`, { text: "[[busy: 600]]" });
+    await until(() => status() === "running", "running again");
+    const read = service.collab.requestDecisionFromSession(session.id, "要不要发版？", ["发", "不发"]);
+    await ok("POST", `/api/decisions/${read.id}/answer`, { answer: "不发" });
+    expect(service.collab.readMailFromSession(session.id).map((m) => m.text)).toEqual(["针对你的问题「要不要发版？」，我的决定：不发"]);
+    await until(() => status() === "idle", "idle at the end");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(turnStarts().some((t) => t.includes("要不要发版？"))).toBe(false);
+  });
+
   it("keeps prompt templates, global or for one project", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     const events: string[] = [];

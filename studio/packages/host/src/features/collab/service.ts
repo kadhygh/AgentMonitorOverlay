@@ -1,4 +1,4 @@
-import type { Id, TaskNote, MailMessage, MailRecipient, DecisionRequest, ChecklistItem } from "@amo-studio/protocol";
+import { inTurn, type Id, type TaskNote, type MailMessage, type MailRecipient, type DecisionRequest, type ChecklistItem, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError, boundedText, MAX_NOTE_CHARS, MAX_QUESTION_CHARS, MAX_OPTION_CHARS } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -104,11 +104,49 @@ export class CollabFeature extends Feature {
     if (!d) throw new HostError("not_found", `decision ${id} not found`);
     if (d.state !== "open") throw new HostError("conflict", "this decision was already answered");
     const answer = boundedText(answerIn, "answer", MAX_QUESTION_CHARS);
-    const next: DecisionRequest = { ...d, state: "answered", answer, answeredAt: new Date().toISOString() };
+    const mail = this.sendMail(null, { kind: "session", sessionId: d.sessionId }, `针对你的问题「${d.question}」，我的决定：${answer}`);
+    const next: DecisionRequest = { ...d, state: "answered", answer, answeredAt: new Date().toISOString(), mailId: mail.id };
     this.store.putDecision(next);
     this.publish({ type: "decision.upserted", decision: next });
-    this.sendMail(null, { kind: "session", sessionId: d.sessionId }, `针对你的问题「${d.question}」，我的决定：${answer}`);
+    this.deliverAnswer(next);
     return next;
+  }
+
+  /**
+   * decision_request does not hold the turn, so the answer often comes after the turn ended — and then it sat in the
+   * mailbox unread with nothing happening (2026-11-05, the user: "回复过慢，在会话结束之后才选完，则没有任何反应"; a
+   * Codex session of 10-22 and a DSH one of 10-27 still had theirs unread). The answer stays mail while the turn runs
+   * (mailbox_read finds it there); once the session is out of its turn and has not read it, it goes into the
+   * conversation as a message (the inbox: held while the session is not free, see sessions/inbox.ts).
+   */
+  watchAnswers(): void {
+    this.f.on("event", (e) => {
+      if (e.type === "session.upserted" && this.answersFor.has(e.session.id) && !inTurn(e.session.status)) this.forwardAnswers(e.session);
+    });
+    // Answers a Host before a restart had not handed on yet (a decision without mailId predates this: left as it was).
+    for (const d of this.store.listDecisions({ state: "answered" })) if (d.mailId && this.store.getMail(d.mailId)?.state === "unread") this.deliverAnswer(d);
+  }
+
+  /** Sessions with an answered decision still to hand on: session id -> mail ids. */
+  private readonly answersFor = new Map<Id, Set<Id>>();
+
+  private deliverAnswer(d: DecisionRequest): void {
+    const s = this.store.getSession(d.sessionId);
+    // A subagent cannot take a message of its own, an archived session none: the answer stays mail, as before.
+    if (!d.mailId || !s || s.archivedAt || s.kind === "sub") return;
+    const ids = this.answersFor.get(s.id) ?? new Set<Id>();
+    ids.add(d.mailId);
+    this.answersFor.set(s.id, ids);
+    if (!inTurn(s.status)) this.forwardAnswers(s);
+  }
+
+  private forwardAnswers(s: Session): void {
+    const ids = this.answersFor.get(s.id);
+    this.answersFor.delete(s.id);
+    for (const id of ids ?? []) {
+      if (this.store.getMail(id)?.state !== "unread") continue; // read with mailbox_read during the turn
+      void this.forwardMail(id).catch((err: unknown) => this.log(`${s.id}: the answer to a decision could not go into the session: ${err instanceof Error ? err.message : String(err)}`));
+    }
   }
 
   private mailAsMessage(mail: MailMessage): string {

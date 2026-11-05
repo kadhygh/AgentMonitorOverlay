@@ -18,7 +18,8 @@ export function useOpenDecisions(link: HostLink) {
 }
 
 /**
- * One question from an agent: pick an option or write an answer. The answer goes back to the asking session as mail.
+ * One question from an agent: pick an option or write an answer. The answer goes back to the asking session as mail,
+ * or as a message once its turn is over (collab/service.ts deliverAnswer, 2026-11-05).
  * Options are whole rows that wrap (agents write long ones). The workbench uses DecisionPrompt below instead.
  * `onWriteElsewhere`: the Focus window cannot take keyboard focus, so instead of a text field it
  * offers to answer in the workbench.
@@ -97,7 +98,7 @@ export function DecisionCard({
   );
 }
 
-/** AMO's nonblocking decision uses the same popup as runtime questions, sending its answer as mail. */
+/** AMO's nonblocking decision uses the same popup as runtime questions, sending its answer as mail (or a message after the turn). */
 export function DecisionPrompt({ link, decision, onClose }: { link: HostLink; decision: DecisionRequest; onClose(): void }) {
   const item = useMemo(() => ({
     id: decision.id,

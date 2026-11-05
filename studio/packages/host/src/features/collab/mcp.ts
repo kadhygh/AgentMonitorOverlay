@@ -64,14 +64,14 @@ export function collabTools({ service, caller, ownTask }: ToolContext): AmoTool[
       name: "decision_request",
       title: "请求决策",
       description:
-        "Ask the person to decide something you should not decide alone (offer short options when you can). It is shown in the workbench's question popup and the Focus window; it does not block your turn. The answer comes back to you as mail (mailbox_read).",
+        "Ask the person to decide something you should not decide alone (offer short options when you can). It is shown in the workbench's question popup and the Focus window; it does not block your turn. While your turn goes on, the answer comes back as mail (mailbox_read); if your turn has ended before the person answers (or you have not read it by then), it comes into this conversation as a message.",
       inputSchema: { question: z.string(), options: z.array(z.string()).optional() },
       readOnly: false,
       autoApprove: true,
       run: (args) =>
         write(caller, (c) => {
           const d = service.collab.requestDecisionFromSession(c.sessionId, args.question, args.options);
-          return { id: d.id, state: d.state, note: "The answer will arrive as mail; read it with mailbox_read." };
+          return { id: d.id, state: d.state, note: "During this turn the answer arrives as mail (mailbox_read); after the turn it comes in as a message." };
         }),
     },
     {
