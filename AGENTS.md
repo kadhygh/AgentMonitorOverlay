@@ -45,16 +45,16 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
   - `relay:release`、`relay:mac -- deploy | publish`、`package:platform` 是 `release` 调用的底层步骤，只在排查时单独用。每次发布（底层是 `relay:mac -- publish`）之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
-- 计划和方案写在 `studio/plans/<主题>.md`。做完一段，在 `studio/HANDOFF.md`「最近的改动」最上面加一条（做了什么、怎么验证的、还剩什么），「当前状态」里过时的也顺手改掉；超过一两周的记录挪进 `studio/docs/history/`。
+- 计划和方案写在 `studio/plans/<主题>.md`。做完一段：改动说明写进各包 `CHANGELOG.md` 的「## 下一版」，怎么做的、怎么验证的写在提交信息里；`studio/HANDOFF.md` 只改「当前状态 / 还开着的事」里受影响的行（事做完了删掉那一行，新开的加一行），**不再一条条记改动**（2026-11-06 用户定：它和提交信息、CHANGELOG 重复，rebase 时反复出现重复条目）。
 - 在 Windows 上用 shell 改含中文的文件容易出乱码，用编辑工具改。
 
 ## 文档在哪
 
 | 位置 | 内容 |
 |---|---|
-| `studio/HANDOFF.md` | 当前状态和最近的改动，新会话先读 |
+| `studio/HANDOFF.md` | 当前状态和还开着的事，新会话先读 |
 | `studio/plans/` | 各个主题的方案和进度；`amo-lan-platform.md` 是平台方案；做完的阶段计划在 `plans/done/` |
-| `studio/docs/history/`、`studio/docs/archive/` | 瘦身前的 HANDOFF 原文；/loop 时期的 STATUS、ROADMAP 等（只查历史时看） |
+| `studio/docs/history/`、`studio/docs/archive/` | 11-06 之前 HANDOFF「最近的改动」的原文；/loop 时期的 STATUS、ROADMAP 等（只查历史时看） |
 | `studio/packages/relay/README.md` | 中转的部署、发布、命令 |
 | `studio/README.md`、根目录 `README.md` | 给用户看的介绍 |
 | `studio/design/` | 早期架构文档（2026-10-13，部分已过时） |
