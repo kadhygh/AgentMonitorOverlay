@@ -6,7 +6,7 @@
      「! 」开头的行是标题下面的提醒（远程的安全）。最后一屏「快速开始」用 ::card 标题 + 1. 2. 3. 写步骤卡
      （卡后面的 ::more 是这张卡的「详细步骤 →」），::cta 加按钮列表。
      11-05 用户：去掉「从装平台开始」，换成快速开始：会用 AI 的从源码跑 Studio；想试远程，在电脑上开服务、手机装 APK。
-     更复杂的部署不写，用得明白的人自己会研究。
+     更复杂的部署不写，用得明白的人自己会研究。这一页要放到 GitHub 的介绍里，所以不放「GitHub 仓库」按钮（11-05 用户）。
      2026-10-30 用户定的结构：① 开场（多 AI、Focus、额度）② 专题 › 任务 › 会话 + 画布 ③ 工具：Reviewer + 便签（都和审阅有关）
      ④ 测试中：中转 + 远程，强调远程的安全。每屏的动画分几章，每章下面链到教程里讲它的那一节（showcase/*.js 的 chapters）。 -->
 
@@ -36,15 +36,14 @@ AI 标出要看的几处，便签边看边记
 会用 AI 编程的，从源码跑起来最快
 ::card 从 Studio 开始
 1. 装好 Node 24 LTS 和 Git；Claude Code 或 Codex 在本机登录过
-2. 克隆仓库 `github.com/kadhygh/AgentMonitorOverlay`（下面的 GitHub 仓库）
+2. 克隆这个仓库：`github.com/kadhygh/AgentMonitorOverlay`
 3. 双击 `studio\start-studio.cmd`：第一次会装依赖、编译，然后打开 Studio
 ::more tutorial.html#ch1-source
 ::card 想试远程（测试中）
-1. 这台电脑开服务：在 `studio` 里运行 `npm run relay -- serve`，防火墙放行 47120 端口
-2. `npm run platform` 打开平台，服务器地址填这台电脑的局域网 IP 加 `:47120`，注册账号并登录
+1. 这台电脑开服务：在 `studio` 里运行 `npm run relay -- serve --passphrase 你的口令`，防火墙放行 47120 端口
+2. `npm run platform` 打开平台，服务器地址填这台电脑的局域网 IP 加 `:47120`，填口令注册账号并登录
 3. Studio 顶栏「远程」→ 打开远程功能
 4. 手机连同一个 Wi-Fi，装安卓 App，用同一个地址和账号登录，选这台电脑配对，回电脑上允许
 ::more tutorial.html#ch9-self
 ::cta
 - [看详细教程](tutorial.html)
-- [GitHub 仓库](https://github.com/kadhygh/AgentMonitorOverlay)
