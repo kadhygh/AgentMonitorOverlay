@@ -262,7 +262,7 @@ export function SettingsDialog({ link, state, settings, page: startPage, onClose
               </section>
             )}
             {page === "common" && <FolderAccessSection link={link} />}
-            {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} />}
+            {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} teamAutoSend={settings?.teamAutoSend ?? false} shellHelp={settings?.shellHelp ?? true} />}
             {page === "experimental" && (
               <>
                 <ExperimentalSection link={link} on={settings?.experimentalFeatures ?? []} />

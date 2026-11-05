@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { HostService } from "../service.js";
 import { MCP_SESSION_HEADER, type McpIdentities } from "./identity.js";
-import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, amoToolsFor, type McpCaller } from "./tools.js";
+import { AMO_MCP_NAME, amoInstructions, amoToolsFor, type McpCaller } from "./tools.js";
 import { PROMPTED_WRITE_TOOLS } from "./names.js";
 import { recordRole, roleCard } from "../features/guide/role.js";
 
@@ -16,7 +16,7 @@ import { recordRole, roleCard } from "../features/guide/role.js";
 /** `connecting`: the request is the client's `initialize`, the one that reads the instructions. */
 export function createAmoMcpServer(service: HostService, caller: McpCaller | null = null, connecting = false): McpServer {
   const dsh = caller ? service.store.getSession(caller.sessionId)?.runtime === "dsh" : false;
-  const server = new McpServer({ name: AMO_MCP_NAME, version: "0.5.0" }, { instructions: dsh && caller ? dshInstructions(service, caller.sessionId, connecting) : AMO_MCP_INSTRUCTIONS });
+  const server = new McpServer({ name: AMO_MCP_NAME, version: "0.5.0" }, { instructions: dsh && caller ? dshInstructions(service, caller.sessionId, connecting) : amoInstructions(service) });
   const prompted = new Set<string>(PROMPTED_WRITE_TOOLS);
   for (const t of amoToolsFor(service, caller)) {
     if (dsh && prompted.has(t.name)) continue;
@@ -28,7 +28,7 @@ export function createAmoMcpServer(service: HostService, caller: McpCaller | nul
 
 /** The role card goes into the instructions; the session counts as told only when it connects. */
 function dshInstructions(service: HostService, sessionId: string, connecting: boolean): string {
-  const instructions = `${AMO_MCP_INSTRUCTIONS}\n\nThis ACP session has no native user-question channel. When you need the person's decision, use decision_request: AMO shows its shared question popup, and the answer returns as mail (mailbox_read) during your turn, or as a message once your turn is over.`;
+  const instructions = `${amoInstructions(service)}\n\nThis ACP session has no native user-question channel. When you need the person's decision, use decision_request: AMO shows its shared question popup, and the answer returns as mail (mailbox_read) during your turn, or as a message once your turn is over.`;
   try {
     const card = roleCard(service, sessionId);
     if (connecting) recordRole(service, sessionId);

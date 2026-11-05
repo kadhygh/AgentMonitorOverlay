@@ -5,7 +5,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 // 设置 → 功能: optional features on or off. Off hides their pages and panels in both windows and their tools from the
 // agents (sessions started from then on); their data stays and comes back when the feature is turned on again.
 
-export function FeaturesSection({ link, disabled, teamAutoSend }: { link: HostLink; disabled: readonly OptionalFeature[]; teamAutoSend: boolean }) {
+export function FeaturesSection({ link, disabled, teamAutoSend, shellHelp }: { link: HostLink; disabled: readonly OptionalFeature[]; teamAutoSend: boolean; shellHelp: boolean }) {
   // Shown at once; the Host's settings event confirms it (or the error puts it back).
   const [shown, setShown] = useState<readonly OptionalFeature[]>(disabled);
   const [busy, setBusy] = useState(false);
@@ -53,7 +53,52 @@ export function FeaturesSection({ link, disabled, teamAutoSend }: { link: HostLi
       )}
     </section>
     <TeamAutoSend link={link} on={teamAutoSend} />
+    <ShellHelp link={link} on={shellHelp} />
     </>
+  );
+}
+
+/**
+ * 命令行适配 (2026-11-06, the user: Studio 统一做，设置里加个选项，有人想关可以关掉): Python's UTF-8 variables under every
+ * agent and a few lines on Windows command lines in their instructions (host runtime/agent-env.ts, mcp/tools.ts). On by
+ * default.
+ */
+function ShellHelp({ link, on }: { link: HostLink; on: boolean }) {
+  const [shown, setShown] = useState(on);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setShown(on), [on]);
+
+  async function toggle(next: boolean) {
+    setShown(next);
+    setBusy(true);
+    setError(null);
+    try {
+      await call(link, "PUT /api/settings", {}, { shellHelp: next });
+    } catch (err) {
+      setShown(on);
+      setError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="settings-section" aria-label="命令行">
+      <span className="settings-heading">命令行</span>
+      <label className="settings-row feature-row">
+        <input type="checkbox" checked={shown} disabled={busy} onChange={(e) => void toggle(e.target.checked)} data-testid="shell-help" />
+        <span className="feature-text">
+          <span className="settings-label">命令行适配（Windows）</span>
+          <span className="settings-hint">让 agent 跑的 Python 按 UTF-8 输出中文（设置 PYTHONUTF8、PYTHONIOENCODING，你自己设过的以你的为准），并告诉 agent 几条 Windows 命令行的注意事项：Bash 里路径用正斜杠，带反斜杠和多层引号的脚本写成文件再跑，PowerShell 里不用 bash 写法、读写文件带 -Encoding utf8。之后新开的会话生效，Codex 下次启动后生效。默认开着。</span>
+        </span>
+      </label>
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+    </section>
   );
 }
 

@@ -16,7 +16,8 @@ import { RuntimeRouter } from "./runtime/runtime.js";
 import { personClaudeConfig } from "./features/mcp/local.js";
 import type { McpLaunch } from "./runtime/mcp-launch.js";
 import type { McpServerSpec } from "@amo-studio/protocol";
-import { AMO_MCP_INSTRUCTIONS, amoToolsFor } from "./mcp/tools.js";
+import { amoInstructions, amoToolsFor } from "./mcp/tools.js";
+import { shellHelpEnv } from "./runtime/agent-env.js";
 import { recordRole, roleCard, roleCardFor } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
@@ -228,6 +229,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           mcp: () => mcp,
           // MCP 设置: Studio's servers that are on, when a server starts (not passed to running ones).
           extraMcp: (): Record<string, McpServerSpec> => service.mcp.codexServers(),
+          // 命令行适配 (设置 → 功能): a server started after the switch changes has it.
+          baseEnv: () => shellHelpEnv(liveKv),
         });
     const servers = options.servers ?? manager!;
     // Only app-servers Studio launches have the AMO MCP configured; threads then name their session to it.
@@ -280,9 +283,9 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         try {
           const card = roleCard(service, sessionId);
           recordRole(service, sessionId);
-          return `${AMO_MCP_INSTRUCTIONS}\n\n${card}`;
+          return `${amoInstructions(service)}\n\n${card}`;
         } catch {
-          return AMO_MCP_INSTRUCTIONS;
+          return amoInstructions(service);
         }
       },
     });

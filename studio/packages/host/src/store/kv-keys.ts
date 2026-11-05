@@ -24,6 +24,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "settings:disabled-features", scope: "global", owner: "core/shared.ts", what: "设置 → 功能：关掉的功能" },
   { key: "settings:experimental-features", scope: "global", owner: "core/shared.ts", what: "设置 → 功能：打开的实验功能" },
   { key: "settings:team-auto-send", scope: "global", owner: "core/shared.ts", what: "中转：会话发的问题不等「发送」直接发" },
+  { key: "settings:agent-shell-help", scope: "global", owner: "runtime/agent-env.ts", what: "设置 → 功能 → 命令行适配：关掉时为 0（默认开）" },
   { key: "settings:quota-display", scope: "global", owner: "core/shared.ts", what: "设置 → 额度：各账号的额度显示在哪" },
   { key: "settings:quick-models", scope: "global", owner: "core/shared.ts", what: "设置 → 模型 → 快速选择" },
   { key: "settings:subsession-notes", scope: "global", owner: "core/shared.ts", what: "设置 → 子会话：人写的模型用法" },

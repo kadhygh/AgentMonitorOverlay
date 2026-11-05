@@ -14,6 +14,7 @@ import { claudeAutoCompactEnv } from "../compact.js";
 import { spawnClaudeProcess } from "../priority.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { keepsProcess } from "./wake.js";
+import { shellHelpEnv } from "../agent-env.js";
 import { agentsMdInstructions } from "./project-instructions.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 import { sameProcessPart, sdkServer, type McpLaunch, type McpSource } from "../mcp-launch.js";
@@ -558,7 +559,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const home = this.homeOf(sessionId);
-    const env = { ...claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, session.profileId) };
+    const env = { ...shellHelpEnv(this.store), ...claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, session.profileId) };
     await this.close(sessionId);
     const ref = session.runtimeRef!;
     const seen = hasTranscript(ref, home) ? (await readTranscript(ref, workspace.path, home)).length : 0;
@@ -712,8 +713,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       prompt: input(),
       options: {
         cwd: workspace.path,
-        // 自动压缩点 (设置 → 模型) over the provider's own window.
-        env: { ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) },
+        // 自动压缩点 (设置 → 模型) over the provider's own window; 命令行适配 (agent-env.ts) under everything.
+        env: { ...shellHelpEnv(this.store), ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) },
         // As in a terminal: CLAUDE.md, settings, hooks, commands and skills of the project and of the config dir (Studio's
         // own with the token, the person's with the local login).
         settingSources: CLI_SETTING_SOURCES,

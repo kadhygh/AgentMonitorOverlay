@@ -57,6 +57,8 @@ export interface CodexServerManagerOptions {
   mcp?: () => { url: string; token: string } | null;
   /** MCP 设置 (2026-11-04): Studio's own servers that are on, read when a server starts (not passed to running ones). */
   extraMcp?: () => Record<string, import("@amo-studio/protocol").McpServerSpec>;
+  /** Variables under everything else, read when a server starts: 命令行适配 (agent-env.ts). */
+  baseEnv?: () => Record<string, string>;
 }
 
 interface Entry {
@@ -220,7 +222,7 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     const child = spawn(cmd.command, args, {
       cwd: this.options.cwd,
       // Not the Host's own variables (agent-env.ts); cmd.env puts ELECTRON_RUN_AS_NODE back when codex.js needs it.
-      env: withoutWindowsApps({ ...withoutHostEnv(process.env), ...cmd.env, ...this.options.env, ...spec.env }),
+      env: withoutWindowsApps({ ...(this.options.baseEnv?.() ?? {}), ...withoutHostEnv(process.env), ...cmd.env, ...this.options.env, ...spec.env }),
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });

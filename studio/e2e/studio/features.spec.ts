@@ -41,3 +41,22 @@ test("turn planning off and on again", async () => {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("tab", { name: "整体待办" })).toBeVisible();
 });
+
+// 命令行适配 (2026-11-06): Python's UTF-8 variables and the Windows command lines for every agent, on by default; one
+// switch turns both off for sessions started from then on.
+test("命令行适配 is on by default and can be turned off", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  expect((await studio.api<{ shellHelp: boolean }>("GET", "/api/settings")).shellHelp).toBe(true);
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "功能", exact: true }).click();
+  const box = dialog.getByTestId("shell-help");
+  await box.scrollIntoViewIfNeeded();
+  await expect(box).toBeChecked();
+  await screenshot(studio.app, "studio", "shell-help-setting", page);
+  await box.uncheck();
+  await expect.poll(async () => (await studio!.api<{ shellHelp: boolean }>("GET", "/api/settings")).shellHelp).toBe(false);
+  await box.check();
+  await expect.poll(async () => (await studio!.api<{ shellHelp: boolean }>("GET", "/api/settings")).shellHelp).toBe(true);
+});

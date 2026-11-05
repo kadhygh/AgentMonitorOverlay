@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, SUBSESSION_PERMISSIONS, type SubsessionNote, type SubsessionPermission, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
+import { readShellHelp, SHELL_HELP_KEY } from "../../runtime/agent-env.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
@@ -20,6 +21,7 @@ export class ConfigFeature extends Feature {
       experimentalFeatures: this.experimentalFeatures(),
       devUiDir: this.devUiDir(),
       teamAutoSend: this.teamAutoSend(),
+      shellHelp: this.shellHelp(),
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
       autoCompactTokens: readAutoCompact(this.store),
@@ -192,6 +194,11 @@ export class ConfigFeature extends Feature {
     return this.store.getKv(TEAM_AUTO_SEND_KEY)?.value === "1";
   }
 
+  /** 命令行适配 (设置 → 功能, agent-env.ts): on unless turned off. */
+  shellHelp(): boolean {
+    return readShellHelp(this.store);
+  }
+
   featureOn(id: OptionalFeature): boolean {
     return !this.disabledFeatures().includes(id);
   }
@@ -212,7 +219,7 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; devUiDir?: unknown; presets?: unknown; disabledFeatures?: unknown; experimentalFeatures?: unknown; teamAutoSend?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; devUiDir?: unknown; presets?: unknown; disabledFeatures?: unknown; experimentalFeatures?: unknown; teamAutoSend?: unknown; shellHelp?: unknown; scratchpadShortcut?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown; topicGroups?: unknown; subsessionNotes?: unknown }): StudioSettings {
     if (input.subsessionNotes !== undefined) this.store.setKv(SUBSESSION_NOTES_KEY, JSON.stringify(this.checkSubsessionNotes(input.subsessionNotes)));
     if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.topicGroups !== undefined) this.store.setKv(TOPIC_GROUPS_KEY, JSON.stringify(this.checkTopicGroups(input.topicGroups)));
@@ -265,6 +272,10 @@ export class ConfigFeature extends Feature {
     if (input.teamAutoSend !== undefined) {
       if (typeof input.teamAutoSend !== "boolean") throw new HostError("bad_request", "teamAutoSend must be true or false");
       this.store.setKv(TEAM_AUTO_SEND_KEY, input.teamAutoSend ? "1" : "0");
+    }
+    if (input.shellHelp !== undefined) {
+      if (typeof input.shellHelp !== "boolean") throw new HostError("bad_request", "shellHelp must be true or false");
+      this.store.setKv(SHELL_HELP_KEY, input.shellHelp ? "1" : "0");
     }
     if (input.disabledFeatures !== undefined) {
       const known = OPTIONAL_FEATURES.map((f) => f.id);

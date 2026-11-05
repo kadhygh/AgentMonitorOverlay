@@ -32,6 +32,20 @@ export const AMO_MCP_INSTRUCTIONS = [
   "When the work needs someone on the team other than the person you work for — a programmer to confirm an implementation, an interface or the work it takes, or to check a plan — ask them with team_ask (AMO 中转; team_members lists who does what). It usually waits for the person's OK in Studio (the answer says), goes as the person marked as their AI's, and the reply comes back into this conversation by itself: end your turn after it instead of going on in the unconfirmed direction; then team_followup to ask again, team_done once settled. (task_message is different: it talks to another task's session inside Studio.)",
 ].join("\n\n");
 
+/**
+ * 设置 → 功能 → 命令行适配 (2026-11-06, agent-env.ts has the survey): what goes wrong on Windows besides encoding — quotes
+ * and heredocs (Claude's Bash, 158 times), backslashes lost on the way (Claude's Bash tool turned `\\` into `\` even in
+ * single quotes and quoted heredocs, seen 2026-11-06; PowerShell's did not), and bash habits in PowerShell (Codex: `&&`
+ * and heredocs in Windows PowerShell 5.1, 635 parse errors). Added to the instructions while the switch is on.
+ */
+export const SHELL_HELP_INSTRUCTIONS =
+  "Commands on Windows: in Bash (Git Bash) write Windows paths with forward slashes (G:/PROJECT/...). Backslashes can be halved before bash sees them — `\\\\` in a path, regex or escape may arrive as `\\`, even inside single quotes or a quoted heredoc — so a script with backslashes, regexes or quotes inside quotes goes into a file (written with your file tool) and is run from there, not inline through node -e, python -c or a heredoc. In PowerShell use PowerShell syntax only (no heredocs, no head/tail/grep, no && in Windows PowerShell 5.1) and read and write text with -Encoding utf8. Python prints UTF-8 here (PYTHONUTF8=1 is set for you).";
+
+/** The instructions as this Studio gives them: the shared part, plus the Windows command help while it is on. */
+export function amoInstructions(service: HostService): string {
+  return service.config.shellHelp() ? `${AMO_MCP_INSTRUCTIONS}\n\n${SHELL_HELP_INSTRUCTIONS}` : AMO_MCP_INSTRUCTIONS;
+}
+
 /** Every AMO tool for one caller (null: reading only): the features' tools, reading ones first; none of a feature turned off. */
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
   const ctx = toolContext(service, caller);
