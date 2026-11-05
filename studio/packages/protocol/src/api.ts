@@ -594,14 +594,15 @@ export interface HostRoutes {
    * only filed (column `todo` unless given); with it, the first session starts.
    */
   "POST /api/tasks": {
-    req: { title?: string; workspaceId?: Id | null; topicId?: Id | null; column?: TaskColumn; lead?: boolean; firstSession?: NewSessionInput };
+    /** `firstMessage`: filed without a session (放进待办), the sentence its first session will start from. */
+    req: { title?: string; workspaceId?: Id | null; topicId?: Id | null; column?: TaskColumn; lead?: boolean; firstSession?: NewSessionInput; firstMessage?: string };
     res: { task: Task; session: Session | null };
   };
   /**
    * `workspaceId` (null: the common space) only while the task has no sessions. `topicId` moves the task to another
    * topic or out of its topic (null); its place, group and dependencies on the old topic's canvas are removed.
    */
-  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; lead?: boolean; relayAuto?: boolean; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
+  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; firstMessage?: string; lead?: boolean; relayAuto?: boolean; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
   /** Archives the task and all its sessions; returns the task. */
   "POST /api/tasks/:id/archive": { req: void; res: Task };
   "POST /api/tasks/:id/unarchive": { req: void; res: Task };

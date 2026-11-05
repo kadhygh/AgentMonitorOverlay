@@ -356,4 +356,8 @@ export const MIGRATIONS: readonly Migration[] = [
   ALTER TABLE sessions ADD COLUMN ended_at TEXT;
   UPDATE sessions SET ended_at = updated_at WHERE status IN ('idle', 'completed', 'interrupted', 'error');
   `,
+  // 25: 放进待办 keeps its first sentence (2026-11-05): it was cut to the title and the rest dropped.
+  `
+  ALTER TABLE tasks ADD COLUMN first_message TEXT;
+  `,
 ];

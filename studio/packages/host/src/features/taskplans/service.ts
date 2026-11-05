@@ -104,7 +104,7 @@ export class TaskPlansFeature extends Feature {
         title: t.title,
         workspaceId: t.workspaceId,
         topicId,
-        ...(run && t.profileId ? { firstSession: { profileId: t.profileId, ...(t.firstMessage ? { text: t.firstMessage } : {}), ...(t.options ? { options: t.options } : {}) } } : { column: "todo" as const }),
+        ...(run && t.profileId ? { firstSession: { profileId: t.profileId, ...(t.firstMessage ? { text: t.firstMessage } : {}), ...(t.options ? { options: t.options } : {}) } } : { column: "todo" as const, ...(t.firstMessage ? { firstMessage: t.firstMessage } : {}) }),
       });
       const described = t.description ? this.f.tasks.updateTask(task.id, { description: t.description }) : task;
       if (topicId) this.f.canvases.canvasPlaceTask(task.id, groups.get(t.workspaceId) ?? null);

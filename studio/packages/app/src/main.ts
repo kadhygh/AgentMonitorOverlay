@@ -576,7 +576,7 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
         ...(process.env.AMO_STUDIO_KEEPALIVE_MS ? { intervalMs: Number(process.env.AMO_STUDIO_KEEPALIVE_MS) } : {}),
         // Asked to stop (完全退出 from another place, the platform's 重启 Studio): this shell goes with it (2026-10-29).
         onStopped: () => {
-          trace?.note("host", "the Host was asked to stop; quitting with it");
+          trace?.mark("host", "the Host was asked to stop; quitting with it");
           appQuitting = true;
           app.quit();
         },
@@ -660,10 +660,19 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
       app.exit(1);
     });
 
-  app.on("window-all-closed", () => app.quit());
+  app.on("window-all-closed", () => {
+    trace?.mark("quit", "every window closed");
+    app.quit();
+  });
+
+  // Each step of quitting, written at once (2026-11-05): Studio 0.9.36 once hung after the platform's 重启 — windows
+  // and helper processes gone, the process left — with nothing in the log after "quitting with it".
+  app.on("quit", (_event, code) => trace?.mark("quit", `quit (exit code ${code})`));
+  process.once("exit", (code) => trace?.mark("quit", `process exit ${code}`));
 
   let quitting = false;
   app.on("before-quit", (event) => {
+    trace?.mark("quit", "before-quit");
     // Now the workbench window really closes (× only hides it).
     appQuitting = true;
     // Quitting stops (in tests) or leaves the Host; it is not to be restarted.
@@ -675,9 +684,16 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
     void stopHost(host).finally(() => app.quit());
   });
   app.on("will-quit", () => {
+    trace?.mark("quit", "will-quit");
     removeShellFile();
     tray?.destroy();
     tray = null;
+    // Still here well after will-quit (the hang above, if JavaScript still runs then): end the process. The Host is
+    // its own process and the windows are gone; nothing is lost. Unref'd: it never keeps a quitting process alive.
+    setTimeout(() => {
+      trace?.mark("quit", "still running 10 s after will-quit: ending the process");
+      app.exit(0);
+    }, 10_000).unref();
   });
 
   // A window's page process crashed (or ran out of memory): load it again; the Host and the sessions never stopped.

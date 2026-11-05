@@ -46,6 +46,7 @@ import { RemoteBanner } from "./RemoteBanner.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { ALSO_MINE_KEY, PINNED_KEY } from "../focus/pins.js";
 import { readStored, writeStored } from "../lib/stored.js";
+import { writeSessionDraft } from "./sessionDraft.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -215,8 +216,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       setStarting(null);
     }
   };
+  // A task filed with a first sentence (放进待办, 2026-11-05): the new session's composer starts with it, to be read
+  // and sent (not sent by itself: the person may have picked a model or want to add to it), and the task lets it go.
   const newSession = (input: { profileId: string; options?: SessionOptions }) =>
-    run(starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input)), (s) => setSelected(s.id));
+    run(starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input)), (s) => {
+      const first = task.firstMessage;
+      if (first && !copy) {
+        writeSessionDraft(s.id, first);
+        void call(link, "PATCH /api/tasks/:id", { id: task.id }, { firstMessage: "" }).catch(() => undefined);
+      }
+      setSelected(s.id);
+    });
   const restore = (id: string) => run(() => call(link, "POST /api/sessions/:id/unarchive", { id }), () => setSelected(id));
   const archive = (id: string) =>
     run(() => call(link, "POST /api/sessions/:id/archive", { id }), () => {
@@ -662,6 +672,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {...(copy ? { remote: { blocked: copy.blocked, revoked: copy.state === "revoked" } } : {})}
               presets={settings?.presets ?? []}
               session={session}
+              {...(task.firstMessage ? { firstMessage: task.firstMessage } : {})}
               {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
               profiles={profiles}
               subsessionNotes={settings?.subsessionNotes ?? []}

@@ -13,7 +13,7 @@ import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
 import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfStanding, type SelfPlace } from "./self-update.js";
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { inFolder, Launched, logTiming, ownRunningFile, pidAlive, readOwnRunning, type RunningRecord } from "./running.js";
-import { foldersInUse, QUIT_SINCE, runningExePaths, runningVersions, stopStudio, studioHealth, studioHostPid, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
+import { foldersInUse, killProcess, QUIT_SINCE, runningExePaths, runningVersions, stopStudio, studioHealth, studioHostPid, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
 import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
 import type { EnvFrom, EnvironmentView, EnvItemView, EnvTaskView, EnvUpdateResult } from "./environment-view.js";
 import { claudeSources, installClaude } from "./claude-install.js";
@@ -82,10 +82,15 @@ export interface PlatformOptions {
   stopStudio?: (dataDir: string) => Promise<StudioStop>;
   /** 重启 Studio: waits for the old processes to end, returns those still running (system.ts's waitForExit). */
   waitForExit?: (pids: readonly number[], timeoutMs: number) => Promise<number[]>;
+  /** 重启 Studio: ends an old shell that hangs after its Host stopped (system.ts's killProcess). */
+  killProcess?: (pid: number) => void;
 }
 
 /** How long 重启 Studio waits for the old Studio and its Host to end (closing sessions and app-servers takes a moment). */
 const STUDIO_STOP_WAIT_MS = 60_000;
+/** Its shell (the windows) usually ends within 2 s; one still there this long after its Host is gone is ended. */
+const STUDIO_SHELL_GRACE_MS = 10_000;
+const RESTARTING = "正在重启 Studio，等它做完再试。";
 /** 关闭 waits this long for the processes known to be the tool to end (Studio asks first when sessions are at work). */
 const CLOSE_WAIT_MS = 30_000;
 /** 打开 looks this long for the tool's own record (running.ts) before asking Windows. */
@@ -606,6 +611,12 @@ export class Platform implements PlatformCalls {
   }
 
   async open(tool: string): Promise<OpenResult> {
+    // The tray's 打开 too (the card greys its button): a second Studio beside the old one still quitting (2026-11-05).
+    if (tool === "studio" && this.studioRestarting) return { ok: false, reason: "failed", message: RESTARTING };
+    return this.openNow(tool);
+  }
+
+  private openNow(tool: string): Promise<OpenResult> {
     return tool === "notes" ? this.startNotes([]) : this.start(tool, []);
   }
 
@@ -615,6 +626,7 @@ export class Platform implements PlatformCalls {
    * is not running quits at once.
    */
   async close(tool: string): Promise<OpenResult> {
+    if (tool === "studio" && this.studioRestarting) return { ok: false, reason: "failed", message: RESTARTING };
     // An older tool, started before it knew --amo-quit, only comes to the front (2026-10-29, the user: 关闭 opened Studio
     // 0.9.7): said instead, with where it quits on its own. 便签 started through Studio is Studio's exe.
     const exeOf = tool === "notes" && !this.programs().notes && this.programs().studio ? "studio" : tool;
@@ -785,16 +797,33 @@ export class Platform implements PlatformCalls {
         return;
       }
       step("后台答应关闭");
-      const left = await (this.options.waitForExit ?? waitForExit)(stop.pids, STUDIO_STOP_WAIT_MS);
+      const wait = this.options.waitForExit ?? waitForExit;
+      let left = await wait(stop.pids, STUDIO_SHELL_GRACE_MS);
+      // The Host may take longer (closing sessions' processes): the rest of the minute for it.
+      if (stop.host !== undefined && left.includes(stop.host)) {
+        await wait([stop.host], Math.max(0, started + STUDIO_STOP_WAIT_MS - Date.now()));
+        left = await wait(left, 0);
+      }
       step("旧进程退出");
+      // 2026-11-05 (the user's 重启 to 0.9.39): the old shell (0.9.36) closed its windows and helpers, let go of its
+      // single-instance lock and then never ended. With its Host gone it holds nothing — the sessions live in the Host,
+      // its windows are closed — so it is ended rather than leaving the person to the task manager.
+      let forced = false;
+      if (stop.shell !== undefined && left.includes(stop.shell) && !(stop.host !== undefined && left.includes(stop.host))) {
+        (this.options.killProcess ?? killProcess)(stop.shell);
+        forced = true;
+        left = await wait(left, 5000);
+        step("强制结束旧窗口进程");
+      }
       if (left.length) {
-        done("error", `旧的 Studio 还没退出（进程 ${left.join("、")}，等了 ${STUDIO_STOP_WAIT_MS / 1000} 秒），没有打开新版。它退出后点「打开」就是新版。`);
+        done("error", `旧的 Studio 还没退出（进程 ${left.join("、")}，等了 ${Math.round((Date.now() - started) / 1000)} 秒），没有打开新版。它退出后点「打开」就是新版。`);
         return;
       }
-      const opened = await this.open("studio");
+      const opened = await this.openNow("studio");
       step("新版启动");
       const installed = this.installer.currentVersion("studio");
-      done(opened.ok ? "ok" : "error", opened.ok ? `已重启 Studio${installed ? `，现在是 ${installed}` : ""}` : `旧的 Studio 已经退出，但新版没能打开：${opened.message}`);
+      const note = forced ? `（旧的 Studio 关掉窗口后 ${STUDIO_SHELL_GRACE_MS / 1000} 秒没退出，平台把它结束了；会话在后台里，不受影响）` : "";
+      done(opened.ok ? "ok" : "error", opened.ok ? `已重启 Studio${installed ? `，现在是 ${installed}` : ""}${note}` : `旧的 Studio 已经退出，但新版没能打开：${opened.message}`);
       // The new Host takes a moment to answer: asked every half second until it does (it was once, after 5 s).
       if (opened.ok) void this.followStudioUp(dataDir, started);
     } finally {

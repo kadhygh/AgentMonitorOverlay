@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, OutsideSessionList, OutsideSessionPreview, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
-import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
+import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX, TASK_FIRST_MESSAGE_MAX } from "@amo-studio/protocol";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
@@ -140,6 +140,8 @@ export class TasksFeature extends Feature {
     column?: TaskColumn;
     lead?: boolean;
     firstSession?: NewSessionInput;
+    /** Filed without a session: the sentence its first session will take (2026-11-05). */
+    firstMessage?: string;
   }): Promise<{ task: Task; session: Session | null }> {
     const workspace = input.workspaceId ? this.requireLiveWorkspace(input.workspaceId) : this.commonWorkspace();
     const topic = input.topicId ? this.requireLiveTopic(input.topicId) : null;
@@ -152,9 +154,10 @@ export class TasksFeature extends Feature {
       if (resumeFrom) await this.wrap(() => this.runtime.checkResume?.(input.firstSession!.profileId, resumeFrom) ?? Promise.resolve());
     }
     if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
-    const title = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || "";
+    const firstMessage = input.firstSession ? "" : firstMessageOf(input.firstMessage);
+    const title = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || firstMessage.split("\n")[0]!.slice(0, 60);
     const column = input.firstSession ? "doing" : (input.column ?? "todo");
-    const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column, lead: input.lead === true });
+    const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column, lead: input.lead === true, ...(firstMessage ? { firstMessage } : {}) });
     this.publish({ type: "task.upserted", task });
     const session = input.firstSession ? await this.startSession({ taskId: task.id, topicId: null }, workspace, input.firstSession) : null;
     return { task: this.store.getTask(task.id)!, session };
@@ -177,10 +180,12 @@ export class TasksFeature extends Feature {
     return this.updateTask(id, patch);
   }
 
-  updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+  updateTask(id: Id, patch: { title?: unknown; description?: unknown; firstMessage?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
     if (current.remote) throw new HostError("read_only", `这是 ${current.remote.name} 上的远程任务：状态、说明和专题跟着那台电脑走，这里不能改（名字可以改，会改到那边）`);
-    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead" | "relayAuto">> = {};
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "firstMessage" | "lead" | "relayAuto">> = {};
+    // The first session took it into its composer, or the person cleared it ("").
+    if (patch.firstMessage !== undefined) clean.firstMessage = firstMessageOf(patch.firstMessage);
     if (patch.lead !== undefined) {
       if (typeof patch.lead !== "boolean") throw new HostError("bad_request", "lead must be true or false");
       clean.lead = patch.lead;
@@ -323,6 +328,15 @@ export class TasksFeature extends Feature {
     if (this.requireProfile(input.profileId).runtime !== "claude") throw new HostError("bad_request", "接续已有会话只能用 Claude");
     return input.resumeFrom;
   }
+}
+
+/** A filed task's first sentence, checked: text, at most TASK_FIRST_MESSAGE_MAX; "" when none. */
+function firstMessageOf(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v !== "string") throw new HostError("bad_request", "firstMessage must be text");
+  const text = v.trim();
+  if (text.length > TASK_FIRST_MESSAGE_MAX) throw new HostError("bad_request", `a first message is limited to ${TASK_FIRST_MESSAGE_MAX} characters`);
+  return text;
 }
 
 /**

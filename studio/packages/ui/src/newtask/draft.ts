@@ -131,8 +131,9 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     workspaceId: draft.projectId,
     topicId: draft.topicId,
     ...(draft.lead ? { lead: true } : {}),
+    // 放进待办 (2026-11-05): the sentence is kept on the task for its first session; it used to be cut to the title.
     ...(file
-      ? {}
+      ? { firstMessage: text }
       : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(resumeFrom ? { resumeFrom } : {}) } }),
   });
   if (!file) {

@@ -168,12 +168,13 @@ export class Store extends DocumentStore {
   // Tasks
 
   /** `id` and `remote`: 远程 step 2, this computer's copy of a paired device's task, under that task's own id. */
-  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn; lead?: boolean; id?: Id; remote?: TaskRemote }): Task {
+  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn; lead?: boolean; id?: Id; remote?: TaskRemote; firstMessage?: string }): Task {
     const at = this.timestamp();
-    const task: Task = { id: input.id ?? newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", ...(input.lead ? { lead: true } : {}), ...(input.remote ? { remote: input.remote } : {}), createdAt: at, updatedAt: at, archivedAt: null };
+    const firstMessage = input.firstMessage?.trim() || "";
+    const task: Task = { id: input.id ?? newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", ...(firstMessage ? { firstMessage } : {}), ...(input.lead ? { lead: true } : {}), ...(input.remote ? { remote: input.remote } : {}), createdAt: at, updatedAt: at, archivedAt: null };
     this.db
-      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, lead, remote, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")
-      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, input.lead ? 1 : 0, input.remote ? JSON.stringify(input.remote) : null, at, at);
+      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, lead, remote, first_message, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")
+      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, input.lead ? 1 : 0, input.remote ? JSON.stringify(input.remote) : null, firstMessage || null, at, at);
     return task;
   }
 
@@ -191,20 +192,21 @@ export class Store extends DocumentStore {
     return (this.db.prepare("SELECT * FROM tasks ORDER BY created_at, id").all() as Row[]).map(toTask);
   }
 
-  /** `description`: empty removes it. */
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead" | "relayAuto" | "remote">>): Task {
+  /** `description`, `firstMessage`: empty removes it. */
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "firstMessage" | "lead" | "relayAuto" | "remote">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const { description: _old, lead: _wasLead, relayAuto: _wasAuto, remote: _wasRemote, ...rest } = task;
+    const { description: _old, firstMessage: _oldFirst, lead: _wasLead, relayAuto: _wasAuto, remote: _wasRemote, ...rest } = task;
     const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
+    const firstMessage = patch.firstMessage !== undefined ? patch.firstMessage.trim() : (task.firstMessage ?? "");
     const lead = patch.lead !== undefined ? patch.lead : !!task.lead;
     const relayAuto = patch.relayAuto !== undefined ? patch.relayAuto : !!task.relayAuto;
     const remote = patch.remote !== undefined ? patch.remote : task.remote;
-    const { description: _d, lead: _l, relayAuto: _r, remote: _m, ...plain } = patch;
-    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), ...(remote ? { remote } : {}), updatedAt: this.timestamp() };
+    const { description: _d, firstMessage: _f, lead: _l, relayAuto: _r, remote: _m, ...plain } = patch;
+    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), ...(remote ? { remote } : {}), updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, relay_auto = ?, remote = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, relayAuto ? 1 : 0, remote ? JSON.stringify(remote) : null, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, first_message = ?, lead = ?, relay_auto = ?, remote = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, firstMessage || null, lead ? 1 : 0, relayAuto ? 1 : 0, remote ? JSON.stringify(remote) : null, next.updatedAt, id);
     return next;
   }
 

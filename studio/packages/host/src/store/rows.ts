@@ -30,6 +30,7 @@ export function toTask(r: Row): Task {
     topicId: strOrNull(r.topic_id),
     column: str(r.column_name) as TaskColumn,
     ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
+    ...(typeof r.first_message === "string" && r.first_message ? { firstMessage: r.first_message } : {}),
     ...(Number(r.lead) === 1 ? { lead: true } : {}),
     ...(Number(r.relay_auto) === 1 ? { relayAuto: true } : {}),
     ...parseRemote(r.remote),

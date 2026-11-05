@@ -216,6 +216,19 @@ export class ResizeTrace {
     }
   }
 
+  /**
+   * A line written at once, with what still waits before it (2026-11-05): the steps of quitting. A Studio once hung
+   * after "quitting with it" and was never seen again in the log — a queued line would have died with it.
+   */
+  mark(window: string, what: string): void {
+    if (!this.enabled) return;
+    try {
+      appendFileSync(this.file, [...this.queue.splice(0), `${stamp()} ${window} ${what}\n`].join(""));
+    } catch {
+      // tracing never breaks the app
+    }
+  }
+
   /** Something that may move or repaint a window, counted into any running burst (or logged alone, with its detail). */
   note(window: string, what: string, detail?: string): void {
     if (!this.enabled) return;

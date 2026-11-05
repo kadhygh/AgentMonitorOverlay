@@ -45,6 +45,22 @@ const column = (task: Task) => store.getTask(task.id)?.column;
 const status = (id: string) => store.getSession(id)?.status;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+describe("放进待办 (2026-11-05)", () => {
+  it("keeps the first sentence on the task (the title from its first line) until it is cleared", async () => {
+    const { task, session } = await service.tasks.createTask({ workspaceId: alpha.id, firstMessage: "  改一下掉落表\n按新的稀有度分档  " });
+    expect(session).toBeNull();
+    expect(task).toMatchObject({ title: "改一下掉落表", column: "todo", firstMessage: "改一下掉落表\n按新的稀有度分档" });
+    expect(store.getTask(task.id)!.firstMessage).toBe("改一下掉落表\n按新的稀有度分档");
+    // The first session took it into its composer: the task lets it go.
+    expect(service.tasks.updateTask(task.id, { firstMessage: "" }).firstMessage).toBeUndefined();
+    expect(store.getTask(task.id)!.firstMessage).toBeUndefined();
+    expect(() => service.tasks.updateTask(task.id, { firstMessage: 3 })).toThrow(/must be text/);
+    // Started at once: nothing kept.
+    const started = await service.tasks.createTask({ workspaceId: alpha.id, firstSession: { profileId: "p-ds", text: "直接开始" }, firstMessage: "不该留下" });
+    expect(started.task.firstMessage).toBeUndefined();
+  });
+});
+
 describe("进行中 ⇄ 待审阅", () => {
   it("goes to 待审阅 once the turn is over, and back to 进行中 when the person talks to it again", async () => {
     const task = store.createTask({ title: "改表", workspaceId: alpha.id, column: "doing" });

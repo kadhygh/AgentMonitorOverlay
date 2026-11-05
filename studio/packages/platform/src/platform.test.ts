@@ -425,7 +425,7 @@ describe("launch and the machine", () => {
       reply = { status: 404, body: { error: { code: "not_found", message: "no route" } } };
       expect(await stopStudio(root)).toMatchObject({ ok: false, reason: "unsupported" });
       reply = { status: 200, body: { ok: true, running: 0 } };
-      expect(await stopStudio(root)).toEqual({ ok: true, pids: [4242, 4343] });
+      expect(await stopStudio(root)).toEqual({ ok: true, pids: [4242, 4343], host: 4242, shell: 4343 });
       expect(seen.every((r) => !r.body.includes("interrupt"))).toBe(true);
     } finally {
       await new Promise<void>((r) => host.close(() => r()));
@@ -444,11 +444,22 @@ describe("launch and the machine", () => {
     let stop: StudioStop = { ok: false, reason: "running", running: 1 };
     let left: number[] = [];
     const waited: Array<readonly number[]> = [];
+    const killed: number[] = [];
+    // While the restart waits: 打开 and 关闭 are refused (2026-11-05).
+    let duringWait: Array<{ ok: boolean }> = [];
     const { platform, launched, picks, running } = make({
       extra: {
         fetch: routed,
         stopStudio: async () => stop,
-        waitForExit: async (pids) => (waited.push(pids), left),
+        waitForExit: async (pids) => {
+          waited.push(pids);
+          if (!duringWait.length) duringWait = [await platform.open("studio"), await platform.close("studio")];
+          return left.filter((p) => pids.includes(p));
+        },
+        killProcess: (pid) => {
+          killed.push(pid);
+          left = left.filter((p) => p !== pid);
+        },
       },
     });
     await platform.init();
@@ -482,6 +493,18 @@ describe("launch and the machine", () => {
     expect(waited.at(-1)).toEqual([4242, 4343]);
     expect(card().result).toMatchObject({ tone: "error", text: expect.stringContaining("旧的 Studio 还没退出（进程 4343") });
     expect(launched).toEqual([]);
+    expect(duringWait).toEqual([
+      { ok: false, reason: "failed", message: "正在重启 Studio，等它做完再试。" },
+      { ok: false, reason: "failed", message: "正在重启 Studio，等它做完再试。" },
+    ]);
+    expect(killed).toEqual([]);
+    // The Host is still stopping: it gets the rest of the minute, the shell is not ended while it runs.
+    stop = { ok: true, pids: [4242, 4343], host: 4242, shell: 4343 };
+    left = [4242, 4343];
+    await platform.restartStudio();
+    expect(waited.slice(-3)).toEqual([[4242, 4343], [4242], [4242, 4343]]);
+    expect(killed).toEqual([]);
+    expect(launched).toEqual([]);
     // Both ended: the installed Studio opens with its data dir.
     left = [];
     health = { ok: true, pid: 5000, running: 0, version: "0.9.0" };
@@ -491,6 +514,12 @@ describe("launch and the machine", () => {
     expect(launched[0]!.file).toMatch(/\\0\.9\.0\\AMO Studio\.exe$/);
     expect(launched[0]!.env.AMO_STUDIO_DATA_DIR).toBe(data);
     expect(card().studio).toEqual({ hostUp: true, sessions: 0, version: "0.9.0", restart: "none", restarting: false });
+    // 2026-11-05: the Host is gone, its shell hangs (windows closed, the process left): ended, and the new one opens.
+    left = [4343];
+    await platform.restartStudio();
+    expect(killed).toEqual([4343]);
+    expect(launched).toHaveLength(2);
+    expect(card().result).toEqual({ tone: "ok", text: "已重启 Studio，现在是 0.9.0（旧的 Studio 关掉窗口后 10 秒没退出，平台把它结束了；会话在后台里，不受影响）" });
     // A Host too old to say its version.
     health = { ok: true, pid: 5000, running: 0 };
     await platform.refreshStudio();

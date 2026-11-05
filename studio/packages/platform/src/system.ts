@@ -120,8 +120,8 @@ export function studioRestart(health: StudioHealth, installed: string | null): "
 }
 
 export type StudioStop =
-  /** Accepted: wait for these processes (the Host, and the shell from shell.json) to end. */
-  | { ok: true; pids: number[] }
+  /** Accepted: wait for these processes (the Host, and the shell from shell.json) to end; which is which. */
+  | { ok: true; pids: number[]; host?: number; shell?: number }
   | { ok: false; reason: "running"; running: number }
   | { ok: false; reason: "not-running" | "unsupported" | "failed"; message: string };
 
@@ -154,7 +154,10 @@ export async function stopStudio(dataDir: string, fetchImpl: typeof fetch = fetc
   try {
     const res = await fetchImpl(`${host.url}/api/shutdown`, { method: "POST", headers: { authorization: `Bearer ${host.token}`, "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000) });
     const body = (await res.json().catch(() => null)) as { running?: unknown; error?: { message?: unknown } } | null;
-    if (res.ok) return { ok: true, pids: [host.pid, shell].filter((p): p is number => p !== null && p !== process.pid) };
+    if (res.ok) {
+      const own = (p: number | null): p is number => p !== null && p !== process.pid;
+      return { ok: true, pids: [host.pid, shell].filter(own), ...(own(host.pid) ? { host: host.pid } : {}), ...(own(shell) && shell !== host.pid ? { shell } : {}) };
+    }
     const running = sessionCount(body?.running);
     if (res.status === 409 && running) return { ok: false, reason: "running", running };
     if (res.status === 404) return { ok: false, reason: "unsupported", message: "这个后台是更早的 Studio 启动的，不能从这里关掉。" };
@@ -170,6 +173,15 @@ function pidAlive(pid: number): boolean {
     return true;
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Ends a process (TerminateProcess on Windows); one already gone is fine. */
+export function killProcess(pid: number): void {
+  try {
+    process.kill(pid);
+  } catch {
+    // gone already, or not ours to end: the wait after it says which
   }
 }
 

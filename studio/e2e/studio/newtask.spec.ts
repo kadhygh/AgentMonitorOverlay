@@ -77,15 +77,27 @@ test("files a task into 待办 in the topic in scope, without starting a session
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "beta" }).click();
-  await page.getByLabel("第一句话").fill("Elite 掉落表补单元测试");
+  await page.getByLabel("第一句话").fill("Elite 掉落表补单元测试\n先补边界：0 掉落和满背包");
   await page.getByRole("button", { name: "放进待办" }).click();
 
   // Back on the board, in 待办; nothing ran.
-  await expect(page.getByTestId("column-todo").getByTestId("task-card")).toContainText("Elite 掉落表补单元测试");
+  const card = page.getByTestId("column-todo").getByTestId("task-card");
+  await expect(card).toContainText("Elite 掉落表补单元测试");
+  await expect(card).toContainText("第一句话已写好");
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   const task = state.tasks.find((t) => t.title === "Elite 掉落表补单元测试")!;
-  expect(task).toMatchObject({ workspaceId: beta!.id, topicId: topic.id, column: "todo" });
+  // 2026-11-05: the whole sentence is kept on the task (it used to be cut to the title).
+  expect(task).toMatchObject({ workspaceId: beta!.id, topicId: topic.id, column: "todo", firstMessage: "Elite 掉落表补单元测试\n先补边界：0 掉落和满背包" });
   expect(state.sessions.filter((s) => s.taskId === task.id)).toEqual([]);
+
+  // The task page shows it; a new session's composer starts with it, and the task lets it go.
+  await card.click();
+  await expect(page.getByTestId("task-first-message")).toContainText("先补边界：0 掉落和满背包");
+  await screenshot(studio.app, "studio", "filed-first-message", page);
+  await page.getByTestId("new-session-toggle").click();
+  await page.getByRole("button", { name: "开始新会话" }).click();
+  await expect(page.getByLabel("输入消息")).toHaveValue("Elite 掉落表补单元测试\n先补边界：0 掉落和满背包");
+  await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).tasks.find((t) => t.id === task.id)!.firstMessage).toBeUndefined();
 });
 
 test("a task without a project runs in the common folder", async () => {

@@ -42,6 +42,11 @@ export interface Task {
   /** What the task is about (2026-10-17): on its canvas card and task page; the person and agents write it (TASK_DESCRIPTION_MAX). */
   description?: string;
   /**
+   * 放进待办 with a first sentence (2026-11-05, the user: where did it go, and a new session did not take it): kept here
+   * until the task's first session takes it into its composer (TASK_FIRST_MESSAGE_MAX).
+   */
+  firstMessage?: string;
+  /**
    * 主控 (stage 16, from the stage 15 design): the person marks a task as the one that coordinates its topic (or its
    * project when it is in none). Its sessions get the 主控 role card and may propose tasks and relay messages.
    */
@@ -585,6 +590,8 @@ export const TOPIC_DOC_BODY_MAX = 50_000;
 
 /** The longest task description (characters). */
 export const TASK_DESCRIPTION_MAX = 2000;
+/** A filed task's first sentence: a prompt can be long. */
+export const TASK_FIRST_MESSAGE_MAX = 20_000;
 
 /** A mark on a canvas card, note or group (2026-10-17): its outline takes the colour; what it means is the person's. */
 export type CanvasColor = "red" | "yellow" | "green" | "blue";

@@ -412,7 +412,9 @@ function RootBanner({ view }: { view: PlatformView }) {
 }
 
 function statusLine(t: ToolView, checking: boolean): { tone: "ok" | "warn" | "idle"; text: string } {
-  const running = t.running ? " · 正在运行" : "";
+  // 重启 Studio under way: neither the old one nor the new one is simply "running" (2026-11-05: it read 0.9.39 正在运行
+  // while the old 0.9.36 was still quitting).
+  const running = t.studio?.restarting ? " · 正在重启" : t.running ? " · 正在运行" : "";
   // While connecting (2026-10-30): what the server has is not known yet — before the first answer an installed tool
   // would read 「这个通道里没有它」, after a 重试 or a channel switch the last answer; say it is being read instead.
   if (checking) return t.installed ? { tone: "ok", text: `✓ ${t.installed} · 正在读取服务器上的版本…${running}` } : { tone: "idle", text: "○ 没装 · 正在读取服务器上的版本…" };
@@ -434,6 +436,7 @@ function statusLine(t: ToolView, checking: boolean): { tone: "ok" | "warn" | "id
 function studioLine(t: ToolView): string | null {
   const s = t.studio;
   if (!s || !t.installed) return null;
+  if (s.restarting) return "◐ 正在关掉旧的 Studio 和后台，再打开已装的版本";
   if (!s.hostUp) return "○ 后台没在运行";
   const sessions = s.sessions === null ? "看不到有几个会话在跑" : s.sessions === 0 ? "没有会话在跑" : `${s.sessions} 个会话进行中`;
   const version = s.version === null ? "" : s.version === "dev" ? " · 后台是开发版" : ` · 后台版本 ${s.version}`;
@@ -509,7 +512,11 @@ function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: Too
   const cannot = !writable ? "这个文件夹不能写入，见上面的提示" : checking ? "正在连接服务器…" : connection !== "online" ? "现在连不上服务器" : undefined;
   if (t.standing === "not-installed" && t.available) actions.push({ label: "安装", kind: "plain", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
   if (t.standing === "update") actions.push({ label: `更新到 ${t.available}`, kind: "primary", run: () => void call("install", t.id), disabled: !!cannot, title: cannot });
-  if (t.installed) actions.push({ label: "打开", kind: "plain", run: open });
+  // While 重启 Studio runs (2026-11-05, the user's restart): 打开 started a second Studio beside the old one still quitting,
+  // and 关闭 went to the wrong one. Both wait for the restart to end.
+  const restarting = t.studio?.restarting === true;
+  const busyRestart = restarting ? "正在重启 Studio，等它做完" : undefined;
+  if (t.installed) actions.push({ label: "打开", kind: "plain", run: open, disabled: restarting, title: busyRestart });
   // 关闭 (2026-10-29, the user): the tool quits its own way — Studio asks first when sessions are at work, as its 完全退出 does.
   if (t.installed && t.running)
     actions.push({
@@ -519,7 +526,8 @@ function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: Too
         setOpenError(null);
         void (call("close", t.id) as Promise<OpenResult>).then((r) => !r.ok && setOpenError(r.message));
       },
-      title: t.id === "studio" ? "完全退出 Studio（连后台一起）；有会话在跑或远程在用时它会先问你" : `退出 ${short}`,
+      disabled: restarting,
+      title: busyRestart ?? (t.id === "studio" ? "完全退出 Studio（连后台一起）；有会话在跑或远程在用时它会先问你" : `退出 ${short}`),
     });
   // 重启 Studio (2026-10-29): the Host is older than what is installed; never while sessions are at work (AGENTS.md, 6).
   const st = t.studio;

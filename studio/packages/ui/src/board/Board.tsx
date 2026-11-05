@@ -223,7 +223,7 @@ function TaskCard({
   const showTopic = scope.kind !== "topic" && !grouped;
   const topic = showTopic && task.topicId ? (topics.find((t) => t.id === task.topicId)?.title ?? null) : null;
   const noTopic = showTopic && !topic && scope.kind === "all";
-  const meta = [mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""].filter(Boolean).join(" · ");
+  const meta = [mains.length ? `${mains.length} 个会话` : task.firstMessage ? "还没有会话 · 第一句话已写好" : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""].filter(Boolean).join(" · ");
   // Collaboration hints are counts in the meta line, not a second status: the dot keeps one status per card.
   const asks = [decisions ? `${decisions} 个待决策` : "", mail ? `${mail} 条留言` : ""].filter(Boolean).join(" · ");
 

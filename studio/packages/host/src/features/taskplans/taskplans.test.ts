@@ -89,7 +89,8 @@ describe("task plans (拆任务提案)", () => {
     expect(accepted.state).toBe("accepted");
     expect(accepted.created!.map((c) => c.key)).toEqual(["a", "b"]);
     const [data, ui] = accepted.created!.map((c) => store.getTask(c.taskId)!);
-    expect(data).toMatchObject({ title: "装甲车数据表", workspaceId: alpha.id, topicId: topic.id, column: "todo", description: "先迁数据" });
+    // Left in 待办 (2026-11-05): the first message stays with the task for its first session.
+    expect(data).toMatchObject({ title: "装甲车数据表", workspaceId: alpha.id, topicId: topic.id, column: "todo", description: "先迁数据", firstMessage: "迁装甲车的数据表" });
     expect(ui).toMatchObject({ title: "装甲车界面", workspaceId: beta.id, column: "todo" });
     expect(store.listSessions({ taskId: data!.id })).toEqual([]);
     const canvas = service.canvases.canvas(topic.id);

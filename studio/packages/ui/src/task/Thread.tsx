@@ -56,6 +56,8 @@ const SEND_GIVE_UP_MS = 30_000;
 interface ThreadProps {
   link: HostLink;
   session: Session | null;
+  /** The task was filed with this sentence (放进待办): shown while it has no session; its first session starts with it. */
+  firstMessage?: string;
   /** The session's model profile (its account mark and models). */
   profile?: ModelProfile;
   /** Every model profile: 开子会话… in the @ list picks one. */
@@ -107,7 +109,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -564,7 +566,15 @@ ${d}` : back));
             </button>
           ))}
           <div className="thread-inner">
-            {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
+            {!session &&
+              (firstMessage ? (
+                <div className="thread-empty thread-first" data-testid="task-first-message">
+                  <div>这个任务还没有会话。放进待办时写的第一句话在这里，在左侧新建一个会话，它会放进输入框，看过再发：</div>
+                  <blockquote className="thread-first-text">{firstMessage}</blockquote>
+                </div>
+              ) : (
+                <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>
+              ))}
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
