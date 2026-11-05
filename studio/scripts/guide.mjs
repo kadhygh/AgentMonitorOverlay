@@ -125,6 +125,9 @@ export function search(topics, query) {
 }
 
 const oneLine = (t) => `${t.id}  ${t.label}`;
+// 2026-11-06's comparison: one of the three agents answered from the index alone, without opening a line of code.
+// The index can be stale or leave a place out; the code is what counts.
+const READ_ON = "索引只指路：回答或动手前，至少打开上面一处代码或「下一步读」核对；和代码对不上的，以代码为准并顺手改主题。";
 
 function full(t) {
   const lines = [`## ${t.id}  ${t.label}  （${CATEGORY_LABEL[t.category] ?? t.category}，${t.file}）`, t.purpose];
@@ -145,7 +148,7 @@ export function render(topics, { id, query } = {}) {
     const t = topics.find((x) => x.id.toLowerCase() === id.toLowerCase()) ?? search(topics, id)[0];
     if (!t) return `没有主题 ${id}。node scripts/guide.mjs 列目录；找不到不等于没有这个功能，去搜代码。`;
     const rel = (t.related ?? []).map((r) => topics.find((x) => x.id === r)).filter(Boolean);
-    return [full(t), ...(rel.length ? ["", "相关主题：", ...rel.map((r) => `  ${oneLine(r)}`)] : [])].join("\n");
+    return [full(t), ...(rel.length ? ["", "相关主题：", ...rel.map((r) => `  ${oneLine(r)}`)] : []), "", READ_ON].join("\n");
   }
   if (query) {
     const found = search(topics, query);
@@ -153,6 +156,7 @@ export function render(topics, { id, query } = {}) {
     const rest = found.slice(2, 8);
     const blocks = found.slice(0, 2).map(full);
     if (rest.length) blocks.push(["也可能是：", ...rest.map((r) => `  ${oneLine(r)}`)].join("\n"));
+    blocks.push(READ_ON);
     return blocks.join("\n\n");
   }
   const lines = [`导航索引：${topics.length} 个主题。--query 关键词 查，--id 主题 看全文。`];
