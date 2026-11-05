@@ -298,8 +298,9 @@ async function main(): Promise<void> {
       const [versions, notes] = await Promise.all([client.versions(pos[0]), client.notes(pos[0])]);
       const f = versions.find((v) => v.id === pos[0])!;
       out(`## ${f.name} v${f.version} · ${f.type} · ${f.size} 字节\n`);
-      if (/^text\/|json|xml|markdown/.test(f.type)) out(await (await client.fileData(f.id)).text());
-      out(`\n${notesAsText(f, notes)}`);
+      const text = /^text\/|json|xml|markdown/.test(f.type) ? await (await client.fileData(f.id)).text() : undefined;
+      if (text !== undefined) out(text);
+      out(`\n${notesAsText(f, notes, text)}`);
       return;
     }
     case "handoff": {

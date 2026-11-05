@@ -6,7 +6,7 @@ import { copyText } from "./env.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
 import type { Session } from "./session.js";
-import { MAX_FILE_BYTES, notesAsText, type FileNote, type RelayFile } from "./shared.js";
+import { MAX_FILE_BYTES, notesAsText, type FileNote, type NotedFile, type RelayFile } from "./shared.js";
 
 // Files (stage 2c) and their notes (2d): a task's or a session's attachments, uploaded by button or by dropping them
 // in, kept by version; opened in a large modal — Markdown rendered, HTML without its scripts (so passages can be
@@ -142,6 +142,21 @@ export function useThreadFiles(session: Session, threadId: string, updatedAt: nu
     };
   }, [session, threadId, updatedAt, tick]);
   return files;
+}
+
+/**
+ * Every note on these files (all versions) and each file's text, to find their lines: what 复制给 AI puts in besides
+ * the messages (2026-11-05, the user: 复制给 AI 里没有我的批注). A file that cannot be read is left without text.
+ */
+export async function loadNotedFiles(session: Session, files: RelayFile[]): Promise<NotedFile[]> {
+  return Promise.all(
+    files.map(async (file) => {
+      // `file.notes` counts this version's only; notes() gives every version's.
+      const notes = await session.client.notes(file.id).catch(() => [] as FileNote[]);
+      const source = notes.length && canNote(file) ? await session.client.fileData(file.id).then((b) => b.text(), () => undefined) : undefined;
+      return { file, notes, source };
+    }),
+  );
 }
 
 interface Placed {
@@ -285,7 +300,7 @@ export function FileViewer({ session, fileId, onClose, toast, scripts = false }:
   const lost = placed.filter((p) => !p.range && p.note.version !== file?.version);
   const copyNotes = async () => {
     if (!file) return;
-    await copyText(notesAsText(file, found.map((p) => p.note)));
+    await copyText(notesAsText(file, found.map((p) => p.note), content?.id === file.id ? content.text : undefined));
     toast(`已复制 ${found.length} 条批注，可以贴进回复或给 AI`);
   };
   const srcdoc = useMemo(() => {

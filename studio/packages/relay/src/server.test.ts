@@ -607,7 +607,8 @@ describe("relay service", () => {
     await coder.addNote(fileId, { quote: "每秒 12 发", body: "建议配表" });
     const read = text(await client.callTool({ name: "relay_file_get", arguments: { fileId } }));
     expect(read).toContain("基础射速每秒 12 发。");
-    expect(read).toContain("> 每秒 12 发\n\n建议配表（程序老李）");
+    // Like Reviewer's copy (2026-11-05): 文件:行, the words after >, what was said.
+    expect(read).toContain("designdoc.md:3\n> 每秒 12 发\n建议配表（程序老李）");
     const again2 = await coder.upload({ taskId }, "designdoc.md", new TextEncoder().encode("# v2"), "text/markdown");
     expect(again2).toMatchObject({ version: 2, versions: 2 });
     expect(text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }))).toContain(`- designdoc.md v2 · fileId ${again2.id}`);

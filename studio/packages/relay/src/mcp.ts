@@ -239,8 +239,9 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
         const f = versions.find((v) => v.id === args.fileId)!;
         const head = `## ${f.name} v${f.version}（共 ${f.versions} 个版本）· ${f.type} · ${f.size} 字节 · ${f.by} 上传`;
         const textual = /^text\/|json|xml|javascript|markdown|yaml|csv/.test(f.type) || /\.(md|markdown|txt|html?|json|csv|ya?ml|xml|js|ts|lua|ini|toml)$/i.test(f.name);
-        const body = textual ? (await (await client.fileData(f.id)).text()).slice(0, 200_000) : "（不是文字文件，没法在这里显示内容）";
-        return `${head}\n\n${body}\n\n${notesAsText(f, notes)}`;
+        const text = textual ? await (await client.fileData(f.id)).text() : undefined;
+        const body = text !== undefined ? text.slice(0, 200_000) : "（不是文字文件，没法在这里显示内容）";
+        return `${head}\n\n${body}\n\n${notesAsText(f, notes, text)}`;
       })(),
   );
 

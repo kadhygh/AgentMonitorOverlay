@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileChip, FileViewer, PickFiles, useThreadFiles, useUpload } from "./Files.js";
+import { FileChip, FileViewer, loadNotedFiles, PickFiles, useThreadFiles, useUpload } from "./Files.js";
 import { sessionStatus, waitedText } from "./bits.js";
 import { copyText } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
-import { newRepliesText, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+import { carriedNotes, fileNotesText, newRepliesText, notePlaces, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type NotePlaces, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 import { writeUsageFile } from "./usageFile.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
@@ -49,26 +49,43 @@ export function SessionView(props: {
       toast(errorText(err));
     }
   };
+  // The notes on the session's files go along (2026-11-05, the user: 复制给 AI 里没有我的批注): before, only the ones a
+  // reply carried did, so the asker's own, ones written after replying or before it, and unticked ones were left out.
+  // Each with its place (文件:行), its words and what was said, as Reviewer copies them.
+  // `since`: only notes written after it (复制新回复). `body(places)` writes the messages, the carried notes with their lines.
+  const withNotes = async (carried: ReadonlySet<string>, body: (places: NotePlaces) => string, since = 0) => {
+    const noted = (await loadNotedFiles(session, files)).map((f) => ({ ...f, notes: f.notes.filter((n) => n.at > since || carried.has(n.id)) }));
+    const rest = fileNotesText(noted, carried);
+    const count = noted.reduce((s, f) => s + f.notes.filter((n) => !carried.has(n.id)).length, 0);
+    return { text: body(notePlaces(noted)) + (rest ? `\n\n${rest}` : ""), count };
+  };
+  const notesSaid = (n: number) => (n ? `，带上附件上的 ${n} 条批注` : "");
   const copyAll = async () => {
     if (!messages) return;
+    const carried = carriedNotes(messages);
     // Back with me: my AI ended its turn after asking, so the reply goes over by hand, with what to do next.
     if (r.from === me && r.state === "returned") {
       const usage = await writeUsageFile(session);
-      await copyText(`${r.to} 回复了你发的会话（threadId ${thread.id}），内容在下面。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。${usage ? `命令见 ${usage.file}。` : ""}\n\n${threadAsText(thread, messages)}`);
-      toast("已复制回复，贴给你的 AI（原来的对话或新对话都行）");
+      const head = `${r.to} 回复了你发的会话（threadId ${thread.id}），内容在下面。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。${usage ? `命令见 ${usage.file}。` : ""}\n\n`;
+      const out = await withNotes(carried, (places) => head + threadAsText(thread, messages, undefined, places));
+      await copyText(out.text);
+      toast(`已复制回复${notesSaid(out.count)}，贴给你的 AI（原来的对话或新对话都行）`);
       return;
     }
-    await copyText(threadAsText(thread, messages));
-    toast("已复制整个会话（含逐条回答），可以贴给 AI");
+    const out = await withNotes(carried, (places) => threadAsText(thread, messages, undefined, places));
+    await copyText(out.text);
+    toast(`已复制整个会话（含逐条回答${out.count ? `和附件上的 ${out.count} 条批注` : ""}），可以贴给 AI`);
   };
   // 复制新回复 (2026-10-30, the user): pasted back into the conversation that asked, the AI has seen the earlier rounds —
-  // only what came after my last word (mine or my AI's), with the questions it answers.
+  // only what came after my last word (mine or my AI's), with the questions it answers; and the notes written since.
   const sinceMine = useMemo(() => (messages ? sinceLastWord(messages, me) : null), [messages, me]);
   const copyNew = async () => {
-    if (!sinceMine) return;
+    if (!sinceMine || !messages) return;
     const usage = await writeUsageFile(session);
-    await copyText(newRepliesText(thread, sinceMine, `用 relay_session_get 或命令行 relay replies ${thread.id}${usage ? `，命令见 ${usage.file}` : ""}`));
-    toast("已复制新回复，贴回原来的对话");
+    const lastWord = messages[messages.length - sinceMine.fresh.length - 1]?.createdAt ?? 0;
+    const out = await withNotes(carriedNotes(messages), (places) => newRepliesText(thread, sinceMine, `用 relay_session_get 或命令行 relay replies ${thread.id}${usage ? `，命令见 ${usage.file}` : ""}`, places), lastWord);
+    await copyText(out.text);
+    toast(`已复制新回复${notesSaid(out.count)}，贴回原来的对话`);
   };
   const copyPickup = async () => {
     await copyText(`用 AMO 中转取会话 ${thread.id} 的回复（命令行 relay replies ${thread.id}，或 MCP 的 relay_session_get），按回复接着推进：没问清楚就追问（send --then ask / relay_session_reply then="ask"），已经敲定就标记完成（--then done / then="done"）。`);

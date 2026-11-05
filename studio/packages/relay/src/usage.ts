@@ -114,7 +114,7 @@ const time = (ms: number) => {
 const who = (m: Message) => (m.via.kind === "ai" ? `${m.author} 的 AI${m.via.client ? `（${m.via.client}）` : ""}` : m.author);
 
 /** One message as Markdown; a reply's answers carry their questions, so the reader needs nothing else. */
-export function messageAsText(m: Message, questions: Message["questions"] = []): string {
+export function messageAsText(m: Message, questions: Message["questions"] = [], places?: NotePlaces): string {
   if (m.kind === "event") return `> （${who(m)} ${m.body} · ${time(m.createdAt)} · #${m.seq}）`;
   const head = `### ${who(m)} · ${time(m.createdAt)} · #${m.seq}${m.kind === "request" ? " · 会话" : m.kind === "reply" ? " · 回复" : m.questions?.length ? " · 追问" : ""}`;
   const parts = [head];
@@ -136,13 +136,14 @@ export function messageAsText(m: Message, questions: Message["questions"] = []):
       );
     }
     if (m.verdict) parts.push(`结论：**${VERDICT_LABEL[m.verdict]}**`);
-    if (m.notes?.length) parts.push(`附上的批注：\n${m.notes.map((n) => `- ${n.file} v${n.version}：「${n.quote}」 → ${n.body}`).join("\n")}`);
+    // A reply keeps a copy of each note (no context, no file text): where is the file and its version.
+    if (m.notes?.length) parts.push(`附上的批注（${m.notes.length} 条）：\n\n${m.notes.map((n) => noteBlock(n.file, n, places?.get(n.noteId)?.shown ?? n.version, places?.get(n.noteId)?.line)).join("\n\n")}`);
   }
   return parts.join("\n\n");
 }
 
 /** A thread and (some of) its messages as Markdown. */
-export function threadAsText(thread: Thread, messages: Message[], requestMessage?: Message): string {
+export function threadAsText(thread: Thread, messages: Message[], requestMessage?: Message, places?: NotePlaces): string {
   // A reply answers the last round of questions before it (the request, or a follow-up that asked more).
   let questions = (requestMessage ?? messages.find((m) => m.kind === "request"))?.questions ?? [];
   const r = thread.request;
@@ -155,7 +156,7 @@ export function threadAsText(thread: Thread, messages: Message[], requestMessage
     head,
     ...messages.map((m) => {
       if (m.questions?.length) questions = m.questions;
-      return messageAsText(m, questions);
+      return messageAsText(m, questions, places);
     }),
   ].join("\n\n");
 }
@@ -177,9 +178,9 @@ export function sinceLastWord(messages: Message[], me: string): { fresh: Message
 }
 
 /** The new part of a session that came back, for the AI that asked: what to do with it, then the messages. */
-export function newRepliesText(thread: Thread, since: NonNullable<ReturnType<typeof sinceLastWord>>, how: string): string {
+export function newRepliesText(thread: Thread, since: NonNullable<ReturnType<typeof sinceLastWord>>, how: string, places?: NotePlaces): string {
   const r = thread.request!;
-  return `${r.to} 回复了你发的会话「${thread.title}」（threadId ${thread.id}）。下面只有你上次发言之后的新内容，之前的你已经看过（要看全文，${how}）。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。\n\n${threadAsText(thread, since.fresh, since.asked)}`;
+  return `${r.to} 回复了你发的会话「${thread.title}」（threadId ${thread.id}）。下面只有你上次发言之后的新内容，之前的你已经看过（要看全文，${how}）。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。\n\n${threadAsText(thread, since.fresh, since.asked, places)}`;
 }
 
 /** A team task for an AI: what it is, where it stands, what was decided, its sessions. */
@@ -218,8 +219,132 @@ ${taskAsText(task, events)}
 ${usageFile ? usagePointer(usageFile, ctx.cli) : usagePrompt(ctx)}`;
 }
 
-/** A file's notes as Markdown: what was quoted, what was said; for 复制批注 and for an AI. */
-export function notesAsText(file: Pick<RelayFile, "name" | "version">, notes: FileNote[]): string {
+/**
+ * The line (1-based) of `source` a note's words start on; null when they are not there. A note keeps the words as they
+ * were shown (Markdown rendered, HTML without its tags, whitespace runs as one space), so the source is searched the
+ * same way: first as it is, then with Markdown's marks (* _ ` ~) and HTML tags taken out, then for the quote's longest
+ * piece. 复制给 AI with notes (2026-11-05, the user): a place like Reviewer's 文件:行.
+ */
+export function noteLine(source: string, n: Pick<FileNote, "quote"> & Partial<Pick<FileNote, "prefix" | "suffix">>): number | null {
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const quote = norm(n.quote);
+  if (!quote) return null;
+  // The context keeps its space next to the words (anchors.ts trims only the far end).
+  const prefix = (n.prefix ?? "").replace(/\s+/g, " ").trimStart();
+  const suffix = (n.suffix ?? "").replace(/\s+/g, " ").trimEnd();
+  /** The source as one line of text, each character with where it came from. */
+  const flat = (strip: boolean) => {
+    let text = "";
+    const at: number[] = [];
+    let space = true;
+    for (let i = 0; i < source.length; i++) {
+      const c = source[i]!;
+      if (strip && c === "<" && /[a-zA-Z/!]/.test(source[i + 1] ?? "")) {
+        const end = source.indexOf(">", i);
+        if (end > 0) {
+          i = end;
+          continue;
+        }
+      }
+      if (strip && /[*_`~]/.test(c)) continue;
+      if (/\s/.test(c)) {
+        if (space) continue;
+        space = true;
+        text += " ";
+      } else {
+        space = false;
+        text += c;
+      }
+      at.push(i);
+    }
+    return { text, at };
+  };
+  const shared = (a: string, b: string, fromEnd: boolean) => {
+    let k = 0;
+    while (k < a.length && k < b.length && (fromEnd ? a[a.length - 1 - k] === b[b.length - 1 - k] : a[k] === b[k])) k++;
+    return k;
+  };
+  /** Where `words` sit in `text`, the place whose context fits best; -1 when nowhere. */
+  const best = (text: string, words: string): number => {
+    let found = -1;
+    let score = -1;
+    for (let i = text.indexOf(words); i >= 0; i = text.indexOf(words, i + 1)) {
+      const s = shared(text.slice(Math.max(0, i - 24), i), prefix, true) + shared(text.slice(i + words.length, i + words.length + 24), suffix, false);
+      if (s > score) (found = i), (score = s);
+    }
+    return found;
+  };
+  const lineAt = (offset: number) => {
+    let line = 1;
+    for (let k = 0; k < offset; k++) if (source.charCodeAt(k) === 10) line++;
+    return line;
+  };
+  const plain = flat(false);
+  let i = best(plain.text, quote);
+  if (i >= 0) return lineAt(plain.at[i]!);
+  const bare = flat(true);
+  i = best(bare.text, quote);
+  if (i >= 0) return lineAt(bare.at[i]!);
+  const pieces = quote
+    .split(/[\s*_`~#>|[\]()<]+/)
+    .filter((p) => p.length >= 4)
+    .sort((a, b) => b.length - a.length);
+  for (const p of pieces) if ((i = best(bare.text, p)) >= 0) return lineAt(bare.at[i]!);
+  return null;
+}
+
+/**
+ * One note the way Reviewer copies one (protocol's composeGitReviewMessage): where (文件:行), the quoted words after `>`,
+ * then what was said and by whom. `line` from the file's text (noteLine): null when the words are not in it, undefined
+ * when there was no text to look in; `shownVersion` the version the line is of.
+ */
+function noteBlock(name: string, n: { quote: string; body: string; author: string; version: number }, shownVersion: number, line: number | null | undefined): string {
+  const other = n.version !== shownVersion;
+  const where =
+    line != null
+      ? `${name}:${line}${other ? `（写在 v${n.version} 上，行号按 v${shownVersion}）` : ""}`
+      : line === null
+        ? `${name}${other ? `（写在 v${n.version} 上，v${shownVersion} 里没找到这段原文）` : "（没找到这段原文所在的行）"}`
+        : `${name} v${n.version}`;
+  return `${where}\n> ${n.quote.replace(/\n/g, "\n> ")}\n${n.body.trim()}（${n.author}）`;
+}
+
+/** A file's notes as Markdown: where, what was quoted, what was said; for 复制批注 and for an AI. `source`: the file's text, for the lines. */
+export function notesAsText(file: Pick<RelayFile, "name" | "version">, notes: FileNote[], source?: string): string {
   if (!notes.length) return `${file.name} v${file.version}：还没有批注。`;
-  return [`### ${file.name} v${file.version} 的批注`, ...notes.map((n) => `> ${n.quote.replace(/\n/g, "\n> ")}\n\n${n.body}（${n.author}${n.version !== file.version ? `，写在 v${n.version} 上` : ""}）`)].join("\n\n");
+  return [`### ${file.name} v${file.version} 的批注`, ...notes.map((n) => noteBlock(file.name, n, file.version, source == null ? undefined : noteLine(source, n)))].join("\n\n");
+}
+
+/** A session's files with their notes (and their text, for the lines). */
+export interface NotedFile {
+  file: Pick<RelayFile, "name" | "version">;
+  notes: FileNote[];
+  source?: string;
+}
+
+/**
+ * The notes on a session's files that its messages do not carry already (a reply carries the ones sent along with it):
+ * the asker's own, ones written after the reply or before replying, ones not ticked to go along. 复制给 AI used to leave
+ * them out (2026-11-05, the user: 复制给 AI 里没有我的批注). Empty when there are none.
+ */
+export function fileNotesText(files: NotedFile[], carried: ReadonlySet<string> = new Set()): string {
+  const left = files.map((f) => ({ ...f, notes: f.notes.filter((n) => !carried.has(n.id)) })).filter((f) => f.notes.length);
+  if (!left.length) return "";
+  const count = left.reduce((s, f) => s + f.notes.length, 0);
+  return [
+    `## 附件上的批注（${count} 条）\n位置写成「文件名:行号」（行号是这段原文在文件里所在的行），\`>\` 后是批注引用的原文，下面是批注内容和写批注的人。`,
+    ...left.map((f) => notesAsText(f.file, f.notes, f.source)),
+  ].join("\n\n");
+}
+
+/** The ids of the notes the messages carry (sent along with replies). */
+export function carriedNotes(messages: Message[]): Set<string> {
+  return new Set(messages.flatMap((m) => (m.notes ?? []).map((n) => n.noteId)));
+}
+
+/** Where each note of the files sits: its line in the file's (latest) text, and that version; for the notes a reply carries. */
+export type NotePlaces = ReadonlyMap<string, { line: number | null | undefined; shown: number }>;
+
+export function notePlaces(files: NotedFile[]): NotePlaces {
+  return new Map(files.flatMap((f) => f.notes.map((n) => [n.id, { line: f.source == null ? undefined : noteLine(f.source, n), shown: f.file.version }] as const)));
 }

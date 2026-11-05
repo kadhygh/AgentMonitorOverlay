@@ -213,6 +213,11 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".notes-pane .note").first()).toContainText("升速曲线建议配表");
   await shot(b.app, "15-viewer");
   await b.page.locator(".viewer-foot").getByRole("button", { name: "完成", exact: true }).click();
+  // 复制给 AI carries the notes on the session's files, placed as Reviewer copies them (2026-11-05, the user: 复制给 AI
+  // 里没有我的批注) — not only the ones a reply took along.
+  await b.page.locator(".head-actions").getByRole("button", { name: "复制给 AI" }).click();
+  await expect.poll(() => copiedText(b.app)).toContain("## 附件上的批注（1 条）");
+  expect(await copiedText(b.app)).toContain("designdoc.md:3\n> 每秒 12 发\n升速曲线建议配表（程序老李）");
 
   // An HTML file in the session: its script does not run unless asked to.
   await b.page.locator(".atts input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
@@ -253,6 +258,10 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("升速曲线建议配表");
   await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("designdoc.md v1：每秒 12 发");
   await shot(a.app, "16-reply-notes");
+  // The planner's copy: the note the reply carried, with its line, and not twice.
+  await a.page.locator(".head-actions").getByRole("button", { name: "复制给 AI" }).click();
+  await expect.poll(() => copiedText(a.app)).toContain("附上的批注（1 条）：\n\ndesigndoc.md:3\n> 每秒 12 发\n升速曲线建议配表（程序老李）");
+  expect(await copiedText(a.app)).not.toContain("## 附件上的批注");
 
   // The coder hands it back: 待处理 for the planner, gone once opened.
   await a.page.locator(".view-tab", { hasText: "待处理" }).click();
