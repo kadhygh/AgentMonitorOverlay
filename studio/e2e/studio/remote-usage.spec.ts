@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { AccountUsage, RemoteState, Task } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
@@ -37,6 +37,8 @@ async function home(name: string, key: string, device: string): Promise<string> 
   account.setDeviceName(device, { env: { AMO_HOME: dir } });
   return dir;
 }
+
+const theme = (page: Page, which: "light" | "dark") => page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), which);
 
 async function until<T>(read: () => Promise<T>, ok: (v: T) => boolean, what: string, ms = 30_000): Promise<T> {
   const end = Date.now() + ms;
@@ -88,10 +90,20 @@ test("B's task page shows the quota A has read for the task's model, folded and 
   await expect(banner).toHaveAttribute("data-state", "online");
   // Folded: one line, the model with its most used window.
   if ((await banner.getByTestId("remote-banner-toggle").getAttribute("aria-expanded")) === "true") await banner.getByTestId("remote-banner-toggle").click();
-  await expect(banner.getByTestId("remote-banner-quota")).toHaveText(" · 5 小时 37%");
+  // Folded (the user, 2026-11-06: 5 小时和周限额都要显示，用进度条): every window, a small bar and the share used.
+  const wins = banner.getByTestId("remote-banner-quota").getByTestId("remote-banner-win");
+  await expect(wins).toHaveCount(2);
+  await expect(wins.nth(0)).toHaveText(/^5 小时\s*37%$/);
+  await expect(wins.nth(1)).toHaveText(/^每周\s*12%$/);
+  await expect(wins.nth(0).locator(".usage-bar")).toBeVisible();
+  await expect(wins.nth(0).locator(".usage-bar > span")).toHaveAttribute("style", /width: 37%/);
+  await expect(wins.nth(0)).toHaveAttribute("title", /A 台式机 上的数据：5 小时已用 37%，剩 63%，1h 3\dm 后重置/);
   await expect(banner.getByTestId("remote-banner-watch")).toContainText("Claude");
   await expect(banner.getByTestId("remote-banner-usage")).toHaveCount(0);
   await screenshot(b.app, "studio", "remote-usage-folded", b.page);
+  await theme(b.page, "dark");
+  await screenshot(b.app, "studio", "remote-usage-folded-dark", b.page);
+  await theme(b.page, "light");
 
   // Open: every window, what is left and when it resets, whose numbers and how old.
   await banner.getByTestId("remote-banner-toggle").click();
@@ -103,6 +115,20 @@ test("B's task page shows the quota A has read for the task's model, folded and 
   await expect(windows.nth(1)).toContainText("剩 88%");
   await expect(open).toContainText(/A 台式机 上的数据 · (刚刚|\d+ 分钟前)更新/);
   await screenshot(b.app, "studio", "remote-usage-open", b.page);
+  await theme(b.page, "dark");
+  await screenshot(b.app, "studio", "remote-usage-open-dark", b.page);
+  await theme(b.page, "light");
   // Folded again for the next copy (remembered).
+  await banner.getByTestId("remote-banner-toggle").click();
+
+  // A narrow window: the bars go, the percentages stay on one line, and nothing spills out of the banner.
+  await b.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(1000, 760));
+  await expect(wins.nth(0).locator(".usage-bar")).toBeHidden();
+  await expect(wins.nth(0)).toContainText("37%");
+  const head = await banner.getByTestId("remote-banner-toggle").boundingBox();
+  expect(head!.height).toBeLessThan(40);
+  await screenshot(b.app, "studio", "remote-usage-narrow", b.page);
+  await banner.getByTestId("remote-banner-toggle").click();
+  await screenshot(b.app, "studio", "remote-usage-narrow-open", b.page);
   await banner.getByTestId("remote-banner-toggle").click();
 });
