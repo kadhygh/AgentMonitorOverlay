@@ -5,7 +5,7 @@ import { compareVersions, isVersion } from "./manifest.js";
 
 // What the platform asks of Windows and of a running Studio — only reading, never changing anything.
 
-function powershell(): string {
+export function powershell(): string {
   const root = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   const full = join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   return existsSync(full) ? full : "powershell.exe";

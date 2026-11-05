@@ -11,6 +11,7 @@ import { logTiming } from "./running.js";
 import { afterPid, forwardArgs, forwardTarget } from "./self-update.js";
 import type { OpenResult, PlatformCalls, PlatformView } from "./view.js";
 import { trayClickAction, trayMenu, type TrayAction, type TrayItem, type TrayState } from "./tray.js";
+import { carryTrayPromotions } from "./tray-icons.js";
 
 // AMO 平台 (plans/amo-lan-platform.md, step 2): a tray program that installs, updates and starts the AMO tools from the
 // team server. One instance; the window is made when shown and destroyed when closed — the program stays in the tray
@@ -390,6 +391,28 @@ function createTray(): void {
   tray.on("right-click", openTrayMenu);
 }
 
+/**
+ * 托盘图标 (tray-icons.ts, 2026-11-06): a new version's icon gets the "shown in the taskbar" the user gave an older one.
+ * Its entry only exists once that version's icon is up, so this looks a while after the platform's own icon is made and
+ * after a tool starts running — not on a timer.
+ */
+function carryTrayIconsSoon(delays: number[]): void {
+  const place = platform.place;
+  if (testMode || place.kind === "dev") return;
+  const run = () =>
+    carryTrayPromotions(place.root, place.kind === "outer" ? VERSION : null)
+      .then((set) => set.length && logTiming(process.env, `托盘图标：沿用上一版的「显示在任务栏」：${set.join("、")}`))
+      .catch(() => undefined);
+  for (const ms of delays) setTimeout(() => void run(), ms);
+}
+
+let toolsRunning = new Set<string>();
+function watchToolsStarting(view: PlatformView): void {
+  const now = new Set(view.tools.filter((t) => t.running).map((t) => t.id));
+  if ([...now].some((id) => !toolsRunning.has(id))) carryTrayIconsSoon([10_000, 45_000]);
+  toolsRunning = now;
+}
+
 function quit(): void {
   quitting = true;
   app.quit();
@@ -416,6 +439,7 @@ function wire(): void {
     if (win && !win.isDestroyed()) win.webContents.send("platform:view", view);
     // 主题 (2026-10-29): the page leaves it to the system's colours (base.css), which this sets for every window here.
     if (nativeTheme.themeSource !== view.theme) nativeTheme.themeSource = view.theme;
+    watchToolsStarting(view);
   });
 }
 
@@ -425,6 +449,7 @@ async function start(): Promise<void> {
   wire();
   nativeTheme.themeSource = platform.view().theme;
   if (!testMode) createTray();
+  carryTrayIconsSoon([5_000, 30_000]);
   watchRelay();
   if (testMode)
     Object.assign(g, {
