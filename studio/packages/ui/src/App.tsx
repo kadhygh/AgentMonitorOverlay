@@ -166,6 +166,16 @@ export function App() {
       }),
     [],
   );
+  // 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): AMO 中转 asked the Host to show the session that sent
+  // one of its threads; the workbench goes there and comes forward, as Focus's 在工作台打开 does.
+  useEffect(
+    () =>
+      onHostEvent((e) => {
+        if (e.type !== "ui.open" || Date.now() - Date.parse(e.at) > 60_000) return;
+        void window.amo?.openInWorkbench?.({ taskId: e.taskId, sessionId: e.sessionId });
+      }),
+    [],
+  );
   // 查看包 (2026-10-23): an agent handed the person something to look at (view_open); the viewer window shows it.
   useEffect(
     () =>

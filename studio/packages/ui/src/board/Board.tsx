@@ -2,7 +2,7 @@ import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type RemoteState, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { copyStatus, grantsOf, useRemote, type CopyStatus } from "../remote/remote.js";
-import { teamWaits, useTeamThreads } from "../teamrelay/TeamRelay.js";
+import { takenText, teamTaken, teamWaits, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { ArchiveIcon } from "../task/Archived.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
@@ -77,7 +77,7 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
       key={task.id}
       task={task}
       sessions={taskSessions(task, sessions)}
-      teamWaiting={teamWaits(teamThreads, taskSessions(task, sessions))}
+      teamWaiting={[...teamWaits(teamThreads, taskSessions(task, sessions)), ...teamTaken(teamThreads, taskSessions(task, sessions)).map(takenText)]}
       scope={scope}
       grouped={grouped}
       workspaces={workspaces}

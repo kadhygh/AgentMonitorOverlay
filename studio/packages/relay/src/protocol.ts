@@ -74,7 +74,7 @@ export interface Message {
 export type SessionState = "open" | "returned" | "done";
 
 /** What the people in a session can do to it besides writing. */
-export type SessionAction = "done" | "reopen" | "handle" | "toAi" | "handoff";
+export type SessionAction = "done" | "reopen" | "handle" | "toAi" | "handoff" | "take";
 
 /** A request thread is a session: someone (or their AI) asks a person to handle one thing. */
 export interface RequestState {
@@ -105,6 +105,23 @@ export interface RequestState {
   askSeq: number | null;
   /** The AI conversation on the asking side that last wrote with a mark (Via.conv); null when none did. */
   conv: string | null;
+  /**
+   * 已接手，不用回复 (2026-11-05, the user): the person asked took it on without replying, which closed it (state done).
+   * null when it was not closed that way (or was reopened since).
+   */
+  takenAt: number | null;
+  /** With takenAt: their note goes to the asking AI (it runs once more). Off unless ticked — most sessions an AI sent
+   * after finishing a round (a review asked for) need nothing more said back (the user, 2026-11-05). */
+  tellAi: boolean;
+}
+
+/**
+ * The asking side's AI has something to take: the session came back to it, or was taken on with a note for it — and it
+ * has not fetched that yet. Studio's Host, `relay inbox` and `relay_inbox` all go by this.
+ */
+export function dueForAi(r: RequestState, me: string): boolean {
+  if (r.from !== me || r.handler !== "ai" || r.pickedAt !== null) return false;
+  return (r.state === "returned" && r.waitingOn === me) || (r.state === "done" && r.takenAt !== null && r.tellAi);
 }
 
 export interface Thread {

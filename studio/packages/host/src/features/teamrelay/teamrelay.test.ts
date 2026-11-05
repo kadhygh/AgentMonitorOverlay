@@ -158,6 +158,39 @@ describe("会话里用中转", () => {
     expect((await coderClient.threads())[0]?.request?.state).toBe("done");
   });
 
+  it("已接手，不用回复 (2026-11-05): taken on quietly it only shows as taken; with the note ticked for the AI it goes in once; 在 Studio 里打开 names the session", async () => {
+    const { service, told, events, session, coderClient, tool } = await setup();
+    const asking = session("加特林");
+    const ask = async (title: string) => {
+      await tool(asking.id, "team_ask", { to: "程序老李", title, body: "做完了，请审。" });
+      const pending = service.teamRelay.sends().find((s) => s.title === title && s.state === "pending")!;
+      await service.teamRelay.send(pending.id);
+      return (await coderClient.threads()).find((t) => t.title === title)!;
+    };
+    // A review simply accepted: nothing goes into the session; it shows as taken.
+    const quiet = await ask("审一下射速");
+    await coderClient.session(quiet.id, "take");
+    await until(() => service.teamRelay.threads().find((t) => t.threadId === quiet.id), (t) => t?.state === "done" && !!t.takenAt, "taken, as seen");
+    await service.teamRelay.scan();
+    expect(told).toHaveLength(0);
+    expect(service.teamRelay.sessionLines(asking.id)).toContain("程序老李 已接手，不用回复");
+    // Ticked: the note goes in, once, and says there is nothing to answer.
+    const noted = await ask("审一下过热");
+    await coderClient.session(noted.id, "take", { note: "接口我来改，你不用动。", tellAi: true });
+    await until(() => told.length, (n) => n > 0, "the note in the session");
+    expect(told[0]!.sessionId).toBe(asking.id);
+    expect(told[0]!.text).toContain("程序老李 已接手你发的会话「审一下过热」");
+    expect(told[0]!.text).toContain("接口我来改，你不用动。");
+    expect(told[0]!.text).toContain("不用 team_done");
+    await service.teamRelay.scan();
+    expect(told).toHaveLength(1);
+
+    // 在 Studio 里打开: the workbench is told which task and session.
+    expect(service.teamRelay.openInUi(asking.id)).toEqual({ taskId: asking.taskId, sessionId: asking.id });
+    expect(events.find((e) => e.type === "ui.open")).toMatchObject({ type: "ui.open", taskId: asking.taskId, sessionId: asking.id });
+    expect(() => service.teamRelay.openInUi("s-nope")).toThrow(/没有会话/);
+  });
+
   it("not sent: the session hears so; without the platform's login the tools say where to sign in", async () => {
     const { service, told, session, coderClient, tool } = await setup();
     const s = session("任务");

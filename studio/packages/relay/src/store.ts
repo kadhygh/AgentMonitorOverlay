@@ -30,6 +30,7 @@ import {
   type ThreadView,
   type Verdict,
   type Via,
+  dueForAi,
 } from "./protocol.js";
 
 // The relay's records (node:sqlite, one file): members (name + password), the keys a login hands out (one per device,
@@ -188,6 +189,8 @@ export class RelayStore {
     // Follow-ups with questions (2026-10-27): which message's questions are the open round.
     const tcols = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
     if (!tcols.includes("s_qseq")) this.db.exec("ALTER TABLE threads ADD COLUMN s_qseq INTEGER; UPDATE threads SET s_qseq = req_seq WHERE kind = 'request';");
+    // 已接手，不用回复 (2026-11-05): when the person asked took it on, and whether their note goes to the asking AI.
+    if (!tcols.includes("s_taken")) this.db.exec("ALTER TABLE threads ADD COLUMN s_taken INTEGER; ALTER TABLE threads ADD COLUMN s_tell INTEGER;");
     this.migrateTasks();
     this.migrateFiles();
     // 编辑资料 (2026-10-27): nickname and picture.
@@ -485,6 +488,8 @@ export class RelayStore {
         askSeq: row.s_qseq === undefined ? Number(row.req_seq) : row.s_qseq == null ? null : Number(row.s_qseq),
         // The asking side's latest AI message with a mark: a session carried on in another conversation moves there.
         conv: ((this.db.prepare("SELECT json_extract(via, '$.conv') AS c FROM messages WHERE thread_id = ? AND author = ? AND json_extract(via, '$.conv') IS NOT NULL ORDER BY seq DESC LIMIT 1").get(id, String(row.req_from)) as Row | undefined)?.c as string | undefined) ?? null,
+        takenAt: row.s_taken == null ? null : Number(row.s_taken),
+        tellAi: Number(row.s_tell ?? 0) === 1,
       };
     }
     return thread;
@@ -741,7 +746,7 @@ export class RelayStore {
    * 标记完成 / 重新打开 / 我来处理 (the asker takes it from their AI) / 交还给 AI / handoff (the AI gives it to its
    * person). Each writes an event message saying what happened.
    */
-  sessionAction(threadId: string, actor: string, action: SessionAction, opts: { via?: Via; note?: unknown } = {}): { thread: Thread; message: Message } {
+  sessionAction(threadId: string, actor: string, action: SessionAction, opts: { via?: Via; note?: unknown; tellAi?: boolean } = {}): { thread: Thread; message: Message } {
     const thread = this.thread(threadId, actor);
     const r = thread.request;
     if (!r) throw new RelayError("bad_request", "只有会话有这些操作");
@@ -761,8 +766,16 @@ export class RelayStore {
         break;
       case "reopen":
         if (r.state !== "done") throw new RelayError("conflict", "会话还没完成");
-        cols = { s_state: "open", s_waiting: r.to };
+        cols = { s_state: "open", s_waiting: r.to, s_taken: null, s_tell: null };
         what = "重新打开";
+        break;
+      // 已接手，不用回复 (2026-11-05, the user): the person asked takes it on as it is — no reply, even when one is
+      // needed — and it is closed. The asking AI hears of it only when they tick it (opts.tellAi), and then once.
+      case "take":
+        if (actor !== r.to || via.kind === "ai") throw new RelayError("forbidden", `只有 ${r.to} 本人能标「已接手」`);
+        if (r.state !== "open" || r.waitingOn !== actor) throw new RelayError("conflict", r.state === "done" ? "已经完成了" : `这个会话现在在 ${r.waitingOn} 手里`);
+        cols = { s_state: "done", s_waiting: null, s_taken: this.now(), s_tell: opts.tellAi && note ? 1 : 0, s_picked: null };
+        what = opts.tellAi && note ? "已接手，不用回复（附言转给了发起的 AI）" : "已接手，不用回复";
         break;
       case "handle":
         if (!asker || via.kind === "ai") throw new RelayError("forbidden", "只有发起人本人能从 AI 手里接手");
@@ -785,7 +798,7 @@ export class RelayStore {
     return this.tx(() => {
       this.setSession(threadId, cols);
       const message = this.insertMessage(threadId, actor, via, "event", note ? `${what}：${note}` : what, null);
-      if (r.taskId && (action === "done" || action === "reopen")) this.addTaskEvent(r.taskId, actor, via, "session", `会话「${thread.title}」${what}`, { threadId });
+      if (r.taskId && (action === "done" || action === "reopen" || action === "take")) this.addTaskEvent(r.taskId, actor, via, "session", `会话「${thread.title}」${what}`, { threadId });
       return { thread: this.toThread(this.threadRow(threadId)), message };
     });
   }
@@ -793,7 +806,7 @@ export class RelayStore {
   /** The asking side's AI read a session that came back: it has it now (shown as 「AI 已取回」). True when that is new. */
   markPicked(threadId: string, name: string): boolean {
     const r = this.thread(threadId, name).request;
-    if (!r || r.from !== name || r.state !== "returned" || r.handler !== "ai" || r.pickedAt !== null) return false;
+    if (!r || !dueForAi(r, name)) return false;
     this.setSession(threadId, { s_picked: this.now() });
     return true;
   }

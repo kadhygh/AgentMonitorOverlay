@@ -49,4 +49,7 @@ electron.contextBridge.exposeInMainWorld("relayShell", {
   writeUsage: (text: string) => invoke("write-usage", text),
   changeServer: () => send("change-server"),
   openExternal: (url: string) => send("open-external", url),
+  takeOpenThread: () => invoke("take-open-thread"),
+  studioHas: (conv: string) => invoke("studio-has", conv),
+  openInStudio: (conv: string) => invoke("open-in-studio", conv),
 });

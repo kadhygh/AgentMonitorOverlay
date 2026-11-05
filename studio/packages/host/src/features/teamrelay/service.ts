@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type TeamSend, type TeamThread } from "@amo-studio/protocol";
-import { RelayClient, RelayClientError, newRepliesText, takeSession, threadAsText, type Thread, type Via } from "@amo-studio/relay/light";
+import { RelayClient, RelayClientError, dueForAi, newRepliesText, takeSession, threadAsText, type Thread, type Via } from "@amo-studio/relay/light";
 import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -215,7 +215,21 @@ export class TeamRelayFeature extends Feature {
     const r = thread.request!;
     const state = r.state === "done" ? "done" : r.state === "returned" ? "returned" : "open";
     const since = state === "returned" ? (r.returnedAt ?? thread.updatedAt) : was && was.state === state ? was.since : thread.updatedAt;
-    return { threadId: thread.id, sessionId, title: thread.title, to: r.to, state, since, deliveredAt: was?.deliveredAt ?? null };
+    return { threadId: thread.id, sessionId, title: thread.title, to: r.to, state, since, deliveredAt: was?.deliveredAt ?? null, takenAt: r.state === "done" ? (r.takenAt ?? null) : null };
+  }
+
+  /**
+   * 在 Studio 里打开 (2026-11-05, J1): AMO 中转 on this computer asks to show the session that sent one of its threads; the
+   * workbench acts on the event (it is the window that listens).
+   */
+  openInUi(sessionId: unknown): { taskId: Id; sessionId: Id } {
+    const id = text(sessionId, "sessionId");
+    const s = this.store.getSession(id);
+    if (!s) throw new HostError("not_found", `没有会话 ${id}（可能已经删掉了）`);
+    // A topic's own session has no task: "" shows the board, as Focus's 在工作台打开 does.
+    const taskId = s.taskId ?? "";
+    this.publish({ type: "ui.open", taskId, sessionId: s.id, at: new Date().toISOString() });
+    return { taskId, sessionId: s.id };
   }
 
   private track(thread: Thread, sessionId: Id): void {
@@ -230,7 +244,7 @@ export class TeamRelayFeature extends Feature {
     if (!mine.length) return "这个会话还没有发过中转会话。";
     const ago = (ms: number) => waited(Date.now() - ms);
     return mine
-      .map((t) => `- ${t.title} · 发给 ${t.to} · ${t.state === "open" ? `等 ${t.to} 回复（已等 ${ago(t.since)}）` : t.state === "returned" ? "回到你这边了" : "已完成"} · threadId ${t.threadId}`)
+      .map((t) => `- ${t.title} · 发给 ${t.to} · ${t.state === "open" ? `等 ${t.to} 回复（已等 ${ago(t.since)}）` : t.state === "returned" ? "回到你这边了" : t.takenAt ? `${t.to} 已接手，不用回复（已结束）` : "已完成"} · threadId ${t.threadId}`)
       .join("\n");
   }
 
@@ -291,8 +305,9 @@ export class TeamRelayFeature extends Feature {
     const next = new Map(before.map((t) => [t.threadId, t]));
     for (const t of mine) next.set(t.id, this.view(t, t.request!.conv!.slice(prefix.length), before.find((b) => b.threadId === t.id)));
 
-    // Back with me for the AI, not taken yet: by session, into it, several as one message.
-    const due = mine.filter((t) => t.request!.state === "returned" && t.request!.waitingOn === me && t.request!.handler === "ai" && t.request!.pickedAt === null);
+    // Back with me for the AI, not taken yet: by session, into it, several as one message. 已接手 (2026-11-05) only when
+    // the person asked ticked that their note goes to the AI; taken on quietly, it only shows as taken.
+    const due = mine.filter((t) => dueForAi(t.request!, me));
     const bySession = new Map<Id, Thread[]>();
     for (const t of due) {
       const sessionId = t.request!.conv!.slice(prefix.length);
@@ -301,15 +316,18 @@ export class TeamRelayFeature extends Feature {
     }
     for (const [sessionId, threads] of bySession) {
       const parts: string[] = [];
+      let replies = 0;
       for (const t of threads) {
         const item = await takeSession(client, me, t.id);
         if (!item) continue;
         parts.push(newRepliesText(item.thread, item, `用 team_session（threadId ${item.thread.id}）`));
+        if (item.thread.request?.state !== "done") replies++;
         const seen = this.view(item.thread, sessionId, next.get(t.id));
         next.set(t.id, { ...seen, deliveredAt: Date.now() });
       }
       if (!parts.length) continue;
-      this.tell(sessionId, `【中转回复】\n\n${parts.join("\n\n---\n\n")}\n\n（AMO Studio 从中转转回来的，你用的是 ${me} 的身份。还没问清楚，用 team_followup 追问；已经敲定，用 team_done 标记完成，再按敲定的方案接着做。）`);
+      const how = replies ? "还没问清楚，用 team_followup 追问；已经敲定，用 team_done 标记完成，再按敲定的方案接着做。" : "对方已接手，会话已经结束，不用 team_done，也不用再追问。";
+      this.tell(sessionId, `【中转回复】\n\n${parts.join("\n\n---\n\n")}\n\n（AMO Studio 从中转转回来的，你用的是 ${me} 的身份。${how}）`);
     }
     this.saveThreads([...next.values()]);
   }

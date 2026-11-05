@@ -585,6 +585,8 @@ export interface TeamThread {
   since: number;
   /** When the last reply went back into the session, ms. */
   deliveredAt: number | null;
+  /** 已接手，不用回复 (2026-11-05): when `to` took it on without replying (it is done then); null/absent otherwise. */
+  takenAt?: number | null;
 }
 export const TOPIC_DOC_BODY_MAX = 50_000;
 

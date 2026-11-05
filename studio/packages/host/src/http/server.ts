@@ -38,6 +38,12 @@ export interface HostServerOptions {
   /** Studio's version, for /api/health (the shell passes its own; "dev" when started from the sources). */
   version?: string;
   /**
+   * Where host.json and host-token are, for /api/health (2026-11-05): AMO 中转 on this computer finds a Studio started
+   * from the sources or a portable copy this way (one AMO 平台 installed it finds through platform.json). The token
+   * itself stays in the file, which only this Windows user can read.
+   */
+  dataDir?: string;
+  /**
    * POST /api/shutdown was accepted (2026-10-29: the tray's 完全退出, the platform's 重启 Studio): stop the Host. Called
    * once, just after the answer went out. Without it there is no such route.
    */
@@ -78,7 +84,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     // without the token, with how many sessions are at work (counted as the board's 进行中, sessionMoving), so the AMO
     // platform can ask before it updates Studio. A number only: no titles or other content. 2026-10-29: and the version
     // of the Studio that started it, so the platform can tell a Host older than the Studio it has installed.
-    route("GET", "/api/health", () => ({ ok: true, pid: process.pid, running: runningCount(), version: options.version ?? "dev" }), { open: true }),
+    route("GET", "/api/health", () => ({ ok: true, pid: process.pid, running: runningCount(), version: options.version ?? "dev", ...(options.dataDir ? { dataDir: options.dataDir } : {}) }), { open: true }),
     // 完全退出 / 重启 Studio (2026-10-29): stops the Host, with the token (POST is never open). Sessions at work are not cut
     // unless the caller says so ({ interrupt: true }, after asking the person): otherwise 409 with how many there are.
     // The platform never sends it (AGENTS.md, constraint 6).

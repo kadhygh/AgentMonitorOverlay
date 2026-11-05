@@ -107,7 +107,8 @@ export class RelayClient {
     return this.call("GET", `/api/threads/${encodeURIComponent(threadId)}/messages?after=${after}${opts.ai ? "&via=ai" : ""}`);
   }
   /** 标记完成, 重新打开, 我来处理, 交还给 AI, or (an AI) handing it to its person. */
-  session(threadId: string, action: SessionAction, opts: { note?: string; via?: Via } = {}): Promise<{ thread: Thread; message: Message }> {
+  /** `tellAi` with `take` (已接手): the note goes to the asking AI. */
+  session(threadId: string, action: SessionAction, opts: { note?: string; via?: Via; tellAi?: boolean } = {}): Promise<{ thread: Thread; message: Message }> {
     return this.call("POST", `/api/threads/${encodeURIComponent(threadId)}/session`, { action, ...opts });
   }
   read(threadId: string, seq?: number): Promise<{ readSeq: number }> {

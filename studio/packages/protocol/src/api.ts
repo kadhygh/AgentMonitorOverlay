@@ -537,7 +537,7 @@ export interface HostRoutes {
    * AMO platform to ask before it updates Studio. `version` (2026-10-29): the Studio that started this Host ("dev" from
    * the sources), so the platform can tell a Host older than the Studio it has installed.
    */
-  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number; version: string } };
+  "GET /api/health": { req: void; res: { ok: true; pid: number; running: number; version: string; /** host.json and host-token are here (2026-11-05). */ dataDir?: string } };
   /**
    * Stops the Host (2026-10-29: the tray's 完全退出, the platform's 重启 Studio). Token needed. With sessions at work it
    * answers 409 `{ ok: false, running }` unless `interrupt` is true (the person agreed to cut them). Accepted, the Host
@@ -785,6 +785,11 @@ export interface HostRoutes {
   "POST /api/teamrelay/sends/:id/dismiss": { req: void; res: import("./entities.js").TeamSend };
   /** The 中转 sessions this computer's sessions sent, as last seen. */
   "GET /api/teamrelay/threads": { req: void; res: import("./entities.js").TeamThread[] };
+  /**
+   * 在 Studio 里打开 (2026-11-05): show this session in the workbench (a `ui.open` event the main window acts on). AMO 中转
+   * asks it for a session one of this computer's sessions sent; 404 when there is no such session.
+   */
+  "POST /api/ui/open": { req: { sessionId: Id }; res: { taskId: Id; sessionId: Id } };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -843,6 +848,11 @@ export type HostEvent = { seq: number } & (
   | { type: "mcp.changed"; workspaceId?: Id; sessionId?: Id }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
+  /**
+   * 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): another program on this computer (AMO 中转) asked to
+   * show a session; the workbench goes to it and comes forward (events older than a minute are stale).
+   */
+  | { type: "ui.open"; taskId: Id; sessionId: Id; at: Timestamp }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
   | {
       type: "review.open";

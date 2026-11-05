@@ -796,7 +796,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       }
       if (method === "POST" && m[2] === "/session") {
         const body = await readJson(req);
-        const out = store.sessionAction(id, me, body.action as SessionAction, { via: body.via as never, note: body.note });
+        const out = store.sessionAction(id, me, body.action as SessionAction, { via: body.via as never, note: body.note, tellAi: body.tellAi === true });
         announce(out.thread, out.message);
         return send(res, 200, out);
       }

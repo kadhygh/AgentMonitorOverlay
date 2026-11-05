@@ -129,6 +129,9 @@ electron.contextBridge.exposeInMainWorld("amo", {
   canvasMiniTop: (on?: boolean): Promise<boolean> => electron.ipcRenderer.invoke("amo:canvas-mini-top", on),
   openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-in-workbench", target),
+  /** 在中转里打开 (2026-11-05): whether this computer has an AMO 中转 client Studio can find; and showing a thread in it. */
+  relayAvailable: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:relay-available"),
+  openInRelay: (threadId: string): Promise<boolean> => electron.ipcRenderer.invoke("amo:relay-open", threadId),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }) => cb(target);
     electron.ipcRenderer.on("amo:navigate", listener);

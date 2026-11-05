@@ -66,7 +66,7 @@ ${people}
 - ${q("people")}：能找的人和他们负责什么
 - ${q("queue")}：待我这边处理的会话
 - ${q("ask --json <文件> --conv <标记>")}：发会话（\`-\` 表示从标准输入读），发出就返回 threadId，不等回复。JSON：\`{"to":"名字","title":"一句话说清要确认什么","body":"Markdown 正文：背景、方案、要确认的点","questions":[{"text":"一个问题只问一件事","options":["选项1","选项2"]}]${tasks ? ',"taskId":"可选，挂在任务下","files":["可选，fileId"]' : ""}}\`
-- ${q("inbox --conv <标记>")}：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的），取过的不会再给
+- ${q("inbox --conv <标记>")}：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的），取过的不会再给。对方也可能标「已接手」：会话就此结束、不会回复，事情由对方去做；只有对方勾了把附言转给你，inbox 才会给出这条附言
 - ${q("replies [threadId]")}：取会话内容（逐条回答、补充说明、结论、附上的批注）；不带 id 时列出我的会话
 - ${q('send <threadId> --body "…" --then ask')}：用话追问，会话回到对方手里；再加 \`--questions <文件>\`（JSON 数组，格式同上面的 questions）就是新一轮逐条回答的问题
 - ${q('send <threadId> --body "…" --then done')}：问清楚了，写一句收尾并标记完成；然后按回复调整方案，告诉我对方怎么答的
@@ -83,7 +83,7 @@ ${taskCommands}**文件和批注**
 ## 怎么用：MCP 工具（amo-relay）
 - \`relay_people\`、\`relay_queue\`：能找的人；待我这边处理的会话。
 - \`relay_session_open\`：发会话（to、title、body、questions${tasks ? "，可带 taskId 和 files" : ""}）；发出就返回 threadId，不等回复。
-- \`relay_inbox\`：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的）。
+- \`relay_inbox\`：一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的）。对方标「已接手」的会话就此结束、不会回复；对方勾了转给你时，这里会给出附言。
 - \`relay_session_get\`：取会话内容。
 - \`relay_session_reply\`：then="ask" 追问（带 questions 是新一轮问题），then="done" 收尾并标记完成。
 - \`relay_session_handoff\`：交给我本人。
@@ -98,7 +98,7 @@ export function mcpInstructions(ctx: UsageContext & { usageFile?: string }): str
 
 /** Where a session stands, in words. */
 export function sessionStateText(r: NonNullable<Thread["request"]>): string {
-  if (r.state === "done") return "已完成";
+  if (r.state === "done") return r.takenAt !== null ? `${r.to} 已接手（不用回复），已结束` : "已完成";
   if (r.state === "open") return `在 ${r.to} 手里，等回复`;
   const verdict = r.verdict ? `（${VERDICT_LABEL[r.verdict]}）` : "";
   const side = r.handler === "ai" ? "，由 AI 接着处理" : "，由本人处理";
@@ -180,6 +180,9 @@ export function sinceLastWord(messages: Message[], me: string): { fresh: Message
 /** The new part of a session that came back, for the AI that asked: what to do with it, then the messages. */
 export function newRepliesText(thread: Thread, since: NonNullable<ReturnType<typeof sinceLastWord>>, how: string, places?: NotePlaces): string {
   const r = thread.request!;
+  // 已接手 with a note for the AI (2026-11-05): nothing to answer — it is closed, and theirs to do now.
+  if (r.state === "done" && r.takenAt !== null)
+    return `${r.to} 已接手你发的会话「${thread.title}」（threadId ${thread.id}），不会逐条回复，会话已经结束，接下来由 ${r.to} 去做。下面是 ${r.to} 留给你的附言：照它调整就行，不用再追问；需要再找 ${r.to}，重新发一个会话。\n\n${threadAsText(thread, since.fresh, since.asked, places)}`;
   return `${r.to} 回复了你发的会话「${thread.title}」（threadId ${thread.id}）。下面只有你上次发言之后的新内容，之前的你已经看过（要看全文，${how}）。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。\n\n${threadAsText(thread, since.fresh, since.asked, places)}`;
 }
 

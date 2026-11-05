@@ -8,5 +8,6 @@ export function teamRelayRoutes(service: HostService): Route[] {
     route("POST", "/api/teamrelay/sends/:id/send", ({ params }) => service.teamRelay.send(params.id!)),
     route("POST", "/api/teamrelay/sends/:id/dismiss", ({ params }) => service.teamRelay.dismiss(params.id!)),
     route("GET", "/api/teamrelay/threads", () => service.teamRelay.threads()),
+    route("POST", "/api/ui/open", ({ body }) => service.teamRelay.openInUi((body as { sessionId?: unknown } | null)?.sessionId)),
   ];
 }

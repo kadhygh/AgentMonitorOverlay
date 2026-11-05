@@ -89,4 +89,16 @@ export interface RelayShell {
   /** Back to the loader, to enter another service address. */
   changeServer(): void;
   openExternal(url: string): void;
+  /**
+   * 在中转里打开 from AMO Studio (2026-11-05, plans/relay-round-2026-11-05.md J2): the thread the shell was started (or
+   * woken) with `--open-thread`, once — later calls give null. Optional: added after shell 1 shipped.
+   */
+  takeOpenThread?(): Promise<string | null>;
+  /**
+   * 在 Studio 里打开 (J1): a session's mark (Via.conv) names a Studio session on this computer that is running now —
+   * its device is this one's (device.json) and a Studio Host is up. Optional: added after shell 1 shipped.
+   */
+  studioHas?(conv: string): Promise<boolean>;
+  /** Shows that Studio session in the workbench; what went wrong, in words, or null. */
+  openInStudio?(conv: string): Promise<string | null>;
 }

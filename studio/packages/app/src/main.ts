@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { platformDataDir, resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
+import { findRelayExe, openInRelay } from "./relay-link.js";
 import { installWindowControls, sendMaximized, setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
@@ -466,6 +467,9 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
     trace?.note("focus", on === true ? "moving on" : "moving off");
     if (testMode) (globalThis as { __amoFocusMoving?: boolean }).__amoFocusMoving = on === true;
   });
+  // 在中转里打开 (2026-11-05, relay-link.ts): the AMO 中转 client shows a thread a session sent. Tests only record it.
+  ipcMain.handle("amo:relay-available", () => testMode || findRelayExe() !== null);
+  ipcMain.handle("amo:relay-open", (_event, threadId: unknown) => typeof threadId === "string" && openInRelay(threadId, { testMode }));
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
     const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown; topicId?: unknown; calloutId?: unknown; settings?: unknown } | null;

@@ -27,6 +27,7 @@ import { Attention, writeAttention } from "./attention.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
+import { openInStudio, studioHas } from "./studio-link.js";
 
 // AMO 中转's desktop client (plans/relay.md). This shell is fixed; what people see — login, conversations — is content
 // the service hands out (packages/relay-ui), kept in <home>/client and updated without a restart:
@@ -109,6 +110,17 @@ const argServer = () => {
   const i = process.argv.indexOf("--server");
   return i >= 0 ? (process.argv[i + 1] ?? null) : null;
 };
+/**
+ * 在中转里打开 from AMO Studio (2026-11-05, plans/relay-round-2026-11-05.md J2): `--open-thread <id>`, at start or from
+ * a second start (single instance). Kept until the content takes it (it may still be loading or signing in), and sent
+ * at once to a content already there.
+ */
+const argThread = (argv: readonly string[]) => {
+  const i = argv.indexOf("--open-thread");
+  const id = i >= 0 ? argv[i + 1] : undefined;
+  return id && /^[A-Za-z0-9_-]{1,80}$/.test(id) ? id : null;
+};
+let pendingThread: string | null = argThread(process.argv);
 
 // ---- the window and its pages
 
@@ -411,6 +423,14 @@ function wire(): void {
     });
     note.show();
   });
+  ipcMain.handle("relay:take-open-thread", () => {
+    const id = pendingThread;
+    pendingThread = null;
+    return id;
+  });
+  // 在 Studio 里打开 (J1, studio-link.ts): the content asks yes/no and go; the Host's token stays here.
+  ipcMain.handle("relay:studio-has", (_e, conv: unknown) => studioHas(conv));
+  ipcMain.handle("relay:open-in-studio", (_e, conv: unknown) => openInStudio(conv));
   // What waits for this person (relay-ui Home: sessions waiting for me + unread chats): taskbar and tray (attention.ts).
   ipcMain.on("relay:unread", (_e, count: unknown) => attention.setCount(typeof count === "number" ? count : 0));
   // The page's window buttons (the window has no system title bar). 关闭 hides it to the tray, as before.
@@ -720,7 +740,14 @@ function start(): void {
       quitting = true;
       tray?.destroy();
       app.quit();
-    } else showWindow();
+    } else {
+      showWindow();
+      const thread = argThread(argv);
+      if (thread) {
+        pendingThread = thread;
+        win?.webContents.send("relay:open-thread", thread);
+      }
+    }
   });
   app.on("before-quit", () => ((quitting = true), attention.dispose()));
   app.on("window-all-closed", () => undefined);

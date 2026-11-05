@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { dueForAi } from "./protocol.js";
 import { RelayError, RelayStore } from "./store.js";
 
 let store: RelayStore;
@@ -164,6 +165,34 @@ describe("RelayStore", () => {
     expect(done.thread.request).toMatchObject({ state: "done", waitingOn: null });
     expect(() => store.sessionAction(thread.id, "策划小王", "done")).toThrow(/已经完成/);
     expect(store.sessionAction(thread.id, "程序老李", "reopen").thread.request).toMatchObject({ state: "open", waitingOn: "程序老李" });
+  });
+
+  it("已接手，不用回复: the person asked closes it without a reply; the asking AI hears of it only when they tick it", () => {
+    team();
+    const ai = { kind: "ai", client: "AMO Studio", conv: "studio:dev:s1" } as const;
+    const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "审一下", body: "做完了", via: ai });
+    expect(thread.request).toMatchObject({ needsReply: true, takenAt: null, tellAi: false });
+    expect(() => store.sessionAction(thread.id, "策划小王", "take")).toThrow(/只有 程序老李 本人/);
+    expect(() => store.sessionAction(thread.id, "程序老李", "take", { via: { kind: "ai" } })).toThrow(/本人/);
+    // Accepted as it is: closed, taken, nothing for the AI.
+    const quiet = store.sessionAction(thread.id, "程序老李", "take");
+    expect(quiet.thread.request).toMatchObject({ state: "done", waitingOn: null, tellAi: false });
+    expect(quiet.thread.request?.takenAt).toBeTypeOf("number");
+    expect(quiet.message).toMatchObject({ kind: "event", author: "程序老李", body: "已接手，不用回复" });
+    expect(dueForAi(quiet.thread.request!, "策划小王")).toBe(false);
+    expect(store.markPicked(thread.id, "策划小王")).toBe(false);
+    expect(() => store.sessionAction(thread.id, "程序老李", "take")).toThrow(/已经完成/);
+    // Reopened, it is not taken any more; taken again with a note for the AI: due once.
+    expect(store.sessionAction(thread.id, "程序老李", "reopen").thread.request).toMatchObject({ state: "open", takenAt: null });
+    const told = store.sessionAction(thread.id, "程序老李", "take", { note: "接口我来改", tellAi: true });
+    expect(told.thread.request).toMatchObject({ state: "done", tellAi: true });
+    expect(told.message.body).toBe("已接手，不用回复（附言转给了发起的 AI）：接口我来改");
+    expect(dueForAi(told.thread.request!, "策划小王")).toBe(true);
+    expect(store.markPicked(thread.id, "策划小王")).toBe(true);
+    expect(dueForAi(store.thread(thread.id, "策划小王").request!, "策划小王")).toBe(false);
+    // Ticked without a note: nothing to tell.
+    const bare = store.createRequest("策划小王", { to: "程序老李", title: "再审", body: "x", via: ai }).thread;
+    expect(store.sessionAction(bare.id, "程序老李", "take", { tellAi: true }).thread.request?.tellAi).toBe(false);
   });
 
   it("follows up in words or with a new round of questions; replies answer the open round", () => {
