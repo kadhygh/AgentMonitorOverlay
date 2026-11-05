@@ -79,8 +79,8 @@
 - 验证和没验证的见方案文件末尾；最该在真环境里看的：真 DSH 收到 session/cancel 后多快停、真 Codex 卡住时的停止兜底、Claude 重启后被中断的那一轮怎么显示。新代码要等 Host 下次重启才生效（由人点）。
 
 **2026-11-04 · 项目梳理第一轮（master + 两个 worktree）**：11-03 只读审查的结论和推进顺序在 `plans/cleanup-2026-11.md`，用户 11-04 定「都照做，按流程推进一轮」。
-- 已提交进 master：第 1 步文档对齐（`63413744`：本文件「当前状态」、AGENTS.md、发布命令统一成 `npm run release`，10-26～10-31 挪进 `docs/history/handoff-2026-10-late.md`）；第 2 步发布脚本漏判（`dbc97045`：中转服务的范围补 locate / account / base.css，外壳 zip 的触发补包，`package-lock` 跟着升版本）；第 5 步清死代码中不碰 runtime 的部分（`ff7d4a2f`）；第 4 步中转给 AI 用的身份不再存明文 key（`0d56e627`，中转外壳「下一版」有一条，会随自动打包发测试通道）；第 6 步中转服务的孤儿截图清理和异步写盘（`6280aeb4`，**没部署**，等用户说再 `release -- relay-service`）；第 8 步只写了方案 `plans/host-structure.md`。
-- 第 3 步、第 7 步在各自的 worktree 里做完，11-04 晚合进 master（见上面两条）。worktree `.claude/worktrees/cleanup-delivery`、`cleanup-ui` 合并后没用了，删之前问用户。
+- 已提交进 master：第 1 步文档对齐（`63413744`：本文件「当前状态」、AGENTS.md、发布命令统一成 `npm run release`，10-26～10-31 挪进 `docs/history/handoff-2026-10-late.md`）；第 2 步发布脚本漏判（`dbc97045`：中转服务的范围补 locate / account / base.css，外壳 zip 的触发补包，`package-lock` 跟着升版本）；第 5 步清死代码中不碰 runtime 的部分（`ff7d4a2f`）；第 4 步中转给 AI 用的身份不再存明文 key（`0d56e627`，中转外壳「下一版」有一条，会随自动打包发测试通道）；第 6 步中转服务的孤儿截图清理和异步写盘（`6280aeb4`，11-05 随中转服务 0.7.11 部署）；第 8 步只写了方案 `plans/host-structure.md`。
+- 第 3 步、第 7 步在各自的 worktree 里做完，11-04 晚合进 master（见上面两条）。worktree `.claude/worktrees/cleanup-delivery`、`cleanup-ui` 和它们的分支 11-05 用户同意后删了。
 - 已合并的 worktree、`release/` 旧包、`studio/Microsoft/` 用户 11-04 已删。还等用户：中转服务部署（`6280aeb4`）；没有会话在跑时重启 Host，第 3、7 步才生效。
 - 下一步：第 6 步 Host 那一半 11-04 夜已做（见最上面）；第 8 步下一轮新开 worktree。
 - 审查里核对后不成立、没改的：`ClaudeLogin = "token"`（API Key 渠道在用）、`relay-service.ps1`（README 写明的退路）、平台装的中转客户端早已只认平台登录。
