@@ -6,6 +6,8 @@
 
 ## 下一版
 
+## 0.9.9（2026-11-05）
+
 - 命令行 `relay file` 和 MCP 的 `relay_file_get` 给 AI 的批注带上位置：`文件名:行号`、`>` 后面是引用的原文、下面是批注内容，和 Reviewer 复制的批注一样。`relay replies`、`relay_session_get` 里回复附上的批注也改成这个写法（这里没有行号，只写文件名和版本）。
 - 能和本机的 AMO Studio 互相跳：会话头上的「在 Studio 里打开」让 Studio 跳到发起这个会话的对话（只认这台电脑上开着的 Studio，用它自己的登录凭据）；Studio 里点「在中转里打开」会启动中转（开着就叫到前面）并打开那个会话（启动参数 `--open-thread <会话号>`）。
 - 「已接手，不用回复」的会话，`relay inbox`、MCP 的 `relay_inbox` 只在对方勾了「把附言转给 AI」时交给 AI 一次，带上附言；没勾就不打扰。
