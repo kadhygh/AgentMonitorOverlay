@@ -18,6 +18,13 @@ export interface RouteOptions {
   queryToken?: boolean;
   /** Answers without the host token (GET only): for what may ask without it, e.g. the AMO platform. Only counts, no content. */
   open?: boolean;
+  /**
+   * 远程 (plans/host-structure.md 8a, 2026-11-05): whether a copy of a task another computer granted this one takes this
+   * write to the task or one of its sessions (`/api/tasks/:id…`, `/api/sessions/:id…`; GETs always read the copy).
+   * `forward`: the handler sends it on to the computer the task runs on (the remote runtime, TasksFeature); `local`: done
+   * on this computer (批注). Left out: refused with a reason (RemoteFeature.guardRoute) — safer than running here.
+   */
+  remoteCopy?: "forward" | "local";
 }
 
 /** `path`: the pattern as declared ("/api/tasks/:id"), for checks that go by route (远程 copies, 2026-10-29). */

@@ -23,6 +23,13 @@ export const PROJECT_GROUPS_KEY = "settings:project-groups";
 export const TOPIC_GROUPS_KEY = "settings:topic-groups";
 export const MAX_PRESETS = 30;
 
+/**
+ * A copy of a session of a task another computer granted this one (远程 step 2, runtime "remote"): it runs there, so
+ * what this computer does to its own sessions by itself (role updates, reports, 中转 replies, counting it as at work)
+ * leaves it out. The one place this is asked (plans/host-structure.md 8a, 2026-11-05).
+ */
+export const isRemoteCopy = (s: Pick<Session, "runtime"> | null | undefined): boolean => s?.runtime === "remote";
+
 /** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */
 export function optionValue(v: unknown, field: string): string | undefined {
   if (v === undefined || v === null || v === "") return undefined;

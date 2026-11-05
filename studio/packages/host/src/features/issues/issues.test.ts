@@ -11,7 +11,6 @@ import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { amoToolsFor } from "../../mcp/tools.js";
-import { Backoff } from "../remote/link.js";
 
 // 问题页 ↔ 会话 (2026-10-31, plans/issues.md stage 3), against a relay service on this machine (never the team server):
 // a session lists the person's issues, reads one with its screenshot as a local file, takes it, answers with a
@@ -60,9 +59,10 @@ async function setup(signedIn = true) {
   const store = new Store(join(root, "studio.db"));
   const servers = new FakeServers(PROFILES);
   const service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES, { commonDir: join(root, "common") });
-  service.remote.start({ env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }) });
+  // The team link alone (2026-11-05, plans/host-structure.md 8a): 中转 and the 问题页 do not need 远程 started.
+  service.teamLink.start({ env, protector: fake, watchMs: 30 });
   cleanups.push(async () => {
-    service.remote.stop();
+    service.teamLink.stop();
     await servers.close();
     store.close();
   });
@@ -72,7 +72,7 @@ async function setup(signedIn = true) {
     const text = out.content.map((c) => c.text).join("");
     return { text, error: !!out.isError, value: out.isError ? null : (JSON.parse(text) as Record<string, any>) };
   };
-  if (signedIn) await until(() => service.remote.teamLogin(), (l) => !!l, "the platform's login");
+  if (signedIn) await until(() => service.teamLink.login(), (l) => !!l, "the platform's login");
   return { tool, page: new RelayClient(relay.url, me.key), root, service };
 }
 

@@ -110,7 +110,7 @@ export class IssuesFeature extends Feature {
   }
 
   private client(): RelayClient {
-    const login = this.f.remote.teamLogin();
+    const login = this.teamLink.login();
     if (!login) throw new HostError("bad_request", ISSUES_NOT_SIGNED_IN);
     return new RelayClient(login.account.server, login.account.key);
   }

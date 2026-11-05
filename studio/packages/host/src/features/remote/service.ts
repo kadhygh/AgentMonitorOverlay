@@ -1,10 +1,10 @@
-import { statSync } from "node:fs";
 import { extname, isAbsolute } from "node:path";
 import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
-import { accountFile, deviceFile, ensureDevice, readAccount, readDevice, serverLabel, setDeviceName, type Account, type Device, type Env, type Protector } from "@amo-studio/account";
+import { serverLabel, type Account, type Device } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
-import { FileReply } from "../../http/route.js";
+import type { TeamLinkOptions } from "../../core/teamlink.js";
+import { FileReply, type Route } from "../../http/route.js";
 import { underTaskFolder } from "./files.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
@@ -15,8 +15,9 @@ import { RemoteCreates } from "./create.js";
 import { sendAlong, UploadInbox } from "./uploads.js";
 
 // 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
-// login (account.json, Studio has none of its own) and device.json — and the devices paired with it. The Host connects
-// out when there is a login (link.ts), takes pairing requests, and answers a 「测试连接」 ping from a paired device.
+// login and device.json, read by the Host's team link (core/teamlink.ts since 2026-11-05) — and the devices paired with
+// it. The Host connects out when there is a login (link.ts), takes pairing requests, and answers a 「测试连接」 ping from
+// a paired device.
 // The pairs' record is here, in the Host's data (kv `remote.pairs`, by account + device id): for pairs this computer
 // allowed ("owner") it is the one that counts — after a reconnect the server's copy is brought in line with it; pairs
 // another device allowed ("guest") come from the server, which is how an approval made while this one was away
@@ -40,13 +41,8 @@ interface StoredPair {
   pairedAt: string;
 }
 
-export interface RemoteOptions {
-  /** Where account.json and device.json are (AMO_HOME); default the Host's environment. */
-  env?: Env;
-  /** Tests: something other than DPAPI for the key. */
-  protector?: Protector;
-  /** How often to look at account.json and device.json for changes the platform made (default 5 s). */
-  watchMs?: number;
+/** With the team link's options: remote starts the link with them when nothing started it yet (tests). */
+export interface RemoteOptions extends TeamLinkOptions {
   heartbeatMs?: number;
   deadMs?: number;
   backoff?: Backoff;
@@ -59,11 +55,11 @@ const same = (a: DeviceRef, b: DeviceRef) => a.account === b.account && a.device
 
 export class RemoteFeature extends Feature {
   private opts: RemoteOptions | null = null;
-  private account: Account | null = null;
-  private device: Device | null = null;
+  /** The login this feature last connected for (a new key, server or name connects again). */
+  private seen: Account | null = null;
+  /** Remote started the team link itself (nothing had: tests), so it stops it too. */
+  private ownsTeam = false;
   private link: DeviceLink | null = null;
-  private watch: NodeJS.Timeout | null = null;
-  private seenFiles = "";
   private incoming: PairRequest[] = [];
   private outgoing: PairRequest[] = [];
   /** What the server last said about each peer: online, and when it was last seen. */
@@ -71,7 +67,6 @@ export class RemoteFeature extends Feature {
   private readonly answered = new CommandLog<{ kind: string; body: unknown }>();
   /** Commands being answered: the same id again waits for that answer instead of running twice. */
   private readonly inflight = new Map<string, Promise<Answer>>();
-  private reading: Promise<void> | null = null;
   private readonly context: RemoteContext = {
     host: this.host,
     link: () => this.link,
@@ -108,108 +103,78 @@ export class RemoteFeature extends Feature {
     }
   };
 
-  /** Starts remote (host-process.ts with the Host's own environment); without it the page says remote is off. */
+  /**
+   * Starts remote (host-process.ts with the Host's own environment); without it the page says remote is off. The team
+   * link is started with the same options when nothing started it yet (tests start remote alone), and then stopped with
+   * remote.
+   */
   start(options: RemoteOptions = {}): void {
     if (this.opts) return;
     this.opts = options;
+    this.seen = null;
     this.copies.onList = (peer, list) => this.asks.sync(peer, list.requests);
     // The catch-up progress (读条, 2026-11-01): only the state, not what paired devices may pick (changed() announces that).
     this.copies.onProgress = () => this.host.emit("event", { type: "remote.updated", remote: this.state(), seq: this.store.lastEventSeq() });
-    try {
-      this.device = ensureDevice({ env: options.env });
-    } catch (err) {
-      console.log(`remote: cannot make device.json: ${String(err)}`);
-    }
-    this.seenFiles = this.fileStamp();
+    this.ownsTeam = !this.teamLink.started;
+    this.teamLink.start(options);
     // Files fetched for copies that are gone (step 3).
     this.copies.files.sweep();
     this.copies.views.sweep();
-    void this.loadAccount();
-    this.watch = setInterval(() => this.checkFiles(), options.watchMs ?? 5000);
-    this.watch.unref();
+    this.teamLink.on("account", this.onAccount);
+    this.teamLink.on("device", this.onDevice);
+    // The link read account.json before remote started: act on what it read (otherwise its first read tells).
+    if (this.teamLink.loaded) this.onAccount();
     this.host.on("event", this.onHostEvent);
   }
 
   stop(): void {
     this.host.off("event", this.onHostEvent);
+    this.teamLink.off("account", this.onAccount);
+    this.teamLink.off("device", this.onDevice);
     this.creates.stop();
-    if (this.watch) clearInterval(this.watch);
-    this.watch = null;
     this.link?.stop();
     this.link = null;
     this.opts = null;
-    this.account = null;
+    this.seen = null;
+    if (this.ownsTeam) this.teamLink.stop();
+    this.ownsTeam = false;
     this.incoming = [];
     this.outgoing = [];
     this.presence.clear();
   }
 
-  /**
-   * The platform's login and this computer's device id, for 会话里用中转 (features/teamrelay, 2026-10-30): it speaks to
-   * 中转 as the person. Null while not signed in (or remote is off: tests).
-   */
-  teamLogin(): { account: Account; deviceId: string } | null {
-    // Not gated by 远程's switch: 中转 is not remote, it only uses the same login.
-    return this.account && this.device ? { account: this.account, deviceId: this.device.id } : null;
+  /** The platform's login, while remote is started (stopped: none, as before the team link was its own). */
+  private get account(): Account | null {
+    return this.opts ? this.teamLink.account : null;
+  }
+  private get device(): Device | null {
+    return this.teamLink.device;
   }
 
-  private get env(): Env | undefined {
-    return this.opts?.env;
-  }
+  // ---- what the team link read (the platform may change account.json or device.json while Studio runs)
 
-  // ---- account.json and device.json (the platform may change either while Studio runs)
-
-  private fileStamp(): string {
-    const stamp = (f: string) => {
-      try {
-        const s = statSync(f);
-        return `${s.mtimeMs}:${s.size}`;
-      } catch {
-        return "-";
-      }
-    };
-    return `${stamp(accountFile(this.env))}|${stamp(deviceFile(this.env))}`;
-  }
-
-  private checkFiles(): void {
-    const now = this.fileStamp();
-    if (now === this.seenFiles) return;
-    const [accountBefore] = this.seenFiles.split("|");
-    this.seenFiles = now;
-    if (now.split("|")[0] !== accountBefore) void this.loadAccount();
-    const d = readDevice({ env: this.env });
-    if (d && this.device && (d.name !== this.device.name || d.id !== this.device.id)) {
-      const idChanged = d.id !== this.device.id;
-      this.device = d;
-      if (idChanged) this.connect();
-      else this.link?.send({ type: "name", name: d.name });
-      this.changed();
+  private readonly onAccount = (): void => {
+    if (!this.opts) return;
+    const a = this.teamLink.account;
+    const before = this.seen;
+    this.seen = a;
+    if (!a) {
+      this.link?.stop();
+      this.link = null;
+      this.incoming = [];
+      this.outgoing = [];
+    } else if (!before || before.server !== a.server || before.name !== a.name || before.key !== a.key || !this.link) {
+      this.connect();
     }
-  }
+    this.changed();
+  };
 
-  private loadAccount(): Promise<void> {
-    const run = async () => {
-      const opts = this.opts;
-      if (!opts) return;
-      const a = await readAccount({ env: opts.env, ...(opts.protector ? { protector: opts.protector } : {}) });
-      // Stopped (or stopped and started again) while it read.
-      if (this.opts !== opts) return;
-      const before = this.account;
-      this.account = a;
-      if (!a) {
-        this.link?.stop();
-        this.link = null;
-        this.incoming = [];
-        this.outgoing = [];
-      } else if (!before || before.server !== a.server || before.name !== a.name || before.key !== a.key || !this.link) {
-        this.connect();
-      }
-      this.changed();
-    };
-    // One read at a time (DPAPI starts a PowerShell).
-    this.reading = (this.reading ?? Promise.resolve()).then(run, run);
-    return this.reading;
-  }
+  private readonly onDevice = (d: Device, { idChanged }: { idChanged: boolean }): void => {
+    if (!this.opts) return;
+    if (idChanged) this.connect();
+    else this.link?.send({ type: "name", name: d.name });
+    this.changed();
+  };
 
   private connect(): void {
     this.link?.stop();
@@ -481,7 +446,7 @@ export class RemoteFeature extends Feature {
   /** Turns remote on (needs the platform's login; waits for a read of account.json under way) or off. */
   async setEnabled(on: boolean): Promise<RemoteState> {
     if (!this.opts) throw new HostError("bad_request", "这个 Host 没有开远程功能");
-    await this.reading;
+    await this.teamLink.settled();
     if (on) {
       const a = this.account;
       if (!a) throw new HostError("bad_request", "在 AMO 平台里登录后才能打开远程功能");
@@ -554,13 +519,8 @@ export class RemoteFeature extends Feature {
 
   rename(name: string): RemoteState {
     if (!this.opts) throw new HostError("bad_request", "这个 Host 没有开远程功能");
-    try {
-      this.device = setDeviceName(name, { env: this.env });
-    } catch (err) {
-      throw new HostError("bad_request", err instanceof Error ? err.message : String(err));
-    }
-    this.seenFiles = this.fileStamp();
-    this.link?.send({ type: "name", name: this.device.name });
+    const device = this.teamLink.rename(name);
+    this.link?.send({ type: "name", name: device.name });
     this.changed();
     return this.state();
   }
@@ -662,7 +622,7 @@ export class RemoteFeature extends Feature {
   }
 
   reconnect(): RemoteState {
-    if (this.opts && !this.account) void this.loadAccount();
+    if (this.opts && !this.account) void this.teamLink.reload();
     else if (!this.enabled()) return this.state();
     else if (this.link && this.link.state !== "online" && this.link.state !== "connecting") {
       this.link.retryNow();
@@ -835,14 +795,14 @@ export class RemoteFeature extends Feature {
    * What a copy takes from this computer's own API (B's Host refuses the rest, 「B 能看到什么」): reading it, a message,
    * an answer to an approval or question, 打断, a new session, renaming the task or a session and archiving or restoring
    * a session (on A), and archiving the task (which deletes the copy). Changing the task's column, topic or 说明, a session's model, a branch, a terminal… are
-   * A's to do.
+   * A's to do. Each route that a copy takes says so where it is declared (`remoteCopy`, http/route.ts; 2026-11-05, it
+   * was a list here that every new route had to be added to); a write to a task or session that does not say is refused.
    */
-  guardRoute(method: string, path: string, params: Record<string, string>): void {
+  guardRoute(route: Pick<Route, "method" | "path" | "remoteCopy">, params: Record<string, string>): void {
     const id = params.id;
-    if (!id || method === "GET") return;
-    const task = path.startsWith("/api/tasks/:id") ? this.store.getTask(id) : path.startsWith("/api/sessions/:id") ? this.sessionTask(id) : undefined;
+    if (!id || route.method === "GET" || route.remoteCopy) return;
+    const task = route.path.startsWith("/api/tasks/:id") ? this.store.getTask(id) : route.path.startsWith("/api/sessions/:id") ? this.sessionTask(id) : undefined;
     if (!task?.remote) return;
-    if (COPY_ROUTES.has(`${method} ${path}`)) return;
     throw new HostError("read_only", `这是 ${task.remote.name} 上的远程任务：这一项要在那台电脑上操作`);
   }
 
@@ -851,26 +811,3 @@ export class RemoteFeature extends Feature {
     return s?.taskId ? this.store.getTask(s.taskId) : undefined;
   }
 }
-
-/** The writes a copy takes (RemoteFeature.guardRoute); every GET reads the copy. */
-const COPY_ROUTES = new Set([
-  "POST /api/sessions/:id/messages",
-  "POST /api/sessions/:id/interrupt",
-  // 立即发送 / 重新发送 (2026-11-02): done on A, like a message.
-  "POST /api/sessions/:id/items/:itemId/send-now",
-  "POST /api/sessions/:id/items/:itemId/resend",
-  "POST /api/sessions/:id/questions/:itemId/answer",
-  "POST /api/tasks/:id/sessions",
-  "POST /api/tasks/:id/archive",
-  // 改名 (2026-10-30): renamed on A (RemoteCopies.renameTask / renameSession); other changes to the task are refused by
-  // TasksFeature.updateTask, a session's options by RemoteAwareRuntime.
-  "PATCH /api/tasks/:id",
-  "PATCH /api/sessions/:id",
-  // 归档 / 恢复 one session (2026-10-30): done on A (RemoteCopies.archive); archiving the task still deletes the copy.
-  "POST /api/sessions/:id/archive",
-  "POST /api/sessions/:id/unarchive",
-  // 批注 (2026-10-30, the user could not comment on a remote reply): kept on this computer, they go to A as the text of
-  // a message (composeAnnotationRefs), like any message. PATCH / DELETE /api/annotations/:id are not by task.
-  "POST /api/sessions/:id/annotations",
-  "POST /api/sessions/:id/annotations/send",
-]);

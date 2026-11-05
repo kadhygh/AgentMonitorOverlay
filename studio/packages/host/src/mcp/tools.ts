@@ -1,6 +1,7 @@
 import type { HostService } from "../service.js";
 import { FEATURES } from "../features/index.js";
 import type { Task } from "@amo-studio/protocol";
+import { isRemoteCopy } from "../core/shared.js";
 import { fail, toolContext, type AmoTool, type McpCaller } from "./tool-kit.js";
 
 // The AMO MCP tools, defined once: the Host serves them over HTTP at /mcp (Codex sessions), and Claude sessions get the
@@ -69,7 +70,7 @@ export function remoteCopyNamed(service: HostService, args: unknown): Task | nul
     const task = service.store.getTask(id);
     if (task?.remote) return task;
     const session = task ? undefined : service.store.getSession(id);
-    if (session?.runtime === "remote" && session.taskId) {
+    if (isRemoteCopy(session) && session?.taskId) {
       const owner = service.store.getTask(session.taskId);
       if (owner?.remote) return owner;
     }

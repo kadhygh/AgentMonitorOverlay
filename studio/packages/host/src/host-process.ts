@@ -25,6 +25,7 @@ import { BUILTIN_BALANCES, BUILTIN_PROFILES, CODEX_PROVIDERS, type CodexProvider
 import { ChannelRegistry } from "./runtime/channels.js";
 import { HostService } from "./service.js";
 import type { RemoteOptions } from "./features/remote/service.js";
+import type { TeamLinkOptions } from "./core/teamlink.js";
 import { Store } from "./store/store.js";
 import { WindowsTerminalLauncher, type TerminalLauncher } from "./terminal/launcher.js";
 
@@ -79,6 +80,11 @@ export interface StartHostOptions {
    * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
    */
   remote?: RemoteOptions;
+  /**
+   * The AMO platform's login and this computer's device (core/teamlink.ts, 2026-11-05): read for 远程, 会话里用中转 and
+   * the 问题页. Studio's Host (bin.ts) turns it on, and with it 中转's watch for replies — no longer only with 远程.
+   */
+  teamLink?: TeamLinkOptions;
   /** Studio's version, for /api/health (bin.ts: AMO_STUDIO_VERSION from the shell, else "dev"). */
   version?: string;
   /**
@@ -344,10 +350,11 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       },
     });
     mcp = { url: `${http.url}/mcp`, token: mcpToken };
-    if (options.remote) {
-      service.remote.start(options.remote);
+    if (options.teamLink) {
+      service.teamLink.start(options.teamLink);
       service.teamRelay.start();
     }
+    if (options.remote) service.remote.start(options.remote);
     // 值守 (2026-10-31): its clock runs in every Host; without items it does nothing.
     service.duty.start();
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
@@ -389,6 +396,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         service.duty.stop();
         service.teamRelay.stop();
         service.remote.stop();
+        service.teamLink.stop();
         await finalHttp.close();
         await finalClaude.closeAll();
         await finalDsh.closeAll();

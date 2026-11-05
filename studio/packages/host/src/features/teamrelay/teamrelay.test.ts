@@ -8,10 +8,10 @@ import { RelayClient, RelayStore, startRelayServer, type RelayServer } from "@am
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
+import { Backoff } from "../remote/link.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { amoToolsFor } from "../../mcp/tools.js";
-import { Backoff } from "../remote/link.js";
 
 // 会话里用中转 (2026-10-30, plans/relay-in-sessions.md), against a relay service on this machine (never the team server):
 // a session asks someone, the person confirms it in Studio, the other person replies in 中转, and the reply goes back
@@ -74,12 +74,16 @@ async function setup(signedIn = true) {
   const realInbox = () => (service.sessions.inbox.put = inboxPut);
   const events: HostEvent[] = [];
   service.on("event", (e) => events.push(e));
-  service.remote.start({ env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }) });
+  // As host-process does (2026-11-05, plans/host-structure.md 8a): the team link, which 中转 speaks through, then 远程
+  // (started, but off until turned on).
+  service.teamLink.start({ env, protector: fake, watchMs: 30 });
+  service.remote.start({ backoff: new Backoff({ baseMs: 30, maxMs: 120 }) });
   service.teamRelay.pauseMs = { signedOut: 50, failed: 100, wait: 400 };
   service.teamRelay.start();
   cleanups.push(async () => {
     service.teamRelay.stop();
     service.remote.stop();
+    service.teamLink.stop();
     await servers.close();
     store.close();
   });
@@ -89,7 +93,7 @@ async function setup(signedIn = true) {
     const out = await t.run(args);
     return { text: out.content.map((c) => c.text).join(""), error: !!out.isError };
   };
-  await until(() => service.remote.teamLogin(), (l) => !signedIn || !!l, "the platform's login");
+  await until(() => service.teamLink.login(), (l) => !signedIn || !!l, "the platform's login");
   return { service, store, told, events, session, coderClient, tool, relay, relayStore, root, realInbox, alpha };
 }
 

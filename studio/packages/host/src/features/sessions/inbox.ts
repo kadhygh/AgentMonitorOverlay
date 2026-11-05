@@ -1,7 +1,7 @@
 import { inTurn, type Id, type Session, type SessionItem } from "@amo-studio/protocol";
 import { newId, type SessionItemInput } from "../../store/store.js";
 import { Feature } from "../../core/feature.js";
-import { HostError } from "../../core/shared.js";
+import { HostError, isRemoteCopy } from "../../core/shared.js";
 
 // 会话收件箱 (2026-11-04, plans/message-delivery.md): messages from agents and from Studio itself — a 中转 reply, 值守
 // going on in a session, 传话 (task_message), a forwarded mail, session_send, session_start's report — go into the
@@ -64,7 +64,7 @@ export class SessionInbox extends Feature {
     if (s.archivedAt || s.writer === "archived") throw new HostError("read_only", "这个会话已归档，不能再往里发消息");
     if (s.kind === "sub") throw new HostError("read_only", "子 agent 不能单独接收消息");
     if (!text.trim()) throw new HostError("bad_request", "text is required");
-    if (s.runtime === "remote") {
+    if (isRemoteCopy(s)) {
       await this.f.sessions.sendMessage(sessionId, text);
       return { delivered: true, waiting: 0 };
     }

@@ -1,152 +1,93 @@
-import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, McpApply, OutsideSessionList, OutsideSessionPreview, QuestionReply, Session, SessionOptions, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
-import { parseRemoteProfileId } from "@amo-studio/protocol";
-import type { SendMode, SendOptions, SessionRuntimeApi } from "../../runtime/runtime.js";
-import type { Store } from "../../store/store.js";
+import { EventEmitter } from "node:events";
+import type { ApprovalDecision, Attachment, Id, McpApply, ProfileChoices, QuestionReply, Session, SlashCommandList, SlashCommandResult } from "@amo-studio/protocol";
+import type { RuntimeEvents, SendMode, SendOptions, SessionRuntimeApi } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
 import type { RemoteCopies } from "./copies.js";
 
-// 远程, step 2 (2026-10-29): "remote" as one more way a session runs, beside Codex, Claude and DSH. The Host's features
-// call one runtime; this one sends the sessions of copies (runtime "remote") to the paired device they run on, and every
-// other session to the runtimes of this computer. What a copy cannot do here (Git Review, a terminal, a branch, its
-// model) is refused with a reason the person can read.
+// 远程, step 2 (2026-10-29): "remote" as one more way a session runs, beside Codex, Claude and DSH. This runtime sends
+// the sessions of copies (runtime "remote") to the paired device they run on. What a copy cannot do here (Git Review, a
+// terminal, a branch, its model) is refused with a reason the person can read. Since 2026-11-05 (plans/host-structure.md
+// 8a) it is registered in the RuntimeRouter like the others — HostService does it — instead of wrapping the router and
+// asking of every call whether its session is a copy: only copies' sessions and models reach it.
 
 const no = (what: string) => new HostError("read_only", `远程任务的会话不能在这台电脑上${what}：任务在授权它的电脑上运行，那边才能做`);
 
-export class RemoteAwareRuntime implements SessionRuntimeApi {
-  constructor(
-    private readonly store: Store,
-    private readonly inner: SessionRuntimeApi,
-    private readonly copies: () => RemoteCopies,
-  ) {
-    // What the runtimes here do not offer, this one does not either (features ask whether a runtime has it).
-    const optional = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus", "outsideSessions", "outsidePreview", "checkResume"] as const;
-    for (const k of optional) if (!inner[k]) (this as unknown as Record<string, unknown>)[k] = undefined;
+export class RemoteRuntime extends EventEmitter<RuntimeEvents> implements SessionRuntimeApi {
+  constructor(private readonly copies: () => RemoteCopies) {
+    super();
   }
 
-  private remote(sessionId: Id): boolean {
-    return this.store.getSession(sessionId)?.runtime === "remote";
-  }
-
-  startSession(input: Parameters<SessionRuntimeApi["startSession"]>[0]): Promise<Session> {
+  startSession(): Promise<Session> {
     // New sessions of a copy are started by TasksFeature through RemoteFeature (they need the task's grant).
-    if (parseRemoteProfileId(input.profileId)) throw no("这样开会话");
-    return this.inner.startSession(input);
+    throw no("这样开会话");
   }
-  choices(profileId: Id) {
-    return this.inner.choices(profileId);
+  /** A copy's models are A's: nothing to pick here (ConfigFeature answers so before it asks a runtime). */
+  async choices(profileId: Id): Promise<ProfileChoices> {
+    return { profileId, models: [], permissions: [], defaultPermission: "", source: "builtin" };
   }
-  outsideSessions(): Promise<OutsideSessionList> {
-    return this.inner.outsideSessions!();
-  }
-  outsidePreview(ref: string): Promise<OutsideSessionPreview | null> {
-    return this.inner.outsidePreview!(ref);
-  }
-  checkResume(profileId: Id, ref: string): Promise<void> {
-    return this.inner.checkResume!(profileId, ref);
-  }
-  setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
-    if (this.remote(sessionId)) throw no("换模型或权限");
-    return this.inner.setOptions(sessionId, options);
+  setOptions(): Promise<Session> {
+    throw no("换模型或权限");
   }
   rename(sessionId: Id, title: string): Promise<Session> {
-    if (this.remote(sessionId)) return this.copies().renameSession(sessionId, title);
-    return this.inner.rename(sessionId, title);
+    return this.copies().renameSession(sessionId, title);
   }
   sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}) {
-    if (this.remote(sessionId)) return this.copies().send(sessionId, text, images, options);
-    return this.inner.sendMessage(sessionId, text, images, options);
+    return this.copies().send(sessionId, text, images, options);
   }
-  /** 立即发送 and 重新发送 (2026-11-02): on a copy, done on A (the copy's items carry A's ids). */
+  /** 立即发送 and 重新发送 (2026-11-02): done on A (the copy's items carry A's ids). */
   sendNow(sessionId: Id, itemId: Id): Promise<void> {
-    if (this.remote(sessionId)) return this.copies().sendNow(sessionId, itemId);
-    if (!this.inner.sendNow) throw new HostError("bad_request", "这种会话不能立即发送");
-    return this.inner.sendNow(sessionId, itemId);
+    return this.copies().sendNow(sessionId, itemId);
   }
-  resend(sessionId: Id, itemId: Id, images: readonly Attachment[] = [], options: SendOptions = {}): Promise<{ mode: SendMode }> {
-    if (this.remote(sessionId)) return this.copies().resend(sessionId, itemId);
-    if (!this.inner.resend) throw new HostError("bad_request", "这种会话不能重新发送消息");
-    return this.inner.resend(sessionId, itemId, images, options);
+  resend(sessionId: Id, itemId: Id): Promise<{ mode: SendMode }> {
+    return this.copies().resend(sessionId, itemId);
   }
   interrupt(sessionId: Id): Promise<void> {
-    if (this.remote(sessionId)) return this.copies().interrupt(sessionId);
-    return this.inner.interrupt(sessionId);
+    return this.copies().interrupt(sessionId);
   }
-  fork(sessionId: Id, profileId?: Id): Promise<Session> {
-    if (this.remote(sessionId)) throw no("分支");
-    return this.inner.fork(sessionId, profileId);
+  fork(): Promise<Session> {
+    throw no("分支");
   }
   archive(sessionId: Id): Promise<Session[]> {
-    if (this.remote(sessionId)) return this.copies().archive(sessionId, true);
-    return this.inner.archive(sessionId);
+    return this.copies().archive(sessionId, true);
   }
   unarchive(sessionId: Id): Promise<Session[]> {
-    if (this.remote(sessionId)) return this.copies().archive(sessionId, false);
-    return this.inner.unarchive(sessionId);
+    return this.copies().archive(sessionId, false);
   }
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {
-    if (this.remote(sessionId)) return this.copies().approve(sessionId, approvalId, decision);
-    return this.inner.respondApproval(sessionId, approvalId, decision);
+    return this.copies().approve(sessionId, approvalId, decision);
   }
   answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void> {
-    if (this.remote(sessionId)) return this.copies().answer(sessionId, itemId, reply);
-    return this.inner.answerQuestion(sessionId, itemId, reply);
+    return this.copies().answer(sessionId, itemId, reply);
   }
-  usage(profileId: Id, refresh: boolean) {
-    if (parseRemoteProfileId(profileId) || !this.inner.usage) return Promise.resolve(null);
-    return this.inner.usage(profileId, refresh);
+  attachInfo(): Promise<{ url: string; token: string; threadId: string }> {
+    throw no("在终端打开");
   }
-  attachInfo(sessionId: Id) {
-    if (this.remote(sessionId)) throw no("在终端打开");
-    return this.inner.attachInfo(sessionId);
+  setWriter(): Session {
+    throw no("在终端打开");
   }
-  setWriter(sessionId: Id, writer: Session["writer"]): Session {
-    if (this.remote(sessionId)) throw no("在终端打开");
-    return this.inner.setWriter(sessionId, writer);
+  handoff(): Promise<{ command: string; cwd: string; env: Record<string, string> }> {
+    throw no("交给终端");
   }
-  handoff(sessionId: Id) {
-    if (this.remote(sessionId)) throw no("交给终端");
-    if (!this.inner.handoff) throw new Error("this runtime does not hand sessions to a terminal");
-    return this.inner.handoff(sessionId);
+  reclaim(): Promise<Session> {
+    throw no("收回");
   }
-  reclaim(sessionId: Id): Promise<Session> {
-    if (this.remote(sessionId)) throw no("收回");
-    return this.inner.reclaim ? this.inner.reclaim(sessionId) : Promise.resolve(this.inner.setWriter(sessionId, "workbench"));
+  async listCommands(): Promise<SlashCommandList> {
+    return { commands: [] };
   }
-  async listCommands(sessionId: Id): Promise<SlashCommandList> {
-    if (this.remote(sessionId) || !this.inner.listCommands) return { commands: [] };
-    return this.inner.listCommands(sessionId);
+  runCommand(): Promise<SlashCommandResult> {
+    throw no("运行命令");
   }
-  runCommand(sessionId: Id, name: string, args: string): Promise<SlashCommandResult> {
-    if (this.remote(sessionId)) throw no("运行命令");
-    if (!this.inner.runCommand) throw new Error("this runtime has no commands");
-    return this.inner.runCommand(sessionId, name, args);
+  stopBackground(): Promise<void> {
+    throw no("停后台命令");
   }
-  stopBackground(sessionId: Id, taskId: string): Promise<void> {
-    if (this.remote(sessionId)) throw no("停后台命令");
-    if (!this.inner.stopBackground) throw new Error("this runtime has no background commands");
-    return this.inner.stopBackground(sessionId, taskId);
-  }
-  setWakeChoice(sessionId: Id, choice: { stopLoop?: boolean; autoContinue?: boolean }): Promise<Session> {
-    if (this.remote(sessionId)) throw no("改循环");
-    if (!this.inner.setWakeChoice) throw new Error("this runtime has no loop");
-    return this.inner.setWakeChoice(sessionId, choice);
-  }
-  applyChatSettings(settings: ChatSettings): void {
-    this.inner.applyChatSettings?.(settings);
+  setWakeChoice(): Promise<Session> {
+    throw no("改循环");
   }
   /** A copy's MCP is the computer it runs on's business. */
-  async refreshMcp(sessionId: Id): Promise<McpApply> {
-    if (this.remote(sessionId) || !this.inner.refreshMcp) return "not-running";
-    return this.inner.refreshMcp(sessionId);
+  async refreshMcp(): Promise<McpApply> {
+    return "not-running";
   }
-  async mcpStatus(sessionId: Id): Promise<Array<{ name: string; status: string; error?: string; source?: string }> | null> {
-    if (this.remote(sessionId) || !this.inner.mcpStatus) return null;
-    return this.inner.mcpStatus(sessionId);
-  }
-  on(event: "event", listener: (e: HostEvent) => void): this;
-  on(event: "log", listener: (line: string) => void): this;
-  on(event: "event" | "log", listener: ((e: HostEvent) => void) | ((line: string) => void)): this {
-    this.inner.on(event as "event", listener as (e: HostEvent) => void);
-    return this;
+  async mcpStatus(): Promise<null> {
+    return null;
   }
 }

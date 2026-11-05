@@ -2,6 +2,7 @@ import type { Id, ModelProfile, Session, Task, Topic, Workspace } from "@amo-stu
 import type { HostEventInput, Store } from "../store/store.js";
 import type { SessionRuntimeApi } from "../runtime/runtime.js";
 import type { HostService } from "../service.js";
+import type { TeamLink } from "./teamlink.js";
 import type { HostErrorCode } from "@amo-studio/protocol";
 
 /**
@@ -22,6 +23,10 @@ export abstract class Feature {
   }
   protected get options(): HostService["options"] {
     return this.host.options;
+  }
+  /** The AMO platform's login and this computer's device, to speak to the team server (core/teamlink.ts). */
+  protected get teamLink(): TeamLink {
+    return this.host.teamLink;
   }
   /** The other features. */
   protected get f(): HostService {

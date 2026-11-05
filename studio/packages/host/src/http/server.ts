@@ -12,6 +12,7 @@ import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
 import { FEATURES } from "../features/index.js";
 import { sessionMoving } from "../features/tasks/service.js";
+import { isRemoteCopy } from "../core/shared.js";
 import { FileReply, JsonReply, route, str, obj, type Route, type RouteContext } from "./route.js";
 
 export type { RouteContext } from "./route.js";
@@ -69,7 +70,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
 
   // A remote task's copies (runtime "remote") run on the other computer: stopping this Host cuts none of them, so they
   // do not hold back 完全退出 or the platform's 重启 Studio (2026-10-29).
-  const runningCount = () => service.store.listSessions().filter((s) => s.runtime !== "remote" && sessionMoving(s)).length;
+  const runningCount = () => service.store.listSessions().filter((s) => !isRemoteCopy(s) && sessionMoving(s)).length;
   let shuttingDown = false;
   const routes: Route[] = [
     route("GET", "/api/state", () => service.snapshot()),
@@ -247,7 +248,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
         req.method === "GET" || req.method === "DELETE" ? undefined : matched?.route.rawBody ? await readRaw(req, matched.route.rawBody) : await readBody(req);
       if (matched) {
         // A copy of a paired device's task (远程, step 2) takes only some of the API.
-        service.remote.guardRoute(req.method!, matched.route.path, matched.params);
+        service.remote.guardRoute(matched.route, matched.params);
         const out = await matched.route.handle({ method: req.method!, path: url.pathname, params: matched.params, query: url.searchParams, body });
         return out instanceof FileReply ? sendFile(res, out) : out instanceof JsonReply ? send(res, out.status, out.body) : send(res, 200, out);
       }

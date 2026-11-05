@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { inTurn, isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
-import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
+import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../guide/role.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
@@ -155,7 +155,7 @@ export class SessionsFeature extends Feature {
     const none = { lines: [], told: () => undefined };
     const s = this.store.getSession(sessionId);
     // A copy of a remote session (远程 step 2): its own computer tells it what changed there.
-    if (!s || s.kind === "sub" || s.archivedAt || s.runtime === "remote") return none;
+    if (!s || s.kind === "sub" || s.archivedAt || isRemoteCopy(s)) return none;
     try {
       return roleUpdate(this.host, sessionId);
     } catch {
@@ -520,7 +520,7 @@ export class SessionsFeature extends Feature {
 
   private checkReport(s: Session): void {
     // A copy of a remote session (远程 step 2) is reported where it runs, never again from here.
-    if (s.runtime === "remote") return;
+    if (isRemoteCopy(s)) return;
     if (!s.reportTo || s.archivedAt || !(s.status === "idle" || s.status === "completed" || s.status === "interrupted" || s.status === "error")) return;
     const [turn] = this.store.findItems(s.id, "turn", {}, { newest: true, limit: 1 });
     if (!turn || turn.type !== "turn" || turn.state === "running") return;

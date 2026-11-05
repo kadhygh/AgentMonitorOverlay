@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage, McpApply, OutsideSessionList, OutsideSessionPreview } from "@amo-studio/protocol";
+import { parseRemoteProfileId } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 import { withDelivery } from "./items.js";
 import { profileGone } from "./profiles.js";
@@ -90,51 +91,106 @@ export interface SessionRuntimeApi {
   on(event: "log", listener: (line: string) => void): unknown;
 }
 
-/** Routes calls to the runtime of the session, or of the profile for new sessions. */
+/** The optional operations: a router made `around` one runtime offers only those that runtime has. */
+const OPTIONAL = ["usage", "handoff", "reclaim", "listCommands", "runCommand", "stopBackground", "setWakeChoice", "applyChatSettings", "refreshMcp", "mcpStatus", "outsideSessions", "outsidePreview", "checkResume"] as const;
+
+/**
+ * Routes calls to the runtime of the session, or of the profile for new sessions. The Host's own (host-process.ts) has
+ * Codex, Claude and DSH; HostService registers "remote" (copies of tasks paired devices granted this computer, 远程
+ * step 2) — 2026-11-05, plans/host-structure.md 8a: it used to be a wrapper around the router.
+ */
 export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements SessionRuntimeApi {
+  /** `around`: the one runtime every session and profile goes to that no registered runtime takes. */
+  private fallback: SessionRuntimeApi | null = null;
+
   constructor(
     private readonly store: Store,
     private readonly profiles: readonly ModelProfile[],
     private readonly runtimes: Partial<Record<SessionRuntime, SessionRuntimeApi>>,
   ) {
     super();
-    for (const r of Object.values(runtimes)) {
-      r.on("event", (e) => this.emit("event", e));
-      r.on("log", (line) => this.emit("log", line));
-    }
+    for (const r of Object.values(runtimes)) this.listen(r);
+  }
+
+  /**
+   * A router around a single runtime (tests give HostService one, not a router): it takes every session and profile no
+   * runtime registered later takes, and what it does not offer the router does not either (features ask whether the
+   * runtime has an operation).
+   */
+  static around(store: Store, runtime: SessionRuntimeApi): RuntimeRouter {
+    const router = new RuntimeRouter(store, [], {});
+    router.fallback = runtime;
+    router.listen(runtime);
+    for (const k of OPTIONAL) if (!runtime[k]) (router as unknown as Record<string, unknown>)[k] = undefined;
+    return router;
+  }
+
+  /** One more runtime, for the sessions that name it (HostService: "remote"). */
+  register(name: SessionRuntime, runtime: SessionRuntimeApi): void {
+    if (this.runtimes[name]) throw new Error(`the ${name} runtime is there already`);
+    this.runtimes[name] = runtime;
+    this.listen(runtime);
+  }
+
+  private listen(r: SessionRuntimeApi): void {
+    r.on("event", (e) => this.emit("event", e));
+    r.on("log", (line) => this.emit("log", line));
   }
 
   private byRuntime(runtime: SessionRuntime): SessionRuntimeApi {
-    const r = this.runtimes[runtime];
+    const r = this.runtimes[runtime] ?? this.fallback;
     if (!r) throw new Error(`the ${runtime} runtime is not available in this Host`);
     return r;
   }
 
   private forSession(sessionId: Id): SessionRuntimeApi {
     const s = this.store.getSession(sessionId);
-    if (!s) throw new Error(`session ${sessionId} not found`);
+    if (!s) {
+      // Around one runtime: it says what is wrong itself, as it did when it was called directly.
+      if (this.fallback) return this.fallback;
+      throw new Error(`session ${sessionId} not found`);
+    }
     return this.byRuntime(s.runtime);
   }
 
+  /** The runtime of a profile: its own, "remote" for a remote copy's model (remoteProfileId), or the one runtime. */
+  private forProfile(profileId: Id): SessionRuntimeApi | undefined {
+    const profile = this.profiles.find((p) => p.id === profileId);
+    if (profile) return this.runtimes[profile.runtime] ?? this.fallback ?? undefined;
+    if (parseRemoteProfileId(profileId) && this.runtimes.remote) return this.runtimes.remote;
+    return this.fallback ?? undefined;
+  }
+
+  private requireProfileRuntime(profileId: Id): SessionRuntimeApi {
+    const profile = this.profiles.find((p) => p.id === profileId);
+    if (profile) return this.byRuntime(profile.runtime);
+    const r = this.forProfile(profileId);
+    if (!r) throw new Error(`unknown profile ${profileId}`);
+    return r;
+  }
+
+  /** Claude's operations that are not about one session (接续已有会话). */
+  private get claude(): SessionRuntimeApi | undefined {
+    return this.runtimes.claude ?? this.fallback ?? undefined;
+  }
+
   startSession(input: Parameters<SessionRuntimeApi["startSession"]>[0]) {
-    const profile = this.profiles.find((p) => p.id === input.profileId);
-    if (!profile) throw new Error(`unknown profile ${input.profileId}`);
-    return this.byRuntime(profile.runtime).startSession(input);
+    return this.requireProfileRuntime(input.profileId).startSession(input);
   }
   sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], options: SendOptions = {}) {
     return this.forSession(sessionId).sendMessage(sessionId, text, images, options);
   }
   outsideSessions(): Promise<OutsideSessionList> {
-    const r = this.runtimes.claude;
+    const r = this.claude;
     if (!r?.outsideSessions) return Promise.resolve({ sessions: [], unavailable: "这个 Studio 没有 Claude" });
     return r.outsideSessions();
   }
   outsidePreview(ref: string): Promise<OutsideSessionPreview | null> {
-    const r = this.runtimes.claude;
+    const r = this.claude;
     return r?.outsidePreview ? r.outsidePreview(ref) : Promise.resolve(null);
   }
   async checkResume(profileId: Id, ref: string): Promise<void> {
-    const r = this.runtimes.claude;
+    const r = this.claude;
     if (!r?.checkResume) throw Object.assign(new Error("这个 Studio 没有 Claude"), { code: "bad_request" });
     return r.checkResume(profileId, ref);
   }
@@ -149,16 +205,13 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
     return r.resend(sessionId, itemId, images, options);
   }
   choices(profileId: Id) {
-    const profile = this.profiles.find((p) => p.id === profileId);
-    if (!profile) throw new Error(`unknown profile ${profileId}`);
-    return this.byRuntime(profile.runtime).choices(profileId);
+    return this.requireProfileRuntime(profileId).choices(profileId);
   }
   setOptions(sessionId: Id, options: SessionOptions) {
     return this.forSession(sessionId).setOptions(sessionId, options);
   }
   async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | AccountUsage[] | null> {
-    const profile = this.profiles.find((p) => p.id === profileId);
-    const r = profile ? this.runtimes[profile.runtime] : undefined;
+    const r = this.forProfile(profileId);
     return r?.usage ? r.usage(profileId, refresh) : null;
   }
   rename(sessionId: Id, title: string) {
@@ -218,6 +271,7 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   applyChatSettings(settings: ChatSettings): void {
     for (const r of Object.values(this.runtimes)) r.applyChatSettings?.(settings);
+    this.fallback?.applyChatSettings?.(settings);
   }
   async refreshMcp(sessionId: Id): Promise<McpApply> {
     const r = this.forSession(sessionId);

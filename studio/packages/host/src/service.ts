@@ -42,7 +42,9 @@ import { StatsFeature } from "./features/stats/service.js";
 import { ChannelsFeature } from "./features/channels/service.js";
 import { MaintenanceFeature } from "./features/maintenance/service.js";
 import { RemoteFeature } from "./features/remote/service.js";
-import { RemoteAwareRuntime } from "./features/remote/runtime.js";
+import { RemoteRuntime } from "./features/remote/runtime.js";
+import { RuntimeRouter } from "./runtime/runtime.js";
+import { TeamLink } from "./core/teamlink.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -85,6 +87,11 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly channels = new ChannelsFeature(this);
   readonly dsh = new DshFeature(this);
   readonly maintenance = new MaintenanceFeature(this);
+  /**
+   * The AMO platform's login and this computer's device (2026-11-05, plans/host-structure.md 8a): 远程, 会话里用中转 and
+   * the 问题页 speak to the team server through it. Started by host-process.ts (or by remote.start, in tests).
+   */
+  readonly teamLink = new TeamLink();
   readonly remote = new RemoteFeature(this);
   /** 会话里用中转 (2026-10-30): sessions ask people on the team through AMO 中转; replies come back into them. */
   readonly teamRelay = new TeamRelayFeature(this);
@@ -120,9 +127,13 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     } = {},
   ) {
     super();
-    this.runtime = new RemoteAwareRuntime(store, runtime, () => this.remote.copies);
-    runtime.on("event", (e) => this.emit("event", e));
-    runtime.on("log", (line) => this.log(line));
+    // "remote" (copies of tasks paired devices granted this computer) is one more runtime of the router; a single runtime
+    // (tests) gets a router around it first.
+    const router = runtime instanceof RuntimeRouter ? runtime : RuntimeRouter.around(store, runtime);
+    router.register("remote", new RemoteRuntime(() => this.remote.copies));
+    this.runtime = router;
+    router.on("event", (e) => this.emit("event", e));
+    router.on("log", (line) => this.log(line));
     this.tasks.ensureStructure();
     this.sessions.watchReports();
     this.collab.watchAnswers();

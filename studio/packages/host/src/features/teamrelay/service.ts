@@ -3,7 +3,7 @@ import { basename, isAbsolute } from "node:path";
 import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type TeamSend, type TeamThread } from "@amo-studio/protocol";
 import { RelayClient, RelayClientError, newRepliesText, takeSession, threadAsText, type Thread, type Via } from "@amo-studio/relay/light";
 import { newId } from "../../store/store.js";
-import { HostError } from "../../core/shared.js";
+import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 // 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): a session asks someone on the team to confirm something through
@@ -36,7 +36,7 @@ export class TeamRelayFeature extends Feature {
 
   /** The 中转 client as the person, and this computer's mark prefix. */
   private relay(): { client: RelayClient; me: string; prefix: string } {
-    const login = this.f.remote.teamLogin();
+    const login = this.teamLink.login();
     if (!login) throw new HostError("bad_request", TEAM_NOT_SIGNED_IN);
     return { client: new RelayClient(login.account.server, login.account.key), me: login.account.name, prefix: `studio:${login.deviceId}:` };
   }
@@ -251,7 +251,7 @@ export class TeamRelayFeature extends Feature {
   private async loop(): Promise<void> {
     while (this.running) {
       try {
-        if (!this.f.remote.teamLogin()) {
+        if (!this.teamLink.login()) {
           await this.pause(this.pauseMs.signedOut);
           continue;
         }
@@ -282,7 +282,7 @@ export class TeamRelayFeature extends Feature {
   }
 
   private async scanOnce(): Promise<void> {
-    if (!this.f.remote.teamLogin()) return;
+    if (!this.teamLink.login()) return;
     const { client, me, prefix } = this.relay();
     const all = await client.threads();
     for (const t of all) this.lastSeq = Math.max(this.lastSeq, t.lastSeq);
@@ -317,7 +317,7 @@ export class TeamRelayFeature extends Feature {
   /** A session a reply can go into: there, not archived, not handed to a terminal, not a copy of a remote one. */
   private canHear(sessionId: Id): boolean {
     const s = this.store.getSession(sessionId);
-    return !!s && !s.archivedAt && s.writer !== "archived" && s.writer !== "terminal-handoff" && s.runtime !== "remote";
+    return !!s && !s.archivedAt && s.writer !== "archived" && s.writer !== "terminal-handoff" && !isRemoteCopy(s);
   }
 
   /**

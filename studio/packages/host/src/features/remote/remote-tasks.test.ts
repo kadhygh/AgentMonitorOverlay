@@ -14,6 +14,8 @@ import { Store } from "../../store/store.js";
 import { Backoff } from "./link.js";
 import { fitItem } from "./grants.js";
 import { amoToolsFor } from "../../mcp/tools.js";
+import { FEATURES } from "../index.js";
+import { route } from "../../http/route.js";
 
 // 远程, step 2 (plans/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
 // approvals, 打断 and new sessions run on A, a revoked grant stays readable on B, and catch-up goes by seq. Two Hosts
@@ -101,6 +103,15 @@ async function paired() {
 type Pair = Awaited<ReturnType<typeof paired>>;
 const items = (h: Pair["a"], sessionId: string) => h.store.listItems(sessionId);
 const agentTexts = (h: Pair["a"], sessionId: string) => items(h, sessionId).flatMap((i) => (i.type === "agent" && !i.streaming ? [i.markdown] : []));
+/**
+ * The route guard as the HTTP server runs it, with the route as declared (its `remoteCopy`, 2026-11-05: it was a list of
+ * method + path in RemoteFeature).
+ */
+const guard = (h: Pair["a"], method: string, path: string, params: Record<string, string>) => {
+  const declared = FEATURES.flatMap((f) => f.routes(h.service)).find((r) => r.method === method && r.path === path);
+  if (!declared) throw new Error(`no route ${method} ${path}`);
+  h.service.remote.guardRoute(declared, params);
+};
 
 /** A task on A with one session that has answered once. */
 async function taskOnA(a: Pair["a"], title = "远程任务") {
@@ -158,9 +169,12 @@ describe("remote tasks between two Hosts (step 2)", () => {
 
     // What only A does is refused on B (its Host and its runtime both).
     await expect(async () => b.service.tasks.updateTask(task.id, { column: "done" })).rejects.toThrow("远程任务");
-    expect(() => b.remote.guardRoute("POST", "/api/tasks/:id/unarchive", { id: task.id })).toThrow("A-PC 上的远程任务");
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/fork", { id: session.id })).toThrow("A-PC 上的远程任务");
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/messages", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "POST", "/api/tasks/:id/unarchive", { id: task.id })).toThrow("A-PC 上的远程任务");
+    expect(() => guard(b, "POST", "/api/sessions/:id/fork", { id: session.id })).toThrow("A-PC 上的远程任务");
+    expect(() => guard(b, "POST", "/api/sessions/:id/messages", { id: session.id })).not.toThrow();
+    // A write added later that does not say whether a copy takes it is refused, not run here (2026-11-05, 8a).
+    expect(() => b.service.remote.guardRoute(route("POST", "/api/sessions/:id/something-new", () => ({ ok: true })), { id: session.id })).toThrow("A-PC 上的远程任务");
+    expect(() => b.service.remote.guardRoute(route("POST", "/api/sessions/:id/something-new", () => ({ ok: true }), { remoteCopy: "forward" }), { id: session.id })).not.toThrow();
     await expect(b.service.sessions.fork(session.id)).rejects.toThrow("远程任务的会话不能在这台电脑上分支");
     // A's own tasks are never B's to reach.
     const other = await a.service.tasks.createTask({ title: "没授权的" });
@@ -797,8 +811,8 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     expect(readFileSync(b.service.attachments.get(got!.id!).path).equals(readFileSync(onA.path))).toBe(true);
 
     // 批注 on a reply in the copy: kept on B, sent to A as a message.
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/annotations", { id: session.id })).not.toThrow();
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/annotations/send", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "POST", "/api/sessions/:id/annotations", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "POST", "/api/sessions/:id/annotations/send", { id: session.id })).not.toThrow();
     await until(() => b.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "B's copy idle");
     const reply = items(b, session.id).find((i): i is Extract<SessionItem, { type: "agent" }> => i.type === "agent" && !i.streaming)!;
     const quote = reply.markdown.slice(0, 4);
@@ -812,8 +826,8 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     const { task, session } = await taskOnA(a);
     a.remote.grant(task.id, toB);
     await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
-    expect(() => b.remote.guardRoute("PATCH", "/api/tasks/:id", { id: task.id })).not.toThrow();
-    expect(() => b.remote.guardRoute("PATCH", "/api/sessions/:id", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "PATCH", "/api/tasks/:id", { id: task.id })).not.toThrow();
+    expect(() => guard(b, "PATCH", "/api/sessions/:id", { id: session.id })).not.toThrow();
 
     expect((await b.service.tasks.patchTask(task.id, { title: "B 起的名字" })).title).toBe("B 起的名字");
     expect(a.store.getTask(task.id)!.title).toBe("B 起的名字");
@@ -835,8 +849,8 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
     expect(() => b.service.tasks.patchTask(task.id, { title: "  " })).toThrow("empty");
 
     // 归档 / 恢复 a session from B (2026-10-30): done on A, the copy shows it when B's call returns; the task stays.
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/archive", { id: session.id })).not.toThrow();
-    expect(() => b.remote.guardRoute("POST", "/api/sessions/:id/unarchive", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "POST", "/api/sessions/:id/archive", { id: session.id })).not.toThrow();
+    expect(() => guard(b, "POST", "/api/sessions/:id/unarchive", { id: session.id })).not.toThrow();
     await until(() => a.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "A idle");
     expect((await b.service.sessions.archive(session.id)).map((s) => s.id)).toContain(session.id);
     expect(a.store.getSession(session.id)!.archivedAt).toBeTruthy();
@@ -956,4 +970,37 @@ describe("remote files between two Hosts (step 3)", () => {
     expect(existsSync(join(root, task.id))).toBe(false);
     expect(readdirSync(root).filter((n) => n.startsWith(".gone-"))).toEqual([]);
   }, 60_000);
+});
+
+describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-05)", () => {
+  it("is said where each route is declared: the same writes as the list RemoteFeature had", async () => {
+    const store = new Store(join(tempDir("routes-data"), "studio.db"));
+    const servers = new FakeServers(PROFILES);
+    const service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES);
+    cleanups.push(async () => {
+      await servers.close();
+      store.close();
+    });
+    const taken = FEATURES.flatMap((f) => f.routes(service))
+      .filter((r) => r.remoteCopy)
+      .map((r) => `${r.remoteCopy} ${r.method} ${r.path}`)
+      .sort();
+    expect(taken).toEqual(
+      [
+        "forward POST /api/sessions/:id/messages",
+        "forward POST /api/sessions/:id/interrupt",
+        "forward POST /api/sessions/:id/items/:itemId/send-now",
+        "forward POST /api/sessions/:id/items/:itemId/resend",
+        "forward POST /api/sessions/:id/questions/:itemId/answer",
+        "forward POST /api/tasks/:id/sessions",
+        "forward POST /api/tasks/:id/archive",
+        "forward PATCH /api/tasks/:id",
+        "forward PATCH /api/sessions/:id",
+        "forward POST /api/sessions/:id/archive",
+        "forward POST /api/sessions/:id/unarchive",
+        "local POST /api/sessions/:id/annotations",
+        "local POST /api/sessions/:id/annotations/send",
+      ].sort(),
+    );
+  });
 });

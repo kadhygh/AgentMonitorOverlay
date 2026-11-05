@@ -25,6 +25,35 @@
 
 验证：现有 remote 单测和 e2e（`remote*`、`remote-reviewer`、`remote-files`、`remote-tasks`）全过；新加一条：一条没声明 `remoteCopy` 的新路由对远程副本返回明确的错误。
 
+### 8a 动手前的核对（2026-11-05，对 master `adb010c4`）
+
+11-04 之后进来的消息投递（立即发送、重新发送、Studio 收件箱 `held`）、接续已有会话（`outsideSessions` / `outsidePreview` / `checkResume`）都已经在 `RemoteAwareRuntime` 和 `COPY_ROUTES` 里有了，方向不用改。对不上、要调整做法的几处：
+
+- **HTTP 层不转发**。`COPY_ROUTES` 里的路由是放行，放行后仍在本机的 handler 里跑，真正发到 A 的是 runtime（消息、打断、审批、改名、归档）和 `TasksFeature`（新会话、任务改名、归档任务）；批注留在本机。所以元数据只决定「放不放行」：`remoteCopy: "forward"`（handler 会转给任务所在的电脑）或 `"local"`（在这台电脑上做，比如批注），两者在 HTTP 层一样放行，写出来是给下一个人看去向；没写就拒绝。「没声明默认 deny」现在其实已经是这样（白名单外的都拒），这次的收获是声明挪到路由旁边，不会再漏改另一个文件。
+- **大多数测试给 `HostService` 的是一个裸 runtime**（`new CodexRuntime(...)`，远程的测试也是），不是 `RuntimeRouter`。做法：`RuntimeRouter` 加 `register(name, runtime)`；`HostService` 收到 Router 就往里注册 `remote`，收到裸 runtime 就用 `RuntimeRouter.around(...)` 包一层（没注册的名字都给它，它没有的可选方法 Router 也没有，和原来 `RemoteAwareRuntime` 去掉可选方法的做法一样），再注册 `remote`。
+- **副本的模型不在 Router 的 profiles 里**（`remote:<设备>:<id>`，`RemoteCopies.profiles()`）。Router 认 `parseRemoteProfileId`：这种 id 走 `remote` runtime（开会话仍然拒绝、额度为 null，和现在一样）。
+- **MCP 那层（`mcp/tools.ts` 的 `keepOffRemoteCopies`）不动**：MCP 工具不是路由，8a 的几步不涉及它。
+- **团队连接的启动**：远程的单测都用 `service.remote.start({ env, protector, ... })` 起账号读取。`RemoteOptions` 继续带 `env` / `protector` / `watchMs`，`remote.start` 顺带启动 `teamLink`（已经启动就不重复），远程单测不用改；teamrelay、issues 的单测改成直接 `service.teamLink.start(...)`、`service.teamLink.login()`（只改准备步骤，不改断言），以此证明它们不再依赖远程。`host-process` 加 `teamLink` 选项（`bin.ts` 传），有它就启动 teamLink 和 teamRelay；`remote` 选项只管远程。
+- 现在 `features/remote` 之外按会话判断远程副本的（`runtime === "remote"`）有 6 处（sessions 3、teamrelay 1、http/server 1、mcp/tools 1），改成 `isRemoteCopy(session)`；按任务的 `task.remote` 本身就是字段，还要读 `.remote.name`，不改。
+
+### 8a 做到哪（2026-11-05，分支 `studio/host-8a`，没合进 master）
+
+做完了 1–4：
+
+1. `core/teamlink.ts`（`TeamLink`）：account.json / device.json 的读取和监视、`login()`、改设备名，从 `RemoteFeature` 搬出来。`HostService.teamLink`，各 feature 用 `this.teamLink`。teamrelay、issues 改用 `this.teamLink.login()`，不再碰 `this.f.remote`。`host-process` 的 `teamLink` 选项（`bin.ts` 传 `{}`）启动它和 teamRelay；`remote` 选项只启动远程。`RemoteFeature` 听 teamLink 的 `account` / `device` 事件连接、改名；没人启动 teamLink 时（单测）`remote.start` 替它启动，`remote.stop` 再停掉它，所以单测里停了再开远程和原来一样重新读账号。
+2. `features/remote/runtime.ts` 的 `RemoteRuntime`：只处理副本的会话，注册进 `RuntimeRouter`（`register("remote", …)`）；`RemoteAwareRuntime` 删了。Router 加了 `register`、`RuntimeRouter.around(store, runtime)`（单测给的裸 runtime），以及按 `parseRemoteProfileId` 把副本的模型 id 交给 `remote`。
+3. `RouteOptions.remoteCopy: "forward" | "local"` 标在 13 条路由上（sessions 8、tasks 3、review 批注 2），`COPY_ROUTES` 删了，`guardRoute(route, params)` 按元数据放行。
+4. `isRemoteCopy(session)` 在 `core/shared.ts`，6 处改用它。
+
+和原方案的偏差：
+
+- HTTP 层不转发，只放行（见上面的核对）；`"deny"` 没做成一个值，没写就是拒绝。
+- `RemoteRuntime.choices` 对副本的模型回空的选项（原来这条路走不到：`ConfigFeature.choices` 先答了副本的；走到时 Router 报 unknown profile）。其余每个操作对副本会话的结果和原来一样。
+- 单测改动（都不是断言）：`remote-tasks.test.ts` 原来直接 `guardRoute("POST", "/api/…", params)`，现在先在 `FEATURES` 里找到声明的路由再调（这样也验证了路由上的标记）；teamrelay、issues 的准备步骤改成先 `teamLink.start(...)`、等 `teamLink.login()`（teamrelay 的一条断言要远程「已启动但关着」，所以它照 host-process 的顺序再 `remote.start`；issues 不启动远程）。新加两条：没声明 `remoteCopy` 的写路由对副本拒绝、声明了就放行；带标记的路由正好是原来那 13 条。
+- MCP 那层（`keepOffRemoteCopies`）没动。
+
+验证（都在低优先级下跑）：`npm run verify` 的三步（类型检查；vitest `--maxWorkers=4`，191 个文件、1281 条通过；构建）；e2e `--workers=2`：`remote`、`remote-create`、`remote-files`、`remote-requests`、`remote-reviewer`、`remote-task-list`、`remote-tasks`、`teamrelay`、relay 的 `issues-page`（13 条），以及走普通会话的 `chat`、`chat-experience`、`session-start`、`handoff-mail`、`mcp`、`blank-on-send`（14 条）。没跑全量 e2e，没在真的两台电脑之间试远程。
+
 ## 8b 路由有类型
 
 现状：`route(method, path, handle: (ctx) => unknown)` 没有类型（`http/route.ts`），请求体靠 `obj(body)` 手动解析。审查时对过：Host 的 196 条路由 protocol 的 `HostRoutes` 都有声明，但编译器不拦漂移；UI 的 `call()` 有类型，Host 这边没有。`api.ts` 一直在末尾追加（remote、duty 已经有自己的 protocol 文件，路由还写在 `api.ts`）。`codex-runtime.ts` 有 19 处 `as never`。
