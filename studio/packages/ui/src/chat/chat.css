@@ -101,7 +101,12 @@
 /* Turns off screen skip layout and paint (2026-10-15: resizing the window or the session list was slow in long
    conversations); the last three (data-recent, Transcript) always render, so following the bottom stays exact and the
    reply read as a message goes out stays drawn (问题 #17: "the last two children" counted the running line too). */
-.turn:not([data-recent]) { content-visibility: auto; contain-intrinsic-size: auto 300px; }
+/* contain-intrinsic-size on every turn (2026-11-05, 问题 #17 again, an idle send): the size a turn stands in at once
+   skipped is the one remembered while it was drawn, and a turn only remembers it with `auto` on. A recent turn had
+   none, so the one leaving the last three as a message went out fell to 300px — the conversation jumped ~1,350px
+   shorter at that moment in a test, far more in a long one. On a drawn turn it changes nothing (no size containment). */
+.turn { contain-intrinsic-size: auto 300px; }
+.turn:not([data-recent]):not([data-drawn]) { content-visibility: auto; }
 .turn-work { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .turn-work > .msg-agent, .turn-work > .msg-user-row, .turn-work > .approval { margin: 6px 0; }
 

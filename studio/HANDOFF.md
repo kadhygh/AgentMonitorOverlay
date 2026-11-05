@@ -51,6 +51,8 @@
 
 ## 最近的改动（新的在上面）
 
+**2026-11-05 · 问题 #17 又出现：空闲时发消息后对话区空白**：用户在 s-055401cc（0.9.39，已含 0.9.34 的修复）空闲时发消息，只有中间对话区空了，切走再切回来就好。`resize-trace.log` 里没有崩溃、无响应或卡顿记录。e2e 探针（`e2e/studio/blank-on-send.spec.ts`）测出：发送那一刻刚移出「最后三轮」的那一轮从没记下尺寸（`contain-intrinsic-size: auto` 只在不画的轮次上），掉成 300px 占位，对话瞬间短了约 1350px；更早的轮次也一直按 300px 算。改法：`.turn` 都带 `contain-intrinsic-size: auto 300px`（`chat/chat.css`）；新增 `chat/drawnCheck.ts`，发送后 1.5 秒和 4 秒各查一次，视野里有没画出来的轮次就补画（`data-drawn`），连同视野里一轮都没有的情况，往 trace 记一行 `#main blank after send`。没能证明这就是那次空白的全部原因，再出现时先看 trace 里这一行。验证：typecheck；UI 单测 351 条；e2e blank-on-send、scroll-on-send、long-session、jumps、bookmarks、chat-experience、chat 共 17 条通过。还没打包。
+
 **2026-11-05 · 展示页和教程合进 master，放上 GitHub Pages**：用户定：展示页用 GitHub Pages 放出去，README 放截图链过去。`.github/workflows/tutorial-pages.yml`：master 上 `studio/docs/tutorial/**`、`build-tutorial.mjs`、`ui/src/styles/base.css` 一变就重新构建（只要 Node，不装依赖），展示页当 `index.html`，教程是 `tutorial.html`，地址 `https://kadhygh.github.io/AgentMonitorOverlay/`。仓库设置里 Pages 的来源要选一次「GitHub Actions」。README 顶上加了入口和封面图 `docs/images/showcase.png`（开场里三个模型同时在跑的看板那一帧）。
 
 **2026-11-05 · 放进待办留住第一句话；平台重启 Studio 的兜底（master `738cbc51`，发 Studio 0.9.41、平台 0.9.24）**

@@ -31,6 +31,7 @@ import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
 import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
 import { READ_HERE_EVENT } from "../lib/scrollPin.js";
+import { checkDrawnAfterSend } from "../chat/drawnCheck.js";
 import { readPlaceOf, restoreReadPlace, type ReadPlace } from "./readPlace.js";
 import { unansweredPrompt } from "./takeBack.js";
 import type { AnnotationRefs } from "../review/annotationRefs.js";
@@ -292,6 +293,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   // out (a scroll event in between would otherwise turn following off). Off: the reading place stays.
   const jumpOnSend = useScrollOnSend();
   const jumpToEnd = () => {
+    if (scroller.current) checkDrawnAfterSend(scroller.current, session?.id);
     if (!jumpOnSend) return;
     const el = scroller.current;
     stick.current = true;
