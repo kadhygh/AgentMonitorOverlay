@@ -84,6 +84,44 @@ export interface SelfView {
   result: { tone: "ok" | "warn" | "error"; text: string } | null;
 }
 
+/**
+ * 更新记录 (2026-11-06, the user: the notes shown once on the card were gone after ×; one place to see the version to
+ * come, the one here, and the ones before with their notes). Asked for when opened (PlatformCalls.changelog), not part
+ * of every view: Studio's runs to some 50 KB.
+ */
+export interface ChangelogView {
+  tool: string;
+  name: string;
+  /** The version in use here: the tool's `current`; for the platform, the one installed, else the one running. */
+  installed: string | null;
+  /** The platform only: the version running, when it is not the one installed (重启平台 not clicked yet). */
+  running: string | null;
+  /** The version the chosen channel has, or null. */
+  available: string | null;
+  channel: Channel;
+  /** Newest first. */
+  entries: ChangelogEntry[];
+  /**
+   * "full": a manifest carried the whole history (published since 2026-11-06); "partial": only the notes of the
+   * versions this machine knows (the one offered, the ones installed) — published before that.
+   */
+  source: "full" | "partial";
+  /** The server could not be asked: what is installed here only. */
+  offline: boolean;
+}
+
+export interface ChangelogEntry {
+  version: string;
+  date: string | null;
+  notes: string;
+  /** The version in use here. */
+  installed: boolean;
+  /** The version the channel offers. */
+  available: boolean;
+  /** Newer than the one in use and not past the one offered: what updating brings. */
+  coming: boolean;
+}
+
 /** The platform's folder (self-update.ts's root) and whether it can hold the tools (root-check.ts). */
 export interface RootView {
   path: string;
@@ -166,6 +204,8 @@ export interface PlatformCalls {
   pickStudioDataDir(): Promise<void>;
   openPath(which: "root" | "apps" | "studioData" | "settings"): Promise<void>;
   dismiss(tool: string): Promise<void>;
+  /** 更新记录 of a tool, or of the platform itself ("platform"). */
+  changelog(tool: string): Promise<ChangelogView>;
   /** 环境 (environment-view.ts): the last check, or a new one. */
   environment(fresh?: boolean): Promise<EnvironmentView>;
   /** 环境 → 更新 (2026-10-29): Claude Code or Codex to the newest version, the way it was installed; checked again after. */

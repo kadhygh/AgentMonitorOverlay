@@ -46,6 +46,40 @@ export function changelogSection(id, version, root = studio) {
   return sectionOf(readFileSync(file, "utf8"), version);
 }
 
+/**
+ * Every released section of a CHANGELOG, in the file's order: `## 0.9.1（2026-10-29）` → { version, date, notes }
+ * (date null when the heading has none). 「## 下一版」 and other headings that are not a version are left out, and so is a
+ * version whose section is empty. For the platform's 更新记录 (2026-11-06): publish puts them into the manifest.
+ */
+export function releasedSections(markdown) {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let open = null;
+  const close = () => {
+    if (!open) return;
+    const notes = open.lines.join("\n").trim();
+    if (notes) out.push({ version: open.version, date: open.date, notes });
+    open = null;
+  };
+  for (const line of lines) {
+    if (!/^##\s/.test(line)) {
+      open?.lines.push(line);
+      continue;
+    }
+    close();
+    const m = /^##\s+v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)(?![0-9A-Za-z.+-])\s*(?:[（(]\s*(\d{4}-\d{2}-\d{2})\s*[）)])?/.exec(line);
+    if (m) open = { version: m[1], date: m[2] ?? null, lines: [] };
+  }
+  close();
+  return out;
+}
+
+/** The tool's released CHANGELOG sections (releasedSections), or [] when it has no CHANGELOG.md. */
+export function changelogHistory(id, root = studio) {
+  const file = join(root, "packages", tool(id).pkg, "CHANGELOG.md");
+  return existsSync(file) ? releasedSections(readFileSync(file, "utf8")) : [];
+}
+
 /** `## 0.9.1（2026-10-29）` … up to the next `## `: the heading's version must be followed by something not part of it. */
 export function sectionOf(markdown, version) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");

@@ -15,7 +15,8 @@
 //                              publish <tool> [--channel test|stable] [--notes "…"] [--release <dir>] [--keep <n> | --keep-all]
 //                                  release/platform/<Name>/ (npm run package:platform -- --only <tool>: the exe left
 //                                  as Electron's own, so the tools share it; a portable folder is refused) as the tool's version
-//                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md;
+//                                  (its package.json) on a channel (test when left out); notes from its CHANGELOG.md, and every
+//                                  released section up to it as the manifest's history (更新记录, 2026-11-06);
 //                                  then the tool's old versions pruned as platform-prune does (--keep-all: not)
 //                              promote <tool> <version>     the stable channel to a version already published
 //                              platform-status              both channels' versions per tool, and what is stored
@@ -40,7 +41,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOOLS, changelogSection, tool, toolVersion } from "./amo-tools.mjs";
+import { TOOLS, changelogHistory, changelogSection, tool, toolVersion } from "./amo-tools.mjs";
 import { KEEP_APKS, androidRelease, placeScript } from "./android-publish.mjs";
 import { KEEP_VERSIONS, LocalTarget, ShellTarget, mb, platformCompress, promote, prune, pruneText, publish, status } from "./platform-publish.mjs";
 
@@ -226,7 +227,8 @@ ${START}`);
     const channel = flag("--channel") ?? "test";
     const target = platformTarget();
     const dir = join(resolve(studio, flag("--release") ?? join("release", "platform")), t.name);
-    const r = await publish(target, { id, dir, version, notes, channel, keep: rest.includes("--keep-all") ? null : keepFlag(), log: (s) => console.log(s) });
+    // 更新记录 (2026-11-06): every released section of its CHANGELOG up to this version goes into the manifest too.
+    const r = await publish(target, { id, dir, version, notes, history: changelogHistory(id), channel, keep: rest.includes("--keep-all") ? null : keepFlag(), log: (s) => console.log(s) });
     console.log(`${r.existed ? "这个版本已经发布过，文件相同：只改了通道" : "已发布"}：${id} ${version} → ${channel === "stable" ? "稳定" : "测试"}通道（${target.where}）`);
     console.log(`${r.manifest.files.length} 个文件，新上传 ${r.uploaded.length} 个（${mb(r.uploadedBytes)}，压缩后 ${mb(r.sentBytes)}）${r.manifest.runtime ? `，Electron ${r.manifest.runtime}` : ""}`);
     if (r.pruned?.versions) console.log(`清理旧版本：\n${pruneText(r.pruned, { all: false })}`);

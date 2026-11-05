@@ -938,6 +938,93 @@ test("AMO 中转 from the platform (2026-10-28): listed after Studio as 「AMO �
   }
 });
 
+test("更新记录 (2026-11-06): on every card and under 平台更新, any time — the version here, the one to come, the ones before; the versions still to come stand out; a version published before has only its own notes", async () => {
+  const own = await startFakePlatformServer({ users: { 小王: "secret" }, gzip: true });
+  try {
+    const notesTool = (version: string) => tool("notes", version);
+    const history = (...vs: Array<[string, string, string]>) => vs.map(([version, date, notes]) => ({ version, date, notes }));
+    const v100: [string, string, string] = ["1.0.0", "2026-11-01", "- 第一版：托盘常驻，随手记"];
+    const v110: [string, string, string] = ["1.1.0", "2026-11-03", "- 待办单独一个窗口\n- 快捷键可以在设置里改"];
+    const v120: [string, string, string] = ["1.2.0", "2026-11-05", "- 托盘图标拖到任务栏上之后，更新到新版本时不再被折叠回去\n- 便签窗口记住上次的大小"];
+    // Published before 2026-11-06: no history in its manifest.
+    own.publish("notes", "1.0.0", notesTool("1.0.0"), { name: "AMO Notes", exe: "run.cmd", notes: v100[2] });
+    own.publish("platform", "9.9.0", { "AMO Platform.exe": "p" }, { exe: "AMO Platform.exe", notes: "- 工具卡片上有「更新记录」", history: history(["9.9.0", "2026-11-06", "- 工具卡片上有「更新记录」"], ["9.8.0", "2026-11-05", "- 重启 Studio 的兜底"]) });
+    const { app, page } = await launch();
+    const form = page.getByRole("form", { name: "登录" });
+    await form.getByLabel("服务器地址").fill(own.url.replace("http://", ""));
+    await form.getByLabel("名字").fill("小王");
+    await form.getByLabel("密码").fill("secret");
+    await form.getByRole("button", { name: "登录" }).click();
+    await row(page, "notes").getByRole("button", { name: "安装" }).click();
+    await expect(status(page, "notes")).toHaveText("✓ 1.0.0 · 已是最新");
+
+    // Only the old manifest: its own notes, and a word on why there is no more.
+    const log = page.getByTestId("pf-changelog");
+    await page.getByTestId("tool-notes-changelog").click();
+    await expect(log.getByRole("heading", { name: "AMO 便签 更新记录" })).toBeVisible();
+    await expect(page.getByTestId("pf-changelog-partial")).toBeVisible();
+    await expect(page.getByTestId("pf-log-1.0.0")).toContainText("✓ 当前版本");
+    await expect(page.getByTestId("pf-changelog-facts")).toContainText("没有更新：当前版本就是稳定通道里的最新版");
+    await page.getByTestId("pf-changelog-back").click();
+    await expect(page.getByRole("heading", { name: "工具" })).toBeVisible();
+
+    // Two versions published with their history: the card offers 1.2.0 with its notes as before, 更新记录 has them all.
+    own.publish("notes", "1.1.0", notesTool("1.1.0"), { name: "AMO Notes", exe: "run.cmd", notes: v110[2], history: history(v110, v100) });
+    own.publish("notes", "1.2.0", notesTool("1.2.0"), { name: "AMO Notes", exe: "run.cmd", notes: v120[2], history: history(v120, v110, v100) });
+    await refresh(page);
+    await expect(status(page, "notes")).toHaveText("! 1.0.0 · 有新版 1.2.0");
+    await expect(row(page, "notes").locator(".pf-notes-text")).toContainText("不再被折叠回去");
+    await screenshot(app, "platform", "P48-changelog-link", page);
+    await page.getByTestId("tool-notes-changelog").click();
+    await expect(page.getByTestId("pf-changelog-facts")).toContainText("当前版本1.0.0");
+    await expect(page.getByTestId("pf-changelog-facts")).toContainText("1.2.0（稳定通道，比当前版本新 2 个版本）");
+    await expect(page.getByTestId("pf-changelog-lead")).toHaveText("更新到 1.2.0 会带来下面 2 个版本的改动（标着「还没装」的）。");
+    await expect(page.getByTestId("pf-changelog-partial")).toHaveCount(0);
+    const order = await page.evaluate(() => [...document.querySelectorAll("[data-testid^='pf-log-']")].map((e) => e.getAttribute("data-testid")));
+    expect(order).toEqual(["pf-log-1.2.0", "pf-log-1.1.0", "pf-log-1.0.0"]);
+    await expect(page.getByTestId("pf-log-1.2.0")).toHaveClass(/coming/);
+    await expect(page.getByTestId("pf-log-1.2.0")).toContainText("2026-11-05○ 还没装可以更新到");
+    await expect(page.getByTestId("pf-log-1.1.0")).toHaveClass(/coming/);
+    await expect(page.getByTestId("pf-log-1.1.0")).toContainText("快捷键可以在设置里改");
+    await expect(page.getByTestId("pf-log-1.0.0")).not.toHaveClass(/coming/);
+    await expect(page.getByTestId("pf-log-1.0.0")).toContainText("✓ 当前版本");
+    await screenshot(app, "platform", "P46-changelog", page);
+    // Dark too.
+    await page.emulateMedia({ colorScheme: null });
+    await page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("setTheme", ["dark"]));
+    await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
+    await screenshot(app, "platform", "P46-changelog-dark", page);
+    await page.getByTestId("pf-changelog-back").click();
+    await screenshot(app, "platform", "P48-changelog-link-dark", page);
+    await page.evaluate(() => (window as unknown as { amoPlatform: { call(m: string, a: unknown[]): Promise<unknown> } }).amoPlatform.call("setTheme", ["light"]));
+
+    // Updated from the card: 更新记录 still there afterwards, nothing to come.
+    await row(page, "notes").getByRole("button", { name: "更新到 1.2.0" }).click();
+    await expect(status(page, "notes")).toHaveText("✓ 1.2.0 · 已是最新", { timeout: 20_000 });
+    await expect(row(page, "notes").locator(".pf-notes-text")).toHaveCount(0);
+    await page.getByTestId("tool-notes-changelog").click();
+    await expect(page.getByTestId("pf-log-1.2.0")).toContainText("✓ 当前版本");
+    await expect(page.getByTestId("pf-changelog-lead")).toHaveCount(0);
+    await expect(log.locator(".pf-log-entry.coming")).toHaveCount(0);
+    await expect(page.getByTestId("pf-log-1.0.0")).toContainText("托盘常驻");
+
+    // The platform's own, from 设置 → 平台更新; a nav item leaves the page.
+    await page.getByRole("navigation", { name: "页面" }).getByRole("button", { name: "设置" }).click();
+    await expect(log).toHaveCount(0);
+    await screenshot(app, "platform", "P49-changelog-self-link", page);
+    await page.getByTestId("pf-self-changelog").click();
+    await expect(log.getByRole("heading", { name: "AMO 平台 更新记录" })).toBeVisible();
+    await expect(page.getByTestId("pf-log-9.9.0")).toContainText("工具卡片上有「更新记录」");
+    await expect(page.getByTestId("pf-log-9.8.0")).toContainText("重启 Studio 的兜底");
+    await expect(page.getByTestId("pf-changelog-back")).toHaveText("← 返回设置");
+    await screenshot(app, "platform", "P47-changelog-platform", page);
+    await page.getByTestId("pf-changelog-back").click();
+    await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  } finally {
+    await own.close();
+  }
+});
+
 /**
  * A stand-in Studio for the card (2026-10-29): a Node process answering /api/health and /api/shutdown on a local port
  * as Studio's Host does, with host.json and host-token in the data dir, and a second process as its shell (shell.json)

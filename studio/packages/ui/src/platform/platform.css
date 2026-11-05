@@ -170,3 +170,24 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-ui); f
 .pf-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin: 0 0 12px; align-items: baseline; }
 .pf-facts dt { font-size: var(--fs-sm); color: var(--text-dim); }
 .pf-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* 更新记录 (2026-11-06): the link on each card and under 平台更新, and its page — the versions still to come stand out
+   (attention colours, as an update does on the card), the one in use is marked; status in words, never colour alone. */
+.pf-status-row { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
+.pf-status-row .pf-status { margin-top: 0; }
+.pf-log-link { height: 22px; padding: 0 6px; font-size: var(--fs-cap); }
+.pf-back { margin-left: -8px; }
+.pf-log-facts { margin: 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel-raised); }
+.pf-log-lead { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--attention); }
+.pf-log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pf-log-entry { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); }
+.pf-log-entry.coming { border-color: var(--attention-border); background: var(--attention-bg); box-shadow: inset 3px 0 0 var(--attention); }
+.pf-log-entry.here { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+.pf-log-head { display: flex; align-items: baseline; gap: 6px 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.pf-log-version { font-family: var(--font-code); font-weight: 600; }
+.pf-log-date { font-size: var(--fs-cap); color: var(--text-faint); }
+.pf-log-tag { font-size: var(--fs-cap); font-weight: 600; padding: 0 6px; border-radius: var(--r-s); border: 1px solid var(--border); color: var(--text-dim); }
+.pf-log-tag.coming { border-color: var(--attention-border); color: var(--attention); }
+.pf-log-tag.here { border-color: var(--primary); color: var(--primary); }
+.pf-log-notes { font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.pf-log-entry:not(.coming):not(.here) .pf-log-notes { color: var(--text-dim); }

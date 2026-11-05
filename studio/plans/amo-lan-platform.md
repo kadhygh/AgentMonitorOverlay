@@ -140,7 +140,7 @@ platform/
 ```
 
 - 工具 id：`studio`、`reviewer`、`notes`、`platform`。
-- 清单：`{ tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }`，`path` 用 `/` 分隔、相对程序文件夹，`exe` 是程序文件夹里主程序的相对路径（如 `AMO Studio.exe`），`notes` 是这次的改动说明（Markdown）。
+- 清单：`{ tool, name, version, builtAt, exe, notes, files: [{ path, size, sha256 }] }`，`path` 用 `/` 分隔、相对程序文件夹，`exe` 是程序文件夹里主程序的相对路径（如 `AMO Studio.exe`），`notes` 是这次的改动说明（Markdown）。2026-11-06 加 `history`：`[{ version, date, notes }]`，这个工具 `CHANGELOG.md` 里到这一版为止所有已发布的版本（不含「下一版」），新的在前，发布时生成；平台的「更新记录」用它。放在清单里而不是单独一个文件：通道指着的清单不会被清理，它只含这个通道已经到的版本，中转服务的 `…/summary` 原样带出，服务不用改。之前发的清单没有它，平台退回各版本自己的 `notes`。
 - 中转服务加的接口（都要登录，`Authorization: Bearer <key>`）：`GET /api/platform/channels`、`GET /api/platform/tools/<tool>/<version>`、`GET /platform/objects/<sha256>`（也接受 `?key=`）。目录由服务的启动参数或环境变量给，Mac 上是 `$ROOT/platform`。下载页（`/`）加平台的下载：`downloads/AMO-Platform-win.zip`。
 - 发布在本机通过 SSH 做，不开 HTTP 写接口：`npm run relay:mac -- publish <tool> [--channel test|stable] [--notes "…"]`（读 `release/<Name>/`，算清单，只上传服务器上没有的文件，写清单，改 `channels.json`；`--notes` 不给时取该工具 `CHANGELOG.md` 里这个版本的一节）；`promote <tool> <version>`（把稳定通道指过去，版本必须已经发布过）；`platform-status`（列出两个通道各工具的版本）。
 

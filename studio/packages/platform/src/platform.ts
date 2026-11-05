@@ -6,7 +6,7 @@ import { entryOldFiles, entryVersion, refreshEntry, type EntryRefresh } from "./
 import { Installer, type InstallProgress, type ProgramsFile } from "./installer.js";
 import { packageSource, unpackedRoot, unpackZip } from "./package-install.js";
 import { discard } from "./remove.js";
-import { channelVersion, compareVersions, PlatformError, type Channels, type ManifestSummary } from "./manifest.js";
+import { channelVersion, compareVersions, isToolId, PlatformError, type Channels, type ManifestSummary } from "./manifest.js";
 import { planLaunch, startDetached, startEnv, type LaunchSpec } from "./launch.js";
 import { NOTES_SETTINGS_ARG, NOTES_TODO_ARG, QUIT_ARG, TOGGLE_ARG, type TrayClick, type TrayState } from "./tray.js";
 import { rootDrive, rootWritable, type RootDrive } from "./root-check.js";
@@ -20,7 +20,7 @@ import { claudeSources, installClaude } from "./claude-install.js";
 import { codexSources, installCodex } from "./codex-install.js";
 import { InstallError, SOURCE_NAME, type InstallProgress as EnvInstallProgress, type InstallRunner } from "./tool-mirror.js";
 import { firstOnPath } from "@amo-studio/locate";
-import type { Channel, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
+import type { Channel, ChangelogView, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
 
 // AMO 平台's state and actions, without Electron (main.ts wires it to the window, the tray and the dialogs; the tests
 // drive it directly). One account (the team server's), the channel's tools, and what is installed here.
@@ -608,6 +608,54 @@ export class Platform implements PlatformCalls {
   async dismiss(tool: string): Promise<void> {
     this.results.delete(tool);
     this.changed();
+  }
+
+  /**
+   * 更新记录 (2026-11-06): the channel's version's history (its manifest carries every version released up to it), with
+   * what the versions installed here carry (their manifests are kept here: it still shows offline, and a version newer
+   * than the channel's). A manifest from before has no history: the notes of those versions alone ("partial").
+   */
+  async changelog(tool: string): Promise<ChangelogView> {
+    if (!isToolId(tool)) throw new Error(`没有这个工具：${tool}`);
+    const self = tool === SELF;
+    const channel = this.channel();
+    const available = this.channels ? channelVersion(this.channels, channel, tool) : null;
+    let offline = !this.client || this.connection.state !== "online";
+    let summary = available ? this.manifests.get(`${tool}@${available}`) : undefined;
+    const client = this.client;
+    if (available && !summary && client && !offline) {
+      try {
+        summary = await client.summary(tool, available);
+        this.manifests.set(`${tool}@${available}`, summary);
+      } catch {
+        offline = true;
+      }
+    }
+    const here = this.installer.currentVersion(tool);
+    const installed = self ? (here ?? this.options.version) : here;
+    const running = self && this.options.version !== installed ? this.options.version : null;
+
+    const found = new Map<string, { date: string | null; notes: string }>();
+    let full = false;
+    const manifests = [...(summary ? [summary] : []), ...this.installer.versions(tool).map((v) => v.manifest)];
+    for (const m of manifests) {
+      if (!m.history) continue;
+      full = true;
+      for (const e of m.history) if (!found.has(e.version) || (!found.get(e.version)!.date && e.date)) found.set(e.version, { date: e.date, notes: e.notes });
+    }
+    for (const m of manifests) if (!found.has(m.version) && m.notes.trim()) found.set(m.version, { date: null, notes: m.notes });
+
+    const entries = [...found.entries()]
+      .sort(([a], [b]) => compareVersions(b, a))
+      .map(([version, e]) => ({
+        version,
+        date: e.date,
+        notes: e.notes,
+        installed: version === installed,
+        available: version === available,
+        coming: !!installed && !!available && compareVersions(version, installed) > 0 && compareVersions(version, available) <= 0,
+      }));
+    return { tool, name: self ? "AMO 平台" : this.toolName(tool).replace(/（独立版）$/, ""), installed, running, available, channel, entries, source: full ? "full" : "partial", offline };
   }
 
   async open(tool: string): Promise<OpenResult> {

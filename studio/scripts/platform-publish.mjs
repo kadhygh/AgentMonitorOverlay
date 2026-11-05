@@ -5,9 +5,14 @@
 //   objects/<sha256 first two>/<sha256>.gz   gzipped (2026-10-29), when that makes it at least 10% smaller; the sha256 is
 //                                         always the original's. The service sends the .gz as Content-Encoding: gzip,
 //                                         or unpacks it for a client that does not take gzip.
-//   tools/<tool>/<version>.json           { tool, name, version, builtAt, exe, runtime, notes, files: [{ path, size, sha256 }] }
+//   tools/<tool>/<version>.json           { tool, name, version, builtAt, exe, runtime, notes, history, files: [{ path, size, sha256 }] }
 //                                         (runtime: the Electron version, 2026-10-29; only folders package-portable built
-//                                         with --platform are published, so every tool's Electron files are the same)
+//                                         with --platform are published, so every tool's Electron files are the same.
+//                                         history, 2026-11-06: every version released up to this one, newest first,
+//                                         [{ version, date, notes }] from the tool's CHANGELOG.md — the platform's
+//                                         更新记录. In the manifest rather than a file of its own: a channel's manifest
+//                                         is never pruned, it holds only what that channel has reached, and the
+//                                         service's …/summary already hands it out, so the service needs no change)
 //   channels.json                         { "stable": { "studio": "0.9.0", … }, "test": { … } }
 // A publish: hash the program folder (release/<Name>/, from package-portable.mjs), ask the target which objects it lacks,
 // send only those, then write the manifest, then the channel — each step only after the one it depends on, each file
@@ -127,7 +132,7 @@ export function builtFor(dir) {
  * The manifest of a program folder, and where each object's content is on this machine. `builtAt` is when the folder
  * was written (its newest file), in ms. `runtime` (2026-10-29) is the Electron version it was built with.
  */
-export async function buildManifest(id, dir, { version, notes }) {
+export async function buildManifest(id, dir, { version, notes, history }) {
   const t = tool(id);
   const files = [];
   const sources = new Map();
@@ -144,7 +149,27 @@ export async function buildManifest(id, dir, { version, notes }) {
   const exe = `${t.name}.exe`;
   if (!files.some((f) => f.path === exe)) throw new Error(`${dir} 里没有 ${exe}：这不是 ${t.name} 的程序文件夹`);
   const runtime = builtFor(dir)?.runtime;
-  return { manifest: { tool: id, name: t.name, version, builtAt, exe, ...(runtime ? { runtime } : {}), notes, files }, sources };
+  return { manifest: { tool: id, name: t.name, version, builtAt, exe, ...(runtime ? { runtime } : {}), notes, ...(history ? { history } : {}), files }, sources };
+}
+
+/**
+ * The manifest's history (2026-11-06): the released CHANGELOG sections (amo-tools.mjs releasedSections) up to and
+ * including `version`, newest first, each version once; `version` itself always there with the notes being published
+ * (--notes may differ from its section, or it may have none yet). Sections with a bad version number are left out.
+ */
+export function historyFor(sections, version, notes) {
+  const seen = new Set([version]);
+  const older = [];
+  let date = null;
+  for (const s of sections ?? []) {
+    if (!s || typeof s.version !== "string" || !VERSION.test(s.version) || typeof s.notes !== "string" || !s.notes.trim()) continue;
+    if (s.version === version) date ??= s.date ?? null;
+    if (seen.has(s.version) || compareVersions(s.version, version) > 0) continue;
+    seen.add(s.version);
+    older.push({ version: s.version, date: s.date ?? null, notes: s.notes.trim() });
+  }
+  older.sort((a, b) => compareVersions(b.version, a.version));
+  return [{ version, date, notes: notes.trim() }, ...older];
 }
 
 const fileKey = (f) => `${f.path}\0${f.size}\0${f.sha256}`;
@@ -201,13 +226,14 @@ function check(id, version, channel) {
 }
 
 /**
- * Publishes the program folder `dir` as `id` `version` on `channel`. The same version again with the same files only
+ * Publishes the program folder `dir` as `id` `version` on `channel`; `history` (the tool's released CHANGELOG sections,
+ * 2026-11-06) goes into the manifest through historyFor. The same version again with the same files only
  * moves the channel; with other files it is refused (a new version number first). Then the tool's old versions are
  * pruned (`keep`; null keeps them all: --keep-all); a prune that fails does not undo the publish, it is in `pruneError`.
  * Returns { manifest, existed, uploaded: [sha256], uploadedBytes (their size), sentBytes (as stored: gzipped or not), channels,
  * pruned (prune's result, or null), pruneError }.
  */
-export async function publish(target, { id, dir, version, notes, channel = "test", keep = KEEP_VERSIONS, log = () => {} }) {
+export async function publish(target, { id, dir, version, notes, history, channel = "test", keep = KEEP_VERSIONS, log = () => {} }) {
   if (keep != null) checkKeep(keep);
   check(id, version, channel);
   if (!existsSync(dir)) throw new Error(`没有程序文件夹 ${dir}：先打包（npm run package:platform -- --only ${id}）`);
@@ -219,7 +245,7 @@ export async function publish(target, { id, dir, version, notes, channel = "test
   if (built && built !== version) throw new Error(`${dir} 是 ${built} 打的包，现在的版本是 ${version}：先重新打包（npm run package:platform -- --only ${id}）`);
   if (!notes?.trim()) throw new Error(`没有改动说明：在 CHANGELOG.md 里写 ${version} 这一节，或者用 --notes "…"`);
   log(`计算 ${dir} 的清单…`);
-  const { manifest, sources } = await buildManifest(id, dir, { version, notes: notes.trim() });
+  const { manifest, sources } = await buildManifest(id, dir, { version, notes: notes.trim(), history: history ? historyFor(history, version, notes) : undefined });
   const existing = await target.readManifest(id, version);
   if (existing && !sameFiles(existing.files, manifest.files)) throw new Error(`${id} ${version} 已经发布过，而且文件不一样：先升版本号（packages/${tool(id).pkg}/package.json 和 CHANGELOG.md），重新打包再发布`);
   const missing = await target.missing([...sources.keys()]);

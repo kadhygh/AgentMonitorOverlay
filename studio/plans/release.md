@@ -38,6 +38,8 @@ npm run release -- promote studio 0.9.17      转正式版（照旧）
 5. **提交并打 tag**：提交说明自动生成（「chore(studio): test channel — Studio 0.9.18、便签 0.9.8；publish dropped …」），每个工具打一个 tag（`studio-v0.9.18`）。以后 `status` 和「该不该发」都按 tag 算。
 6. **收尾**：打印每个工具的版本和 promote 命令。
 
+**更新记录**（2026-11-06）：`relay:mac -- publish`（`release` 调的那一步）除了这一版的 `notes`，还把这个工具 `CHANGELOG.md` 里到这一版为止所有已发布的节（去掉「下一版」）作为 `history` 写进清单（`amo-tools.mjs` 的 `releasedSections`、`platform-publish.mjs` 的 `historyFor`），平台卡片上的「更新记录」读它。不用多做什么，CHANGELOG 照旧写；改了已发布版本的说明，下次发布这个工具时才会带上。
+
 `release relay-service`：`relay:release`（外壳版本变了才带 `--shell`）→ 部署（照旧：服务变了才重启，重启前备份）→ 提交并打 `relay-service-v<n>` tag。中转服务也加一个版本号和 CHANGELOG（`packages/relay`），部署时写进服务，`/api/health` 能看到。
 
 **中转服务只从提交过的代码部署**（2026-10-31 补）：服务器上只有一份构建，谁后部署谁的为准。那天上午另一个会话在主工作区直接 `relay:mac deploy` 了「服务器状态」（没提交），下午从值守目录发 0.7.1 就把它冲掉了。所以：改中转不要绕过 `release relay-service` 直接 deploy；`release relay-service` 发之前看主工作区 `packages/relay`、`packages/relay-ui` 有没有没提交的改动，有就停下（先提交进 master；确定不要它们才加 `--main-dirty-ok`）。

@@ -127,6 +127,49 @@ describe("Platform", () => {
     server.setChannel("stable", "reviewer", "0.9.0");
   });
 
+  it("更新记录: the channel's history with the versions here marked; before history only the notes known; offline what is installed (2026-11-06)", async () => {
+    const { platform } = make();
+    await platform.init();
+    await platform.login(server.url, "小王", "secret");
+    // Published before 2026-11-06: no history, only the notes of the versions this machine knows.
+    server.publish("notes", "0.9.0", { "AMO Notes.exe": "n0" }, { name: "AMO Notes", exe: "AMO Notes.exe", notes: "- 零" });
+    await platform.refresh();
+    await platform.install("notes");
+    server.publish("notes", "0.9.1", { "AMO Notes.exe": "n1" }, { name: "AMO Notes", exe: "AMO Notes.exe", notes: "- 一" });
+    await platform.refresh();
+    let log = await platform.changelog("notes");
+    expect(log).toMatchObject({ tool: "notes", name: "AMO 便签", installed: "0.9.0", available: "0.9.1", running: null, channel: "stable", source: "partial", offline: false });
+    expect(log.entries).toEqual([
+      { version: "0.9.1", date: null, notes: "- 一", installed: false, available: true, coming: true },
+      { version: "0.9.0", date: null, notes: "- 零", installed: true, available: false, coming: false },
+    ]);
+    // Published with history: every version up to the channel's, the ones between here and there to come.
+    const history = (n: number) => [3, 2, 1, 0].filter((i) => i <= n).map((i) => ({ version: `0.9.${i}`, date: `2026-11-0${i + 1}`, notes: `- 第 ${i} 版` }));
+    server.publish("notes", "0.9.3", { "AMO Notes.exe": "n3" }, { name: "AMO Notes", exe: "AMO Notes.exe", notes: "- 第 3 版", history: history(3) });
+    await platform.refresh();
+    log = await platform.changelog("notes");
+    expect(log.source).toBe("full");
+    expect(log.entries.map((e) => [e.version, e.date, e.installed, e.available, e.coming])).toEqual([
+      ["0.9.3", "2026-11-04", false, true, true],
+      ["0.9.2", "2026-11-03", false, false, true],
+      ["0.9.1", "2026-11-02", false, false, true],
+      ["0.9.0", "2026-11-01", true, false, false],
+    ]);
+    // Offline: what the installed versions' manifests carry (kept here), the channel's not asked.
+    await platform.install("notes");
+    server.revokeKeys();
+    (platform as unknown as { connection: { state: string } }).connection.state = "offline";
+    log = await platform.changelog("notes");
+    expect(log).toMatchObject({ installed: "0.9.3", offline: true, source: "full" });
+    expect(log.entries.map((e) => e.version)).toEqual(["0.9.3", "0.9.2", "0.9.1", "0.9.0"]);
+    expect(log.entries.some((e) => e.coming)).toBe(false);
+    // The platform's own: the version running when nothing is installed under apps\platform.
+    expect(await platform.changelog("platform")).toMatchObject({ tool: "platform", name: "AMO 平台", installed: "0.9.0", running: null });
+    await expect(platform.changelog("../studio")).rejects.toThrow(/没有这个工具/);
+    server.setChannel("stable", "notes", null);
+    server.setChannel("test", "notes", null);
+  });
+
   it("registers: the server check, errors back to the form (not loginError), then logged in with the tools listed", async () => {
     const { platform, env } = make();
     await platform.init();

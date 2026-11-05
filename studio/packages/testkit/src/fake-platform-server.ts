@@ -21,13 +21,15 @@ export interface FakePlatformManifest {
   builtAt: number;
   exe: string;
   notes: string;
+  /** 更新记录 (2026-11-06): the versions released up to this one, newest first; absent as in manifests from before. */
+  history?: Array<{ version: string; date: string | null; notes: string }>;
   files: Array<{ path: string; size: number; sha256: string }>;
 }
 
 export interface FakePlatformServer {
   url: string;
   /** Adds a version of a tool (files: path → content) and, unless `channel: null`, points that channel at it. */
-  publish(tool: string, version: string, files: Record<string, string | Buffer>, options?: { name?: string; exe?: string; notes?: string; channel?: "stable" | "test" | null }): FakePlatformManifest;
+  publish(tool: string, version: string, files: Record<string, string | Buffer>, options?: { name?: string; exe?: string; notes?: string; history?: FakePlatformManifest["history"]; channel?: "stable" | "test" | null }): FakePlatformManifest;
   /** Points a channel at a published version (promote), or drops the tool from it (null). */
   setChannel(channel: "stable" | "test", tool: string, version: string | null): void;
   /** The next downloads of this object send other bytes (a wrong sha256). */
@@ -380,7 +382,7 @@ export async function startFakePlatformServer(options: { users?: Record<string, 
         objects.set(sha, data);
         return { path, size: data.length, sha256: sha };
       });
-      const manifest: FakePlatformManifest = { tool: toolId, name: o.name ?? toolId, version, builtAt: Date.now(), exe: o.exe ?? list[0]?.path ?? "", notes: o.notes ?? "", files: list };
+      const manifest: FakePlatformManifest = { tool: toolId, name: o.name ?? toolId, version, builtAt: Date.now(), exe: o.exe ?? list[0]?.path ?? "", notes: o.notes ?? "", ...(o.history ? { history: o.history } : {}), files: list };
       manifests.set(`${toolId}@${version}`, manifest);
       if (o.channel !== null) point(o.channel ?? "stable", toolId, version);
       return manifest;

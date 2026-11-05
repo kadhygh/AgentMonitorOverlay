@@ -6,8 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
-import { sectionOf } from "./amo-tools.mjs";
-import { LocalTarget, ShellTarget, compareVersions, platformCompress, promote, prune, pruneText, publish, status } from "./platform-publish.mjs";
+import { releasedSections, sectionOf } from "./amo-tools.mjs";
+import { LocalTarget, ShellTarget, compareVersions, historyFor, platformCompress, promote, prune, pruneText, publish, status } from "./platform-publish.mjs";
 
 const dirs = [];
 afterEach(() => {
@@ -319,6 +319,35 @@ describe("platform publish", () => {
     expect(sectionOf(md, "0.9.0")).toBe("- 零");
     expect(sectionOf(md, "0.9")).toBeNull();
     expect(sectionOf(md, "0.9.2")).toBeNull();
+  });
+
+  it("puts the released CHANGELOG sections up to the version into the manifest as its history (更新记录, 2026-11-06)", async () => {
+    const md = "# 改动\n\n## 下一版\n\n- 还没发\n\n## 0.9.10（2026-11-01）\n\n- 十\n\n## 0.9.2 (2026-10-30)\n\n- 二\n\n## 0.9.1（2026-10-29）\n\n- 一\n- 一点五\n\n## 空的（2026-10-28）\n\n- 不是版本\n\n## 0.9.0\n\n- 零\n\n## 0.8.9（2026-10-01）\n\n";
+    const sections = releasedSections(md);
+    expect(sections).toEqual([
+      { version: "0.9.10", date: "2026-11-01", notes: "- 十" },
+      { version: "0.9.2", date: "2026-10-30", notes: "- 二" },
+      { version: "0.9.1", date: "2026-10-29", notes: "- 一\n- 一点五" },
+      { version: "0.9.0", date: null, notes: "- 零" },
+    ]);
+    // Only up to the version published (a test-channel 0.9.10 is not in a stable 0.9.2's), newest first, each once.
+    expect(historyFor([...sections, { version: "0.9.1", date: "x", notes: "重复" }, { version: "0.9", notes: "坏的" }], "0.9.2", "- 二").map((e) => e.version)).toEqual(["0.9.2", "0.9.1", "0.9.0"]);
+    // The notes published win for the version itself (--notes), with its section's date; a version not in it yet is first.
+    expect(historyFor(sections, "0.9.2", "- 另写的")[0]).toEqual({ version: "0.9.2", date: "2026-10-30", notes: "- 另写的" });
+    expect(historyFor(sections, "0.9.11", "- 十一")[0]).toEqual({ version: "0.9.11", date: null, notes: "- 十一" });
+
+    const target = new LocalTarget(temp("platform"));
+    const dir = programFolder(temp("release"), "0.9.2", {});
+    const r = await publish(target, { id: "notes", dir, version: "0.9.2", notes: "- 二", history: sections });
+    expect(r.manifest.history).toEqual([
+      { version: "0.9.2", date: "2026-10-30", notes: "- 二" },
+      { version: "0.9.1", date: "2026-10-29", notes: "- 一\n- 一点五" },
+      { version: "0.9.0", date: null, notes: "- 零" },
+    ]);
+    expect((await target.readManifest("notes", "0.9.2")).history).toEqual(r.manifest.history);
+    // Without it (as before): no history key at all.
+    const old = await publish(target, { id: "notes", dir: programFolder(temp("release"), "0.9.3", {}), version: "0.9.3", notes: "- 三" });
+    expect("history" in old.manifest).toBe(false);
   });
 
   it("orders versions like semver", () => {

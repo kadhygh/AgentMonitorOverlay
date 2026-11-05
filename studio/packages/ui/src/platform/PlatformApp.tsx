@@ -3,6 +3,7 @@ import { AccountPage, Face } from "./AccountPage.js";
 import { formatBytes } from "../lib/bytes.js";
 import { bridge, call, openTool, serverLabel, type Channel, type OpenResult, type PlatformView, type RegisterResult, type ServerCheck, type TaskView, type ToolView } from "./bridge.js";
 import { EnvironmentPage } from "./EnvironmentPage.js";
+import { ChangelogPage } from "./ChangelogPage.js";
 import { useMenuDismiss } from "../lib/ContextMenu.js";
 
 // AMO 平台's window (platform.html, 2026-10-28; prototype https://claude.ai/artifact/Uu4fL3bXZg1NZHXDSKBPc9): the login
@@ -25,6 +26,8 @@ export function PlatformApp() {
   const [page, setPage] = useState<Page>("tools");
   /** Why the 目录 page was opened for them (Studio without its data dir). */
   const [dirNotice, setDirNotice] = useState<string | null>(null);
+  /** 更新记录 open (2026-11-06): which tool's, and the page 返回 goes back to. */
+  const [log, setLog] = useState<{ tool: string; back: Page } | null>(null);
 
   useEffect(() => {
     const b = bridge();
@@ -46,40 +49,55 @@ export function PlatformApp() {
   // Logged out (退出登录 is on 账号): the next login or registration starts on 工具.
   const loggedIn = !!view?.account;
   useEffect(() => {
-    if (!loggedIn) setPage("tools");
+    if (!loggedIn) {
+      setPage("tools");
+      setLog(null);
+    }
   }, [loggedIn]);
 
   if (!bridge()) return <div className="pf-empty">这个页面要在 AMO 平台里打开。</div>;
   if (!view) return <div className="pf-empty">正在读取…</div>;
 
   const needStudioDir = (message: string) => {
+    setLog(null);
     setPage("dirs");
     setDirNotice(message);
   };
+  const go = (p: Page) => {
+    setLog(null);
+    setPage(p);
+  };
+  const openLog = (tool: string) => setLog({ tool, back: page });
 
   return (
     <div className="pf-root">
-      <TitleBar view={view} onSelf={() => setPage("settings")} />
+      <TitleBar view={view} onSelf={() => go("settings")} />
       {view.account ? (
         <div className="pf-main">
           <nav className="pf-nav" aria-label="页面">
             {PAGES.map(([id, label]) => (
-              <button key={id} type="button" className="pf-nav-item" aria-current={page === id ? "page" : undefined} onClick={() => setPage(id)}>
+              <button key={id} type="button" className="pf-nav-item" aria-current={page === id ? "page" : undefined} onClick={() => go(id)}>
                 {label}
               </button>
             ))}
             <span className="pf-spacer" />
-            <NavAccount view={view} current={page === "account"} onOpen={() => setPage("account")} />
+            <NavAccount view={view} current={page === "account"} onOpen={() => go("account")} />
             <div className="pf-nav-foot">
               平台 {view.version} · {view.channel === "test" ? "测试通道" : "稳定通道"}
             </div>
           </nav>
           <main className="pf-content">
-            {page === "tools" && <ToolsPage view={view} onNeedStudioDir={needStudioDir} />}
-            {page === "environment" && <EnvironmentPage task={view.envTask} />}
-            {page === "dirs" && <DirsPage view={view} notice={dirNotice} onNoticeDone={() => setDirNotice(null)} />}
-            {page === "settings" && <SettingsPage view={view} />}
-            {page === "account" && <AccountPage view={view} />}
+            {log ? (
+              <ChangelogPage key={log.tool} tool={log.tool} view={view} backLabel={PAGES.find(([id]) => id === log.back)?.[1] ?? ""} onBack={() => setLog(null)} />
+            ) : (
+              <>
+                {page === "tools" && <ToolsPage view={view} onNeedStudioDir={needStudioDir} onChangelog={openLog} />}
+                {page === "environment" && <EnvironmentPage task={view.envTask} />}
+                {page === "dirs" && <DirsPage view={view} notice={dirNotice} onNoticeDone={() => setDirNotice(null)} />}
+                {page === "settings" && <SettingsPage view={view} onChangelog={openLog} />}
+                {page === "account" && <AccountPage view={view} />}
+              </>
+            )}
           </main>
         </div>
       ) : (
@@ -353,7 +371,7 @@ function ServerCheckLine({ check }: { check: ServerCheck | null }) {
 
 // ---- 工具
 
-function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudioDir: (message: string) => void }) {
+function ToolsPage({ view, onNeedStudioDir, onChangelog }: { view: PlatformView; onNeedStudioDir: (message: string) => void; onChangelog: (tool: string) => void }) {
   const offline = view.connection.state === "offline";
   return (
     <div className="pf-page">
@@ -372,7 +390,7 @@ function ToolsPage({ view, onNeedStudioDir }: { view: PlatformView; onNeedStudio
       )}
       {view.tools.length === 0 && <p className="pf-hint">{view.connection.state === "checking" ? "正在读取服务器上的工具…" : "服务器上还没有发布工具。"}</p>}
       {view.tools.map((t) => (
-        <ToolRow key={t.id} tool={t} connection={view.connection.state} writable={view.root.writable} onNeedStudioDir={onNeedStudioDir} />
+        <ToolRow key={t.id} tool={t} connection={view.connection.state} writable={view.root.writable} onNeedStudioDir={onNeedStudioDir} onChangelog={() => onChangelog(t.id)} />
       ))}
     </div>
   );
@@ -487,7 +505,7 @@ function taskLine(task: TaskView): string {
   }
 }
 
-function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: ToolView; connection: PlatformView["connection"]["state"]; writable: boolean; onNeedStudioDir: (message: string) => void }) {
+function ToolRow({ tool: t, connection, writable, onNeedStudioDir, onChangelog }: { tool: ToolView; connection: PlatformView["connection"]["state"]; writable: boolean; onNeedStudioDir: (message: string) => void; onChangelog: () => void }) {
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const busy = t.task !== null;
@@ -557,8 +575,14 @@ function ToolRow({ tool: t, connection, writable, onNeedStudioDir }: { tool: Too
         <div className="pf-tool-text">
           <div className="pf-tool-name">{t.name}</div>
           {t.desc && <div className="pf-hint">{t.desc}</div>}
-          <div className={`pf-status ${status.tone}`} data-testid={`tool-${t.id}-status`}>
-            {status.text}
+          <div className="pf-status-row">
+            <div className={`pf-status ${status.tone}`} data-testid={`tool-${t.id}-status`}>
+              {status.text}
+            </div>
+            {/* 更新记录 (2026-11-06): always there, unlike the notes below, which go once it is updated. */}
+            <button type="button" className="pf-link pf-log-link" onClick={onChangelog} data-testid={`tool-${t.id}-changelog`}>
+              更新记录
+            </button>
           </div>
           {studio && (
             <div className="pf-hint" data-testid="tool-studio-host">
@@ -809,7 +833,7 @@ function selfStatus(view: PlatformView): { tone: "ok" | "warn" | "idle"; text: s
  * one with its notes and 更新平台; once installed 重启平台 — only when clicked (AGENTS.md, constraint 6); the tools it
  * started keep running. The development build only says it does not update itself.
  */
-function SelfSection({ view }: { view: PlatformView }) {
+function SelfSection({ view, onChangelog }: { view: PlatformView; onChangelog: (tool: string) => void }) {
   const s = view.self;
   const status = selfStatus(view);
   const online = view.connection.state === "online";
@@ -824,6 +848,9 @@ function SelfSection({ view }: { view: PlatformView }) {
             {status.text}
           </span>
         )}
+        <button type="button" className="pf-link pf-log-link" onClick={() => onChangelog("platform")} data-testid="pf-self-changelog">
+          更新记录
+        </button>
         <span className="pf-spacer" />
         {s.standing === "update" && (
           <button type="button" className="btn-primary" disabled={busy || !online || !view.root.writable} title={!view.root.writable ? "这个文件夹不能写入，见「工具」页上的提示" : online ? undefined : view.connection.state === "checking" ? "正在连接服务器…" : "现在连不上服务器"} onClick={() => void call("updateSelf")}>
@@ -900,13 +927,13 @@ const THEMES: Array<[PlatformView["theme"], string]> = [
   ["system", "跟随系统"],
 ];
 
-function SettingsPage({ view }: { view: PlatformView }) {
+function SettingsPage({ view, onChangelog }: { view: PlatformView; onChangelog: (tool: string) => void }) {
   // The team server and 退出登录 are on 账号 (2026-10-28).
   return (
     <div className="pf-page">
       <h1 className="pf-h1">设置</h1>
 
-      <SelfSection view={view} />
+      <SelfSection view={view} onChangelog={onChangelog} />
 
       <section className="pf-section" aria-label="更新通道">
         <h2 className="pf-h2">更新通道</h2>

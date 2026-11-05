@@ -24,7 +24,20 @@ export interface Manifest {
   /** The Electron version it was built with (2026-10-29; absent in manifests published before). */
   runtime?: string;
   notes: string;
+  /**
+   * 更新记录 (2026-11-06): every version released up to this one, newest first, from the tool's CHANGELOG.md
+   * (scripts/platform-publish.mjs historyFor). Absent in manifests published before.
+   */
+  history?: HistoryEntry[];
   files: ManifestFile[];
+}
+
+/** One released version in a manifest's history. */
+export interface HistoryEntry {
+  version: string;
+  /** YYYY-MM-DD from the CHANGELOG heading, or null when it had none. */
+  date: string | null;
+  notes: string;
 }
 
 /**
@@ -60,6 +73,33 @@ export function safeParts(path: string): string[] | null {
   return parts;
 }
 
+/** A history kept only as long as it is sensible (each tool has some 50 versions in 2026-11). */
+const HISTORY_MAX = 2000;
+const NOTES_MAX = 100_000;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A manifest's history, its bad entries left out (it only shows text; one wrong entry does not hide the rest); null
+ * when there is none, or nothing usable in it — then the version's notes stand in (a manifest from before 2026-11-06).
+ */
+export function checkHistory(value: unknown): HistoryEntry[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: HistoryEntry[] = [];
+  const seen = new Set<string>();
+  for (const e of value.slice(0, HISTORY_MAX)) {
+    const x = (e ?? {}) as Record<string, unknown>;
+    if (typeof x.version !== "string" || !isVersion(x.version) || seen.has(x.version) || typeof x.notes !== "string") continue;
+    seen.add(x.version);
+    out.push({ version: x.version, date: typeof x.date === "string" && DATE.test(x.date) ? x.date : null, notes: x.notes.slice(0, NOTES_MAX) });
+  }
+  return out.length ? out : null;
+}
+
+const historyOf = (m: Record<string, unknown>) => {
+  const history = checkHistory(m.history);
+  return history ? { history } : {};
+};
+
 export function checkManifest(value: unknown, tool: string, version: string): Manifest {
   const bad = (why: string) => new PlatformError("bad_data", `服务器上 ${tool} ${version} 的清单不对：${why}`);
   if (!value || typeof value !== "object") throw bad("不是 JSON 对象");
@@ -87,6 +127,7 @@ export function checkManifest(value: unknown, tool: string, version: string): Ma
     exe: m.exe,
     ...(typeof m.runtime === "string" && m.runtime ? { runtime: m.runtime } : {}),
     notes: typeof m.notes === "string" ? m.notes : "",
+    ...historyOf(m),
     files,
   };
 }
@@ -103,6 +144,7 @@ export function checkSummary(value: unknown, tool: string, version: string): Man
     exe: typeof m.exe === "string" ? m.exe : "",
     ...(typeof m.runtime === "string" && m.runtime ? { runtime: m.runtime } : {}),
     notes: typeof m.notes === "string" ? m.notes : "",
+    ...historyOf(m),
   };
 }
 
