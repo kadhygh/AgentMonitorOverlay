@@ -340,7 +340,7 @@ export interface MessageImage {
 /**
  * Where a message stands before the model read it (see the `user` item). `waiting`: sent mid-turn, at the runtime, not
  * read yet (立即发送, 2026-11-02). `unsent`: its process went (or it could not go in) before the model read it; 重新发送
- * sends it again. `held` (2026-11-04, plans/message-delivery.md): from an agent or from Studio (中转回复, 值守, 传话,
+ * sends it again. `held` (2026-11-04, plans/done/message-delivery.md): from an agent or from Studio (中转回复, 值守, 传话,
  * session_send…), in the session's inbox until the session is free — then it goes in by itself.
  */
 export type UserDelivery = "waiting" | "unsent" | "held";
@@ -550,7 +550,7 @@ export interface Relay {
 export const RELAY_TEXT_MAX = 20_000;
 
 /**
- * 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): what a session asked to send through AMO 中转 — a new session
+ * 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): what a session asked to send through AMO 中转 — a new session
  * for someone to confirm (ask) or a follow-up in one (followup). Every one waits for the person first, in auto mode too
  * (it goes to a real person); sent as the person, marked as their AI's (AI 代发).
  */
@@ -760,7 +760,7 @@ export interface ScheduleProposal {
 }
 
 /** One step of a task's checklist. They came from extension packs' task templates (stage 6); the packs went on 10-31, so
- * nothing makes new ones — old tasks keep theirs, readable and tickable (the 11-03 audit: kept as is, plans/cleanup-2026-11.md). */
+ * nothing makes new ones — old tasks keep theirs, readable and tickable (the 11-03 audit: kept as is, plans/done/cleanup-2026-11.md). */
 export interface ChecklistItem {
   id: Id;
   taskId: Id;

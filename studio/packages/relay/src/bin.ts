@@ -13,7 +13,7 @@ import { takeInbox } from "./inbox.js";
 import { newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
 import { typeOf } from "./types.js";
 
-// amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/relay.md).
+// amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/done/relay.md).
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name 策划组] [--passphrase <邀请口令>]
 //         (passphrase also from AMO_RELAY_PASSPHRASE; public = client/ + downloads/, default: next to this file;
 //         platform dir = the AMO platform's files, platform.ts, also from AMO_RELAY_PLATFORM_DIR, default: none;

@@ -72,7 +72,7 @@ const TRAY_MENU = { width: 184, height: 124 };
 /** 显示待办's row, there while 使用待办 is on (2026-11-01). */
 const TRAY_MENU_TODO_ROW = 26;
 let quitting = false;
-/** 待办 (2026-11-01, plans/todo.md): a window of its own beside the 便签 one, and the sync of its copy. */
+/** 待办 (2026-11-01, plans/done/todo.md): a window of its own beside the 便签 one, and the sync of its copy. */
 let todoWin: BrowserWindow | null = null;
 let todoReady = false;
 let todo: TodoSync;

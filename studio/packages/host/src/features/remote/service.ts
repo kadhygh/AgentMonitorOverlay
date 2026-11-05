@@ -15,7 +15,7 @@ import { RemoteCreates } from "./create.js";
 import { sendAlong, UploadInbox } from "./uploads.js";
 import { RemoteUsageCopies, RemoteUsageSender } from "./usage.js";
 
-// 远程, step 1 (plans/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
+// 远程, step 1 (plans/done/remote-session.md, 2026-10-29): this computer as a device on the team server — the AMO platform's
 // login and device.json, read by the Host's team link (core/teamlink.ts since 2026-11-05) — and the devices paired with
 // it. The Host connects out when there is a login (link.ts), takes pairing requests, and answers a 「测试连接」 ping from
 // a paired device.
@@ -695,7 +695,7 @@ export class RemoteFeature extends Feature<RemoteUses> {
     return this.state();
   }
 
-  // ---- 远程创建 as B (plans/remote-page-and-new-task.md 4.1, 2026-10-29): the new-task page's 「在别的设备上」
+  // ---- 远程创建 as B (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): the new-task page's 「在别的设备上」
 
   /** A device that allowed this computer, online now: who it is (for what is said). */
   private creatable(peer: DeviceRef): { name: string } {
@@ -802,7 +802,7 @@ export class RemoteFeature extends Feature<RemoteUses> {
   }
 
   /**
-   * 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): what a remote task's Reviewer window asks its Host for, under
+   * 远程 Reviewer (plans/done/remote-reviewer.md, 2026-11-02): what a remote task's Reviewer window asks its Host for, under
    * /api/remote/view/<task>/<the route it would ask>. Reads go to the computer the task runs on (rt.view; kept here);
    * a picture by rt.file as any remote file; tools of this computer (VS Code, Explorer) are not offered.
    */

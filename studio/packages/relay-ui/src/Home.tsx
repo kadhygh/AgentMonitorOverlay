@@ -19,7 +19,7 @@ import { writeUsageFile } from "./usageFile.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 import { saveResume, useUpdates } from "./update.js";
 
-// After login, in AMO Studio's layout (stages 2a–2b, plans/relay-tasks.md): the top bar with four views — 待处理 (tasks
+// After login, in AMO Studio's layout (stages 2a–2b, plans/done/relay-tasks.md): the top bar with four views — 待处理 (tasks
 // handed to me and the sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones),
 // 任务 (the team's board, a task's page), 聊天 (the plain chat with each person and the topics next to it; archived
 // ones folded) and 成员 — the view's list on the left, the open one on the right. The top bar holds only those and

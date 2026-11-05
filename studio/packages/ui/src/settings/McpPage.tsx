@@ -3,7 +3,7 @@ import { MCP_SECRET_MASK, mcpSummary, type McpChoices, type McpState, type Studi
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ChoiceChips, EntryLine, parsePasted, useMcpChanges } from "../mcp/shared.js";
 
-// 设置 → MCP (2026-11-04, plans/mcp.md): the MCP servers sessions get besides Studio's own amo. Studio's list (pasted
+// 设置 → MCP (2026-11-04, plans/done/mcp.md): the MCP servers sessions get besides Studio's own amo. Studio's list (pasted
 // JSON, secrets kept in the Windows credential store), the person's own Claude Code servers, and whether each is on by
 // default; projects and sessions can still turn one on or off (编辑项目, the composer's MCP button).
 

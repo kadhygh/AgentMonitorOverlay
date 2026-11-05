@@ -4,7 +4,7 @@ import { DownloadError, fileIntegrity, resumeDownload, SHA512_INTEGRITY, unpackZ
 import { VERSION } from "./platform.js";
 import { RelayError } from "./store.js";
 
-// 工具镜像 on the team server (plans/claude-code-mirror.md; the user, 2026-11-02/03). Installing Claude Code or Codex from
+// 工具镜像 on the team server (plans/done/claude-code-mirror.md; the user, 2026-11-02/03). Installing Claude Code or Codex from
 // their makers means one big download that starts over when the line drops; the service checks each one's latest every
 // hour, downloads the new version in the background, going on after a break (Range) and trying again, checks it against
 // what the maker publishes, and only then hands it out on the LAN, where AMO 平台 installs from it. The newest 3 ready

@@ -21,7 +21,7 @@ import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
 import { checkTodoDevice, TodoStore } from "./todo.js";
 import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js";
 
-// The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
+// The relay service (plans/done/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
 // every other call carries (Authorization: Bearer, or ?key= for the WebSocket). Any origin may call it — the key, not a
 // cookie, is the credential — so the desktop client's pages, loaded from disk, reach it. It also hands out the client
@@ -182,7 +182,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   pruneImages();
   const pruneTimer = setInterval(pruneImages, 6 * 3600_000);
   pruneTimer.unref?.();
-  // 待办 (2026-11-01, plans/todo.md): every account's todo lists, in the same database.
+  // 待办 (2026-11-01, plans/done/todo.md): every account's todo lists, in the same database.
   const todo = new TodoStore(store.db);
   const sockets = new Map<string, Set<WebSocket>>();
   const lastSeen = new Map<string, number>();

@@ -27,7 +27,7 @@ export interface MentionGroup {
 /**
  * 开子会话 (2026-10-26): how the model is to start sub-sessions when it does — AMO's session_start with these. The
  * person usually says when ("接下来你开子会话就用 @子会话1").
- * 2026-11-05 (plans/subsession-mention-2026-11-05.md): sent to the Host with the message (SubsessionSetup), so
+ * 2026-11-05 (plans/done/subsession-mention-2026-11-05.md): sent to the Host with the message (SubsessionSetup), so
  * session_start takes it by name (`setup`); the model's own options (effort, Fast), the person's words for this round
  * (`extra`). Whether its results come back is the model's to decide (session_start's report), no longer set here.
  */

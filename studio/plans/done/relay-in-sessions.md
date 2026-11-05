@@ -1,5 +1,7 @@
 # relay-in-sessions：会话里直接用 AMO 中转
 
+> 状态：做完（第 1–4 步 2026-10-30 做完，中转服务当天部署，Studio 0.9.12 发到测试通道；工具名定为 `team_*`，Studio 内部的传话改名 `task_message`）。没做的是文末「以后」那几条（终端里的会话、普通聊天、超时提醒、名单）。11-05 加了「已接手」和 Studio ⇄ 中转互跳，见 `plans/done/relay-round-2026-11-05.md`。进度流水 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。
+
 ## 起因
 
 用户 10-29：想让会话（Studio 里的和终端里的）能直接通过 AMO 中转发聊天消息、发审批请求（策划的 AI 卡住或方案要程序把关时发会话找人确认），对方回复后最好自动回到对话里接着做。Claude、Codex、DSH 都要支持。
@@ -12,19 +14,19 @@
 4. **第一版只做「AI 找人确认」**（会话：正文、问题和选项、附文件、等回复、追问、标记完成），不做普通聊天。
 5. **一次取所有新回复**（`relay inbox`）**只取这个对话发出的**：发的时候带一个对话标记，取的时候按标记筛。Studio 里由 Host 按「哪个会话发的」自动送回。
 - 终端里的会话先不做（第 4 节原打算 4，留着）。
-- 10-30 已做：中转「复制新回复」（只复制你或你的 AI 上次发言之后的内容）。
+- 中转加「复制新回复」：只复制你或你的 AI 上次发言之后的内容（10-30）。
 - 10-30 晚加：设置 → 功能 → 中转「AI 找人确认时直接发出，不用先问我」（`teamAutoSend`，默认关；开着时第 2 条的「每次先问」不再适用，只管中转，不管 Studio 内部的传话）。
 
-## 现状（10-30 查的）
+## 动手前的现状（10-30 查的，做的时候的依据）
 
-- Studio 会话的 AMO MCP 里 `relay_send` 是 **Studio 内部的「传话」**（主控给同专题别的任务的会话传话，`host/features/relays`），和 AMO 中转无关，名字撞了。传话的确认流程正好能借鉴：AI 调工具 → 记一条待确认 → 人在主窗口或 Focus 里同意 → 送进目标会话（`sessions.sendMessage`，正在跑就排到这一轮后面）→ 结果作为留言回来。
+- Studio 会话的 AMO MCP 里原来的 `relay_send` 是 **Studio 内部的「传话」**（主控给同专题别的任务的会话传话，`host/features/relays`），和 AMO 中转无关，名字撞了（所以改名 `task_message`）。传话的确认流程正好能借鉴：AI 调工具 → 记一条待确认 → 人在主窗口或 Focus 里同意 → 送进目标会话（`sessions.sendMessage`，正在跑就排到这一轮后面）→ 结果作为留言回来。
 - 中转服务的会话 API 都在 `relay/src/api.ts`（`ask`、`send`、`session`、`messages`、`wait`）；`messages(…, { ai: true })` 会把会话记成「AI 已取回」（`pickedAt`）。`Via` 在服务端被 `checkVia` 只留 `kind` 和 `client`，存在每条消息的 `via` JSON 里。
 - Host 已经用平台的账号连着团队服务器（远程会话，`host/features/remote`：`readAccount`、设备 id 在 `device.json`）。
 - 中转自己的命令行和 MCP（`relay/src/bin.ts`、`mcp.ts`）：`relay_queue` 列出回到我这边的会话，再逐个 `relay_session_get`。
 
 ## 做法
 
-进度（10-30）：第 1–4 步都做完了，验证见 `HANDOFF.md` 同日那条。实际做法和下面一致；工具名定为 `team_*`。10-30 已上线：中转服务部署了，Studio 0.9.12 在测试通道。
+实际做法和下面一致。
 
 ### 第 1 步：中转服务和命令行（`packages/relay`）
 
@@ -48,6 +50,7 @@
 - Host 用平台账号连中转（复用 remote 读到的账号）：`wait` 长轮询（不带 ai，不改「已取回」）醒来，再扫一遍会话列表；启动时和每 60 秒也扫一次。
 - 找出 `conv` 是本机前缀（`studio:<设备 id>:`）、回到我这边、由 AI 处理、还没取回的会话：取新内容（`messages(…, { ai: true })`，记成已取回），作为一条消息发进那个 Studio 会话（`sessions.sendMessage`：空闲就开新一轮，正在跑就排在后面；同一会话同时来几条，合成一条）。开头写「【中转回复】X 回复了你发的会话「…」」，末尾写怎么接着做（追问用 `team_followup`，敲定了用 `team_done`）。
 - 那个 Studio 会话没了或归档了：不取，中转里照常显示「回复已到」，人自己复制。
+- （11-05 起：要不要交给 AI 统一由 `dueForAi`（`relay/src/protocol.ts`）判断；收件人「已接手」默认不送进会话，勾了「把附言转给发起的 AI」才送，见 `plans/done/relay-round-2026-11-05.md`。）
 - 测试：Host 单测用假的中转（或 testkit 起一个真中转服务）：发 → 对方回复 → 会话收到一条消息、`pickedAt` 有值；会话正在跑时排队。
 
 ### 第 4 步：界面（`ui`）

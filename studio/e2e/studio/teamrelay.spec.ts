@@ -7,7 +7,7 @@ import type { Session, Task, TeamSend, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): a session asks someone on the team through AMO 中转; the person
+// 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): a session asks someone on the team through AMO 中转; the person
 // confirms it (Focus, the task page); it goes as them (AI 代发); the other person replies in 中转 and the reply comes back
 // into the session by itself. Against a relay service started here on a free port — never the team server — with an
 // AMO_HOME logged in as the AMO platform would.

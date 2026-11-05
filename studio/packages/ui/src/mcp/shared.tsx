@@ -3,7 +3,7 @@ import { MCP_SOURCE_LABELS, type McpEntry, type McpServerStatusSeen, type McpSer
 import { onHostEvent } from "../host/events.js";
 import "./mcp.css";
 
-// MCP 设置 (2026-11-04, plans/mcp.md): what 设置 → MCP, 编辑项目 and the composer's MCP tray share.
+// MCP 设置 (2026-11-04, plans/done/mcp.md): what 设置 → MCP, 编辑项目 and the composer's MCP tray share.
 
 /** Opens 设置 on its MCP page from anywhere in the main window (App listens). */
 export const OPEN_SETTINGS_EVENT = "amo:open-settings";

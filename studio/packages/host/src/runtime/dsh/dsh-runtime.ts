@@ -148,7 +148,7 @@ interface Live {
   inflight: boolean;
   /**
    * Messages sent while a turn runs (their rows `waiting`), sent together when it ends — also after 停止, as Claude's
-   * and Codex's are (2026-11-02, plans/send-now.md). An error, the process going or archiving makes them 没送到.
+   * and Codex's are (2026-11-02, plans/done/send-now.md). An error, the process going or archiving makes them 没送到.
    */
   queue: QueuedMessage[];
   /** 停止 went unanswered and Studio closed the process: the turn ends as stopped, not as an error. */

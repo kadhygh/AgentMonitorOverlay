@@ -1,8 +1,8 @@
 # AMO 中转 · 2026-11-05 这一轮调整
 
-> 状态：四件都做完了，在分支 `studio/relay-round-1105` 上（第 1 件 `33b308c6`，服务和 Studio、外壳 `227c5510`，界面和 e2e 是之后那个提交），**没合进 master、没部署、没发布**。按用户定的「全做完再一起发」：合进 master 后中转服务（`npm run release -- relay-service`）、中转外壳、Studio 一起发。用户原话见文末。
+> 状态：做完（四件都做了，2026-11-05 合进 master，按用户定的「全做完再一起发」一起发：Studio 0.9.44、中转外壳 0.9.9、中转服务 0.7.12）。J4（在 Studio 里新建任务处理收到的会话）和查看器的 B、C 做法留着以后再说。进度流水和验证记录 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。用户原话见文末。
 >
-> 做法上和方案的出入：「已接手」时 Studio 里那条显示一天后自己消失（`TAKEN_SHOWN_MS`）；刚登录时列表和实时连接之间来的会话会丢（e2e 撞到的老问题），顺手修了（`relay-ui/src/session.ts`：先连再拉列表，拉的过程中收到的会话保留）。中转找开着的 Studio：`AMO_STUDIO_DATA_DIR`、平台的 `studioDataDir`，再加 Studio 外壳写的 `%APPDATA%\AMO Studio\running.json`（数据目录的指针，退出时删）；一开始用过 `/api/health` 带数据目录，rebase 时撤掉了——health 不要 token，10-28 定的只给数量、不给内容。
+> 做法上和方案的出入：「已接手」时 Studio 里那条显示一天后自己消失（`TAKEN_SHOWN_MS`）；刚登录时列表和实时连接之间来的会话会丢（e2e 撞到的老问题），顺手修了（`relay-ui/src/session.ts`：先连再拉列表，拉的过程中收到的会话保留）。中转找开着的 Studio：`AMO_STUDIO_DATA_DIR`、平台的 `studioDataDir`，再加 Studio 外壳写的 `%APPDATA%\AMO Studio\running.json`（数据目录的指针，退出时删）；一开始用过 `/api/health` 带数据目录，后来撤掉了（`305d5a14`）——health 不要 token，10-28 定的只给数量、不给内容。下文第 2、3、4 节的「现状」是动手前查的，现在的代码已经不是那样。
 
 ## 用户的决定（2026-11-05）
 
@@ -35,13 +35,13 @@
 - 行号由 `packages/relay/src/usage.ts` 的 `noteLine` 算。批注只存了引文和前后各 24 个字，所以在原文里按显示的样子去找：先原样找，再去掉 Markdown 记号和 HTML 标签找，最后找引文里最长的一段。找不到时只写文件名。
 - 回复里带的批注，复制的人有原文时也带行号。`relay file`、`relay_file_get` 和查看器的「复制批注」也用这个写法。
 
-**验证**：`tsc -b`；relay-ui 类型检查；vitest（relay 和 host teamrelay，共 87 个）；e2e relay 7 个全过，新加了两处检查：程序回复前复制，带上自己的批注和 `designdoc.md:3`；策划复制，回复带的批注有行号，而且不重复。
-
 ---
 
 ## 2. 中转里的审核（查看器）
 
-### 现状
+用户选了 A（Q1、Q2）。
+
+### 动手前的现状
 - 中转用的是**自己的查看器**，没有嵌 Reviewer：`packages/relay-ui/src/Files.tsx` 的 `FileViewer`。
 - 它是一个模态弹窗（`Dialog.tsx:17`，`.overlay` 盖住整个窗口，点外面就关）。所以会挡住后面的会话内容，也拖不动。
 - 批注写在右边固定的「批注」栏里（`Files.tsx` 的 `.note.new` 文本框），不是 Reviewer 那种跟着选区、能拖动的小窗。
@@ -73,7 +73,9 @@
 
 ## 3. Studio 开着时的跳转
 
-### 现状（手段）
+用户选了 J1+J2+J3，J1 用 Host 的打开接口（Q3、Q4）。
+
+### 动手前的现状（手段）
 - **会话是谁发的**：Studio 发出的每条消息带 `Via {kind:"ai", client:"AMO Studio", conv:"studio:<设备号>:<Studio 会话 id>"}`（`host/src/features/teamrelay/service.ts:45`），服务端把最新的标记记在 `thread.request.conv`。设备号来自 `%APPDATA%\AMO\device.json`，本机各工具共用。所以中转客户端能认出「这条会话是本机哪个 Studio 会话发的」。没有 taskId，要问 Host 才知道（会话所属的任务）。
 - **Studio 开着没有**：Studio 在数据目录写 `shell.json {pid, exe}`、`host.json {url, port}` 和 `host-token`；数据目录从 `%APPDATA%\AMO\platform.json` 的 `studioDataDir` 来（平台装的）。平台就是这样判断的（`platform/src/running.ts`）。
 - **从外面让 Studio 跳过去**：现在**没有办法**。没有自定义协议；`second-instance`（`app/src/main.ts:341`）只处理 `--amo-quit`；Host 也没有「打开某个任务或会话」的接口。Studio 内部跳转走 IPC `amo:navigate`（Focus 的「在工作台打开」、便签待办都用它）。
@@ -95,7 +97,7 @@ J1 只对发起人的本机有效：收件人的机器上没有那个 Studio 会
 
 **J1（中转 → Studio），推荐：Host 加一个「打开」接口**
 - Host 加 `POST /api/ui/open {sessionId}`（要 token），发一个事件，Studio 主进程收到后走现有的 `amo:navigate`，再把窗口提到前面。
-- 中转外壳读 `device.json`（判断是不是本机发的），再读 Studio 的 `host.json`、`host-token`，调这个接口。界面内容不直接碰 token。
+- 中转外壳读 `device.json`（判断是不是本机发的），再读 Studio 的 `host.json`、`host-token`，调这个接口。界面内容不直接碰 token。数据目录怎么找见文首状态块（`relay-app/src/studio-link.ts`）。
 - 代价：Studio 改 Host 和主进程，要发 Studio；外壳加一个 `openInStudio(conv)`（可选方法，旧外壳没有就不显示按钮），要发中转外壳。
 - 和约束的关系：这是工具之间直接调用，便签和 Studio 之间已经有先例（Studio 调便签的本机接口，`app/src/notes-link.ts`）；不经过平台，也不改平台。
 - 另外两种做法：
@@ -110,7 +112,9 @@ J1 只对发起人的本机有效：收件人的机器上没有那个 Studio 会
 
 ## 4. 「已接手」和方案说明
 
-### 现状
+用户选了「结束会话、附言可以不写、说明页 + ?」（Q5–Q7），但**改了「告诉发起方」这一条**：默认不告诉发起的 AI，见文首「用户的决定」批注 1。下面「发起人是 AI」那段是原来的推荐，没照它做。
+
+### 动手前的现状
 - 会话三个状态：`open`（在收件人手里）、`returned`（回到发起人手里）、`done`（`store.ts:744` 的 `sessionAction`）。
 - AI 发来的会话都是 `needsReply`：收件人**不能**标记完成，只能回复（`store.ts:757`）。所以「不用回、我来做」的情况，现在只能随便回一句。
 - 已经有几个名字相近的按钮，要分清：
@@ -127,7 +131,7 @@ J1 只对发起人的本机有效：收件人的机器上没有那个 Studio 会
   - 旧客户端、旧命令行只认得 `done`，会显示「已完成」，不会出错。
   - 任何一方都能「重新打开」（现有的）。
 - **发起人是人**：列表和会话头上的标签写「X 已接手」，不写「已完成」，附言显示在消息里。
-- **发起人是 AI**：
+- **发起人是 AI**（原来的推荐，用户改成默认不送，勾了「把附言转给发起的 AI」才送；规则在 `relay/src/protocol.ts` 的 `dueForAi`）：
   - Studio 的 `scanOnce` 看到新的「已接手」，往发起的会话里送一条：「【中转】X 已接手『标题』，不会逐条回复。附言：……。不用再等，这件事由 X 去做；你这边按情况收尾，或者接着做别的。」只送一次（`TeamThread` 记下已送达）。
   - 命令行 `relay inbox` 和 MCP 的 `relay_inbox` 也把「已接手」当成一条新消息给出来。
 - **界面**：
@@ -160,7 +164,7 @@ J1 只对发起人的本机有效：收件人的机器上没有那个 Studio 会
 | Q5 | 「已接手」之后会话 | 结束（标「X 已接手」），能重新打开 / 不结束，等「处理完了」 | **结束** |
 | Q6 | 「已接手」时写附言 | 可以不写 / 一定要写一句 | **可以不写** |
 | Q7 | 方案说明 | 左下角「说明」页 + 状态旁「?」 / 只有说明页 / 只在按钮上加悬停提示 | **说明页 + 「?」** |
-| Q8 | 发布顺序 | 界面和服务一起（部署中转服务）先上，外壳和 Studio 跟着各自发版 / 全做完一起发 | **分开**：A、已接手、说明页先上；跳转等外壳和 Studio 发版 |
+| Q8 | 发布顺序 | 界面和服务一起（部署中转服务）先上，外壳和 Studio 跟着各自发版 / 全做完一起发 | **分开**：A、已接手、说明页先上；跳转等外壳和 Studio 发版（用户没按推荐，选了「全做完一起发」） |
 
 ## 用户原话
 

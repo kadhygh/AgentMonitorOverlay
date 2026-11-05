@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileIntegrity, SHA512_INTEGRITY } from "@amo-studio/locate/download";
 import { fetchPart, InstallError, machinePlatform, mirrorInfo, outputTail, runInstaller, serverReady, toolSources, VERSION, type InstallFrom, type InstallProgress, type InstallRunner, type MachinePlatform, type ServerAccount, type ToolSources } from "./tool-mirror.js";
 
-// 环境 → 安装 / 更新 Codex (plans/claude-code-mirror.md; the user, 2026-11-03). Codex is installed with npm as before, only
+// 环境 → 安装 / 更新 Codex (plans/done/claude-code-mirror.md; the user, 2026-11-03). Codex is installed with npm as before, only
 // its big part comes another way: npm's @openai/codex is a 13 KB package whose program is in a platform package
 // (@openai/codex@<version>-win32-x64, a 180 MB .tgz). That .tgz comes from the team server's mirror or from npm, whichever
 // the person clicks, going on after a break (Range); it is checked against npm's own dist.integrity (sha512; the server's

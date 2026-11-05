@@ -1,4 +1,4 @@
-// AMO 中转 (Relay, 2026-10-26, plans/relay.md): what the relay service, its clients (the tray program, the MCP) and
+// AMO 中转 (Relay, 2026-10-26, plans/done/relay.md): what the relay service, its clients (the tray program, the MCP) and
 // later the UI share. A small team on one LAN; people talk to each other directly, and an AI session can send a
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
@@ -42,7 +42,7 @@ export interface Answer {
 
 /**
  * Who wrote a message: the person, or an AI on their behalf (the client is the MCP client's name, e.g. claude-code).
- * `conv` (2026-10-30, plans/relay-in-sessions.md): which AI conversation of theirs — `relay inbox` takes back only what
+ * `conv` (2026-10-30, plans/done/relay-in-sessions.md): which AI conversation of theirs — `relay inbox` takes back only what
  * that conversation sent, and Studio sends each reply back into the session that asked.
  */
 export type Via = { kind: "person" } | { kind: "ai"; client?: string; conv?: string };
@@ -70,7 +70,7 @@ export interface Message {
   createdAt: number;
 }
 
-/** A session (stage 2a, plans/relay-tasks.md): open = with the person asked, returned = back with the one who asked. */
+/** A session (stage 2a, plans/done/relay-tasks.md): open = with the person asked, returned = back with the one who asked. */
 export type SessionState = "open" | "returned" | "done";
 
 /** What the people in a session can do to it besides writing. */
@@ -178,7 +178,7 @@ export interface NewMessage {
 }
 
 /** Pushed over /ws to the members it concerns. */
-// ---- team tasks (stage 2b, plans/relay-tasks.md): a task is always in someone's hands and moves on by 流转.
+// ---- team tasks (stage 2b, plans/done/relay-tasks.md): a task is always in someone's hands and moves on by 流转.
 
 export const TASK_STATUSES = ["待处理", "开发中", "已完成", "已搁置"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];

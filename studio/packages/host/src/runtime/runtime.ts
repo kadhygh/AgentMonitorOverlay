@@ -329,7 +329,7 @@ export const STOP_GRACE_MS = 15_000;
 
 /**
  * Shared persistence helpers (every change is stored, turned into a Host event and emitted), and what every runtime
- * does the same way (2026-11-04, plans/message-delivery.md: each had its own copy, a little different): whether a
+ * does the same way (2026-11-04, plans/done/message-delivery.md: each had its own copy, a little different): whether a
  * session takes messages, archiving, settling what a cut-off turn left open, and the 停止 fallback.
  */
 export abstract class RuntimeBase extends EventEmitter<RuntimeEvents> {

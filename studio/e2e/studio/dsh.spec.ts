@@ -30,7 +30,7 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(card).toContainText("New-Item notes.md", { timeout: 30_000 });
   await expect(card).toContainText("the person asked for it");
   await screenshot(studio.app, "stage-17", "S17-dsh-approval", page);
-  // 2026-11-04 (plans/message-delivery.md): a mail forwarded while the turn waits on the person goes into the session's
+  // 2026-11-04 (plans/done/message-delivery.md): a mail forwarded while the turn waits on the person goes into the session's
   // inbox — shown at once, 「等这一轮结束后送进去」 — and is sent as the next turn once this one is over.
   const mail = await studio.api<{ id: string }>("POST", "/api/mail", { to: { kind: "session", sessionId: session.id }, text: "记得跑一下测试" });
   await studio.api("POST", `/api/mail/${mail.id}/forward`, {});

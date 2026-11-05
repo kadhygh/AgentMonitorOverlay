@@ -13,7 +13,7 @@ const forPeer = (r: RemoteTaskRequest): RemoteTaskRequest => {
   return { ...rest, attached: { images: attached.images, files: attached.files.map((f) => ({ id: f.id, name: f.name, path: "" })) } };
 };
 
-// 远程, step 4 (plans/remote-session.md, 2026-10-29): B asks A to run a task. B writes a title and what to do; A's
+// 远程, step 4 (plans/done/remote-session.md, 2026-10-29): B asks A to run a task. B writes a title and what to do; A's
 // person sees it on Focus and on the remote page (顶栏「远程」), picks the project, the topic (or none) and a model from 远端允许的模型,
 // and allows it: A makes the task (its 说明 the request), grants it to B, and starts its session with the request as
 // the first message — B's board shows the task and it running. Or A refuses it, saying why. A request goes only while A

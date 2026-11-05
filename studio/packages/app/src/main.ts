@@ -236,7 +236,7 @@ async function quitCompletely(): Promise<void> {
 let sleepBlocker: number | null = null;
 
 /**
- * 被远程使用时不睡眠 (plans/remote-session.md, 2026-10-29): while a task is granted to a device that is online, the
+ * 被远程使用时不睡眠 (plans/done/remote-session.md, 2026-10-29): while a task is granted to a device that is online, the
  * system does not sleep (prevent-app-suspension: the screen still turns off); released when none is. Read from the Host
  * every 20 s (AMO_STUDIO_REMOTE_WATCH_MS in tests). Tests record it in __amoSleepBlocked instead of asking Windows.
  */

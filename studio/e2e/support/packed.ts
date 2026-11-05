@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 
-// AMO_E2E_APP=<folder of packed programs> (2026-11-03, plans/package-slim.md): the specs launch the packed exe
+// AMO_E2E_APP=<folder of packed programs> (2026-11-03, plans/done/package-slim.md): the specs launch the packed exe
 // (<folder>\AMO Studio\AMO Studio.exe …) instead of Electron with a package's dist/main.js, so a packed build can be
 // checked with the same specs (npm run package:platform -- release/x, then AMO_E2E_APP=release/x npx playwright test …).
 // Unset: the dev layout, as before.

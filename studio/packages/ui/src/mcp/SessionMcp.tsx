@@ -3,7 +3,7 @@ import type { McpApply, McpSessionState, Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { EntryLine, openMcpSettings, useMcpChanges } from "./shared.js";
 
-// The composer's 「MCP」 (2026-11-04, plans/mcp.md): which MCP servers this session has, ticked on or off for it alone;
+// The composer's 「MCP」 (2026-11-04, plans/done/mcp.md): which MCP servers this session has, ticked on or off for it alone;
 // the rest follow its project and 设置 → MCP. A new session of the same task starts with the same choices.
 
 /** The session's MCP, kept up to date; `refresh` reads the running process's statuses again (Claude). */

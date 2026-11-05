@@ -1,4 +1,4 @@
-// AMO 中转's release folder (2026-10-26, plans/relay.md) — what the service serves and runs from:
+// AMO 中转's release folder (2026-10-26, plans/done/relay.md) — what the service serves and runs from:
 //   <out>/amo-relay.mjs          the service, CLI and MCP in one file (plain Node 22.13+, also on a Mac)
 //   <out>/client/                the client's content + manifest.json: the desktop client's hot update, /app/ in a browser
 //   <out>/downloads/AMO-Relay-win.zip   the desktop client (with --shell)

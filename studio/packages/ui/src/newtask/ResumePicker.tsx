@@ -5,7 +5,7 @@ import { Modal } from "../lib/Modal.js";
 import { relativeTime } from "../lib/status.js";
 import { formatBytes } from "../lib/bytes.js";
 
-// 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): the Claude sessions of a terminal or the Claude desktop app that
+// 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md): the Claude sessions of a terminal or the Claude desktop app that
 // Studio does not have, grouped by the project their folder is in (the new-task page's project first, those in no
 // project last). Search on top, the list on the left, the end of the picked one's conversation on the right to know it
 // by. 接续这个 (or Enter, or a double click) hands it back to the page, which fills in the task.

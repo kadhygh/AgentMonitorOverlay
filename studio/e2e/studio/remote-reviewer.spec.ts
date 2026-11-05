@@ -8,7 +8,7 @@ import type { GitReviewComment, RemoteState, Session, SessionItem, Task, Workspa
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): two Studios on this machine (each its own AMO_HOME and data,
+// 远程 Reviewer (plans/done/remote-reviewer.md, 2026-11-02): two Studios on this machine (each its own AMO_HOME and data,
 // the mock model), paired through a relay service started here on a free port — never the team server. A grants B a
 // task in a git project. B's message makes A's agent open a 查看包 and a Review: they pop up on B (the turn is B's),
 // read from A; B writes comments there, which stay on B — copied with 任务文件夹/ paths, or sent into the task's

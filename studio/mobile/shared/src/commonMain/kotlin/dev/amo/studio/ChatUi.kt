@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.encodeUtf8
 
-// The conversation page (2026-10-31 redesign, plans/android-mobile-redesign.md 第 3 步): a turn's tool calls and thinking
+// The conversation page (2026-10-31 redesign, plans/done/android-mobile-redesign.md 第 3 步): a turn's tool calls and thinking
 // fold into one line, Markdown renders as blocks, the composer starts at one line with the send button inside it,
 // approvals and questions waiting for you are pinned above it, and 「↓」 brings you back to the newest message.
 

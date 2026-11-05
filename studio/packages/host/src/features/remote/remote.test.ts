@@ -15,7 +15,7 @@ import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { Backoff, CommandError, CommandLog, DeviceLink } from "./link.js";
 
-// 远程, step 1 (plans/remote-session.md): this computer's device id, the reconnect backoff, commands answered once, and
+// 远程, step 1 (plans/done/remote-session.md): this computer's device id, the reconnect backoff, commands answered once, and
 // two Hosts pairing through a relay service on this machine (never the team server).
 
 const fake: Protector = {

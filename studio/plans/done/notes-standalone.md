@@ -1,5 +1,7 @@
 # 便签独立成程序（2026-10-23）
 
+> 状态：做完（2026-10-23，`2d6de8d4` 便签程序、`8b7dc390` 接入 Studio；Portable 和平台的 Studio 包都带着便签）。进度一节 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。后来加的待办窗口见 `plans/done/todo.md`。
+
 用户要的：Studio 重启不再打断便签；便签是 Studio 自带的独立小程序，Studio 里点「便签」时它在跑就呼出，没跑就先启动。
 界面定稿在 Design 画布 https://claude.ai/artifact/BXngZSwVW1TwTWYkcGcnVr（「定稿」两张 + 设置、迁移、托盘、Studio 那一节）。
 决定记在 memory `studio-notes-standalone`。
@@ -28,15 +30,9 @@
     启动后把地址、token、pid 写进 `%APPDATA%\AMO Notes\running.json`，Studio 靠它找到便签。
   - `store.ts`：设置文件 + 工作文件夹（`pages.json`、`images/`、`cache/`）。
   - 测试用 `AMO_NOTES_HOME` 指到临时目录。
-- 文档的纯函数（`readScratchpad`、`withPage`…）从 host 挪到 protocol，host 和 notes 共用。
+- 文档的纯函数（`readScratchpad`、`withPage`…）从 host 挪到 protocol（`protocol/src/scratchpad-doc.ts`），host 和 notes 共用。
 
-## 步骤
+## 接入 Studio 时定的
 
-1. **本体**：notes 包、小服务、存储、单实例、托盘、快捷键、便签窗口按定稿（甲 + 按键提示 + Ctrl ↵ + 空白页引导）。e2e 单独启动便签程序验证。
-2. **设置窗口**：快捷键、页数、复制换行、开机启动、工作文件夹（更改 + 迁移、占用、清理缓存、打开临时文件夹）、设置文件位置。
-3. **接入 Studio**：Studio 的「便签」按钮 / 设置节改成呼出或启动独立便签；首次把 Studio 数据库里的便签页和图片导入（`/api/notes/import`，Studio 的旧数据保留）；
-   去掉 Studio 里原来的便签窗口和快捷键（快捷键归便签自己）。Portable 打包时把便签一起带上（发布时再做）。
-
-## 进度
-
-- 2026-10-23：1、2 完成（`2d6de8d`）；3 完成（接入 Studio、首次导入、设置节、去掉 Studio 里的旧窗口）。只剩 Portable 打包时带上便签。
+- Studio 的「便签」按钮 / 设置节改成呼出或启动独立便签；快捷键归便签自己，Studio 里原来的便签窗口和快捷键去掉。
+- 第一次把 Studio 数据库里的便签页和图片导入便签（`/api/notes/import`），Studio 的旧数据保留。

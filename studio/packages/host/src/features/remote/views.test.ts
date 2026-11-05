@@ -11,7 +11,7 @@ import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { answerView, placeInFolder, ViewAnswers, type ViewScope } from "./views.js";
 
-// 远程 Reviewer on A (plans/remote-reviewer.md, 2026-11-02): what a paired device's Reviewer may read of a granted task,
+// 远程 Reviewer on A (plans/done/remote-reviewer.md, 2026-11-02): what a paired device's Reviewer may read of a granted task,
 // and every way out of it refused — another task's pack, another project, outside the task's folder (by `..`, by a
 // link or junction), a file too big, a file no pack names.
 

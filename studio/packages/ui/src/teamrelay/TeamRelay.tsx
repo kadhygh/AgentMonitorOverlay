@@ -3,7 +3,7 @@ import type { Session, TeamSend, TeamThread } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { upsertById, useLiveResource } from "../host/live.js";
 
-// 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): what a session asks to send through AMO 中转 waits here for the
+// 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): what a session asks to send through AMO 中转 waits here for the
 // person — on its task's page and in Focus — every time, auto mode or not (it goes to a real person, as them). Once
 // sent, the task's card and page say whom it waits on; the reply goes back into the session by itself.
 

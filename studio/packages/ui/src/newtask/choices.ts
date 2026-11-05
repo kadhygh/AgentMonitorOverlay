@@ -1,6 +1,6 @@
 import type { Task } from "@amo-studio/protocol";
 
-// 新任务页的专题和项目两行 (2026-10-29, plans/remote-page-and-new-task.md 4.2): each row shows a few chips — for projects
+// 新任务页的专题和项目两行 (2026-10-29, plans/done/remote-page-and-new-task.md 4.2): each row shows a few chips — for projects
 // the topic's own first (「专题常用」), then pinned ones, then recently used ones, then the rest — and 「更多…」 opens a
 // search over all of them, grouped the same way. Pure logic; the rows and the picker live in ChoiceRow.tsx.
 

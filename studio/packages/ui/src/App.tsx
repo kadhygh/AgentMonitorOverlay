@@ -166,7 +166,7 @@ export function App() {
       }),
     [],
   );
-  // 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): AMO 中转 asked the Host to show the session that sent
+  // 在 Studio 里打开 (2026-11-05, plans/done/relay-round-2026-11-05.md J1): AMO 中转 asked the Host to show the session that sent
   // one of its threads; the workbench goes there and comes forward, as Focus's 在工作台打开 does.
   useEffect(
     () =>

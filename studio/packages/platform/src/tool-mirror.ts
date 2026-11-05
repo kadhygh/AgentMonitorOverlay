@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DownloadError, resumeDownload } from "@amo-studio/locate/download";
 
-// What 环境's 安装 / 更新 of Claude Code and Codex share (plans/claude-code-mirror.md; the user, 2026-11-03): the team
+// What 环境's 安装 / 更新 of Claude Code and Codex share (plans/done/claude-code-mirror.md; the user, 2026-11-03): the team
 // server's mirror (packages/relay/src/mirror.ts) and the maker's latest, shown side by side — the person picks which one
 // to install (「团队服务器」 only when it has a version ready, 「官方」 always) — and the download, going on after a break
 // (Range) from a .part in the platform's folder. A download from the server that fails stops and says so; it does not

@@ -1,6 +1,6 @@
 # AMO 中转（amo-relay）
 
-局域网里的小工具：人和人互相发消息；人或 AI 也能给某个人发一个「会话」，请他处理一件事，对方逐条回答后返回。聊天记录都存在中转服务上。计划见 `plans/relay.md`（阶段 1）和 `plans/relay-tasks.md`（阶段 2：会话、团队任务、文件和批注）。
+局域网里的小工具：人和人互相发消息；人或 AI 也能给某个人发一个「会话」，请他处理一件事，对方逐条回答后返回。聊天记录都存在中转服务上。计划见 `plans/done/relay.md`（阶段 1）和 `plans/done/relay-tasks.md`（阶段 2：会话、团队任务、文件和批注）。
 
 界面用的是 AMO Studio 的设计：主题变量直接引用 `packages/ui/src/styles/base.css`（支持浅色和深色），顶栏、左栏、会话列表和弹窗的做法也照 Studio 来。
 
@@ -134,7 +134,7 @@ npm run relay:mac -- platform-prune [--dry-run] [--keep 3]   # 删各工具的�
 
 ## 工具镜像：Claude Code、Codex（2026-11-03 起）
 
-服务定时从官方下好 Claude Code 和 Codex，AMO 平台的「环境」页可以从这里安装、更新（也可以选从官方下）。方案在 `plans/claude-code-mirror.md`，代码在 `src/mirror.ts`。
+服务定时从官方下好 Claude Code 和 Codex，AMO 平台的「环境」页可以从这里安装、更新（也可以选从官方下）。方案在 `plans/done/claude-code-mirror.md`，代码在 `src/mirror.ts`。
 
 - 带 `--platform-dir` 启动的服务默认开（团队服务器就是）；`--mirror` 强制开，`--no-mirror` 关。第一次检查在启动 30 秒后。
 - 设置和状态在管理页 `/admin`，每个工具一张卡片（「Claude Code 镜像」「Codex 镜像」）：开关、检查间隔（默认 60 分钟）、平台（默认只要 win32-x64）、保留几版（默认 3），各管各的，改了马上生效；「现在检查」立刻查一次。
@@ -240,7 +240,7 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 
 ### 待办（便签的待办窗口，2026-11-01）
 
-每个账号：每台设备一张表（`device:<设备编号>`）和一张共通的表（`shared`），同账号的设备都能看、能改。便签程序留一份副本和没发出去的改动，连上就补交。格式和冲突规则见 `src/todo-protocol.ts`，方案见 `plans/todo.md`。
+每个账号：每台设备一张表（`device:<设备编号>`）和一张共通的表（`shared`），同账号的设备都能看、能改。便签程序留一份副本和没发出去的改动，连上就补交。格式和冲突规则见 `src/todo-protocol.ts`，方案见 `plans/done/todo.md`。
 
 | | |
 |---|---|

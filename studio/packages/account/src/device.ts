@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { readJsonFile, updateJsonFile } from "./json.js";
 import { amoFile, type Env } from "./paths.js";
 
-// This computer, as the AMO tools tell the team server about it (plans/remote-session.md, step 1, 2026-10-29): a random
+// This computer, as the AMO tools tell the team server about it (plans/done/remote-session.md, step 1, 2026-10-29): a random
 // id that stays with the machine and a name people recognise it by (the computer name until they change it). Pairing
 // for remote sessions is by account + device id, since one person's two computers may well be logged in with two
 // accounts. Kept in %APPDATA%\AMO\device.json (follows AMO_HOME); the platform or Studio, whichever needs it first,

@@ -268,7 +268,7 @@ describe("session_send (续发)", () => {
   });
 });
 
-// 会话收件箱 (2026-11-04, plans/message-delivery.md): what agents and Studio send waits on disk until the session is free.
+// 会话收件箱 (2026-11-04, plans/done/message-delivery.md): what agents and Studio send waits on disk until the session is free.
 describe("the session inbox", () => {
   it("goes on after a Host restart, and moves session_send's old queue in", { timeout: 15_000 }, async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });

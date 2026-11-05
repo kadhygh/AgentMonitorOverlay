@@ -13,7 +13,7 @@ import { ClaudeAccounts } from "./accounts.js";
 import { ClaudeRuntime } from "./claude-runtime.js";
 import { adoptedKey } from "./outside.js";
 
-// 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md), through HostService: a session the Claude desktop app left in
+// 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md), through HostService: a session the Claude desktop app left in
 // the person's config dir (written here as Claude Code writes one) is listed, previewed and taken on by a new task —
 // from a copy, its conversation imported, the model seeing the whole of it — and is not listed again.
 

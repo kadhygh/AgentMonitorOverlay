@@ -4,7 +4,7 @@ import { emitHostEvent, emitHostReconnect } from "./events.js";
 import { keepWhere, removeById, upsertById, watchLive, type LiveOptions } from "./live.js";
 import { sharedLive } from "./shared.js";
 
-// The loop behind useLiveResource and the shared per-window values (2026-11-04, plans/cleanup-2026-11.md 第 7 步).
+// The loop behind useLiveResource and the shared per-window values (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步).
 
 interface Item {
   id: string;

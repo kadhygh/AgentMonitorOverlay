@@ -1,5 +1,7 @@
 # MCP 设置（2026-11-04）
 
+> 状态：做完（2026-11-04 进 master `12bee82f`，Studio 0.9.35）。末尾指向 HANDOFF 的「进度」一节 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。
+
 ## 起因
 
 同事反馈：Figma MCP 配在 `~/.claude.json` 里，在终端里开 Claude Code 能用，在 Studio 里的 Claude 会话中却用不了。原因是 Studio 用本机登录启动 Claude 时总是带 `strictMcpConfig`（4cef30ce，10-14 接入本机登录时加的），只加载 AMO 自己的 MCP，`~/.claude.json`、项目 `.mcp.json`、插件和 claude.ai 连接器里的都被忽略了。CLAUDE.md、skills、hooks、命令一直照常加载，只挡了 MCP。
@@ -62,7 +64,3 @@
 
 - `mcp_server_list`：列出有哪些 MCP、各自在哪里、在调用方会话里开没开；不返回密钥。
 - `mcp_server_save`（每次都要人批准）：添加或修改一个 Studio 的 MCP；`enableHere: true` 时同时在调用方会话里启用。说明里告诉 AI：不要把密钥写进参数，值留空，让人到设置里填。
-
-## 进度
-
-见 `studio/HANDOFF.md`「最近的改动」11-04 那一条。

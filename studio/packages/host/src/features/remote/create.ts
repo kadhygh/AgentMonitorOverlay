@@ -6,7 +6,7 @@ import type { RemoteContext, RemoteGrants } from "./grants.js";
 import type { TaskRequests } from "./requests.js";
 import { claimedText, heldOf, type Claimed } from "./uploads.js";
 
-// 远程创建 on A (plans/remote-page-and-new-task.md 4.1, 2026-10-29): a paired device creates a task on this computer from
+// 远程创建 on A (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): a paired device creates a task on this computer from
 // its new-task page. The user (10-29): nobody here says yes — 远程设置 limits it instead: 远端允许的项目 (kv
 // `remote.allowedProjects`, the whole computer, as 远端允许的模型 is) and 远端允许的模型. Nothing ticked: not available.
 // rt.catalog says what the device may pick; rt.create makes the task, grants it and starts its session — the same

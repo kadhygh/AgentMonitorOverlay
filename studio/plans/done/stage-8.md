@@ -50,10 +50,10 @@
 ### S8-04 文档 · done
 - 内容：`studio/README.md` 改成使用说明（下载解压、首次设置、和旧 AMO 的对应关系、常见问题）；`docs/` 里的架构说明更新到实际实现。
 
-### S8-05 删除旧 AMO 的清单（不删） · done（`plans/remove-old-amo.md`）
-- 内容：`plans/remove-old-amo.md`：列出旧 AMO 的目录和文件、它们和 Studio 的对应关系、删除后 master 上剩什么；等你回复 S3-10 后才执行。
+### S8-05 删除旧 AMO 的清单（不删） · done（`plans/done/remove-old-amo.md`）
+- 内容：`plans/done/remove-old-amo.md`：列出旧 AMO 的目录和文件、它们和 Studio 的对应关系、删除后 master 上剩什么；等你回复 S3-10 后才执行。
 
-### S8-06 全面自查与合并准备 · done（`plans/merge-to-master.md`）
+### S8-06 全面自查与合并准备 · done（`plans/done/merge-to-master.md`）
 - 依赖：S8-01～S8-05
 - 内容：跨阶段的自查（安全、红线、遗留待办）；完整验证；列出合并到 master 的检查单（会带进 master 的文件、和 master 现有内容的冲突、`studio/.data` 等不进 git 的确认）。
 

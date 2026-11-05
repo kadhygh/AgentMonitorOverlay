@@ -12,7 +12,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 | AMO Reviewer | Git Review 和查看器（含 HTML 批注），可以单独用，Studio 里也带着 | `reviewer`（独立程序的入口），界面在 `ui/src/gitreview` 等，后台用 `host` |
 | AMO 便签 | 托盘常驻的随手记，可以单独用，Studio 会顺带启动它 | `notes` |
 | AMO 中转（Relay） | 局域网服务 + 桌面客户端：策划的 AI 把要确认的事发给程序，人和人聊天 | `relay`（服务、命令行、MCP）、`relay-ui`（客户端界面，从服务器热更新）、`relay-app`（客户端外壳） |
-| AMO 平台（规划中） | 托盘常驻：从团队服务器安装、更新、设置上面这些工具 | 还没有，方案见 `studio/plans/amo-lan-platform.md` |
+| AMO 平台 | 托盘常驻：从团队服务器安装、更新、设置上面这些工具，登录 | `platform`（界面在 `ui/src/platform`），方案见 `studio/plans/amo-lan-platform.md` |
 
 `testkit` 是测试用的假服务器和工具。团队服务器是一台 Mac mini（`http://172.16.8.85:47120/`，SSH 别名 `mac`），上面跑着中转服务，以后也是平台的发布点。
 
@@ -46,7 +46,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
   - `relay:release`、`relay:mac -- deploy | publish`、`package:platform` 是 `release` 调用的底层步骤，只在排查时单独用。每次发布（底层是 `relay:mac -- publish`）之后会自动删这个工具的旧版本（留最新 3 个和两个通道指向的，`--keep-all` 不删），`platform-prune [--dry-run]` 对所有工具清理。
 - **不要擅自重启用户正在用的 Studio**（`host:stop` 会杀掉进行中的会话）。要重启先问，而且只在没有会话运行时做。
 - 改了界面就截图看一遍。e2e 的截图放在 `studio/screenshots/<程序>/`。
-- 计划和方案写在 `studio/plans/<主题>.md`。做完一段：改动说明写进各包 `CHANGELOG.md` 的「## 下一版」，怎么做的、怎么验证的写在提交信息里；`studio/HANDOFF.md` 只改「当前状态 / 还开着的事」里受影响的行（事做完了删掉那一行，新开的加一行），**不再一条条记改动**（2026-11-06 用户定：它和提交信息、CHANGELOG 重复，rebase 时反复出现重复条目）。
+- 计划和方案写在 `studio/plans/<主题>.md`：开头写状态，正文写用户定的事（带日期）、做法和原因，不写进度流水；做完了在开头标「做完」，挪进 `plans/done/`（`git grep` 把指向它的路径都改掉）。做完一段：改动说明写进各包 `CHANGELOG.md` 的「## 下一版」，怎么做的、怎么验证的写在提交信息里；`studio/HANDOFF.md` 只改「当前状态 / 还开着的事」里受影响的行（事做完了删掉那一行，新开的加一行），**不再一条条记改动**（2026-11-06 用户定：它和提交信息、CHANGELOG 重复，rebase 时反复出现重复条目）。
 - 在 Windows 上用 shell 改含中文的文件容易出乱码，用编辑工具改。
 
 ## 文档在哪
@@ -55,7 +55,7 @@ AMO 是一组给「有 AI 参与的项目」用的 Windows 桌面工具。代码
 |---|---|
 | `studio/HANDOFF.md` | 当前状态和还开着的事，新会话先读 |
 | `studio/docs/guide/` | 导航索引（`node scripts/guide.mjs` 查）：功能在哪、要改哪几处、代码锚点、下一步读什么 |
-| `studio/plans/` | 各个主题的方案和进度；`amo-lan-platform.md` 是平台方案；做完的阶段计划在 `plans/done/` |
+| `studio/plans/` | 各个主题的方案：开头一行状态（进行中 / 做完 / 搁置 / 被取代 / 待确认），正文只留决定和原因，进度看 git log 和 CHANGELOG；`amo-lan-platform.md` 是平台方案；做完的在 `plans/done/` |
 | `studio/docs/history/`、`studio/docs/archive/` | 11-06 之前 HANDOFF「最近的改动」的原文；/loop 时期的 STATUS、ROADMAP 等（只查历史时看） |
 | `studio/packages/relay/README.md` | 中转的部署、发布、命令 |
 | `studio/README.md`、根目录 `README.md` | 给用户看的介绍 |

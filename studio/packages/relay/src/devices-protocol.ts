@@ -1,4 +1,4 @@
-// Devices on the team server (plans/remote-session.md, step 1, 2026-10-29): what the relay service and the programs that
+// Devices on the team server (plans/done/remote-session.md, step 1, 2026-10-29): what the relay service and the programs that
 // connect as a device (Studio's Host) share. A device is one computer of one account (`account` + `device`, the id from
 // %APPDATA%\AMO\device.json). Two devices pair — B asks by account name, a device of that account allows — and the
 // service then passes frames between exactly those two, without reading what is in them. It keeps the least it can:

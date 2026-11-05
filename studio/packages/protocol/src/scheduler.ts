@@ -6,7 +6,7 @@ import type { Id, Session, SessionStatus, Workspace } from "./entities.js";
 
 /**
  * In the middle of a turn: working, or the turn waits on the person (an approval, a question). What the runtimes, the
- * Host and the board mean by "the session is at it" (2026-11-04, plans/message-delivery.md: each had its own copy).
+ * Host and the board mean by "the session is at it" (2026-11-04, plans/done/message-delivery.md: each had its own copy).
  */
 export const TURN_STATUSES: readonly SessionStatus[] = ["running", "awaiting-approval", "awaiting-answer"];
 

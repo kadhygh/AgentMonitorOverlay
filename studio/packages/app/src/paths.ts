@@ -86,7 +86,7 @@ export function acceptDataDir(choice: string, portableDir: string): { dataDir: s
 }
 
 /**
- * Where a running Studio says its data dir is (2026-11-05, 中转's 在 Studio 里打开; plans/relay-round-2026-11-05.md):
+ * Where a running Studio says its data dir is (2026-11-05, 中转's 在 Studio 里打开; plans/done/relay-round-2026-11-05.md):
  * %APPDATA%\AMO Studio\running.json (AMO_STUDIO_HOME moves it), {pid, exe, dataDir}, written once the Host is up and
  * removed at quit, like 中转's and 便签's running.json. Only the path: host.json and host-token stay in the data dir, which
  * is this Windows user's. /api/health stays without it (open, numbers only — 2026-10-28). In test mode only with

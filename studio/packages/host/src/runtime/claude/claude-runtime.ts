@@ -208,7 +208,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /**
-   * 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): Claude sessions started outside Studio (a terminal, the
+   * 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md): Claude sessions started outside Studio (a terminal, the
    * Claude desktop app), read where the local login's sessions are. Only the subscription on the local login sees them.
    */
   async outsideSessions(): Promise<OutsideSessionList> {

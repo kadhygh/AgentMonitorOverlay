@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DependencyList, type Dis
 import type { HostEvent } from "@amo-studio/protocol";
 import { onHostEvent, onHostReconnect } from "./events.js";
 
-// 「订阅事件 → GET → 合并 → 断线后重读」 in one place (2026-11-04, plans/cleanup-2026-11.md 第 7 步): it was written out
+// 「订阅事件 → GET → 合并 → 断线后重读」 in one place (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步): it was written out
 // in some 23 hooks and panels, each a little differently, a few of them never reading again after a reconnect.
 
 export interface LiveOptions<T> {

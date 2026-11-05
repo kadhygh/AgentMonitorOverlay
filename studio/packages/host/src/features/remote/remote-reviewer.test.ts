@@ -14,7 +14,7 @@ import { Store } from "../../store/store.js";
 import { FileReply } from "../../http/route.js";
 import { Backoff } from "./link.js";
 
-// 远程 Reviewer on B (plans/remote-reviewer.md, 2026-11-02): a remote task's Reviewer reads go through B's Host to A
+// 远程 Reviewer on B (plans/done/remote-reviewer.md, 2026-11-02): a remote task's Reviewer reads go through B's Host to A
 // (rt.view) and come back; kept on B, they are shown again (said to be old) while A is away or the grant is gone; the
 // copy archived, they go with it. Two Hosts through a relay service on this machine, the fake Codex app-server.
 

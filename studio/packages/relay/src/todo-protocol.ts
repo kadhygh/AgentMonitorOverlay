@@ -1,4 +1,4 @@
-// 待办 (2026-11-01, plans/todo.md): the todo lists of an account, kept by the team server so every device of the account
+// 待办 (2026-11-01, plans/done/todo.md): the todo lists of an account, kept by the team server so every device of the account
 // sees them. Each device has a list of its own (`device:<id>`, the id in %APPDATA%\AMO\device.json) and the account has
 // one shared by all its devices (`shared`); every device of the account may read and change every list. The 便签
 // program keeps a copy and a queue of changes made while the server could not be reached, and sends them later.

@@ -9,7 +9,7 @@ import { attachedPaths, itemForPeer, readRemoteFile, type FileRoots } from "./fi
 import { claimedText, type UploadInbox } from "./uploads.js";
 import { answerView, ViewAnswers } from "./views.js";
 
-// 远程, step 2 on A (plans/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
+// 远程, step 2 on A (plans/done/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
 // a device may ask of them, and what A tells it unasked as they change. The grant is the whole task: every session in
 // it, delegated sessions and subagents included (「授权范围」). Commands are checked against the grant one by one; a
 // device reaches nothing else of this computer — no other task, project, setting or file.
@@ -231,7 +231,7 @@ export class RemoteGrants {
     if (task.remote) throw new HostError("bad_request", "这是别的电脑授权给这台电脑的远程任务，不能再转授权");
     if (task.archivedAt) throw new HostError("read_only", "任务已归档，不能授权");
     const p = this.ctx.peer(peer, "owner");
-    // Only a device this computer allowed to pair may reach it (the owner side, plans/remote-session.md「B 是谁」).
+    // Only a device this computer allowed to pair may reach it (the owner side, plans/done/remote-session.md「B 是谁」).
     if (!p) throw new HostError("bad_request", "只能授权给这台电脑允许配对的设备（在顶栏的「远程」里配对）");
     const list = this.list();
     const had = list.find((g) => g.taskId === taskId && same(g, peer));
@@ -458,7 +458,7 @@ export class RemoteGrants {
           return ok(await readRemoteFile(this.fileRoots(taskId), b as unknown as RemoteFileAsk, this.ctx.deviceName()));
         }
         case REMOTE_KINDS.view: {
-          // 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): a read of the task's 查看包 or Review, checked in views.ts.
+          // 远程 Reviewer (plans/done/remote-reviewer.md, 2026-11-02): a read of the task's 查看包 or Review, checked in views.ts.
           const taskId = id(b.taskId, "taskId");
           this.grantFor(from, taskId);
           const task = this.store.getTask(taskId);

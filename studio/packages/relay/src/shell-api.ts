@@ -90,7 +90,7 @@ export interface RelayShell {
   changeServer(): void;
   openExternal(url: string): void;
   /**
-   * 在中转里打开 from AMO Studio (2026-11-05, plans/relay-round-2026-11-05.md J2): the thread the shell was started (or
+   * 在中转里打开 from AMO Studio (2026-11-05, plans/done/relay-round-2026-11-05.md J2): the thread the shell was started (or
    * woken) with `--open-thread`, once — later calls give null. Optional: added after shell 1 shipped.
    */
   takeOpenThread?(): Promise<string | null>;

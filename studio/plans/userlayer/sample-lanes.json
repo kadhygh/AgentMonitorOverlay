@@ -64,7 +64,7 @@
     { "id": "t2", "num": 25, "lane": "L-ts", "at": "2026-10-31T11:20:00+08:00", "type": "conclusion", "status": "settled", "short": "加 al20 规则", "title": "al20 加了一条防火墙规则", "summary": "portproxy 共用，一台设备一条防火墙规则。", "conclusion": "重启后转发不通就重启 iphlpsvc。" },
     { "id": "t3", "num": 26, "lane": "L-ts", "at": "2026-10-31T11:27:00+08:00", "type": "question", "status": "waiting", "owner": "team:al20 手机", "short": "等 al20 试", "title": "等 al20 手机打开服务器确认", "summary": "电脑这边通了，手机那边还没人试。" },
 
-    { "id": "a1", "num": 27, "lane": "L-and", "at": "2026-10-30T14:00:00+08:00", "type": "milestone", "status": "settled", "short": "开工", "title": "安卓版开工", "summary": "方案 studio/plans/android-studio.md。" },
+    { "id": "a1", "num": 27, "lane": "L-and", "at": "2026-10-30T14:00:00+08:00", "type": "milestone", "status": "settled", "short": "开工", "title": "安卓版开工", "summary": "方案 studio/plans/done/android-studio.md。" },
     { "id": "a2", "num": 28, "lane": "L-and", "at": "2026-10-30T15:30:00+08:00", "type": "question", "status": "settled", "short": "原生还是套壳", "title": "原生写，还是 WebView 套 Studio 的界面？", "summary": "套壳快，但手机上不好用。", "conclusion": "试了套壳（支线），手势和键盘都别扭，改原生。" },
     { "id": "aw1", "num": 29, "lane": "L-and-web", "at": "2026-10-30T17:00:00+08:00", "type": "finding", "status": "settled", "short": "套壳很别扭", "title": "WebView 套壳：滚动和输入法都别扭", "summary": "Studio 的界面是给鼠标设计的。" },
     { "id": "a3", "num": 30, "lane": "L-and", "at": "2026-10-31T16:00:00+08:00", "type": "milestone", "status": "settled", "short": "provision 脚本", "title": "android-provision：一键装开发环境", "evidence": [{ "kind": "file", "ref": "studio/scripts/android-provision.mjs", "note": "" }] },

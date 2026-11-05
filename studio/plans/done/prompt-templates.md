@@ -1,8 +1,8 @@
 # 提示词模板（2026-10-31）
 
-用户常开同样的任务，要一个存好提示词、在输入框里一选就粘进去的功能；模板可以让 AI 通过 AMO 的 MCP 按要求加。同时**删掉扩展包**（`.amo/packs`）：模板比它好用，扩展包一直没有真实的包。以后可能做类似 DSH 的插件架构，到时另起方案。
+> 状态：做完（2026-10-31 合进 master，Studio 0.9.17）。分支、worktree 和验证清单 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。
 
-分支 `studio/prompt-templates`，worktree `G:\PROJECT\AgentMonitorOverlay-templates`（主工作区有别的会话在干活）。
+用户常开同样的任务，要一个存好提示词、在输入框里一选就粘进去的功能；模板可以让 AI 通过 AMO 的 MCP 按要求加。同时**删掉扩展包**（`.amo/packs`）：模板比它好用，扩展包一直没有真实的包。以后可能做类似 DSH 的插件架构，到时另起方案。
 
 ## 用户定的（都按建议）
 
@@ -24,9 +24,3 @@
 Host 的 `features/packs`、`packs/`（加载器、预设草稿）、读模型的 `packList`/`packDoc`、调度简报里的预设、新建任务带的流程模板（`template` 参数）；「一键忽略 .amo/」（只为扩展包存在）；protocol 的 `packs.ts`、`TaskTemplateChoice`、可关闭功能里的 `packs`；界面的扩展包页、任务页的预设和文档面板、会话树的「按扩展包预设」、新建任务的流程模板；e2e `packs`、`pack-acceptance`；`examples/packs`、`scripts/smoke-stage6.mjs`；`design/pack-format.md` 挪进 `docs/archive/`。
 
 留着：任务清单（`checklist_items`、`checklist_check`），老任务上已有的清单照样显示和勾选；设置里已关掉的 `packs` 读的时候忽略。
-
-## 验证
-
-- 单测：service（增删改、范围过滤、上限、事件）、MCP（三个工具、删除不自动通过）、mentions（扩展功能里有这一项）。
-- e2e：@ → 提示词模板… → 新建一条 → 选中粘进输入框；新建任务页同样能用。截图放 `screenshots/studio/`。
-- `npm run verify`。

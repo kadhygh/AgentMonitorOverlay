@@ -2,7 +2,7 @@ import type { RelayClient } from "./api.js";
 import { dueForAi, type Message, type Thread } from "./protocol.js";
 import { sinceLastWord } from "./usage.js";
 
-// `relay inbox` (2026-10-30, plans/relay-in-sessions.md): every session one AI conversation sent that came back to its
+// `relay inbox` (2026-10-30, plans/done/relay-in-sessions.md): every session one AI conversation sent that came back to its
 // person, taken at once — each only what came after their side's last word, and marked as fetched (「AI 已取回」), so the
 // next call does not give it again. The conversation is the mark its messages carry (Via.conv); Studio's Host takes its
 // own sessions the same way, by the prefix of its marks.

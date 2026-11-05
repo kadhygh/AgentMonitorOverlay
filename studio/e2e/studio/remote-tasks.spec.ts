@@ -7,7 +7,7 @@ import type { RemoteState, Session, Task } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 远程, step 2 (plans/remote-session.md, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data, the
+// 远程, step 2 (plans/done/remote-session.md, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data, the
 // mock model), paired through a relay service started here on a free port — never the team server. A grants a task to
 // B from the task page; B's board shows it as a remote task; B's message runs on A's mock session and the reply comes
 // back; an approval waits on B (not on A's Focus) and B allows it, A's card follows; B starts a session on the one model

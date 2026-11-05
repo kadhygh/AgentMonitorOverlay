@@ -4,7 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
 import { Modal } from "../lib/Modal.js";
 
-// 远程 step 4 (2026-10-29, plans/remote-session.md 方式 2): B asks one of the person's other computers (A) to run a task;
+// 远程 step 4 (2026-10-29, plans/done/remote-session.md 方式 2): B asks one of the person's other computers (A) to run a task;
 // A's person picks where it goes and the model, and allows or refuses it. On B: the requests sent (等它同意 / 拒绝了 /
 // 同意了) under the remote page's 「在别的设备上跑的」. On A: the requests to answer, under 「等你处理」. Since 远程创建
 // (2026-10-29) a new B creates tasks on A from its new-task page instead (no yes on A, 远端允许的项目 limits it), so

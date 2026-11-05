@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
-// 在中转里打开 (2026-11-05, plans/relay-round-2026-11-05.md J2/J3): from a session's 「等 X 回复（中转）」, the AMO 中转
+// 在中转里打开 (2026-11-05, plans/done/relay-round-2026-11-05.md J2/J3): from a session's 「等 X 回复（中转）」, the AMO 中转
 // client shows that thread. Found the way AMO 平台 knows it (AGENTS.md rule 1): programs.json's `tools.relay` (installed
 // by the platform), else the running client's own running.json (unpacked by hand). Started with `--open-thread <id>`:
 // a running client takes it through its single-instance lock and goes there; one not running starts on it.

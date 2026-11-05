@@ -265,7 +265,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
                 maxLength={100}
               />
             </label>
-            {/* 2026-10-29: the topic first, then the project, its preferred ones first (plans/remote-page-and-new-task.md 4.2). */}
+            {/* 2026-10-29: the topic first, then the project, its preferred ones first (plans/done/remote-page-and-new-task.md 4.2). */}
             <ChoiceRow label="专题" noun="专题" choices={rows.topicChoices} selected={draft.topicId} onPick={rows.pickTopic} />
             <ChoiceRow label="项目" noun="项目" choices={rows.projectChoices} selected={draft.projectId} onPick={rows.pickProject}>
               {window.amo?.pickDirectory && (

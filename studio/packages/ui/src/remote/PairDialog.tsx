@@ -4,7 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
 import { Dialog } from "./RemoteRequests.js";
 
-// 配对设备 (2026-10-29, plans/remote-page-and-new-task.md §3): the other devices of this computer's own account that are
+// 配对设备 (2026-10-29, plans/done/remote-page-and-new-task.md §3): the other devices of this computer's own account that are
 // online now (the team server lists them), one picked → 「发起配对」 → 「等 <name> 允许」 with 撤回. Pairing is for the
 // person's own computers (a remote session runs on this computer's model accounts); another account's name is folded
 // below, for test accounts and the like.

@@ -351,7 +351,7 @@ export class CodexRuntime extends RuntimeBase {
     const st = this.sessionState(sessionId);
     if (!st.activeTurnId || !session.runtimeRef) return;
     this.asks.cancelQuestionsOf(sessionId);
-    // 停止's fallback (2026-11-04, plans/message-delivery.md): the app-server is shared by the channel's sessions, so it
+    // 停止's fallback (2026-11-04, plans/done/message-delivery.md): the app-server is shared by the channel's sessions, so it
     // is not closed; the turn is taken as stopped here, and what the turn had not read becomes 没送到.
     const turnId = st.activeTurnId;
     const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;

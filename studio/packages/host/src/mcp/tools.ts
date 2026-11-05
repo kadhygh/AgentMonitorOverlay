@@ -28,7 +28,7 @@ export const AMO_MCP_INSTRUCTIONS = [
   // 「放到画布上审阅」) they do it fully, as before. Reading it stays.
   "Use your topic's canvas when the person asks for it — e.g. to lay the work out on the canvas, or to put a review there — and then do it fully, in the way amo_guide describes (sections lead and canvas): split the work into tasks, arrange groups, dependencies and colours, describe each task; or lay review items out and pin remarks and questions. Without such a request leave the canvas as it is (reading it with canvas_read to understand the topic is fine), and reports and reviews go in your reply as usual.",
   "When the person wants to review a file or saved changes, use review_open: mode=file for its current content (optional line/endLine), mode=changes for its Git diff (optional base, commit or range). It opens the person's reviewer and defaults comments back to your session; it does not perform or approve a review. Save edits before reopening to show the latest content.",
-  // 会话里用中转 (2026-10-30, plans/relay-in-sessions.md).
+  // 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md).
   "When the work needs someone on the team other than the person you work for — a programmer to confirm an implementation, an interface or the work it takes, or to check a plan — ask them with team_ask (AMO 中转; team_members lists who does what). It usually waits for the person's OK in Studio (the answer says), goes as the person marked as their AI's, and the reply comes back into this conversation by itself: end your turn after it instead of going on in the unconfirmed direction; then team_followup to ask again, team_done once settled. (task_message is different: it talks to another task's session inside Studio.)",
 ].join("\n\n");
 

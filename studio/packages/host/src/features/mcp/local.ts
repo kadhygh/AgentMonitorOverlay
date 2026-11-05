@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AMO_MCP_SERVER_NAME, type McpServerSpec } from "@amo-studio/protocol";
 
-// The person's own MCP servers as Claude Code keeps them (2026-11-04, plans/mcp.md). Studio only reads these files;
+// The person's own MCP servers as Claude Code keeps them (2026-11-04, plans/done/mcp.md). Studio only reads these files;
 // it never writes them (HANDOFF: Studio does not change ~/.claude). Read again on every use, cached by mtime.
 
 /** A server of the person's config, with where it came from. */

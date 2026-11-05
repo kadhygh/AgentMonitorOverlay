@@ -15,7 +15,7 @@ import type { TaskDraft } from "./draft.js";
 import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
 import { readStored, writeStored } from "../lib/stored.js";
 
-// 新任务页的「在别的设备上」 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
+// 新任务页的「在别的设备上」 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
 // allows (its catalog, fetched when it is picked). Enter creates the task there: it is granted to this computer and its
 // session starts there; the page opens its copy here once the copy has come. @ offers only 提示词模板…, listing that

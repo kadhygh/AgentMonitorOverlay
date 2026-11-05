@@ -1,4 +1,4 @@
-/* AMO 中转 in AMO Studio's design language (stage 2a, plans/relay-tasks.md): the theme variables are Studio's own
+/* AMO 中转 in AMO Studio's design language (stage 2a, plans/done/relay-tasks.md): the theme variables are Studio's own
    (packages/ui/src/styles/base.css, imported in main.tsx; light = 纸感编辑部, dark = Studio's dark), and the parts follow
    Studio's: top bar with view tabs (shell.css), left column of labels and rows (nav.css), session rows (task.css .srow),
    modals (settings.css). Plain buttons are Studio's ghost buttons, .primary its primary ones. */
@@ -347,7 +347,7 @@ button.box-row:hover:not(:disabled) { border-color: var(--border-strong); backgr
 .link-btn { color: var(--primary); font-size: var(--fs-sm); }
 .selbtn { position: fixed; z-index: 80; }
 
-/* The viewer as a panel, not a modal (2026-11-05, plans/relay-round-2026-11-05.md): what is behind stays readable and
+/* The viewer as a panel, not a modal (2026-11-05, plans/done/relay-round-2026-11-05.md): what is behind stays readable and
    clickable; moved by its head, sized by its left edge and corner (FloatPanel in Dialog.tsx). */
 .float-panel { position: fixed; z-index: 50; max-width: none; max-height: none; box-shadow: 0 18px 48px var(--shadow), 0 0 0 1px var(--border-strong); }
 .float-panel > .dialog-head { cursor: move; user-select: none; touch-action: none; }

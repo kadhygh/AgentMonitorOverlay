@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { programLaunch } from "../support/packed.js";
 
-// AMO 中转's desktop client (plans/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
+// AMO 中转's desktop client (plans/done/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
 // content download → login), register two people, a session sent by an AI through the command line the client
 // installs, answered one by one in the other client and handed back (the AI fetches it, the person takes it over and
 // closes it), team tasks (files on it, a note in the viewer sent with a reply, an HTML file without its scripts; a session under one, 接手任务 from it, 流转 back, seen, archived, shared settings), a direct chat and a topic next to it (archived on one side), updates (installed by the loader at start; applied by itself

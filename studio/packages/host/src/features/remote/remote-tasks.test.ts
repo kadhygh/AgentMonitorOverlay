@@ -17,7 +17,7 @@ import { amoToolsFor } from "../../mcp/tools.js";
 import { FEATURES } from "../index.js";
 import { untypedRoute } from "../../http/route.js";
 
-// 远程, step 2 (plans/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
+// 远程, step 2 (plans/done/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
 // approvals, 打断 and new sessions run on A, a revoked grant stays readable on B, and catch-up goes by seq. Two Hosts
 // through a relay service on this machine (never the team server), the fake Codex app-server as the model.
 
@@ -572,7 +572,7 @@ describe("requests for tasks between two Hosts (step 4)", () => {
   }, 60_000);
 });
 
-describe("远程创建 between two Hosts (plans/remote-page-and-new-task.md 4.1)", () => {
+describe("远程创建 between two Hosts (plans/done/remote-page-and-new-task.md 4.1)", () => {
   it("nothing allowed: refused, saying where to tick; the catalog lists only allowed projects, the topics with their allowed projects and the allowed models", async () => {
     const { a, b } = await paired();
     const A = toA(a);

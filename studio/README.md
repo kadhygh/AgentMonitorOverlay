@@ -104,7 +104,8 @@ studio\amo-review.cmd G:\PROJECT\game --mode file --file src\Drop.cs --line 24 -
 |---|---|
 | [../AGENTS.md](../AGENTS.md) | 项目说明：有哪些工具和包、架构约束、怎么干活 |
 | [HANDOFF.md](HANDOFF.md) | 当前状态和还开着的事，新会话先读（改动看 git log 和各包 CHANGELOG） |
-| [plans/](plans/) | 各个主题的方案和进度；做完的阶段计划在 [plans/done/](plans/done/) |
+| [plans/](plans/) | 各个主题的方案（开头写状态，正文只留决定和原因）；做完的在 [plans/done/](plans/done/) |
+| [docs/guide/](docs/guide/) | 导航索引：`node scripts/guide.mjs --query 关键词` 查功能在哪、要改哪几处 |
 | [design/](design/) | 早期架构文档（2026-10-13，部分已过时，文件开头有标注） |
 | [docs/history/](docs/history/) | 11-06 之前 HANDOFF「最近的改动」的原文（10-13 到 11-06） |
 | [docs/archive/](docs/archive/) | /loop 自动迭代时期的 STATUS、NEEDS_YOU、ROADMAP、LOOP_RULES、LOOP_LOG（停在 10-23） |

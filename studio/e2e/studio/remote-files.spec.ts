@@ -8,7 +8,7 @@ import type { RemoteState, Session, Task, Workspace } from "@amo-studio/protocol
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 远程, step 3 (plans/remote-session.md, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data, the
+// 远程, step 3 (plans/done/remote-session.md, 2026-10-29): two Studios on this machine (each its own AMO_HOME and data, the
 // mock model), paired through a relay service started here on a free port — never the team server. A grants B a task
 // whose conversation names a Markdown file, an HTML page with a picture beside it, a big picture, a program and a file
 // outside the task's folder. On B each link opens the viewer, which fetches the file from A (saying so, with how far it

@@ -13,7 +13,7 @@ import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { amoToolsFor } from "../../mcp/tools.js";
 
-// 会话里用中转 (2026-10-30, plans/relay-in-sessions.md), against a relay service on this machine (never the team server):
+// 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md), against a relay service on this machine (never the team server):
 // a session asks someone, the person confirms it in Studio, the other person replies in 中转, and the reply goes back
 // into the session that asked — only into it, once.
 

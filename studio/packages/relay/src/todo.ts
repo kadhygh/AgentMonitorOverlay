@@ -3,7 +3,7 @@ import { DEVICE_ID_RE } from "./devices-protocol.js";
 import { RelayError } from "./store.js";
 import { TODO_ID_RE, TODO_ITEMS_MAX, TODO_OPS_MAX, TODO_SHARED, TODO_TEXT_MAX, TODO_TOMBSTONE_DAYS, type TodoDevice, type TodoItem, type TodoOp, type TodoOpsResult, type TodoSnapshot } from "./todo-protocol.js";
 
-// 待办's records (2026-11-01, plans/todo.md), in the relay's database: the items of every account's lists, the devices
+// 待办's records (2026-11-01, plans/done/todo.md), in the relay's database: the items of every account's lists, the devices
 // that used them, and per account the change counter (`rev`, every change takes it up and stamps the item) and the
 // highest counter of the deletion marks already thrown away (a device that last asked before that gets everything).
 

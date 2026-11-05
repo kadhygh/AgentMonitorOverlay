@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 
-// One set of rules for the right-click and ⋯ menus (2026-11-04, plans/cleanup-2026-11.md 第 7 步): there were eight,
+// One set of rules for the right-click and ⋯ menus (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步): there were eight,
 // each closing on a different set of things (the canvas's on the wheel and when the window lost focus, the file
 // menu's on a scroll, the task head's on neither) and keeping inside the window in its own way, or not.
 

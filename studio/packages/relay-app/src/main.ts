@@ -29,7 +29,7 @@ import { ContentStore, fetchManifest, type InstalledContent } from "./content.js
 import { LOADER_HTML, type LoaderState } from "./loader.js";
 import { openInStudio, studioHas } from "./studio-link.js";
 
-// AMO 中转's desktop client (plans/relay.md). This shell is fixed; what people see — login, conversations — is content
+// AMO 中转's desktop client (plans/done/relay.md). This shell is fixed; what people see — login, conversations — is content
 // the service hands out (packages/relay-ui), kept in <home>/client and updated without a restart:
 //   start → loader (connect, check the version, download content — the first time, or a newer version) → the content's
 //   login screen. A version published while it runs is applied by the content when nothing would be lost (it asks the
@@ -111,7 +111,7 @@ const argServer = () => {
   return i >= 0 ? (process.argv[i + 1] ?? null) : null;
 };
 /**
- * 在中转里打开 from AMO Studio (2026-11-05, plans/relay-round-2026-11-05.md J2): `--open-thread <id>`, at start or from
+ * 在中转里打开 from AMO Studio (2026-11-05, plans/done/relay-round-2026-11-05.md J2): `--open-thread <id>`, at start or from
  * a second start (single instance). Kept until the content takes it (it may still be loading or signing in), and sent
  * at once to a content already there.
  */

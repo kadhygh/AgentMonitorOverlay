@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { applyTodoOps, type TodoDevice, type TodoEntry, type TodoLink, type TodoOp, type TodoStatus, type TodoView } from "@amo-studio/protocol";
 
-// 待办's copy and its sync (2026-11-01, plans/todo.md). The lists live on the team server (the relay service's
+// 待办's copy and its sync (2026-11-01, plans/done/todo.md). The lists live on the team server (the relay service's
 // /api/todo); this keeps, per account, the server's state as last fetched (`base`, with its `rev`) and the changes made
 // here not sent yet (`queue`), in the program's home (todo-cache.json — a copy of the server's, not the person's file,
 // so not in the work folder). What the window shows is the base with the queue applied on top. A sync sends the queue,

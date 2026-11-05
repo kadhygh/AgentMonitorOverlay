@@ -18,7 +18,7 @@
         { "label": "改动说明", "path": "studio/packages/reviewer/CHANGELOG.md" }
       ],
       "related": ["studio.gitReview", "studio.viewPacks", "infra.e2e"],
-      "next": ["studio/plans/reviewer-standalone.md"]
+      "next": ["studio/plans/done/reviewer-standalone.md"]
     },
     {
       "id": "tool.notes",
@@ -37,7 +37,7 @@
         { "label": "改动说明", "path": "studio/packages/notes/CHANGELOG.md" }
       ],
       "related": ["tool.relayService", "app.shell"],
-      "next": ["studio/plans/notes-standalone.md", "studio/plans/todo.md"]
+      "next": ["studio/plans/done/notes-standalone.md", "studio/plans/done/todo.md"]
     },
     {
       "id": "tool.relayService",
@@ -57,7 +57,7 @@
         { "label": "改动说明（中转服务）", "path": "studio/packages/relay/CHANGELOG.md" }
       ],
       "related": ["tool.relayClient", "tool.issues", "studio.teamRelay", "studio.remote", "infra.release"],
-      "next": ["studio/packages/relay/README.md", "studio/plans/relay.md", "studio/plans/relay-tasks.md"]
+      "next": ["studio/packages/relay/README.md", "studio/plans/done/relay.md", "studio/plans/done/relay-tasks.md"]
     },
     {
       "id": "tool.relayClient",
@@ -74,7 +74,7 @@
         { "label": "改动说明（外壳）", "path": "studio/packages/relay-app/CHANGELOG.md" }
       ],
       "related": ["tool.relayService", "app.shell", "tool.platform"],
-      "next": ["studio/plans/relay-round-2026-11-05.md", "studio/plans/relay-tasks.md"]
+      "next": ["studio/plans/done/relay-round-2026-11-05.md", "studio/plans/done/relay-tasks.md"]
     },
     {
       "id": "tool.issues",
@@ -109,7 +109,7 @@
         { "label": "改动说明", "path": "studio/packages/platform/CHANGELOG.md" }
       ],
       "related": ["flow.platformChangelog", "infra.release", "tool.account", "tool.relayService"],
-      "next": ["studio/plans/amo-lan-platform.md", "studio/plans/claude-code-mirror.md"]
+      "next": ["studio/plans/amo-lan-platform.md", "studio/plans/done/claude-code-mirror.md"]
     },
     {
       "id": "tool.account",
@@ -141,7 +141,7 @@
         { "label": "手机用的命令", "path": "studio/packages/protocol/src/remote.ts", "anchor": "rt.rename" }
       ],
       "related": ["studio.remote", "tool.relayService"],
-      "next": ["studio/plans/ios.md", "studio/plans/android-mobile-redesign.md"]
+      "next": ["studio/plans/ios.md", "studio/plans/done/android-mobile-redesign.md"]
     }
   ]
 }

@@ -51,7 +51,7 @@ export interface NewSessionInput {
   /** Model, effort and permissions; the profile's defaults otherwise. */
   options?: SessionOptions;
   /**
-   * 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): the id of a Claude session started outside Studio (a terminal,
+   * 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md): the id of a Claude session started outside Studio (a terminal,
    * the Claude desktop app; GET /api/claude/outside-sessions). The session goes on from a copy of it, its conversation
    * imported; the original is left as it is. Claude subscription only.
    */
@@ -365,7 +365,7 @@ export const SUBSESSION_PERMISSIONS = ["read-only", "write", "full"] as const;
 export type SubsessionPermission = (typeof SUBSESSION_PERMISSIONS)[number];
 
 /**
- * 子会话设定 (2026-11-05, plans/subsession-mention-2026-11-05.md): a sub-session set up with @ 开子会话…, sent with the
+ * 子会话设定 (2026-11-05, plans/done/subsession-mention-2026-11-05.md): a sub-session set up with @ 开子会话…, sent with the
  * message that names it (「@子会话·Opus 5.5·high」). The Host keeps it under the session it was sent to; that session's
  * session_start with `setup: name` takes the model and options from it, and `extra` goes to the new session word for
  * word. What the person set wins over what the agent writes.
@@ -865,7 +865,7 @@ export type HostEvent = { seq: number } & (
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
   /**
-   * 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): another program on this computer (AMO 中转) asked to
+   * 在 Studio 里打开 (2026-11-05, plans/done/relay-round-2026-11-05.md J1): another program on this computer (AMO 中转) asked to
    * show a session; the workbench goes to it and comes forward (events older than a minute are stale).
    */
   | { type: "ui.open"; taskId: Id; sessionId: Id; at: Timestamp }

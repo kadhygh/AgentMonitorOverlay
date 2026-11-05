@@ -12,7 +12,7 @@ import { RemoteComments } from "./comments.js";
 import { sendAlong } from "./uploads.js";
 import { CopyImages } from "./copy-images.js";
 
-// 远程, step 2 on B (plans/remote-session.md, 2026-10-29): this computer's copies of the tasks paired devices granted
+// 远程, step 2 on B (plans/done/remote-session.md, 2026-10-29): this computer's copies of the tasks paired devices granted
 // it. A copy is an ordinary task of this Host (in the common space, Task.remote saying where it runs) with sessions whose
 // runtime is "remote", under A's own ids: the board, the task page, the conversation and Focus show it like any other.
 // A is the original: what B does to it goes there as a command, and what A has comes back — pushed as it happens, and
@@ -418,7 +418,7 @@ export class RemoteCopies {
     this.store.purge({ sessionIds, taskIds: [task.id], topicIds: [], workspaceIds: [] });
     this.publish({ type: "data.purged", workspaceIds: [], topicIds: [], taskIds: [task.id], sessionIds });
     this.profilesChanged(before);
-    // The files fetched for it go too (plans/remote-session.md: 归档时一起清掉).
+    // The files fetched for it go too (plans/done/remote-session.md: 归档时一起清掉).
     this.files.drop(task.id);
     this.views.drop(task.id);
     this.comments.drop(task.id);

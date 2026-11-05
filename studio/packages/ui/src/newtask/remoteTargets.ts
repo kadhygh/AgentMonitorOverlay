@@ -1,7 +1,7 @@
 import { peerPresence, type PeerPresence, type RemoteCatalog, type RemoteState } from "@amo-studio/protocol";
 import { rankChoices, type Choice } from "./choices.js";
 
-// 新任务页的远程模式 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): 「在别的设备上」 creates the task on another
+// 新任务页的远程模式 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): 「在别的设备上」 creates the task on another
 // computer of the person's — one that allowed this computer to pair — from what that computer allows (its catalog).
 // Pure logic; the page is RemoteDraft.tsx.
 

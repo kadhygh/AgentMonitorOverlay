@@ -9,7 +9,7 @@ import { setupViewerWindows } from "./viewer-window.js";
 import { installWindowControls } from "./window-controls.js";
 
 // AMO Reviewer (2026-10-23): Git Review, the viewer and 查看包 as a program of their own, for any tool or model, not
-// only AMO Studio (plans/reviewer-standalone.md). It runs a Host of its own with no models — its own data dir, the same
+// only AMO Studio (plans/done/reviewer-standalone.md). It runs a Host of its own with no models — its own data dir, the same
 // routes the review pages use — and opens the windows the Host is asked for: `amo-review <folder> --data <its data>`,
 // or this program started with a folder. Comments are copied (复制注释); there is nothing to send them to. Bookmarks are
 // Studio's and are not shown here. It ends with its last window.

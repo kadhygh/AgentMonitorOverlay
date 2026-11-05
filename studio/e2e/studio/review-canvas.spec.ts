@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { CanvasCallout, CanvasDoc, CanvasItem, Session, SessionItem, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
-// 画布审阅 (2026-10-27, plans/review-canvas.md): an agent lays a review out on its topic's canvas and asks on a card;
+// 画布审阅 (2026-10-27, plans/done/review-canvas.md): an agent lays a review out on its topic's canvas and asks on a card;
 // the person answers in the question window, the question folds away, the answer reaches the session; the person
 // marks an item and opens a session to talk one item over. Mock models only.
 

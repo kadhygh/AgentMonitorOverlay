@@ -1,4 +1,4 @@
-// 待办 (2026-11-01, plans/todo.md): what the 便签 program's 待办 window and its main process share. The lists live on the
+// 待办 (2026-11-01, plans/done/todo.md): what the 便签 program's 待办 window and its main process share. The lists live on the
 // team server (packages/relay/src/todo-protocol.ts, the same shapes); the program keeps a copy and the changes not sent
 // yet, and shows the copy with those changes on top.
 

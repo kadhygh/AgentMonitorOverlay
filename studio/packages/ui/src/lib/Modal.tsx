@@ -1,7 +1,7 @@
 import { useEffect, useRef, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
-// One dialog shell (2026-11-04, plans/cleanup-2026-11.md 第 7 步): some twenty dialogs wrote the backdrop and Escape out by
+// One dialog shell (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步): some twenty dialogs wrote the backdrop and Escape out by
 // hand, some with Escape on the backdrop (only while focus was inside), some on the window (closing the dialog under
 // another one too). Here: focus comes into the dialog when it opens (unless a field inside took it) and goes back when
 // it closes, so Escape reaches this one first; Escape and a press on the backdrop close it — only this one, not one

@@ -826,7 +826,7 @@ export class RelayStore {
     return Number((this.db.prepare("SELECT read_seq FROM thread_members WHERE thread_id = ? AND name = ?").get(threadId, name) as Row).read_seq);
   }
 
-  // ---- team tasks (stage 2b, plans/relay-tasks.md)
+  // ---- team tasks (stage 2b, plans/done/relay-tasks.md)
 
   /** Stage 2b (2026-10-27): tasks, their 记录, who has looked at a hand-over, the team's settings; sessions under a task. */
   private migrateTasks(): void {

@@ -117,7 +117,7 @@
 .quick-hints { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-faint); }
 .quick-hints > span, .quick-hints .link-btn { display: inline-flex; align-items: center; gap: 4px; }
 
-/* ---- 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md) ----------------------------------------------------- */
+/* ---- 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md) ----------------------------------------------------- */
 
 .draft-resume-btn { margin-left: auto; }
 .draft-side + .draft-resume-btn, .draft-resume-btn + .draft-side { margin-left: 0; }

@@ -6,7 +6,7 @@ import { DeleteButton } from "./DeleteButton.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { Modal } from "../lib/Modal.js";
 
-// 画布审阅 (2026-10-27, plans/review-canvas.md): a review's items as cards, the agents' remarks and questions pinned to
+// 画布审阅 (2026-10-27, plans/done/review-canvas.md): a review's items as cards, the agents' remarks and questions pinned to
 // cards as bubbles, the window a question is answered in, and the sidebar's 沟通 list.
 
 export const statusLabel = (s: ReviewStatus) => REVIEW_STATUSES.find((x) => x.id === s)?.label ?? s;

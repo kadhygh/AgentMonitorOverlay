@@ -26,7 +26,7 @@ export interface EnvItemView {
   updater: string | null;
   /**
    * Claude Code (not installed, or from its own installer) and Codex (not installed, or from npm) are installed here by
-   * the platform (2026-11-03, plans/claude-code-mirror.md): the two places to fetch from, side by side. Null for the
+   * the platform (2026-11-03, plans/done/claude-code-mirror.md): the two places to fetch from, side by side. Null for the
    * others, a Claude Code from npm (npm updates it) and anything from another installer.
    */
   install: EnvInstallView | null;

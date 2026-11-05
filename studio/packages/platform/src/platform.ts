@@ -1162,7 +1162,7 @@ export class Platform implements PlatformCalls {
   }
 
   /**
-   * 安装 / 更新 Claude Code (2026-11-03, plans/claude-code-mirror.md): from the team server's mirror when it has the
+   * 安装 / 更新 Claude Code (2026-11-03, plans/done/claude-code-mirror.md): from the team server's mirror when it has the
    * version, else Anthropic; the progress goes out with the view (at most every 300 ms while downloading).
    */
   private async installHere(it: EnvItemView, from: EnvFrom, view: EnvironmentView): Promise<EnvUpdateResult> {

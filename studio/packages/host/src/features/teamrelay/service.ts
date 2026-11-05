@@ -6,7 +6,7 @@ import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
-// 会话里用中转 (2026-10-30, plans/relay-in-sessions.md): a session asks someone on the team to confirm something through
+// 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): a session asks someone on the team to confirm something through
 // AMO 中转, as the person (the platform's login), marked as their AI's. Every send waits for the person first — in auto
 // mode too, since it goes to a real person — like a 主控's 传话; unless the person turned that off (设置 → 功能 → 中转,
 // 2026-10-30), then it goes at once. Each message carries the session's mark (Via.conv,
@@ -339,7 +339,7 @@ export class TeamRelayFeature extends Feature<"config" | "sessions"> {
   }
 
   /**
-   * Into the session's inbox (2026-11-04, plans/message-delivery.md): shown there at once, sent once its turn is over,
+   * Into the session's inbox (2026-11-04, plans/done/message-delivery.md): shown there at once, sent once its turn is over,
    * kept across a restart, 没送到 with 重新发送 when it cannot go in. Before, it went as the person's messages do — steered
    * into a Codex turn — and one that failed was only a line in host.log, the reply already taken off the relay.
    */

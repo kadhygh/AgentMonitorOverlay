@@ -8,7 +8,7 @@ import "./environment.css";
 // page. Claude Code and Codex also show the newest version, with 更新 when there is a newer one (2026-10-29, the user:
 // like cc-switch, only here and only when clicked — nothing suggests it elsewhere). The tools still check for themselves.
 // Claude Code (not installed, or from its own installer) and Codex (not installed, or from npm) are installed here
-// (2026-11-03, plans/claude-code-mirror.md): two blocks — 「团队服务器」 when it has a version ready, 「官方」 always —
+// (2026-11-03, plans/done/claude-code-mirror.md): two blocks — 「团队服务器」 when it has a version ready, 「官方」 always —
 // each with its version and button; the person picks. The real progress comes with the view (PlatformView.envTask).
 
 /** Newer than what is installed: the latest beats the version here. */

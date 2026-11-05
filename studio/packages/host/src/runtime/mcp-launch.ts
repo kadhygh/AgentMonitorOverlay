@@ -1,6 +1,6 @@
 import type { McpServerSpec } from "@amo-studio/protocol";
 
-// MCP 设置 (2026-11-04, plans/mcp.md): what a runtime starts a session's process with besides `amo`. Worked out by the
+// MCP 设置 (2026-11-04, plans/done/mcp.md): what a runtime starts a session's process with besides `amo`. Worked out by the
 // MCP feature (features/mcp/service.ts launch); here so the runtimes need not import a feature.
 
 export interface McpLaunch {

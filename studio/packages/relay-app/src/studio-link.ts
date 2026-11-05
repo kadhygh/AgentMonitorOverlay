@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { platformFile, readDevice } from "@amo-studio/account";
 
-// 在 Studio 里打开 (2026-11-05, plans/relay-round-2026-11-05.md J1): a session a Studio session on this computer sent
+// 在 Studio 里打开 (2026-11-05, plans/done/relay-round-2026-11-05.md J1): a session a Studio session on this computer sent
 // carries its mark, `studio:<device>:<session>` (Via.conv). When the device is this one's and Studio runs, the button
 // asks Studio's Host to show that session (POST /api/ui/open; the workbench acts on it). Studio is found through its
 // data dir: AMO_STUDIO_DATA_DIR, the one AMO 平台 set (platform.json), else the one a running Studio wrote down in

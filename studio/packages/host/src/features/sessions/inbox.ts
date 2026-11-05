@@ -4,7 +4,7 @@ import { Feature, type FeatureHost } from "../../core/feature.js";
 import type { SessionsFeature } from "./service.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 
-// 会话收件箱 (2026-11-04, plans/message-delivery.md): messages from agents and from Studio itself — a 中转 reply, 值守
+// 会话收件箱 (2026-11-04, plans/done/message-delivery.md): messages from agents and from Studio itself — a 中转 reply, 值守
 // going on in a session, 传话 (task_message), a forwarded mail, session_send, session_start's report — go into the
 // conversation at once as a row `delivery: "held"` (「等这一轮结束后送进去」) and are sent once the session is free: not in
 // a turn, not waiting on the person, not handed to a terminal. Before, each place called sendMessage as the person's

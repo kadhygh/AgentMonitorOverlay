@@ -10,7 +10,7 @@ import { writeUsageFile } from "./usageFile.js";
 import { SessionView } from "./SessionView.js";
 import { ARCHIVABLE, TASK_STATUSES, taskPrompt, type TaskEvent, type TaskSession, type TaskStatus, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
 
-// Team tasks (stage 2b, plans/relay-tasks.md), in AMO Studio's shapes: a board of cards in four columns (Studio
+// Team tasks (stage 2b, plans/done/relay-tasks.md), in AMO Studio's shapes: a board of cards in four columns (Studio
 // board.css), a task page with its list on the left — 概要, 记录, the sessions under it (Studio task.css) — and the
 // dialogs: 流转 (also 接手任务 from a session), a new task, 流程速查 and the team's settings.
 

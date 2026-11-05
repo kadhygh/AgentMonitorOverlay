@@ -3,7 +3,7 @@ import { REMOTE_TASK_FOLDER, type StateSnapshot, type Workspace } from "@amo-stu
 import { call, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 
-// 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): a remote task's 查看包 and Review on this computer. The windows
+// 远程 Reviewer (plans/done/remote-reviewer.md, 2026-11-02): a remote task's 查看包 and Review on this computer. The windows
 // are the usual ones; only their link goes through this Host's /api/remote/view/<task>/…, which passes each read on to
 // the computer the task runs on (and keeps it, for when that computer is away). The task's project is not on this
 // computer: a stand-in names it by that computer and 任务文件夹, with that computer's id for it (the routes carry it).

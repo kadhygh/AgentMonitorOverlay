@@ -6,7 +6,7 @@ import type { Store } from "../../store/store.js";
 import type { ClaudeHome } from "./claude-env.js";
 import { withConfigDir } from "./transcripts.js";
 
-// 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): Claude sessions started outside Studio — a terminal's `claude`,
+// 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md): Claude sessions started outside Studio — a terminal's `claude`,
 // the Claude desktop app — listed so a new task can go on from one. They live where Studio's local-login sessions do
 // (the person's config dir; added accounts link its `projects`), so the SDK's own session helpers read them.
 

@@ -1,4 +1,4 @@
-// Does every module a packed program imports exist in its folder? (2026-11-03, plans/package-slim.md)
+// Does every module a packed program imports exist in its folder? (2026-11-03, plans/done/package-slim.md)
 //   node scripts/check-package.mjs <program folder>…            e.g. "release/platform/AMO Studio"
 //   node scripts/check-package.mjs <folder>… --update-allow     write what is missing now into check-package.allow.json
 // package-portable.mjs runs it on every folder it builds. It reads each .js/.mjs/.cjs under resources/app and looks at the

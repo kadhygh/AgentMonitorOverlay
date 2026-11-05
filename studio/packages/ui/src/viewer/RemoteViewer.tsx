@@ -7,7 +7,7 @@ import { fileName } from "../files/paths.js";
 import type { ViewerTarget } from "./logic.js";
 import { TitleBar } from "../shell/WindowControls.js";
 
-// 远程 step 3 (2026-10-29, plans/remote-session.md): a remote task's file in the viewer. It is on the computer the task
+// 远程 step 3 (2026-10-29, plans/done/remote-session.md): a remote task's file in the viewer. It is on the computer the task
 // runs on, so this Host fetches it first (through the team server) and keeps it in this computer's data folder; the
 // viewer says 「正在从 <设备> 取文件…」 with how far it came, as 正在启动 does for a session, then shows the copy as it shows
 // any file. Fetching fails with the reason (that computer away, too big, not a kind remote viewing takes, not in the

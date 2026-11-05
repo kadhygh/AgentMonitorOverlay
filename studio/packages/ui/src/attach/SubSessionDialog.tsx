@@ -12,7 +12,7 @@ import { OPEN_SETTINGS_EVENT } from "../mcp/shared.js";
 
 // 开子会话… (2026-10-26): from the composer's @ list, a sub-session for the model to start — confirmed, the composer
 // gets its tag and the message says what it means.
-// 2026-11-05 (the user, plans/subsession-mention-2026-11-05.md): the model's own options (effort; Fast where it has
+// 2026-11-05 (the user, plans/done/subsession-mention-2026-11-05.md): the model's own options (effort; Fast where it has
 // one), the person's usage note for it (设置 → 子会话, read-only here) and words for this round; the tag reads
 // 「@子会话·模型·强度」; 「结果回到这个对话」 is gone (session_start's report is the model's to decide). Every choice
 // starts from that model's defaults in 设置 → 子会话.

@@ -8,7 +8,7 @@ import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext } from "./grants.js";
 
-// 远程, step 3 (plans/remote-session.md, 2026-10-29): B looks at a remote task's HTML, Markdown and images. On A
+// 远程, step 3 (plans/done/remote-session.md, 2026-10-29): B looks at a remote task's HTML, Markdown and images. On A
 // (`readRemoteFile`): the asked path is resolved, links and junctions first, and must land under the task's folder — or be
 // one of the pictures sent in its conversation — be one of those kinds by its name and its first bytes (text: no NUL
 // byte; 2026-10-29), and not too big;

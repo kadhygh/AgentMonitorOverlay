@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import type { StateSnapshot, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
-// 接续已有会话 (2026-11-05, plans/resume-cli-sessions.md): on the new-task page, a Claude session of the desktop app or a
+// 接续已有会话 (2026-11-05, plans/done/resume-cli-sessions.md): on the new-task page, a Claude session of the desktop app or a
 // terminal is picked from the person's own Claude Code dir (a stand-in here, signed in), and the task goes on from a
 // copy of it: its conversation shown, the model answering with all of it (the mock Anthropic API).
 

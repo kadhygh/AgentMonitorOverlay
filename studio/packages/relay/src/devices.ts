@@ -18,7 +18,7 @@ import {
 } from "./devices-protocol.js";
 import { RelayError } from "./store.js";
 
-// The devices side of the relay service (devices-protocol.ts, plans/remote-session.md step 1): who is connected as which
+// The devices side of the relay service (devices-protocol.ts, plans/done/remote-session.md step 1): who is connected as which
 // device, pairing requests, the service's copy of the pairs, and passing frames between paired devices. The tables live
 // in the relay's database beside the rest; what is online is memory only. Frames are never stored or read beyond their
 // envelope (to, id, kind).

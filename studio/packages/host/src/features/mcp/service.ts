@@ -30,7 +30,7 @@ import type { McpDraft, McpLaunch } from "../../runtime/mcp-launch.js";
 export type { McpLaunch };
 import { expandVars, parseSpec, personClaudeConfig, projectServers, userServers, type LocalMcpServer } from "./local.js";
 
-// MCP 设置 (2026-11-04, plans/mcp.md). Studio's own servers, the person's Claude Code ones, and which are on at the
+// MCP 设置 (2026-11-04, plans/done/mcp.md). Studio's own servers, the person's Claude Code ones, and which are on at the
 // global level, for a project and for a session; what each runtime gets when it starts a session's process.
 
 const SERVERS_KEY = "mcp:servers";

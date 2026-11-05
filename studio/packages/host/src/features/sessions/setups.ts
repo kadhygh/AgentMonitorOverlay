@@ -2,7 +2,7 @@ import { MAX_SUBSESSION_SETUPS, SUBSESSION_EXTRA_MAX, SUBSESSION_PERMISSIONS, ty
 import { HostError } from "../../core/shared.js";
 import type { Store } from "../../store/store.js";
 
-// 子会话设定 (2026-11-05, plans/subsession-mention-2026-11-05.md): what the person set up with @ 开子会话… comes with
+// 子会话设定 (2026-11-05, plans/done/subsession-mention-2026-11-05.md): what the person set up with @ 开子会话… comes with
 // the message that names it and is kept under the session it was sent to, by name; that session's session_start with
 // `setup: name` starts from it. A later setup of the same name replaces the earlier one.
 

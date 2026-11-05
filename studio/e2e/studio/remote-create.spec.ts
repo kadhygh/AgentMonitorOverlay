@@ -7,7 +7,7 @@ import type { ModelProfile, RemoteState, Session, SessionItem, Task, Topic, Work
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 远程创建 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): two Studios on this machine (each its own AMO_HOME and
+// 远程创建 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): two Studios on this machine (each its own AMO_HOME and
 // data, the mock model), paired through a relay service started here — never the team server. A ticks 远端允许的模型 and
 // 远端允许的项目 in 远程 → 远程设置 (before that, B's new-task page says where to tick); B opens 新任务, switches to
 // 「在别的设备上」 (the device card's 「在它上面新建任务」 does it with A picked), picks a topic — its one allowed project

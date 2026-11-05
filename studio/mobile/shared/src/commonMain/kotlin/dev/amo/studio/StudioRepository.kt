@@ -44,7 +44,7 @@ import kotlin.uuid.Uuid
 /**
  * The phone is only a guest device; every operation remains authorized by the remote Host.
  *
- * 2026-10-31 rewrite (plans/android-mobile-redesign.md): the connection, commands and file transfer are as before; what
+ * 2026-10-31 rewrite (plans/done/android-mobile-redesign.md): the connection, commands and file transfer are as before; what
  * changed is how much goes over the wire and how often. A session's history is fetched from where the phone's copy
  * ends (re-reading only what can still change: pending approvals and questions, running tools, streaming text), tasks
  * are fetched a few at a time and only on connect or coming back, pushed task and session changes are applied as they

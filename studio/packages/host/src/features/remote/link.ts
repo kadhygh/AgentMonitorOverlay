@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import WebSocket from "ws";
 import type { DeviceEvent, DeviceFrame, DeviceRef } from "@amo-studio/relay";
 
-// The Host's connection to the team server as a device (plans/remote-session.md, step 1; the ideas borrowed from Multica,
+// The Host's connection to the team server as a device (plans/done/remote-session.md, step 1; the ideas borrowed from Multica,
 // not its code): the Host connects out — the server never reaches into this computer — and comes back by itself with a
 // backoff (1 s doubling to 30 s, with jitter, back to 1 s once a connection held 10 s). Both ends ping: 60 s without an
 // answer counts as gone. Commands carry an id; the receiver answers a repeated id with the answer it gave (CommandLog),

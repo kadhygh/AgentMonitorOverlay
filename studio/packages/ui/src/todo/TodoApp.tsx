@@ -6,7 +6,7 @@ import { useHostState } from "../host/useHostState.js";
 import { pageFromKey } from "../scratchpad/logic.js";
 import { openPlatform, todoChange, todoOpenBound, todoSyncNow, todoUnbind, todoView } from "./api.js";
 
-// The 待办 window (#todo, 2026-11-01, plans/todo.md): a window of the 便签 program beside the 便签 one, in its look. The
+// The 待办 window (#todo, 2026-11-01, plans/done/todo.md): a window of the 便签 program beside the 便签 one, in its look. The
 // lists are on the team server; the program keeps the copy and sends the changes (packages/notes/src/todo.ts), this
 // shows them: 本机 / 共通 / 其他 ▾ in the title bar (Alt+1…), a line to type a new one, the open ones, 已完成 folded.
 // Deleting waits a few seconds before it is sent, so 撤销 can take it back (the server keeps deleted ones deleted).

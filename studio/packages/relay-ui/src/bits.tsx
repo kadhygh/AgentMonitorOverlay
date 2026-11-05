@@ -78,10 +78,10 @@ export function preview(m: Message | null): string {
   return text;
 }
 
-// ---- sessions (stage 2a, plans/relay-tasks.md): where one stands for me
+// ---- sessions (stage 2a, plans/done/relay-tasks.md): where one stands for me
 
 /** A session the asker's AI fetched and left untouched this long is 卡住. Back and not fetched, it is the asker's at
- * once: since 2026-10-28 the AI does not wait for a reply, the asker copies it over (plans/relay-tasks.md「卡点」). */
+ * once: since 2026-10-28 the AI does not wait for a reply, the asker copies it over (plans/done/relay-tasks.md「卡点」). */
 export const AI_STUCK_MS = 30 * 60_000;
 
 export interface SessionStatus {

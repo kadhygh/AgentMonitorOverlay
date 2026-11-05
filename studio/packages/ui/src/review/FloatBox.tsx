@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-// Its styles come with it (2026-11-05): AMO 中转's file viewer uses this same box (plans/relay-round-2026-11-05.md).
+// Its styles come with it (2026-11-05): AMO 中转's file viewer uses this same box (plans/done/relay-round-2026-11-05.md).
 import "./floatbox.css";
 
 // 批注小窗 (2026-10-31, 问题 #2): the box a comment is written in, next to what it is about — a passage of a reply in

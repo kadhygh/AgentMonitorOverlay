@@ -4,7 +4,7 @@ import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 
-// Downloading big program files so a break costs only what is left (plans/claude-code-mirror.md, 2026-11-03). Claude
+// Downloading big program files so a break costs only what is left (plans/done/claude-code-mirror.md, 2026-11-03). Claude
 // Code's official script fetches its 335 MB exe in one go and starts over when the line drops; the team server mirrors it
 // (packages/relay/src/mirror.ts) and AMO 平台 installs it (packages/platform/src/claude-install.ts), both with this: the
 // bytes go to a .part file, and the next try asks for the rest with Range. Both sides also unpack the .zst the same way to

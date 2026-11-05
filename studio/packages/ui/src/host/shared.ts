@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { HostLink } from "./client.js";
 import { watchLive, type LiveOptions } from "./live.js";
 
-// One copy per window and Host of something many components read (2026-11-04, plans/cleanup-2026-11.md 第 7 步):
+// One copy per window and Host of something many components read (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步):
 // useSettings was in seven components, each with its own GET /api/settings, and useProfiles in four, each loading the
 // whole /api/state. Like duty/duty.ts, but started by whoever reads it first and stopped when the last one goes, so a
 // window needs nothing set up. Keyed by address and token: a reconnect hands a new HostLink object for the same Host,

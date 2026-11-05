@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { fileSha256, unpackZstd } from "@amo-studio/locate/download";
 import { fetchPart, InstallError, machinePlatform, mirrorInfo, outputTail, runInstaller, toolSources, VERSION, type InstallFrom, type InstallProgress, type InstallRunner, type MachinePlatform, type ServerAccount, type ToolSources } from "./tool-mirror.js";
 
-// 环境 → 安装 / 更新 Claude Code (plans/claude-code-mirror.md; the user, 2026-11-02/03): from the team server's mirror
+// 环境 → 安装 / 更新 Claude Code (plans/done/claude-code-mirror.md; the user, 2026-11-02/03): from the team server's mirror
 // (packages/relay/src/mirror.ts) or from Anthropic, whichever the person clicks; either way the .zst (122 MB, not the
 // 335 MB exe), going on after a break (Range), unpacked and checked against Anthropic's own manifest (asked directly, so a
 // server that went wrong cannot slip in another file; the server's copy only when Anthropic cannot be reached).

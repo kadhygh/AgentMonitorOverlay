@@ -7,7 +7,7 @@ import { removeTempDir } from "@amo-studio/testkit";
 import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
-// 待办 (2026-11-01, plans/todo.md): the 便签 program's second window, its lists on a team server — here a relay service
+// 待办 (2026-11-01, plans/done/todo.md): the 便签 program's second window, its lists on a team server — here a relay service
 // started in this process, never the real one. This computer (台式机) and another device of the account (手机, through the
 // API) change the lists; the server goes away and comes back; the login goes; 使用待办 is turned off.
 

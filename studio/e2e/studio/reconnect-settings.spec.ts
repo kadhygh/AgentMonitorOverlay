@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import type { StudioSettings } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
-// 2026-11-04 (plans/cleanup-2026-11.md 第 7 步): what the window reads from the Host is read again after the event
+// 2026-11-04 (plans/done/cleanup-2026-11.md 第 7 步): what the window reads from the Host is read again after the event
 // socket comes back (host/live.ts, host/shared.ts). The Host dies and the shell starts it again; changes made before
 // the window has reconnected (no event reaches it) show in 设置 once it has: a preset (the settings, one copy per
 // window) and a 值守 item (the shell's copy).

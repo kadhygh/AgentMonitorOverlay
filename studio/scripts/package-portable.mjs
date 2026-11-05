@@ -53,7 +53,7 @@ const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewe
  */
 const BY_PATH = new Set(["app", "host", "reviewer", "notes", "platform", "relay-app", "ui"]);
 
-// What a packed program carries (2026-11-03, plans/package-slim.md; the user settled the scope, only what is safe):
+// What a packed program carries (2026-11-03, plans/done/package-slim.md; the user settled the scope, only what is safe):
 // no type declarations and no source maps; in third-party packages also none of their docs, tests, examples and tool
 // configs. Licences (LICENSE, NOTICE, COPYING) stay, each package's as it ships. Kept on purpose: .ts sources, the empty
 // modules of generated types, @anthropic-ai/sdk, the fonts.
@@ -252,7 +252,7 @@ function build(id) {
   const KEEP_LOCALES = new Set(["en-US.pak", "zh-CN.pak", "zh-TW.pak"]);
   for (const name of readdirSync(join(target, "locales"))) if (!KEEP_LOCALES.has(name)) rmSync(join(target, "locales", name));
 
-  // 2. The program's own packages (only what runs: package.json, dist, assets), each in one place (2026-11-03, plans/
+  // 2. The program's own packages (only what runs: package.json, dist, assets), each in one place (2026-11-03, plans/done/
   //    package-slim.md: until then the ones imported by name were copied twice). In development npm links
   //    node_modules/@amo-studio/<name> to packages/<name>; here a package reached by path stays in packages/, one only
   //    imported by name goes to node_modules/@amo-studio/, and one that is both (host, reviewer) gets in node_modules only

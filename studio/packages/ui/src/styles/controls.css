@@ -1,5 +1,5 @@
 /*
- * Studio's shared controls in one stylesheet (2026-11-04, plans/cleanup-2026-11.md 第 7 步): buttons, the text field,
+ * Studio's shared controls in one stylesheet (2026-11-04, plans/done/cleanup-2026-11.md 第 7 步): buttons, the text field,
  * dialogs and menus were spread over shell.css, task.css, review.css and settings.css, so the 便签 took task.css and
  * settings.css for their buttons and the platform added its own .btn-ghost:disabled. Imported right after base.css by
  * every page (main, 便签, Reviewer, 平台). The rules are as they were, in the order they were; the page's own sheets come

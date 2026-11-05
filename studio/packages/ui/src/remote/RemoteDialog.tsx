@@ -8,7 +8,7 @@ import { AskRows, IncomingTaskRequests } from "./RemoteRequests.js";
 import { PairDialog } from "./PairDialog.js";
 import { Modal } from "../lib/Modal.js";
 
-// 远程 (2026-10-29, plans/remote-page-and-new-task.md §1–3): opened from the top bar (设置 → 远程 before). A dialog since
+// 远程 (2026-10-29, plans/done/remote-page-and-new-task.md §1–3): opened from the top bar (设置 → 远程 before). A dialog since
 // the evening of 10-29 (the user: 「远程包成一个弹窗」; a page of its own before), and 远程设置 a second dialog on top of
 // it. Top to bottom, in the order it is used: who and where this computer is on the team server (one quiet line, or why
 // it is not connected); 任务 — what waits here, the tasks this computer granted, the remote tasks on it and the

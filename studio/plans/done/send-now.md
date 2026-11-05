@@ -1,6 +1,6 @@
 # 立即发送（Claude 和 Codex）
 
-分支 `studio/send-now`，worktree `G:\PROJECT\AgentMonitorOverlay-send-now`。2026-11-02 开始。
+> 状态：做完（2026-11-02 起做，合进 master，随 Studio 0.9.27 发布；DSH 11-04 由 `plans/done/message-delivery.md` 补上）。两台电脑之间的远程立即发送 / 重新发送只有单测，没有端到端跑过。分步进度表 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。
 
 ## 要做什么
 
@@ -11,7 +11,7 @@
 | 怎么发 | Enter、点发送 | 生成中按 Ctrl+Enter；或在一条「等待送达」的消息上点「立即发送」 |
 | 什么时候到模型 | 下一次工具调用后，或这一轮结束后 | 马上：打断当前这一步，模型立刻读到 |
 
-对齐 Claude Code CLI 的 Send now（`ctrl+enter`、`ctrl+x ctrl+s`）和 Codex TUI 的「press esc to interrupt and send immediately」。DSH 当时不做（它等这一轮结束才发）；2026-11-04 补上了（`session/cancel` 让位，见 `plans/message-delivery.md`）。
+对齐 Claude Code CLI 的 Send now（`ctrl+enter`、`ctrl+x ctrl+s`）和 Codex TUI 的「press esc to interrupt and send immediately」。DSH 当时不做（它等这一轮结束才发）；2026-11-04 补上了（`session/cancel` 让位，见 `plans/done/message-delivery.md`）。
 
 ## 用户定的（2026-11-02）
 
@@ -20,13 +20,13 @@
 3. **远程会话也支持**：B 控制 A 的会话时，立即发送、重新发送照样能用。
 4. **生成中 Ctrl+Enter = 立即发送**；不在生成中时 Ctrl+Enter 还是普通发送。
 
-## 调查结论（2026-11-02，假模型实测，脚本在 `%TEMP%\amo-sendnow-exp\`）
+## 调查结论（2026-11-02，假模型实测）
 
 Claude（SDK 0.3.304 自带的 CLI 2.1.304）：
 
 - 发进输入流的消息，CLI 先放进它自己的队列（等待送达），到下一次工具调用后被并进当前这一轮，或这一轮结束后作为下一轮。
 - 带 `uuid` 的消息，CLI 发 `command_lifecycle` 帧：`queued` → `started`（送到模型）→ `completed` / `cancelled`。init 里有 `msg_lifecycle_v1`。
-- `q.interrupt()`：查询**不会**结束（`claude-runtime.ts` 原来的注释过时了）。这一轮以 `error_during_execution` 结束，等待中的消息留下（`still_queued`），马上作为下一轮发出。
+- `q.interrupt()`：查询**不会**结束。这一轮以 `error_during_execution` 结束，等待中的消息留下（`still_queued`），马上作为下一轮发出。
 - 内部控制请求 `{subtype: "interrupt", send_now: true, message_uuid}`（`q.request`，SDK 的类型里没有；init 里有 `interrupt_send_now_v1`）：回答 `send_now: "stopped"`，这一轮像打断一样结束，那条消息立刻发出。CLI 不认识时当普通打断，效果一样。
 - 用户消息带 `priority: "now"`（SDK 公开字段）：当前这一轮马上让位（工具调用被中止），这条立刻发出。
 - 关掉进程（15 秒兜底）时，等待中的消息**丢了**：从没送到模型，Studio 却显示已发出。
@@ -56,14 +56,14 @@ Claude：
 Codex：
 
 - 插话带 `clientUserMessageId`，消息马上显示成 `waiting`；`item/completed userMessage` 带回同一个 `clientId` 时，不新增条目，清掉 `waiting`。
-- 一轮结束（完成或中断）时还有没读到的插话：照第 1 条，作为下一轮 `turn/start` 发出（几条合成一条输入）。
+- 一轮结束（完成或中断）时还有没读到的插话：照第 1 条接着发出（怎么发见下面「做的时候定下的细节」）。
 - 立即发送：`turn/interrupt`，然后由上一条接着发出。Ctrl+Enter 在一轮进行中：先作为等待中的插话，再立即发送。
 - app-server 退出时，没读到的改成 `unsent`。
 
 界面：
 
 - 等待中的消息：小字「等待送达」+「立即发送」；没送到的：「没送到」+「重新发送」。只读时不给按钮。
-- 生成中提示：原来的那句后面加「 · Ctrl+Enter 立即发送」，去掉「生成中：」开头（不然输入框下面一行放不下），例如 Claude「工具调用后或本轮结束后读到 · Ctrl+Enter 立即发送」。DSH 不变。
+- 生成中提示：原来的那句后面加「 · Ctrl+Enter 立即发送」，去掉「生成中：」开头（不然输入框下面一行放不下），例如 Claude「工具调用后或本轮结束后读到 · Ctrl+Enter 立即发送」。
 - 「停止」把刚发的消息放回输入框（`takeBack.ts`）：等待中的那条不放回（它停下后照样会发出，放回会发两次）。
 
 ## 做的时候定下的细节
@@ -73,19 +73,7 @@ Codex：
 - 让位的那一轮在对话里显示成「已停止」（和打断一样），不报错。
 - 停下后等待中的消息接着发：Claude 由 CLI 自己做（`still_queued`），Codex 由上面的 `afterTurn` 做。
 
-## 分步
-
-| 步 | 内容 | 状态 |
-|---|---|---|
-| 0 | 方案、worktree | ✓ |
-| 1 | 协议 + Claude：uuid、送达状态、立即发送、Ctrl+Enter、没送到、重新发送；集成测试（假模型） | ✓ |
-| 2 | Codex：插话马上显示、clientId 对上、没读到的接着发、立即发送、没送到、重新发送；假 app-server 补上「命令跑完才读插话、打断就丢」（`[[busy: ms]]`） | ✓ |
-| 3 | 路由 + 远程（`rt.send` 的 `now`、`rt.sendNow`、`rt.resend`） | ✓（单测和类型检查过；两台电脑的远程没有端到端跑） |
-| 4 | 界面：两个按钮、Ctrl+Enter、提示、takeBack；e2e 截图（`screenshots/send-now/`） | ✓ |
-| 5 | CHANGELOG「下一版」、HANDOFF | ✓ |
-
 ## 约束
 
 - `send_now` 是 CLI 的内部字段，CLI 升级可能变：只在 init 报了 `interrupt_send_now_v1` 时用，否则普通打断（效果相同，只是 CLI 不能选择把命令挪到后台）。
 - 不改「停止」的行为（除了 Codex 的插话不再丢）。
-- 重的命令用 BelowNormal、`--maxWorkers=6`。

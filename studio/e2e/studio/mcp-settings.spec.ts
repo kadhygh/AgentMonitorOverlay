@@ -6,7 +6,7 @@ import type { Session, StateSnapshot, Task, Workspace } from "@amo-studio/protoc
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
-// MCP 设置 (2026-11-04, plans/mcp.md): 设置 → MCP (the person's own Claude Code servers and Studio's, pasted as JSON),
+// MCP 设置 (2026-11-04, plans/done/mcp.md): 设置 → MCP (the person's own Claude Code servers and Studio's, pasted as JSON),
 // 编辑项目's MCP (its .mcp.json), the composer's MCP button; a DSH session gets them, and a change from its next message.
 
 let studio: Studio | undefined;

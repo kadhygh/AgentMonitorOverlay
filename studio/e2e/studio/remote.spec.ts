@@ -6,11 +6,11 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
-// 远程, step 1 (plans/remote-session.md, 2026-10-29): two Studios on this machine, each with its own AMO_HOME logged in
+// 远程, step 1 (plans/done/remote-session.md, 2026-10-29): two Studios on this machine, each with its own AMO_HOME logged in
 // (as the AMO platform would) to a relay service started here on a free port — never the team server. B asks A's
 // account to pair; A sees it on the top bar's 「远程」 and on Focus and allows; both list the other and 测试连接 goes
 // round; A ends it and B's list empties too. Since 2026-10-29 evening 远程 is a page of its own (the top bar's button,
-// plans/remote-page-and-new-task.md), and the pair dialog lists the account's other online devices to pick from.
+// plans/done/remote-page-and-new-task.md), and the pair dialog lists the account's other online devices to pick from.
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
 const account = (await import(pathToFileURL(join(studioRoot, "packages", "account", "dist", "index.js")).href)) as typeof import("../../packages/account/src/index.js");

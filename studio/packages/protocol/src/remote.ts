@@ -1,4 +1,4 @@
-// 远程 (plans/remote-session.md, step 1, 2026-10-29): this computer as a device on the team server, the devices paired
+// 远程 (plans/done/remote-session.md, step 1, 2026-10-29): this computer as a device on the team server, the devices paired
 // with it, and pairing requests. The Host keeps the connection (features/remote/); the remote page (顶栏「远程」, 设置 → 远程 until 2026-10-29) and Focus show this.
 // Needs the AMO platform's login (%APPDATA%\AMO\account.json): Studio has no login of its own.
 
@@ -94,7 +94,7 @@ export interface RemoteState {
   taskRequests: RemoteTaskRequest[];
   /** Step 4, as B: what this computer asked paired devices to run, and their answers (until put away). */
   asks: RemoteTaskRequest[];
-  /** 远端允许的项目 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): where paired devices may create tasks here. */
+  /** 远端允许的项目 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): where paired devices may create tasks here. */
   allowedProjects: RemoteAllowedProjects;
   /** 安全 (2026-10-29): whether a task a paired device creates here starts at once or waits for a yes here. */
   security: RemoteSecurity;
@@ -167,7 +167,7 @@ export interface RemotePingResult {
   message: string;
 }
 
-/** 刚失联 lasts this long after a device went away; then it is 离线 (Multica's two levels, plans/remote-session.md). */
+/** 刚失联 lasts this long after a device went away; then it is 离线 (Multica's two levels, plans/done/remote-session.md). */
 export const REMOTE_LOST_MS = 5 * 60_000;
 
 export type PeerPresence = "online" | "lost" | "offline" | "unknown";
@@ -325,7 +325,7 @@ export const REMOTE_KINDS = {
    */
   createTemplates: "rt.create-templates",
   /**
-   * B → A (远程 Reviewer, plans/remote-reviewer.md, 2026-11-02): one read of the Reviewer on a granted task — its 查看包,
+   * B → A (远程 Reviewer, plans/done/remote-reviewer.md, 2026-11-02): one read of the Reviewer on a granted task — its 查看包,
    * the Git Review of its project, a file a pack names — as B's Reviewer asked its own Host for it. A checks it against
    * the grant and the task's folder. RemoteViewAsk → RemoteViewAnswer
    */
@@ -551,7 +551,7 @@ export interface RemoteFetchedFile {
   key: string;
 }
 
-// ---- 远程 Reviewer (plans/remote-reviewer.md, 2026-11-02): B looks at a remote task's 查看包 and Review --------------
+// ---- 远程 Reviewer (plans/done/remote-reviewer.md, 2026-11-02): B looks at a remote task's 查看包 and Review --------------
 // B's Reviewer windows on a remote task talk to their own Host as usual, through `/api/remote/view/<task>/…` instead of
 // `/api/…`; B's Host passes each read on to A (rt.view) and keeps the answer, shown again (said to be old) while A is
 // away. A answers only what the Reviewer reads — the task's packs, git of the task's project (read only), files a pack
@@ -628,7 +628,7 @@ export interface RemoteAcceptInput {
   profileId: Id;
 }
 
-// ---- 远程创建 (plans/remote-page-and-new-task.md 4.1, 2026-10-29): B creates a task on A from its new-task page ----------
+// ---- 远程创建 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): B creates a task on A from its new-task page ----------
 // The user (10-29): nobody on A says yes; A's 远程设置 limits it instead — 远端允许的项目 (and whether 「不选项目（公共
 // 文件夹）」 is allowed) beside 远端允许的模型. Nothing ticked there: remote create is not available. B asks A for what it
 // may pick (rt.catalog), then creates (rt.create): A makes the task, grants it to B and starts its session with the
@@ -758,7 +758,7 @@ export function composeRemoteReviewMessage(comments: Parameters<typeof composeGi
 
 // ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
 
-/** 远程 (2026-10-29, plans/remote-session.md): this computer as a device, pairing, granted tasks, remote creation. */
+/** 远程 (2026-10-29, plans/done/remote-session.md): this computer as a device, pairing, granted tasks, remote creation. */
 export interface RemoteRoutes {
   "GET /api/remote": { req: void; res: RemoteState };
   /** Renames this computer (device.json, shared with the AMO platform). */

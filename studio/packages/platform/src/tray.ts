@@ -1,4 +1,4 @@
-// The platform's tray menu (plans/remote-page-and-new-task.md §6, 2026-10-29, the user): the tools the platform starts
+// The platform's tray menu (plans/done/remote-page-and-new-task.md §6, 2026-10-29, the user): the tools the platform starts
 // put no icon of their own in the tray (`--amo-tray=platform`), so this one menu has all of them — not folded into
 // submenus (there are few), one part per tool under a grey heading, everything listed. Clicking the icon opens 便签 or
 // Studio, as chosen at the bottom. What an item does is an action the platform runs (platform.ts's trayAction): each

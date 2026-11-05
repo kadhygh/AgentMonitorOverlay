@@ -69,7 +69,7 @@
         { "label": "任务页远程那一行", "path": "studio/packages/ui/src/task/RemoteBanner.tsx", "anchor": "export function remoteQuota" }
       ],
       "related": ["studio.remote", "studio.channels"],
-      "next": ["studio/packages/host/src/features/remote/remote-usage.test.ts", "studio/plans/remote-session.md"]
+      "next": ["studio/packages/host/src/features/remote/remote-usage.test.ts", "studio/plans/done/remote-session.md"]
     },
     {
       "id": "flow.platformChangelog",
@@ -131,7 +131,7 @@
         { "label": "冒烟", "path": "studio/scripts/smoke-portable.mjs" }
       ],
       "related": ["infra.release"],
-      "next": ["studio/plans/package-slim.md"]
+      "next": ["studio/plans/done/package-slim.md"]
     },
     {
       "id": "infra.e2e",

@@ -78,7 +78,7 @@
         { "label": "子会话设置页", "path": "studio/packages/ui/src/settings/SubsessionPage.tsx" }
       ],
       "related": ["runtime.common", "ui.chat", "studio.relays", "studio.teamRelay"],
-      "next": ["studio/plans/message-delivery.md", "studio/plans/send-now.md", "studio/plans/subsession-mention-2026-11-05.md"]
+      "next": ["studio/plans/done/message-delivery.md", "studio/plans/done/send-now.md", "studio/plans/done/subsession-mention-2026-11-05.md"]
     },
     {
       "id": "studio.tasks",
@@ -151,7 +151,7 @@
         { "label": "画布状态", "path": "studio/packages/ui/src/canvas/useCanvas.ts" }
       ],
       "related": ["studio.topics", "ui.shell"],
-      "next": ["studio/plans/review-canvas.md", "studio/plans/canvas-workflow.md"]
+      "next": ["studio/plans/done/review-canvas.md", "studio/plans/canvas-workflow.md"]
     },
     {
       "id": "studio.remote",
@@ -174,7 +174,7 @@
         { "label": "服务器上的设备中转", "path": "studio/packages/relay/src/devices.ts", "anchor": "export class DeviceHub" }
       ],
       "related": ["flow.remoteUsage", "tool.account", "tool.relayService", "tool.mobile"],
-      "next": ["studio/plans/remote-session.md", "studio/plans/remote-page-and-new-task.md", "studio/plans/remote-reviewer.md"]
+      "next": ["studio/plans/done/remote-session.md", "studio/plans/done/remote-page-and-new-task.md", "studio/plans/done/remote-reviewer.md"]
     },
     {
       "id": "studio.teamRelay",
@@ -188,7 +188,7 @@
         { "label": "界面", "path": "studio/packages/ui/src/teamrelay/TeamRelay.tsx" }
       ],
       "related": ["tool.relayService", "studio.sessions", "tool.account"],
-      "next": ["studio/plans/relay-in-sessions.md"]
+      "next": ["studio/plans/done/relay-in-sessions.md"]
     },
     {
       "id": "studio.duty",
@@ -217,7 +217,7 @@
         { "label": "设置页", "path": "studio/packages/ui/src/settings/McpPage.tsx" }
       ],
       "related": ["host.agentMcp", "runtime.common"],
-      "next": ["studio/plans/mcp.md"]
+      "next": ["studio/plans/done/mcp.md"]
     },
     {
       "id": "studio.gitReview",
@@ -232,7 +232,7 @@
         { "label": "协议", "path": "studio/packages/protocol/src/gitreview.ts", "anchor": "GitReviewRoutes" }
       ],
       "related": ["tool.reviewer", "studio.viewPacks"],
-      "next": ["studio/plans/reviewer-standalone.md", "studio/plans/done/stage-12.md"]
+      "next": ["studio/plans/done/reviewer-standalone.md", "studio/plans/done/stage-12.md"]
     },
     {
       "id": "studio.viewPacks",
@@ -261,7 +261,7 @@
         { "label": "维护模板原文", "path": "studio/docs/prompt-templates/maintenance-iterate.md" }
       ],
       "related": ["studio.duty"],
-      "next": ["studio/plans/prompt-templates.md"]
+      "next": ["studio/plans/done/prompt-templates.md"]
     },
     {
       "id": "studio.channels",
@@ -386,7 +386,7 @@
         { "label": "提问", "path": "studio/packages/host/src/runtime/claude/questions.integration.test.ts" }
       ],
       "related": ["runtime.common", "studio.channels", "ui.newTask"],
-      "next": ["studio/plans/resume-cli-sessions.md", "studio/plans/done/stage-12.md"]
+      "next": ["studio/plans/done/resume-cli-sessions.md", "studio/plans/done/stage-12.md"]
     },
     {
       "id": "runtime.codex",
@@ -437,7 +437,7 @@
         { "label": "改动说明", "path": "studio/packages/app/CHANGELOG.md" }
       ],
       "related": ["ui.focus", "tool.platform", "tool.notes"],
-      "next": ["studio/plans/remote-session.md"]
+      "next": ["studio/plans/done/remote-session.md"]
     },
     {
       "id": "ui.shell",
@@ -453,7 +453,7 @@
         { "label": "弹窗外壳", "path": "studio/packages/ui/src/lib/Modal.tsx" }
       ],
       "related": ["ui.chat", "ui.focus", "workflow.newRoute"],
-      "next": ["studio/plans/cleanup-2026-11.md"]
+      "next": ["studio/plans/done/cleanup-2026-11.md"]
     },
     {
       "id": "ui.chat",
@@ -497,7 +497,7 @@
         { "label": "远程新建", "path": "studio/packages/ui/src/newtask/RemoteDraft.tsx" }
       ],
       "related": ["runtime.claude", "studio.remote", "studio.tasks"],
-      "next": ["studio/plans/resume-cli-sessions.md", "studio/plans/remote-page-and-new-task.md"]
+      "next": ["studio/plans/done/resume-cli-sessions.md", "studio/plans/done/remote-page-and-new-task.md"]
     },
     {
       "id": "ui.panorama",
