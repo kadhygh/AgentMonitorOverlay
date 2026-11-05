@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
-import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, Task, Workspace } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, SubsessionSetup, Task, Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
@@ -83,7 +83,8 @@ interface ThreadProps {
   onApprove(item: ApprovalItem, decision: ApprovalDecision): void;
   onJump(sessionId: string): void;
   /** `attachments`: ids of uploaded images sent along; `now`: 立即发送 (Ctrl+Enter while it works, 2026-11-02). */
-  onSend(text: string, attachments: string[], now?: boolean): Promise<boolean>;
+  /** `subsessions`: the 子会话设定 the message names (2026-11-05). */
+  onSend(text: string, attachments: string[], now?: boolean, subsessions?: SubsessionSetup[]): Promise<boolean>;
   onInterrupt(): void;
   /** 立即发送 a waiting message / 重新发送 one never read (the buttons under it). */
   onDelivery?(itemId: string, action: DeliveryAction): void;
@@ -417,6 +418,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
     setDraft("");
     const sent = attach.take();
     jumpToEnd();
+    const setups = text ? mentions.setups(text) : [];
     const message = withFileRefs(text ? mentions.expand(text) : "", sent.refs);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
     const givesWay = now && sendsNow;
@@ -434,7 +436,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
       setDraft((d) => (d.trim() ? d : text));
       onError?.(`发出去 ${SEND_GIVE_UP_MS / 1000} 秒了，Host 还没回应：文字放回了输入框。先看一眼对话里有没有这条，没有再发。`);
     }, SEND_GIVE_UP_MS);
-    const ok = await onSend(message, ids, givesWay);
+    const ok = await onSend(message, ids, givesWay, setups);
     settled = true;
     clearTimeout(slow);
     clearTimeout(giveUp);

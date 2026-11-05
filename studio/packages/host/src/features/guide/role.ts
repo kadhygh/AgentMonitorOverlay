@@ -112,8 +112,11 @@ function cardOf(service: HostService, f: RoleFacts): string {
     lines.push("- 人写的模型用法（开子会话 session_start、拆任务 task_plan_propose 时参考；model 照括号里的写）：");
     for (const n of notes) {
       const p = service.profiles.find((x) => x.id === n.profileId)!;
-      if (n.model) lines.push(`  - ${p.label}/${n.model}（model: "${p.label}/${n.model}"）：${oneLine(n.note, 1000)}`);
-      else lines.push(`  - ${p.label} 的所有型号（model: "${p.label}" 是它的默认型号，"${p.label}/型号" 指定型号；某个型号另有说明时以那条为准）：${oneLine(n.note, 1000)}`);
+      // 2026-11-05: its defaults as a sub-session, which session_start applies when they are left out.
+      const defaults = [n.effort ? `effort ${n.effort}` : "", n.fast === true ? "Fast 开" : n.fast === false ? "Fast 关" : "", n.permission ? `permission ${n.permission}` : ""].filter(Boolean);
+      const tail = `${n.note ? oneLine(n.note, 1000) : "（没写用法）"}${defaults.length ? `（人设的默认：${defaults.join("、")}；session_start 不带这几项时自动用）` : ""}`;
+      if (n.model) lines.push(`  - ${p.label}/${n.model}（model: "${p.label}/${n.model}"）：${tail}`);
+      else lines.push(`  - ${p.label} 的所有型号（model: "${p.label}" 是它的默认型号，"${p.label}/型号" 指定型号；某个型号另有说明时以那条为准）：${tail}`);
     }
   }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;

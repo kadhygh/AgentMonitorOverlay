@@ -5,6 +5,7 @@ import { StaticCredentialReader } from "./runtime/credentials.js";
 import { resolveNode } from "./runtime/dsh/install.js";
 import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 import { StoreTooNewError } from "./store/store.js";
+import { CLAUDE_FAST_NOTE, CLAUDE_FAST_TIER } from "./runtime/claude/probe.js";
 import { HOST_START_FAILED, type HostStartFailedMessage } from "@amo-studio/protocol";
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
@@ -20,7 +21,7 @@ const studioRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
 
 // Asking Claude Code for its models against the mock API only times out, so the mock profiles list their own.
-const MOCK_CLAUDE_MODELS = ["mock-claude", "mock-claude-b"].map((id) => ({ id, label: id, efforts: ["low", "medium", "high", "xhigh", "max"], ...(id === "mock-claude" ? { isDefault: true } : {}) }));
+const MOCK_CLAUDE_MODELS = ["mock-claude", "mock-claude-b"].map((id) => ({ id, label: id, efforts: ["low", "medium", "high", "xhigh", "max"], ...(id === "mock-claude" ? { isDefault: true, fast: { tier: CLAUDE_FAST_TIER, description: CLAUDE_FAST_NOTE } } : {}) }));
 
 const OFFLINE = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" };
 

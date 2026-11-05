@@ -10,6 +10,14 @@ import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
 import { mentionSpans, splitMentionRefs } from "../attach/mentions.js";
+
+/** The line under a message whose @ names were explained to the model (2026-11-05: sub-session setups named too). */
+function mentionBrief(blocks: string): string {
+  const kinds = ["项目", "任务", "会话"].filter((k) => blocks.includes(`提到的${k}：`));
+  const sub = blocks.includes("子会话的设定（") || blocks.includes("子会话的开法（");
+  if (!kinds.length && sub) return "AMO：已附上子会话设定";
+  return `AMO：已附上提到的${kinds.join("、") || "任务、会话"}说明${sub ? "和子会话设定" : ""}`;
+}
 import { TurnChanges } from "../files/ChangedFiles.js";
 import { QuestionRecord } from "./questions/QuestionRecord.js";
 import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
@@ -355,7 +363,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
         <MessageFiles files={refs} />
         {blocks && (
           <span className={commit ? "msg-role-update quick-commit" : "msg-role-update"} title={blocks} data-testid="msg-mention-brief">
-            {commit ? `快速提交 · ${commit.push ? "提交、合并并推送" : "提交、合并，不推送"}` : `AMO：已附上提到的${["项目", "任务", "会话"].filter((k) => blocks.includes(`提到的${k}：`)).join("、") || "任务、会话"}说明`}
+            {commit ? `快速提交 · ${commit.push ? "提交、合并并推送" : "提交、合并，不推送"}` : mentionBrief(blocks)}
           </span>
         )}
         {update && (

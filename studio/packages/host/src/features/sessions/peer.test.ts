@@ -90,6 +90,38 @@ describe("session_start (开会话)", () => {
     expect(userTexts(caller.id).some((t) => t.includes("这一轮做完了"))).toBe(false);
   });
 
+  it("setup: the person's 子会话设定 sent with a message wins over the agent's arguments; its words go to the new session (2026-11-05)", async () => {
+    await expect(service.sessions.startPeer(caller.id, { text: "x", setup: "子会话·Plain·high" })).rejects.toThrow(/人还没在发给你的消息里 @ 过子会话/);
+    service.sessions.rememberSetups(caller.id, [{ name: "子会话·Plain·high", profileId: "p-plain", model: null, effort: "high", fast: true, permission: "full", extra: "只改数值表，改完跑校验" }]);
+    // The agent names another model, effort and permission: the person's setup stands. Full is not held to the
+    // caller's (default) permission: the person chose it. Fast is dropped where the model has none.
+    const s = await service.sessions.startPeer(caller.id, { text: "按计划改", setup: "@子会话·Plain·high", model: "GPT", effort: "low", permission: "read-only" });
+    expect(s).toMatchObject({ profileId: "p-plain", options: { effort: "high", permission: "full-auto" } });
+    expect(s.options.fast).toBeUndefined();
+    const first = userTexts(s.id)[0]!;
+    expect(first).toContain("按计划改\n\n【人对这个子会话补充的话（@子会话·Plain·high）】\n只改数值表，改完跑校验");
+    // A name it does not have: refused with the ones it has. A later setup of the same name replaces the earlier.
+    await expect(service.sessions.startPeer(caller.id, { text: "x", setup: "子会话·GPT" })).rejects.toThrow(/人发给你的有：「子会话·Plain·high」/);
+    service.sessions.rememberSetups(caller.id, [{ name: "子会话·Plain·high", profileId: "p-plain", model: null, effort: "low" }]);
+    expect((await service.sessions.startPeer(caller.id, { text: "再来", setup: "子会话·Plain·high" })).options).toMatchObject({ effort: "low" });
+    // The agent's own fast on a model without Fast is refused.
+    await expect(service.sessions.startPeer(caller.id, { text: "x", model: "Plain", fast: true })).rejects.toThrow(/没有 Fast/);
+  });
+
+  it("设置 → 子会话's defaults fill what the agent leaves out (2026-11-05)", async () => {
+    service.config.updateSettings({ subsessionNotes: [{ profileId: "p-plain", model: null, note: "", effort: "low", permission: "read-only" }] });
+    const s = await service.sessions.startPeer(caller.id, { text: "查一下", model: "Plain" });
+    expect(s.options).toMatchObject({ effort: "low", permission: "read-only" });
+    // What the agent names goes first; an agent's permission is still held to the caller's.
+    expect((await service.sessions.startPeer(caller.id, { text: "想深点", model: "Plain", effort: "high" })).options.effort).toBe("high");
+    // Another model of the account: the account's permission, not its effort (it fits the default model's list).
+    const slow = await service.sessions.startPeer(caller.id, { text: "慢慢来", model: "Plain/fake-slow" });
+    expect(slow.options).toMatchObject({ model: "fake-slow", permission: "read-only" });
+    expect(slow.options.effort).toBeUndefined();
+    // A note with only defaults is kept; the role card says them.
+    expect(service.config.subsessionNotes()).toEqual([{ profileId: "p-plain", model: null, note: "", effort: "low", permission: "read-only" }]);
+  });
+
   it("forPerson: a session the person works in, beside the caller rather than under it, not reporting back (2026-10-26)", async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "拳套的问题人来处理，背景如下……", title: "拳套", forPerson: true });
     expect(s).toMatchObject({ taskId: task.id, kind: "main", parentId: null, title: "拳套" });

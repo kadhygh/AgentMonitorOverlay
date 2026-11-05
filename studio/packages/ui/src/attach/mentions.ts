@@ -1,4 +1,4 @@
-import { lineSuffix, RUNTIME_LABELS, type FileMark, type ProjectFile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { lineSuffix, RUNTIME_LABELS, type FileMark, type ProjectFile, type Session, type SubsessionPermission, type SubsessionSetup, type Task, type Workspace } from "@amo-studio/protocol";
 import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
@@ -27,17 +27,25 @@ export interface MentionGroup {
 /**
  * 开子会话 (2026-10-26): how the model is to start sub-sessions when it does — AMO's session_start with these. The
  * person usually says when ("接下来你开子会话就用 @子会话1").
+ * 2026-11-05 (plans/subsession-mention-2026-11-05.md): sent to the Host with the message (SubsessionSetup), so
+ * session_start takes it by name (`setup`); the model's own options (effort, Fast), the person's words for this round
+ * (`extra`). Whether its results come back is the model's to decide (session_start's report), no longer set here.
  */
 export interface SubSessionSpec {
-  /** session_start's model: a profile's name, or "<profile>/<model>" for one of its models. */
+  profileId: string;
+  /** One of the profile's models; null: its default. */
+  modelId: string | null;
+  /** session_start's model, for the model to read: a profile's name, or "<profile>/<model>". */
   model: string;
-  /** How the person knows it ("Opus"). */
+  /** How the person knows it ("Opus 5.5"). */
   modelName: string;
   effort?: string;
-  permission?: "read-only" | "write" | "full";
-  report: boolean;
-  /** 设置 → 子会话: the person's note on that model as a sub-session. */
+  fast?: boolean;
+  permission?: SubsessionPermission;
+  /** 设置 → 子会话: the person's note on that model as a sub-session (for the main model). */
   note?: string;
+  /** 这一轮补充: the person's words for the sub-session itself. */
+  extra?: string;
 }
 
 /** A task, session, sub-session setup or 快速提交 picked with @: the text keeps "@name", the message says what it is. */
@@ -158,7 +166,7 @@ export function mentionGroups(input: {
     { kind: "file", heading: input.query ? "文件" : "最近改动的文件", options: files },
   ];
   const ext: MentionOption[] = [
-    ...(input.subsession ? [{ kind: "subsession" as const, id: "subsession", name: "开子会话…", hint: "选模型和强度，告诉它怎么开" }] : []),
+    ...(input.subsession ? [{ kind: "subsession" as const, id: "subsession", name: "开子会话…", hint: "选模型、强度，补充这轮的话" }] : []),
     ...(input.commit ? [{ kind: "commit" as const, id: "commit", name: QUICK_COMMIT, hint: "分条提交、拉取合并，可选推送　Ctrl+Shift+P" }] : []),
     ...(input.template ? [{ kind: "template" as const, id: "template", name: "提示词模板…", hint: "选一条存好的提示词，粘进输入框" }] : []),
   ].filter((o) => !q || contains(o.name, q));
@@ -179,19 +187,21 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
   const sessions = refs.flatMap(([name, p]) =>
     p.kind === "session" ? [`- @${name}：AMO 会话 ${p.id}${p.taskId ? `，属于任务 ${p.taskId}（可以用 AMO 的 session_tree 查看）` : ""}`] : [],
   );
-  const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(p.spec)}${p.spec.note ? `。人对这个模型的说明：${p.spec.note.replace(/\s+/g, " ")}` : ""}`] : []));
+  const subs = refs.flatMap(([name, p]) => (p.kind === "subsession" ? [`- @${name}：${subSessionArgs(name, p.spec)}${p.spec.note ? `。人对这个模型的说明：${p.spec.note.replace(/\s+/g, " ")}` : ""}`] : []));
   const blocks = [
     projects.length ? `提到的项目：\n${projects.join("\n")}` : "",
     tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "",
     sessions.length ? `提到的会话：\n${sessions.join("\n")}` : "",
-    subs.length ? `子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent；第一句话写够让它能独立开工）：\n${subs.join("\n")}` : "",
+    subs.length
+      ? `子会话的设定（人设好的子会话：要开时用 AMO 的 session_start 带 setup: "名字"，不要用你自带的子 agent。模型、思考强度、Fast、权限和人补充给它的话 Host 会照设定带上；什么时候开、开几个你定，第一句话照常写够让它能独立开工）：\n${subs.join("\n")}`
+      : "",
     ...refs.flatMap(([, p]) => (p.kind === "commit" ? [quickCommitBrief(p.push)] : [])),
   ].filter(Boolean);
   return blocks.length ? `${message}\n\n${blocks.join("\n\n")}` : message;
 }
 
-/** Where withMentionRefs' blocks start, each after a blank line. */
-const REF_HEADS = ["提到的任务：\n", "提到的会话：\n", "子会话的开法（", `「@${QUICK_COMMIT}」是人要你现在做的事`, "提到的项目：\n"];
+/** Where withMentionRefs' blocks start, each after a blank line ("子会话的开法（": before 2026-11-05). */
+const REF_HEADS = ["提到的任务：\n", "提到的会话：\n", "子会话的开法（", `「@${QUICK_COMMIT}」是人要你现在做的事`, "提到的项目：\n", "子会话的设定（"];
 
 /**
  * A sent message read back (2026-10-28): the person's text, the @ names it picked (each with what the message said of
@@ -235,17 +245,48 @@ export function mentionSpans(text: string, names: readonly string[]): Array<{ te
   return out;
 }
 
-/** A sub-session setup as session_start's arguments, for the model to copy. */
-export function subSessionArgs(spec: SubSessionSpec): string {
-  const args = [`model: "${spec.model}"（${spec.modelName}）`, spec.effort ? `effort: "${spec.effort}"` : "", spec.permission ? `permission: "${spec.permission}"` : "", `report: ${spec.report}`];
-  return `session_start 带 ${args.filter(Boolean).join("，")}`;
+const PERMISSION_LABELS: Record<SubsessionPermission, string> = { "read-only": "只读", write: "可写", full: "完全放开" };
+
+/** What a setup is, for the model to read: session_start's `setup` and what it holds. */
+export function subSessionArgs(name: string, spec: SubSessionSpec): string {
+  const parts = [`model "${spec.model}"（${spec.modelName}）`, `思考强度 ${spec.effort ?? "默认"}`, spec.fast ? "Fast 开" : "", spec.permission ? `权限 ${spec.permission}（${PERMISSION_LABELS[spec.permission]}）` : "", spec.extra ? "人补充了给它的话" : ""];
+  return `session_start 带 setup: "${name}"（${parts.filter(Boolean).join("，")}）`;
 }
 
-/** The next free 「子会话N」 name: not in the text and not picked already. */
-export function nextSubSessionName(text: string, taken: Iterable<string>): string {
+/** The tag a setup shows in the text (the user, 11-05: 「子会话-模型名-思考强度」), without "@". */
+export function subSessionTag(spec: Pick<SubSessionSpec, "modelName" | "effort" | "fast">): string {
+  return `子会话·${spec.modelName}·${spec.effort ?? "默认强度"}${spec.fast ? "·Fast" : ""}`;
+}
+
+/** The setup's tag, numbered (2, 3…) where the text or the picks already have it. */
+export function subSessionName(spec: SubSessionSpec, text: string, taken: Iterable<string>): string {
   const used = new Set(taken);
+  const base = subSessionTag(spec);
   for (let n = 1; ; n++) {
-    const name = `子会话${n}`;
+    const name = n === 1 ? base : `${base}${n}`;
     if (!used.has(name) && !text.includes(`@${name}`)) return name;
   }
+}
+
+/** The 子会话设定 a message names, as sent to the Host with it. */
+export function subSessionSetups(message: string, picked: ReadonlyMap<string, MentionPick>): SubsessionSetup[] {
+  const named = new Set(mentionSpans(message, [...picked.keys()]).flatMap((part) => (part.mention ? [part.text.slice(1)] : [])));
+  return [...picked.entries()].flatMap(([name, p]) =>
+    p.kind === "subsession" && named.has(name)
+      ? [{ name, profileId: p.spec.profileId, model: p.spec.modelId, ...(p.spec.effort ? { effort: p.spec.effort } : {}), ...(p.spec.fast !== undefined ? { fast: p.spec.fast } : {}), ...(p.spec.permission ? { permission: p.spec.permission } : {}), ...(p.spec.extra ? { extra: p.spec.extra } : {}) }]
+      : [],
+  );
+}
+
+/** A setup in full, for the tag's tooltip. */
+export function subSessionDetail(spec: SubSessionSpec): string {
+  return [
+    `子会话：${spec.modelName}（${spec.model}）`,
+    `思考强度：${spec.effort ?? "默认"}`,
+    spec.fast !== undefined ? `Fast：${spec.fast ? "开" : "关"}` : "",
+    `权限：${spec.permission ? PERMISSION_LABELS[spec.permission] : "默认"}`,
+    spec.extra ? `这一轮补充：${spec.extra}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

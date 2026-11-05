@@ -18,6 +18,7 @@ import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { PromptTemplateDialog } from "../attach/PromptTemplateDialog.js";
 import { SubSessionDialog } from "../attach/SubSessionDialog.js";
+import { subSessionSetups } from "../attach/mentions.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { IconPaperclip } from "../attach/icons.js";
@@ -141,6 +142,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     if (!resume && !draft.text.trim()) return setError(file ? "写一句话再放进待办。" : "写一句话再开始。");
     if (!file && !draft.pick.profileId) return setError("先选一个模型。");
     if (file && !attach.empty) return setError("放进待办不带图片和文件：先移除它们，或者直接开始。");
+    // A 子会话设定 lives with the session it is sent to: a filed task has none yet (2026-11-05).
+    if (file && Object.entries(draft.refs ?? {}).some(([name, r]) => r.kind === "subsession" && draft.text.includes(`@${name}`))) return setError("放进待办不带子会话设定：直接开始，或者先去掉 @子会话。");
     if (attach.uploading) return setError("图片还在上传，稍等一下。");
     if (attach.failed) return setError("有图片上传失败，移除后再开始。");
     setBusy(true);
@@ -149,8 +152,9 @@ export function NewTaskPage({ link, workspaces, topics, tasks, sessions = [], pr
     try {
       const text = withFileRefs(draftText(draft), attach.files.map(attach.refOf));
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
+      const setups = draft.refs ? subSessionSetups(draft.text, new Map(Object.entries(draft.refs))) : [];
       const { refs: _refs, ...rest } = draft;
-      const created = await submitDraft(link, { ...rest, text, ...(resume && !rest.title.trim() ? { title: resume.title } : {}) }, file, onCanvas, images, resume?.id);
+      const created = await submitDraft(link, { ...rest, text, ...(resume && !rest.title.trim() ? { title: resume.title } : {}) }, file, onCanvas, images, resume?.id, setups);
       setResume(null);
       attach.reset();
       reset({ projectId: draft.projectId, topicId: draft.topicId });

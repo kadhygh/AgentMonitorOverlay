@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -329,11 +329,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const approve = (approvalId: string, decision: ApprovalDecision) =>
     session ? run(() => call(link, "POST /api/approvals/:approvalId", { approvalId }, { sessionId: session.id, decision })) : Promise.resolve();
   const interrupt = (id: string) => run(() => call(link, "POST /api/sessions/:id/interrupt", { id }));
-  async function send(text: string, attachments: string[], now = false): Promise<boolean> {
+  async function send(text: string, attachments: string[], now = false, subsessions: SubsessionSetup[] = []): Promise<boolean> {
     if (!session) return false;
     try {
       const referred = annotationRefs.list.map((a) => a.id);
-      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}), ...(referred.length ? { annotations: referred } : {}), ...(now ? { now: true } : {}) });
+      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}), ...(referred.length ? { annotations: referred } : {}), ...(now ? { now: true } : {}), ...(subsessions.length ? { subsessions } : {}) });
       annotationRefs.sent();
       return true;
     } catch (err) {

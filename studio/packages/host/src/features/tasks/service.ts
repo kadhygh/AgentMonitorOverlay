@@ -6,6 +6,7 @@ import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRI
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
+import { checkSetups } from "../sessions/setups.js";
 
 /** Tasks: creating, renaming, moving, archiving, their sessions; bringing older data into structure v2. */
 export class TasksFeature extends Feature {
@@ -153,13 +154,18 @@ export class TasksFeature extends Feature {
       // 接续已有会话: refused before the task is made (the session is gone, already taken on, not the subscription).
       if (resumeFrom) await this.wrap(() => this.runtime.checkResume?.(input.firstSession!.profileId, resumeFrom) ?? Promise.resolve());
     }
+    // 子会话设定 named in the first message (2026-11-05: @ 开子会话… on the new-task page), checked before the task is made.
+    const setups = checkSetups(input.firstSession?.subsessions);
+    for (const s of setups) this.requireProfile(s.profileId);
     if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
     const firstMessage = input.firstSession ? "" : firstMessageOf(input.firstMessage);
     const title = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || firstMessage.split("\n")[0]!.slice(0, 60);
     const column = input.firstSession ? "doing" : (input.column ?? "todo");
     const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column, lead: input.lead === true, ...(firstMessage ? { firstMessage } : {}) });
     this.publish({ type: "task.upserted", task });
-    const session = input.firstSession ? await this.startSession({ taskId: task.id, topicId: null }, workspace, input.firstSession) : null;
+    const { subsessions: _setups, ...first } = input.firstSession ?? { profileId: "" };
+    const session = input.firstSession ? await this.startSession({ taskId: task.id, topicId: null }, workspace, first) : null;
+    if (session && setups.length) this.f.sessions.rememberSetups(session.id, setups);
     return { task: this.store.getTask(task.id)!, session };
   }
 

@@ -248,12 +248,12 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await expect(bubble.getByTestId("msg-file").last()).toContainText("importer.py");
 });
 
-test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the text, and the message tells how to start it (2026-10-26)", async () => {
+test("@ 开子会话…: the model's own options, its usage and this round's words; 「@子会话·模型·强度」 in the text; the setup goes to the Host (2026-11-05)", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const dir = studio.workspace("alpha");
   const { session } = await openTask(studio, dir);
-  // 设置 → 子会话 (2026-10-26): a note on the model, written on its page, goes with the setup.
+  // 设置 → 子会话: per model, its usage note and its defaults as a sub-session (2026-11-05).
   await page.getByRole("button", { name: "设置" }).click();
   const settingsDialog = page.getByRole("dialog", { name: "设置" });
   await settingsDialog.getByRole("tab", { name: "子会话" }).click();
@@ -265,7 +265,10 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   await settingsDialog.getByTestId("subsession-note-text").blur();
   await expect.poll(async () => (await studio!.api<{ subsessionNotes: Array<{ note: string }> }>("GET", "/api/settings")).subsessionNotes.map((n) => n.note)).toEqual(["适合照计划改代码"]);
   await expect(channel.getByTestId("subsession-chip").first()).toHaveAttribute("aria-pressed", "true");
-  await screenshot(studio.app, "stage-18", "S18-subsession-settings", page);
+  // Its default permission, saved at once.
+  await channel.getByTestId("subsession-defaults").getByRole("button", { name: "完全放开" }).click();
+  await expect.poll(async () => (await studio!.api<{ subsessionNotes: Array<{ permission?: string }> }>("GET", "/api/settings")).subsessionNotes.map((n) => n.permission)).toEqual(["full"]);
+  await screenshot(studio.app, "studio", "subsession-settings", page);
   await settingsDialog.getByRole("button", { name: "关闭设置" }).click();
   const suggest = page.getByTestId("suggest");
   await composer(page).pressSequentially("接下来开子会话就用 @");
@@ -276,21 +279,44 @@ test("@ 开子会话…: model and effort in a dialog, 「@子会话1」 in the 
   const dialog = page.getByTestId("subsession-dialog");
   await expect(dialog).toBeVisible();
   await expect(composer(page)).toHaveValue("接下来开子会话就用 ");
-  await dialog.getByRole("button", { name: "完全放开" }).click();
-  await dialog.getByTestId("subsession-report").uncheck();
-  await expect(dialog.getByTestId("subsession-preview")).toContainText('permission: "full"，report: false');
+  // The session's model, starting from its defaults: the usage note shown, the permission from 设置 → 子会话.
   await expect(dialog.getByTestId("subsession-note")).toContainText("适合照计划改代码");
-  await screenshot(studio.app, "stage-18", "S18-subsession-dialog", page);
+  await expect(dialog.locator(".subsession-more summary")).toContainText("现在：完全放开");
+  await expect(dialog.getByTestId("subsession-report")).toHaveCount(0);
+  // The mock Codex model has a Fast tier: Codex's own words, not Claude's billing note.
+  await expect(dialog.getByTestId("subsession-fast")).not.toBeChecked();
+  await expect(dialog.locator(".subsession-cost")).toHaveCount(0);
+  await dialog.getByTestId("subsession-extra").fill("只改数值表，改完跑校验");
+  await expect(dialog.getByTestId("subsession-preview")).toContainText(/@子会话·.+·默认强度$/);
+  await screenshot(studio.app, "studio", "subsession-dialog", page);
+  // A Claude model with fast mode: its Fast, saying it is billed as extra usage. The words stay.
+  await dialog.getByRole("button", { name: /mock-claude/ }).first().click();
+  await expect(dialog.getByTestId("subsession-fast")).toBeVisible();
+  await expect(dialog.locator(".subsession-cost")).toContainText("按额外用量");
+  await dialog.getByTestId("subsession-fast").check();
+  await expect(dialog.getByTestId("subsession-preview")).toContainText(/@子会话·.+·默认强度·Fast$/);
+  await expect(dialog.getByTestId("subsession-extra")).toHaveValue("只改数值表，改完跑校验");
+  await screenshot(studio.app, "studio", "subsession-dialog-claude-fast", page);
   await dialog.getByTestId("subsession-ok").click();
   await expect(dialog).toHaveCount(0);
-  await expect(composer(page)).toHaveValue("接下来开子会话就用 @子会话1 ");
-  await expect(page.getByTestId("mention-backdrop").locator(".mention-token")).toHaveText("@子会话1");
+  await expect(composer(page)).toHaveValue(/^接下来开子会话就用 @子会话·.+·默认强度·Fast $/);
+  const tag = (await composer(page).inputValue()).slice("接下来开子会话就用 @".length).trim();
+  await expect(page.getByTestId("mention-backdrop").locator(".mention-token")).toHaveText(`@${tag}`);
+  await screenshot(studio.app, "studio", "subsession-composer-tag", page);
+  const posted = page.waitForRequest((r) => r.method() === "POST" && r.url().includes(`/api/sessions/${session.id}/messages`));
   await composer(page).press("Enter");
+  expect((await posted).postDataJSON().subsessions).toEqual([{ name: tag, profileId: expect.stringMatching(/claude/), model: null, fast: true, extra: "只改数值表，改完跑校验" }]);
   await expect
     .poll(async () => (await studio!.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)?.text ?? "", { timeout: 15_000 })
-    .toContain("子会话的开法（要开时用 AMO 的 session_start");
+    .toContain("子会话的设定（人设好的子会话：要开时用 AMO 的 session_start 带 setup");
   const sent = (await studio.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!.text!;
-  expect(sent).toMatch(/- @子会话1：session_start 带 model: ".+"（.+），permission: "full"，report: false。人对这个模型的说明：适合照计划改代码/);
+  expect(sent).toContain(`- @${tag}：session_start 带 setup: "${tag}"`);
+  expect(sent).not.toContain("report");
+  // In the conversation: the tag coloured, the line under it says what was attached.
+  const bubble = page.getByTestId("msg-user").last();
+  await expect(bubble.getByTestId("msg-mention")).toHaveText([`@${tag}`]);
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveText("AMO：已附上子会话设定");
+  await screenshot(studio.app, "studio", "subsession-sent", page);
 });
 
 test("快速提交 (10-26): from @ or Ctrl+Shift+P, a choice of pushing too; the message tells how to commit, pull and merge", async () => {

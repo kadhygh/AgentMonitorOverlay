@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, type SubsessionNote, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, SUBSESSION_PERMISSIONS, type SubsessionNote, type SubsessionPermission, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
@@ -55,7 +55,7 @@ export class ConfigFeature extends Feature {
     }
   }
 
-  /** A new list of 子会话 notes: known accounts, one note per model, empty notes left out. */
+  /** A new list of 子会话 notes: known accounts, one per model, those with neither a note nor a default left out. */
   private checkSubsessionNotes(list: unknown): SubsessionNote[] {
     if (!Array.isArray(list) || list.length > MAX_SUBSESSION_NOTES) throw new HostError("bad_request", `subsessionNotes must be a list of at most ${MAX_SUBSESSION_NOTES}`);
     const out: SubsessionNote[] = [];
@@ -67,7 +67,16 @@ export class ConfigFeature extends Feature {
       if (model === undefined) throw new HostError("bad_request", "subsessionNotes entries are { profileId, model: string | null, note }");
       const note = typeof o.note === "string" ? o.note.trim() : "";
       if (note.length > SUBSESSION_NOTE_MAX) throw new HostError("bad_request", `a note is limited to ${SUBSESSION_NOTE_MAX} characters`);
-      if (note && !out.some((x) => x.profileId === profileId && x.model === model)) out.push({ profileId, model, note });
+      // 2026-11-05: the model's defaults as a sub-session.
+      if (o.effort !== undefined && o.effort !== null && (typeof o.effort !== "string" || o.effort.length > 40)) throw new HostError("bad_request", "effort must be text, e.g. high");
+      if (o.fast !== undefined && o.fast !== null && typeof o.fast !== "boolean") throw new HostError("bad_request", "fast must be true or false");
+      if (o.permission !== undefined && o.permission !== null && !SUBSESSION_PERMISSIONS.includes(o.permission as never)) throw new HostError("bad_request", `permission must be one of: ${SUBSESSION_PERMISSIONS.join(", ")}`);
+      const defaults = {
+        ...(typeof o.effort === "string" && o.effort ? { effort: o.effort } : {}),
+        ...(typeof o.fast === "boolean" ? { fast: o.fast } : {}),
+        ...(o.permission ? { permission: o.permission as SubsessionPermission } : {}),
+      };
+      if ((note || Object.keys(defaults).length) && !out.some((x) => x.profileId === profileId && x.model === model)) out.push({ profileId, model, note, ...defaults });
     }
     return out;
   }

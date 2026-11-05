@@ -40,6 +40,8 @@ export interface NewSessionInput {
    * imported; the original is left as it is. Claude subscription only.
    */
   resumeFrom?: string;
+  /** 子会话设定 named in the first message (see SubsessionSetup): kept for the new session. */
+  subsessions?: SubsessionSetup[];
 }
 
 /** 接续已有会话 (2026-11-05): a Claude session started outside Studio, as GET /api/claude/outside-sessions lists it. */
@@ -324,9 +326,42 @@ export interface SubsessionNote {
   profileId: Id;
   model: string | null;
   note: string;
+  /**
+   * 2026-11-05 (the user: 「每种模型可能都要有自己的设置方式」): the model's own defaults as a sub-session — the first
+   * choice in @ 开子会话…, and what session_start uses when the agent leaves them out. Absent: 设置 → 模型's default.
+   * A whole account's entry (`model` null) has no effort (its models' lists differ).
+   */
+  effort?: string;
+  fast?: boolean;
+  permission?: SubsessionPermission;
 }
 export const MAX_SUBSESSION_NOTES = 30;
 export const SUBSESSION_NOTE_MAX = 1000;
+
+/** session_start's permission levels (each runtime maps them to its own setting). */
+export const SUBSESSION_PERMISSIONS = ["read-only", "write", "full"] as const;
+export type SubsessionPermission = (typeof SUBSESSION_PERMISSIONS)[number];
+
+/**
+ * 子会话设定 (2026-11-05, plans/subsession-mention-2026-11-05.md): a sub-session set up with @ 开子会话…, sent with the
+ * message that names it (「@子会话·Opus 5.5·high」). The Host keeps it under the session it was sent to; that session's
+ * session_start with `setup: name` takes the model and options from it, and `extra` goes to the new session word for
+ * word. What the person set wins over what the agent writes.
+ */
+export interface SubsessionSetup {
+  /** The name in the text, without "@". */
+  name: string;
+  profileId: Id;
+  /** One of the profile's models; null: its default. */
+  model: string | null;
+  effort?: string;
+  fast?: boolean;
+  permission?: SubsessionPermission;
+  /** 这一轮补充: the person's words for the sub-session. */
+  extra?: string;
+}
+export const MAX_SUBSESSION_SETUPS = 10;
+export const SUBSESSION_EXTRA_MAX = 4000;
 
 /** Where one account's quota shows: the bottom of the left column (default on) and the Focus window (default off). */
 export interface QuotaDisplay {
@@ -645,7 +680,7 @@ export interface HostRoutes {
    * `now` (立即发送, 2026-11-02; Claude and Codex): while a turn runs, the model reads the message at once — the turn's
    * current step gives way (Ctrl+Enter); `mode` stays what the message would have been without it.
    */
-  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[]; now?: boolean }; res: { mode: "start" | "steer" | "queue" } };
+  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[]; now?: boolean; subsessions?: SubsessionSetup[] }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
   "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };

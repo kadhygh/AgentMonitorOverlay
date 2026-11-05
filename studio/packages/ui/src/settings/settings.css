@@ -167,7 +167,11 @@
 .subsession-chips { flex-wrap: wrap; gap: 6px; }
 .subsession-chips .chip[aria-pressed="false"] { color: var(--text-faint); }
 .subsession-note { display: flex; flex-direction: column; gap: 4px; padding-left: 26px; }
-.subsession-note .settings-row { justify-content: space-between; }
+.subsession-note > .settings-row { justify-content: space-between; }
+/* 2026-11-05: a model's defaults as a sub-session. */
+.subsession-defaults { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 4px; }
+.subsession-defaults .settings-row { justify-content: flex-start; gap: 8px; }
+.subsession-defaults-label { flex: none; width: 140px; font-size: 13px; color: var(--text-dim); }
 .quick-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: grab; }
 .quick-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .quick-row[data-dragging] { opacity: 0.45; }

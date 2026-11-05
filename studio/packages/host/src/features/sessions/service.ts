@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { inTurn, isCommon, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -7,6 +7,7 @@ import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../guide/role.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
+import { readSetups, rememberSetups } from "./setups.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
@@ -321,7 +322,7 @@ export class SessionsFeature extends Feature {
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown; setup?: unknown; fast?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -329,7 +330,15 @@ export class SessionsFeature extends Feature {
     if (task.archivedAt) throw new HostError("read_only", "这个任务已归档，不能再开会话");
     const text = boundedText(input.text, "text", 20_000);
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
-    let picked: { profileId: Id; model?: string } = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
+    if (input.fast !== undefined && input.fast !== null && typeof input.fast !== "boolean") throw new HostError("bad_request", "fast must be true or false");
+    if (input.effort !== undefined && input.effort !== null && input.effort !== "" && typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
+    // 子会话设定 (2026-11-05): what the person set up with @ 开子会话… wins over what the agent writes.
+    const setup = this.setupOf(from.id, input.setup);
+    let picked: { profileId: Id; model?: string } = setup
+      ? { profileId: this.f.requireProfile(setup.profileId).id, ...(setup.model ? { model: setup.model } : {}) }
+      : typeof input.model === "string" && input.model.trim()
+        ? await this.modelByRef(input.model.trim())
+        : { profileId: from.profileId };
     // For the person (2026-10-26: 「本 task 里另起一个 session，我来处理」 came out as one hung under its starter, which
     // Focus leaves to the starter): a session of the task like one they opened, not reporting back.
     const forPerson = input.forPerson === true;
@@ -341,20 +350,38 @@ export class SessionsFeature extends Feature {
     const remote = this.f.remote.grants.limitDelegation(task.id, { profileId: picked.profileId, elsewhere: workspace.id !== task.workspaceId });
     if (remote?.note) picked = { profileId: remote.profileId };
     const profileId = picked.profileId;
+    // 设置 → 子会话's defaults for this model (2026-11-05, the user's choice): used for what the agent leaves out.
+    const defaults = remote?.note ? null : this.noteDefaults(profileId, picked.model ?? null);
     let options: SessionOptions | undefined = picked.model ? { model: picked.model } : undefined;
     if (remote?.permission) options = { ...options, permission: remote.permission };
     else {
+      const asked = setup?.permission ?? (input.permission === undefined || input.permission === null || input.permission === "" ? undefined : input.permission);
+      const want = asked ?? defaults?.permission;
       let level: PermissionLevel | null = null;
-      if (input.permission !== undefined && input.permission !== null && input.permission !== "") {
-        level = PERMISSION_LEVELS.find((l) => l === input.permission) ?? null;
+      if (want !== undefined) {
+        level = PERMISSION_LEVELS.find((l) => l === want) ?? null;
         if (!level) throw new HostError("bad_request", `permission must be one of: ${PERMISSION_LEVELS.join(", ")}`);
       }
-      const permission = await this.peerPermission(from, profileId, level);
+      // The person's own choice (a setup, or their default where the agent named none) is not held to the caller's.
+      const personChose = !!setup?.permission || (asked === undefined && !!defaults?.permission);
+      const permission = await this.peerPermission(from, profileId, level, personChose);
       if (permission) options = { ...options, permission };
     }
-    if (input.effort !== undefined && input.effort !== null && input.effort !== "" && !remote?.note) {
-      if (typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
-      options = { ...options, effort: await this.effortFor(profileId, picked.model, input.effort.trim()) };
+    if (!remote?.note) {
+      const effort = setup?.effort ?? (typeof input.effort === "string" && input.effort.trim() ? input.effort.trim() : undefined);
+      if (effort) options = { ...options, effort: await this.effortFor(profileId, picked.model, effort) };
+      else if (defaults?.effort) {
+        // A default the model's list no longer has is passed over.
+        const fallback = await this.effortFor(profileId, picked.model, defaults.effort).catch(() => null);
+        if (fallback) options = { ...options, effort: fallback };
+      }
+      const agentFast = typeof input.fast === "boolean" ? input.fast : undefined;
+      const fast = setup?.fast ?? agentFast ?? defaults?.fast;
+      if (fast !== undefined) {
+        const runs = await this.modelOption(profileId, picked.model);
+        if (runs?.fast) options = { ...options, fast };
+        else if (fast && setup?.fast === undefined && agentFast === true) throw new HostError("bad_request", `${this.f.requireProfile(profileId).label}（${runs?.label ?? picked.model ?? "默认型号"}）没有 Fast：去掉 fast 再开`);
+      }
     }
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [
@@ -362,6 +389,7 @@ export class SessionsFeature extends Feature {
       ...(elsewhere ? [`（你在项目「${isCommon(workspace) ? "公共目录" : workspace.name}」的文件夹 ${workspace.path} 里工作，和任务本身的项目不同。）`] : []),
       ...(remote?.note ? [remote.note] : []),
       text,
+      ...(setup?.extra ? ["", `【人对这个子会话补充的话（@${setup.name}）】`, setup.extra] : []),
       "",
       forPerson
         ? `（这个会话是同一任务里的另一个会话（${from.id}）替人通过 AMO Studio 开的，之后听人的。要告诉那个会话什么，用 mailbox_send 给会话 ${from.id}。）`
@@ -429,10 +457,11 @@ export class SessionsFeature extends Feature {
    * default); and it is never wider than the caller's — a level that would be is refused, a default that would be is
    * brought down to the caller's level.
    */
-  private async peerPermission(from: Session, profileId: Id, level: PermissionLevel | null): Promise<string | undefined> {
+  private async peerPermission(from: Session, profileId: Id, level: PermissionLevel | null, personChose = false): Promise<string | undefined> {
     const runtime = this.f.requireProfile(profileId).runtime;
     if (!isPeerRuntime(runtime)) return undefined;
     const choices = await this.f.config.choices(profileId).catch(() => null);
+    if (personChose && level) return peerPermission(null, runtime, level, choices);
     const callerPermission = isPeerRuntime(from.runtime) ? from.options.permission || (await this.f.config.choices(from.profileId).catch(() => null))?.defaultPermission || "" : "";
     const caller = isPeerRuntime(from.runtime) && callerPermission ? { runtime: from.runtime, permission: callerPermission } : null;
     return peerPermission(caller, runtime, level, choices);
@@ -455,6 +484,50 @@ export class SessionsFeature extends Feature {
     if (permission) options = { ...options, permission };
     if (typeof input.effort === "string" && input.effort.trim()) options = { ...options, effort: await this.effortFor(picked.profileId, picked.model, input.effort.trim()) };
     return { profileId: picked.profileId, options };
+  }
+
+  /** session_start's `setup`: the 子会话设定 of that name sent to the caller (null when none is asked for). */
+  private setupOf(fromId: Id, name: unknown): SubsessionSetup | null {
+    if (name === undefined || name === null || name === "") return null;
+    if (typeof name !== "string") throw new HostError("bad_request", "setup must be the name of a 子会话设定, e.g. 子会话·Opus·high");
+    const want = name.trim().replace(/^@/, "");
+    const all = readSetups(this.store, fromId);
+    const hit = all.find((s) => s.name === want);
+    if (hit) return hit;
+    throw new HostError(
+      "bad_request",
+      all.length
+        ? `没有叫「${want}」的子会话设定。人发给你的有：${all.map((s) => `「${s.name}」`).join("、")}`
+        : `没有叫「${want}」的子会话设定：人还没在发给你的消息里 @ 过子会话。去掉 setup，自己用 model、effort 开。`,
+    );
+  }
+
+  /**
+   * 设置 → 子会话's defaults for a model as a sub-session: its own entry's (the account's entry is the default model's
+   * own), else the account's fast and permission (an effort only fits the list of the model it was set for).
+   */
+  private noteDefaults(profileId: Id, model: string | null): Pick<SubsessionNote, "effort" | "fast" | "permission"> {
+    const notes = this.f.config.subsessionNotes().filter((n) => n.profileId === profileId);
+    const own = notes.find((n) => (n.model ?? null) === model);
+    const account = notes.find((n) => n.model === null);
+    const fast = own?.fast ?? account?.fast;
+    const permission = own?.permission ?? account?.permission;
+    return { ...(own?.effort ? { effort: own.effort } : {}), ...(fast !== undefined ? { fast } : {}), ...(permission ? { permission } : {}) };
+  }
+
+  /** The model a session of `profileId` would run (the chosen one, else the profile's default), as its CLI lists it. */
+  private async modelOption(profileId: Id, chosen: string | undefined): Promise<ModelOption | undefined> {
+    const choices = await this.f.config.choices(profileId).catch(() => null);
+    if (!choices?.models.length) return undefined;
+    const model = chosen ?? fillDefaults({}, choices, readModelPrefs(this.store)[profileId]).model;
+    return choices.models.find((m) => m.id === model) ?? choices.models.find((m) => m.isDefault) ?? choices.models[0];
+  }
+
+  /** Keeps 子会话设定 sent with a message to this session (POST /api/sessions/:id/messages, a task's first session). */
+  rememberSetups(sessionId: Id, setups: readonly SubsessionSetup[]): void {
+    this.requireSession(sessionId);
+    for (const s of setups) this.f.requireProfile(s.profileId);
+    rememberSetups(this.store, sessionId, setups);
   }
 
   async effortFor(profileId: Id, chosen: string | undefined, want: string): Promise<string> {

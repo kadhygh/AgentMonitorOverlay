@@ -155,7 +155,18 @@ button.file-chip:hover { border-color: var(--border-strong); }
 .prompt-new { margin-right: auto; }
 .prompt-keys { margin-right: 4px; }
 .subsession-field { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.subsession-field > .settings-label { flex: none; width: 64px; padding-top: 5px; }
+.subsession-field > .settings-label { flex: none; width: 76px; padding-top: 5px; }
 .subsession-field > .model-row, .subsession-field > .model-drawer { flex: 1; min-width: 0; }
 .subsession-field > .model-drawer { flex-basis: 100%; }
-.subsession-preview { font-family: var(--font-code); font-size: 12px; color: var(--text-dim); background: var(--code-bg); border-radius: 6px; padding: 6px 8px; overflow-wrap: anywhere; }
+.subsession-preview { font-size: 12px; color: var(--text-dim); background: var(--code-bg); border-radius: 6px; padding: 6px 8px; overflow-wrap: anywhere; }
+/* 2026-11-05: the model's own options, its usage note (read-only) and this round's words. */
+.subsession-modal { max-height: calc(100vh - 48px); overflow: auto; }
+.subsession-field > .subsession-usage-box { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.subsession-usage { font-size: 13px; color: var(--text-dim); background: var(--panel-raised); border: 1px solid var(--border); border-radius: var(--r-m); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 3.4em; overflow: hidden; }
+.subsession-usage.open { max-height: 16em; overflow: auto; }
+.subsession-fast { flex: 1; min-width: 0; align-items: flex-start; gap: 8px; font-size: 13px; }
+.subsession-fast input { margin-top: 4px; }
+.subsession-cost { color: var(--attention); }
+.subsession-more > summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
+.subsession-more > .settings-row { margin-top: 6px; }
+.subsession-usage-box textarea { width: 100%; resize: vertical; }

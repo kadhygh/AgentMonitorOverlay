@@ -484,7 +484,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       try {
         await live.q.setModel(options.model ?? this.profile(session.profileId).model ?? undefined);
         await live.q.setPermissionMode(claudePermissionMode(options.permission));
-        await live.q.applyFlagSettings({ effortLevel: (options.effort as never) ?? null });
+        await live.q.applyFlagSettings({ effortLevel: (options.effort as never) ?? null, fastMode: (options.fast as never) ?? null });
       } catch (err) {
         this.emit("log", `could not switch options of ${sessionId}: ${String(err)}`);
       }
@@ -739,7 +739,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         // turned on are approved for it. Elsewhere, or with 加载本机 off, only what Studio passes (strict).
         ...(plan.strict ? { strictMcpConfig: true } : {}),
         ...(plan.deny.length ? { managedSettings: { deniedMcpServers: plan.deny.map((serverName) => ({ serverName })) } } : {}),
-        ...(plan.enableJson.length ? { settings: { enabledMcpjsonServers: plan.enableJson } } : {}),
+        // Fast mode (2026-11-05): only when chosen (on or off); never chosen, the person's own setting applies.
+        ...(plan.enableJson.length || session.options.fast !== undefined
+          ? { settings: { ...(plan.enableJson.length ? { enabledMcpjsonServers: plan.enableJson } : {}), ...(session.options.fast !== undefined ? { fastMode: session.options.fast } : {}) } }
+          : {}),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
         pathToClaudeCodeExecutable: exe,

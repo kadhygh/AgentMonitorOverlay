@@ -5,7 +5,7 @@ import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { pinnedFirst, usePins } from "../lib/pins.js";
 import { useFileMarks } from "../marks/useFileMarks.js";
 import type { FileRefItem } from "./refs.js";
-import { mentionGroups, mentionSpans, nextSubSessionName, QUICK_COMMIT, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
+import { mentionGroups, mentionSpans, QUICK_COMMIT, subSessionName, subSessionSetups, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick, type SubSessionSpec } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
@@ -190,12 +190,12 @@ export function useComposerMentions(input: {
     },
     /** 开子会话…'s dialog is up. */
     askingSubsession: subAt !== null,
-    /** The dialog's answer: 「@子会话N」 where @ was typed; the caret after it (null when cancelled). */
+    /** The dialog's answer: 「@子会话·模型·强度」 where @ was typed; the caret after it (null when cancelled). */
     finishSubsession(spec: SubSessionSpec | null): number | null {
       const at = Math.min(subAt ?? text.length, text.length);
       setSubAt(null);
       if (!spec) return null;
-      return insertPick(at, nextSubSessionName(text, picked.keys()), { kind: "subsession", spec });
+      return insertPick(at, subSessionName(spec, text, picked.keys()), { kind: "subsession", spec });
     },
     groups,
     /** The picked tasks' and sessions' names still in the text (coloured in the composer). */
@@ -224,6 +224,8 @@ export function useComposerMentions(input: {
       }
       return false;
     },
+    /** The 子会话设定 the message names, sent to the Host with it (2026-11-05). Read before expand(). */
+    setups: (message: string) => subSessionSetups(message, picked),
     /** The message as sent (see withMentionRefs). Forgets the picks. */
     expand(message: string): string {
       const out = withMentionRefs(message, picked);

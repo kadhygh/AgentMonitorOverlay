@@ -171,7 +171,7 @@ export function SessionOptionsBar({
         {model && model.efforts.length > 0 && (
           <EffortBars efforts={model.efforts} value={session.options.effort ?? null} fallback={model.defaultEffort} onChange={setEffort} disabled={disabled || busy} small />
         )}
-        {session.runtime === "codex" && <FastToggle fast={model?.fast} value={session.options.fast} onChange={setFast} disabled={disabled || busy} small when={when} />}
+        {(session.runtime === "codex" || session.runtime === "claude") && <FastToggle fast={model?.fast} value={session.options.fast} onChange={setFast} disabled={disabled || busy} small when={when} />}
         <button
           type="button"
           className="seg-btn"

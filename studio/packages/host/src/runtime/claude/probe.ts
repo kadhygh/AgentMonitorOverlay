@@ -27,6 +27,10 @@ async function asking<T>(options: Parameters<typeof query>[0]["options"], ask: (
   }
 }
 
+/** ModelOption.fast for a Claude model with fast mode (the session's `options.fast` turns on the `fastMode` setting). */
+export const CLAUDE_FAST_TIER = "fast-mode";
+export const CLAUDE_FAST_NOTE = "Claude 的 fast mode：输出更快；按额外用量（usage credits）计费，不算订阅额度，账号没开额外用量时会报错";
+
 /** Claude Code's model list for the account. */
 export function askModels(profile: ModelProfile, env: Record<string, string | undefined>, cwd: string): Promise<ModelOption[]> {
   return asking({ cwd, env, settingSources: [], permissionMode: "default" }, async (q) => {
@@ -36,6 +40,9 @@ export function askModels(profile: ModelProfile, env: Record<string, string | un
       label: m.value === "default" ? `默认（${m.resolvedModel ?? m.displayName}）` : m.displayName,
       ...(m.description ? { description: m.description } : {}),
       efforts: m.supportedEffortLevels ?? [],
+      // Fast mode (2026-11-05, for sub-sessions first): Opus models that have it. A subscription pays for it as extra
+      // usage (usage credits), outside its limits; without them Claude Code refuses it (code.claude.com/docs/en/fast-mode).
+      ...(m.supportsFastMode ? { fast: { tier: CLAUDE_FAST_TIER, description: CLAUDE_FAST_NOTE } } : {}),
       ...((profile.model ? m.value === profile.model : m.value === "default") ? { isDefault: true } : {}),
     }));
   });

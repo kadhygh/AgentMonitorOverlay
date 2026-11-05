@@ -312,19 +312,26 @@ test("@ 开子会话… on the new-task page: the setup goes with the first sent
   await text.press("Enter");
   const dialog = page.getByTestId("subsession-dialog");
   await expect(dialog).toBeVisible();
+  await dialog.getByTestId("subsession-extra").fill("只看日志，不改代码");
   await screenshot(studio.app, "studio", "newtask-subsession-dialog", page);
   await dialog.getByTestId("subsession-ok").click();
-  await expect(text).toHaveValue("先查原因 @子会话1 ");
+  await expect(text).toHaveValue(/^先查原因 @子会话·.+·默认强度 $/);
+  const tag = (await text.inputValue()).slice("先查原因 @".length).trim();
   // Back to the board and in again: the pick is kept with the draft.
   await page.getByRole("button", { name: "返回看板" }).click();
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await expect(text).toHaveValue("先查原因 @子会话1 ");
+  await expect(text).toHaveValue(`先查原因 @${tag} `);
+  // A filed task has no session to keep it for: refused, saying so.
+  await text.press("Control+Enter");
+  await expect(page.getByRole("alert")).toContainText("放进待办不带子会话设定");
   await text.press("End");
+  const posted = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith("/api/tasks"));
   await text.press("Enter");
-  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先查原因 @子会话1", { timeout: 30_000 });
+  expect((await posted).postDataJSON().firstSession.subsessions).toEqual([{ name: tag, profileId: "codex-mock", model: null, extra: "只看日志，不改代码" }]);
+  await expect(page.getByTestId("msg-agent")).toContainText(`MOCK: 先查原因 @${tag}`, { timeout: 30_000 });
   const bubble = page.getByTestId("msg-user").first();
-  await expect(bubble.getByTestId("msg-mention")).toHaveText(["@子会话1"]);
-  await expect(bubble.getByTestId("msg-mention-brief")).toHaveAttribute("title", /session_start/);
+  await expect(bubble.getByTestId("msg-mention")).toHaveText([`@${tag}`]);
+  await expect(bubble.getByTestId("msg-mention-brief")).toHaveAttribute("title", /session_start 带 setup/);
 });
 
 test("设置 → 默认路径: 选择文件夹 starts there when adding a project (2026-10-17, in place of 默认项目)", async () => {

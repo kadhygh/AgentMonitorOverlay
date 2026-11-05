@@ -2,6 +2,8 @@
 
 分支 `studio/subsession-mention`（worktree `.claude/worktrees/subsession-mention`）。界面草图：`plans/subsession-mention.html`（双击打开）。
 
+**状态（11-05）**：用户第 7 节 6 个问题都按推荐定了，第 2–4 件已在这个分支做完，没合进 master。做法见第 8 节。
+
 用户原话（11-05）：
 > 子会话在开始任务的界面 at不出来。
 > 子会话 一般都是由ai来开，所以我觉得 结果回到这个会话不需要我们配置可以删掉。
@@ -93,3 +95,13 @@ Codex 还有 `model_reasoning_summary`、`model_verbosity`，Studio 里任何地
 4. **Claude 的 Fast**：**做，开关旁边写明「按额外用量计费，订阅额度不包含」（推荐）** / 先不做，只给 Codex 的 Fast。
 5. **输入框里的标签写法**：**`@子会话·Opus 5.5·high`（推荐，直接是文字，复制、撤销都正常）** / 保持 `@子会话1`，在输入框上方另放一个可点的小卡片显示「子会话 · Opus 5.5 · high」（点开能改，但要多做一块）。
 6. **权限**：**收进弹窗的「更多」，默认用设置里的（推荐）** / 弹窗里去掉权限，只在设置里定。
+
+**用户的决定（11-05）**：都按推荐——B 设定交给 Host；一个「这一轮补充」框；设置里的默认在 AI 不带参数时也用；做 Claude 的 Fast 并写明计费；标签就是文字 `@子会话·模型·强度`；权限收进「更多」。
+
+## 8. 做了什么（11-05）
+
+- 协议：`SubsessionSetup`、`SubsessionNote` 加 `effort`/`fast`/`permission`、`SUBSESSION_PERMISSIONS`；`POST /api/sessions/:id/messages` 和 `firstSession` 加 `subsessions`。
+- Host：`features/sessions/setups.ts` 存取设定（kv `subsession-setup:<会话>`，按名字覆盖，留最新 30 个）；`startPeer` 加 `setup`、`fast`，优先级「设定 > AI 写的 > 设置里这个型号的默认 > 原来的默认」；人定的权限（设定、或 AI 没写时的默认）不受「不比开它的会话宽」限制，AI 自己写的照旧受；`extra` 接在第一句话后面「【人对这个子会话补充的话（@名字）】」。设置的默认：型号自己那条的强度，Fast 和权限没有就用「整个渠道」那条。Claude：型号 `supportsFastMode` 时 `ModelOption.fast`，`options.fast` 启动时进 `settings.fastMode`、中途 `applyFlagSettings`。工具说明、amo_guide、身份说明里的模型用法都写了 `setup`/`fast` 和默认。
+- 界面：`SubSessionDialog` 重写；`mentions.ts` 的 `subSessionTag`/`subSessionName`/`subSessionSetups`，消息末尾那段标题改成「子会话的设定（」（旧的「子会话的开法（」照样能读）；会话和新建任务页发出时带 `subsessions`；设置页每个型号加 `NoteDefaults`；会话选项栏的 Fast 也给 Claude 显示。
+- 验证：typecheck；全量 vitest 1282 条（新增 peer 两条：setup、设置默认）；build；e2e attachments、newtask、claude、options、model-channels、duty 32 条；截图 `screenshots/studio/subsession-*.png`、`newtask-subsession-dialog.png` 看过。
+- 没验证：真的 Claude Opus 开 Fast（mock 只验证了开关和设定，没有真模型调用）；主模型拿到「子会话的设定」后会不会照着带 setup（要真模型跑一次）。

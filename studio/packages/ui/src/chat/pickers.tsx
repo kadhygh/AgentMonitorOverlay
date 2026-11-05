@@ -163,7 +163,8 @@ export function FastToggle({
 }) {
   if (!fast) return null;
   const on = value === true;
-  const note = fast.description ? `Codex：${fast.description}` : "更快的响应速度";
+  // Codex's own note ("2x speed, increased usage"), or Claude's (billed as extra usage, 2026-11-05).
+  const note = fast.description ?? "更快的响应速度";
   return (
     <button
       type="button"

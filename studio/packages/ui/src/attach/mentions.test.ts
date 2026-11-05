@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileMark, Session, Task, Workspace } from "@amo-studio/protocol";
-import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, nextSubSessionName, splitMentionRefs, withMentionRefs } from "./mentions.js";
+import { quickCommitBrief, mentionGroups, mentionSpans, nearbySessions, splitMentionRefs, subSessionName, subSessionSetups, subSessionTag, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
 const session = (id: string, title: string, extra: Partial<Session> = {}) =>
@@ -116,17 +116,27 @@ describe("开子会话… (2026-10-26)", () => {
     expect(mentionGroups({ ...input, query: "模板", commit: true, template: true }).at(-1)!.options.map((o) => o.kind)).toEqual(["template"]);
   });
 
-  it("tells the model how to start sub-sessions: AMO's session_start with the picked setup", () => {
+  const sonnet = { profileId: "claude", modelId: "claude-sonnet", model: "Claude/claude-sonnet", modelName: "Sonnet", effort: "high", fast: true, permission: "write" as const, extra: "只改 ui 包" };
+  const deepseek = { profileId: "ds", modelId: null, model: "DeepSeek", modelName: "DeepSeek", note: "便宜，\n照计划做" };
+
+  it("tells the model to start it with session_start's setup, and sends the setup to the Host (2026-11-05)", () => {
     const picked = new Map([
-      ["子会话1", { kind: "subsession" as const, spec: { model: "Claude/claude-sonnet", modelName: "Sonnet", effort: "high", permission: "write" as const, report: true } }],
-      ["子会话2", { kind: "subsession" as const, spec: { model: "DeepSeek", modelName: "DeepSeek", report: false, note: "便宜，\n照计划做" } }],
+      ["子会话·Sonnet·high·Fast", { kind: "subsession" as const, spec: sonnet }],
+      ["子会话·DeepSeek·默认强度", { kind: "subsession" as const, spec: deepseek }],
     ]);
-    const out = withMentionRefs("接下来开子会话就用 @子会话1", picked);
-    expect(out).toContain("子会话的开法（要开时用 AMO 的 session_start，不要用你自带的子 agent");
-    expect(out).toContain('- @子会话1：session_start 带 model: "Claude/claude-sonnet"（Sonnet），effort: "high"，permission: "write"，report: true');
-    // Only the ones still in the text.
-    expect(out).not.toContain("@子会话2：");
-    expect(withMentionRefs("@子会话2 去查", picked)).toContain('- @子会话2：session_start 带 model: "DeepSeek"（DeepSeek），report: false。人对这个模型的说明：便宜， 照计划做');
+    const out = withMentionRefs("接下来开子会话就用 @子会话·Sonnet·high·Fast", picked);
+    expect(out).toContain('子会话的设定（人设好的子会话：要开时用 AMO 的 session_start 带 setup: "名字"，不要用你自带的子 agent');
+    expect(out).toContain('- @子会话·Sonnet·high·Fast：session_start 带 setup: "子会话·Sonnet·high·Fast"（model "Claude/claude-sonnet"（Sonnet），思考强度 high，Fast 开，权限 write（可写），人补充了给它的话）');
+    // Only the ones still in the text; no report (the model decides).
+    expect(out).not.toContain("子会话·DeepSeek");
+    expect(out).not.toContain("report");
+    expect(withMentionRefs("@子会话·DeepSeek·默认强度 去查", picked)).toContain('setup: "子会话·DeepSeek·默认强度"（model "DeepSeek"（DeepSeek），思考强度 默认）。人对这个模型的说明：便宜， 照计划做');
+    expect(subSessionSetups("就用 @子会话·Sonnet·high·Fast", picked)).toEqual([{ name: "子会话·Sonnet·high·Fast", profileId: "claude", model: "claude-sonnet", effort: "high", fast: true, permission: "write", extra: "只改 ui 包" }]);
+    expect(subSessionSetups("@子会话·DeepSeek·默认强度", picked)).toEqual([{ name: "子会话·DeepSeek·默认强度", profileId: "ds", model: null }]);
+    // Read back: the tag is a name, the line behind it.
+    const back = splitMentionRefs(out);
+    expect(back.text).toBe("接下来开子会话就用 @子会话·Sonnet·high·Fast");
+    expect(back.names.get("子会话·Sonnet·high·Fast")).toContain('setup: "子会话·Sonnet·high·Fast"');
   });
 
   it("「@快速提交」 tells the model to commit split by content, pull with a merge, push only when chosen, and ask about the unclear and conflicts (10-26)", () => {
@@ -146,9 +156,12 @@ describe("开子会话… (2026-10-26)", () => {
     expect(withMentionRefs("算了", picked)).toBe("算了");
   });
 
-  it("numbers them by what is free", () => {
-    expect(nextSubSessionName("", [])).toBe("子会话1");
-    expect(nextSubSessionName("用 @子会话1 和 @子会话3", ["子会话2"])).toBe("子会话4");
+  it("names them 子会话·模型·强度, numbered where the same is already there (the user, 2026-11-05)", () => {
+    expect(subSessionTag({ modelName: "Opus 5.5", effort: "high" })).toBe("子会话·Opus 5.5·high");
+    expect(subSessionTag({ modelName: "GPT-5.5", fast: true })).toBe("子会话·GPT-5.5·默认强度·Fast");
+    expect(subSessionName(sonnet, "", [])).toBe("子会话·Sonnet·high·Fast");
+    expect(subSessionName(sonnet, "用 @子会话·Sonnet·high·Fast", [])).toBe("子会话·Sonnet·high·Fast2");
+    expect(subSessionName(sonnet, "", ["子会话·Sonnet·high·Fast", "子会话·Sonnet·high·Fast2"])).toBe("子会话·Sonnet·high·Fast3");
   });
 
   it("reads a sent message back: the person's text, its @ names with what was said of them, and 快速提交 (2026-10-28)", () => {

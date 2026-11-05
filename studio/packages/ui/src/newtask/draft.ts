@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ModelProfile, Session, SessionOptions, Task } from "@amo-studio/protocol";
+import type { ModelProfile, Session, SessionOptions, SubsessionSetup, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { defaultProfile, rememberProfile, rememberWorkspace, repick } from "../lib/profiles.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
-import { withMentionRefs, type MentionPick, type SubSessionSpec } from "../attach/mentions.js";
+import { subSessionSetups, withMentionRefs, type MentionPick, type SubSessionSpec } from "../attach/mentions.js";
 import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 
 // The task being written: one draft, shared by the draft task page and the quick bar (Ctrl N), kept across restarts
@@ -57,7 +57,7 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
 
 const isSpec = (v: unknown): v is SubSessionSpec => {
   const o = v as Partial<SubSessionSpec> | null;
-  return !!o && typeof o === "object" && typeof o.model === "string" && typeof o.modelName === "string" && typeof o.report === "boolean";
+  return !!o && typeof o === "object" && typeof o.profileId === "string" && typeof o.model === "string" && typeof o.modelName === "string" && (o.modelId === null || typeof o.modelId === "string");
 };
 
 /** Stored picks that still make sense (a project, task or session with its id, or a sub-session setup). */
@@ -133,8 +133,10 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
  * with the first message (not when only filing).
  */
 /** `resumeFrom` (接续已有会话, 2026-11-05): the outside Claude session the first session goes on from; the text may be empty then. */
-export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, onCanvas = false, attachments: readonly string[] = [], resumeFrom?: string): Promise<{ task: Task; session: Session | null }> {
+export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, onCanvas = false, attachments: readonly string[] = [], resumeFrom?: string, subsessions?: readonly SubsessionSetup[]): Promise<{ task: Task; session: Session | null }> {
   const text = draftText(draft);
+  // 子会话设定 named in the first message (2026-11-05): kept by the Host for the task's first session.
+  const setups = subsessions ?? (draft.refs ? subSessionSetups(draft.text, new Map(Object.entries(draft.refs))) : []);
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
     ...(draft.title.trim() ? { title: draft.title.trim() } : file ? { title: text.split("\n")[0]!.slice(0, 60) } : {}),
@@ -144,7 +146,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     // 放进待办 (2026-11-05): the sentence is kept on the task for its first session; it used to be cut to the title.
     ...(file
       ? { firstMessage: text }
-      : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(resumeFrom ? { resumeFrom } : {}) } }),
+      : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(resumeFrom ? { resumeFrom } : {}), ...(setups.length ? { subsessions: [...setups] } : {}) } }),
   });
   if (!file) {
     rememberProfile(draft.pick.profileId);

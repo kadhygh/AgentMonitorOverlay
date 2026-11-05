@@ -1,6 +1,7 @@
 import type { HostService } from "../../service.js";
 import { route, type Route, str, obj } from "../../http/route.js";
 import { HostError } from "../../core/shared.js";
+import { checkSetups } from "./setups.js";
 
 /** The HTTP routes of this feature (see protocol/src/api.ts for each route's request and response). */
 export function sessionsRoutes(service: HostService): Route[] {
@@ -16,6 +17,9 @@ export function sessionsRoutes(service: HostService): Route[] {
       const annotations = b.annotations ?? [];
       if (!Array.isArray(annotations) || annotations.some((a) => typeof a !== "string")) throw new HostError("bad_request", "annotations must be a list of ids");
       if (b.now !== undefined && typeof b.now !== "boolean") throw new HostError("bad_request", "now must be true or false");
+      // 子会话设定 named in the message (2026-11-05): kept for this session's session_start before it reads the message.
+      const setups = checkSetups(b.subsessions);
+      if (setups.length) service.sessions.rememberSetups(params.id!, setups);
       return service.sessions.sendMessage(params.id!, b.text === undefined && (attachments.length || annotations.length) ? "" : str(b.text, "text"), attachments as string[], annotations as string[], { now: b.now === true });
     }, { remoteCopy: "forward" }),
     // 立即发送 / 重新发送 (2026-11-02): on a copy, done on A, like a message.
