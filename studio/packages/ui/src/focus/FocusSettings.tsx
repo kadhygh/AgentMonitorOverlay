@@ -83,10 +83,18 @@ export const ICON = {
       <path d="M1.5 8h2M12.5 8h2M8 1.5v2M8 12.5v2" />
     </>,
   ),
+  // A cog, the main window's 设置 icon (ScopeNav.tsx) (2026-11-06: the rays read as a sun).
   gear: svg(
     <>
-      <circle cx="8" cy="8" r="2.2" />
-      <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
+      <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="2.2" strokeWidth="1.2" />
+    </>,
+  ),
+  // A corner with a diagonal: 拖拽调整大小.
+  resize: svg(
+    <>
+      <path d="M2.5 6V2.5H6M2.5 2.5l5 5" />
+      <path d="M13.5 10v3.5H10" />
     </>,
   ),
   // A pointer passing through a sheet.

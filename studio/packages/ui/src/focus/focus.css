@@ -4,7 +4,7 @@
    each entry a card with a coloured left bar (B). No 额度 line any more. */
 html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { background: transparent; overflow: hidden; }
 .focus-root { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px; }
-.focus-root > .focus-panel { min-height: 0; flex: 0 1 auto; }
+.focus-root > .focus-panel { min-height: 48px; flex: 0 1 auto; }
 .focus-panel {
   border-radius: 4px; background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
   overflow: hidden; display: flex; flex-direction: column; max-height: 100%; font-size: 13.5px; line-height: 1.5;
@@ -101,6 +101,17 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .focus-move-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 3px; background: var(--primary); color: var(--on-primary); font-size: 12.5px; font-weight: 600; }
 .focus-move-done { -webkit-app-region: no-drag; height: 28px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; }
 
+/* 拖拽调整大小 (2026-11-06): the panel fills the window under a dashed frame; a grip in its top-left corner. */
+.focus-root > .focus-panel.sizing { flex: 1 1 auto; position: relative; outline: 2px dashed var(--primary); outline-offset: -2px; }
+.focus-grip {
+  position: absolute; top: 0; left: 0; z-index: 3; width: 18px; height: 18px; -webkit-app-region: no-drag; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, var(--primary) 0 50%, transparent 50%);
+}
+.focus-grip:hover { background: linear-gradient(135deg, var(--primary-hover) 0 50%, transparent 50%); }
+.focus-sizing-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 12px; }
+.focus-sizing-bar > span { flex: 1; min-width: 0; }
+.focus-sizing-done { height: 24px; padding: 0 10px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: 12px; cursor: pointer; }
+
 /* 2026-10-15: the alert colour; green (calm) when all that is new is finished work to look at. */
 .focus-root { --focus-alert: var(--attention); }
 .focus-root.calm { --focus-alert: var(--running); }
@@ -161,8 +172,9 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 
 /* 2026-10-15: the window is only as big as what Focus draws (its shape follows the panel, robot and this box), so the
    shadows stay within a few pixels. 「Focus 设置」 sits above the panel. */
+/* Scrolls when Focus was dragged short (拖拽调整大小, 2026-11-06), the panel keeping its head, so the switch stays in reach. */
 .focus-pop {
-  flex: none; align-self: flex-end; width: 260px; margin-bottom: 8px; padding: 6px; border-radius: 4px;
+  flex: 0 1 auto; min-height: 120px; overflow-y: auto; align-self: flex-end; width: 260px; margin-bottom: 8px; padding: 6px; border-radius: 4px;
   background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
   display: flex; flex-direction: column; gap: 2px; font-size: 13px;
 }

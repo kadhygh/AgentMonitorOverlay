@@ -96,6 +96,19 @@ export function refitFocus(current: Rect, displays: readonly DisplayInfo[], prim
   return placeFocus({ x: current.x, y: current.y }, current, displays, primaryId);
 }
 
+/**
+ * 拖拽调整大小 (2026-11-06): Focus resized by its top-left corner, the pointer moved from `from` to `to` since the drag
+ * began on `start`. The bottom-right corner stays (the panel grows up from the bottom); the size stays within `min`
+ * and the work area, whose top-left the window does not cross.
+ */
+export function resizeFocus(start: Rect, from: Point, to: Point, min: Size, a: Rect): Rect {
+  const right = start.x + start.width;
+  const bottom = start.y + start.height;
+  const width = Math.round(Math.min(Math.max(start.width - (to.x - from.x), min.width), Math.max(min.width, right - a.x)));
+  const height = Math.round(Math.min(Math.max(start.height - (to.y - from.y), min.height), Math.max(min.height, bottom - a.y)));
+  return { x: right - width, y: bottom - height, width, height };
+}
+
 /** 主窗口回到屏幕中央 (2026-10-19): the window's size, shrunk to the work area if larger, centred on it. */
 export function centreIn(size: Size, a: Rect): Rect {
   const width = Math.min(size.width, a.width);

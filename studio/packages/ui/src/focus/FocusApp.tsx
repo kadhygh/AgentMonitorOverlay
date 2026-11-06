@@ -58,6 +58,12 @@ export function FocusApp() {
   const [folded, setFolded] = useState<string | null>(null);
   const [locked, setLocked] = useState(readFocusLocked);
   const [moving, setMoving] = useState(false);
+  // 拖拽调整大小 (2026-11-06; the user: 选中之后可以拖拽，关闭后不可拖拽): a switch in 「Focus 设置」. While on, the panel
+  // fills the window under a dashed frame and its top-left corner has a grip; a drag of it resizes the window, its
+  // bottom-right corner staying (app/src/focus-window.ts focusResizer), and the size is kept for the next start. Not kept
+  // on itself: while on, Focus may take focus like 移动位置, which it should not do for good.
+  const [sizing, setSizing] = useState(false);
+  const gripDrag = useRef<{ frame: number | null } | null>(null);
   const [pop, setPop] = useState(false);
   const [passthrough, setPassthrough] = useState(readFocusPassthrough);
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
@@ -107,7 +113,7 @@ export function FocusApp() {
   }, []);
   // 点击穿透: the window lets clicks through, and takes them back while the pointer is over a button (the pointer's
   // moves still reach the page). Moving and the settings box always take clicks.
-  const through = passthrough && !moving && !pop;
+  const through = passthrough && !moving && !pop && !sizing;
   useEffect(() => {
     // Only changes go out: pointerover fires on every element the pointer crosses.
     let last: boolean | null = null;
@@ -134,6 +140,11 @@ export function FocusApp() {
     window.amo?.focus?.setMoving?.(true);
     return () => window.amo?.focus?.setMoving?.(false);
   }, [moving]);
+  useEffect(() => {
+    if (!sizing) return;
+    window.amo?.focus?.setSizing?.(true);
+    return () => window.amo?.focus?.setSizing?.(false);
+  }, [sizing]);
   // A right-click on the title row (a window drag area) only reaches the main process, which passes it on.
   useEffect(() => window.amo?.focus?.onContextMenu?.(() => setPop(true)), []);
 
@@ -300,7 +311,32 @@ export function FocusApp() {
   const slotSay = demo === "alert" ? "1 件事（测试）" : demo === "calm" ? "1 个完成待审核（测试）" : summary(things, toReview.length);
   const rootCalm = demo ? demo === "calm" : calm;
 
-  const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
+  const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", sizing ? "sizing" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
+  /** The grip's drag: the main process reads the pointer itself; moves go at most once a frame. */
+  const grip = {
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      gripDrag.current = { frame: null };
+      window.amo?.focus?.resize?.("start");
+    },
+    onPointerMove: () => {
+      const d = gripDrag.current;
+      if (!d || d.frame !== null) return;
+      d.frame = requestAnimationFrame(() => {
+        d.frame = null;
+        if (gripDrag.current === d) window.amo?.focus?.resize?.("move");
+      });
+    },
+    onLostPointerCapture: () => {
+      const d = gripDrag.current;
+      if (!d) return;
+      if (d.frame !== null) cancelAnimationFrame(d.frame);
+      gripDrag.current = null;
+      window.amo?.focus?.resize?.("end");
+    },
+  };
   return (
     <div className={rootCalm ? "focus-root calm" : "focus-root"}>
       {(alerting || demo) && !moving && !flyMessage && (
@@ -313,6 +349,7 @@ export function FocusApp() {
           onClose={() => setPop(false)}
           items={[
             { label: moving ? "完成移动" : "移动位置", icon: ICON.move, disabled: locked, hint: locked ? "先取消锁定位置" : "拖动 Focus 到别处", close: true, onPick: () => setMoving(!moving), testId: "focus-menu-move" },
+            { label: "拖拽调整大小", icon: ICON.resize, checked: sizing, hint: "开着时拖面板左上角改大小，关掉就不能拖", onPick: () => setSizing(!sizing), testId: "focus-menu-resize" },
             { label: "锁定位置", icon: ICON.lock, checked: locked, hint: "锁定后标题栏不能拖动", onPick: toggleLock, testId: "focus-menu-lock" },
             { label: "点击穿透", icon: ICON.through, checked: passthrough, hint: "点在 Focus 上会落到下面的窗口，只有按钮能点", onPick: togglePassthrough, testId: "focus-menu-through" },
             { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
@@ -333,6 +370,7 @@ export function FocusApp() {
           setPop(true);
         }}
       >
+        {sizing && <div className="focus-grip" role="separator" aria-label="拖动调整 Focus 的大小" title="拖动调整大小（右下角不动）" {...grip} data-testid="focus-resize-grip" />}
         <div className="focus-head">
           {/* Always takes clicks (a button, even under 点击穿透): brings the main window forward, where it is. The icon
               and the name are one button (2026-10-19). */}
@@ -369,6 +407,14 @@ export function FocusApp() {
             {compact ? ICON.expand : ICON.collapse}
           </button>
         </div>
+        {sizing && (
+          <div className="focus-sizing-bar" data-testid="focus-sizing-bar">
+            <span>拖左上角的角标调整大小</span>
+            <button type="button" className="focus-sizing-done" onClick={() => setSizing(false)} data-testid="focus-sizing-done">
+              完成
+            </button>
+          </div>
+        )}
         {!compact && (needs > 0 || working.length > 0 || pinned.length > 0) && (
           <div className="focus-list" onClickCapture={acknowledge}>
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel

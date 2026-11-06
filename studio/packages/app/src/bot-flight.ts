@@ -50,3 +50,21 @@ function clampInto(p: { x: number; y: number }, size: { width: number; height: n
     y: Math.min(area.y + Math.max(0, area.height - size.height), Math.max(area.y, p.y)),
   };
 }
+
+/**
+ * 追到了就停 (2026-11-06; the user: 鼠标追到了桌宠，桌宠应该停下): whether the pointer is on the robot — inside one of
+ * the window's shape rectangles (the robot and its bubble, the window's own points), the window's top-left at `at`.
+ */
+export function pointerOn(pointer: { x: number; y: number }, at: { x: number; y: number }, shape: readonly Area[]): boolean {
+  const x = pointer.x - at.x;
+  const y = pointer.y - at.y;
+  return shape.some((r) => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height);
+}
+
+/** Once the pointer has left it, the robot waits this long before it flies on: time to come back and click. */
+export const HOLD_AFTER_MS = 1500;
+
+/** Whether the robot stays put now: the pointer is on it, or left it less than HOLD_AFTER_MS ago (`lastOn`). */
+export function holding(on: boolean, lastOn: number | null, now: number): boolean {
+  return on || (lastOn !== null && now - lastOn < HOLD_AFTER_MS);
+}

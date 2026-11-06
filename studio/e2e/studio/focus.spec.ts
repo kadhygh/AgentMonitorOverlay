@@ -158,8 +158,8 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-entry").click({ button: "right" });
   const menu = focus.getByTestId("focus-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.locator(".focus-pop-row")).toHaveCount(8);
-  for (const label of ["移动位置", "锁定位置", "点击穿透", "收起成一行", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
+  await expect(menu.locator(".focus-pop-row")).toHaveCount(9);
+  for (const label of ["移动位置", "拖拽调整大小", "锁定位置", "点击穿透", "收起成一行", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
   await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeGreaterThan(panelOnly);
   await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
   await focus.getByTestId("focus-menu-close").click();
@@ -188,6 +188,35 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await caption("exited");
   await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: false, anyFocused: false });
 
+  // 拖拽调整大小 (2026-11-06): a switch — on, the panel fills the window under a frame with a grip at its top-left; a
+  // drag of the grip resizes the window, its bottom-right corner staying, and the size is kept. The main process reads
+  // the pointer itself: the test puts it where the drag goes. Off, no grip and the window does not activate again.
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-resize").click();
+  await expect(focus.getByTestId("focus-menu-resize")).toHaveAttribute("aria-checked", "true");
+  await focus.getByTestId("focus-menu-close").click();
+  const grip = focus.getByTestId("focus-resize-grip");
+  await expect(grip).toBeVisible();
+  await expect(focus.getByTestId("focus-sizing-bar")).toBeVisible();
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: true });
+  await screenshot(app, "studio", "focus-resize", focus, "focus");
+  const bounds = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes("#focus"))!.getBounds());
+  const was = await bounds();
+  const cursorAt = (x: number, y: number) => app.evaluate((_e, at) => void ((globalThis as { __amoTestCursor?: unknown }).__amoTestCursor = at), { x, y });
+  await cursorAt(was.x + 5, was.y + 5);
+  const g = (await grip.boundingBox())!;
+  await focus.mouse.move(g.x + 6, g.y + 6);
+  await focus.mouse.down();
+  await cursorAt(was.x + 5 - 100, was.y + 5 - 150);
+  await focus.mouse.move(g.x + 2, g.y + 2);
+  await expect.poll(bounds).toEqual({ x: was.x - 100, y: was.y - 150, width: was.width + 100, height: was.height + 150 });
+  await focus.mouse.up();
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as { __amoFocusResized?: { base: unknown } }).__amoFocusResized?.base ?? null))
+    .toEqual({ width: was.width + 100, height: was.height + 150 });
+  await focus.getByTestId("focus-sizing-done").click();
+  await expect(grip).toHaveCount(0);
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: false, anyFocused: false });
   // 锁定位置: a switch — the box stays open; shown in the head, moving is off; remembered after a reload.
   await focus.getByTestId("focus-settings-toggle").click();
   await focus.getByTestId("focus-menu-lock").click();
@@ -225,6 +254,29 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   expect(Math.abs(centred.x + centred.width / 2 - (centred.display.x + centred.display.width / 2))).toBeLessThanOrEqual(1);
   expect(Math.abs(centred.y + centred.height / 2 - (centred.display.y + centred.display.height / 2))).toBeLessThanOrEqual(1);
   expect(centred.width).toBeLessThanOrEqual(centred.display.width);
+  // Dragged as short as it goes: the settings box scrolls, its switches still in reach; turned off there.
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-resize").click();
+  await focus.getByTestId("focus-menu-close").click();
+  const big = await bounds();
+  await cursorAt(big.x + 5, big.y + 5);
+  const g2 = (await grip.boundingBox())!;
+  await focus.mouse.move(g2.x + 6, g2.y + 6);
+  await focus.mouse.down();
+  await cursorAt(big.x + 3000, big.y + 3000);
+  await focus.mouse.move(g2.x + 9, g2.y + 9);
+  await expect.poll(bounds).toEqual({ x: big.x + big.width - 300, y: big.y + big.height - 200, width: 300, height: 200 });
+  await focus.mouse.up();
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-hide").scrollIntoViewIfNeeded();
+  await expect(focus.getByTestId("focus-menu-hide")).toBeInViewport();
+  await expect(focus.locator(".focus-head")).toBeInViewport();
+  await screenshot(app, "studio", "focus-resize-small", focus, "focus");
+  await focus.getByTestId("focus-menu-resize").click();
+  await expect(focus.getByTestId("focus-menu-resize")).toHaveAttribute("aria-checked", "false");
+  await expect(grip).toHaveCount(0);
+  await focus.getByTestId("focus-menu-close").click();
+
   await focus.getByTestId("focus-settings-toggle").click();
 
   // 隐藏 Focus: the window goes, the top bar button follows.

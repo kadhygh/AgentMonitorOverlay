@@ -44,6 +44,10 @@ declare global {
         setIgnoreMouse(ignore: boolean): void;
         /** Focus window: 移动位置 starts or ends (10-22); while it lasts a drag moves the window. */
         setMoving?(on: boolean): void;
+        /** Focus window: 拖拽调整大小 on or off (2026-11-06); while on the window may activate. */
+        setSizing?(on: boolean): void;
+        /** Focus window: a drag of the resize grip starts, moves or ends (the main process follows the pointer). */
+        resize?(phase: "start" | "move" | "end"): void;
         /** Focus window: the parts of the window that take clicks (2026-10-15); the rest lets them through. */
         setShape?(rects: Array<{ x: number; y: number; width: number; height: number }>): void;
         /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */

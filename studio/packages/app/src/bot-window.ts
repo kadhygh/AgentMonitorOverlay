@@ -1,5 +1,5 @@
 import { BrowserWindow, screen, type Rectangle } from "electron";
-import { fly, takeOff, type Flight } from "./bot-flight.js";
+import { fly, holding, pointerOn, takeOff, type Flight } from "./bot-flight.js";
 import { recoverLostClicks } from "./focus-window.js";
 
 // The angry robot (2026-10-15 evening): when something has waited for the person too long, Focus's robot leaves the
@@ -122,9 +122,18 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
           if (reshape) clearTimeout(reshape);
           reshape = setTimeout(applyShape, 120);
           let last = Date.now();
+          // 追到了就停 (2026-11-06): the pointer on the robot holds it in place, until a moment after it left. One
+          // cursor read per frame (GetCursorPos, microseconds); held, it skips the window move, the costly part.
+          let lastOn: number | null = null;
           timer = setInterval(() => {
             if (!win || win.isDestroyed() || !flight) return stop();
             const now = Date.now();
+            const on = pointerOn(screen.getCursorScreenPoint(), { x: Math.round(flight.x), y: Math.round(flight.y) }, shape);
+            if (on) lastOn = now;
+            if (holding(on, lastOn, now)) {
+              last = now;
+              return;
+            }
             // A stalled frame (the machine was busy, or asleep) does not become one long jump.
             const dt = Math.min(0.1, (now - last) / 1000);
             last = now;

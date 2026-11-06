@@ -65,6 +65,10 @@ electron.contextBridge.exposeInMainWorld("amo", {
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
     /** Focus window only: 移动位置 starts (true) or ends; while it lasts the window may activate, so a drag moves it. */
     setMoving: (on: boolean): void => electron.ipcRenderer.send("amo:focus-moving", on),
+    /** Focus window only: 拖拽调整大小 is on (true) or off; while on the window may activate, so the grip takes presses. */
+    setSizing: (on: boolean): void => electron.ipcRenderer.send("amo:focus-sizing", on),
+    /** Focus window only: a drag of the resize grip starts, moves or ends; the main process follows the pointer. */
+    resize: (phase: "start" | "move" | "end"): void => electron.ipcRenderer.send("amo:focus-resize", phase),
     /** Focus window only: the parts of the window that are Focus (panel, robot, settings); clicks elsewhere go through. */
     setShape: (rects: Array<{ x: number; y: number; width: number; height: number }>): void => electron.ipcRenderer.send("amo:focus-shape", rects),
     /** Focus window only: the page saw a press (a click Chromium dropped is given back otherwise; focus-clicks.ts). */

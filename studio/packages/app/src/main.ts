@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, HostStartError, keepHostAlive, putHostJson, readHostJson, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { remoteInUse, remoteQuitNote, type RemoteState } from "@amo-studio/protocol";
-import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { createFocusWindow, displays, focusResizer, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -69,6 +69,8 @@ let host: HostConnection | null = null;
 let stopKeepAlive: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
+/** 拖拽调整大小: the open Focus window's resizer (focusResizer). */
+let resizeFocus: ((phase: "start" | "move" | "end") => void) | null = null;
 let tray: Tray | null = null;
 /** The app is quitting: the workbench window really closes (otherwise × only hides it). */
 let appQuitting = false;
@@ -105,7 +107,19 @@ function setFocusVisible(on: boolean): void {
       testMode,
       scale: prefs.uiScale(),
       saved: prefs.focusPos(),
+      base: prefs.focusSize(),
       onMoved: (pos) => prefs.setFocusPos(pos),
+    });
+    const win = focusWindow;
+    resizeFocus = focusResizer(win, {
+      testMode,
+      scale: () => win.webContents.getZoomFactor() || prefs.uiScale(),
+      done: (base, at) => {
+        prefs.setFocusSize(base);
+        if (!testMode) prefs.setFocusPos(at);
+        trace?.note("focus", "resized", `${base.width}×${base.height}`);
+        if (testMode) (globalThis as { __amoFocusResized?: unknown }).__amoFocusResized = { base, bounds: win.getBounds() };
+      },
     });
     focusWindow.on("closed", () => {
       focusWindow = null;
@@ -118,6 +132,7 @@ function setFocusVisible(on: boolean): void {
   } else if (!on && focusWindow) {
     focusWindow.destroy();
     focusWindow = null;
+    resizeFocus = null;
     bot.land();
   }
   mainWindow?.webContents.send("amo:focus-changed", on);
@@ -402,7 +417,7 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
   const setUiScale = (scale: number) => {
     prefs.setUiScale(scale);
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.setZoomFactor(scale);
-    if (focusWindow) rescaleFocusWindow(focusWindow, scale);
+    if (focusWindow) rescaleFocusWindow(focusWindow, scale, prefs.focusSize());
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("amo:ui-scale-changed", scale);
   };
   app.on("web-contents-created", (_e, contents) => {
@@ -469,6 +484,18 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
     setFocusActivatable(focusWindow, on === true);
     trace?.note("focus", on === true ? "moving on" : "moving off");
     if (testMode) (globalThis as { __amoFocusMoving?: boolean }).__amoFocusMoving = on === true;
+  });
+  // 拖拽调整大小 (2026-11-06): while it is on, Focus may activate like 移动位置 (a press on the grip must reach the page,
+  // and Chromium drops presses on a window that cannot activate); its drags resize the window (focusResizer).
+  ipcMain.on("amo:focus-sizing", (event, on: unknown) => {
+    if (!focusWindow || event.sender !== focusWindow.webContents) return;
+    setFocusActivatable(focusWindow, on === true);
+    trace?.note("focus", on === true ? "sizing on" : "sizing off");
+    if (testMode) (globalThis as { __amoFocusSizing?: boolean }).__amoFocusSizing = on === true;
+  });
+  ipcMain.on("amo:focus-resize", (event, phase: unknown) => {
+    if (!focusWindow || event.sender !== focusWindow.webContents || (phase !== "start" && phase !== "move" && phase !== "end")) return;
+    resizeFocus?.(phase);
   });
   // 在中转里打开 (2026-11-05, relay-link.ts): the AMO 中转 client shows a thread a session sent. Tests only record it.
   ipcMain.handle("amo:relay-available", () => testMode || findRelayExe() !== null);

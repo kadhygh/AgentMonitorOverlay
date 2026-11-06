@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CaptionDrag, EatenClicks } from "./focus-clicks.js";
 import { HTCAPTION, HTCLIENT, onWindowMessage, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE } from "./window-messages.js";
-import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type Rect, type Size } from "./placement.js";
+import { displayFor, placeFocus, placeMain, refitFocus, resizeFocus, type DisplayInfo, type Point, type Rect, type Size } from "./placement.js";
 
 // The Focus window: a small frameless, transparent, always-on-top panel in a corner of the screen that answers one
 // question, "what needs me right now". It never takes focus. The window's shape is only what the page draws (panel,
@@ -12,6 +12,8 @@ import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type R
 
 export const FOCUS_W = 380;
 export const FOCUS_H = 560;
+/** 拖拽调整大小 (2026-11-06): the least size Focus can be dragged to, at 界面大小 100%. */
+export const FOCUS_MIN = { width: 300, height: 200 } as const;
 
 /** 界面大小 (2026-10-15): the zoom of every Studio page. Chromium zooms by origin, so Focus is zoomed too. */
 export const UI_SCALES = [0.9, 1, 1.1, 1.25, 1.4] as const;
@@ -27,6 +29,8 @@ export interface FocusOptions {
   scale: number;
   /** Where the person last left it, if anywhere. */
   saved: Point | null;
+  /** The size the person dragged it to (at 界面大小 100%), if they did. */
+  base: Size | null;
   onMoved(pos: Point): void;
 }
 
@@ -34,8 +38,8 @@ export function displays(): DisplayInfo[] {
   return screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea, scaleFactor: d.scaleFactor }));
 }
 
-export function createFocusWindow({ url, preload, testMode, scale, saved, onMoved }: FocusOptions): BrowserWindow {
-  const size = focusSize(scale);
+export function createFocusWindow({ url, preload, testMode, scale, saved, base, onMoved }: FocusOptions): BrowserWindow {
+  const size = focusSize(scale, base);
   const pos = testMode ? { x: -32000, y: -32000 } : placeFocus(saved, size, displays(), screen.getPrimaryDisplay().id);
   const win = new BrowserWindow({
     ...pos,
@@ -87,17 +91,18 @@ export function createFocusWindow({ url, preload, testMode, scale, saved, onMove
   return win;
 }
 
-/** The Focus window's size at a 界面大小: its page keeps the same layout, only bigger. */
-export function focusSize(scale: number): Size {
-  return { width: Math.round(FOCUS_W * scale), height: Math.round(FOCUS_H * scale) };
+/** The Focus window's size at a 界面大小 (its page keeps the same layout, only bigger): the size dragged to, or the default. */
+export function focusSize(scale: number, base: Size | null = null): Size {
+  const b = base ?? { width: FOCUS_W, height: FOCUS_H };
+  return { width: Math.round(Math.max(FOCUS_MIN.width, b.width) * scale), height: Math.round(Math.max(FOCUS_MIN.height, b.height) * scale) };
 }
 
 const roundRect = (r: { x: number; y: number; width: number; height: number }) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
 
 /** A new 界面大小 for an open Focus window: resized with its bottom edge where it was (the panel sits at the bottom). */
-export function rescaleFocusWindow(win: BrowserWindow, scale: number): void {
+export function rescaleFocusWindow(win: BrowserWindow, scale: number, base: Size | null = null): void {
   const b = win.getBounds();
-  const size = focusSize(scale);
+  const size = focusSize(scale, base);
   win.setBounds({ x: b.x, y: b.y + b.height - size.height, ...size });
   refitFocusWindow(win);
 }
@@ -120,6 +125,8 @@ interface PrefsData {
   main?: { bounds: Rect; maximized: boolean };
   /** 界面大小 (2026-10-15): the zoom of every Studio page. */
   uiScale?: number;
+  /** 拖拽调整大小 (2026-11-06): Focus's size, at 界面大小 100%. */
+  focusSize?: Size;
 }
 
 /** Shell preferences that belong to this machine's windows rather than to the Host: Focus on/off and window places. */
@@ -150,6 +157,15 @@ export class ShellPrefs {
 
   setFocusPos(pos: Point): void {
     this.save({ focusPos: pos });
+  }
+
+  focusSize(): Size | null {
+    const s = this.data.focusSize;
+    return s && Number.isFinite(s.width) && Number.isFinite(s.height) ? s : null;
+  }
+
+  setFocusSize(size: Size): void {
+    this.save({ focusSize: size });
   }
 
   main(): PrefsData["main"] | null {
@@ -248,4 +264,33 @@ export function letTitleDragsMove(win: BrowserWindow, { testMode, note }: { test
   // Tests cannot make Windows send these messages; they drive the drag itself.
   if (testMode) (globalThis as Record<string, unknown>).__amoFocusCaption = { pressed: () => drag.pressed(), entered: () => drag.entered(), exited: () => drag.exited() };
   return drag;
+}
+
+/**
+ * 拖拽调整大小 (2026-11-06): Focus resized by the grip at its panel's top-left corner. The page says when a drag
+ * starts, moves and ends; where to is read here from the pointer (screen points, as the window's bounds), so the page's
+ * zoom and the window moving under the pointer do not matter. `done` hears the size at 界面大小 100% and the place.
+ */
+export function focusResizer(win: BrowserWindow, { testMode, scale, done }: { testMode: boolean; scale(): number; done(base: Size, at: Point): void }) {
+  let drag: { start: Rect; from: Point; area: Rect } | null = null;
+  const cursor = (): Point => (testMode && (globalThis as { __amoTestCursor?: Point }).__amoTestCursor) || screen.getCursorScreenPoint();
+  return (phase: "start" | "move" | "end") => {
+    if (win.isDestroyed()) return;
+    if (phase === "start") {
+      const start = win.getBounds();
+      // Tests keep their windows off every screen: no work area to stay in there.
+      const area = testMode ? { x: -1e6, y: -1e6, width: 2e6, height: 2e6 } : displayFor(start, displays()).workArea;
+      drag = { start, from: cursor(), area };
+      return;
+    }
+    if (!drag) return;
+    const z = scale();
+    const next = resizeFocus(drag.start, drag.from, cursor(), { width: Math.round(FOCUS_MIN.width * z), height: Math.round(FOCUS_MIN.height * z) }, drag.area);
+    const b = win.getBounds();
+    if (next.x !== b.x || next.y !== b.y || next.width !== b.width || next.height !== b.height) win.setBounds(next);
+    if (phase === "end") {
+      drag = null;
+      done({ width: Math.round(next.width / z), height: Math.round(next.height / z) }, { x: next.x, y: next.y });
+    }
+  };
 }

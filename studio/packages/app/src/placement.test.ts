@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centreIn, clampInto, displayFor, placeFocus, placeMain, refitFocus, type DisplayInfo } from "./placement.js";
+import { centreIn, clampInto, displayFor, placeFocus, placeMain, refitFocus, resizeFocus, type DisplayInfo } from "./placement.js";
 
 // Primary 1920x1080 at 100% (taskbar 40 high); a 4K monitor at 150% on its left (2560x1440 DIP, above the origin);
 // a 1280x1024 at 125% on its right.
@@ -43,6 +43,17 @@ describe("placement", () => {
       // The right display goes to 175%: its work area shrinks and the window is pulled back inside.
       const shrunk = { ...right, scaleFactor: 1.75, workArea: { x: 1920, y: 0, width: 731, height: 556 } };
       expect(refitFocus(onRight, [primary, left4k, shrunk], 1)).toEqual({ x: 1920 + 731 - 380, y: 0 });
+    });
+
+    it("resizes by its top-left corner: the bottom-right stays, within the least size and the work area (拖拽调整大小)", () => {
+      const start = { x: 1528, y: 468, width: 380, height: 560 };
+      const min = { width: 300, height: 200 };
+      // Up and left 100: bigger by 100 each way.
+      expect(resizeFocus(start, { x: 1530, y: 470 }, { x: 1430, y: 370 }, min, primary.workArea)).toEqual({ x: 1428, y: 368, width: 480, height: 660 });
+      // Down and right far: never below the least size.
+      expect(resizeFocus(start, { x: 1530, y: 470 }, { x: 1900, y: 1000 }, min, primary.workArea)).toEqual({ x: 1608, y: 828, width: 300, height: 200 });
+      // Past the work area's top-left: as big as it gets there.
+      expect(resizeFocus(start, { x: 1530, y: 470 }, { x: -800, y: -900 }, min, primary.workArea)).toEqual({ x: 0, y: 0, width: 1908, height: 1028 });
     });
   });
 
