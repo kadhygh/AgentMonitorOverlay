@@ -115,3 +115,46 @@ test("a picture of a rendered page shows enlarged over it, and ← brings the pa
   await expect(viewer.getByTestId("viewer-name")).toHaveText("report.html");
   await viewer.close();
 });
+
+// 页面旁边的文件 (2026-11-06; the user: DSH's pages keep their CSS beside them): a page's stylesheet, script, pictures
+// (also from a folder up, in the project) load through the Host; a file outside the project does not.
+test("an HTML page's stylesheet, script and pictures beside it load in the viewer", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("design");
+  for (const d of ["out", "shots"]) mkdirSync(join(dir, d), { recursive: true });
+  const outside = join(dir, "..", "outside");
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, "evil.css"), "body { background: rgb(255, 0, 0); }");
+  copyFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "screenshots", "platform", "P46-changelog.png"), join(dir, "shots", "board.png"));
+  writeFileSync(join(dir, "out", "style.css"), "h1 { color: rgb(1, 2, 3); } .card { background-image: url(../shots/board.png); width: 40px; height: 40px; }");
+  writeFileSync(join(dir, "out", "app.js"), "document.addEventListener('DOMContentLoaded', () => { document.getElementById('js').textContent = '脚本已加载'; });");
+  writeFileSync(
+    join(dir, "out", "page.html"),
+    `<!doctype html><html><head><meta charset="utf-8"><title>页面</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="../../outside/evil.css"><script src="app.js"></script></head>
+<body><h1>旁边的样式</h1><p id="js">脚本没加载</p><div class="card"></div><img id="pic" src="../shots/board.png" width="200"><p><a id="sec" href="#end">到结尾</a></p><div style="height:2000px"></div><p id="end">结尾</p></body></html>`,
+  );
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+
+  const viewer = await openViewer(app, page, { path: join(dir, "out", "page.html"), workspaceId: ws.id });
+  const inFrame = viewer.frameLocator('[data-testid="viewer-html"]');
+  await expect(inFrame.locator("h1")).toHaveText("旁边的样式");
+  await expect.poll(() => inFrame.locator("h1").evaluate((el) => getComputedStyle(el).color)).toBe("rgb(1, 2, 3)");
+  await expect(inFrame.locator("#js")).toHaveText("脚本已加载");
+  await expect.poll(() => inFrame.locator("#pic").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(100);
+  expect(await inFrame.locator(".card").evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("/api/fs/page/");
+  // Outside the project: not served, the page's own background stays.
+  expect(await inFrame.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgb(255, 0, 0)");
+  // An in-page anchor still moves within the page (the <base> does not send it away).
+  await inFrame.locator("#sec").click();
+  await expect.poll(() => inFrame.locator("body").evaluate(() => scrollY)).toBeGreaterThan(1000);
+  await expect(viewer.getByTestId("viewer-name")).toHaveText("page.html");
+  // The picture loaded beside the page zooms as its file (with its buttons).
+  await inFrame.locator("#pic").click();
+  await expect(viewer.getByTestId("image-zoom")).toContainText("board.png");
+  await expect(viewer.getByTestId("image-zoom-reveal")).toBeVisible();
+  await inFrame.locator("body").evaluate(() => scrollTo(0, 0));
+  await viewer.keyboard.press("Escape");
+  await screenshot(app, "studio", "viewer-page-assets", viewer, "viewer");
+  await viewer.close();
+});

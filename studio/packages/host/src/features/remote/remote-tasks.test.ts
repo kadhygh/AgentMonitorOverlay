@@ -932,7 +932,7 @@ describe("remote files between two Hosts (step 3)", () => {
     const served = await b.remote.serveFile(img.key, "docs/img/p.png");
     expect(served).toMatchObject({ path: img.path, mime: "image/png" });
     await expect(b.remote.serveFile("nokeynokeynokey", "docs/img/p.png")).rejects.toThrow();
-    await expect(b.remote.serveFile(img.key, "docs/a.md")).rejects.toThrow("only images");
+    await expect(b.remote.serveFile(img.key, "docs/a.md")).rejects.toThrow("only a page");
     // Refused on A, said on B.
     await expect(b.remote.fetchFile(task.id, "run.exe")).rejects.toThrow("不能看程序和二进制文件");
     await expect(b.remote.fetchFile(task.id, join(proj, "..", "elsewhere.md"))).rejects.toThrow();

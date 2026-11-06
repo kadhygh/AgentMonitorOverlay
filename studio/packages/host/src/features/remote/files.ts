@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { open, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
-import { MAX_TEXT_FILE_BYTES, PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_KINDS, REMOTE_TASK_FOLDER, remoteFileKind, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
+import { MAX_TEXT_FILE_BYTES, PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_FONT_EXT, REMOTE_KINDS,REMOTE_TASK_FOLDER, remoteFileKind, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext } from "./grants.js";
@@ -84,8 +84,10 @@ export const real = (p: string): string | null => {
 
 /** Does the file's start look like its kind (an image's signature; text without NUL bytes)? */
 export function looksLike(kind: RemoteFileKind, ext: string, head: Buffer): boolean {
-  if (kind !== "image") return !head.includes(0);
   const b = head;
+  // A page's font (2026-11-06): WOFF, WOFF2, TrueType or OpenType by their first four bytes, whatever the name says.
+  if (kind === "font") return ["wOFF", "wOF2", "OTTO", "true", "\u0000\u0001\u0000\u0000"].includes(b.subarray(0, 4).toString("latin1"));
+  if (kind !== "image") return !head.includes(0);
   switch (ext) {
     case ".png":
       return b.length >= 8 && b.readUInt32BE(0) === 0x89504e47;
@@ -133,7 +135,7 @@ export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, devic
   else if (attachments && inside(where, attachments) && roots.attached().some((a) => key(real(a) ?? "") === key(where))) rel = `${REMOTE_ATTACHMENTS_FOLDER}/${basename(where)}`;
   else throw new HostError("read_only", "这个文件不在任务的文件夹里，不能远程查看（只能看任务文件夹和对话附件里的文件）");
   const ext = extOf(where);
-  const kind = remoteFileKind(where);
+  const kind = remoteFileKind(where) ?? (ask.pageAsset === true && REMOTE_FONT_EXT.has(ext) ? "font" : null);
   if (!kind) throw new HostError("bad_request", `远程任务不能看程序和二进制文件（这是 ${ext} 文件），只能看文本、HTML、Markdown 和图片`);
   const info = await stat(where);
   if (info.isDirectory()) throw new HostError("bad_request", "这是一个文件夹，不是文件");
@@ -316,11 +318,11 @@ export class RemoteFiles {
   }
 
   /** A file of a remote task: fetched from A (or found unchanged there), kept here. `fetchId` names its progress events. */
-  fetch(taskId: Id, path: string, cwd?: string, fetchId?: string): Promise<RemoteFetchedFile> {
-    const k = `${taskId}\n${cwd ?? ""}\n${path}`;
+  fetch(taskId: Id, path: string, cwd?: string, fetchId?: string, pageAsset = false): Promise<RemoteFetchedFile> {
+    const k = `${taskId}\n${cwd ?? ""}\n${path}\n${pageAsset}`;
     const had = this.running.get(k);
     if (had) return had;
-    const run = this.fetchNow(taskId, path, cwd, fetchId).finally(() => this.running.delete(k));
+    const run = this.fetchNow(taskId, path, cwd, fetchId, false, pageAsset).finally(() => this.running.delete(k));
     this.running.set(k, run);
     return run;
   }
@@ -330,7 +332,7 @@ export class RemoteFiles {
   }
 
   /** `again`: a second try that ignores the copy here (it was gone, or the file changed while it came). */
-  private async fetchNow(taskId: Id, path: string, cwd: string | undefined, fetchId: string | undefined, again = false): Promise<RemoteFetchedFile> {
+  private async fetchNow(taskId: Id, path: string, cwd: string | undefined, fetchId: string | undefined, again = false, pageAsset = false): Promise<RemoteFetchedFile> {
     const task = this.store.getTask(taskId);
     if (!task?.remote) throw new HostError("not_found", "这不是远程任务");
     const r = task.remote;
@@ -346,7 +348,7 @@ export class RemoteFiles {
       if (kept) return fromKept("授权已收回，显示的是上次取来的版本");
       throw new HostError("read_only", "授权已收回，不能再从那台电脑取文件");
     }
-    const body = (offset: number, extra: Partial<RemoteFileAsk> = {}): RemoteFileAsk => ({ taskId, path, ...(cwd ? { cwd } : {}), offset, ...extra });
+    const body = (offset: number, extra: Partial<RemoteFileAsk> = {}): RemoteFileAsk => ({ taskId, path, ...(cwd ? { cwd } : {}), offset, ...(pageAsset ? { pageAsset: true } : {}), ...extra });
     let first: RemoteFileAnswer;
     try {
       first = await this.ask<RemoteFileAnswer>(peer, REMOTE_KINDS.file, body(0, kept && !again ? { have: { size: kept.size, mtime: kept.mtime, sha256: kept.sha256 } } : {}), FILE_MS, `${name} 离线，取不到文件（回来后再打开一次）`);
@@ -370,7 +372,7 @@ export class RemoteFiles {
     if (first.unchanged) {
       // A said unchanged but the copy here is gone: ask again for all of it.
       if (again) throw new HostError("runtime_error", "取文件出了错，再打开一次");
-      return this.fetchNow(taskId, path, cwd, fetchId, true);
+      return this.fetchNow(taskId, path, cwd, fetchId, true, pageAsset);
     }
     if (first.size > REMOTE_FILE_MAX_BYTES) throw new HostError("bad_request", `文件太大（${mb(first.size)}），远程最多取 ${mb(REMOTE_FILE_MAX_BYTES)}`);
     const parts: Buffer[] = [Buffer.from(first.data ?? "", "base64")];
@@ -382,7 +384,7 @@ export class RemoteFiles {
         piece = await this.ask<RemoteFileAnswer>(peer, REMOTE_KINDS.file, body(received, { expect: { size: first.size, mtime: first.mtime } }), FILE_MS, `${name} 离线了，文件没取完（回来后再打开一次）`);
       } catch (err) {
         // Changed on A while it came: once more from the start.
-        if (err instanceof HostError && err.code === "conflict" && !again) return this.fetchNow(taskId, path, cwd, fetchId, true);
+        if (err instanceof HostError && err.code === "conflict" && !again) return this.fetchNow(taskId, path, cwd, fetchId, true, pageAsset);
         throw err;
       }
       const buf = Buffer.from(piece.data ?? "", "base64");
@@ -405,15 +407,17 @@ export class RemoteFiles {
   }
 
   /**
-   * GET /api/remote/files/<key>/<rel>: an image a remote page (HTML) loads, by its place in the task's folder — fetched
-   * from A when it is not here or changed there, else the copy here.
+   * GET /api/remote/files/<key>/<rel>: a picture, stylesheet, script or font a remote page (HTML) loads (页面旁边的文件,
+   * 2026-11-06; pictures only before), by its place in the task's folder — fetched from A when it is not here or
+   * changed there, else the copy here. Stylesheets and scripts are text to A (an older A sends them too); fonts are
+   * asked as a page's (`pageAsset`), which only a newer A answers — an older one leaves the page in its fallback font.
    */
   async serve(k: string, rel: string): Promise<{ path: string; mime: string }> {
     const taskId = this.keys.get(k);
     if (!taskId) throw new HostError("not_found", "not found");
-    const mime = PREVIEW_IMAGE_TYPES[extOf(rel)];
-    if (!mime) throw new HostError("not_found", "only images are served here");
-    const f = await this.fetch(taskId, `${REMOTE_TASK_FOLDER}/${slash(rel)}`);
+    const mime = PAGE_ASSET_TYPES[extOf(rel)];
+    if (!mime) throw new HostError("not_found", "only a page's pictures, stylesheets, scripts and fonts are served here");
+    const f = await this.fetch(taskId, `${REMOTE_TASK_FOLDER}/${slash(rel)}`, undefined, undefined, true);
     return { path: f.path, mime };
   }
 }

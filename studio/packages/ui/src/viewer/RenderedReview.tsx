@@ -207,7 +207,22 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
 
   // ---- HTML: painted in its frame ----
   // A remote page's own images load from the task's folder there, through this Host (fetched as the page asks).
-  const base = remote ? remoteFileUrl(remote.host ?? link, remote.key, `${remote.rel.includes("/") ? remote.rel.slice(0, remote.rel.lastIndexOf("/") + 1) : ""}`) : null;
+  // 页面旁边的文件 (2026-11-06; the user: DSH's pages keep their CSS beside them): a page of this computer loads its
+  // stylesheets, scripts, pictures and fonts through this Host too, under a key for its project (or its folder). The
+  // frame waits for it (undefined), so the page is not drawn twice; without one (an error) it is drawn as before.
+  const [localBase, setLocalBase] = useState<string | null | undefined>(remote || kind !== "html" ? null : undefined);
+  useEffect(() => {
+    if (remote || kind !== "html") return;
+    let live = true;
+    call(link, "POST /api/fs/page", {}, { path: file.path }).then(
+      (b) => live && setLocalBase(`${link.url}/api/fs/page/${b.key}/${b.dir.split("/").map(encodeURIComponent).join("/")}`),
+      () => live && setLocalBase(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [link, file.path, kind, !!remote]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = remote ? remoteFileUrl(remote.host ?? link, remote.key, `${remote.rel.includes("/") ? remote.rel.slice(0, remote.rel.lastIndexOf("/") + 1) : ""}`) : (localBase ?? null);
   const srcDoc = useMemo(() => (kind === "html" ? frameDoc(text, base) : ""), [kind, text, base]);
   const toFrame = (m: ToFrame) => frame.current?.contentWindow?.postMessage({ amoPassage: m }, "*");
   const anchorOf = (p: PassageAnchor) => ({ quote: p.quote, prefix: p.prefix, suffix: p.suffix });
@@ -261,11 +276,13 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
       }
     };
     const web = href && /^(https?:|data:image\/)/i.test(href) ? href : null;
-    if (loaded || web) return setZoom({ url: (loaded ?? web)!, name: alt || (web && !web.startsWith("data:") ? nameOf(web) : "图片") });
-    if (!href) return;
+    const asIs = () => setZoom({ url: (loaded ?? web)!, name: alt || (web && !web.startsWith("data:") ? nameOf(web) : "图片") });
+    // A file first (its buttons), then what the page loaded (a picture beside a page now loads through the Host too).
+    if (!href || web) return loaded || web ? asIs() : undefined;
+    const cannot = () => (loaded ? asIs() : showToast({ text: `这张图在查看器里打不开：${href}`, error: true }));
     if (remote) {
       const there = remoteLinkPath(remote.rel, href, resolveLink);
-      if (!there || remoteFileKind(there.path) !== "image" || !there.path.startsWith(`${REMOTE_TASK_FOLDER}/`)) return showToast({ text: `这张图在查看器里打不开：${href}`, error: true });
+      if (!there || remoteFileKind(there.path) !== "image" || !there.path.startsWith(`${REMOTE_TASK_FOLDER}/`)) return cannot();
       return setZoom({
         url: remoteFileUrl(remote.host ?? link, remote.key, there.path.slice(REMOTE_TASK_FOLDER.length + 1)),
         name: nameOf(there.path),
@@ -276,7 +293,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
       });
     }
     const to = resolveLink(file.path, href);
-    if (to?.kind !== "file" || remoteFileKind(to.path) !== "image") return showToast({ text: `这张图在查看器里打不开：${href}`, error: true });
+    if (to?.kind !== "file" || remoteFileKind(to.path) !== "image") return cannot();
     setZoom({
       url: rawFileUrl(link, { path: to.path }),
       name: nameOf(to.path),
@@ -444,7 +461,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
                 </div>
               </div>
             </>
-          ) : (
+          ) : localBase === undefined ? null : (
             <iframe
               ref={frame}
               className="vw-frame"

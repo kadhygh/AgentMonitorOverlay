@@ -80,8 +80,9 @@ export function remoteRoutes(service: HostService): Route[] {
         },
       }),
     ),
-    // Step 3: images a remote task's HTML page loads, by their place in the task's folder (the page gets <base> here).
-    // An <img> sends no token and <base> drops a query, so the key in the path (random, per task, per Host run) is it.
+    // Step 3: what a remote task's HTML page loads — pictures, and since 2026-11-06 its stylesheets, scripts and fonts —
+    // by their place in the task's folder (the page gets <base> here). An <img> sends no token and <base> drops a
+    // query, so the key in the path (random, per task, per Host run) is it.
     {
       method: "GET",
       path: "/api/remote/files/:key/*",
@@ -90,7 +91,8 @@ export function remoteRoutes(service: HostService): Route[] {
       open: true,
       handle: async ({ params }) => {
         const f = await service.remote.serveFile(params.key!, params.rel!);
-        return new FileReply(f.path, f.mime, { fresh: true, whole: true });
+        // cors: the page's fonts (2026-11-06), which its sandboxed frame loads in CORS mode.
+        return new FileReply(f.path, f.mime, { fresh: true, whole: true, cors: true });
       },
     },
   ];

@@ -115,6 +115,50 @@ describe("quick look", () => {
     expect(cs.status).toBe(400);
   });
 
+  it("serves a page's stylesheets, scripts, pictures and fonts under a key for its project, nothing outside or else (2026-11-06)", async () => {
+    const dir = makeProject();
+    mkdirSync(join(dir, "docs", "out"), { recursive: true });
+    mkdirSync(join(dir, "assets"), { recursive: true });
+    writeFileSync(join(dir, "docs", "out", "page.html"), "<link rel=stylesheet href=style.css>");
+    writeFileSync(join(dir, "docs", "out", "style.css"), "h1 { color: red }");
+    writeFileSync(join(dir, "assets", "font.woff2"), "wOF2");
+    writeFileSync(join(root, "secret.css"), "x");
+    await api<Workspace>("POST", "/api/workspaces", { path: dir });
+
+    const page = await api<{ key: string; dir: string }>("POST", "/api/fs/page", { path: join(dir, "docs", "out", "page.html") });
+    expect(page.status).toBe(200);
+    expect(page.data.key).toMatch(/^[0-9a-f]{32}$/);
+    expect(page.data.dir).toBe("docs/out/");
+    // The same project: the same key.
+    expect((await api<{ key: string }>("POST", "/api/fs/page", { path: join(dir, "Assets", "Player.cs") })).data.key).toBe(page.data.key);
+    const at = (rel: string) => fetch(`${http.url}/api/fs/page/${page.data.key}/${rel}`);
+    // No token: the key is it.
+    const css = await at("docs/out/style.css");
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toContain("text/css");
+    expect(await css.text()).toBe("h1 { color: red }");
+    const font = await at("assets/font.woff2");
+    expect(font.status).toBe(200);
+    expect(font.headers.get("access-control-allow-origin")).toBe("*");
+    expect((await at("logo.png")).status).toBe(200);
+    // Not a page's kind of file, outside the project, a made-up key.
+    expect((await at("Assets/Player.cs")).status).toBe(404);
+    expect((await at("docs/out/page.html")).status).toBe(404);
+    expect((await at("..%2Fsecret.css")).status).toBe(404);
+    expect((await at("docs/..%2F..%2F..%2Fsecret.css")).status).toBe(404);
+    expect((await fetch(`${http.url}/api/fs/page/${"0".repeat(32)}/docs/out/style.css`)).status).toBe(404);
+    // A page in no project: its own folder.
+    mkdirSync(join(root, "loose"), { recursive: true });
+    writeFileSync(join(root, "loose", "p.html"), "x");
+    writeFileSync(join(root, "loose", "p.css"), "p {}");
+    const loose = await api<{ key: string; dir: string }>("POST", "/api/fs/page", { path: join(root, "loose", "p.html") });
+    expect(loose.data.dir).toBe("");
+    expect((await fetch(`${http.url}/api/fs/page/${loose.data.key}/p.css`)).status).toBe(200);
+    expect((await fetch(`${http.url}/api/fs/page/${loose.data.key}/..%2Fsecret.css`)).status).toBe(404);
+    // Asking for a key needs the token.
+    expect((await fetch(`${http.url}/api/fs/page`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: join(root, "loose", "p.html") }) })).status).toBe(401);
+  });
+
   it("decodes UTF-16 with a BOM", () => {
     expect(decode(Buffer.from([0xff, 0xfe, 0x41, 0x00, 0x42, 0x00]))).toBe("AB");
     expect(decode(Buffer.from([0xfe, 0xff, 0x00, 0x41]))).toBe("A");

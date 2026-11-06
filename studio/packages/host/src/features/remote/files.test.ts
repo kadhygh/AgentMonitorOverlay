@@ -83,6 +83,20 @@ describe("remote files on A (step 3)", () => {
     expect(await readRemoteFile(roots, { taskId: "t", path: "附件/att-1.png", offset: 0 }, "A")).toMatchObject({ rel: "附件/att-1.png", kind: "image" });
   });
 
+  it("sends a page's font only when asked as a page's file, and only one that is a font (页面旁边的文件, 2026-11-06)", async () => {
+    const { root, roots } = layout();
+    writeFileSync(join(root, "docs", "f.woff2"), Buffer.concat([Buffer.from("wOF2"), Buffer.alloc(40, 1)]));
+    writeFileSync(join(root, "docs", "fake.ttf"), "not a font at all");
+    expect(remoteFileKind("docs/f.woff2")).toBeNull();
+    // Opened on its own: refused as binary files are.
+    await expect(readRemoteFile(roots, { taskId: "t", path: "docs/f.woff2", offset: 0 }, "A")).rejects.toThrow("不能看程序和二进制文件");
+    expect(await readRemoteFile(roots, { taskId: "t", path: "docs/f.woff2", offset: 0, pageAsset: true }, "A")).toMatchObject({ rel: "docs/f.woff2", kind: "font" });
+    await expect(readRemoteFile(roots, { taskId: "t", path: "docs/fake.ttf", offset: 0, pageAsset: true }, "A")).rejects.toThrow("不是文本");
+    // Stylesheets were text before: still.
+    writeFileSync(join(root, "docs", "s.css"), "h1 { color: red }");
+    expect(await readRemoteFile(roots, { taskId: "t", path: "docs/s.css", offset: 0, pageAsset: true }, "A")).toMatchObject({ kind: "text" });
+  });
+
   it("finds a relative path written from a subfolder by its end, as local links do (2026-10-30)", async () => {
     const { root, roots } = layout();
     const asked: string[] = [];

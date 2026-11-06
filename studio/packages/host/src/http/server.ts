@@ -180,7 +180,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
 
   const sendFile = (res: ServerResponse, file: FileReply) => {
     if (!existsSync(file.path)) return fail(res, 404, "not_found", "file not found");
-    res.writeHead(200, { "content-type": file.mime, "cache-control": file.options.fresh ? "no-store" : "private, max-age=31536000, immutable" });
+    res.writeHead(200, { "content-type": file.mime, "cache-control": file.options.fresh ? "no-store" : "private, max-age=31536000, immutable", ...(file.options.cors ? { "access-control-allow-origin": "*" } : {}) });
     // A remote task's copy (at most 20 MB) is read whole: a stream to a picture the page no longer shows was seen to
     // stay open, holding the file, so archiving the copy could not delete its folder (2026-10-29).
     if (file.options.whole) {

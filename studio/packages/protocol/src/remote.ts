@@ -471,7 +471,12 @@ export const REMOTE_ATTACHMENTS_FOLDER = "附件";
  * `text` (2026-10-29, the user: B should open what a page links to, as A's viewer does — scripts, configs, logs): any
  * other file whose start has no NUL byte (A checks), shown as the viewer shows text, at most MAX_TEXT_FILE_BYTES.
  */
-export type RemoteFileKind = "html" | "markdown" | "image" | "text";
+export type RemoteFileKind = "html" | "markdown" | "image" | "text" | "font";
+/**
+ * Fonts a page loads (页面旁边的文件, 2026-11-06): A sends them only when asked as a page's file (`pageAsset`); opened
+ * on their own they stay refused, as other binary files (remoteFileKind says null).
+ */
+export const REMOTE_FONT_EXT: ReadonlySet<string> = new Set([".woff", ".woff2", ".ttf", ".otf"]);
 const REMOTE_FILE_EXT: Record<string, RemoteFileKind> = {
   ".html": "html",
   ".htm": "html",
@@ -511,6 +516,8 @@ export interface RemoteFileAsk {
   cwd?: string;
   /** The first byte wanted (0 for the start). */
   offset: number;
+  /** A file a page loads beside it (页面旁边的文件, 2026-11-06): fonts are sent too. An older A ignores it. */
+  pageAsset?: boolean;
   /** B's kept copy: A answers `unchanged` when the file is still the same. */
   have?: { size: number; mtime: number; sha256: string };
   /** After the first piece: the file as it was then; changed since, A says so and B starts again. */

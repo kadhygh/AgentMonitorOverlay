@@ -1,8 +1,9 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, normalize } from "node:path";
-import { MAX_TEXT_FILE_BYTES, PREVIEW_IMAGE_TYPES, type Id, type OpenInApp, type OpenInApps, type OpenInRequest, type OpenInResult, type TextFile } from "@amo-studio/protocol";
+import { dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { MAX_TEXT_FILE_BYTES, PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, type Id, type OpenInApp, type OpenInApps, type OpenInRequest, type OpenInResult, type PageBase, type TextFile } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
@@ -31,6 +32,9 @@ export class OpenInFeature extends Feature {
   /** Test runs (AMO_STUDIO_TEST=1) only record launches. */
   readonly launches: OpenInLaunch[] = [];
   private vscode: Promise<VsCode | null> | null = null;
+  /** 页面旁边的文件: key → the folder it serves, and the way back (lowercased: Windows paths). */
+  private readonly pageRoots = new Map<string, string>();
+  private readonly pageKeyOf = new Map<string, string>();
 
   private get dryRun(): boolean {
     return process.env.AMO_STUDIO_TEST === "1";
@@ -85,6 +89,47 @@ export class OpenInFeature extends Feature {
     return { path, mime };
   }
 
+  /**
+   * 页面旁边的文件 (2026-11-06; the user: DSH's pages keep their CSS beside them): the viewer shows an HTML file in a
+   * sandboxed frame whose relative addresses would resolve against the viewer's own, so its stylesheets, scripts,
+   * pictures and fonts did not load. The page gets `<base>` at `/api/fs/page/<key>/<dir>`; the key stands for the project
+   * the page is in (`../assets/x.css` works), else its own folder. Random, per root, per Host run; only the token holder
+   * gets one (this route), the files behind it are served without a token (servePage).
+   */
+  pageBase(pathIn: unknown, workspaceId: unknown): PageBase {
+    const page = this.resolve(pathIn, workspaceId);
+    const real = realOrNull(page);
+    if (!real) throw new HostError("not_found", `${page} does not exist`);
+    const project = this.store
+      .listWorkspaces()
+      .map((w) => realOrNull(w.path))
+      .filter((p): p is string => !!p && inside(real, p))
+      .sort((a, b) => b.length - a.length)[0];
+    const root = project ?? dirname(real);
+    let key = this.pageKeyOf.get(root.toLowerCase());
+    if (!key) {
+      key = randomBytes(16).toString("hex");
+      this.pageKeyOf.set(root.toLowerCase(), key);
+      this.pageRoots.set(key, root);
+    }
+    const dir = relative(root, dirname(real)).split(sep).filter(Boolean);
+    return { key, dir: dir.length ? `${dir.join("/")}/` : "" };
+  }
+
+  /** GET /api/fs/page/<key>/<rel>: a file under the key's root, of a type in PAGE_ASSET_TYPES (links and junctions resolved first). */
+  servePage(key: string, rel: string): { path: string; mime: string } {
+    const root = this.pageRoots.get(key);
+    if (!root) throw new HostError("not_found", "not found");
+    // Already decoded by the router; a part that climbs out or names a drive is refused before the resolved check.
+    const parts = rel.split("/").filter((p) => p && p !== ".");
+    if (!parts.length || parts.some((p) => p === ".." || /[\\:]/.test(p))) throw new HostError("not_found", "not found");
+    const mime = PAGE_ASSET_TYPES[extname(parts[parts.length - 1] ?? "").toLowerCase()];
+    if (!mime) throw new HostError("not_found", "only a page's stylesheets, scripts, pictures and fonts are served here");
+    const real = realOrNull(join(root, ...parts));
+    if (!real || !inside(real, root) || !statSync(real).isFile()) throw new HostError("not_found", "not found");
+    return { path: real, mime };
+  }
+
   /** An absolute path, or one relative to the project. */
   resolve(pathIn: unknown, workspaceId: unknown): string {
     if (typeof pathIn !== "string" || !pathIn.trim()) throw new HostError("bad_request", "path is required");
@@ -118,6 +163,21 @@ export class OpenInFeature extends Feature {
 }
 
 const positive = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
+
+/** A path with its links and junctions resolved, or null when it does not exist. */
+const realOrNull = (p: string): string | null => {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return null;
+  }
+};
+
+/** Is `p` the folder `root` or under it (both resolved; Windows paths compare without case)? */
+const inside = (p: string, root: string): boolean => {
+  const r = relative(root.toLowerCase(), p.toLowerCase());
+  return r === "" || (!r.startsWith("..") && !isAbsolute(r));
+};
 
 /** UTF-8 (BOM dropped) or UTF-16 with a BOM; null for binary data. */
 export function decode(data: Buffer): string | null {

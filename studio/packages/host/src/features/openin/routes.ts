@@ -20,5 +20,23 @@ export function openInRoutes(service: HostService): Route[] {
       },
       { queryToken: true },
     ),
+    // 页面旁边的文件 (2026-11-06): the key a page's neighbours are served under, then the files themselves — open, as
+    // the remote task's pictures are: a <link> or <img> sends no token and <base> drops a query, so the random key in
+    // the path is it. CORS for fonts: the page's frame is sandboxed (origin null), and fonts load in CORS mode.
+    route("POST /api/fs/page", ({ body }) => {
+      const b = (body ?? {}) as { path?: unknown; workspaceId?: unknown };
+      return service.openIn.pageBase(b.path, b.workspaceId);
+    }),
+    {
+      method: "GET",
+      path: "/api/fs/page/:key/*",
+      pattern: /^\/api\/fs\/page\/([0-9a-f]{32})\/(.+)$/,
+      keys: ["key", "rel"],
+      open: true,
+      handle: ({ params }) => {
+        const f = service.openIn.servePage(params.key!, params.rel!);
+        return new FileReply(f.path, f.mime, { fresh: true, cors: true, whole: statSync(f.path).size <= WHOLE_MAX });
+      },
+    },
   ];
 }

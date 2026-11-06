@@ -54,6 +54,33 @@ export const PREVIEW_IMAGE_TYPES: Readonly<Record<string, string>> = {
   ".ico": "image/x-icon",
 };
 
+/**
+ * 页面旁边的文件 (2026-11-06): what an HTML page shown in the viewer may load from beside it — its stylesheets, scripts,
+ * pictures and fonts (the user: DSH's pages keep their CSS next to them) — by lowercase extension. Served by
+ * `GET /api/fs/page/<key>/<rel>` here, and for a remote task's page by `/api/remote/files/<key>/<rel>`.
+ */
+export const PAGE_ASSET_TYPES: Readonly<Record<string, string>> = {
+  ...PREVIEW_IMAGE_TYPES,
+  ".avif": "image/avif",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+};
+
+/**
+ * Where a page's neighbours are served (POST /api/fs/page): `/api/fs/page/<key>/` stands for `root` — the project the
+ * page is in, else its own folder — and `dir` is the page's folder under it ("" or "a/b/"), so `<base href>` is
+ * `<Host>/api/fs/page/<key>/<dir>` with each part of `dir` escaped.
+ */
+export interface PageBase {
+  key: string;
+  dir: string;
+}
+
 // ---- Host routes (declared here, part of api.ts's HostRoutes) --------------------------------------------------
 
 /** Files outside Studio (stage 12, S12-0): open in an editor or the file manager, quick looks. */
@@ -66,4 +93,9 @@ export interface OpenInRoutes {
   "GET /api/fs/text": { req: void; res: TextFile };
   /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
   "GET /api/fs/raw": { req: void; res: Blob };
+  /**
+   * 页面旁边的文件 (2026-11-06): the key an HTML page's stylesheets, scripts, pictures and fonts are served under
+   * (`GET /api/fs/page/<key>/<rel>`, open: a <link> or <img> sends no token, and <base> drops a query). Per Host run.
+   */
+  "POST /api/fs/page": { req: { path: string; workspaceId?: Id }; res: PageBase };
 }
