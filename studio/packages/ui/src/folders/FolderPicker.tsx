@@ -41,6 +41,20 @@ export function pickDirectory(start?: string | null): Promise<string | null> {
 
 type Edit = { kind: "new"; text: string } | { kind: "rename"; name: string; text: string };
 
+/** A folder's name with the part 在这一层里找 matched marked. */
+function Marked({ name, query }: { name: string; query: string }) {
+  const q = query.trim().toLowerCase();
+  const at = q ? name.toLowerCase().indexOf(q) : -1;
+  if (at < 0) return <>{name}</>;
+  return (
+    <>
+      {name.slice(0, at)}
+      <mark className="folder-match">{name.slice(at, at + q.length)}</mark>
+      {name.slice(at + q.length)}
+    </>
+  );
+}
+
 function unwrap<T>(r: FolderResult<T>): T {
   if (!r.ok) throw new Error(r.error);
   return r.value;
@@ -55,8 +69,12 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState<Edit | null>(null);
+  // 在这一层里找 (2026-11-06; the user: 输入文件夹关键词快速找到文件夹，只做当前选中位置的同层级检索): narrows the folders of the
+  // folder shown, by a part of their name, any case; nothing below it is searched. Going to another folder clears it.
+  const [query, setQuery] = useState("");
   const list = useRef<HTMLDivElement>(null);
   const editBox = useRef<HTMLInputElement>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
 
   /** Shows `path`; the folder named `select` in it highlighted. Keeps what was shown when it cannot be read. */
   async function go(path: string, select: string | null = null): Promise<boolean> {
@@ -68,6 +86,7 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
       setSelected(select);
       setEdit(null);
       setError("");
+      setQuery("");
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -105,16 +124,31 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
   }, [selected]);
 
   const folders = listing?.folders ?? [];
+  const matching = (text: string) => {
+    const q = text.trim().toLowerCase();
+    return q ? folders.filter((f) => f.toLowerCase().includes(q)) : folders;
+  };
+  /** The folders shown: those whose name holds what is typed in 在这一层里找. */
+  const shown = matching(query);
   /** Highlights a folder; a failed 前往 is forgotten then. */
   const select = (name: string) => {
     setSelected(name);
     setError("");
     if (listing) setPathText(listing.path);
   };
+  /** Narrows the list; the highlight goes to the first match when the highlighted folder is no longer shown. */
+  const search = (text: string) => {
+    setQuery(text);
+    const m = matching(text);
+    if (selected && m.includes(selected)) return;
+    if (m[0]) select(m[0]);
+    else setSelected(null);
+  };
   const chosen = listing ? (selected ? inside(listing.path, selected) : listing.path) : null;
 
   function startNew() {
     if (!listing) return;
+    setQuery("");
     let text = "新建文件夹";
     for (let n = 2; folders.some((f) => f.toLowerCase() === text.toLowerCase()); n++) text = `新建文件夹 (${n})`;
     setEdit({ kind: "new", text });
@@ -140,17 +174,33 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
     list.current?.focus();
   }
 
-  function onListKey(e: React.KeyboardEvent) {
-    if (edit || !listing) return;
-    const i = selected ? folders.indexOf(selected) : -1;
+  /** ↑ ↓ and Enter, from the list or from 在这一层里找. True when it was one of them. */
+  function moveKey(e: React.KeyboardEvent): boolean {
+    if (!listing) return false;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (!folders.length) return;
-      const next = e.key === "ArrowDown" ? Math.min(i + 1, folders.length - 1) : Math.max(i - 1, 0);
-      select(folders[next]!);
-    } else if (e.key === "Enter" && selected) {
+      if (!shown.length) return true;
+      const i = selected ? shown.indexOf(selected) : -1;
+      const next = e.key === "ArrowDown" ? Math.min(i + 1, shown.length - 1) : Math.max(i - 1, 0);
+      select(shown[next]!);
+      return true;
+    }
+    if (e.key === "Enter" && selected && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void go(inside(listing.path, selected));
+      return true;
+    }
+    return false;
+  }
+
+  function onListKey(e: React.KeyboardEvent) {
+    if (edit || !listing) return;
+    if (moveKey(e)) return;
+    if (e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      // Typing on the list starts 在这一层里找 with that letter.
+      e.preventDefault();
+      search(query + e.key);
+      searchBox.current?.focus();
     } else if (e.key === "Backspace" && listing.parent) {
       e.preventDefault();
       const from = listing.path.slice(listing.path.lastIndexOf("\\") + 1);
@@ -202,6 +252,9 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
         if (e.key === "Escape" && !edit) {
           e.stopPropagation();
           onDone(null);
+        } else if (e.key.toLowerCase() === "f" && e.ctrlKey && !edit) {
+          e.preventDefault();
+          searchBox.current?.select();
         }
       }}
     >
@@ -238,9 +291,37 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
             前往
           </button>
         </form>
+        <div className="folder-search">
+          <input
+            ref={searchBox}
+            className="field"
+            type="search"
+            value={query}
+            aria-label="在这一层里找"
+            placeholder="在这一层里找：输入文件夹名字的一部分（在列表上直接打字也行，Ctrl+F）"
+            spellCheck={false}
+            disabled={!listing || !!edit}
+            data-testid="folder-search"
+            onChange={(e) => search(e.target.value)}
+            onKeyDown={(e) => {
+              if (moveKey(e)) return;
+              if (e.key === "Escape" && query) {
+                // The first Esc clears what was typed; the next one closes the picker.
+                e.preventDefault();
+                e.stopPropagation();
+                search("");
+              }
+            }}
+          />
+          {query.trim() && (
+            <span className="folder-search-count" data-testid="folder-search-count">
+              {shown.length} / {folders.length}
+            </span>
+          )}
+        </div>
         <div className="folder-list" role="listbox" aria-label="文件夹" tabIndex={0} ref={list} onKeyDown={onListKey}>
           {edit?.kind === "new" && editRow}
-          {folders.map((name) =>
+          {shown.map((name) =>
             edit?.kind === "rename" && edit.name === name ? (
               <div key={name}>{editRow}</div>
             ) : (
@@ -257,7 +338,9 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
                 <span className="folder-icon" aria-hidden>
                   ▸
                 </span>
-                <span className="folder-name">{name}</span>
+                <span className="folder-name">
+                  <Marked name={name} query={query} />
+                </span>
                 <button
                   type="button"
                   className="folder-action"
@@ -283,6 +366,9 @@ export function FolderPicker({ start, onDone }: { start: string | null; onDone(p
             ),
           )}
           {listing && !folders.length && edit?.kind !== "new" && <div className="folder-empty">这里没有文件夹</div>}
+          {listing && folders.length > 0 && !shown.length && edit?.kind !== "new" && (
+            <div className="folder-empty">这一层没有名字含「{query.trim()}」的文件夹（不找更深的层）</div>
+          )}
           {!listing && !error && <div className="folder-empty">正在读取…</div>}
         </div>
         {error && (
