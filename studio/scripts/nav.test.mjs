@@ -1,12 +1,12 @@
-// The navigation index (docs/guide/, scripts/guide.mjs) only helps while it points at real code. 2026-11-06, the user:
+// The navigation index (docs/nav/, scripts/nav.mjs) only helps while it points at real code. 2026-11-06, the user:
 // an anchor that went stale is fixed or deleted right away (plans/doc-architecture.md) — each failure below says which
 // topic, which anchor, and what to do.
 import { describe, expect, it } from "vitest";
-import { anchorProblems, loadTopics, render, search, shapeProblems } from "./guide.mjs";
+import { anchorProblems, loadTopics, render, search, shapeProblems } from "./nav.mjs";
 
 const topics = loadTopics();
 
-describe("导航索引 docs/guide/", () => {
+describe("导航索引 docs/nav/", () => {
   it("每个主题的字段齐全、id 不重复、related 指向现有主题", () => {
     const problems = shapeProblems(topics);
     expect(problems, `\n${problems.join("\n")}\n`).toEqual([]);

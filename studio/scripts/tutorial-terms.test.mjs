@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { build, buildShowcase, inline, markdown, showcaseScreens, stageTokens, studio, tutorialDir, tutorialTerms } from "./build-tutorial.mjs";
 
-// The tutorial names Studio's buttons, menus and pages (plans/tutorial-onboarding.md, section 5: the cheap check
+// The tutorial names Studio's buttons, menus and pages (plans/later/tutorial-onboarding.md, section 5: the cheap check
 // against drift). Each must still be written in the packages' sources; when one is renamed this fails — change the
 // tutorial (docs/tutorial/) along with the interface. Comments do not count, tests neither.
 

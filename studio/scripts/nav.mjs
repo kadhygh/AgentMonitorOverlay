@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // The navigation index (2026-11-06, plans/doc-architecture.md): where a feature lives, which places a common change
 // touches, literal anchors in the code, and which document to read next. No implementation details — those are the
-// code, its tests and CHANGELOG. Topics are the JSON files in studio/docs/guide/; scripts/guide.test.mjs checks that
+// code, its tests and CHANGELOG. Topics are the JSON files in studio/docs/nav/; scripts/nav.test.mjs checks that
 // every anchor still points at something.
 //
-//   node scripts/guide.mjs                      the catalog, one line per topic
-//   node scripts/guide.mjs --query 远程 额度      topics matching the words (label, aliases, purpose, steps); the best
+//   node scripts/nav.mjs                      the catalog, one line per topic
+//   node scripts/nav.mjs --query 远程 额度      topics matching the words (label, aliases, purpose, steps); the best
 //                                               two in full, the rest one line each
-//   node scripts/guide.mjs --id studio.remote   one topic in full, with its related topics one line each
+//   node scripts/nav.mjs --id studio.remote   one topic in full, with its related topics one line each
 //
 // Nothing found is not "AMO does not have it": search the code, and when it is a gap, add a topic.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -17,20 +17,20 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 /** Paths in topics are relative to the repository root (they start with studio/ or .github/). */
 export const REPO = resolve(here, "..", "..");
-export const GUIDE_DIR = join(REPO, "studio", "docs", "guide");
+export const NAV_DIR = join(REPO, "studio", "docs", "nav");
 
 export const CATEGORIES = ["workflow", "flow", "host", "runtime", "app", "ui", "tool", "infra"];
 const CATEGORY_LABEL = { workflow: "常见改动", flow: "跨模块流程", host: "Studio · Host", runtime: "Studio · runtime", app: "Studio · 外壳", ui: "Studio · 界面", tool: "其他工具", infra: "发布、测试、文档" };
 const TOPIC_KEYS = ["id", "label", "aliases", "category", "purpose", "steps", "anchors", "related", "next"];
 const ANCHOR_KEYS = ["label", "path", "anchor"];
 
-/** Every topic of every docs/guide/*.json, each with the file it came from (`file`). Throws on JSON that does not parse. */
-export function loadTopics(dir = GUIDE_DIR) {
+/** Every topic of every docs/nav/*.json, each with the file it came from (`file`). Throws on JSON that does not parse. */
+export function loadTopics(dir = NAV_DIR) {
   const topics = [];
   for (const name of readdirSync(dir).filter((n) => n.endsWith(".json")).sort()) {
     const doc = JSON.parse(readFileSync(join(dir, name), "utf8").replace(/^﻿/, ""));
-    for (const t of Array.isArray(doc?.topics) ? doc.topics : []) topics.push({ ...t, file: `docs/guide/${name}` });
-    if (doc?.schemaVersion !== 1 || !Array.isArray(doc?.topics)) topics.push({ id: `<${name}>`, file: `docs/guide/${name}`, broken: "文件要是 { \"schemaVersion\": 1, \"topics\": [...] }" });
+    for (const t of Array.isArray(doc?.topics) ? doc.topics : []) topics.push({ ...t, file: `docs/nav/${name}` });
+    if (doc?.schemaVersion !== 1 || !Array.isArray(doc?.topics)) topics.push({ id: `<${name}>`, file: `docs/nav/${name}`, broken: "文件要是 { \"schemaVersion\": 1, \"topics\": [...] }" });
   }
   return topics;
 }
@@ -66,7 +66,7 @@ export function shapeProblems(topics) {
     for (const p of Array.isArray(t.next) ? t.next : []) if (!repoPath(p)) out.push(`${at}：next 的「${p}」要是仓库根目录起的相对路径，用 /`);
   }
   for (const t of topics) for (const r of Array.isArray(t.related) ? t.related : []) {
-    if (!ids.has(String(r).toLowerCase())) out.push(`${t.file} 主题 ${t.id}：related 里的 ${r} 不存在：改成现有的 id（node scripts/guide.mjs 列目录），或删掉`);
+    if (!ids.has(String(r).toLowerCase())) out.push(`${t.file} 主题 ${t.id}：related 里的 ${r} 不存在：改成现有的 id（node scripts/nav.mjs 列目录），或删掉`);
     if (r === t.id) out.push(`${t.file} 主题 ${t.id}：related 里写了自己`);
   }
   return out;
@@ -146,13 +146,13 @@ function full(t) {
 export function render(topics, { id, query } = {}) {
   if (id) {
     const t = topics.find((x) => x.id.toLowerCase() === id.toLowerCase()) ?? search(topics, id)[0];
-    if (!t) return `没有主题 ${id}。node scripts/guide.mjs 列目录；找不到不等于没有这个功能，去搜代码。`;
+    if (!t) return `没有主题 ${id}。node scripts/nav.mjs 列目录；找不到不等于没有这个功能，去搜代码。`;
     const rel = (t.related ?? []).map((r) => topics.find((x) => x.id === r)).filter(Boolean);
     return [full(t), ...(rel.length ? ["", "相关主题：", ...rel.map((r) => `  ${oneLine(r)}`)] : []), "", READ_ON].join("\n");
   }
   if (query) {
     const found = search(topics, query);
-    if (!found.length) return `「${query}」没有匹配的主题。找不到不等于没有这个功能：去搜代码（git grep），确认是索引的缺口就在 docs/guide/ 补一个主题。`;
+    if (!found.length) return `「${query}」没有匹配的主题。找不到不等于没有这个功能：去搜代码（git grep），确认是索引的缺口就在 docs/nav/ 补一个主题。`;
     const rest = found.slice(2, 8);
     const blocks = found.slice(0, 2).map(full);
     if (rest.length) blocks.push(["也可能是：", ...rest.map((r) => `  ${oneLine(r)}`)].join("\n"));
@@ -175,6 +175,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   };
   const topics = loadTopics();
   const shape = shapeProblems(topics);
-  if (shape.length) console.error(`索引本身有问题（npx vitest run scripts/guide.test.mjs 看全部）：\n${shape.slice(0, 5).join("\n")}\n`);
+  if (shape.length) console.error(`索引本身有问题（npx vitest run scripts/nav.test.mjs 看全部）：\n${shape.slice(0, 5).join("\n")}\n`);
   console.log(render(topics.filter((t) => !t.broken), { id: flag("--id"), query: flag("--query") }));
 }

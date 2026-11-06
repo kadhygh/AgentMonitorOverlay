@@ -1,4 +1,4 @@
-// npm run tutorial:build — the tutorial (plans/tutorial-onboarding.md, section 5) as one self-contained HTML file.
+// npm run tutorial:build — the tutorial (plans/later/tutorial-onboarding.md, section 5) as one self-contained HTML file.
 //
 // Sources in docs/tutorial/: index.md (the page's head) and ch*.md (one chapter each, in name order), the demo engine
 // (engine.js), the scenes (scenes/*.js; files starting with _ are shared parts and load first), the concept map, the

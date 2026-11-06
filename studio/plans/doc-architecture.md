@@ -1,6 +1,6 @@
 # 文档分层（Archify 三层，2026-11-06）
 
-> 状态：进行中。分支 `studio/docs-archify` 上三步做完，等用户一起审，没合进 master。合进去之后这份是长期有效的「文档怎么维护」。
+> 状态：进行中（长期有效的「文档怎么维护」）。三步 2026-11-06 做完，用户审过后合进 master；审时用户定：索引目录改名 `docs/nav/`（Host 里已有 agent 用的 `features/guide`），加 `plans/later/` 放以后推进的。
 
 ## 起因
 
@@ -15,7 +15,7 @@
 
 | 层 | 在哪 | 写什么 | 不写什么 |
 |---|---|---|---|
-| ① 导航索引 | `studio/docs/guide/*.json`，`node scripts/guide.mjs` 查 | 功能在哪、常见改动要改哪几处、代码锚点（文件 + 文件里的原文）、相关主题、下一步读哪份文档 | 实现细节、参数、算法 |
+| ① 导航索引 | `studio/docs/nav/*.json`，`node scripts/nav.mjs` 查 | 功能在哪、常见改动要改哪几处、代码锚点（文件 + 文件里的原文）、相关主题、下一步读哪份文档 | 实现细节、参数、算法 |
 | ② 节点文档 | `studio/plans/<主题>.md`（只留决定）、`studio/HANDOFF.md`（只留现在的状态）、各包 README | 代码看不出来的：为什么这样、约束、跨模块的决定、用户定的事（带日期） | 进度流水、测试数字、逐提交的记录 |
 | ③ 末端细节 | 代码、测试、各包 `CHANGELOG.md`、提交信息 | 怎么做的、改了什么、怎么验证的 | — |
 
@@ -29,18 +29,19 @@
 **索引**
 - 每个主题都给「下一步读」（`next`），不让 agent 停在索引这一层：查到后至少读一份它指的代码或文档再动手。
 - 查不到不等于没有这个功能：先搜代码核实，确认是索引的缺口就补主题。
-- 锚点用文件里的字面原文（类名、函数声明）。锚点失效（`scripts/guide.test.mjs` 报）就直接改指到现在的代码，或删掉；不留失效的锚点。
+- 锚点用文件里的字面原文（类名、函数声明）。锚点失效（`scripts/nav.test.mjs` 报）就直接改指到现在的代码，或删掉；不留失效的锚点。
 - 宁可准不要多：主题按工具和 Host 的 feature 分，同一处代码不在两个主题里各写一遍做法，用 `related` 互相指。
 
 **HANDOFF**
 - 只有「在哪、怎么跑」「规则补充」「还开着的事」「已知问题」。做完一段只改受影响的行：事做完了删掉那一行，新开的加一行。目标 10 KB 以内。
 
 **plans**
-- 每份开头一行状态：进行中 / 做完 / 搁置 / 被取代（指向取代它的）/ 待确认。正文只留决定和原因。做完的挪进 `plans/done/`，挪的时候用 `git grep` 把指向它的链接都改掉（代码注释、AGENTS.md、HANDOFF、索引）。
+- 每份开头一行状态：进行中 / 做完 / 以后推进 / 被取代（指向取代它的）/ 待确认。正文只留决定和原因。做完的挪进 `plans/done/`，挪的时候用 `git grep` 把指向它的链接都改掉（代码注释、AGENTS.md、HANDOFF、索引）。
+- 以后推进（用户 2026-11-06）：谈出来但这一轮不做的功能、做到一半停下的，放进 `plans/later/`，开头写清停在哪，`plans/later/README.md` 的清单跟着改；HANDOFF 只用一行指过去。重新开工挪回 `plans/`。
 
 ## 索引格式
 
-每个 `docs/guide/*.json` 是 `{ "schemaVersion": 1, "topics": [...] }`。一个主题：
+每个 `docs/nav/*.json` 是 `{ "schemaVersion": 1, "topics": [...] }`。一个主题：
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
@@ -61,7 +62,7 @@
 见下面三节的提交（分支 `studio/docs-archify`）。
 
 1. HANDOFF 瘦身：82,403 → 8,165 字节（第三步又补了三行「还开着的事」和一条已知问题，现在约 8.8 KB）；「最近的改动」（11-01 到 11-06）原样挪进 `docs/history/handoff-2026-11.md`；「还开着的事」按 git log、tag、分支和 worktree 核对过。`AGENTS.md` 的规矩改成：做完只改「当前状态 / 还开着的事」里受影响的行，改动说明写 CHANGELOG。
-2. 导航索引：`docs/guide/` 48 个主题，`scripts/guide.mjs` 查询，`scripts/guide.test.mjs` 检查字段、id、related、锚点和 next。`AGENTS.md` 加了入口。
+2. 导航索引：`docs/nav/` 48 个主题，`scripts/nav.mjs` 查询，`scripts/nav.test.mjs` 检查字段、id、related、锚点和 next。`AGENTS.md` 加了入口。
 3. plans 整理：33 份每份开头加了状态，删掉进度流水（测试数字、截图清单、逐提交记录、做完的步骤表），用户的决定、取舍的理由、约束、没做完的事留着；和现在代码对不上的说法按代码改了。合计 414,292 → 338,247 字节（LF）。做完的 24 份挪进 `plans/done/`，145 个文件里指向它们的路径跟着改（代码注释、e2e、索引、HANDOFF、其他 plans；`docs/history/`、`docs/archive/` 是原样的归档，没改）。删掉的原文都在 git 历史里（`f46907f2` 及之前）。
 
 ### plans 的状态（2026-11-06）
@@ -73,10 +74,8 @@
 | `host-structure.md` | 进行中：剩一组 feature 环、8b 留下的 19 处请求体 `as never`、8d 没开工 |
 | `ios.md` | 进行中：等 App Store Connect API Key |
 | `issues.md` | 做完，但留在原地：它也是值守的设计文档，值守还在用 |
-| `tutorial-onboarding.md` | 进行中：产品内引导没做，**待确认**用户还要不要 |
-| `canvas-workflow.md` | 搁置（10-30 谈了方向，没开工） |
-| `lan-file-transfer.md` | **待确认**（10-31 调查完，范围用户没定） |
 | `doc-architecture.md` | 这一份 |
+| `later/tutorial-onboarding.md`、`later/lan-file-transfer.md`、`later/canvas-workflow.md` | 以后推进（用户审时定：暂时先不做，作为后续推进内容），清单在 `later/README.md` |
 
 挪进 `plans/done/` 的 24 份：relay、relay-tasks、relay-in-sessions、relay-round-2026-11-05、todo、remote-session、remote-page-and-new-task、remote-reviewer、android-studio、android-mobile-redesign、package-slim、notes-standalone、reviewer-standalone、remove-old-amo、merge-to-master、claude-code-mirror、message-delivery、send-now、mcp、prompt-templates、cleanup-2026-11、subsession-mention-2026-11-05、resume-cli-sessions、review-canvas。`plans/userlayer/` 是原型目录（另一个分支在改），没动。
 
@@ -114,12 +113,12 @@
 看法：
 - 和 10-27 的统计一致：AMO 找代码本来就便宜（旧文档平均 6 次调用就答全了），这次省的不多，收益主要在可维护：HANDOFF 从 82 KB 到 9 KB，每个新会话少读约两万 token（上面的实验没算这一项：子 agent 只读了 AGENTS.md，没读 HANDOFF）。
 - 新的答案多覆盖了界面和服务两端（索引的锚点把链路两头都列出来了）。
-- 和 project_mining 一样，agent 容易停在索引这一层（第 3 题）。已经在 `guide.mjs` 的输出末尾加了一行「至少打开一处代码核对」，`AGENTS.md` 也这样写；下次复测看它有没有用。
+- 和 project_mining 一样，agent 容易停在索引这一层（第 3 题）。已经在 `nav.mjs` 的输出末尾加了一行「至少打开一处代码核对」，`AGENTS.md` 也这样写；下次复测看它有没有用。
 - 局限：每个组合只跑 1 次；索引是我知道这三个问题之后写的（三个题都有正好对口的主题），对没见过的问题帮助多大要靠以后的复测和实际会话。
 
 ## 以后怎么维护
 
-- 改一个功能：先 `node scripts/guide.mjs --query …`；查到的主题和代码对不上就顺手改主题；没有的补主题。
-- 加 feature、改名、挪文件：跑 `npx vitest run scripts/guide.test.mjs`（全量 vitest 里也有它），失败信息说清是哪个主题哪个锚点、怎么改。
+- 改一个功能：先 `node scripts/nav.mjs --query …`；查到的主题和代码对不上就顺手改主题；没有的补主题。
+- 加 feature、改名、挪文件：跑 `npx vitest run scripts/nav.test.mjs`（全量 vitest 里也有它），失败信息说清是哪个主题哪个锚点、怎么改。
 - 做完一段：CHANGELOG「下一版」+ 提交信息；HANDOFF 只改受影响的行；方案做完就在开头标「做完」、挪进 `plans/done/`。
 - 隔一两个月按同样 3 个问题复测一次（问题和答案要点在本文「对比实验」一节）。

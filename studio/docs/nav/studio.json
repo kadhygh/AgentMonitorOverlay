@@ -109,7 +109,7 @@
         { "label": "主控是谁", "path": "studio/packages/host/src/core/role.ts", "anchor": "leadsTopic" }
       ],
       "related": ["studio.canvas", "studio.relays", "host.agentMcp"],
-      "next": ["studio/plans/done/stage-15.md", "studio/plans/done/stage-16.md", "studio/plans/canvas-workflow.md"]
+      "next": ["studio/plans/done/stage-15.md", "studio/plans/done/stage-16.md", "studio/plans/later/canvas-workflow.md"]
     },
     {
       "id": "studio.relays",
@@ -151,7 +151,7 @@
         { "label": "画布状态", "path": "studio/packages/ui/src/canvas/useCanvas.ts" }
       ],
       "related": ["studio.topics", "ui.shell"],
-      "next": ["studio/plans/done/review-canvas.md", "studio/plans/canvas-workflow.md"]
+      "next": ["studio/plans/done/review-canvas.md", "studio/plans/later/canvas-workflow.md"]
     },
     {
       "id": "studio.remote",

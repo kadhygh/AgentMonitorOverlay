@@ -154,18 +154,18 @@
     {
       "id": "infra.docs",
       "label": "文档、教程和展示页",
-      "aliases": ["文档", "教程", "tutorial", "展示页", "showcase", "GitHub Pages", "导航索引", "guide", "HANDOFF"],
+      "aliases": ["文档", "教程", "tutorial", "展示页", "showcase", "GitHub Pages", "导航索引", "nav", "HANDOFF", "以后推进", "later", "backlog"],
       "category": "infra",
-      "purpose": "文档分三层：这个导航索引（docs/guide/，`node scripts/guide.mjs`）、少量节点文档（plans/ 的决定和原因、AGENTS.md 的硬规则）、末端细节（代码、测试、CHANGELOG）。教程和展示页在 docs/tutorial/，构建后放 GitHub Pages。",
+      "purpose": "文档分三层：这个导航索引（docs/nav/，`node scripts/nav.mjs`）、少量节点文档（plans/ 的决定和原因、AGENTS.md 的硬规则）、末端细节（代码、测试、CHANGELOG）。教程和展示页在 docs/tutorial/，构建后放 GitHub Pages。",
       "anchors": [
-        { "label": "索引查询", "path": "studio/scripts/guide.mjs" },
-        { "label": "索引检查", "path": "studio/scripts/guide.test.mjs" },
+        { "label": "索引查询", "path": "studio/scripts/nav.mjs" },
+        { "label": "索引检查", "path": "studio/scripts/nav.test.mjs" },
         { "label": "教程构建", "path": "studio/scripts/build-tutorial.mjs" },
         { "label": "展示页说明", "path": "studio/docs/tutorial/showcase.md" },
         { "label": "Pages 发布", "path": ".github/workflows/tutorial-pages.yml" }
       ],
       "related": ["infra.e2e"],
-      "next": ["studio/plans/doc-architecture.md", "studio/plans/tutorial-onboarding.md"]
+      "next": ["studio/plans/doc-architecture.md", "studio/plans/later/README.md", "studio/plans/later/tutorial-onboarding.md"]
     }
   ]
 }

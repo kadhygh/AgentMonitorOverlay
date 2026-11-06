@@ -1,4 +1,4 @@
-// 教程的演示引擎（plans/tutorial-onboarding.md 第五节，2026-10-30）。一个演示 = 一块用 HTML/CSS 画的简化界面
+// 教程的演示引擎（plans/later/tutorial-onboarding.md 第五节，2026-10-30）。一个演示 = 一块用 HTML/CSS 画的简化界面
 // （scene.html，元素用 data-k="名字" 标出来）+ 一串步骤（每步一行字幕 say 和几个动作 do）。
 //
 //   AMO_TUTORIAL.scene({ id, title, ui: ["界面上画出来的按钮文字", …], html, steps: [{ say, do: [[动作, …], …] }] })
