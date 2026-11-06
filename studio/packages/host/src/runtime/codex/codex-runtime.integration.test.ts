@@ -61,6 +61,8 @@ beforeAll(async () => {
   mock = await startMockModel();
 });
 
+// 60 s, not vitest's 10 (2026-11-06, 自动打包 Studio 0.9.49 failed on it): the hosts' app-servers are stopped one
+// after another, each waiting up to 5 s for its process tree to go, which a busy machine runs into.
 afterAll(async () => {
   for (const h of hosts) {
     await h.manager.stopAll();
@@ -68,7 +70,7 @@ afterAll(async () => {
   }
   await mock.close();
   removeTempDir(root);
-});
+}, 60_000);
 
 describe("Codex runtime against the real app-server", () => {
   let host: Host;

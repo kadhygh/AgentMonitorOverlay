@@ -1,6 +1,6 @@
 # 带过来的小问题（阶段 8 之后）
 
-> 状态：进行中（长期记录：看过、定了怎么处理的遗留小问题，最近一条 2026-11-05）。还开着的：`platform.test.ts` 那条偶发失败加了诊断，等它再出现时照诊断改。每次出现的时间、提交号、重跑的文件数和用例数 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。原来文末的「暂缓（用户 2026-10-13 决定）」两项也删了：旧 AMO 部署在工程里的 Hook 10-23 随旧 AMO 一起清掉（`plans/done/remove-old-amo.md`）；Portable 包改成随发布打（`plans/release.md`）。
+> 状态：进行中（长期记录：看过、定了怎么处理的遗留小问题，最近一条 2026-11-06）。还开着的：`platform.test.ts` 那条偶发失败加了诊断，等它再出现时照诊断改。每次出现的时间、提交号、重跑的文件数和用例数 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。原来文末的「暂缓（用户 2026-10-13 决定）」两项也删了：旧 AMO 部署在工程里的 Hook 10-23 随旧 AMO 一起清掉（`plans/done/remove-old-amo.md`）；Portable 包改成随发布打（`plans/release.md`）。
 
 | 问题 | 原因 | 处理 |
 |---|---|---|
@@ -11,6 +11,7 @@
 | 自动打包的单测偶发失败，问题页的进度条停在「类型检查」 | 失败的用例查不到：自动打包的输出没有留下来；进度条停住是「单测」这一步的进度没报上去（猜是 typecheck 同步跑时服务器关了空闲的 keep-alive 连接） | **2026-11-03 改**：单测另出一份 JSON 报告，失败时把用例名和错误的第一行（最多 8 条）接在问题页的提示后面；报进度没送到时再试一次。要知道的：`auto --if-due` 的 node 进程先载入 `release.mjs`，之后才把打包目录同步到新 master，所以改 `release.mjs` 从**下一次**运行起才生效 |
 | 一提交就开打包，做改动的会话可能还在跑测试 | 「最早一次改动过了 120 分钟」是从最早一次碰到这个工具的包的提交算起的，一个没写「下一版」的老改动（比如平台的提交改了 `packages/relay`，也是 Studio 的包）会让刚写进来的第一条「下一版」马上到期 | **2026-11-03 改（用户同意）**：120 分钟从第一条「下一版」写进来时算起；失败过以后，master 要安静 10 分钟（`--retry-quiet`）才再试，人点了「发布打包」不用等 |
 | 全量单测「全过」却退出 1：`codex-runtime.integration.test.ts`「survives a Host restart」之后，Codex 晚到的 RPC 消息走到 `findByThread`，读了已经关掉的库（`database is not open`），vitest 记成 unhandled error | 测试关 Host 时 Codex 的连接还没断，晚到的消息走到了 `handlerFailed` | **已修（2026-11-04）**：`CodexEvents.handlerFailed` 是失败消息的兜底，自己不再往外抛，查会话、记提示出错时只写 host.log（单测 `codex/events.test.ts`）。另：值守目录 sync 以后要先 `npm run typecheck` 再跑单测，`tsc -b` 才会重建 testkit 的 dist，不然 DSH 的 `[[mcp-list]]` 用例会因为旧的假 agent 失败（打包流程本来就是先类型检查） |
+| 自动打包单测失败（Studio 0.9.49，master bb402b52，2026-11-06）：Claude 的「waits for the person on a command」、DSH 的「停止 stops a DSH goal…（问题 #13）」超时，`cli-features`、`codex-runtime` 两个集成测试文件的 `afterAll` 超过 10 秒 | 那一轮单测跑了 312 秒（平时 85～240 秒），机器忙：前两条单独重跑能过，是负载下的超时（`--retry=1` 两次都没赶上）。两个 `afterAll` 是关真进程：`closeAll` 等这个文件开的每个 Claude CLI 进程退出，Codex 那边依次停每个 Host 的 app-server（每个最多等 5 秒）；`cli-features` 的那个在机器空闲时全量跑也超了一次，而 hook 超时不吃 `--retry` | **已改**：这两个 `afterAll` 的时限放到 60 秒（和第 10 行 `server-manager` 一样），之后照打包的命令全量跑通过。另：值守目录 sync 后没先 typecheck，DSH 的「subagent」用例会因为旧的 testkit dist 每次超时（同第 13 行） |
 | 自动打包单测失败：`platform.test.ts` 的「the Studio card … 重启 Studio」`TypeError: Cannot read properties of undefined (reading 'studio')`（2026-11-05，`--retry=1` 两次都失败） | 单独跑、照打包的命令全量跑都过。读 `.studio` 出错的是测试里的 `card()`：工具列表里没有 studio，只会是登录或取频道没成功（假服务器走真的 `fetch`，登录超时 10 秒），机器忙时可能。平台代码里读 `.studio` 的地方都有保护 | **记录 + 加了诊断**：这条用例在登录、安装之后先断言 `loginError`、连接状态、工具列表和装好的版本，下次再失败能直接看出是哪一步。再出现时照那一步改（比如这个用例的假服务器换成本地的 fetch 替身） |
 
 偶发失败的通用处理：在问题页点「发布打包」重试，或者等 master 下次变动时自动打包自己再试；同一条反复出现再查。

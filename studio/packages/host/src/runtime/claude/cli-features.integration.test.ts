@@ -50,12 +50,15 @@ beforeAll(async () => {
   task = store.createTask({ title: "cli", workspaceId: workspace.id });
 });
 
+// 60 s, not vitest's 10 (2026-11-06, 自动打包 Studio 0.9.49 failed on it, and again in a full run on an idle machine):
+// closeAll waits for every CLI process the file started to exit, and on Windows a dozen of them going at once can take
+// longer than 10 s while the other workers run.
 afterAll(async () => {
   await runtime?.closeAll();
   store?.close();
   await mock?.close();
   if (root) removeTempDir(root);
-});
+}, 60_000);
 
 describe("Claude Code CLI features", () => {
   it("lists Claude Code's commands without a running session, leaving out the ones Studio keeps itself", async () => {
