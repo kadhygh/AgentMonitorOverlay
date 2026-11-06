@@ -194,7 +194,8 @@ function InlineImage({ alt, src }: { alt: string; src: string }) {
         <ExternalLink href={src}>{alt || src}</ExternalLink>
       </>
     );
-  return <img className="md-img" src={url} alt={alt} title={alt || src} onError={() => setBroken(true)} data-testid="md-image" />;
+  // data-src: the address as written, for the viewer's 看大图 (2026-11-06) to know which file it is.
+  return <img className="md-img" src={url} alt={alt} title={alt || src} onError={() => setBroken(true)} data-src={src} data-testid="md-image" />;
 }
 
 /**

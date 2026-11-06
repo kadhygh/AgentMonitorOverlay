@@ -35,6 +35,17 @@
 .vw-rendered-doc { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
 .vw-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 .vw-pick { position: absolute; z-index: 5; box-shadow: 0 2px 10px var(--shadow-soft); }
+.vw-back { flex: none; font-size: 15px; line-height: 1; padding-inline: 8px; }
+/* 看大图 (2026-11-06): over the rendered page, the same dark backdrop in both themes (pictures read best on it). */
+.iz { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(10, 12, 14, 0.82); outline: none; user-select: none; }
+.iz-bar { position: absolute; top: 8px; left: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 6px; background: var(--panel-raised); color: var(--text); box-shadow: 0 2px 10px var(--shadow-soft); z-index: 1; }
+.iz-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; }
+.iz-size { flex: none; color: var(--text-dim); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.iz-x { font-size: 16px; line-height: 1; padding-inline: 8px; }
+.iz-img { flex: none; max-width: none; max-height: none; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); background: #fff; }
+.iz-broken { color: #e6e6e6; font-size: var(--fs-sm); }
+.iz-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: rgba(255, 255, 255, 0.7); font-size: var(--fs-sm); pointer-events: none; }
+.vw-rendered .md-img { cursor: zoom-in; }
 ::highlight(amo-passage) { background-color: var(--tint-strong); text-decoration: underline 2px var(--primary); }
 ::highlight(amo-passage-hot) { background-color: var(--selection); color: var(--text); }
 .vw-notes { flex: none; width: 300px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--panel); }

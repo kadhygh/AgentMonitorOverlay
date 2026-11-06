@@ -10,7 +10,8 @@ import { useVsCode } from "../files/FileLinks.js";
 import { fileName, folderOf } from "../files/paths.js";
 import { ReviewPage } from "../gitreview/ReviewApp.js";
 import { useIsGitRepo } from "../gitreview/open.js";
-import { useSelectAll } from "../gitreview/selectAll.js";
+import { typingIn, useSelectAll } from "../gitreview/selectAll.js";
+import { goBack, hashArrived, isBackKey, startHistory, useCanGoBack } from "./history.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { sessionChoices } from "../gitreview/logic.js";
 import { FileReview } from "./FileReview.js";
@@ -30,12 +31,31 @@ import { TitleMark, WindowControls, WindowPlaceholder } from "../shell/WindowCon
 
 export function ViewerApp() {
   const host = useHostState();
-  const [target, setTarget] = useState<ViewerTarget | null>(() => parseViewerHash(location.hash));
-  // The preview window is reused: another file arrives as a new hash.
+  const [target, setTarget] = useState<ViewerTarget | null>(() => {
+    startHistory(location.hash);
+    return parseViewerHash(location.hash);
+  });
+  // The preview window is reused: another file arrives as a new hash; the one it replaces is kept for ← (2026-11-06).
   useEffect(() => {
-    const on = () => setTarget(parseViewerHash(location.hash));
+    const on = () => {
+      hashArrived(location.hash);
+      setTarget(parseViewerHash(location.hash));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (isBackKey(e) && !typingIn(e.target) && goBack()) e.preventDefault();
+    };
+    // The mouse's back button (button 3).
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3 && goBack()) e.preventDefault();
+    };
     window.addEventListener("hashchange", on);
-    return () => window.removeEventListener("hashchange", on);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mouseup", onMouse);
+    return () => {
+      window.removeEventListener("hashchange", on);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mouseup", onMouse);
+    };
   }, []);
 
   if (host.kind !== "ready") return <WindowPlaceholder title="查看器">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</WindowPlaceholder>;
@@ -139,12 +159,18 @@ function ViewerPage({ link, state, target, remote }: { link: HostLink; state: St
   // window's buttons (2026-11-05); FileReview and RenderedReview keep it to their own text.
   const plain = useRef<HTMLDivElement>(null);
   useSelectAll(mode === "file" && !code && !(renderable && rendered && loaded.state === "ok"), () => plain.current);
+  const back = useCanGoBack();
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
       {/* The window's title bar (2026-10-29): it drags the window and ends with the window buttons. */}
       <header className="vw-head titlebar" ref={head}>
         <TitleMark />
+        {back && (
+          <button type="button" className="btn-ghost small vw-back" title="返回上一个文件（Alt+←）" aria-label="返回上一个文件" onClick={() => goBack()} data-testid="viewer-back">
+            ←
+          </button>
+        )}
         <div className="gr-seg" role="group" aria-label="查看方式">
           {MODES.map((m) => {
             const off = m.id === "changes" && (!workspace || !repo);

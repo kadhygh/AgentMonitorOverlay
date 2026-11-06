@@ -4,7 +4,9 @@ import { ActionMenu } from "../lib/ActionMenu.js";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
 import { Markdown, MarkdownFileLinks, MarkdownImages } from "../lib/markdown.js";
-import { rawFileUrl } from "../lib/openin.js";
+import { rawFileUrl, revealInExplorer } from "../lib/openin.js";
+import { ImageZoom, type ZoomedImage } from "./ImageZoom.js";
+import { goBack, readScrollWith, takeScroll } from "./history.js";
 import { viewRemoteFile } from "../files/FileLinks.js";
 import { highlightsSupported } from "../review/highlights.js";
 import { FloatBox } from "../review/FloatBox.js";
@@ -117,6 +119,18 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
   const list = useRef<HTMLDivElement>(null);
   const mdRanges = useRef(new Map<string, Range>());
   const marksKey = mine.map((c) => c.id).join("|");
+  /** 看大图 (2026-11-06): a picture of the page, enlarged over it. */
+  const [zoom, setZoom] = useState<ZoomedImage | null>(null);
+  /** How far the HTML page is scrolled (its frame reports it), for 返回 to bring it back there. */
+  const frameY = useRef(0);
+  /** Where 返回 left this file, put back once it is drawn. */
+  const restoreY = useRef(takeScroll(file.path));
+  useEffect(() => readScrollWith(() => ({ path: file.path, y: kind === "html" ? frameY.current : (doc.current?.scrollTop ?? 0) })), [file.path, kind]);
+  useLayoutEffect(() => {
+    if (kind !== "markdown" || restoreY.current === null || !doc.current) return;
+    doc.current.scrollTop = restoreY.current;
+    restoreY.current = null;
+  }, [kind]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -215,6 +229,8 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
     const to = resolveLink(file.path, href);
     if (!to) return showToast({ text: `这个链接在查看器里打不开：${href}`, error: true });
     if (to.kind === "web") return void window.amo?.openExternal?.(to.url);
+    // A picture: enlarged over the page, not in its place (2026-11-06).
+    if (to.kind === "file" && remoteFileKind(to.path) === "image") return zoomOn(href, null, "");
     if (to.kind === "file" && remote) {
       // A remote file's links are files of the task's folder over there: fetched as this one was.
       const there = remoteLinkPath(remote.rel, href, resolveLink);
@@ -230,8 +246,50 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
     if (!root || !h) return showToast({ text: `没有找到标题「${to.id}」` });
     root.scrollTop += h.getBoundingClientRect().top - root.getBoundingClientRect().top - 12;
   };
-  const latest = useRef({ sendMarks, follow });
-  latest.current = { sendMarks, follow };
+  /**
+   * 看大图 (2026-11-06): `href` the picture's address as the page wrote it, `loaded` what the page itself loaded when
+   * the viewer can show that (inlined or from the web). A file of this computer (or of the remote task's folder) also
+   * gets 在查看器中打开 and 在资源管理器中显示; the viewer's ← brings the page back from there.
+   */
+  function zoomOn(href: string | null, loaded: string | null, alt: string) {
+    const nameOf = (s: string) => {
+      const last = s.replace(/[?#].*$/, "").split(/[\\/]/).pop() || s;
+      try {
+        return decodeURIComponent(last);
+      } catch {
+        return last;
+      }
+    };
+    const web = href && /^(https?:|data:image\/)/i.test(href) ? href : null;
+    if (loaded || web) return setZoom({ url: (loaded ?? web)!, name: alt || (web && !web.startsWith("data:") ? nameOf(web) : "图片") });
+    if (!href) return;
+    if (remote) {
+      const there = remoteLinkPath(remote.rel, href, resolveLink);
+      if (!there || remoteFileKind(there.path) !== "image" || !there.path.startsWith(`${REMOTE_TASK_FOLDER}/`)) return showToast({ text: `这张图在查看器里打不开：${href}`, error: true });
+      return setZoom({
+        url: remoteFileUrl(remote.host ?? link, remote.key, there.path.slice(REMOTE_TASK_FOLDER.length + 1)),
+        name: nameOf(there.path),
+        open: () => {
+          setZoom(null);
+          viewRemoteFile({ file: { path: there.path } }, remote.taskId, sessionId ?? null);
+        },
+      });
+    }
+    const to = resolveLink(file.path, href);
+    if (to?.kind !== "file" || remoteFileKind(to.path) !== "image") return showToast({ text: `这张图在查看器里打不开：${href}`, error: true });
+    setZoom({
+      url: rawFileUrl(link, { path: to.path }),
+      name: nameOf(to.path),
+      open: () => {
+        setZoom(null);
+        openViewer({ path: to.path });
+      },
+      reveal: () => void revealInExplorer(link, { path: to.path }).catch((err: unknown) => showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true })),
+    });
+  }
+  const closeZoom = useCallback(() => setZoom(null), []);
+  const latest = useRef({ sendMarks, follow, zoomOn });
+  latest.current = { sendMarks, follow, zoomOn };
   const followLink = useCallback((href: string) => latest.current.follow(href), []);
   // Pictures beside the Markdown file show in it (2026-10-29): a remote task's through this Host from its computer.
   const imageUrl = useCallback(
@@ -256,9 +314,12 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
       if (m.type === "ready") latest.current.sendMarks();
       else if (m.type === "placed") setFound(new Set(m.found));
       else if (m.type === "scroll") {
+        if (typeof m.y === "number") frameY.current = m.y;
         setPick(null);
         setMenu(null);
       } else if (m.type === "press") setMenu(null);
+      else if (m.type === "image") latest.current.zoomOn(m.href, m.src, m.alt);
+      else if (m.type === "back") goBack();
       else if (m.type === "point") {
         const at = frame.current.getBoundingClientRect();
         setPick(null);
@@ -360,7 +421,19 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
             <>
               <FindBar active={active} container={doc} />
               <div className="vw-content">
-                <div className="fp-md" ref={doc} onMouseUp={onMdMouseUp} onScroll={() => setPick(null)} data-testid="viewer-md">
+                <div
+                  className="fp-md"
+                  ref={doc}
+                  onMouseUp={onMdMouseUp}
+                  onScroll={() => setPick(null)}
+                  // 看大图 (2026-11-06): a picture of the Markdown, unless it is a link (that link is followed).
+                  onClick={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    if (img.tagName !== "IMG" || img.closest("a[href]") || getSelection()?.isCollapsed === false) return;
+                    zoomOn(img.dataset.src ?? null, null, img.alt);
+                  }}
+                  data-testid="viewer-md"
+                >
                   <Follow.Provider value={followLink}>
                     <MarkdownFileLinks.Provider value={ViewerLink}>
                       <MarkdownImages.Provider value={imageUrl}>
@@ -379,10 +452,19 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
               // Its scripts run, without this window's origin: it reaches nothing here but by messages.
               sandbox="allow-scripts"
               srcDoc={srcDoc}
-              onLoad={() => sendMarks()}
+              onLoad={() => {
+                sendMarks();
+                // 返回 (2026-11-06): where the page was left, once its pictures are in (the frame's load waits for them).
+                if (restoreY.current !== null) {
+                  toFrame({ type: "scrollTo", y: restoreY.current });
+                  frameY.current = restoreY.current;
+                  restoreY.current = null;
+                }
+              }}
               data-testid="viewer-html"
             />
           )}
+          {zoom && <ImageZoom image={zoom} onClose={closeZoom} />}
           {pick && ws && (
             <button
               type="button"

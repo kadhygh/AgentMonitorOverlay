@@ -125,9 +125,17 @@ export type FrameMessage =
   | { type: "placed"; found: string[] }
   | { type: "select"; anchor: PassageAnchor | null; rect?: { left: number; top: number; right: number; bottom: number } }
   | { type: "hit"; id: string }
-  | { type: "scroll" }
+  /** `y`: how far the page is scrolled (查看器的返回 puts it back there, 2026-11-06). */
+  | { type: "scroll"; y?: number }
   | { type: "press" }
   | { type: "link"; href: string }
+  /**
+   * A picture to show enlarged (2026-11-06): a link to an image file (`href` as written), or a click on a picture that
+   * is no link (`href` its src as written, `src` what it loaded, when it did: a data: or web address the viewer can show).
+   */
+  | { type: "image"; href: string | null; src: string | null; alt: string }
+  /** Alt+← or the mouse's back button inside the page: the viewer's 返回 (keys in the frame do not reach the window). */
+  | { type: "back" }
   | { type: "copy"; text: string }
   /** A right click on the page (位置批注): the place, its element's source line, the words nearest it, and the selection if any. */
   | { type: "point"; x: number; y: number; line: number; point: GitCommentPoint; near: PassageAnchor; selection: PassageAnchor | null };
@@ -135,7 +143,7 @@ export type FrameMessage =
 /** A place to pin on the page: `n` is the label on its pin, `draft` the one being written. */
 export type PointMark = PassageAnchor & { id: string; n: string; point: GitCommentPoint; draft?: boolean };
 
-export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; points: PointMark[]; hot: string | null } | { type: "go"; id: string } | { type: "clear" } | { type: "selectAll" };
+export type ToFrame = { type: "marks"; marks: Array<PassageAnchor & { id: string }>; points: PointMark[]; hot: string | null } | { type: "go"; id: string } | { type: "clear" } | { type: "selectAll" } | { type: "scrollTo"; y: number };
 
 /** Elements whose content is not markup: what is inside is left alone. */
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript", "iframe", "noembed", "noframes", "plaintext"]);
@@ -447,7 +455,7 @@ function frameMain(makeKit: typeof passageKit) {
 
   window.addEventListener("message", (e) => {
     if (e.source !== parent) return;
-    const d = (e.data as { amoPassage?: { type: string; marks?: typeof marks; points?: PointMark[]; hot?: string | null; id?: string } } | null)?.amoPassage;
+    const d = (e.data as { amoPassage?: { type: string; marks?: typeof marks; points?: PointMark[]; hot?: string | null; id?: string; y?: number } } | null)?.amoPassage;
     if (!d) return;
     if (d.type === "marks") {
       marks = d.marks ?? [];
@@ -473,6 +481,8 @@ function frameMain(makeKit: typeof passageKit) {
     } else if (d.type === "clear") getSelection()?.removeAllRanges();
     // Ctrl+A pressed outside the page (2026-11-05): its text, not the viewer's buttons and comments.
     else if (d.type === "selectAll" && document.body) getSelection()?.selectAllChildren(document.body);
+    // 查看器的返回 (2026-11-06): back where the page was left.
+    else if (d.type === "scrollTo" && typeof d.y === "number") scrollTo(0, d.y);
   });
 
   const report = () => {
@@ -498,18 +508,44 @@ function frameMain(makeKit: typeof passageKit) {
     }, 0),
   );
   document.addEventListener("keyup", (e) => e.shiftKey && report());
-  window.addEventListener("scroll", () => post({ type: "scroll" }), { capture: true, passive: true });
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || e.key !== "ArrowLeft" || e.defaultPrevented) return;
+    e.preventDefault();
+    post({ type: "back" });
+  });
+  document.addEventListener("mouseup", (e) => {
+    if (e.button !== 3) return;
+    e.preventDefault();
+    post({ type: "back" });
+  });
+  window.addEventListener("scroll", () => post({ type: "scroll", y: document.scrollingElement?.scrollTop ?? scrollY }), { capture: true, passive: true });
+  // A link to a picture shows it enlarged over the page instead of opening it in place of the page (2026-11-06: the
+  // user clicked a screenshot in a report and could not get back). By its name, its query and fragment left out.
+  const pictureLink = (href: string) => /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i.test(href.replace(/[?#].*$/, ""));
   document.addEventListener(
     "click",
     (e) => {
       // As written: resolved here it would be against the viewer's own address.
-      const href = ((e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null)?.getAttribute("href") ?? "";
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      const href = a?.getAttribute("href") ?? "";
       if (!href || href.startsWith("#") || /^javascript:/i.test(href)) return;
       e.preventDefault();
+      if (pictureLink(href)) {
+        const img = a!.querySelector("img");
+        return post({ type: "image", href, src: null, alt: img?.alt || a!.textContent?.trim() || "" });
+      }
       post({ type: "link", href });
     },
     true,
   );
+  // A click on a picture that is no link: enlarged too, after the page's own handlers (its own gallery comes first).
+  window.addEventListener("click", (e) => {
+    const img = e.target as HTMLImageElement | null;
+    if (e.defaultPrevented || img?.tagName !== "IMG" || img.closest("a[href]")) return;
+    // What it loaded, when the viewer can load it too: inlined (data:) or from the web; else its src as written.
+    const loaded = img.complete && img.naturalWidth > 0 && /^(data:image\/|https?:)/i.test(img.currentSrc) ? img.currentSrc : null;
+    post({ type: "image", href: img.getAttribute("src"), src: loaded, alt: img.alt || "" });
+  });
   // In-page anchors: a srcdoc page reads `#x` against the viewer's address, so they would not move; done here, after
   // the page's own handlers (tabs and the like take theirs first).
   window.addEventListener("click", (e) => {
