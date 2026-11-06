@@ -158,3 +158,63 @@ test("an HTML page's stylesheet, script and pictures beside it load in the viewe
   await screenshot(app, "studio", "viewer-page-assets", viewer, "viewer");
   await viewer.close();
 });
+
+// 查找 (2026-11-06; the user: 查看渲染时，无法用 ctrl+f 搜索具体的文字): Ctrl+F on a rendered HTML page — from inside the page
+// (the frame passes it on) or from the window — opens the find bar; the page's visible text and what folded <details>
+// hold are searched (not its scripts or hidden parts), matches painted, Enter steps and scrolls, Esc clears.
+test("Ctrl+F finds text in a rendered HTML page", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("design");
+  mkdirSync(join(dir, "out"), { recursive: true });
+  writeFileSync(
+    join(dir, "out", "find.html"),
+    `<!doctype html><html><head><meta charset="utf-8"><title>查找</title><script>const note = "苹果 in a script";</script></head>
+<body><h1>水果</h1><p id="first">第一个苹果。Apple and apple.</p><div style="display:none">藏起来的苹果</div><div style="height:2400px"></div>
+<p id="far">很远的苹果</p><details><summary>折起来</summary><p id="folded">折起来的苹果</p></details><div style="height:600px"></div></body></html>`,
+  );
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  const viewer = await openViewer(app, page, { path: join(dir, "out", "find.html"), workspaceId: ws.id });
+  const inFrame = viewer.frameLocator('[data-testid="viewer-html"]');
+  await expect(inFrame.locator("h1")).toHaveText("水果");
+
+  // From inside the page.
+  await inFrame.locator("#first").click();
+  await inFrame.locator("body").press("Control+f");
+  const bar = viewer.getByTestId("find-bar");
+  await expect(bar).toBeVisible();
+  // The page's focus (toBeFocused also asks the window to be in front, which two at once are not).
+  await expect.poll(() => viewer.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe("find-input");
+  await viewer.getByTestId("find-input").fill("苹果");
+  await expect(viewer.getByTestId("find-count")).toHaveText("第 1 / 共 3 个");
+  expect(await inFrame.locator("body").evaluate(() => CSS.highlights.get("amo-find")?.size ?? 0)).toBe(3);
+  await viewer.getByTestId("find-input").press("Enter");
+  await expect(viewer.getByTestId("find-count")).toHaveText("第 2 / 共 3 个");
+  await expect.poll(() => inFrame.locator("body").evaluate(() => scrollY)).toBeGreaterThan(1500);
+  await screenshot(app, "studio", "viewer-html-find", viewer, "viewer");
+  await viewer.getByTestId("find-input").press("Enter");
+  await expect(viewer.getByTestId("find-count")).toHaveText("第 3 / 共 3 个");
+  await expect(inFrame.locator("details")).toHaveAttribute("open", "");
+  await viewer.getByTestId("find-input").press("Shift+Enter");
+  await expect(viewer.getByTestId("find-count")).toHaveText("第 2 / 共 3 个");
+
+  // Case.
+  await viewer.getByTestId("find-input").fill("apple");
+  await expect(viewer.getByTestId("find-count")).toHaveText(/共 2 个/);
+  await viewer.getByTestId("find-case").click();
+  await expect(viewer.getByTestId("find-count")).toHaveText("第 1 / 共 1 个");
+  await viewer.getByTestId("find-input").fill("没有的字");
+  await expect(viewer.getByTestId("find-count")).toHaveText("无结果");
+
+  // Esc closes it and the page's highlights go.
+  await viewer.getByTestId("find-input").press("Escape");
+  await expect(bar).toHaveCount(0);
+  await expect.poll(() => inFrame.locator("body").evaluate(() => CSS.highlights.has("amo-find") || CSS.highlights.has("amo-find-current"))).toBe(false);
+
+  // From the window (the focus outside the page), with the search kept.
+  await viewer.getByTestId("viewer-name").click();
+  await viewer.keyboard.press("Control+f");
+  await expect(bar).toBeVisible();
+  await expect(viewer.getByTestId("find-input")).toHaveValue("没有的字");
+  await viewer.close();
+});

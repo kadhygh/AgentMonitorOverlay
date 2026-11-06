@@ -14,6 +14,7 @@ import { CommentDraft } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey, setDraftText, useEditing } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
+import { FrameFind } from "./FrameFind.js";
 import { isSelectAllKey, typingIn, useSelectAll } from "../gitreview/selectAll.js";
 import { relativeIn, remoteLinkPath } from "./logic.js";
 import { passageKit, type PassageAnchor } from "./passageKit.js";
@@ -462,6 +463,8 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
               </div>
             </>
           ) : localBase === undefined ? null : (
+            <>
+            <FrameFind active={active} frame={frame} />
             <iframe
               ref={frame}
               className="vw-frame"
@@ -480,6 +483,7 @@ export function RenderedReview({ link, workspace, file, kind, active, remote, se
               }}
               data-testid="viewer-html"
             />
+            </>
           )}
           {zoom && <ImageZoom image={zoom} onClose={closeZoom} />}
           {pick && ws && (
