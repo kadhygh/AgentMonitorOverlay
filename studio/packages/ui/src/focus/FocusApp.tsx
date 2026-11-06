@@ -23,6 +23,7 @@ import { historyRows, readHistory, updateHistory, writeHistory, type Attention, 
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
 import { useWindowShape } from "./windowShape.js";
+import { revealOpened } from "./reveal.js";
 import { useRemote } from "../remote/remote.js";
 import { FocusPairRequest } from "./FocusPairRequest.js";
 import { FocusTaskRequest } from "./FocusTaskRequest.js";
@@ -416,7 +417,7 @@ export function FocusApp() {
           </div>
         )}
         {!compact && (needs > 0 || working.length > 0 || pinned.length > 0) && (
-          <div className="focus-list" onClickCapture={acknowledge}>
+          <div className="focus-list" onClickCapture={acknowledge} onClick={(e) => revealOpened(e.currentTarget, e.target)} data-testid="focus-list">
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
                 grow, which moved the buttons between press and release and lost the click (2026-10-20). */}
             {/* On top: Focus grows upwards from the bottom of the screen, so what starts and stops working here does not

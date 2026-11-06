@@ -491,3 +491,37 @@ test("Focus: renaming an ended session or restoring its archived task does not l
   await expect(entry).toHaveCount(0);
   await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
 });
+
+test("Focus: a card opened by a click is scrolled into the list whole, its buttons in view (2026-11-06)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  // More approvals than the list shows open: the oldest is at the bottom.
+  for (let i = 1; i <= 6; i++) {
+    await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+      title: `展开看全 ${i}`,
+      workspaceId: ws.id,
+      firstSession: { profileId: "codex-mock", text: `[[shell: cmd /c echo reveal-${i}]]` },
+    });
+  }
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 6", { timeout: 30_000 });
+  const list = focus.getByTestId("focus-list");
+  await expect.poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  const last = focus.getByTestId("focus-entry").filter({ hasText: "展开看全 1" });
+  await last.locator(".focus-row").click();
+  await expect(last.locator(".focus-row")).toHaveAttribute("aria-expanded", "true");
+  const approve = last.getByRole("button", { name: "批准", exact: true });
+  await expect(approve).toBeVisible();
+  // Without scrolling by hand: the card's bottom (its buttons) and its top are inside the list.
+  const inList = () =>
+    last.evaluate((card) => {
+      const l = card.closest(".focus-list")!.getBoundingClientRect();
+      const r = card.getBoundingClientRect();
+      return r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+    });
+  await expect.poll(inList).toBe(true);
+  await screenshot(app, "studio", "focus-reveal-opened", focus, "focus");
+});
