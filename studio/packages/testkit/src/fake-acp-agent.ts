@@ -17,6 +17,7 @@
 //   [[subagent: MS]]         DSH's `subagent` tool: the call returns the agent's id at once; the agent's own log is
 //                            written frame by frame over MS (a command, its reply sent back with send_message), and
 //                            the prompt waits for it, as DSH's does (2026-11-06). ACP says nothing of the agent.
+//                            `[[subagent: MS fail]]`: its turn ends with the error of a stream cut off (2026-11-07)
 //   [[goal: N]]              after the prompt has ended, N rounds by itself as a DSH goal does (no prompt, no turn
 //                            signal): thought, a pwsh call, a reply each; `[[goal: N slow]]`: the last round's call
 //                            runs until session/cancel
@@ -250,13 +251,13 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
       update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: "Error: tool call aborted" } }] });
       return { stopReason: "cancelled" };
     }
-    const sub = /\[\[subagent: (\d+)\]\]/.exec(text);
+    const sub = /\[\[subagent: (\d+)( fail)?\]\]/.exec(text);
     if (sub) {
       const callId = `call-${randomUUID()}`;
       const childId = randomUUID();
       update(a.id, { sessionUpdate: "tool_call", toolCallId: callId, title: "subagent", kind: "other", status: "in_progress", rawInput: { description: "数文件", prompt: "数一数 src 下的文件" } });
       update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "completed", content: [{ type: "content", content: { type: "text", text: `started subagent ${childId}` } }] });
-      await subagentRun(a.id, childId, Number(sub[1]));
+      await subagentRun(a.id, childId, Number(sub[1]), !!sub[2]);
       reply = `SUB DONE ${childId}`;
     }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
@@ -284,7 +285,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
 }
 
 /** A DSH subagent's run as its log shows it: one zstd frame per event, appended as DSH does, over `ms`. */
-async function subagentRun(parentId: string, childId: string, ms: number): Promise<void> {
+async function subagentRun(parentId: string, childId: string, ms: number, fail = false): Promise<void> {
   const dir = join(home, "sessions", "--fake-cwd--", childId);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "session.v4.jsonl.zstd");
@@ -300,7 +301,7 @@ async function subagentRun(parentId: string, childId: string, ms: number): Promi
   put("tool/call", { turn: 1, step: 2, callId: "c-2", name: "send_message", arguments: JSON.stringify({ agent_id: parentId, message: "共 2 个文件" }) });
   put("tool/result", { turn: 1, step: 2, message: { role: "tool", toolCallId: "c-2", content: [{ type: "text", text: "sent" }], isError: false } });
   await wait(0.5);
-  put("turn/end", { turn: 1, reason: { kind: "completed" } });
+  put("turn/end", { turn: 1, reason: fail ? { kind: "error", error: { message: "DeepSeek Messages stream ended before message_stop", code: "STREAM_CLOSED" } } : { kind: "completed" } });
 }
 
 /** A goal's rounds after the prompt (DSH's goal-round-driver): ACP updates only, outside any prompt. */

@@ -411,9 +411,11 @@
       "label": "DSH runtime（DeepSeek Harness，ACP）",
       "aliases": ["DSH", "DeepSeek", "DshRuntime", "ACP", "Dxx-DS", "DeepSeek Harness"],
       "category": "runtime",
-      "purpose": "DeepSeek 会话：经 ACP 跑 DSH（桌面版装了就用它的，否则用源码 clone）；DSH 自己开的子 agent 从它的会话日志里读出来，挂成子会话；日志轮转。",
+      "purpose": "DeepSeek 会话：经 ACP 跑 DSH（桌面版装了就用它的，否则用源码 clone）；Studio 给 DSH 的设置都走 --patch 文件（渠道的模型名、会话的模型、账号、重试策略），一个进程只带一个补丁，所以每个补丁都要写全；DSH 自己开的子 agent 从它的会话日志里读出来，挂成子会话；日志轮转。",
       "anchors": [
         { "label": "DshRuntime", "path": "studio/packages/host/src/runtime/dsh/dsh-runtime.ts", "anchor": "export class DshRuntime" },
+        { "label": "重试策略（--patch）", "path": "studio/packages/host/src/runtime/dsh/install.ts", "anchor": "DSH_RETRY_CODES" },
+        { "label": "子 agent 回合怎么结束的", "path": "studio/packages/host/src/runtime/dsh/subagents.ts", "anchor": "export function turnEndOf" },
         { "label": "ACP 连接", "path": "studio/packages/host/src/runtime/dsh/acp.ts", "anchor": "export class AcpConnection" },
         { "label": "子 agent", "path": "studio/packages/host/src/runtime/dsh/subagents.ts", "anchor": "export class DshSubagents" },
         { "label": "会话日志", "path": "studio/packages/host/src/runtime/dsh/session-log.ts" },

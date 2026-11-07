@@ -115,6 +115,17 @@ describe("DSH runtime", () => {
     await expect(call(host, "POST", `/api/sessions/${child!.id}/messages`, { text: "你好" })).rejects.toThrow(/409.*子 agent 不能单独接收消息/);
   });
 
+  it("shows why a subagent's turn failed as an error row of its session, as a main session's failed turn has (2026-11-07)", async () => {
+    const host = await boot();
+    const s = await start(host, "[[subagent: 300 fail]]");
+    const child = await until(async () => (await call<StateSnapshot>(host, "GET", "/api/state")).sessions.find((x) => x.parentId === s.id), (c) => !!c);
+    await idle(host, s.id);
+    const list = await until(() => items(host, child!.id), (l) => l.some((i) => i.type === "turn" && i.state === "failed"));
+    expect(list.find((i) => i.type === "error")).toMatchObject({ message: "DeepSeek Messages stream ended before message_stop（STREAM_CLOSED）" });
+    expect(list.find((i) => i.type === "turn")).toMatchObject({ state: "failed", error: "DeepSeek Messages stream ended before message_stop（STREAM_CLOSED）" });
+    expect((await call<StateSnapshot>(host, "GET", "/api/state")).sessions.find((x) => x.id === child!.id)?.status).toBe("error");
+  });
+
   it("fills in the tokens and speed of turns that ended without them, from DSH's log, without touching others (2026-10-27)", async () => {
     const host = await boot();
     const s = await start(host, "你好");

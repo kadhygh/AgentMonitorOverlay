@@ -26,7 +26,10 @@ import {
   DSH_ACCOUNT_DEFAULT_MODEL,
   DSH_ACCOUNT_OPTIONS_KEY,
   DSH_ACCOUNT_PROVIDER,
+  DSH_KEY_PLUGIN,
   accountPatchYaml,
+  retryPatchYaml,
+  retryPolicyYaml,
   dshAccountFile,
   dshAccountSignedIn,
   readDshAuth,
@@ -568,7 +571,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
       const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
       if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
-      patch = profile ? (this.catalogPatch(profile) ?? (usable ? this.modelPatch(usable) : null)) : null;
+      patch = (profile ? (this.catalogPatch(profile) ?? (usable ? this.modelPatch(usable) : null)) : null) ?? this.retryPatch();
     }
     let command: string;
     let args: string[];
@@ -1203,6 +1206,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return file;
   }
 
+  /** Only the retry policy (every patch above carries it too), as a DSH patch file. */
+  private retryPatch(): string {
+    const dir = join(this.options.dir, "patches");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "retry.yml");
+    writeFileSync(file, retryPatchYaml());
+    return file;
+  }
+
   private cachedOptions(profile: ModelProfile | null): ConfigOption[] | null {
     try {
       const v = JSON.parse(this.store.getKv(this.optionsKey(profile))?.value ?? "null") as unknown;
@@ -1266,6 +1278,9 @@ function takeQueue(live: Live): { text: string; images: ImageBlock[]; items: Id[
 export function modelPatchYaml(provider: string, model: string): string {
   return [
     "# Written by AMO Studio: the session's model as the ACP agent's default, so DSH says whether it takes images.",
+    `- id: ${DSH_KEY_PLUGIN}`,
+    "  config:",
+    ...retryPolicyYaml(),
     "- id: acp",
     "  config:",
     `    provider: ${JSON.stringify(provider)}`,
@@ -1281,10 +1296,11 @@ export function modelPatchYaml(provider: string, model: string): string {
 export function catalogPatchYaml(label: string, models: readonly string[], first: string): string {
   return [
     `# Written by AMO Studio for the channel ${JSON.stringify(label)}: the site's own model names. Rewritten on every start.`,
-    "- id: llm-deepseek",
+    `- id: ${DSH_KEY_PLUGIN}`,
     "  config:",
     "    models:",
     ...models.map((m) => `      - id: ${JSON.stringify(m)}`),
+    ...retryPolicyYaml(),
     "- id: acp",
     "  config:",
     "    provider: deepseek-official",

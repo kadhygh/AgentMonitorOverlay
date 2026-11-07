@@ -7,10 +7,13 @@ import { removeTempDir } from "@amo-studio/testkit";
 import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { dshPermissionMode } from "../choices.js";
-import { catalogPatchYaml, channelModels, dshModelId, dshModels, dshModelValue } from "./dsh-runtime.js";
+import { catalogPatchYaml, channelModels, dshModelId, dshModels, dshModelValue, modelPatchYaml } from "./dsh-runtime.js";
 import { locateDshDesktop } from "@amo-studio/locate";
-import { DSH_AUTH_KEY, DSH_DESKTOP_PATH_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, accountPatchYaml, describeDsh, dshAccountFile, dshAccountSignedIn, dshStatus, readDshAuth, resolveDsh, type KvStore } from "./install.js";
+import { DSH_AUTH_KEY, DSH_DESKTOP_PATH_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, accountPatchYaml, describeDsh, dshAccountFile, dshAccountSignedIn, dshStatus, readDshAuth, resolveDsh, retryPatchYaml, type KvStore } from "./install.js";
+import { turnEndOf } from "./subagents.js";
 import { describeDshTool } from "./transcript.js";
+
+const RETRY = ["    retryPolicy:", "      mode: normal", "      retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT, STREAM_CLOSED]"];
 
 const CONFIG = [
   {
@@ -209,5 +212,29 @@ describe("DeepSeek sign-in (2026-11-03)", () => {
   it("points DSH's credential store at the app's file and starts the ACP agent on the account", () => {
     const yaml = accountPatchYaml(String.raw`C:\Users\me\.dsh\.credentials.yaml`, "deepseek-flash");
     expect(yaml).toContain(["- id: credentials", "  config:", '    path: "C:\\\\Users\\\\me\\\\.dsh\\\\.credentials.yaml"', "- id: acp", "  config:", "    provider: deepseek-account", '    model: "deepseek-flash"', ""].join("\n"));
+    expect(yaml).toContain(["- id: llm-deepseek-account", "  config:", ...RETRY].join("\n"));
+  });
+
+  it("asks DSH again after a stream cut off before its end, on both routes and in every patch (2026-11-07)", () => {
+    // Checked against the clone with its mock server: without it the turn fails on STREAM_CLOSED, with it the second
+    // request answers and the cut-off half is not in the reply.
+    expect(retryPatchYaml()).toContain(["- id: llm-deepseek", "  config:", ...RETRY, "- id: llm-deepseek-account", "  config:", ...RETRY].join("\n"));
+    expect(modelPatchYaml("deepseek-official", "deepseek-v4-pro")).toContain(["- id: llm-deepseek", "  config:", ...RETRY, "- id: acp"].join("\n"));
+    // The catalog's llm-deepseek entry says both (a patch's config replaces the entry's whole config).
+    expect(catalogPatchYaml("中转", ["a/x"], "a/x")).toContain(["- id: llm-deepseek", "  config:", "    models:", '      - id: "a/x"', ...RETRY, "- id: acp"].join("\n"));
+  });
+});
+
+describe("DSH subagent turn endings", () => {
+  it("says why an agent's turn did not finish", () => {
+    expect(turnEndOf({ kind: "completed" })).toEqual({ state: "completed" });
+    expect(turnEndOf({ kind: "error", error: { message: "DeepSeek Messages stream ended before message_stop", code: "STREAM_CLOSED" } })).toEqual({ state: "failed", error: "DeepSeek Messages stream ended before message_stop（STREAM_CLOSED）" });
+    expect(turnEndOf({ kind: "error", error: { message: "boom", code: "UNKNOWN" } })).toEqual({ state: "failed", error: "boom" });
+    expect(turnEndOf({ kind: "error", error: {} })).toEqual({ state: "failed", error: "出错了" });
+    expect(turnEndOf({ kind: "aborted", reason: { kind: "parent" } })).toEqual({ state: "interrupted", note: "父会话停下了这个子 agent" });
+    expect(turnEndOf({ kind: "aborted", reason: { kind: "hook", reason: "budget" } }).note).toBe("子 agent 被钩子停下了：budget");
+    expect(turnEndOf({ kind: "max-tokens" }).note).toMatch(/max-tokens/);
+    expect(turnEndOf({ kind: "something-new" })).toEqual({ state: "interrupted", note: "子 agent 停下了（something-new）" });
+    expect(turnEndOf(undefined).note).toBe("子 agent 停下了（原因不明）");
   });
 });

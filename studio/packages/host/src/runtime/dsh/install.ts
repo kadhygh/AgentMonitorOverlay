@@ -154,10 +154,46 @@ export function dshAccountSignedIn(file: string): boolean {
   }
 }
 
+// DSH's DeepSeek routes: the API key's (`deepseek-official`) and the account's. Neither has config of its own in the
+// acp profile (checked 2026-11-07 with --dump-default-config), so a patch that gives one config loses nothing — but a
+// patch's config replaces the whole entry, so each of Studio's patches says everything Studio sets on a route.
+export const DSH_KEY_PLUGIN = "llm-deepseek";
+export const DSH_ACCOUNT_PLUGIN = "llm-deepseek-account";
+
+// A stream that ends cleanly before its last event (`STREAM_CLOSED`: "DeepSeek Messages stream ended before
+// message_stop") is asked again too (2026-11-07: a channel cut a subagent's turn there after 12 minutes, and the work
+// stopped; DSH's default policy leaves this code out until it decides on it). DSH keeps the cut answer out of the
+// conversation and sends the same request again, so no tool runs twice; the cost is the answer generated again. The
+// other codes are DSH's defaults (packages/llm/llm/src/retry-policy.ts), restated because a list replaces them; the
+// number of tries and the waits stay DSH's.
+export const DSH_RETRY_CODES = ["EMPTY_RESPONSE", "RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT", "STREAM_CLOSED"] as const;
+
+/** A route's retry policy as the lines under its `config:`. */
+export function retryPolicyYaml(): string[] {
+  return ["    retryPolicy:", "      mode: normal", `      retryableCodes: [${DSH_RETRY_CODES.join(", ")}]`];
+}
+
+/** The patch with only the retry policy, on both routes (a process that needs no other patch). */
+export function retryPatchYaml(): string {
+  return [
+    "# Written by AMO Studio: a cut-off answer is asked again (DSH_RETRY_CODES).",
+    `- id: ${DSH_KEY_PLUGIN}`,
+    "  config:",
+    ...retryPolicyYaml(),
+    `- id: ${DSH_ACCOUNT_PLUGIN}`,
+    "  config:",
+    ...retryPolicyYaml(),
+    "",
+  ].join("\n");
+}
+
 /** The patch for "account" mode: DSH's credentials from the desktop app's file, the ACP agent on the account's `model`. */
 export function accountPatchYaml(file: string, model: string): string {
   return [
     "# Written by AMO Studio: the DeepSeek account signed in in the DSH desktop app (设置 → 模型 → DeepSeek).",
+    `- id: ${DSH_ACCOUNT_PLUGIN}`,
+    "  config:",
+    ...retryPolicyYaml(),
     `- id: ${DSH_CREDENTIALS_PLUGIN}`,
     "  config:",
     `    path: ${JSON.stringify(file)}`,

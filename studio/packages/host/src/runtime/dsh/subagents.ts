@@ -149,7 +149,10 @@ export class DshSubagents {
     for (const w of [...this.watched.values()]) {
       if (w.rootId !== rootId) continue;
       this.read(w);
-      if (w.turn) this.endTurn(w, "interrupted");
+      if (w.turn) {
+        this.core.appendItem(w.childId, { type: "notice", level: "warning", message: STOPPED_WITH_PROCESS }, { method: "dsh/subagent", turnId: w.turn.turnId });
+        this.endTurn(w, "interrupted");
+      }
       if (this.core.store.getSession(w.childId)?.status === "running") this.core.setStatus(w.childId, "interrupted");
       this.watched.delete(w.childId);
     }
@@ -287,10 +290,13 @@ export class DshSubagents {
         return;
       }
       case "turn/end": {
-        const reason = record(d.reason);
-        const kind = str(reason.kind);
-        const error = kind === "error" ? str(record(reason.error).message) || "出错了" : undefined;
-        this.endTurn(w, kind === "completed" ? "completed" : error ? "failed" : "interrupted", error);
+        const end = turnEndOf(d.reason);
+        // Why it did not finish, as a row of its session (2026-11-07: an agent's turn that failed showed only 处理失败,
+        // its error kept on the turn alone, and one stopped for any other reason said nothing): a failure as an error
+        // row, as a main session's failed turn has; any other stop as a notice.
+        if (end.error) this.core.appendItem(w.childId, { type: "error", message: end.error }, { method: "dsh-log/turn-end", ...ref() });
+        else if (end.note) this.core.appendItem(w.childId, { type: "notice", level: "warning", message: end.note }, { method: "dsh-log/turn-end", ...ref() });
+        this.endTurn(w, end.state, end.error);
         return;
       }
       case "agent/inbox/spliced": {
@@ -419,6 +425,40 @@ function record(v: unknown): Record<string, unknown> {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
+}
+
+/** A running agent whose parent's DSH process ended: its log stops there, so does its turn. */
+export const STOPPED_WITH_PROCESS = "主会话的 DSH 进程结束了，子 agent 停在这里（它写到日志里的都在上面）";
+
+/**
+ * How an agent's turn ended (DSH's `turn/end` reason, `TurnEndReasonMap` in dsh-session): its state, the error of a
+ * failed one, and for one stopped otherwise what stopped it. A kind Studio does not know reads as stopped, named.
+ */
+export function turnEndOf(raw: unknown): { state: "completed" | "failed" | "interrupted"; error?: string; note?: string } {
+  const reason = record(raw);
+  const kind = str(reason.kind);
+  if (kind === "completed") return { state: "completed" };
+  if (kind === "error") {
+    const e = record(reason.error);
+    const message = str(e.message) || "出错了";
+    const code = str(e.code);
+    return { state: "failed", error: code && code !== "UNKNOWN" && !message.includes(code) ? `${message}（${code}）` : message };
+  }
+  if (kind === "aborted") {
+    const cause = record(reason.reason);
+    const by = str(cause.kind);
+    const note =
+      by === "user" ? "子 agent 被停下了" :
+      by === "parent" ? "父会话停下了这个子 agent" :
+      by === "hook" ? `子 agent 被钩子停下了${str(cause.reason) ? `：${str(cause.reason)}` : ""}` :
+      by === "disposed" ? "DSH 关闭了这个子 agent（进程退出或会话关闭）" :
+      "子 agent 被停下了";
+    return { state: "interrupted", note };
+  }
+  if (kind === "max-tokens") return { state: "interrupted", note: "子 agent 的输出到了上限（max-tokens），停在这里" };
+  if (kind === "blocked") return { state: "interrupted", note: "子 agent 被拦下了（blocked）" };
+  if (kind === "interrupted") return { state: "interrupted", note: "子 agent 上次没有正常结束（DSH 进程中途退出），停在这里" };
+  return { state: "interrupted", note: `子 agent 停下了（${kind || "原因不明"}）` };
 }
 
 function labelOf(input: Record<string, unknown>): string {
