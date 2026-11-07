@@ -40,8 +40,9 @@ function usedKeys(): Map<string, string[]> {
   return out;
 }
 
-// Constants named …KEY… that are not kv keys.
-const NOT_KV = new Set(["DEEPSEEK_API_KEY", "deepseek-v4"]);
+// Constants named …KEY… that are not kv keys. llm-deepseek: DSH's API-key route (DSH_KEY_PLUGIN, 2026-11-07; 自动打包
+// Studio 0.9.51 stopped on it).
+const NOT_KV = new Set(["DEEPSEEK_API_KEY", "deepseek-v4", "llm-deepseek"]);
 
 describe("kv keys", () => {
   const used = usedKeys();
