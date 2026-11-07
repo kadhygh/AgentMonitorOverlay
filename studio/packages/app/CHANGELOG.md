@@ -4,6 +4,8 @@
 
 ## 下一版
 
+## 0.9.52（2026-11-07）
+
 - Codex 会话不再带 Codex 桌面版的浏览器控制和电脑控制（Browser、Chrome、Computer Use 插件和 `node_repl`）。这些工具要 Codex 桌面版在旁边当宿主才能用，Studio 的会话里一用就报「The browser access host is unavailable」或「native pipe 不存在（os error 2）」，每个会话还会白起几个 node 进程。现在 Studio 启动 Codex 时会把它们关掉，只影响 Studio 里的会话，Codex 桌面版里照常能用。要让 AI 在 Studio 里控制浏览器，在「设置 → MCP」里加一个浏览器 MCP（比如 Playwright MCP），Claude、Codex、DeepSeek 的会话都能用。改动在 Codex 下次启动时生效。
 
 ## 0.9.51（2026-11-07）
