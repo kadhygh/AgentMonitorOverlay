@@ -4,6 +4,8 @@
 
 ## 下一版
 
+- Codex 会话不再带 Codex 桌面版的浏览器控制和电脑控制（Browser、Chrome、Computer Use 插件和 `node_repl`）。这些工具要 Codex 桌面版在旁边当宿主才能用，Studio 的会话里一用就报「The browser access host is unavailable」或「native pipe 不存在（os error 2）」，每个会话还会白起几个 node 进程。现在 Studio 启动 Codex 时会把它们关掉，只影响 Studio 里的会话，Codex 桌面版里照常能用。要让 AI 在 Studio 里控制浏览器，在「设置 → MCP」里加一个浏览器 MCP（比如 Playwright MCP），Claude、Codex、DeepSeek 的会话都能用。改动在 Codex 下次启动时生效。
+
 ## 0.9.51（2026-11-07）
 
 - DeepSeek（DSH）会话：模型的回答传到一半、连接被对面正常关掉时（报错「DeepSeek Messages stream ended before message_stop」，常见于中转渠道），现在会自动重新请求，不再让整个回合直接失败。和断网、超时一样，最多重试 5 次；被截断的半段回答丢掉，不会出现在对话里，也不会重复执行命令。代价是这一段回答要重新生成。

@@ -11,6 +11,7 @@ import { lowerAgentPriority } from "../priority.js";
 import { codexServerSpec, profileGone, type CodexProviderDef } from "../profiles.js";
 import { resolveCodexCommand, type CodexCommand } from "./command.js";
 import { CodexRpcClient } from "./rpc-client.js";
+import { codexHomeOf, desktopHostedToolArgs } from "./desktop-tools.js";
 
 // One `codex app-server` per Codex profile (studio/spikes/RESULTS.md, sections c and d). Port and token persist in
 // the data dir so a restarted server, or a restarted Host, comes back at the same address and attached TUIs reconnect.
@@ -218,11 +219,14 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: this.options.mcp?.() ?? null, extraMcp: this.extraMcp() });
     const cmd = this.options.codexCommand ?? resolveCodexCommand();
     const tokenFile = this.tokenFile(entry.profileId);
-    const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];
+    // Not the Host's own variables (agent-env.ts); cmd.env puts ELECTRON_RUN_AS_NODE back when codex.js needs it.
+    const env = withoutWindowsApps({ ...(this.options.baseEnv?.() ?? {}), ...withoutHostEnv(process.env), ...cmd.env, ...this.options.env, ...spec.env });
+    // The Codex desktop app's browser and computer-use tools cannot work without the app as their host (desktop-tools.ts).
+    const desktopOff = desktopHostedToolArgs(codexHomeOf(env));
+    const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, ...desktopOff, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];
     const child = spawn(cmd.command, args, {
       cwd: this.options.cwd,
-      // Not the Host's own variables (agent-env.ts); cmd.env puts ELECTRON_RUN_AS_NODE back when codex.js needs it.
-      env: withoutWindowsApps({ ...(this.options.baseEnv?.() ?? {}), ...withoutHostEnv(process.env), ...cmd.env, ...this.options.env, ...spec.env }),
+      env,
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
