@@ -4,6 +4,8 @@
 
 ## 下一版
 
+- 别的会话用 `session_start` 以只读方式开的 Claude 会话，不再找你审批计划。Claude 的只读用的是计划模式，以前它做完会把结果当成「计划」交给你批，你批完它又把同样的内容写一遍回复转给开它的会话，而且批准后这个会话就不再是只读了。现在 Studio 一开始就告诉它直接写回复交回，它要是还提交计划，Studio 直接替你拒掉，会话保持只读。人自己开的、或「替人开」的会话照常审批计划。
+
 ## 0.9.52（2026-11-07）
 
 - Codex 会话不再带 Codex 桌面版的浏览器控制和电脑控制（Browser、Chrome、Computer Use 插件和 `node_repl`）。这些工具要 Codex 桌面版在旁边当宿主才能用，Studio 的会话里一用就报「The browser access host is unavailable」或「native pipe 不存在（os error 2）」，每个会话还会白起几个 node 进程。现在 Studio 启动 Codex 时会把它们关掉，只影响 Studio 里的会话，Codex 桌面版里照常能用。要让 AI 在 Studio 里控制浏览器，在「设置 → MCP」里加一个浏览器 MCP（比如 Playwright MCP），Claude、Codex、DeepSeek 的会话都能用。改动在 Codex 下次启动时生效。

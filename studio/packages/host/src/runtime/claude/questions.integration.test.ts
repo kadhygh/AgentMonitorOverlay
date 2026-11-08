@@ -111,4 +111,17 @@ describe("Claude questions", () => {
     expect(store.getSession(s.id)!.options.permission).toBe("default");
     expect(items(s.id).filter((i) => i.type === "question").at(-1)).toMatchObject({ state: "answered" });
   }, 180_000);
+
+  it("declines ExitPlanMode in a read-only session another session opened: no review, still plan mode", async () => {
+    const caller = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "开会话的那个" });
+    await until(() => status(caller.id) === "idle", "the caller idle");
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "只读审查", options: { permission: "plan" } });
+    await until(() => status(s.id) === "idle", "the first turn");
+    store.setSessionStartedBy(s.id, caller.id);
+    await runtime.sendMessage(s.id, "[[plan]] 审完交回");
+    await until(() => lastAgent(s.id).startsWith("MOCK-PLAN") && status(s.id) === "idle", "the reply to the declined plan");
+    expect(lastAgent(s.id)).toContain("No plan review here");
+    expect(question(s.id)).toBeUndefined();
+    expect(store.getSession(s.id)!.options.permission).toBe("plan");
+  }, 180_000);
 });

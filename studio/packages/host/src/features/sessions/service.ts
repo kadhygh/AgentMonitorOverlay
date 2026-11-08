@@ -396,6 +396,9 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
         : report
           ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它）；中途要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
           : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
+      // Claude's read-only is plan mode (2026-11-09): its prompt ends with ExitPlanMode, which Studio declines in a
+      // session opened this way (ClaudeAsks) — said up front so the result is not written twice.
+      ...(!forPerson && options?.permission === PERMISSIONS.claude["read-only"] ? ["（你是以只读方式开的，用的是 Claude 的计划模式。这里没有人审批计划：做完直接把结果写成最后的回复，不要调用 ExitPlanMode。）"] : []),
     ].join("\n");
     const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
     // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other. One for
