@@ -249,6 +249,8 @@ export interface FakeAppServer {
   threads: Map<string, FakeThread>;
   /** Every JSON-RPC request received, for assertions. */
   calls: Array<{ method: string; params: unknown }>;
+  /** The ChatGPT login's access token runs out: `account/rateLimits/read` fails with 401 until `account/read` refreshes it. */
+  expireToken(): void;
   close(): Promise<void>;
 }
 
@@ -265,6 +267,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const pending = new Map<number, PendingApproval>();
   const calls: FakeAppServer["calls"] = [];
   let nextRequestId = 0;
+  let tokenExpired = false;
 
   // An HTTP server carries the WebSocket server so it can listen inside Studio's port range (red line 6). The
   // WebSocket server is attached only once listening succeeded: it re-emits the HTTP server's errors, which would turn
@@ -542,16 +545,24 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       ],
       nextCursor: null,
     }),
+    // An expired token: the error codex-cli 0.162 answers with (问题 #18); `account/read` with refreshToken renews it.
+    "account/read": (_client, params) => {
+      if (params.refreshToken) tokenExpired = false;
+      return { account: { type: "chatgpt", email: "fake@example.com", planType: "plus", workspaceName: null }, requiresOpenaiAuth: true };
+    },
     // A ChatGPT login's quota: 5-hour and weekly windows.
-    "account/rateLimits/read": () => ({
-      ordinaryUsageAllowed: true,
-      rateLimits: {
-        limitId: "codex", limitName: null, normalModelSlug: null, credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null,
-        primary: { usedPercent: 32, windowDurationMins: 300, resetsAt: 1_800_000_000 },
-        secondary: { usedPercent: 8, windowDurationMins: 10080, resetsAt: 1_800_500_000 },
-      },
-      rateLimitsByLimitId: null, rateLimitResetCredits: null, accountId: null, rateLimitUpsell: null,
-    }),
+    "account/rateLimits/read": () => {
+      if (tokenExpired) throw rpcError(-32603, 'failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized; content-type=text/plain; body={ "error": { "message": "Your authentication token has expired. Please try refreshing it.", "code": "token_expired" }, "status": 401 }');
+      return {
+        ordinaryUsageAllowed: true,
+        rateLimits: {
+          limitId: "codex", limitName: null, normalModelSlug: null, credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null,
+          primary: { usedPercent: 32, windowDurationMins: 300, resetsAt: 1_800_000_000 },
+          secondary: { usedPercent: 8, windowDurationMins: 10080, resetsAt: 1_800_500_000 },
+        },
+        rateLimitsByLimitId: null, rateLimitResetCredits: null, accountId: null, rateLimitUpsell: null,
+      };
+    },
     "thread/name/set": (_client, params) => {
       const t = requireThread(params);
       notify(t.id, "thread/name/updated", { threadId: t.id, threadName: params.name });
@@ -719,6 +730,9 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     token,
     threads,
     calls,
+    expireToken: () => {
+      tokenExpired = true;
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.ws.terminate();

@@ -8,7 +8,7 @@ import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../
 import { RuntimeBase, STOP_GRACE_MS, type RuntimeEvents, type SendOptions } from "../runtime.js";
 import { withDelivery } from "../items.js";
 import type { CodexServerHandle } from "./server-manager.js";
-import { codexUsage, reviewTarget, STANDARD_TIER, toModelOption, type CodexModel, type CodexSkill, type GetAccountRateLimitsResponse } from "./account.js";
+import { codexUsage, isTokenExpired, reviewTarget, STANDARD_TIER, toModelOption, type CodexModel, type CodexSkill, type GetAccountRateLimitsResponse } from "./account.js";
 import { CodexAsks } from "./asks.js";
 import { CodexEvents } from "./events.js";
 import { newSessionState, type CodexCore, type SessionState } from "./state.js";
@@ -292,7 +292,18 @@ export class CodexRuntime extends RuntimeBase {
     if (refresh) {
       try {
         const handle = await this.handleFor(profileId);
-        const r = (await handle.client.request("account/rateLimits/read", { excludeResetCreditDetails: true })) as unknown as GetAccountRateLimitsResponse;
+        const read = async () => (await handle.client.request("account/rateLimits/read", { excludeResetCreditDetails: true })) as unknown as GetAccountRateLimitsResponse;
+        let r: GetAccountRateLimitsResponse;
+        try {
+          r = await read();
+        } catch (err) {
+          // 问题 #18 (2026-11-09): a long-running app-server answers the quota read with 401 token_expired instead of
+          // renewing the ChatGPT token first. `account/read` with refreshToken renews it (Codex's own login, as its
+          // protocol says), then the quota is read once more; another failure shows as before.
+          if (!isTokenExpired(err)) throw err;
+          await handle.client.request("account/read", { refreshToken: true });
+          r = await read();
+        }
         this.usageCache.set(profileId, codexUsage(profile, r.rateLimits));
       } catch (err) {
         this.usageCache.set(profileId, { profileId, label: profile.label, windows: [], note: `读不到用量：${String((err as Error).message ?? err)}`, updatedAt: new Date().toISOString() });

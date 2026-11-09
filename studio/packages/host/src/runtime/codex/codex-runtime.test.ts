@@ -313,6 +313,16 @@ describe("CodexRuntime", () => {
     await runtime.respondApproval(s.id, replay.approvalId, "accept");
     await until(idle(s.id), "idle after replayed approval");
   });
+
+  it("renews an expired ChatGPT token and reads the quota again (问题 #18)", async () => {
+    await servers.ensure("p-default");
+    const fake = servers.fakes.get("p-default")!;
+    fake.expireToken();
+    const usage = await runtime.usage("p-default", true);
+    expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 32 }, { label: "每周", usedPercent: 8 }] });
+    expect(fake.calls.map((c) => c.method).filter((m) => m.startsWith("account/"))).toEqual(["account/rateLimits/read", "account/read", "account/rateLimits/read"]);
+    expect(fake.calls.find((c) => c.method === "account/read")!.params).toEqual({ refreshToken: true });
+  });
 });
 
 describe("describeReview", () => {

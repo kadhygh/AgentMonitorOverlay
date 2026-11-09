@@ -96,3 +96,9 @@ export function codexUsage(profile: ModelProfile, limits: { primary: CodexRateWi
     .map((w) => ({ label: windowLabel(w.windowDurationMins), usedPercent: w.usedPercent, resetsAt: w.resetsAt ? new Date(w.resetsAt * 1000).toISOString() : null }));
   return { profileId: profile.id, label: profile.label, windows, note: windows.length ? null : "这个账号没有用量限制", updatedAt: new Date().toISOString() };
 }
+
+/** The quota read failed because the ChatGPT login's access token ran out (问题 #18: `401 Unauthorized … token_expired`). */
+export function isTokenExpired(err: unknown): boolean {
+  const message = String((err as Error | undefined)?.message ?? err);
+  return /token_expired|token has expired/i.test(message) || (/\b401\b/.test(message) && /unauthori[sz]ed/i.test(message));
+}
