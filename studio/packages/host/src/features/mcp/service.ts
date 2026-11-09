@@ -199,6 +199,25 @@ export class McpFeature extends Feature {
     return latest?.options.mcp && Object.keys(latest.options.mcp).length ? { ...latest.options.mcp } : undefined;
   }
 
+  /**
+   * A new session's MCP choices when the agent that opens it names some (session_start's mcp, 2026-11-09, the user: 让 AI
+   * 拉起的时候设置需要使用的 MCP — a sub-session went on with the task's 「playwright 关」 and had no browser): those over
+   * the task's latest choices. A name the session's project does not offer is refused, with the ones it does.
+   */
+  chooseFor(workspaceId: Id, taskId: Id | null, runtime: string, asked: unknown): Record<string, boolean> | undefined {
+    if (asked === undefined || asked === null) return undefined;
+    if (typeof asked !== "object" || Array.isArray(asked) || Object.values(asked).some((v) => typeof v !== "boolean")) throw new HostError("bad_request", "mcp 要写成 {\"名字\": true 或 false}，例如 {\"playwright\": true}");
+    const want = asked as Record<string, boolean>;
+    if (!Object.keys(want).length) return undefined;
+    if (runtime === "codex") throw new HostError("bad_request", "Codex 的 MCP 在它的 app-server 启动时就定了，不能按会话设：去掉 mcp，或换一个模型");
+    const ws = this.store.getWorkspace(workspaceId) ?? null;
+    const known = this.candidates(ws).map((c) => c.name);
+    const unknown = Object.keys(want).filter((n) => !known.includes(n));
+    if (unknown.includes(AMO_MCP_SERVER_NAME)) throw new HostError("bad_request", `${AMO_MCP_SERVER_NAME} 每个会话都带着，不用写进 mcp`);
+    if (unknown.length) throw new HostError("bad_request", `没有这个 MCP：${unknown.join("、")}。这个项目能用的：${known.join("、") || "（没有）"}`);
+    return { ...(this.inherited(taskId) ?? {}), ...want };
+  }
+
   // ---- for the runtimes ---------------------------------------------------------------------------------------------
 
   /**

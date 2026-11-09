@@ -82,6 +82,8 @@ describe("session_start (开会话)", () => {
     await expect(service.sessions.startPeer(caller.id, { text: "x", model: "Plain/gpt-9" })).rejects.toThrow(/Plain 没有型号 gpt-9/);
     await expect(service.sessions.startPeer(caller.id, { text: "x", model: "nobody" })).rejects.toThrow(/model nobody not found/);
     await expect(service.sessions.startPeer(caller.id, { text: "x", permission: "root" })).rejects.toThrow(/permission must be/);
+    // MCP named at the start (2026-11-09): not for Codex, whose app-server is shared.
+    await expect(service.sessions.startPeer(caller.id, { text: "x", mcp: { playwright: true } })).rejects.toThrow(/Codex 的 MCP/);
     // Archiving the caller leaves the sessions it started alone.
     await service.sessions.archive(caller.id);
     expect(store.getSession(s.id)?.archivedAt).toBeNull();

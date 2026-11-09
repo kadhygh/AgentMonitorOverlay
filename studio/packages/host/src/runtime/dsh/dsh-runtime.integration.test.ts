@@ -8,6 +8,8 @@ import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { StaticCredentialReader } from "../credentials.js";
 import type { FolderAccess } from "./folder-access.js";
+import { AcpError } from "./acp.js";
+import { failingMcpOf } from "./dsh-runtime.js";
 
 // DSH sessions (stage 17) through a whole Host, with the scripted ACP agent standing in for `dsh --profile acp`.
 
@@ -279,6 +281,30 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, s.id))[1]).toBe("MCP-LIST amo:http,amo-relay:stdio,img:stdio");
     // Its process started again (the change), still without canvas: not said a second time.
     expect((await items(host, s.id)).filter((i) => i.type === "notice" && i.message.includes("没带上 MCP"))).toHaveLength(1);
+  });
+
+  it("leaves out a server DSH cannot connect to, instead of having no session (2026-11-09, ybf: Figma's MCP →「Internal error」)", async () => {
+    const host = await boot();
+    await call(host, "POST", "/api/mcp/servers", { name: "img", spec: { command: "npx", args: ["img-mcp"] } });
+    await call(host, "POST", "/api/mcp/servers", { name: "figma", spec: { type: "http", url: "https://unreachable.example/mcp" } });
+    const s = await start(host, "[[mcp-list]]");
+    await idle(host, s.id);
+    expect(replies(await items(host, s.id))[0]).toBe("MCP-LIST amo:http,img:stdio");
+    const told = (await items(host, s.id)).filter((i) => i.type === "notice" && i.message.includes("没带上 MCP"));
+    expect(told.map((i) => (i.type === "notice" ? i.message : ""))).toEqual([expect.stringContaining("figma（initial connection or tool synchronization failed）。DeepSeek 连不上它")]);
+    // Another MCP choice starts its process again (session/resume): still without figma, and not said again.
+    await call(host, "PUT", `/api/sessions/${s.id}/mcp`, { choices: { img: false } });
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[mcp-list]]" });
+    await until(() => items(host, s.id), (l) => replies(l).length === 2);
+    expect(replies(await items(host, s.id))[1]).toBe("MCP-LIST amo:http");
+    expect((await items(host, s.id)).filter((i) => i.type === "notice" && i.message.includes("没带上 MCP"))).toHaveLength(1);
+  });
+
+  it("says what DSH said failed, not only「Internal error」", () => {
+    const err = new AcpError("Internal error", -32603, { details: "mcp-client(figma): initial connection or tool synchronization failed" });
+    expect(failingMcpOf(err, ["figma"])).toEqual({ name: "figma", why: "initial connection or tool synchronization failed" });
+    expect(failingMcpOf(err, ["img"])).toBeNull();
+    expect(failingMcpOf(new Error("x"), ["figma"])).toBeNull();
   });
 
   it("resumes the DSH session after a Host restart; model, effort and permission go to DSH", async () => {

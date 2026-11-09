@@ -17,7 +17,7 @@ export const SLOW_SEND_MS = 5000;
 const busy = (s: Session) => inTurn(s.status);
 
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
-export class SessionsFeature extends Feature<"attachments" | "collab" | "config" | "remote" | "review" | "tasks"> {
+export class SessionsFeature extends Feature<"attachments" | "collab" | "config" | "mcp" | "remote" | "review" | "tasks"> {
   /** Messages from agents and from Studio: held until the session is free (inbox.ts). */
   readonly inbox = new SessionInbox(this.host, this);
 
@@ -328,7 +328,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown; setup?: unknown; fast?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown; setup?: unknown; fast?: unknown; mcp?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -389,6 +389,8 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
         else if (fast && setup?.fast === undefined && agentFast === true) throw new HostError("bad_request", `${this.requireProfile(profileId).label}（${runs?.label ?? picked.model ?? "默认型号"}）没有 Fast：去掉 fast 再开`);
       }
     }
+    const mcp = this.f.mcp.chooseFor(workspace.id, task.id, this.requireProfile(profileId).runtime, input.mcp);
+    if (mcp) options = { ...options, mcp };
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [
       forPerson ? `【本任务的会话「${from.title || "未命名会话"}」应人的要求开启：人会在这里和你一起推进】` : `【由本任务的会话「${from.title || "未命名会话"}」开启】`,

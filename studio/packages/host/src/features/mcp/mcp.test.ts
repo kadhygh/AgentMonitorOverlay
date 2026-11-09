@@ -126,6 +126,20 @@ describe("MCP 设置", () => {
     expect(store.getSession(dsh.id)?.options.mcp).toEqual({ figma: false });
   });
 
+  it("lets the agent that opens a session name its MCP servers, over what the task's sessions had (session_start's mcp, 2026-11-09)", async () => {
+    const ws = store.addWorkspace({ name: "Alpha", path: project });
+    const task = store.createTask({ workspaceId: ws.id, title: "t" });
+    const dsh = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "dsh", profileId: "p-ds", workspaceId: ws.id, title: "", status: "idle", runtimeRef: null, writer: "workbench" } as never);
+    service.runtime.setOptions = async (id, options) => store.updateSession(id, { options });
+    await service.mcp.setSession(dsh.id, { choices: { figma: false, "pixso-desktop": false } });
+    expect(service.mcp.chooseFor(ws.id, task.id, "dsh", undefined)).toBeUndefined();
+    expect(service.mcp.chooseFor(ws.id, task.id, "dsh", { figma: true })).toEqual({ figma: true, "pixso-desktop": false });
+    expect(() => service.mcp.chooseFor(ws.id, task.id, "dsh", { playwright: true })).toThrow("没有这个 MCP：playwright。这个项目能用的：pixso-desktop、shared-ok、shared-new、figma、amo-relay");
+    expect(() => service.mcp.chooseFor(ws.id, task.id, "dsh", { amo: false })).toThrow("每个会话都带着");
+    expect(() => service.mcp.chooseFor(ws.id, task.id, "dsh", { figma: "on" })).toThrow("true 或 false");
+    expect(() => service.mcp.chooseFor(ws.id, task.id, "codex", { figma: true })).toThrow("Codex");
+  });
+
   it("works out what each runtime starts with", () => {
     const ws = store.addWorkspace({ name: "Alpha", path: project });
     const img = service.mcp.create({ name: "img", spec: { command: "npx", env: { IMG_KEY: "sk-1" } } });

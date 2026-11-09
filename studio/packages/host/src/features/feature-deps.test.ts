@@ -33,7 +33,7 @@ const GRAPH: Record<string, string[]> = {
   remote: ["attachments", "channels", "chatfiles", "gitreview", "openin", "prompttemplates", "sessions", "tasks", "viewpacks"],
   review: ["sessions"],
   scratchpad: ["attachments"],
-  sessions: ["attachments", "collab", "config", "remote", "review", "tasks"],
+  sessions: ["attachments", "collab", "config", "mcp", "remote", "review", "tasks"],
   taskplans: ["canvas", "collab", "sessions", "tasks"],
   tasks: ["canvas", "config", "mcp", "remote", "sessions"],
   teamrelay: ["config", "sessions"],

@@ -141,6 +141,7 @@ class RpcError extends Error {
   constructor(
     readonly code: number,
     message: string,
+    readonly data?: unknown,
   ) {
     super(message);
   }
@@ -325,10 +326,14 @@ async function goalRounds(a: Active, n: number, slow: boolean): Promise<void> {
 
 /** As DSH does (2026-11): a server in a transport it did not offer (mcpCapabilities: http only) refuses the whole request. */
 function checkMcp(params: Record<string, unknown>): void {
-  const list = (params.mcpServers as Array<{ type?: string }> | undefined) ?? [];
+  const list = (params.mcpServers as Array<{ type?: string; name?: string; url?: string }> | undefined) ?? [];
   list.forEach((s, i) => {
     if (s.type && s.type !== "http" && s.type !== "stdio") throw new RpcError(-32602, `Invalid params: mcpServers[${i}] transport ${s.type} is not supported`);
   });
+  // A server DSH cannot connect to fails the whole session/new (DSH 0.2.1-rc.5 with Figma's MCP, which wants OAuth;
+  // 2026-11-09): a url with "unreachable" in it stands for one.
+  const bad = list.find((s) => s.url?.includes("unreachable"));
+  if (bad) throw new RpcError(-32603, "Internal error", { details: `mcp-client(${bad.name}): initial connection or tool synchronization failed` });
 }
 
 async function handle(method: string, params: Record<string, unknown>): Promise<unknown> {
@@ -396,7 +401,7 @@ process.stdin.on("data", (chunk: string) => {
       const id = msg.id;
       handle(msg.method, msg.params ?? {}).then(
         (result) => send({ jsonrpc: "2.0", id, result }),
-        (err: unknown) => send({ jsonrpc: "2.0", id, error: { code: err instanceof RpcError ? err.code : -32603, message: String((err as Error).message ?? err) } }),
+        (err: unknown) => send({ jsonrpc: "2.0", id, error: { code: err instanceof RpcError ? err.code : -32603, message: String((err as Error).message ?? err), ...(err instanceof RpcError && err.data !== undefined ? { data: err.data } : {}) } }),
       );
     }
   }
