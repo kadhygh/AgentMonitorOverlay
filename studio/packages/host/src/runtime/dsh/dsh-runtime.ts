@@ -457,7 +457,10 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     // 停止's fallback (2026-11-04): a DSH stuck in a command or a model call that does not end the prompt has its
     // process closed; what waited for the turn becomes 没送到 (a process that had to be killed may be stuck again).
     const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
-    this.armStopGrace(sessionId, grace, () => this.live.get(sessionId) === live && live.inflight, () => {
+    // Only the prompt that was stopped (2026-11-09: with Claude, a message sent right after a quick 停止 had its new turn
+    // cut 15 s after 停止; DSH's process lives on between prompts the same way).
+    const turnId = live.transcript.turnRef().turnId;
+    this.armStopGrace(sessionId, grace, () => this.live.get(sessionId) === live && live.inflight && live.transcript.turnRef().turnId === turnId, () => {
       live.killedOnStop = true;
       this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 DSH 还没停下（它可能卡在某个命令上），Studio 关掉了它的进程。发一条消息即可接着对话。` }, { method: "dsh/stop", ...live.transcript.turnRef() });
       live.conn.kill();

@@ -191,6 +191,27 @@ describe("ClaudeRuntime", () => {
     await until(() => agentTexts(s.id).includes("MOCK: after stuck"), "reply after the forced stop");
   }, 120_000);
 
+  it("停止's fallback is for the stopped turn only: a message sent right after a quick stop runs to its end (2026-11-09)", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]] first" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    const internals = runtime as unknown as { options: { stopGraceMs?: number } };
+    internals.options.stopGraceMs = 1500;
+    try {
+      // The stop is answered at once; the fuller message goes in the same process, and outlives the grace.
+      await runtime.interrupt(s.id);
+      await until(() => status(s.id) === "idle", "stopped");
+      await runtime.sendMessage(s.id, "[[slow]] fuller");
+      await until(() => status(s.id) === "running", "the new turn runs");
+      await new Promise((r) => setTimeout(r, 2500));
+      expect(status(s.id)).toBe("running");
+      await until(() => status(s.id) === "idle", "the new turn ends", 30_000);
+      expect(items(s.id).some((i) => i.type === "notice" && /Studio 关掉了它的进程|Host 关闭时/.test(i.message))).toBe(false);
+      expect(items(s.id).filter((i) => i.type === "turn").at(-1)).toMatchObject({ state: "completed" });
+    } finally {
+      delete internals.options.stopGraceMs;
+    }
+  }, 120_000);
+
   // 立即发送 (2026-11-02). The mock's [[slow]] reply is 40 words over 6 s: a cut one has fewer.
   const userItem = (sessionId: string, text: string) => items(sessionId).find((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user" && i.text === text);
   const slowWords = (sessionId: string) => Math.max(0, ...items(sessionId).filter((i): i is Extract<SessionItem, { type: "agent" }> => i.type === "agent" && i.markdown.startsWith("slow")).map((i) => i.markdown.split(" ").length));

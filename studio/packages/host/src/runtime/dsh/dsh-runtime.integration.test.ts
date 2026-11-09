@@ -644,6 +644,21 @@ describe("DSH runtime", () => {
     expect(userRow(list, "第三件事")).toMatchObject({ delivery: "unsent" });
   });
 
+  it("停止's fallback is for the stopped prompt only: one sent right after a quick stop runs to its end (2026-11-09)", async () => {
+    const host = await boot({ stopGraceMs: 500 });
+    const s = await start(host, "[[slow]]");
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "tool"));
+    await call(host, "POST", `/api/sessions/${s.id}/interrupt`);
+    await idle(host, s.id);
+    // Takes 1.5 s, three times the grace, in the same process.
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[subagent: 1500]]" });
+    await until(() => items(host, s.id), (l) => replies(l).some((r) => r.startsWith("SUB DONE ")));
+    await idle(host, s.id);
+    const list = await items(host, s.id);
+    expect(list.some((i) => i.type === "notice" && i.message.includes("DSH 还没停下"))).toBe(false);
+    expect(list.filter((i) => i.type === "turn").at(-1)).toMatchObject({ state: "completed" });
+  });
+
   it("a message waiting when the Host stops is 没送到 after the restart, and can be sent again (2026-11-04)", async () => {
     let host = await boot();
     const s = await start(host, "[[slow]]");

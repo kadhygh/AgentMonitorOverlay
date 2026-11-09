@@ -391,7 +391,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     live.interrupted = true;
     this.asks.declineAll(live);
     const grace = this.options.stopGraceMs ?? STOP_GRACE_MS;
-    const stillRunning = () => this.live.get(sessionId) === live && live.running && !live.finished;
+    // The turn that was stopped, not just one (2026-11-09, the user: s-35db5a8c, 停止 then a fuller message sent a few
+    // seconds later — the stopped turn had ended at once, and 15 s after 停止 Studio closed the process in the middle of
+    // the new one). The process lives on between turns, so `running` alone is any turn's.
+    const turn = live.turn;
+    const stillRunning = () => this.live.get(sessionId) === live && live.running && !live.finished && live.turn === turn;
     this.armStopGrace(sessionId, grace, stillRunning, () => {
       this.appendItem(sessionId, { type: "notice", level: "warning", message: `点了停止 ${Math.round(grace / 1000)} 秒后 Claude 还没停下（它可能卡在某个命令或文件操作上），Studio 关掉了它的进程。发一条消息即可接着对话。` });
       void this.close(sessionId);
