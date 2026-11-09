@@ -582,6 +582,17 @@ try {
       // After a failure, not on a master that moved minutes ago (2026-11-03, the user agreed): 20:12's retry started 22 s
       // after a commit landed, while the session that made it may still have been testing; quiet `--retry-quiet` first.
       if (failed && !clicked && Date.now() - masterAt() < minutes("--retry-quiet", 10)) break;
+      // 2026-11-09 (Studio 0.9.53 stopped at 提交版本): the release commit lands by a fast-forward in the main checkout,
+      // and git refuses it while a file it writes (a CHANGELOG, a package.json, the lock) has someone's uncommitted
+      // change there — a 维护迭代 session writes 「下一版」 before it commits. Wait for that commit (it moves master)
+      // instead of running the tests, failing and calling 值守 in.
+      const main = where().main;
+      const writes = [...new Set(list.flatMap((d) => [changelogFile(d.t), pkgFile(d.t), ...(d.t.ios || d.t.service ? [] : [join(studio, "package-lock.json")])]))].map(rel);
+      const held = main ? spawnSync("git", ["status", "--porcelain", "--", ...writes], { cwd: main, encoding: "utf8" }).stdout.split("\n").filter(Boolean) : [];
+      if (held.length) {
+        console.log(`等主工作区提交：${held.map((l) => l.slice(3)).join("、")} 有没提交的改动，发布提交合不进 master`);
+        break;
+      }
       try {
         await release(list.map((d) => d.t.id));
         rmSync(failedFile(), { force: true });
