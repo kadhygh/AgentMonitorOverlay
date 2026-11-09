@@ -264,15 +264,21 @@ describe("DSH runtime", () => {
     writeFileSync(join(claudeDir, ".claude.json"), JSON.stringify({ mcpServers: { figma: { type: "http", url: "https://mcp.figma.com/mcp" }, "amo-relay": { command: "node" } } }));
     const host = await boot({ localClaudeHome: claudeDir });
     await call(host, "POST", "/api/mcp/servers", { name: "img", spec: { command: "npx", args: ["img-mcp"], env: { KEY: "k" } } });
+    // An SSE server DSH does not take (2026-11-09: it refused the whole session): left out, and the session says so.
+    await call(host, "POST", "/api/mcp/servers", { name: "canvas", spec: { type: "sse", url: "https://canvas.example/api/mcp/sse" } });
     const s = await start(host, "[[mcp-list]]");
     await idle(host, s.id);
     expect(replies(await items(host, s.id))[0]).toBe("MCP-LIST amo:http,figma:http,img:stdio");
+    const told = (await items(host, s.id)).filter((i) => i.type === "notice" && i.message.includes("没带上 MCP"));
+    expect(told.map((i) => (i.type === "notice" ? i.message : ""))).toEqual([expect.stringContaining("canvas（SSE 连接）。DeepSeek 不支持这种连接方式")]);
     const changed = await call<{ apply: string; entries: Array<{ name: string; on: boolean }> }>(host, "PUT", `/api/sessions/${s.id}/mcp`, { choices: { figma: false, "amo-relay": true } });
     expect(changed.apply).toBe("next-message");
     expect(Object.fromEntries(changed.entries.map((e) => [e.name, e.on]))).toMatchObject({ figma: false, "amo-relay": true, img: true });
     await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[mcp-list]]" });
     await until(() => items(host, s.id), (l) => replies(l).length === 2);
     expect(replies(await items(host, s.id))[1]).toBe("MCP-LIST amo:http,amo-relay:stdio,img:stdio");
+    // Its process started again (the change), still without canvas: not said a second time.
+    expect((await items(host, s.id)).filter((i) => i.type === "notice" && i.message.includes("没带上 MCP"))).toHaveLength(1);
   });
 
   it("resumes the DSH session after a Host restart; model, effort and permission go to DSH", async () => {

@@ -12,6 +12,7 @@ import { codexServerSpec, profileGone, type CodexProviderDef } from "../profiles
 import { resolveCodexCommand, type CodexCommand } from "./command.js";
 import { CodexRpcClient } from "./rpc-client.js";
 import { codexHomeOf, desktopHostedToolArgs } from "./desktop-tools.js";
+import { mcpFits } from "../mcp-launch.js";
 
 // One `codex app-server` per Codex profile (studio/spikes/RESULTS.md, sections c and d). Port and token persist in
 // the data dir so a restarted server, or a restarted Host, comes back at the same address and attached TUIs reconnect.
@@ -123,6 +124,16 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     // The launcher may exit before codex.exe releases the socket; wait until nothing listens any more.
     await waitPortClosed(entry.port, 5000);
     this.persist();
+  }
+
+  /**
+   * Studio's servers that are on but Codex cannot take (it is given stdio and HTTP ones only, profiles.ts): an SSE one is
+   * left out, and the session is told (2026-11-09).
+   */
+  unsupportedMcp(): Array<{ name: string; type: string }> {
+    return Object.entries(this.extraMcp())
+      .filter(([, spec]) => !mcpFits(spec, { http: true, sse: false }))
+      .map(([name, spec]) => ({ name, type: spec.type }));
   }
 
   /** Studio's MCP servers for a new server; a broken list must not keep Codex from starting. */

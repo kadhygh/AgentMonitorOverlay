@@ -58,6 +58,13 @@ describe("CodexRuntime", () => {
     expect(fake.threads.get(s.runtimeRef!)!.modelProvider).toBe("amo-ds");
   });
 
+  it("says which MCP servers that are on Codex cannot take (SSE), instead of leaving them out unsaid (2026-11-09)", async () => {
+    (servers as FakeServers & { unsupportedMcp(): Array<{ name: string; type: string }> }).unsupportedMcp = () => [{ name: "gorilla-canvas", type: "sse" }];
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace });
+    const notices = items(s.id).filter((i) => i.type === "notice");
+    expect(notices).toEqual([expect.objectContaining({ level: "warning", message: expect.stringContaining("没带上 MCP：gorilla-canvas（SSE 连接）。Codex 不支持这种连接方式") })]);
+  });
+
   it("lists a model's fast tier and sends it as serviceTier only when Fast is chosen (stage 13)", async () => {
     const c = await runtime.choices("p-default");
     expect(c.models.find((m) => m.id === "fake-model")).toMatchObject({ isDefault: true, fast: { tier: "priority", description: "2x speed, increased usage" } });

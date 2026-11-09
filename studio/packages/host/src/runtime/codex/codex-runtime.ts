@@ -12,6 +12,7 @@ import { codexUsage, isTokenExpired, reviewTarget, STANDARD_TIER, toModelOption,
 import { CodexAsks } from "./asks.js";
 import { CodexEvents } from "./events.js";
 import { newSessionState, type CodexCore, type SessionState } from "./state.js";
+import { mcpSkippedNotice } from "../mcp-launch.js";
 
 export { codexRetry, codexUsage, fastTier, reviewTarget } from "./account.js";
 export { describePlan, describeReview, describeTool, inputQuestions } from "./describe.js";
@@ -27,6 +28,8 @@ export { describePlan, describeReview, describeTool, inputQuestions } from "./de
 export interface CodexServers {
   ensure(profileId: string): Promise<CodexServerHandle>;
   on(event: "ready", listener: (handle: CodexServerHandle) => void): unknown;
+  /** Studio's MCP servers that are on but Codex cannot take (server-manager.ts). */
+  unsupportedMcp?(): Array<{ name: string; type: string }>;
 }
 
 export interface CodexRuntimeOptions {
@@ -121,7 +124,8 @@ export class CodexRuntime extends RuntimeBase {
       ...(options.model ? { model: options.model } : {}),
       ...(developerInstructions ? { developerInstructions } : {}),
     });
-    const session = this.findByThread(started.thread.id) ?? this.createSession({
+    const existing = this.findByThread(started.thread.id);
+    const session = existing ?? this.createSession({
       taskId: input.taskId,
       topicId: input.topicId,
       parentId: null,
@@ -134,6 +138,9 @@ export class CodexRuntime extends RuntimeBase {
     });
     if (token) this.options.identities!.bind(token, session.id);
     if (developerInstructions) this.options.roleGiven?.(session.id);
+    // MCP servers that are on but Codex cannot take (SSE) are left out of its config: say so instead of nothing (2026-11-09).
+    const skipped = existing ? [] : (this.options.servers.unsupportedMcp?.() ?? []);
+    if (skipped.length) this.appendItem(session.id, { type: "notice", level: "warning", message: mcpSkippedNotice(skipped, "Codex") });
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }

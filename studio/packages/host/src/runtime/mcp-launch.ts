@@ -46,3 +46,26 @@ export function acpServer(name: string, spec: McpServerSpec): Record<string, unk
   if (spec.type === "stdio") return { name, command: spec.command ?? "", args: spec.args ?? [], env: Object.entries(spec.env ?? {}).map(([k, value]) => ({ name: k, value })) };
   return { type: spec.type, name, url: spec.url ?? "", headers: Object.entries(spec.headers ?? {}).map(([k, value]) => ({ name: k, value })) };
 }
+
+/**
+ * The connections an agent takes besides a program of its own (stdio, which every one takes): ACP's
+ * agentCapabilities.mcpCapabilities (DSH 2026-11: http only), or what Codex's config has (stdio and http).
+ */
+export interface McpTransports {
+  http: boolean;
+  sse: boolean;
+}
+
+/** Whether the agent can take this server as it is. */
+export const mcpFits = (spec: McpServerSpec, t: McpTransports): boolean => spec.type === "stdio" || (spec.type === "http" && t.http) || (spec.type === "sse" && t.sse);
+
+const TRANSPORT_LABEL: Record<string, string> = { http: "HTTP", sse: "SSE" };
+
+/**
+ * What a session is told when MCP servers that are on could not go with it (2026-11-09, the user: 有人用子会话拉起
+ * DeepSeek 会话，因为项目里一个 SSE 的 MCP 整个起不来 — 不应当要人去关掉项目里指定的 MCP，应该在子会话里去处理).
+ */
+export function mcpSkippedNotice(skipped: ReadonlyArray<{ name: string; type: string }>, runtime: string): string {
+  const names = skipped.map((s) => `${s.name}（${TRANSPORT_LABEL[s.type] ?? s.type} 连接）`).join("、");
+  return `这个会话没带上 MCP：${names}。${runtime} 不支持这种连接方式，其他 MCP 照常可用；要在 ${runtime} 会话里用它，得换成 HTTP 连接的地址，或在 Claude 会话里用。`;
+}

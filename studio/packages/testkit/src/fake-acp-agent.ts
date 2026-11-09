@@ -323,7 +323,16 @@ async function goalRounds(a: Active, n: number, slow: boolean): Promise<void> {
   }
 }
 
+/** As DSH does (2026-11): a server in a transport it did not offer (mcpCapabilities: http only) refuses the whole request. */
+function checkMcp(params: Record<string, unknown>): void {
+  const list = (params.mcpServers as Array<{ type?: string }> | undefined) ?? [];
+  list.forEach((s, i) => {
+    if (s.type && s.type !== "http" && s.type !== "stdio") throw new RpcError(-32602, `Invalid params: mcpServers[${i}] transport ${s.type} is not supported`);
+  });
+}
+
 async function handle(method: string, params: Record<string, unknown>): Promise<unknown> {
+  if (method === "session/new" || method === "session/resume") checkMcp(params);
   switch (method) {
     case "initialize":
       return { protocolVersion: 1, agentInfo: { name: "fake-dsh-acp", version: "0.0.1" }, agentCapabilities: { mcpCapabilities: { http: true }, promptCapabilities: { image: TAKES_IMAGES }, sessionCapabilities: { close: {}, list: {}, resume: {} } }, authMethods: [] };
