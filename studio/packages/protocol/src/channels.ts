@@ -18,8 +18,10 @@ export const CHANNEL_KIND_LABEL: Record<ChannelKind, string> = { claude: "第三
  * - `openai`: the old OpenAI billing endpoints many relays keep (`/v1/dashboard/billing/subscription` and `/usage`).
  * - `deepseek`: GET https://api.deepseek.com/user/balance.
  * - `custom`: any GET address (`{{baseUrl}}`, `{{apiKey}}` filled in) and where the numbers are in its JSON.
+ * - `deepseek-account`: the built-in DeepSeek on the DSH desktop app's account (2026-11-09): DeepSeek Platform's own
+ *   account summary with that sign-in. Studio's own, not offered for a channel.
  */
-export type BalanceTemplate = "general" | "newapi" | "sub2api" | "openai" | "deepseek" | "custom";
+export type BalanceTemplate = "general" | "newapi" | "sub2api" | "openai" | "deepseek" | "deepseek-account" | "custom";
 
 export const BALANCE_TEMPLATES: ReadonlyArray<{ id: BalanceTemplate; label: string; hint: string }> = [
   { id: "general", label: "通用", hint: "GET 网址/user/balance，用 API Key，读 balance" },

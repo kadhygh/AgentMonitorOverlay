@@ -273,6 +273,7 @@
         { "label": "渠道注册表", "path": "studio/packages/host/src/runtime/channels.ts", "anchor": "export class ChannelRegistry" },
         { "label": "ChannelsFeature（余额）", "path": "studio/packages/host/src/features/channels/service.ts", "anchor": "cachedBalance" },
         { "label": "问余额", "path": "studio/packages/host/src/runtime/balance.ts", "anchor": "export async function askBalance" },
+        { "label": "内置 DeepSeek 按登录方式查余额（账号 / Key）", "path": "studio/packages/host/src/runtime/channels.ts", "anchor": "template: \"deepseek-account\"" },
         { "label": "Claude 订阅额度", "path": "studio/packages/host/src/runtime/claude/claude-usage.ts", "anchor": "fetchClaudeUsage" },
         { "label": "Claude 多账号", "path": "studio/packages/host/src/runtime/claude/accounts.ts", "anchor": "export class ClaudeAccounts" },
         { "label": "内置 profile", "path": "studio/packages/host/src/runtime/profiles.ts", "anchor": "BUILTIN" },

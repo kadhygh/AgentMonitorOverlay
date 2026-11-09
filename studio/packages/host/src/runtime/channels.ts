@@ -5,6 +5,7 @@ import { CLAUDE_BUILTIN_MODELS, CLAUDE_EFFORTS } from "./choices.js";
 import type { CredentialReader, CredentialStore } from "./credentials.js";
 import type { CodexProviderDef } from "./profiles.js";
 import type { DshProviderDef } from "./dsh/dsh-runtime.js";
+import { DSH_ACCOUNT_ORIGIN, dshAccountFile, readDshAuth } from "./dsh/install.js";
 
 // The model profiles as the Host runs them (设置 → 模型, 2026-10-15): the built-in ones, then the person's own channels
 // — a third-party Claude endpoint run by Claude Code, a third-party Codex endpoint (Responses API) run by Codex, or a
@@ -146,6 +147,8 @@ export interface ChannelRegistryOptions {
   dshProviders?: Record<string, DshProviderDef>;
   /** Balance queries of built-in profiles (DeepSeek's own endpoint). */
   builtinBalance?: Record<string, { baseUrl: string; config: BalanceConfig }>;
+  /** The DSH desktop app's credentials file (tests); default the person's own (DSH_HOME, else ~/.dsh). */
+  dshAccountFile?: string;
   /** Why a profile cannot start sessions now (DSH with no clone set up, Claude with no Claude Code), or undefined. */
   unavailable?: (profile: ModelProfile) => string | undefined;
 }
@@ -252,13 +255,18 @@ export class ChannelRegistry {
   }
 
   /** What a balance query of this profile needs, or null when it has none. */
-  balanceOf(profileId: string): { baseUrl: string; config: BalanceConfig; key: string | null; accessToken: string | null } | null {
+  balanceOf(profileId: string): { baseUrl: string; config: BalanceConfig; key: string | null; accessToken: string | null; accountFile?: string } | null {
     const c = this.stored().find((x) => x.id === profileId);
     if (c) return c.balance ? { baseUrl: c.baseUrl, config: c.balance, key: this.keyOf(c), accessToken: this.read(accessId(c.id)) } : null;
     const b = this.options.builtinBalance?.[profileId];
     if (!b) return null;
     const p = this.profiles.find((x) => x.id === profileId);
-    return { ...b, key: p?.credentialId ? this.read(p.credentialId) : null, accessToken: null };
+    const key = p?.credentialId ? this.read(p.credentialId) : null;
+    // The built-in DeepSeek asks the way it signs in (2026-11-09, the user: 选了 DS 登录就用 DS 登录的方式去查，选了 API
+    // 就用 API 的方式去查): on the DSH desktop app's account, that account's Platform balance; with a key, the API's.
+    if (b.config.template === "deepseek" && p?.runtime === "dsh" && readDshAuth(this.options.kv, !!key) === "account")
+      return { baseUrl: DSH_ACCOUNT_ORIGIN, config: { template: "deepseek-account" }, key: null, accessToken: null, accountFile: this.options.dshAccountFile ?? dshAccountFile() };
+    return { ...b, key, accessToken: null };
   }
 
   /** The key and New API token a draft (the dialog's 测试) would use, falling back to what `id` has stored. */

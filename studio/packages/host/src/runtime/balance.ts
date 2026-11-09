@@ -1,4 +1,5 @@
 import type { BalanceConfig, ChannelBalance } from "@amo-studio/protocol";
+import { DSH_ACCOUNT_ORIGIN, readDshAccountGrant } from "./dsh/install.js";
 
 // Asking a model site for its balance, the way CC Switch's 用量查询 templates do (src/components/UsageScriptModal.tsx
 // there). Only GET requests to the address the person gave; the key goes in a header and never into a message.
@@ -11,6 +12,8 @@ export interface BalanceAsk {
   key: string | null;
   /** New API's 系统访问令牌. */
   accessToken?: string | null;
+  /** `deepseek-account`: the DSH desktop app's credentials file, read for its sign-in when asked. */
+  accountFile?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
 }
@@ -51,7 +54,7 @@ export async function askBalance(ask: BalanceAsk): Promise<ChannelBalance> {
   }
 }
 
-interface Numbers {
+export interface Numbers {
   remaining: number | null;
   used: number | null;
   total: number | null;
@@ -62,7 +65,7 @@ interface Numbers {
 async function query(ask: BalanceAsk): Promise<Numbers> {
   const { config } = ask;
   const site = trimSlash(config.url || ask.baseUrl);
-  if (!site && config.template !== "deepseek") throw new BalanceError("没有可查询的网址");
+  if (!site && config.template !== "deepseek" && config.template !== "deepseek-account") throw new BalanceError("没有可查询的网址");
   const bearer = (token: string | null | undefined, what = "API Key") => {
     if (!token) throw new BalanceError(`还没有保存${what}`);
     return { Authorization: `Bearer ${token}` };
@@ -80,6 +83,17 @@ async function query(ask: BalanceAsk): Promise<Numbers> {
       const remaining = num(info?.total_balance);
       if (remaining === null) throw new BalanceError("返回里没有 balance_infos");
       return { remaining, used: null, total: null, unit: String(info?.currency ?? "CNY"), planName: pick(j, "is_available") === false ? "余额不足" : null };
+    }
+    case "deepseek-account": {
+      // 设置 → 模型 → DeepSeek on「DSH 桌面版的账号」(2026-11-09, checked on the person's account that day): the
+      // account summary DeepSeek Platform's own pages and the DSH desktop app read, with the app's sign-in. The token
+      // goes only to Platform, as DSH sends it; the wallets are 充值 (normal) and 赠送 (bonus), amounts as strings.
+      const grant = ask.accountFile ? readDshAccountGrant(ask.accountFile) : null;
+      if (!grant) throw new BalanceError("DSH 桌面版还没有登录 DeepSeek 账号：打开 DeepSeek Harness 桌面版登录");
+      if (grant.issuer !== DSH_ACCOUNT_ORIGIN) throw new BalanceError(`这个账号不是在 ${DSH_ACCOUNT_ORIGIN} 登录的，Studio 不把它的登录发到别处`);
+      const j = await getJson(ask, `${DSH_ACCOUNT_ORIGIN}/api/v0/users/get_user_summary`, { "x-dsh-auth-token": grant.token }, { unauthorized: "DeepSeek 账号的登录过期了：打开 DSH 桌面版重新登录", noRedirect: true });
+      if (pick(j, "code") !== 0 || pick(j, "data.biz_code") !== 0) throw new BalanceError(`DeepSeek 没有返回余额：${String(pick(j, "data.biz_msg") || pick(j, "msg") || "未知原因")}`.slice(0, 120));
+      return accountWallets(pick(j, "data.biz_data"));
     }
     case "newapi": {
       if (!config.userId?.trim()) throw new BalanceError("New API 需要填用户 ID");
@@ -135,7 +149,28 @@ async function query(ask: BalanceAsk): Promise<Numbers> {
   }
 }
 
-async function getJson(ask: BalanceAsk, url: string, headers: Record<string, string>): Promise<unknown> {
+type Wallet = { currency: string; balance: number };
+
+/** Platform's 充值 and 赠送 wallets: their sum in CNY (or the first currency there is); the 赠送 part and any other currency named. */
+export function accountWallets(data: unknown): Numbers {
+  const read = (path: string): Wallet[] => {
+    const list = pick(data, path);
+    return Array.isArray(list) ? list.flatMap((w: unknown) => (w && typeof w === "object" && typeof (w as Wallet).currency === "string" && num((w as { balance?: unknown }).balance) !== null ? [{ currency: (w as Wallet).currency, balance: num((w as { balance?: unknown }).balance)! }] : [])) : [];
+  };
+  const normal = read("normal_wallets");
+  const bonus = read("bonus_wallets");
+  if (!normal.length && !bonus.length) throw new BalanceError("返回里没有钱包余额");
+  const all = [...normal, ...bonus];
+  const unit = all.some((w) => w.currency === "CNY") ? "CNY" : all[0]!.currency;
+  const sum = (ws: Wallet[]) => ws.filter((w) => w.currency === unit).reduce((n, w) => n + w.balance, 0);
+  const gift = round(sum(bonus))!;
+  const others = [...new Set(all.filter((w) => w.currency !== unit && w.balance !== 0).map((w) => w.currency))].map((c) => `${round(all.filter((w) => w.currency === c).reduce((n, w) => n + w.balance, 0))} ${c}`);
+  const notes = [gift ? `含赠送 ${gift}` : "", others.length ? `另有 ${others.join("、")}` : ""].filter(Boolean);
+  return { remaining: sum(normal) + sum(bonus), used: null, total: null, unit, planName: notes.length ? notes.join("，") : null };
+}
+
+/** `unauthorized`: what a 401 or 403 means here; `noRedirect`: a sign-in in the headers never follows a redirect elsewhere. */
+async function getJson(ask: BalanceAsk, url: string, headers: Record<string, string>, opts: { unauthorized?: string; noRedirect?: boolean } = {}): Promise<unknown> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -146,12 +181,14 @@ async function getJson(ask: BalanceAsk, url: string, headers: Record<string, str
   const res = await (ask.fetch ?? fetch)(parsed, {
     method: "GET",
     headers: { Accept: "application/json", "User-Agent": "amo-studio/1.0", ...headers },
+    ...(opts.noRedirect ? { redirect: "error" as const } : {}),
     signal: AbortSignal.timeout(ask.timeoutMs ?? 10_000),
   }).catch((err: unknown) => {
     const name = err instanceof Error ? err.name : "";
-    throw new BalanceError(name === "TimeoutError" || name === "AbortError" ? "查询超时（10 秒）" : `连不上 ${parsed.host}`);
+    throw new BalanceError(name === "TimeoutError" || name === "AbortError" ? "查询超时（10 秒）" : opts.noRedirect ? `连不上 ${parsed.host}，或它要跳转到别处` : `连不上 ${parsed.host}`);
   });
   const text = await res.text();
+  if ((res.status === 401 || res.status === 403) && opts.unauthorized) throw new BalanceError(opts.unauthorized);
   if (!res.ok) throw new BalanceError(`${parsed.host} 返回 ${res.status}${res.status === 401 || res.status === 403 ? "：Key 或令牌不对" : res.status === 404 ? "：这个站没有这个查询接口" : ""}`);
   try {
     return JSON.parse(text) as unknown;

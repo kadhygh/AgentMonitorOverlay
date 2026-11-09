@@ -27,6 +27,8 @@ export function useBalance(link: HostLink, profile: ModelProfile | undefined): {
   const [balance, setBalance] = useState<ChannelBalance | null>(null);
   const [loading, setLoading] = useState(false);
   const id = profile?.balance ? profile.id : null;
+  // Asked again when the profiles change (2026-11-09: the built-in DeepSeek's sign-in switched between the desktop
+  // app's account and the key, and its balance is asked the other way); the Host keeps its own answer a minute.
   const load = useCallback(
     (refresh: boolean) => {
       if (!id || !link.url) return;
@@ -43,7 +45,7 @@ export function useBalance(link: HostLink, profile: ModelProfile | undefined): {
   useEffect(() => {
     setBalance(null);
     load(false);
-  }, [load]);
+  }, [load, profile]);
   return { balance, loading, refresh: () => load(true) };
 }
 

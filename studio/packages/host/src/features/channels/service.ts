@@ -15,7 +15,7 @@ import { Feature } from "../../core/feature.js";
  * the model pickers, and asking a channel's site for its balance. Changes go out as `profiles.updated`.
  */
 export class ChannelsFeature extends Feature {
-  private readonly balances = new Map<string, { at: number; value: ChannelBalance }>();
+  private readonly balances = new Map<string, { at: number; value: ChannelBalance; template?: string }>();
 
   private get registry(): ChannelRegistry {
     const r = this.options.channels;
@@ -91,9 +91,10 @@ export class ChannelsFeature extends Feature {
     const ask = this.registry.balanceOf(profileId);
     if (!ask) throw new HostError("not_found", "这个渠道没有设置余额查询");
     const cached = this.balances.get(profileId);
-    if (cached && Date.now() - cached.at < (refresh ? 5_000 : 60_000)) return cached.value;
+    // Asked the other way a moment ago (the built-in DeepSeek's sign-in just changed, 2026-11-09): ask again.
+    if (cached && cached.template === ask.config.template && Date.now() - cached.at < (refresh ? 5_000 : 60_000)) return cached.value;
     const value = await askBalance({ profileId, ...ask });
-    this.balances.set(profileId, { at: Date.now(), value });
+    this.balances.set(profileId, { at: Date.now(), value, template: ask.config.template });
     return value;
   }
 

@@ -154,6 +154,40 @@ export function dshAccountSignedIn(file: string): boolean {
   }
 }
 
+/** DeepSeek Platform, where the desktop app's account signs in; its token goes nowhere else. */
+export const DSH_ACCOUNT_ORIGIN = "https://platform.deepseek.com";
+
+/**
+ * The desktop app's account sign-in (its token and the site that issued it), for the balance (2026-11-09: 选了 DS
+ * 登录就用 DS 登录的方式去查). Read when it is asked, kept nowhere, never logged. DSH writes the record as
+ * `records: / deepseek-account-platform/default: / kind: grant / payload: { version, token, issuer }`
+ * (`@deepseek-ai/dsh-credentials-local`); null when the file or the record is missing or not like that.
+ */
+export function readDshAccountGrant(file: string): { token: string; issuer: string } | null {
+  let lines: string[];
+  try {
+    lines = readFileSync(file, "utf8").split(/\r?\n/);
+  } catch {
+    return null;
+  }
+  const at = lines.findIndex((l) => ACCOUNT_RECORD.test(l));
+  if (at < 0) return null;
+  const indentOf = (l: string) => l.length - l.trimStart().length;
+  const own = indentOf(lines[at]!);
+  const fields = new Map<string, string>();
+  for (const line of lines.slice(at + 1)) {
+    if (line.trim() && indentOf(line) <= own) break;
+    const m = /^\s+(kind|token|issuer):\s*(.*?)\s*$/.exec(line);
+    if (!m) continue;
+    const raw = m[2]!;
+    fields.set(m[1]!, /^(["']).*\1$/.test(raw) ? raw.slice(1, -1) : raw);
+  }
+  const token = fields.get("token") ?? "";
+  const issuer = (fields.get("issuer") ?? "").replace(/\/+$/, "");
+  if (fields.get("kind") !== "grant" || !/^[\x21-\x7e]+$/.test(token) || !issuer) return null;
+  return { token, issuer };
+}
+
 // DSH's DeepSeek routes: the API key's (`deepseek-official`) and the account's. Neither has config of its own in the
 // acp profile (checked 2026-11-07 with --dump-default-config), so a patch that gives one config loses nothing — but a
 // patch's config replaces the whole entry, so each of Studio's patches says everything Studio sets on a route.

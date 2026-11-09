@@ -88,4 +88,20 @@ describe("ChannelRegistry", () => {
     // Built-in balance queries read the profile's own key.
     expect(registry({ "glm-5.2": "g" }).r.balanceOf("claude-glm")).toMatchObject({ key: "g" });
   });
+
+  it("the built-in DeepSeek's balance is asked the way it signs in: the desktop app's account, or the key (2026-11-09)", () => {
+    const dsh: ModelProfile = { id: "dsh-deepseek", label: "DeepSeek", runtime: "dsh", provider: null, model: null, credentialId: "dsh-key" };
+    const make = (secrets: Record<string, string>, auth?: "account" | "key") => {
+      const store = kv();
+      if (auth) store.setKv("settings:dsh-auth", auth);
+      return new ChannelRegistry({ kv: store, credentials: new StaticCredentialReader(secrets), builtins: [dsh], codexProviders: {}, claudeProviders: {}, builtinBalance: { "dsh-deepseek": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } } }, dshAccountFile: "C:/x/.credentials.yaml" });
+    };
+    const account = { config: { template: "deepseek-account" }, key: null, accountFile: "C:/x/.credentials.yaml" };
+    const key = { config: { template: "deepseek" }, key: "sk" };
+    expect(make({ "dsh-key": "sk" }, "account").balanceOf("dsh-deepseek")).toMatchObject(account);
+    expect(make({ "dsh-key": "sk" }, "key").balanceOf("dsh-deepseek")).toMatchObject(key);
+    // Not chosen: the key when one is saved, else the account (as the sessions do).
+    expect(make({ "dsh-key": "sk" }).balanceOf("dsh-deepseek")).toMatchObject(key);
+    expect(make({}).balanceOf("dsh-deepseek")).toMatchObject(account);
+  });
 });
