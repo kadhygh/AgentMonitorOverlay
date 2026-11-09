@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { NO_REMOTE_ALLOWED, REMOTE_KINDS, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { NO_REMOTE_ALLOWED, REMOTE_KINDS, isCommon, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type Session, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { FeatureHost } from "../../core/feature.js";
 import type { RemoteUses } from "./service.js";
@@ -182,7 +182,17 @@ export class RemoteGrants {
   }
 
   private view(task: Task): RemoteTaskView {
-    return { id: task.id, title: task.title, ...(task.description ? { description: task.description } : {}), column: task.column, createdAt: task.createdAt, updatedAt: task.updatedAt };
+    return { id: task.id, title: task.title, ...(task.description ? { description: task.description } : {}), column: task.column, createdAt: task.createdAt, updatedAt: task.updatedAt, project: this.projectName(task.workspaceId) };
+  }
+
+  /** A project as the device sees it (2026-11-09): its name, never its folder (the path has the user's name in it); null: the common folder. */
+  private projectName(workspaceId: Id): string | null {
+    const ws = this.store.getWorkspace(workspaceId);
+    return ws && !isCommon(ws) ? ws.name : null;
+  }
+
+  private sessionPush(session: Session): RemotePush {
+    return { type: "session", session, project: this.projectName(session.workspaceId) };
   }
 
   private taskPush(task: Task): RemotePush {
@@ -294,7 +304,9 @@ export class RemoteGrants {
     const task = this.store.getTask(taskId);
     if (!task) throw new HostError("not_found", "任务已经不在了");
     const allowed = this.allowedFor(taskId);
-    return { task: this.view(task), sessions: this.store.listSessions({ taskId }), profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt };
+    const sessions = this.store.listSessions({ taskId });
+    const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
@@ -513,7 +525,17 @@ ${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
       }
       case "session.upserted":
         this.taskOf.set(e.session.id, e.session.taskId);
-        for (const g of to(e.session.taskId)) this.push(g, { type: "session", session: e.session });
+        for (const g of to(e.session.taskId)) this.push(g, this.sessionPush(e.session));
+        return;
+      // A project renamed here: the granted tasks and sessions in it say its new name there.
+      case "workspace.upserted":
+        for (const taskId of new Set(grants.map((g) => g.taskId))) {
+          const task = this.store.getTask(taskId);
+          if (!task || task.archivedAt) continue;
+          const gs = to(taskId);
+          if (task.workspaceId === e.workspace.id) for (const g of gs) this.push(g, this.taskPush(task));
+          for (const s of this.store.listSessions({ taskId })) if (s.workspaceId === e.workspace.id) for (const g of gs) this.push(g, this.sessionPush(s));
+        }
         return;
       case "item.appended":
       case "item.updated": {

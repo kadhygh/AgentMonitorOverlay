@@ -1,9 +1,9 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import type { RemoteState, Session, Task } from "@amo-studio/protocol";
+import type { RemoteState, Session, Task, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
@@ -81,10 +81,16 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await a.api("POST", `/api/remote/requests/${asked.incoming[0]!.id}/answer`, { allow: true });
   await until(() => b.api<RemoteState>("GET", "/api/remote"), (s) => s.peers[0]?.online === true, "B sees A online");
 
-  // A: a task with a session that has answered.
-  const { task, session } = await a.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "远程一起做的任务", firstSession: { profileId: "codex-mock", text: "先说一句" } });
+  // A: a task in a project, with a session that has answered.
+  const projectDir = join(root, "远程项目");
+  mkdirSync(projectDir, { recursive: true });
+  const project = await a.api<Workspace>("POST", "/api/workspaces", { path: projectDir, name: "游戏客户端" });
+  const { task, session } = await a.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "远程一起做的任务", workspaceId: project.id, firstSession: { profileId: "codex-mock", text: "先说一句" } });
+  await a.page.getByTestId("scope-all").click();
   await a.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" }).click();
   await expect(a.page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 60_000 });
+  // 2026-11-09: the session's bar names its project.
+  await expect(a.page.getByTestId("session-project")).toHaveText("游戏客户端");
 
   // A grants it from the task page: ⋯ → 授权给… → B 笔记本.
   await a.page.getByTestId("task-more").click();
@@ -103,7 +109,7 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   const remote = a.page.getByRole("dialog", { name: "远程", exact: true });
   const grant = remote.getByTestId("remote-grants").getByTestId("remote-grant");
   await expect(grant).toContainText("远程一起做的任务");
-  await expect(grant).toContainText("B 笔记本");
+  await expect(grant).toContainText("游戏客户端 · 给 B 笔记本");
   await expect(grant).toContainText("在线");
   // 打开: the task page; the dialog closes.
   await grant.getByTestId("remote-grant-open").click();
@@ -134,7 +140,8 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   // B: the task is on its board, marked remote, where it runs.
   const card = b.page.getByTestId("task-card").filter({ hasText: "远程一起做的任务" });
   await expect(card).toHaveAttribute("data-remote", "online", { timeout: 30_000 });
-  await expect(card.getByTestId("card-remote")).toHaveText("远程在 A 台式机 上");
+  // 2026-11-09 (the user: 远程操控时要求能看到 task 属于哪个 project): and in which of its projects.
+  await expect(card.getByTestId("card-remote")).toHaveText("远程在 A 台式机 上· 游戏客户端");
   await screenshot(b.app, "studio", "remote-b-board", b.page);
   // 2026-11-04: the reply A's session ended with before the grant is not 完成待审核 in B's Focus (B never opened it).
   const bFocus = await turnOnFocus(b.page, b.app);
@@ -145,6 +152,8 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
   await expect(b.page.getByTestId("task-title")).toHaveText("远程一起做的任务");
   await expect(b.page.getByTestId("remote-banner")).toHaveAttribute("data-state", "online");
   await expect(b.page.getByTestId("task-remote-where")).toContainText("在 A 台式机 上（台式机的我）");
+  await expect(b.page.getByTestId("task-project")).toHaveText("游戏客户端");
+  await expect(b.page.getByTestId("session-project")).toHaveText("游戏客户端");
   await expect(b.page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 30_000 });
   // 2026-10-30: one line — where it runs and its model; the explanation folds out under the title.
   const banner = b.page.getByTestId("remote-banner");

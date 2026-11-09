@@ -85,7 +85,7 @@ private fun pending(e: Entry) = (e.type == "approval" || e.type == "question") &
     LaunchedEffect(atBottom, newest) { if (atBottom) seen = newest }
     val pinned = remember(rows) { reversed.indexOfFirst { it is ItemRow && pending(it.entry) } }
     val pinnedVisible = pinned >= 0 && list.layoutInfo.visibleItemsInfo.any { it.index == pinned }
-    val status = session?.let { s -> listOfNotNull(if (s.archived) "已归档" else if (running) "正在回复…" else sessionStatusLabel(s.state), state.profiles.find { it.first == s.profileId }?.second).joinToString(" · ") }
+    val status = session?.let { s -> listOfNotNull(if (s.archived) "已归档" else if (running) "正在回复…" else sessionStatusLabel(s.state), state.profiles.find { it.first == s.profileId }?.second, s.project).joinToString(" · ") }
 
     Column(Modifier.fillMaxSize()) {
         TopBar(session?.title?.ifBlank { null } ?: "未命名会话", status, back = back) {

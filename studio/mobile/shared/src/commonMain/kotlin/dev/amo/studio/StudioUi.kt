@@ -138,6 +138,7 @@ private fun taskTone(t: RemoteTask): Tone {
                         live.count { needsYou(it.state) }.takeIf { it > 0 }?.let { add("$it 个等你") }
                         if (none()) add(if (live.isEmpty()) "还没有会话" else "${live.size} 个会话")
                         if (computers.size > 1 && filter.isEmpty()) add(t.peer.name)
+                        t.project?.let { add(it) }
                         if (t.description.isNotBlank()) add(t.description.lineSequence().first())
                     }
                     ListRow(t.title.ifBlank { "未命名任务" }, parts.joinToString(" · "), taskTone(t), shortTime(t.activeAt), tag = "task-row") { open(t, null) }
@@ -181,7 +182,7 @@ private fun taskTone(t: RemoteTask): Tone {
     val children = live.filter { it.parentId != null && it.parentId in ids }.groupBy { it.parentId!! }
     val roots = live.filter { it.parentId == null || it.parentId !in ids }.sortedByDescending { it.updatedAt }
     fun model(s: RemoteSession) = state.profiles.find { it.first == s.profileId }?.second
-    val subtitle = listOfNotNull(task.peer.name + if (task.peer.online) "" else "（离线）", "${live.size} 个会话", if (task.revoked) "授权已撤回" else null).joinToString(" · ")
+    val subtitle = listOfNotNull(task.peer.name + if (task.peer.online) "" else "（离线）", task.project, "${live.size} 个会话", if (task.revoked) "授权已撤回" else null).joinToString(" · ")
     Column(Modifier.fillMaxSize()) {
         TopBar(task.title.ifBlank { "未命名任务" }, subtitle, back = back) { IconAction(AmoIcons.Refresh, "刷新", enabled = state.connected) { repo.refresh(force = true) } }
         Box(Modifier.weight(1f)) {
@@ -193,7 +194,8 @@ private fun taskTone(t: RemoteTask): Tone {
                 fun LazyListScope.branch(s: RemoteSession, depth: Int) {
                     val kids = children[s.id].orEmpty().sortedByDescending { it.updatedAt }
                     item(s.id) {
-                        val parts = listOfNotNull(sessionStatusLabel(s.state), when (s.kind) { "sub" -> "子代理"; "fork" -> "分支"; else -> null }, model(s), if (kids.isNotEmpty()) "${kids.size} 个子会话" else null)
+                        // Its project only where it is not the task's (that one is in the bar above; 2026-11-09).
+                        val parts = listOfNotNull(sessionStatusLabel(s.state), when (s.kind) { "sub" -> "子代理"; "fork" -> "分支"; else -> null }, model(s), s.project?.takeIf { it != task.project }, if (kids.isNotEmpty()) "${kids.size} 个子会话" else null)
                         ListRow(s.title.ifBlank { "未命名会话" }, parts.joinToString(" · "), toneOf(s.state), shortTime(s.updatedAt), tag = "session-row", indent = depth.coerceAtMost(3)) { repo.selectSession(s) }
                     }
                     if (kids.isNotEmpty()) {

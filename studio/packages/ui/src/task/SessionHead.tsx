@@ -7,7 +7,7 @@ import { openInEditor, revealInExplorer } from "../lib/openin.js";
 import { useVsCode } from "../files/FileLinks.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { EditableName } from "./EditableName.js";
-import { PopMenu, below, type Anchor } from "./TaskHead.js";
+import { PopMenu, below, folderIcon, type Anchor } from "./TaskHead.js";
 
 // The bar over a session's conversation and the banners under it (stage 16 split out of TaskPage.tsx).
 
@@ -27,6 +27,7 @@ export function SessionHead({
   session,
   topicId,
   model,
+  project,
   workdir,
   busy,
   tracked,
@@ -44,6 +45,11 @@ export function SessionHead({
   topicId?: string | null;
   /** The model as shown ("Opus 5.5 · 高"). */
   model: string;
+  /**
+   * The project the session works in, by name (2026-11-09, the user: session 也要显示属于哪个 project; a session can be
+   * in another one than its task's): null for the common folder; absent where it is not known (an older remote computer).
+   */
+  project?: string | null;
   /** The folder the session works in. */
   workdir: string | undefined;
   busy: boolean;
@@ -87,6 +93,13 @@ export function SessionHead({
       <span className="thread-model" data-testid="thread-model">
         {model}
       </span>
+      {project !== undefined && (
+        <span className="thread-project" title={project ? `项目：${project}${remote ? "（在那台电脑上）" : ""}${dir ? `
+${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testid="session-project">
+          {folderIcon}
+          <span className="thread-project-name">{project ?? "未指定项目"}</span>
+        </span>
+      )}
       <CopyId id={session.id} label="会话" className="thread-id" testId="session-id" />
       {/* 仅工作台 is the usual case and says nothing; the other writers matter. */}
       {writer && !session.archivedAt && session.writer !== "workbench" && (

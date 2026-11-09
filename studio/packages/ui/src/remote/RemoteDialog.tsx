@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { DEFAULT_REMOTE_SECURITY, NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteSecurity, type RemoteStart, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, PEER_PRESENCE_LABEL, peerPresence, projectWorkspaces, REMOTE_PERMISSION_LABEL, REMOTE_PERMISSIONS, remoteCreateOpen, RUNTIME_LABELS, type ModelProfile, type PeerPresence, type RemoteAllowed, type RemoteAllowedProjects, type RemoteConnection, type RemotePeer, type RemotePermission, type RemotePingResult, type RemoteSecurity, type RemoteStart, type RemoteState, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { relativeTime } from "../lib/status.js";
@@ -112,6 +112,11 @@ export function RemoteDialog({
 }) {
   const remote = useRemote(link);
   const taskTitle = (id: string) => tasks.find((t) => t.id === id)?.title || "未命名任务";
+  // 2026-11-09 (the user: 远程操控时要求能看到 task 属于哪个 project): a granted task's project, as the device sees it too.
+  const projectOf = (id: string) => {
+    const ws = workspaces.find((w) => w.id === tasks.find((t) => t.id === id)?.workspaceId);
+    return ws && !isCommon(ws) ? ws.name : "未指定项目";
+  };
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [pings, setPings] = useState<Record<string, RemotePingResult | "busy">>({});
@@ -308,7 +313,7 @@ export function RemoteDialog({
                         <span className="remote-row-main">
                           <span className="remote-card-title">{taskTitle(g.taskId)}</span>
                           <span className="settings-hint">
-                            给 {g.name}（{g.account}）· {relativeTime(g.grantedAt)}授权
+                            {projectOf(g.taskId)} · 给 {g.name}（{g.account}）· {relativeTime(g.grantedAt)}授权
                           </span>
                           <Presence peer={peer} />
                         </span>
@@ -342,7 +347,10 @@ export function RemoteDialog({
                       <div key={t.id} className="remote-row" data-testid="remote-copy" data-state={st?.state}>
                         <span className="remote-row-main">
                           <span className="remote-card-title">{t.title || "未命名任务"}</span>
-                          <span className="settings-hint">在 {t.remote!.name}</span>
+                          <span className="settings-hint" data-testid="remote-copy-where">
+                            在 {t.remote!.name}
+                            {t.remote!.project !== undefined && ` · ${t.remote!.project ?? "未指定项目"}`}
+                          </span>
                           <span className={`remote-presence remote-presence-${st?.state === "online" ? "online" : st?.state === "revoked" ? "offline" : "lost"}`}>
                             <span className="dot" aria-hidden="true" />
                             {st?.state === "online" ? "在线" : (st?.label ?? "")}

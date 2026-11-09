@@ -412,6 +412,36 @@ describe("remote tasks between two Hosts (step 2)", () => {
   }, 60_000);
 });
 
+describe("projects of granted tasks (2026-11-09)", () => {
+  it("B's copy names A's project of the task and of each session (never its folder), follows a rename, and says null for the common folder", async () => {
+    const { a, b, toB } = await paired();
+    const main = a.service.projects.addWorkspace({ path: tempDir("granted-proj") });
+    const other = a.service.projects.addWorkspace({ path: tempDir("other-proj") });
+    const { task, session } = await a.service.tasks.createTask({ title: "项目里的任务", workspaceId: main.id, firstSession: { profileId: "p", text: "第一句" } });
+    // A session in another project (session_start's workspace; before the grant, which keeps delegations in the task's).
+    const elsewhere = await a.service.sessions.startPeer(session!.id, { text: "别处的", workspace: other.id });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    expect(copy!.remote).toMatchObject({ project: main.name, sessionProjects: { [session!.id]: main.name, [elsewhere.id]: other.name } });
+    expect(JSON.stringify(copy!.remote)).not.toContain(main.path);
+
+    // Renamed on A: the copy's task and session follow.
+    a.service.projects.updateWorkspace(main.id, { name: "改名的项目" });
+    await until(() => b.store.getTask(task.id)?.remote, (r) => r?.project === "改名的项目" && r.sessionProjects?.[session!.id] === "改名的项目", "B hears the rename");
+    expect(b.store.getTask(task.id)!.remote!.sessionProjects![elsewhere.id]).toBe(other.name);
+
+    // A session started later: B names its project too.
+    const later = await a.service.tasks.addSession(task.id, { profileId: "p" });
+    await until(() => b.store.getTask(task.id)?.remote?.sessionProjects?.[later.id], (p) => p === "改名的项目", "B names the new session's project");
+
+    // A task in A's common folder: null, not a name.
+    const { task: plain } = await a.service.tasks.createTask({ title: "公共目录的任务" });
+    a.remote.grant(plain.id, toB);
+    const plainCopy = await until(() => b.store.getTask(plain.id), (t) => t?.remote?.state === "active", "B's second copy");
+    expect(plainCopy!.remote!.project).toBeNull();
+  }, 60_000);
+});
+
 describe("remote limits on A", () => {
   it("delegated sessions in a granted task stay in its project and on allowed models", async () => {
     const { a, toB } = await paired();

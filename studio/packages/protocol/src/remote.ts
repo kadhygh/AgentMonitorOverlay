@@ -202,6 +202,10 @@ export interface TaskRemote {
   /** Of those, what new sessions may start with (A's 远端允许的模型); the first is the default. */
   allowed: Id[];
   grantedAt: Timestamp;
+  /** A's name of the task's project; null: A's common folder; absent: an older A, which does not say (RemoteTaskView.project). */
+  project?: string | null;
+  /** Each session's project as A names it (by session id), where A said: a session can work in another project than its task's. */
+  sessionProjects?: Record<Id, string | null>;
 }
 
 /** On A: a task granted to a paired device. */
@@ -336,7 +340,7 @@ export const REMOTE_KINDS = {
   push: "rt.push",
 } as const;
 
-/** A's task as B sees it: only what the grant shows (no project, topic or settings of A's). */
+/** A's task as B sees it: only what the grant shows (no topic or settings of A's; its project by name only). */
 export interface RemoteTaskView {
   id: Id;
   title: string;
@@ -344,12 +348,19 @@ export interface RemoteTaskView {
   column: TaskColumn;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  /**
+   * The project's name on A, null for A's common folder (2026-11-09, the user: 远程操控时要求能看到 task 属于哪个 project).
+   * Only the name: A's folder path has its user's name in it. An older A leaves it out.
+   */
+  project?: string | null;
 }
 
 export interface RemoteTaskSnapshot {
   task: RemoteTaskView;
   /** Every session of the task (its delegated sessions and subagents too), as A has them. */
   sessions: Session[];
+  /** Each session's project name on A (null: the common folder), by session id (2026-11-09). An older A leaves it out. */
+  sessionProjects?: Record<Id, string | null>;
   /** A's profiles the task's sessions run on, plus the allowed ones, with their names (A's ids). */
   profiles: Array<{ id: Id; label: string }>;
   /** A's ids of the models B may start sessions with; the first is the default. */
@@ -395,7 +406,8 @@ export type RemotePush =
   | { type: "revoked"; taskId: Id; reason: string }
   /** The task's title, description or column changed, or what new sessions may run on. */
   | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[] }
-  | { type: "session"; session: Session }
+  /** `project`: the session's project name on A (null: the common folder; 2026-11-09, an older A leaves it out). */
+  | { type: "session"; session: Session; project?: string | null }
   /** An item appended or changed. */
   | { type: "item"; item: SessionItem }
   /** Streaming text of an agent item (not stored on its own on either side). */

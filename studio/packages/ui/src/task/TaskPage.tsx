@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -350,7 +350,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       else await call(link, "POST /api/sessions/:id/items/:itemId/resend", { id, itemId });
     });
   };
-  const workdir = session ? workspaces.find((w) => w.id === session.workspaceId)?.path : undefined;
+  const sessionWorkspace = session ? workspaces.find((w) => w.id === session.workspaceId) : undefined;
+  const workdir = sessionWorkspace?.path;
+  // The session's project (2026-11-09): a copy's as its own computer names it (its workspace here is the common folder).
+  const sessionProject: string | null | undefined = !session ? undefined : task.remote ? (task.remote.sessionProjects?.[session.id] !== undefined ? task.remote.sessionProjects[session.id] : task.remote.project) : sessionWorkspace && !isCommon(sessionWorkspace) ? sessionWorkspace.name : null;
   const showError = (text: string) => setToast({ text, error: true });
 
   return (
@@ -654,6 +657,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               session={session}
               topicId={task.topicId}
               model={[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
+              {...(sessionProject !== undefined ? { project: sessionProject } : {})}
               workdir={workdir}
               busy={busy}
               {...(!task.archivedAt ? { tracked: focusPins.has(task.id), onTrack: () => focusPins.toggle(task.id) } : {})}

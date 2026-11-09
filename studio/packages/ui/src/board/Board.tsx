@@ -247,6 +247,12 @@ function TaskCard({
         <span className="card-where card-remote" data-testid="card-remote" title={`在 ${copy.name}（${task.remote!.account}）上运行：模型调用和命令都在那台电脑上`}>
           <span className="remote-badge">远程</span>
           <span className="card-remote-where">{off ? copy.label : `在 ${copy.name} 上`}</span>
+          {/* Its project on that computer (2026-11-09), when that computer says it. */}
+          {task.remote?.project !== undefined && (
+            <span className="card-remote-project" title={task.remote.project ? `${copy.name} 上的项目：${task.remote.project}` : `在 ${copy.name} 的公共目录里运行`} data-testid="card-remote-project">
+              · {task.remote.project ?? "未指定项目"}
+            </span>
+          )}
         </span>
       )}
       {(topic || noTopic || project) && !copy && (

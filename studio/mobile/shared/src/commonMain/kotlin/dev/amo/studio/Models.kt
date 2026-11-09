@@ -22,6 +22,8 @@ data class RemoteTask(
     val description: String = "",
     val updatedAt: String = "",
     val sessions: List<RemoteSession> = emptyList(),
+    /** Its project on the computer, as shown (2026-11-09): the name, 「未指定项目」 for the common folder; null where an older computer does not say. */
+    val project: String? = null,
 ) {
     val key: String get() = "${peer.identity}/$id"
     /** Newest activity of the task or any of its sessions (ISO times compare as text). */
@@ -37,6 +39,8 @@ data class RemoteSession(
     /** The session it hangs under: a subagent's or fork's parent, or the one that started it (session_start). */
     val parentId: String? = null,
     val updatedAt: String = "",
+    /** The project it works in, as shown (2026-11-09); null where the computer does not say. */
+    val project: String? = null,
 )
 data class StudioState(
     val account: Account? = null,

@@ -222,6 +222,8 @@ export class RemoteCopies {
       profiles: snap.profiles.map((p) => ({ id: remoteProfileId(peer.device, p.id), label: p.label })),
       allowed: snap.allowed.map((p) => remoteProfileId(peer.device, p)),
       grantedAt: snap.grantedAt,
+      // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
+      ...projectsOf(snap.task.project !== undefined ? snap.task.project : existing?.remote?.project, snap.sessionProjects ?? existing?.remote?.sessionProjects),
     };
     let task: Task;
     if (!existing) {
@@ -329,7 +331,7 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const remote: TaskRemote = { ...t.remote, profiles: p.profiles.map((x) => ({ id: remoteProfileId(peer.device, x.id), label: x.label })), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)) };
+        const remote: TaskRemote = { ...t.remote, profiles: p.profiles.map((x) => ({ id: remoteProfileId(peer.device, x.id), label: x.label })), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -341,6 +343,11 @@ export class RemoteCopies {
         // A session on a model the copy does not name yet, or whose parent is not here: the whole task again.
         const known = t.remote.profiles.some((x) => x.id === remoteProfileId(peer.device, p.session.profileId));
         if (!known || (p.session.parentId && !this.store.getSession(p.session.parentId))) return void later(() => this.syncTask(peer, t.id));
+        // The session's project, kept with the task (a copy's own workspace is this computer's common folder).
+        if (p.project !== undefined && t.remote.sessionProjects?.[p.session.id] !== p.project) {
+          const remote: TaskRemote = { ...t.remote, sessionProjects: { ...t.remote.sessionProjects, [p.session.id]: p.project } };
+          this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { remote }) });
+        }
         this.putSession(peer, p.session);
         return;
       }
@@ -534,4 +541,9 @@ export class RemoteCopies {
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;
   }
+}
+
+/** TaskRemote's project fields, only those A said. */
+function projectsOf(project: string | null | undefined, sessionProjects: Record<Id, string | null> | undefined): Pick<TaskRemote, "project" | "sessionProjects"> {
+  return { ...(project !== undefined ? { project } : {}), ...(sessionProjects ? { sessionProjects } : {}) };
 }

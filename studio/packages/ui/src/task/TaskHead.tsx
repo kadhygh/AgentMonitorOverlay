@@ -203,6 +203,9 @@ const Icon = {
   ),
 };
 
+/** The project's folder icon, for the session's bar too. */
+export const folderIcon = Icon.folder;
+
 /**
  * The line under the title (方案 A1): `● 进行中 · 📁 项目 · ⎇ 分支 · ☰ 专题 · #id`, separated by dots. Each part is a button
  * that looks like text until hovered.
@@ -231,14 +234,22 @@ export function TaskMeta({
       {COLUMN_NAMES[task.column]}
     </button>,
   ];
-  // 远程 (step 2): a copy runs in a project of another computer's, which this one does not show.
-  if (task.remote)
+  // 远程 (step 2): a copy runs in a project of another computer's; its name shows since 2026-11-09 (the user: 远程操控时要求
+  // 能看到 task 属于哪个 project), when that computer says it (an older one does not).
+  if (task.remote) {
     parts.push(
-      <span key="project" className="meta-item static" title="模型调用和命令都在那台电脑上，用的是那边的项目文件夹" data-testid="task-remote-where">
+      <span key="where" className="meta-item static" title="模型调用和命令都在那台电脑上，用的是那边的项目文件夹" data-testid="task-remote-where">
         <span className="remote-badge">远程</span>在 {task.remote.name} 上（{task.remote.account}）
       </span>,
     );
-  else if (workspace && !isCommon(workspace))
+    if (task.remote.project !== undefined)
+      parts.push(
+        <span key="project" className="meta-item static" title={task.remote.project ? `${task.remote.name} 上的项目` : `在 ${task.remote.name} 的公共目录里运行`} data-testid="task-project">
+          {Icon.folder}
+          {task.remote.project ?? "未指定项目"}
+        </span>,
+      );
+  } else if (workspace && !isCommon(workspace))
     parts.push(
       <span key="project" className="meta-item static" title={[workspace.path, workspace.description, "左栏右键项目可以改名字和说明"].filter(Boolean).join("\n")} data-testid="task-project">
         {Icon.folder}
