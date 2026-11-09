@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { StateSnapshot, Workspace } from "@amo-studio/protocol";
-import { launchStudio, screenshot, type Studio } from "../support/studio.js";
+import { selectAndRelease } from "../support/selection.js";
+import { launchStudio, screenshot, windowState, type Studio } from "../support/studio.js";
 
 // Stage 12, S12-B: Claude's questions (AskUserQuestion) open as a popup over the conversation and the answers reach the model;
-// a plan written in 只做计划 is reviewed in the conversation (要修改 sends the composer's text back, 批准并开始 leaves
-// plan mode). Real Claude Agent SDK against the mock Anthropic API; no model budget.
+// a plan written in 只做计划 is reviewed in its own window (2026-11-09: annotations and the window's own box go back
+// with 要修改, 批准并开始 leaves plan mode). Real Claude Agent SDK against the mock Anthropic API; no model budget.
 
 let studio: Studio | undefined;
 
@@ -96,55 +97,87 @@ test("answers Claude's questions in a popup over the conversation", async () => 
   await expect(page.getByTestId("question-record").last()).toHaveAttribute("data-state", "dismissed");
 });
 
-test("reviews a plan: changes from the composer, then approve and leave plan mode", async () => {
+test("reviews a plan in its own window: annotate and write, kept across closing, 要修改, then approve and leave plan mode", async () => {
   studio = await launchStudio({ transcriptView: "standard" });
   const { page, app } = studio;
   await openTask(studio, { text: "[[plan]] 先出一个计划", options: { permission: "plan" } });
 
+  // In the conversation: one row with 查看计划, not the plan itself; above the composer: 打开计划 and 批准并开始.
   const plan = page.getByTestId("plan-card").first();
   await expect(plan).toHaveAttribute("data-state", "pending", { timeout: 60_000 });
-  await expect(plan.locator(".md-h1")).toHaveText("给导入器加上失败重试");
-  await expect(plan.getByRole("button", { name: "展开全部计划" })).toBeVisible();
+  await expect(plan).toContainText("Claude 的计划：给导入器加上失败重试");
+  await expect(plan.locator(".md-h1")).toHaveCount(0);
   const bar = page.getByTestId("plan-review-bar");
   await expect(bar).toContainText("计划待审：给导入器加上失败重试");
+  await expect(bar.getByRole("button")).toHaveText(["打开计划", "批准并开始"]);
   await expect(page.getByTestId("switch-permission")).toContainText("只做计划");
   await expect(page.getByTestId("run-status")).toContainText("等你回答");
+  await expect(page.getByLabel("输入消息")).toHaveAttribute("placeholder", /打开计划/);
   await screenshot(app, "stage-12", "S12-B-plan-review", page);
 
-  // 要修改 with an empty composer: the composer collects the feedback and sends it back.
-  await bar.getByRole("button", { name: "要修改" }).click();
-  const composer = page.getByLabel("输入消息");
-  await expect(composer).toBeFocused();
-  await expect(composer).toHaveAttribute("placeholder", /写下要修改的地方/);
-  await composer.fill("测试也要覆盖超时");
-  await screenshot(app, "stage-12", "S12-B-plan-revise", page);
-  await composer.press("Enter");
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-PLAN", { timeout: 60_000 });
-  await expect(page.getByTestId("msg-agent").last()).toContainText("测试也要覆盖超时");
+  // The window: the plan, annotated where it is selected; what to change in its own box.
+  const opened = app.waitForEvent("window");
+  await plan.getByTestId("plan-card-open").click();
+  const win = await opened;
+  const doc = win.getByTestId("plan-window-doc");
+  await expect(doc.locator(".md-h1")).toHaveText("给导入器加上失败重试");
+  await expect(win.getByTestId("plan-window-state")).toHaveText("待你审阅");
+  expect(await windowState(app, "plan")).toMatchObject({ onScreen: false, anyFocused: false });
+  await selectAndRelease(doc, "指数退避");
+  await win.getByTestId("selection-bar").getByRole("button", { name: "批注" }).click();
+  const bubble = win.getByTestId("annotation-bubble");
+  await bubble.getByLabel("批注内容").fill("退避上限 30 秒");
+  await bubble.getByRole("button", { name: "保存" }).click();
+  await expect(win.getByTestId("plan-window-notes")).toContainText("退避上限 30 秒");
+  await win.getByTestId("plan-window-input").fill("测试也要覆盖超时");
+  await expect(win.getByTestId("plan-window-revise")).toHaveText("要修改（1 条批注）");
+  await screenshot(app, "stage-12", "S12-B-plan-window", win, "plan");
+  // The plan's annotation is the window's: the task page's 批注 panel does not count it.
+  await expect(page.getByTestId("annotation-count")).toHaveText("0");
+
+  // Closed and opened again (from the bar this time): what was written and annotated is still there.
+  await win.close();
+  const reopened = app.waitForEvent("window");
+  await bar.getByTestId("plan-bar-open").click();
+  const win2 = await reopened;
+  await expect(win2.getByTestId("plan-window-input")).toHaveValue("测试也要覆盖超时");
+  await expect(win2.getByTestId("plan-window-notes")).toContainText("退避上限 30 秒");
+
+  // 要修改: the text and the annotation go back to Claude together.
+  await win2.getByTestId("plan-window-revise").click();
+  const reply = page.getByTestId("msg-agent").last();
+  await expect(reply).toContainText("MOCK-PLAN", { timeout: 60_000 });
+  await expect(reply).toContainText("测试也要覆盖超时");
+  await expect(reply).toContainText("退避上限 30 秒");
   await expect(plan).toHaveAttribute("data-revised", "");
   await expect(plan).toContainText("已要求修改");
+  await expect(plan).toContainText("带 1 条批注");
+  await expect(win2.getByTestId("plan-window-feedback")).toContainText("退避上限 30 秒");
   await expect(bar).toHaveCount(0);
 
-  // The revised plan, approved: the session leaves 只做计划 for 每次询问.
+  // The revised plan: the open window moves to it (第 2 版), with an empty box; approved there.
+  const composer = page.getByLabel("输入消息");
   await composer.fill("[[plan]] 改好了");
   await composer.press("Enter");
   const second = page.getByTestId("plan-card").nth(1);
   await expect(second).toHaveAttribute("data-state", "pending", { timeout: 60_000 });
-  await second.getByRole("button", { name: "展开全部计划" }).click();
-  await expect(second).toContainText("补充单元测试：成功、重试后成功、全部失败");
-  await bar.getByRole("button", { name: "批准并开始" }).click();
+  await expect(win2.getByTestId("plan-window-state")).toHaveText("待你审阅");
+  await expect(win2.getByTestId("plan-version")).toContainText("第 2 版（待审）");
+  await expect(win2.getByTestId("plan-window-doc")).toContainText("补充单元测试：成功、重试后成功、全部失败");
+  await expect(win2.getByTestId("plan-window-input")).toHaveValue("");
+  await win2.getByTestId("plan-window-approve").click();
   await expect(second).toHaveAttribute("data-state", "answered");
   await expect(second).toContainText("已批准");
+  await expect(win2.getByTestId("plan-window-state")).toHaveText("已批准");
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-PLAN", { timeout: 60_000 });
   await expect(page.getByTestId("switch-permission")).toContainText("每次询问");
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.sessions.find((s) => s.runtime === "claude")!.options.permission).toBe("default");
-  // Scroll the thread (it follows the bottom until the person scrolls) so the approved plan shows.
-  // Under load the answered card can still be leaving the popup: wait for the one in the thread.
+  // Scroll the thread (it follows the bottom until the person scrolls) so the approved plan's row shows.
   const approved = page.getByTestId("thread").getByTestId("plan-card").filter({ hasText: "已批准" }).last();
   await expect(approved).toBeVisible();
-  // When the turn finishes the card is drawn once more, so the scroll may meet the old one: try again.
-  await expect(async () => approved.scrollIntoViewIfNeeded({ timeout: 2000 })).toPass();
+  // When the turn finishes the row is drawn once more, so the scroll may meet the old one: try again.
+  await expect(async () => approved.evaluate((el) => el.scrollIntoView({ block: "center" }))).toPass();
   await page.waitForTimeout(100);
   await screenshot(app, "stage-12", "S12-B-plan-approved", page);
 });

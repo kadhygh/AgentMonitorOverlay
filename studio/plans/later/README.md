@@ -15,6 +15,7 @@
 | [lan-file-transfer.md](lan-file-transfer.md) | AMO 文件快传（局域网传文件） | 10-31 首轮调查做完，范围没定，没开工 |
 | [canvas-workflow.md](canvas-workflow.md) | 画布工作流 canvasflow | 10-30 谈定方向，细节等用户想，没开工 |
 | [turn-changes-commands.md](turn-changes-commands.md) | 本轮改动把命令改的文件也列进来 | 11-06 谈了三种做法、实测了开销，用户定先维持现状，没开工 |
+| [plan-review-window-later.md](plan-review-window-later.md) | 计划窗口：远程设备和手机、和上一版对比 | 11-09 第一版（本机工作台）做完，这两项用户定先放着，没开工 |
 
 还没写成方案的小事（用户定了以后再说）：
 

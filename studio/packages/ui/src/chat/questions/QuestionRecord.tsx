@@ -11,6 +11,8 @@ import { PlanCard } from "./PlanReview.js";
 export interface QuestionSeat {
   isOpen(itemId: string): boolean;
   reopen(itemId: string): void;
+  /** Opens a plan in its window (2026-11-09); absent where there is no such window, and the plan shows in full. */
+  openPlan?(itemId: string): void;
 }
 export const QuestionSeatContext = createContext<QuestionSeat | null>(null);
 

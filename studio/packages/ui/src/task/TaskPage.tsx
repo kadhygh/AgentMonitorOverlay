@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
@@ -108,7 +108,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   }, [task.id, session?.id]);
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
-  const annotations = useAnnotations(link, session?.id ?? null);
+  const allAnnotations = useAnnotations(link, session?.id ?? null);
+  // A plan's annotations are the plan window's: they go with its 要修改, not from here (2026-11-09).
+  const annotations = useMemo(() => {
+    const plans = new Set(items.filter((i) => i.type === "question" && i.source === "plan-review").map((i) => i.id));
+    return plans.size ? allAnnotations.filter((a) => !plans.has(a.itemId)) : allAnnotations;
+  }, [allAnnotations, items]);
   const annotationRefs = useAnnotationRefs(session?.id ?? null, annotations);
   // The model by name ("GPT-6.1 Sol", "Opus 5.5"), also when it is the profile's default.
   const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);

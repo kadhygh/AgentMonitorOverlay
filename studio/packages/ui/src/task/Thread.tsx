@@ -191,8 +191,15 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   }, [session?.id]);
   const planReview = asked?.source === "plan-review" ? asked : null;
   const isRevising = !!planReview && revising === planReview.id;
+  // 计划窗口 (2026-11-09, plans/done/plan-review-window.md): a plan is read, annotated and answered in its own window; a
+  // session run on another computer, or a page without the app around it, keeps the plan card and the composer.
+  const openPlan = useMemo(
+    () => (sessionId && session?.runtime !== "remote" && window.amo?.openPlan ? (itemId?: string) => void window.amo?.openPlan?.({ sessionId, ...(itemId ? { itemId } : {}) }) : undefined),
+    [sessionId, session?.runtime],
+  );
   const seat = useMemo(
     () => ({
+      ...(openPlan ? { openPlan } : {}),
       isOpen: (id: string) => asked?.id === id && asked.source !== "plan-review" && !hiddenCards.has(id),
       reopen: (id: string) =>
         setHiddenCards((cur) => {
@@ -201,7 +208,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
           return next;
         }),
     }),
-    [asked, hiddenCards],
+    [asked, hiddenCards, openPlan],
   );
   const nativeQuestionOpen = !!asked && seat.isOpen(asked.id);
   const decision = decisions.find((d) => d.id === decisionId && !hiddenCards.has(d.id)) ?? decisions.find((d) => !hiddenCards.has(d.id));
@@ -346,7 +353,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
     ? "子 agent 不能单独接收消息，请在父会话里继续。"
     : blocked
       ? `${blocked}${readOnly ? "" : "（可以先写好）"}`
-      : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues, waitsForTurn: session?.runtime === "dsh" });
+      : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, planWindow: !!openPlan, generating, queues, waitsForTurn: session?.runtime === "dsh" });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // 立即发送 (2026-11-02): Claude and Codex (a remote copy's computer says what it can); DSH waits for the turn's end.
@@ -674,6 +681,7 @@ ${d}` : back));
               sessionId={session.id}
               item={planReview}
               revising={isRevising}
+              {...(openPlan ? { onOpen: () => openPlan(planReview.id) } : {})}
               onRevise={() => {
                 const text = draft.trim();
                 if (text) {

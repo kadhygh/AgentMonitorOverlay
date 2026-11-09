@@ -469,8 +469,30 @@
         { "label": "会话选项栏", "path": "studio/packages/ui/src/chat/SessionOptionsBar.tsx" },
         { "label": "会话行数据", "path": "studio/packages/ui/src/host/useSessionItems.ts" }
       ],
-      "related": ["studio.sessions", "studio.cli", "ui.shell"],
+      "related": ["studio.sessions", "studio.cli", "ui.shell", "ui.planReview"],
       "next": ["studio/plans/done/stage-9-chat.md"]
+    },
+    {
+      "id": "ui.planReview",
+      "label": "Claude 的计划审阅（计划窗口）",
+      "aliases": ["计划", "计划窗口", "计划审阅", "plan", "plan-review", "ExitPlanMode", "只做计划", "要修改", "批准并开始", "PlanApp"],
+      "category": "ui",
+      "purpose": "Claude 在「只做计划」里交来的计划（ExitPlanMode，会话里一条 source 为 plan-review 的 question）：对话里一行「查看计划」、输入框上面一条「打开计划 / 批准并开始」；计划在每个会话一个的独立窗口（#plan?session=…&item=…）里看、写批注、在自己的输入框写修改意见，要修改时文字和批注一起作为 revise 的 feedback 发回。远程会话和没有窗口的地方还是整张计划卡 + 输入框收修改意见。",
+      "steps": [
+        "改窗口界面：ui/src/plan/PlanApp.tsx（版本、批注、输入框草稿按 item 存 localStorage）和 plan.css。",
+        "改对话里的那一行和输入框上的条：chat/questions/PlanReview.tsx；Thread.tsx 里 openPlan 决定用窗口还是旧的卡片。",
+        "计划的批注是会话批注（Annotation.itemId 指向 question）：Host 的 review/service.ts 允许它，sendAnnotations 和任务页批注栏都不带它；revise 带 annotations 时在 sessions/service.ts 的 answerQuestion 里拼进 feedback。",
+        "窗口本身（Electron）：app/src/plan-window.ts，preload 的 openPlan。"
+      ],
+      "anchors": [
+        { "label": "计划窗口界面", "path": "studio/packages/ui/src/plan/PlanApp.tsx", "anchor": "export function PlanApp" },
+        { "label": "对话里的计划行和审阅条", "path": "studio/packages/ui/src/chat/questions/PlanReview.tsx", "anchor": "export function PlanReviewBar" },
+        { "label": "窗口（Electron）", "path": "studio/packages/app/src/plan-window.ts", "anchor": "export function installPlanWindows" },
+        { "label": "revise 带批注", "path": "studio/packages/host/src/features/sessions/service.ts", "anchor": "referencedAnnotations(sessionId, reply.annotations)" },
+        { "label": "Claude 交计划", "path": "studio/packages/host/src/runtime/claude/asks.ts", "anchor": "source: \"plan-review\"" }
+      ],
+      "related": ["ui.chat", "runtime.claude", "studio.gitReview"],
+      "next": ["studio/plans/done/plan-review-window.md"]
     },
     {
       "id": "ui.focus",

@@ -98,8 +98,11 @@ export type QuestionReply =
   | { action: "submit"; values: Record<string, unknown> }
   /** plan-review: approve and start (the session leaves plan mode) */
   | { action: "approve" }
-  /** plan-review: ask for changes */
-  | { action: "revise"; feedback: string }
+  /**
+   * plan-review: ask for changes. `annotations`: the plan's annotations (批注N) that go with it, after the text
+   * (composeAnnotationRefs; the plan window, 2026-11-09); then the text may be empty.
+   */
+  | { action: "revise"; feedback: string; annotations?: string[] }
   /** Any: close without answering. */
   | { action: "dismiss" };
 

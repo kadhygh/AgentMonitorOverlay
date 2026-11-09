@@ -85,6 +85,8 @@ declare global {
       openCanvasMini?(target: { topicId?: string }): Promise<void>;
       /** In the 画布小窗: keep it on top of other windows (or not); without a value, whether it is. */
       canvasMiniTop?(on?: boolean): Promise<boolean>;
+      /** 计划窗口 (2026-11-09): a session's plan (its latest, or the version `itemId`) in a window of its own. */
+      openPlan?(target: { sessionId: string; itemId?: string }): Promise<void>;
       /** One window drag's summary, for logs/resize-trace.log (Electron). */
       trace?(summary: unknown): void;
       windowControls?: {

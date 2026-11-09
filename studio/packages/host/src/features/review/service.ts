@@ -16,7 +16,9 @@ export class ReviewFeature extends Feature<"sessions"> {
     this.requireSession(sessionId);
     const item = this.store.getItem(String(input?.itemId ?? ""));
     if (!item || item.sessionId !== sessionId) throw new HostError("bad_request", "itemId must be an item of this session");
-    if (item.type !== "agent") throw new HostError("bad_request", "only agent replies can be annotated");
+    // A plan Claude asks to have reviewed is annotated in its window too (2026-11-09, plans/done/plan-review-window.md).
+    const source = item.type === "agent" ? item.markdown : item.type === "question" && item.source === "plan-review" ? (item.plan ?? "") : null;
+    if (source === null) throw new HostError("bad_request", "only agent replies and plans can be annotated");
     const quote = typeof input.quote === "string" ? input.quote : "";
     const note = typeof input.note === "string" ? input.note.trim() : "";
     if (!quote.trim()) throw new HostError("bad_request", "quote is required");
@@ -24,7 +26,7 @@ export class ReviewFeature extends Feature<"sessions"> {
     const start = Number(input.start);
     const end = Number(input.end);
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start) throw new HostError("bad_request", "start/end must be a non-empty range");
-    if (end > item.markdown.replace(/\r\n/g, "\n").length) throw new HostError("bad_request", "start/end lie outside the reply");
+    if (end > source.replace(/\r\n/g, "\n").length) throw new HostError("bad_request", "start/end lie outside the reply");
     const annotation: Annotation = {
       id: newId("an"),
       sessionId,
@@ -73,7 +75,8 @@ export class ReviewFeature extends Feature<"sessions"> {
 
   /** Sends all unsent annotations as one message (reply order, then position in the reply) and marks them sent. */
   async sendAnnotations(sessionId: Id): Promise<{ mode: SendMode; sent: Annotation[] }> {
-    const pending = this.annotations(sessionId).filter((a) => !a.sentAt);
+    // A plan's annotations go with its review (要修改 in the plan window), not as a message of their own.
+    const pending = this.annotations(sessionId).filter((a) => !a.sentAt && this.store.getItem(a.itemId)?.type !== "question");
     if (!pending.length) throw new HostError("bad_request", "no annotations to send");
     // The same message as referring to them from the composer (2026-10-15), without text of the person's own.
     const result = await this.f.sessions.sendMessage(sessionId, "", [], pending.map((a) => a.id));

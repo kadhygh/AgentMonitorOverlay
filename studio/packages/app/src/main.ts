@@ -16,6 +16,7 @@ import { installWindowControls, sendMaximized, setupReviewWindows, setupViewerWi
 import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
 import { installCanvasWindow } from "./canvas-window.js";
+import { installPlanWindows } from "./plan-window.js";
 import { ResizeTrace } from "./resize-trace.js";
 import { setupBotFlight } from "./bot-window.js";
 import { installFolderIpc } from "./folders.js";
@@ -659,6 +660,8 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
       // The file marks window (文件标记).
       installMarksWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       installCanvasWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
+      // 计划窗口 (2026-11-09): a plan Claude asks to have reviewed, one window per session.
+      installPlanWindows({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       if (!testMode) {
         // Displays unplugged, rearranged or rescaled: keep both windows reachable.
         const refit = () => {

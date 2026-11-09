@@ -227,7 +227,13 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
       const checked = formContent(item.form ?? [], reply.values);
       if ("error" in checked) throw new HostError("bad_request", checked.error);
     }
+    // 要修改 from the plan window (2026-11-09): the plan's annotations go after the person's words, as a message refers
+    // to them from the composer, and count as sent once Claude has the revision.
+    const referenced = reply.action === "revise" && reply.annotations?.length ? this.f.review.referencedAnnotations(sessionId, reply.annotations) : null;
+    if (reply.action === "revise" && referenced) reply.feedback = composeAnnotationRefs(reply.feedback, referenced.refs);
+    if (reply.action === "revise" && !reply.feedback.trim()) throw new HostError("bad_request", "feedback is required");
     await this.wrap(() => this.runtime.answerQuestion(sessionId, itemId, reply), "conflict");
+    referenced?.markSent();
     // Codex's async questions: the answer is the person's next message (the turn did not wait for it).
     if (item.source === "codex-async" && reply.action === "answer") await this.sendMessage(sessionId, asyncAnswerText(item.questions ?? [], reply.answers));
   }
@@ -697,8 +703,12 @@ function questionReply(body: unknown): QuestionReply {
     case "dismiss":
     case "approve":
       return { action: b.action };
-    case "revise":
-      return { action: "revise", feedback: boundedText(b.feedback, "feedback", 20_000) };
+    case "revise": {
+      const annotations = Array.isArray(b.annotations) ? b.annotations.filter((a): a is string => typeof a === "string") : [];
+      // With annotations the words may be empty (checked again once they are put together).
+      const feedback = annotations.length && !(typeof b.feedback === "string" && b.feedback.trim()) ? "" : boundedText(b.feedback, "feedback", 20_000);
+      return { action: "revise", feedback, ...(annotations.length ? { annotations } : {}) };
+    }
     case "submit":
       if (!b.values || typeof b.values !== "object" || Array.isArray(b.values)) throw new HostError("bad_request", "values must be an object");
       return { action: "submit", values: b.values as Record<string, unknown> };

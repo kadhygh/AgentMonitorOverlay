@@ -1,0 +1,31 @@
+/* 计划窗口 (2026-11-09, plans/done/plan-review-window.md): the plan to read and annotate above, the person's review below —
+   the annotations made so far, a box for what to change, and the four answers. */
+
+.plan-win { height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+.plan-win-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--border); background: var(--panel); --titlebar-h: 40px; }
+.plan-win-bar .titlebar-mark { width: 18px; height: 18px; }
+.plan-win-bar > .win-controls { margin-left: 2px; }
+.plan-win-bar .win-btn { width: 40px; }
+.plan-win-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--chat-label); }
+.plan-win-session { flex: 0 2 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--chat-dim); }
+.plan-win-bar select { flex: none; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; }
+.plan-win-bar .spacer { flex: 1; }
+
+.plan-win-empty { flex: 1; display: grid; place-items: center; color: var(--chat-dim); font-size: 13px; }
+.plan-win-body { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+.plan-win-doc { max-width: var(--chat-width); margin: 0 auto; padding: 20px 28px 32px; }
+
+.plan-win-review { flex: none; display: flex; flex-direction: column; gap: 8px; max-height: 45vh; padding: 10px 14px 12px; border-top: 1px solid var(--border); background: var(--panel); }
+.plan-win-review.done { overflow-y: auto; gap: 4px; font-size: 13px; line-height: 21px; }
+.plan-win-notes { display: flex; flex-direction: column; gap: 2px; min-height: 0; max-height: 140px; overflow-y: auto; }
+.plan-win-note { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; line-height: 22px; }
+.plan-win-note-n { flex: none; padding: 0; border: none; background: none; font: inherit; font-size: 12px; color: var(--attention); cursor: pointer; }
+span.plan-win-note-n { cursor: default; }
+.plan-win-note-quote { flex: 0 1 auto; max-width: 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chat-dim); }
+.plan-win-note-quote::before { content: "「"; }
+.plan-win-note-quote::after { content: "」"; }
+.plan-win-note-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.plan-win-note .icon-btn { flex: none; }
+.plan-win-input { height: auto; min-height: 76px; max-height: 30vh; padding: 8px 10px; line-height: 1.6; resize: vertical; font-family: inherit; }
+.plan-win-actions { display: flex; align-items: center; gap: 8px; }
+.plan-win-actions .spacer { flex: 1; }

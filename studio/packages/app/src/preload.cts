@@ -131,6 +131,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** 画布小窗 (2026-10-27): a topic's canvas in the small window on top; and, there, whether it stays on top. */
   openCanvasMini: (target: { topicId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-canvas-mini", target),
   canvasMiniTop: (on?: boolean): Promise<boolean> => electron.ipcRenderer.invoke("amo:canvas-mini-top", on),
+  /** 计划窗口 (2026-11-09): the plan of a session (its latest, or the version `itemId`) in its own window. */
+  openPlan: (target: { sessionId: string; itemId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-plan", target),
   openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   /** 在中转里打开 (2026-11-05): whether this computer has an AMO 中转 client Studio can find; and showing a thread in it. */
