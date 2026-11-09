@@ -377,7 +377,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
           </span>
         )}
       </div>
-      {item.delivery && <DeliveryLine itemId={item.id} delivery={item.delivery} />}
+      {item.delivery && <DeliveryLine itemId={item.id} delivery={item.delivery} withPerson={item.withPerson === true} />}
     </div>
   );
 }
@@ -386,7 +386,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
  * 立即发送 (2026-11-02): a message sent while the model worked and not read yet (Claude: after its next tool call or at
  * the turn's end; Codex: at its next step), or one whose process went before reading it.
  */
-function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]> }) {
+function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]>; withPerson: boolean }) {
   const { onDelivery, givingWay, waitsForSubagents } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
@@ -397,21 +397,26 @@ function DeliveryLine({ itemId, delivery }: { itemId: string; delivery: NonNulla
   // 问题 #16: once 立即发送 is under way (this button, or Ctrl+Enter in the composer) the row says so until it is read.
   const interrupting = delivery === "waiting" && (asked || givingWay);
   const forSubagents = delivery === "waiting" && waitsForSubagents;
+  // 2026-11-08: went in right behind the person's message after a pause; read next by itself, so no 立即发送 (it would
+  // cut off the person's own turn). Ctrl+Enter in the composer still makes the turn give way.
+  const behindPerson = delivery === "waiting" && withPerson && !interrupting && !forSubagents;
   const title = interrupting
     ? "正在让模型停下当前这一步，停下后马上读到这条（它手上的命令或输出可能要几秒才收得住）"
-    : held
-      ? "这条是 AMO 替别处转来的（中转回复、值守、传话、子会话的回报…）：等会话这一轮做完再送进去，不打断它；Studio 重启了也会接着送"
-      : forSubagents
-        ? "DSH 要等它开的子 agent 都跑完，这一轮才结束，这条要等那时才送到。「立即发送」会打断这一轮。不想等的话，让它用 AMO 的子会话（session_start）开子 agent"
-        : waiting
-        ? "模型还没读到这条：工具调用后或这一轮结束时读到"
-        : "这条消息没送进会话（会话的进程没了，或者送的时候出错了），模型没读到它";
+    : behindPerson
+      ? "你停下会话期间转来的消息，已经随你刚发的消息一起送进去了（排在它后面），模型接下来会读到，不用再点"
+      : held
+        ? "这条是 AMO 替别处转来的（中转回复、值守、传话、子会话的回报…）：等会话这一轮做完再送进去，不打断它；Studio 重启了也会接着送"
+        : forSubagents
+          ? "DSH 要等它开的子 agent 都跑完，这一轮才结束，这条要等那时才送到。「立即发送」会打断这一轮。不想等的话，让它用 AMO 的子会话（session_start）开子 agent"
+          : waiting
+            ? "模型还没读到这条：工具调用后或这一轮结束时读到"
+            : "这条消息没送进会话（会话的进程没了，或者送的时候出错了），模型没读到它";
   return (
-    <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : delivery}>
+    <div className={`msg-delivery ${delivery}${interrupting ? " interrupting" : ""}`} data-testid="msg-delivery" data-delivery={interrupting ? "interrupting" : behindPerson ? "behind-person" : delivery}>
       <span className="msg-delivery-state" title={title}>
-        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : forSubagents ? "◐ 等子 agent 跑完后送到" : waiting ? "◐ 等待送达" : "! 没送到"}
+        {interrupting ? "◐ 正在打断当前这一步，停下后马上发出…" : behindPerson ? "◐ 已随你刚发的消息一起送进去，模型接下来会读到" : held ? (asked ? "◐ 正在送进去…" : "◐ 等这一轮结束后送进去") : forSubagents ? "◐ 等子 agent 跑完后送到" : waiting ? "◐ 等待送达" : "! 没送到"}
       </span>
-      {onDelivery && !interrupting && (
+      {onDelivery && !interrupting && !behindPerson && (
         <button
           type="button"
           className="msg-delivery-btn"

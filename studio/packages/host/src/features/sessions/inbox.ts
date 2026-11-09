@@ -34,6 +34,8 @@ export class SessionInbox extends Feature {
   /** One delivery at a time per session; `again`: something came meanwhile, look once more after it. */
   private readonly flushing = new Map<Id, Promise<void>>();
   private readonly again = new Set<Id>();
+  /** Of `again`: the look once more is the person's message ending a pause (withTurn), not to be lost behind a running delivery. */
+  private readonly againWithTurn = new Set<Id>();
   /**
    * Sessions the person stopped (2026-11-04, the user): what is held waits for their next message, and goes in with it,
    * or for 立即发送 — a session stopped on purpose is not started again by a reply arriving. Until the Host restarts.
@@ -60,7 +62,7 @@ export class SessionInbox extends Feature {
     const s = this.store.getSession(sessionId);
     if (!s || this.told.has(sessionId)) return;
     this.told.add(sessionId);
-    const message = "你停下了这个会话：别的会话、中转、值守发来的消息先不送进去，等你发下一条消息时一起送；想现在送就点它旁边的「立即发送」。";
+    const message = "你停下了这个会话：别的会话、中转、值守发来的消息先不送进去，等你发下一条消息时，排在它后面一起送进去；想现在送就点它旁边的「立即发送」。";
     this.publish({ type: "item.appended", item: this.store.appendItem(this.row(s, { type: "notice", level: "info", message }, "inbox/paused")) });
   }
 
@@ -115,11 +117,13 @@ export class SessionInbox extends Feature {
     const running = this.flushing.get(sessionId);
     if (running) {
       this.again.add(sessionId);
+      if (withTurn) this.againWithTurn.add(sessionId);
       return running;
     }
     const p = this.deliver(sessionId, withTurn).finally(() => {
       this.flushing.delete(sessionId);
-      if (this.again.delete(sessionId)) void this.flush(sessionId).catch(() => undefined);
+      const turn = this.againWithTurn.delete(sessionId);
+      if (this.again.delete(sessionId)) void this.flush(sessionId, turn).catch(() => undefined);
     });
     this.flushing.set(sessionId, p);
     return p;
@@ -135,6 +139,9 @@ export class SessionInbox extends Feature {
     }
     if (this.paused.has(sessionId)) return;
     if (!free(s) && !(withTurn && s.status === "running" && writable(s))) return;
+    // Behind the person's message (2026-11-08): marked so the row says it goes in by itself (see `withPerson`). Not by
+    // status: a Codex session shows `running` only once turn/started comes back, after the person's send has returned.
+    const behindPerson = withTurn;
     const rt = this.runtime;
     // The first starts a turn; the others follow it at once (queued at the CLI, steered in, or DSH's next turn) — once
     // the turn is seen to run: Codex tells it (turn/started) only after its turn/start, and a second turn/start before
@@ -147,6 +154,8 @@ export class SessionInbox extends Feature {
       before = current.seq;
       try {
         if (!rt.resend) throw new Error("this Host cannot send a held message");
+        // Set before sending: the runtime keeps the item's other fields when it changes its delivery.
+        if (behindPerson) this.publish({ type: "item.updated", item: this.store.replaceItem({ ...current, withPerson: true }) });
         await rt.resend(sessionId, it.id, []);
       } catch (err) {
         this.mark(it.id, "unsent");

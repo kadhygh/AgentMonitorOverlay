@@ -142,3 +142,33 @@ test("hands a Claude session to a terminal and takes it back", async () => {
   await page.getByLabel("输入消息").press("Enter");
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after reclaim", { timeout: 60_000 });
 });
+
+// 2026-11-08 (the user: 停止 → 将留言转进 → 重发 → 留言的「立即发送」打断了自己重发的那一轮): a mail forwarded into a
+// session the person stopped is held; their next message ends the pause and it goes in right behind it — the row says so
+// and has no 立即发送.
+test("a mail forwarded after 停止 goes in behind the person's next message, without 立即发送", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const { session } = await studio.api<{ session: { id: string } }>("POST", "/api/tasks", { title: "停下后留言", workspaceId: ws.id, firstSession: { profileId: "claude-mock", text: "[[slow]]" } });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByRole("button", { name: "排队" })).toBeVisible({ timeout: 60_000 });
+  await studio.api("POST", `/api/sessions/${session.id}/interrupt`, {});
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
+
+  const mail = await studio.api<{ id: string }>("POST", "/api/mail", { to: { kind: "session", sessionId: session.id }, text: "kill 那边合完了" });
+  await studio.api("POST", `/api/mail/${mail.id}/forward`, {});
+  const line = page.getByTestId("msg-delivery");
+  await expect(line).toHaveAttribute("data-delivery", "held");
+  await expect(page.getByText("排在它后面一起送进去")).toBeVisible();
+
+  const composer = page.getByLabel("输入消息");
+  await composer.fill("[[slow]]");
+  await composer.press("Enter");
+  await expect(line).toHaveAttribute("data-delivery", "behind-person", { timeout: 10_000 });
+  await expect(line).toContainText("已随你刚发的消息一起送进去");
+  await expect(line.getByTestId("send-now")).toHaveCount(0);
+  await screenshot(studio.app, "studio", "inbox-behind-person", page);
+  await expect(page.getByTestId("msg-agent").last()).toContainText("kill 那边合完了", { timeout: 60_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+});

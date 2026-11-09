@@ -387,8 +387,11 @@ export type SessionItem =
    * `images`: pictures sent with the message (stage 11). `delivery` (立即发送, 2026-11-02): `waiting` — sent while a turn
    * ran and not read by the model yet (Claude reads it after the next tool call or at the turn's end, Codex at its next
    * step); `unsent` — its process went before it was read (it can be sent again). Absent: it reached the model.
+   * `withPerson` (2026-11-08): a held one that went in right behind the person's message that ended a pause (inbox.ts,
+   * resume) — the model reads it next by itself, so the row says so and offers no 立即发送 (which would cut off the
+   * person's own turn; the user: 「留言的立即发送 触发了 打断重发」).
    */
-  | (ItemBase & { type: "user"; text: string; images?: MessageImage[]; delivery?: UserDelivery })
+  | (ItemBase & { type: "user"; text: string; images?: MessageImage[]; delivery?: UserDelivery; withPerson?: true })
   | (ItemBase & { type: "agent"; markdown: string; streaming: boolean })
   /** The model's thinking before or between steps. */
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })

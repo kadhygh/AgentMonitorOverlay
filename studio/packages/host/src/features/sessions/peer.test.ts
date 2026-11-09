@@ -352,6 +352,9 @@ describe("the session inbox", () => {
     await service.sessions.sendMessage(s.id, "接着做");
     await until(() => deliveries(s.id).every((d) => d === undefined || d === "waiting"));
     expect(userTexts(s.id).at(-1)).toBe("接着做");
+    // 2026-11-08: marked as gone in behind the person's message, so the row offers no 立即发送 (it would cut their turn off).
+    const users = store.listItems(s.id).filter((i) => i.type === "user");
+    expect(users.map((i) => (i as { withPerson?: boolean }).withPerson)).toEqual([undefined, true, true, undefined]);
     await until(() => store.getSession(s.id)?.status === "idle");
     expect(deliveries(s.id).every((d) => d === undefined)).toBe(true);
   });
