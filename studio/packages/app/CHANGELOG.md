@@ -4,6 +4,8 @@
 
 ## 下一版
 
+## 0.9.56（2026-11-09）
+
 - 项目里开着 SSE 连接的 MCP（比如 gorilla-canvas）时，DeepSeek 会话也能开起来了。以前 Studio 把它原样交给 DeepSeek（DSH），DSH 不支持 SSE，直接报「Invalid params: mcpServers[…] transport sse is not supported」，整个会话起不来，用 `session_start` 拉起的 DeepSeek 子会话也一样，只能去关掉项目里的 MCP。现在 DeepSeek 会话只带 DSH 支持的 MCP，带不上的不带，会话里多一行说明是哪个、为什么没带；其他 MCP 照常可用，DSH 以后支持了会自动带上。Codex 本来就带不上 SSE 的 MCP，以前是不声不响地跳过，现在新会话里也会说明。Claude 会话不受影响。
 
 - 任务页顶上中转的那几行不再一直挤占空间。超过一行时只显示第一行，后面接着「还有 N 条中转」，点开看全部，「收起」再折回去；等你点「发送」的中转卡片照常全显示。「✓ 某某 已接手…，不用回复」这一行多了「知道了」，点了就不再显示，看板卡片上也一起消掉（按这台电脑记住）；没点的照旧一天后自己消失。
