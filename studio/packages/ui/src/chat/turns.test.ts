@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionItem } from "@amo-studio/protocol";
-import { buildTranscript, closedTitle, foldable, formatDuration, formatTokens, liveTitle, outputSpeed, segmentWeight, sessionStats, turnLabel, windowStart, type ProcessMember } from "./turns.js";
+import { buildTranscript, clock, closedTitle, foldable, formatDuration, formatTokens, liveTitle, outputSpeed, segmentWeight, sessionStats, turnLabel, windowStart, type ProcessMember } from "./turns.js";
 
 let seq = 0;
 const base = (turnId?: string) => ({ id: `i${++seq}`, sessionId: "s", seq, createdAt: "2026-10-13T00:00:00.000Z", ...(turnId ? { raw: { runtime: "codex" as const, method: "x", turnId } } : {}) });
@@ -238,5 +238,14 @@ describe("the window drawn of a long session (2026-10-24)", () => {
     // A place to go back to is kept in.
     expect(windowStart(segs, true, segs.length, 100, segs[3]!.key)).toBe(3);
     expect(windowStart([], true)).toBe(0);
+  });
+});
+
+describe("clock", () => {
+  it("says the day and the time a turn ended, with the year only when it is not this one", () => {
+    const now = new Date(2026, 10, 9, 12, 0);
+    expect(clock(new Date(2026, 10, 9, 0, 49).toISOString(), now)).toBe("11-09 00:49");
+    expect(clock(new Date(2026, 0, 3, 9, 5).toISOString(), now)).toBe("01-03 09:05");
+    expect(clock(new Date(2025, 11, 31, 23, 10).toISOString(), now)).toBe("2025-12-31 23:10");
   });
 });

@@ -396,3 +396,14 @@ export function windowStart(segments: readonly Segment[], unfoldedWork: boolean,
   }
   return kept >= 0 ? Math.min(start, kept) : start;
 }
+
+/**
+ * When the turn ended: `11-09 00:49`, with the year in front when it is not this one (2026-11-09, the user: 任务完成时，在
+ * 用量旁边除了时间也加个日期 — a time alone does not say which day an old turn was).
+ */
+export const clock = (iso: string, now = new Date()) => {
+  const d = new Date(iso);
+  const p = (v: number) => String(v).padStart(2, "0");
+  const day = `${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${d.getFullYear() === now.getFullYear() ? day : `${d.getFullYear()}-${day}`} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};

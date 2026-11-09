@@ -5,7 +5,7 @@ import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
 import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
 import { ProcessGroup, Shimmer, MemberRow } from "./ProcessRows.js";
-import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, windowStart, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
+import { buildTranscript, clock, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, windowStart, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
@@ -470,11 +470,6 @@ function ApprovalCard({ item, busy, onApprove }: { item: ApprovalItem; busy: boo
 }
 
 // ---- footer -----------------------------------------------------------------------------------------------------
-
-const clock = (iso: string) => {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
 
 /** What the turn's Claude subagents spent (each one's row carries its total), null when it started none that counted. */
 export function subagentsUsage(items: readonly SessionItem[]): SubsUsage | null {
