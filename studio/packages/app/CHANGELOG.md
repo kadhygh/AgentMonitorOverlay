@@ -4,6 +4,8 @@
 
 ## 下一版
 
+## 0.9.58（2026-11-09）
+
 - DeepSeek 会话不会再因为某个 MCP 连不上而整个开不起来。以前项目里开着 DSH 连不上的 MCP（比如要登录的 Figma MCP）时，新建 DeepSeek 会话或首次交互只显示「Internal error」，日志里也看不到原因。现在 Studio 会去掉这个 MCP 再开会话，会话里多一行说明是哪个 MCP、DSH 报了什么，其他 MCP 照常可用。DSH 的其他报错也会带上它给的细节，不再只有「Internal error」。
 - 用 `session_start` 拉起子会话时，可以指定它开哪些 MCP、关哪些，比如 `{"playwright": true}`。以前新会话只能沿用任务里上一个会话的 MCP 开关，那边关过 playwright，子会话就用不了浏览器。Codex 的 MCP 在它启动时就定了，不能按会话设。
 
