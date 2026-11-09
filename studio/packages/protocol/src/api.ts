@@ -218,13 +218,26 @@ export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; h
  * 设置 → 测试功能 (2026-11-01, the user: 设置里加个测试功能页，这个功能加个开关): features still being tried out. The
  * opposite of OPTIONAL_FEATURES: off until the person turns one on, and the settings list the ones turned on.
  */
-export type ExperimentalFeature = "panorama";
+export type ExperimentalFeature = "panorama" | "tracks";
 
-export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: string; hint: string }[] = [
+/**
+ * `dev` (2026-11-09, the user: 给测试功能全景加一个开发中的标记): still being built, shown as 「开发中」 beside its name —
+ * what it does now is a first piece, or nothing yet.
+ */
+export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: string; hint: string; stage?: "dev" }[] = [
   {
     id: "panorama",
     label: "全景",
     hint: "左边栏「全部任务」下面多一个「全景」：把所有专题画成一张地图，每个专题一块区域，每个任务一条路，会话是路上的节点，等你处理的会话立着牌子，点「N 件等你」依次飞过去。还在测试，只读不改数据，样子和内容以后会变。",
+    stage: "dev",
+  },
+  // 脉络 (2026-11-09, plans/tracks.md): one session carrying several things at once keeps where each line stands outside
+  // its context, so a compaction does not lose the quiet ones. Only the switch so far.
+  {
+    id: "tracks",
+    label: "脉络",
+    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；会话顶上会多一个「对话 / 脉络」切换。现在打开还没有入口。",
+    stage: "dev",
   },
 ];
 

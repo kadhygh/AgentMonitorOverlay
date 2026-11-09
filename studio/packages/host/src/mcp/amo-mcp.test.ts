@@ -115,6 +115,9 @@ describe("AMO MCP", () => {
     expect(() => service.config.updateSettings({ experimentalFeatures: ["nope"] })).toThrow(/experimentalFeatures/);
     expect(() => service.config.updateSettings({ experimentalFeatures: "panorama" })).toThrow(/experimentalFeatures/);
     expect(service.config.updateSettings({ experimentalFeatures: ["panorama", "panorama"] }).experimentalFeatures).toEqual(["panorama"]);
+    // 脉络 (2026-11-09): kept in the list's order whatever order it was sent in.
+    expect(service.config.updateSettings({ experimentalFeatures: ["tracks", "panorama"] }).experimentalFeatures).toEqual(["panorama", "tracks"]);
+    expect(service.config.updateSettings({ experimentalFeatures: ["panorama"] }).experimentalFeatures).toEqual(["panorama"]);
     // One that was taken out again is ignored when read back.
     store.setKv("settings:experimental-features", JSON.stringify(["gone", "panorama"]));
     expect(service.config.experimentalFeatures()).toEqual(["panorama"]);

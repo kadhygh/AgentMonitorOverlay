@@ -38,7 +38,14 @@ export function ExperimentalSection({ link, on }: { link: HostLink; on: readonly
         <label key={f.id} className="settings-row feature-row">
           <input type="checkbox" checked={shown.includes(f.id)} disabled={busy} onChange={(e) => void toggle(f.id, e.target.checked)} data-testid={`experimental-${f.id}`} />
           <span className="feature-text">
-            <span className="settings-label">{f.label}</span>
+            <span className="settings-label">
+              {f.label}
+              {f.stage === "dev" && (
+                <span className="settings-tag feature-stage" data-testid={`experimental-${f.id}-stage`}>
+                  开发中
+                </span>
+              )}
+            </span>
             <span className="settings-hint">{f.hint}</span>
           </span>
         </label>

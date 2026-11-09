@@ -4,6 +4,8 @@
 
 ## 下一版
 
+- 设置 → 测试功能里，还在开发的功能名字旁边多了「开发中」标签，「全景」现在带着它。另外新加了一项「脉络」（也是开发中）：以后一个会话里同时推进几件事时，用它记下每条线做到哪、还欠什么、在等谁，上下文压缩了也不丢。这一版只有开关，打开后还没有入口。
+
 ## 0.9.56（2026-11-09）
 
 - 项目里开着 SSE 连接的 MCP（比如 gorilla-canvas）时，DeepSeek 会话也能开起来了。以前 Studio 把它原样交给 DeepSeek（DSH），DSH 不支持 SSE，直接报「Invalid params: mcpServers[…] transport sse is not supported」，整个会话起不来，用 `session_start` 拉起的 DeepSeek 子会话也一样，只能去关掉项目里的 MCP。现在 DeepSeek 会话只带 DSH 支持的 MCP，带不上的不带，会话里多一行说明是哪个、为什么没带；其他 MCP 照常可用，DSH 以后支持了会自动带上。Codex 本来就带不上 SSE 的 MCP，以前是不声不响地跳过，现在新会话里也会说明。Claude 会话不受影响。

@@ -90,6 +90,10 @@ test("全景: off by default, turned on in 测试功能, opened from the left co
   await dialog.getByRole("tab", { name: "测试功能" }).click();
   const toggle = dialog.getByTestId("experimental-panorama");
   await expect(toggle).not.toBeChecked();
+  // Both still being built (2026-11-09): 「开发中」 beside the name; 脉络 off and left alone here.
+  await expect(dialog.getByTestId("experimental-panorama-stage")).toHaveText("开发中");
+  await expect(dialog.getByTestId("experimental-tracks-stage")).toHaveText("开发中");
+  await expect(dialog.getByTestId("experimental-tracks")).not.toBeChecked();
   await toggle.check();
   await expect(toggle).toBeChecked();
   await expect.poll(async () => (await studio!.api<{ experimentalFeatures: string[] }>("GET", "/api/settings")).experimentalFeatures).toEqual(["panorama"]);
