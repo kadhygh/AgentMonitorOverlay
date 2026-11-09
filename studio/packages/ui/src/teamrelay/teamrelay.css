@@ -14,6 +14,12 @@
 .teamsend-wait { display: flex; align-items: center; gap: 10px; padding: 2px 12px; font-size: var(--fs-sm); color: var(--text-dim); }
 .teamsend-wait-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .teamsend-wait.taken { color: var(--text); }
+.teamsend-wait .btn-ghost { flex: none; }
+/* 还有 N 条中转 (2026-11-09): the rest of the lines, folded until opened. */
+.teamsend-fold-line { display: flex; align-items: center; min-width: 0; }
+.teamsend-fold-line > .teamsend-wait { flex: 0 1 auto; min-width: 0; }
+.teamsend-fold { flex: none; padding: 0; white-space: nowrap; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text-dim); cursor: pointer; }
+.teamsend-fold:hover { color: var(--text); }
 .focus-teamsend { padding: 8px 10px; }
 .focus-teamsend .teamsend-body { font-size: 12px; max-height: 6.4em; }
 .focus-teamsend .teamsend-note { display: none; }

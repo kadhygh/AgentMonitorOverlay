@@ -81,8 +81,30 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
   await screenshot(app, "teamrelay", "T1b-waiting-open-in-relay", page);
   await banner.getByTestId("team-wait").getByTestId("open-in-relay").click();
   await expect.poll(() => app.evaluate(() => (globalThis as { __amoRelayOpened?: Array<{ threadId: string }> }).__amoRelayOpened?.map((o) => o.threadId))).toEqual([thread!.id]);
+
+  // A second ask the coder takes on without replying (已接手). Two lines about 中转 fold to one (2026-11-09: they piled up
+  // above the conversation); 知道了 puts the taken one away, on the page and the card.
+  const ask2 = { to: "程序老李", title: "背包图标尺寸", body: "图标按 64×64 出。", questions: [{ text: "尺寸行不行", options: ["行", "不行"] }] };
+  await studio.api("POST", `/api/tasks/${session.taskId}/sessions`, { profileId: "claude-mock", text: `[[mcp: team_ask ${JSON.stringify(ask2)}]]` });
+  await expect(banner.getByTestId("teamsend-card")).toContainText("背包图标尺寸", { timeout: 60_000 });
+  await banner.getByTestId("teamsend-send").click();
+  await expect.poll(async () => (await coder.threads()).length).toBe(2);
+  const second = (await coder.threads()).find((t) => t.id !== thread!.id)!;
+  await coder.session(second.id, "take");
+  await expect.poll(async () => (await studio!.api<Array<{ threadId: string; takenAt: number | null }>>("GET", "/api/teamrelay/threads")).find((t) => t.threadId === second.id)?.takenAt ?? null, { timeout: 30_000 }).not.toBeNull();
+  await expect(banner.getByTestId("team-fold")).toHaveText("还有 1 条中转 ▾", { timeout: 30_000 });
+  await expect(banner.getByTestId("team-wait")).toHaveCount(1);
+  await expect(banner.getByTestId("team-taken")).toHaveCount(0);
+  await screenshot(app, "teamrelay", "T1c-folded", page);
+  await banner.getByTestId("team-fold").click();
+  await expect(banner.getByTestId("team-taken")).toContainText("✓ 程序老李 已接手「背包图标尺寸」，不用回复");
+  await screenshot(app, "teamrelay", "T1d-unfolded", page);
+  await banner.getByTestId("team-taken-dismiss").click();
+  await expect(banner.getByTestId("team-taken")).toHaveCount(0);
+  await expect(banner.getByTestId("team-fold")).toHaveCount(0);
   await page.getByRole("button", { name: /返回看板|看板/ }).first().click();
   await expect(page.getByTestId("task-card").filter({ hasText: "背包扩容" }).getByTestId("card-team-wait")).toContainText("等 程序老李 回复（中转）");
+  await expect(page.getByTestId("task-card").filter({ hasText: "背包扩容" })).not.toContainText("已接手");
   await screenshot(app, "teamrelay", "T2-card-waiting", page);
 
   // The coder replies in 中转: it comes into the session by itself, a new turn.
@@ -93,7 +115,7 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
   await expect(transcript).toContainText("上限放哪");
   await expect(transcript).toContainText("服务端配置表");
   await expect(page.getByTestId("teamsend-banner")).toHaveCount(0);
-  expect((await coder.threads())[0]!.request!.pickedAt).not.toBeNull();
+  expect((await coder.threads()).find((t) => t.id === thread!.id)!.request!.pickedAt).not.toBeNull();
   await screenshot(app, "teamrelay", "T3-reply-back", page);
   expect(session.id).toBeTruthy();
 
