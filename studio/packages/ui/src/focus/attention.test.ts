@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ANGRY_AFTER_MS, attentionKeys, longestWait, pruneSeen, trackFirstSeen, readFocusLocked, shapeRects, shouldAlert, writeFocusLocked } from "./attention.js";
+import { ANGRY_AFTER_MS, attentionKeys, longestWait, miniStatus, opensFocus, pruneSeen, readFocusAutoExpand, readFocusCollapsed, trackFirstSeen, readFocusLocked, shapeRects, shouldAlert, writeFocusAutoExpand, writeFocusCollapsed, writeFocusLocked } from "./attention.js";
 
 describe("Focus robot (S14-J)", () => {
   const keys = attentionKeys([{ id: "a", status: "awaiting-approval" }], ["d1"], ["p1"]);
@@ -87,5 +87,33 @@ describe("the robot gets angry when left waiting (2026-10-15 evening)", () => {
     expect(longestWait(["old", "new"], new Set(["old"]), first, ANGRY_AFTER_MS)).toBe(1000);
     expect(longestWait([], new Set(), first, ANGRY_AFTER_MS)).toBe(0);
     expect(ANGRY_AFTER_MS).toBe(5 * 60_000);
+  });
+});
+
+describe("收起成悬浮块 (2026-11-10)", () => {
+  it("rests folded and does not open by itself on hover unless asked; both are kept", () => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    expect(readFocusCollapsed()).toBe(true);
+    expect(readFocusAutoExpand()).toBe(false);
+    writeFocusCollapsed(false);
+    writeFocusAutoExpand(true);
+    expect(readFocusCollapsed()).toBe(false);
+    expect(readFocusAutoExpand()).toBe(true);
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  it("shows the one thing that matters most on the tile", () => {
+    expect(miniStatus(1, 3, 2)).toEqual({ tone: "att", text: "! 1", title: "需要你 1 · 完成待看 3 · 运行中 2" });
+    expect(miniStatus(0, 3, 2)).toMatchObject({ tone: "done", text: "✓ 3" });
+    expect(miniStatus(0, 0, 2)).toMatchObject({ tone: "run", text: "▶ 2" });
+    expect(miniStatus(0, 0, 0)).toEqual({ tone: "idle", text: "—", title: "没有待处理" });
+  });
+
+  it("opens by itself only for something new that needs the person", () => {
+    expect(opensFocus(null, ["d:1"])).toBe(true);
+    expect(opensFocus(new Set(["d:1"]), ["d:1"])).toBe(false);
+    expect(opensFocus(new Set(["d:1"]), ["d:1", "s:2:awaiting-approval"])).toBe(true);
+    expect(opensFocus(new Set(["d:1"]), [])).toBe(false);
   });
 });

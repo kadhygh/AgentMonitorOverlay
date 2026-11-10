@@ -227,3 +227,19 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 
 /* A 委派 session under the one that started it (2026-10-22): the turn arrow of the session list. */
 .focus-sub-kind { flex: none; fill: none; stroke: var(--text-faint); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 收起成悬浮块 (2026-11-10, design A in plans/done/focus-mini-prototype.html): the icon over a strip with the one number that
+   matters — ! what needs the person (amber, breathing while it is new), ✓ finished work to look at, ▶ what runs, — none.
+   In the bottom-right corner, where the panel's corner is; the robot stands above it. */
+.focus-mini { align-self: flex-end; flex: none; width: 52px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--panel); box-shadow: 0 2px 7px var(--shadow); overflow: hidden; cursor: pointer; display: flex; flex-direction: column; color: var(--text); font: inherit; }
+.focus-mini:hover { border-color: var(--primary); }
+.focus-mini-face { height: 44px; display: grid; place-items: center; background: var(--bg-header); }
+.focus-mini-face img { width: 30px; height: 30px; }
+.focus-mini-foot { height: 17px; display: flex; align-items: center; justify-content: center; border-top: 1px solid var(--border-strong); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-faint); background: var(--panel); white-space: nowrap; }
+.focus-mini[data-tone="att"] { border-color: var(--attention); }
+.focus-mini[data-tone="att"] .focus-mini-foot { background: var(--attention); border-top-color: var(--attention); color: var(--panel); }
+.focus-mini[data-tone="run"] .focus-mini-foot { background: color-mix(in srgb, var(--running) 16%, var(--panel)); color: var(--running-text, var(--running)); }
+.focus-mini[data-tone="done"] .focus-mini-foot { background: var(--running); border-top-color: var(--running); color: var(--panel); }
+.focus-mini.alerting { animation: focus-mini-breathe 1.8s ease-in-out infinite; }
+@keyframes focus-mini-breathe { 0%, 100% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 0 var(--attention-border); } 50% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 5px var(--attention-border); } }
+@media (prefers-reduced-motion: reduce) { .focus-mini.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px var(--attention-border); } }

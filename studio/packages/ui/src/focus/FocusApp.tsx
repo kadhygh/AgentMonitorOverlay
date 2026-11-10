@@ -11,7 +11,10 @@ import { RelayCard, useRelays } from "../relays/Relays.js";
 import { TeamSendCard, useTeamSends } from "../teamrelay/TeamRelay.js";
 import { useWaitingQuestionList } from "../canvas/useCallouts.js";
 import { useSettings } from "../settings/useSettings.js";
-import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
+import {
+  ANGRY_AFTER_MS, attentionKeys, longestWait, miniStatus, opensFocus, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusAutoExpand, readFocusCollapsed, readFocusLocked, readFocusPassthrough, shouldAlert,
+  writeFocusAutoExpand, writeFocusCollapsed, writeFocusLocked, writeFocusPassthrough,
+} from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { usePetSkin } from "./petSkin.js";
 import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
@@ -53,7 +56,23 @@ const NO_LINK = { url: "", token: "" };
 
 export function FocusApp() {
   const host = useHostState();
-  const [compact, setCompact] = useState(false);
+  // 收起成悬浮块 (2026-11-10, plans/done/focus-mini.md): folded, Focus is a tile (the icon over a strip with the one number
+  // that matters); kept. It opens for a while by itself — something new needs the person (until it is dealt with), or
+  // with 自动展开 the pointer over it (until it leaves) — and stays open once the tile is clicked, until ⌄.
+  const [collapsed, setCollapsedState] = useState(readFocusCollapsed);
+  const [autoExpand, setAutoExpand] = useState(readFocusAutoExpand);
+  const [eventOpen, setEventOpen] = useState(false);
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const hovering = useRef(false);
+  const closeOnLeave = useRef(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setCollapsed = (on: boolean) => {
+    writeFocusCollapsed(on);
+    setCollapsedState(on);
+    setEventOpen(false);
+    setHoverOpen(false);
+    closeOnLeave.current = false;
+  };
   const [open, setOpen] = useState<string | null>(null);
   // The entry folded by a click on its title: it stays folded (the newest otherwise opens by itself, 2026-10-26).
   const [folded, setFolded] = useState<string | null>(null);
@@ -204,6 +223,46 @@ export function FocusApp() {
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
   const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length - toReview.length;
+  // Folded, Focus opens by itself for something new that needs the person — not for finished work to look at (the tile
+  // shows that) — and folds again once nothing does; with the pointer on it, when the pointer leaves.
+  const needKeys = keys.filter((k) => !reviewKeys.has(k));
+  const needKeysId = needKeys.join("|");
+  const knownNeeds = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (host.kind !== "ready") return;
+    const prev = knownNeeds.current;
+    knownNeeds.current = new Set(needKeys);
+    if (opensFocus(prev, needKeys)) {
+      closeOnLeave.current = false;
+      setEventOpen(true);
+    } else if (!needKeys.length) {
+      if (hovering.current) closeOnLeave.current = true;
+      else setEventOpen(false);
+    }
+  }, [needKeysId, host.kind]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the keys by content
+  // The pointer on Focus (the window's shape: what it draws): a fold waiting for it to leave waits on.
+  const hoverBack = () => {
+    hovering.current = true;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+  };
+  // On the tile: with 自动展开 it opens (after a moment, so passing over it does not).
+  const hoverIn = () => {
+    hoverBack();
+    if (autoExpand) hoverTimer.current = setTimeout(() => setHoverOpen(true), 120);
+  };
+  const hoverOut = () => {
+    hovering.current = false;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      setHoverOpen(false);
+      if (closeOnLeave.current) {
+        closeOnLeave.current = false;
+        setEventOpen(false);
+      }
+    }, 350);
+  };
+  useEffect(() => () => void (hoverTimer.current && clearTimeout(hoverTimer.current)), []);
 
   // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
   const firstSeen = useRef<Map<string, number>>(new Map());
@@ -312,6 +371,14 @@ export function FocusApp() {
   const slotSay = demo === "alert" ? "1 件事（测试）" : demo === "calm" ? "1 个完成待审核（测试）" : summary(things, toReview.length);
   const rootCalm = demo ? demo === "calm" : calm;
 
+  // Moving and resizing work on the panel, so it shows while they last.
+  const expanded = !collapsed || eventOpen || hoverOpen || moving || sizing;
+  const mini = miniStatus(things, toReview.length, running);
+  const toggleAutoExpand = () => {
+    writeFocusAutoExpand(!autoExpand);
+    setAutoExpand(!autoExpand);
+    if (autoExpand) setHoverOpen(false);
+  };
   const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", sizing ? "sizing" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
   /** The grip's drag: the main process reads the pointer itself; moves go at most once a frame. */
   const grip = {
@@ -339,7 +406,7 @@ export function FocusApp() {
     },
   };
   return (
-    <div className={rootCalm ? "focus-root calm" : "focus-root"}>
+    <div className={rootCalm ? "focus-root calm" : "focus-root"} onPointerEnter={hoverBack} onPointerLeave={hoverOut} data-expanded={expanded}>
       {(alerting || demo) && !moving && !flyMessage && (
         <div className="focus-bot-slot">
           <PixelBot mood={slotMood} skin={skin} message={slotSay} onClick={demo ? () => setDemo(null) : openFirst} />
@@ -353,7 +420,8 @@ export function FocusApp() {
             { label: "拖拽调整大小", icon: ICON.resize, checked: sizing, hint: "开着时拖面板左上角改大小，关掉就不能拖", onPick: () => setSizing(!sizing), testId: "focus-menu-resize" },
             { label: "锁定位置", icon: ICON.lock, checked: locked, hint: "锁定后标题栏不能拖动", onPick: toggleLock, testId: "focus-menu-lock" },
             { label: "点击穿透", icon: ICON.through, checked: passthrough, hint: "点在 Focus 上会落到下面的窗口，只有按钮能点", onPick: togglePassthrough, testId: "focus-menu-through" },
-            { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
+            { label: "自动展开", icon: ICON.expand, checked: autoExpand, hint: "鼠标移到悬浮块上就展开，移开就收起；不开时只在有事要你处理时自己展开", onPick: toggleAutoExpand, testId: "focus-menu-autoexpand" },
+            { label: expanded ? "收起成悬浮块" : "展开 Focus", icon: expanded ? ICON.collapse : ICON.expand, close: true, onPick: () => setCollapsed(expanded), testId: "focus-menu-compact" },
             { label: "机器人动作测试", icon: ICON.bot, hint: "跳舞、变绿、生气乱飞各演一遍", close: true, onPick: () => setDemo("alert"), testId: "focus-menu-bot" },
             { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ show: true }), testId: "focus-menu-open" },
             { label: "主窗口回到屏幕中央", icon: ICON.center, hint: "主窗口拖到屏幕外找不到时：放回 Focus 所在屏幕的正中", close: true, onPick: () => void window.amo?.focus?.centerMain?.(), testId: "focus-menu-center" },
@@ -361,6 +429,29 @@ export function FocusApp() {
           ]}
         />
       )}
+      {!expanded ? (
+        <button
+          type="button"
+          className={alerting && things > 0 ? "focus-mini alerting" : "focus-mini"}
+          data-tone={mini.tone}
+          aria-label={`展开 Focus：${mini.title}`}
+          title={`${mini.title}（点一下展开，右键是 Focus 设置）`}
+          onClick={() => setCollapsed(false)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setPop(true);
+          }}
+          onPointerEnter={hoverIn}
+          data-testid="focus-mini"
+        >
+          <span className="focus-mini-face">
+            <img src="./icon.svg" alt="" aria-hidden="true" />
+          </span>
+          <span className="focus-mini-foot" data-testid="focus-mini-foot">
+            {mini.text}
+          </span>
+        </button>
+      ) : (
       <div
         className={panelClass}
         data-testid="focus-panel"
@@ -400,12 +491,12 @@ export function FocusApp() {
           <button
             type="button"
             className="focus-icon"
-            aria-label={compact ? "展开会话列表" : "收起成一行"}
-            title={compact ? "展开会话列表" : "收起成一行"}
-            onClick={() => setCompact(!compact)}
+            aria-label="收起成悬浮块"
+            title="收起成悬浮块"
+            onClick={() => setCollapsed(true)}
             data-testid="focus-compact"
           >
-            {compact ? ICON.expand : ICON.collapse}
+            {ICON.collapse}
           </button>
         </div>
         {sizing && (
@@ -416,7 +507,7 @@ export function FocusApp() {
             </button>
           </div>
         )}
-        {!compact && (needs > 0 || working.length > 0 || pinned.length > 0) && (
+        {(needs > 0 || working.length > 0 || pinned.length > 0) && (
           <div className="focus-list" onClickCapture={acknowledge} onClick={(e) => revealOpened(e.currentTarget, e.target)} data-testid="focus-list">
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
                 grow, which moved the buttons between press and release and lost the click (2026-10-20). */}
@@ -565,7 +656,7 @@ export function FocusApp() {
             ))}
           </div>
         )}
-        {!compact && history.length > 0 && (
+        {history.length > 0 && (
           <div className="focus-history" data-testid="focus-history">
             <button type="button" className="focus-history-toggle" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)} data-testid="focus-history-toggle">
               历史 {historyRows(history).length} {showHistory ? "▴" : "▾"}
@@ -611,6 +702,7 @@ export function FocusApp() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

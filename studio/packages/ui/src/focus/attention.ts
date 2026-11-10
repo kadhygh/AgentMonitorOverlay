@@ -45,6 +45,36 @@ const PASSTHROUGH_KEY = "amo.focusPassthrough";
 export const readFocusPassthrough = (): boolean => readStored(PASSTHROUGH_KEY) === "1";
 export const writeFocusPassthrough = (on: boolean): void => writeStored(PASSTHROUGH_KEY, on ? "1" : "0");
 
+const COLLAPSED_KEY = "amo.focusCollapsed";
+const AUTO_EXPAND_KEY = "amo.focusAutoExpand";
+
+/**
+ * 收起成悬浮块 (2026-11-10, the user: 收起成一行优化一下，变成缩成一个图标带底部块的悬浮小块 … 不勾选，默认收起): Focus
+ * rests as a small tile — collapsed unless the person opened it — and opens by itself when something needs them.
+ */
+export const readFocusCollapsed = (): boolean => readStored(COLLAPSED_KEY) !== "0";
+export const writeFocusCollapsed = (on: boolean): void => writeStored(COLLAPSED_KEY, on ? "1" : "0");
+/** 自动展开: the tile opens while the pointer is over it, and folds when it leaves. Off by default. */
+export const readFocusAutoExpand = (): boolean => readStored(AUTO_EXPAND_KEY) === "1";
+export const writeFocusAutoExpand = (on: boolean): void => writeStored(AUTO_EXPAND_KEY, on ? "1" : "0");
+
+/**
+ * The tile's bottom strip (design A, plans/done/focus-mini.md): the one thing that matters most, as one number — what needs
+ * the person, else finished work to look at, else what is running.
+ */
+export function miniStatus(needs: number, toReview: number, running: number): { tone: "att" | "done" | "run" | "idle"; text: string; title: string } {
+  const title = [needs ? `需要你 ${needs}` : "", toReview ? `完成待看 ${toReview}` : "", running ? `运行中 ${running}` : ""].filter(Boolean).join(" · ") || "没有待处理";
+  if (needs) return { tone: "att", text: `! ${needs}`, title };
+  if (toReview) return { tone: "done", text: `✓ ${toReview}`, title };
+  if (running) return { tone: "run", text: `▶ ${running}`, title };
+  return { tone: "idle", text: "—", title };
+}
+
+/** Whether the folded Focus opens by itself: something that needs the person is new since it last looked (`prev`). */
+export function opensFocus(prev: ReadonlySet<string> | null, now: readonly string[]): boolean {
+  return now.length > 0 && (!prev || now.some((k) => !prev.has(k)));
+}
+
 /** What still answers clicks under 点击穿透: buttons, fields and links, and the settings box. */
 export const PASSTHROUGH_INTERACTIVE = "button, a[href], input, textarea, select, summary, [role=button], .focus-pop";
 

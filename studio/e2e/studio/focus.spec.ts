@@ -68,6 +68,58 @@ test("Focus lists what needs me, approves in place and opens the workbench", asy
   expect((await windowState(app)).anyFocused).toBe(false);
 });
 
+test("Focus rests as a tile, opens by itself for something that needs me and folds once it is dealt with; 自动展开 opens it on hover (2026-11-10)", async () => {
+  studio = await launchStudio({ focusCollapsed: true });
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  // Folded by default: the tile only, its strip saying nothing waits; the window's shape is the tile.
+  const tile = focus.getByTestId("focus-mini");
+  await expect(tile).toBeVisible({ timeout: 30_000 });
+  await expect(focus.getByTestId("focus-mini-foot")).toHaveText("—");
+  await expect(focus.getByTestId("focus-panel")).toHaveCount(0);
+  const shape = () => app.evaluate(() => (globalThis as { __amoFocusShape?: Array<{ width: number; height: number }> }).__amoFocusShape ?? []);
+  await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeLessThan(80 * 90);
+  await screenshot(app, "focus", "F1-tile-idle", focus, "focus");
+
+  // Something needs me: it opens by itself.
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "悬浮块", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo tile]]" } });
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1", { timeout: 30_000 });
+  await expect(tile).toHaveCount(0);
+  // Dealt with here: it folds again, once the pointer has left it (Focus's window is its shape, so leaving the shape is
+  // leaving the window; a test cannot move the pointer out of it, so the leave is sent).
+  await focus.getByRole("button", { name: "批准", exact: true }).click();
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+  await expect(focus.getByTestId("focus-panel")).toBeVisible();
+  await focus.locator(".focus-root").dispatchEvent("pointerout", { relatedTarget: null });
+  await expect(tile).toBeVisible({ timeout: 30_000 });
+  await expect(focus.getByTestId("focus-panel")).toHaveCount(0);
+
+  // A click on the tile keeps it open; ⌄ folds it.
+  await tile.click();
+  await expect(focus.getByTestId("focus-panel")).toBeVisible();
+  await focus.mouse.move(2, 2);
+  await expect(focus.getByTestId("focus-panel")).toBeVisible();
+  await focus.getByTestId("focus-compact").click();
+  await expect(tile).toBeVisible();
+
+  // 自动展开 (Focus 设置, from a right-click on the tile): the pointer over the tile opens it, leaving folds it.
+  await tile.click({ button: "right" });
+  await focus.getByTestId("focus-menu-autoexpand").click();
+  await expect(focus.getByTestId("focus-menu-autoexpand")).toHaveAttribute("aria-checked", "true");
+  await focus.getByTestId("focus-menu-close").click();
+  await focus.mouse.move(2, 2);
+  await expect(focus.getByTestId("focus-panel")).toHaveCount(0);
+  await tile.hover();
+  await expect(focus.getByTestId("focus-panel")).toBeVisible();
+  await screenshot(app, "focus", "F2-tile-hover-open", focus, "focus");
+  await focus.locator(".focus-root").dispatchEvent("pointerout", { relatedTarget: null });
+  await expect(tile).toBeVisible();
+  await screenshot(app, "focus", "F3-tile-done", focus, "focus");
+});
+
 test("Focus shows a Codex async question at once, while the model is still working (stage 13)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
@@ -139,13 +191,15 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-home").hover();
   await screenshot(app, "stage-18", "S18-focus-home", focus, "focus");
 
-  // The fold button says what it does.
+  // The fold button says what it does: Focus folds to the tile (2026-11-10), which shows what still needs the person,
+  // and stays folded (what needs them was seen); a click on the tile opens it again.
   const fold = focus.getByTestId("focus-compact");
-  await expect(fold).toHaveAttribute("title", "收起成一行");
+  await expect(fold).toHaveAttribute("title", "收起成悬浮块");
   await fold.click();
-  await expect(fold).toHaveAttribute("title", "展开会话列表");
-  await expect(focus.getByTestId("focus-entry")).toHaveCount(0);
-  await fold.click();
+  await expect(focus.getByTestId("focus-panel")).toHaveCount(0);
+  await expect(focus.getByTestId("focus-mini-foot")).toHaveText("! 1");
+  await focus.getByTestId("focus-mini").click();
+  await expect(focus.getByTestId("focus-entry")).toHaveCount(1);
 
   // The window is only what Focus draws: its shape follows the panel.
   const shape = () => app.evaluate(() => (globalThis as { __amoFocusShape?: Array<{ x: number; y: number; width: number; height: number }> }).__amoFocusShape ?? []);
@@ -158,8 +212,8 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-entry").click({ button: "right" });
   const menu = focus.getByTestId("focus-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.locator(".focus-pop-row")).toHaveCount(9);
-  for (const label of ["移动位置", "拖拽调整大小", "锁定位置", "点击穿透", "收起成一行", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
+  await expect(menu.locator(".focus-pop-row")).toHaveCount(10);
+  for (const label of ["移动位置", "拖拽调整大小", "锁定位置", "点击穿透", "自动展开", "收起成悬浮块", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
   await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeGreaterThan(panelOnly);
   await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
   await focus.getByTestId("focus-menu-close").click();

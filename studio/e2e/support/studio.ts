@@ -45,6 +45,8 @@ export async function launchStudio(
     taskSidebar?: boolean;
     /** Adds the 「Mock DSH」 model, whose sessions run the scripted ACP agent (stage 17). */
     dsh?: boolean;
+    /** Focus starts folded to its tile, as for people (2026-11-10); the specs that work in its panel start it open. */
+    focusCollapsed?: boolean;
   } = {},
 ): Promise<Studio> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
@@ -88,13 +90,14 @@ export async function launchStudio(
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   await page.evaluate(
-    ({ view, sidebar }) => {
+    ({ view, sidebar, focusCollapsed }) => {
       localStorage.setItem("amo.transcriptView", view);
       window.dispatchEvent(new CustomEvent("amo:transcript-view", { detail: view }));
       // The task page's right column is off for people by default; most specs work in it, so it starts on here.
       localStorage.setItem("amo.taskSidebar", sidebar ? "1" : "0");
+      localStorage.setItem("amo.focusCollapsed", focusCollapsed ? "1" : "0");
     },
-    { view: options.transcriptView ?? "verbose", sidebar: options.taskSidebar ?? true },
+    { view: options.transcriptView ?? "verbose", sidebar: options.taskSidebar ?? true, focusCollapsed: options.focusCollapsed ?? false },
   );
 
   async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
