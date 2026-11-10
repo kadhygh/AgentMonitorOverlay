@@ -77,6 +77,17 @@ describe("token stats", () => {
       { profileId: "p-ds", label: "DS", runtime: "codex", model: "ds-model", removed: false },
     ]);
     expect(Date.parse(stats.generatedAt)).not.toBeNaN();
+
+    // 按时间段查 (2026-11-10): to the minute, `to` left out; most used first.
+    const range = host.stats.tokensBetween(new Date(2026, 9, 26, 23, 0).toISOString(), new Date(2026, 9, 27, 0, 10).toISOString());
+    expect(range.turns).toBe(1);
+    expect(range.rows).toEqual([{ profileId: "p-ds", input: 500, cached: 0, output: 20, turns: 1 }]);
+    const wide = host.stats.tokensBetween(new Date(2026, 9, 26).toISOString(), new Date(2026, 9, 28).toISOString());
+    expect(wide.turns).toBe(6);
+    expect(wide.rows.map((r) => r.profileId)).toEqual(["p-claude", "p-ds", "ch-deleted"]);
+    expect(wide.models.map((m) => m.profileId).sort()).toEqual(["ch-deleted", "p-claude", "p-ds"]);
+    expect(() => host.stats.tokensBetween("x", "y")).toThrow("要写成时间");
+    expect(() => host.stats.tokensBetween(day2, day1)).toThrow("早于");
   });
 
   it("dates by the local day", () => {

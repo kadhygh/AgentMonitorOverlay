@@ -554,6 +554,17 @@ export interface TokenStats {
   models: TokenStatsModel[];
 }
 
+/** 统计 → 按时间段查 (2026-11-10): the turns that started in [from, to), per model. */
+export interface TokenStatsRange {
+  from: Timestamp;
+  to: Timestamp;
+  generatedAt: Timestamp;
+  ms: number;
+  turns: number;
+  rows: Array<Omit<TokenStatsDay, "date">>;
+  models: TokenStatsModel[];
+}
+
 export interface CredentialStatus {
   id: string;
   /** The profiles that use it, e.g. "Claude 订阅". */
@@ -677,6 +688,8 @@ export interface HostRoutes
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
   "GET /api/stats/tokens": { req: void; res: TokenStats };
+  /** Query `from`, `to`: ISO times; the turns that started at or after `from` and before `to`. */
+  "GET /api/stats/tokens/range": { req: void; res: TokenStatsRange };
   /** Saves a writable credential (the Claude subscription token) in the Windows Credential Manager. */
   "PUT /api/credentials/:id": { req: { secret: string }; res: CredentialStatus[] };
   "DELETE /api/credentials/:id": { req: void; res: CredentialStatus[] };

@@ -92,3 +92,8 @@
 @container (max-width: 620px) {
   .stats-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* 按时间段查 (2026-11-10): two date-and-time fields, 查询 and a few ready ranges. */
+.stats-range-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 10px; }
+.stats-range-field { display: inline-flex; align-items: center; }
+.stats-range-field input { height: var(--ctl-s); padding: 0 6px; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--bg); color: var(--text); font: inherit; font-size: var(--fs-cap); font-variant-numeric: tabular-nums; color-scheme: light dark; }

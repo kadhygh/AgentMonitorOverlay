@@ -55,6 +55,24 @@ test("设置 → 统计 counts the turns' tokens by model, as a line, an area or
   await dialog.getByRole("group", { name: "图或表" }).getByRole("button", { name: "表" }).click();
   await expect(dialog.locator(".stats-table").first()).toContainText("合计");
 
+  // 按时间段查 (2026-11-10): today so far on opening; a range before the turns has none; 最近 1 小时 has both models.
+  const range = dialog.getByTestId("stats-range");
+  await range.scrollIntoViewIfNeeded();
+  await expect(range.getByTestId("stats-range-table").locator("tbody tr")).toHaveCount(3);
+  await expect(range).toContainText("– 现在");
+  await range.getByTestId("stats-range-from").fill("2020-01-01T08:00");
+  await range.getByTestId("stats-range-to").fill("2020-01-01T09:30");
+  await range.getByTestId("stats-range-run").click();
+  await expect(range.getByTestId("stats-range-none")).toHaveText("这段时间没有用量。");
+  await expect(range).toContainText("2020-01-01 08:00 – 2020-01-01 09:30 · 0 轮");
+  await range.getByTestId("stats-range-to").fill("2020-01-01T07:00");
+  await range.getByTestId("stats-range-run").click();
+  await expect(range.getByRole("alert")).toHaveText("开始时间要早于结束时间");
+  await range.getByRole("button", { name: "最近 1 小时" }).click();
+  await expect(range.getByTestId("stats-range-table").locator("tbody tr")).toHaveCount(3);
+  await expect(range.getByTestId("stats-range-to")).toHaveValue("");
+  await screenshot(app, "settings", "settings-stats-range", page);
+
   // The corner resizes 设置; the size is kept for the next time; a double click restores the default.
   const before = (await dialog.boundingBox())!;
   const grip = (await dialog.getByTestId("settings-grip").boundingBox())!;

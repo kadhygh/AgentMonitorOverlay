@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import type { TokenStats } from "@amo-studio/protocol";
+import type { TokenStats, TokenStatsRange } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import {
   activeModels, addDays, byDate, columns, firstDate, fmtTokens, mondayOf, niceMax, rangeStart, smoothPath, statModels, sumRange, value, ymd,
@@ -20,7 +20,7 @@ const NOW_WORD: Record<Exclude<Grain, "total">, string> = { day: "今天", week:
 const RANGE: Record<Grain, string> = { day: "最近 30 天", week: "最近 12 周", month: "最近 12 个月", total: "全部时间" };
 
 // What was chosen last: the page opens on it again (this window).
-const last = { grain: "day" as Grain, metric: "all" as Metric, style: "line" as Style, view: "chart" as View, hidden: new Set<string>() };
+const last = { grain: "day" as Grain, metric: "all" as Metric, style: "line" as Style, view: "chart" as View, hidden: new Set<string>(), rangeFrom: null as string | null, rangeTo: null as string | null };
 
 /** The element's width, followed as it changes (设置 can be resized). */
 function useWidth(): [(el: HTMLElement | null) => void, number, { current: HTMLElement | null }] {
@@ -222,6 +222,8 @@ export function StatsPage({ link }: { link: HostLink }) {
       </div>
         </>
       )}
+      <RangeCard link={link} models={models} />
+
       <span className="settings-hint">
         按每一轮开始的那天算（本机时间）。输入不含缓存命中；子 agent 和委派会话算在它们自己用的模型下。只算 Studio 记下用量的轮次：Studio 开始记之前的、和中途被打断没回报用量的不在里面。
       </span>
@@ -600,6 +602,121 @@ function Mini({ model, cols, metric }: { model: StatModel; cols: Column[]; metri
 
 function Detail({ data, models, from, to }: { data: ByDate; models: StatModel[]; from: string; to: string }) {
   const { total, per } = sumRange(data, models.map((m) => m.id), from, to);
+  return <DetailTable models={models} per={per} total={total} />;
+}
+
+/** "YYYY-MM-DDTHH:MM" of a local time, as <input type="datetime-local"> takes it. */
+const localInput = (d: Date) => `${ymd(d)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+const PRESETS: Array<{ id: string; label: string; range(now: Date): [Date, Date | null] }> = [
+  { id: "hour", label: "最近 1 小时", range: (now) => [new Date(now.getTime() - 3_600_000), null] },
+  { id: "today", label: "今天", range: (now) => [addDays(now, 0), null] },
+  { id: "yesterday", label: "昨天", range: (now) => [addDays(now, -1), addDays(now, 0)] },
+  { id: "day", label: "最近 24 小时", range: (now) => [new Date(now.getTime() - 86_400_000), null] },
+];
+
+/**
+ * 按时间段查 (2026-11-10, the user: 统计里面加日期时间选择，可以列出指定日期时间的数据统计): from a date and time to
+ * another (to the minute; 结束 left empty is now), counted by the Host from each turn's start, per model.
+ */
+function RangeCard({ link, models }: { link: HostLink; models: StatModel[] }) {
+  const [from, setFrom] = useState(() => last.rangeFrom ?? localInput(addDays(new Date(), 0)));
+  const [to, setTo] = useState(() => last.rangeTo ?? "");
+  const [result, setResult] = useState<TokenStatsRange | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    Object.assign(last, { rangeFrom: from, rangeTo: to });
+  }, [from, to]);
+  const run = useCallback(
+    async (f: string, t: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const a = new Date(f), b = t ? new Date(t) : new Date();
+        if (Number.isNaN(a.getTime())) throw new Error("先选开始时间");
+        if (Number.isNaN(b.getTime())) throw new Error("结束时间不对");
+        if (a >= b) throw new Error("开始时间要早于结束时间");
+        setResult(await call(link, "GET /api/stats/tokens/range", {}, undefined, { from: a.toISOString(), to: b.toISOString() }));
+      } catch (err) {
+        setResult(null);
+        setError(err instanceof HostApiError || err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [link],
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- counted once on opening, then on 查询 or a preset
+  useEffect(() => void run(from, to), [run]);
+  const preset = (p: (typeof PRESETS)[number]) => {
+    const [a, b] = p.range(new Date());
+    const f = localInput(a), t = b ? localInput(b) : "";
+    setFrom(f);
+    setTo(t);
+    void run(f, t);
+  };
+  // The Host's rows by profile, into the page's series (a model past the six colours goes into 其他).
+  const seriesOf = new Map<string, string>();
+  for (const m of models) for (const p of m.profileIds) seriesOf.set(p, m.id);
+  const per: Record<string, Usage> = {};
+  const total: Usage = { input: 0, cached: 0, output: 0, turns: 0 };
+  for (const r of result?.rows ?? []) {
+    const id = seriesOf.get(r.profileId);
+    if (!id) continue;
+    const u = (per[id] ??= { input: 0, cached: 0, output: 0, turns: 0 });
+    for (const k of ["input", "cached", "output", "turns"] as const) {
+      u[k] += r[k];
+      total[k] += r[k];
+    }
+  }
+  const used = models.filter((m) => per[m.id]);
+  const span = result ? `${fmtTime(result.from)} – ${to ? fmtTime(result.to) : "现在"}` : "";
+  return (
+    <div className="stats-card" data-testid="stats-range">
+      <div className="stats-card-head">
+        <span className="stats-card-title">按时间段查</span>
+        <span className="stats-card-sub">{span ? `${span} · ${result!.turns.toLocaleString("en")} 轮` : "选一段时间，按模型列出用量"}</span>
+      </div>
+      <div className="stats-range-bar">
+        <label className="stats-range-field">
+          <span className="stats-flabel">从</span>
+          <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="stats-range-from" />
+        </label>
+        <label className="stats-range-field">
+          <span className="stats-flabel">到</span>
+          <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} data-testid="stats-range-to" title="不填就是到现在" />
+        </label>
+        <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void run(from, to)} data-testid="stats-range-run">
+          {busy ? "统计中…" : "查询"}
+        </button>
+        <span className="stats-seg" role="group" aria-label="常用时间段">
+          {PRESETS.map((p) => (
+            <button key={p.id} type="button" disabled={busy} onClick={() => preset(p)}>
+              {p.label}
+            </button>
+          ))}
+        </span>
+      </div>
+      {error ? (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      ) : result && !used.length ? (
+        <span className="settings-hint" data-testid="stats-range-none">这段时间没有用量。</span>
+      ) : result ? (
+        <DetailTable models={used} per={per} total={total} testId="stats-range-table" />
+      ) : null}
+    </div>
+  );
+}
+
+const fmtTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${ymd(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+function DetailTable({ models, per, total, testId = "stats-detail" }: { models: StatModel[]; per: Record<string, Usage | undefined>; total: Usage; testId?: string }) {
   const all = (u: Usage) => u.input + u.cached + u.output;
   const rows = models.map((m) => ({ m, u: per[m.id] ?? { input: 0, cached: 0, output: 0, turns: 0 } })).sort((a, b) => all(b.u) - all(a.u));
   const sum = all(total);
@@ -616,7 +733,7 @@ function Detail({ data, models, from, to }: { data: ByDate; models: StatModel[];
   );
   return (
     <div className="stats-table-wrap">
-      <table className="stats-table" data-testid="stats-detail">
+      <table className="stats-table" data-testid={testId}>
         <thead>
           <tr>
             <th>模型</th>
