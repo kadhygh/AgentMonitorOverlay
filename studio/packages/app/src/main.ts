@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from "electron";
+import { crashDumpsChoice, listCrashDumps, platformChannel, startCrashDumps } from "@amo-studio/account";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, nativeImage, nativeTheme, powerSaveBlocker, screen, shell, Tray } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, HostStartError, keepHostAlive, putHostJson, readHostJson, requestShutdown, stopHost, waitForExit, type HostConnection, type HostLinkOptions } from "./host-link.js";
@@ -86,6 +87,9 @@ const focusMouseSet = new WeakMap<Electron.WebContents, boolean>();
 /** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
 let stepUiScaleRef: (dir: 1 | -1 | 0) => void = () => undefined;
 const prefs = new ShellPrefs(dataDir);
+// 崩溃转储 (2026-11-10): Crashpad minidumps in <data>\electron\Crashpad, on by default on the platform's test channel;
+// 设置 → 维护 turns it on or off (from the next start). Tests leave it off unless AMO_CRASH_DUMPS says otherwise.
+const crashDumps = dataChoice.firstRun ? null : startCrashDumps({ app, crashReporter }, "AMO Studio", crashDumpsChoice(prefs.crashDumps()), testMode);
 const reviews = setupReviewWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
 // The angry robot that flies about the screen when something waited too long (2026-10-15 evening).
 const bot = setupBotFlight({
@@ -437,6 +441,22 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
   stepUiScaleRef = stepUiScale;
   ipcMain.handle("amo:focus-get", () => focusWindow !== null);
   ipcMain.handle("amo:focus-set", (_event, on: unknown) => setFocusVisible(on === true));
+  // 设置 → 维护 → 崩溃转储: what runs now, what the next start does, and the dumps there are.
+  const crashInfo = () => {
+    const dir = crashDumps?.dir ?? join(dataDir, "electron", "Crashpad");
+    const dumps = listCrashDumps(dir);
+    const next = crashDumpsChoice(prefs.crashDumps());
+    return { running: crashDumps?.started ?? false, next, setting: prefs.crashDumps(), channel: platformChannel(), dir, count: dumps.length, newest: dumps[0]?.mtimeMs ?? null };
+  };
+  ipcMain.handle("amo:crash-dumps-get", () => crashInfo());
+  ipcMain.handle("amo:crash-dumps-set", (_event, on: unknown) => {
+    prefs.setCrashDumps(on === true ? true : on === false ? false : null);
+    return crashInfo();
+  });
+  ipcMain.handle("amo:crash-dumps-open", async () => {
+    const dir = crashInfo().dir;
+    return existsSync(dir) ? shell.openPath(dir) : "还没有这个文件夹：还没有记下过崩溃。";
+  });
   // Only the Focus window may set its own shape and click-through.
   ipcMain.on("amo:focus-shape", (event, rects: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents || !Array.isArray(rects)) return;

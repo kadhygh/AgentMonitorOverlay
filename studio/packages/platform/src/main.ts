@@ -1,8 +1,8 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, session, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, nativeImage, nativeTheme, protocol, screen, session, shell, Tray } from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { amoLocalHome } from "@amo-studio/account";
+import { amoLocalHome, crashDumpsChoice, startCrashDumps } from "@amo-studio/account";
 import { badgedImage, TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { RelayAttentionReader, trayLook, type RelayAttention, type TrayLook } from "./relay-attention.js";
 import { startDetached, startEnv, type LaunchSpec } from "./launch.js";
@@ -49,6 +49,8 @@ const VERSION = (() => {
 
 // The Chromium profile and the single-instance lock: outside the program folder (constraint 2), in local app data.
 app.setPath("userData", join(amoLocalHome(), "platform-profile"));
+// 崩溃转储 (2026-11-10): Crashpad minidumps in platform-profile\Crashpad, on the test channel (@amo-studio/account).
+startCrashDumps({ app, crashReporter }, "AMO 平台", crashDumpsChoice(null), testMode);
 if (process.platform === "win32") app.setAppUserModelId("AMO.Platform");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 

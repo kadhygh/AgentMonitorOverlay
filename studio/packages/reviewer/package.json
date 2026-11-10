@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
+    "@amo-studio/account": "0.0.0",
     "@amo-studio/host": "0.0.0",
     "@amo-studio/protocol": "0.0.0"
   },

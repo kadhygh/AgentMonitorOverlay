@@ -47,6 +47,12 @@ electron.contextBridge.exposeInMainWorld("amo", {
       return () => electron.ipcRenderer.removeListener("amo:ui-scale-changed", listener);
     },
   },
+  /** 设置 → 维护 → 崩溃转储 (2026-11-10). */
+  crashDumps: {
+    get: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:crash-dumps-get"),
+    set: (on: boolean | null): Promise<unknown> => electron.ipcRenderer.invoke("amo:crash-dumps-set", on),
+    open: (): Promise<string> => electron.ipcRenderer.invoke("amo:crash-dumps-open"),
+  },
   /** First-run setup window of the portable build only (the handlers exist only while it is open). */
   setup: {
     info: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-info"),

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell } from "electron";
+import { crashDumpsChoice, startCrashDumps } from "@amo-studio/account";
+import { app, BrowserWindow, clipboard, crashReporter, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,8 @@ const ICON = [join(here, "..", "assets", "icon.png"), join(here, "..", "..", "ap
 const preload = join(here, "preload.cjs");
 
 app.setPath("userData", join(home, "electron"));
+// 崩溃转储 (2026-11-10): Crashpad minidumps in electron\Crashpad, on the platform's test channel (@amo-studio/account).
+startCrashDumps({ app, crashReporter }, "AMO Reviewer", crashDumpsChoice(null), testMode);
 // Its own taskbar group, also when it runs from AMO Studio.exe.
 if (process.platform === "win32") app.setAppUserModelId("AMO.Reviewer");
 

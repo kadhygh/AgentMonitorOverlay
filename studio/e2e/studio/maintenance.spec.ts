@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
@@ -32,6 +33,30 @@ test("维护 shows the source checkout and opens Claude Code or Codex at the rep
   } else {
     await expect(dialog.getByTestId("maintenance-codex-missing")).toContainText("没有找到 Codex");
   }
+});
+
+test("崩溃转储 follows the platform's channel, and the person's switch wins from the next start", async () => {
+  // 2026-11-10: on by default on the test channel, off on the stable one; 设置 → 维护 turns it on or off for Studio.
+  // Test runs never start Crashpad itself (startCrashDumps' testMode), so this run says it is not on yet.
+  const amoHome = mkdtempSync(join(tmpdir(), "amo-home-crash-"));
+  writeFileSync(join(amoHome, "platform.json"), JSON.stringify({ channel: "test" }));
+  studio = await launchStudio({ env: { AMO_HOME: amoHome } });
+  const { page, app, dataDir } = studio;
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "维护" }).click();
+  const box = dialog.getByTestId("crash-dumps");
+  await expect(box).toBeChecked();
+  await expect(dialog.getByTestId("crash-dumps-state")).toContainText("测试通道，默认开着");
+  await expect(dialog.getByTestId("crash-dumps-state")).toContainText("下次打开 Studio 后开启");
+  await expect(dialog.getByTestId("crash-dumps-count")).toHaveText("还没有转储。");
+  await screenshot(app, "studio", "settings-crash-dumps", page);
+  await box.uncheck();
+  await expect(dialog.getByTestId("crash-dumps-state")).toContainText("你自己关掉了它");
+  expect(JSON.parse(readFileSync(join(dataDir, "shell-prefs.json"), "utf8")).crashDumps).toBe(false);
+  await dialog.getByTestId("crash-dumps-default").click();
+  await expect(box).toBeChecked();
+  expect(JSON.parse(readFileSync(join(dataDir, "shell-prefs.json"), "utf8")).crashDumps).toBeUndefined();
 });
 
 test("维护 says plainly when there is no codex on PATH, and its button stays off", async () => {

@@ -8,3 +8,5 @@ export * from "./dpapi.js";
 export * from "./account.js";
 // This computer (device.json): readDevice(), ensureDevice(), setDeviceName(), for pairing devices (remote sessions)
 export * from "./device.js";
+// 崩溃转储 (2026-11-10): every program's Crashpad, by the platform's channel: startCrashDumps(), crashDumpsChoice()
+export * from "./crash-dumps.js";

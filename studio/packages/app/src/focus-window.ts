@@ -127,6 +127,8 @@ interface PrefsData {
   uiScale?: number;
   /** 拖拽调整大小 (2026-11-06): Focus's size, at 界面大小 100%. */
   focusSize?: Size;
+  /** 崩溃转储 (2026-11-10, 设置 → 维护): on or off; absent, the platform's channel decides (@amo-studio/account). */
+  crashDumps?: boolean;
 }
 
 /** Shell preferences that belong to this machine's windows rather than to the Host: Focus on/off and window places. */
@@ -182,6 +184,16 @@ export class ShellPrefs {
 
   setUiScale(scale: number): void {
     this.save({ uiScale: scale });
+  }
+
+  /** null: not chosen, the channel decides. */
+  crashDumps(): boolean | null {
+    return typeof this.data.crashDumps === "boolean" ? this.data.crashDumps : null;
+  }
+
+  setCrashDumps(on: boolean | null): void {
+    // undefined drops the key when written.
+    this.save({ crashDumps: on ?? undefined });
   }
 
   private save(patch: PrefsData): void {

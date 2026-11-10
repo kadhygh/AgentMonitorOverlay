@@ -127,6 +127,25 @@
       "next": ["studio/plans/amo-lan-platform.md"]
     },
     {
+      "id": "tool.crashDumps",
+      "label": "崩溃转储（Crashpad）",
+      "aliases": ["crashpad", "crashReporter", "崩溃", "崩溃转储", "dmp", "minidump", "startCrashDumps", "AMO_CRASH_DUMPS"],
+      "category": "tool",
+      "purpose": "Studio、平台、便签、中转、Reviewer 崩溃时在各自 userData\\Crashpad 留 minidump（不上传，留最近 5 个）。按平台 platform.json 的更新通道决定：测试通道开、正式通道和没装平台时关；Studio 的「设置 → 维护」可以自己开关（shell-prefs.json 的 crashDumps），其他程序暂时没有开关（2026-11-10 用户定）。",
+      "steps": [
+        "新程序接入：在 main 里 app.setPath(\"userData\") 之后马上调 startCrashDumps({ app, crashReporter }, 名字, crashDumpsChoice(设置或 null), testMode)。",
+        "不要调 app.setPath(\"crashDumps\")：Electron 44 在 Windows 上设了它 crashpad handler 就不启动（2026-11-10 试过）。",
+        "测试模式不真的启动 Crashpad，除非 AMO_CRASH_DUMPS=1；AMO_CRASH_DUMPS=1/0 也能临时盖过设置和通道。"
+      ],
+      "anchors": [
+        { "label": "共用模块", "path": "studio/packages/account/src/crash-dumps.ts", "anchor": "export function startCrashDumps" },
+        { "label": "Studio 接入和 IPC", "path": "studio/packages/app/src/main.ts", "anchor": "amo:crash-dumps-get" },
+        { "label": "设置 → 维护", "path": "studio/packages/ui/src/settings/CrashDumpsSection.tsx", "anchor": "export function CrashDumpsSection" }
+      ],
+      "related": ["tool.platform", "tool.account"],
+      "next": ["studio/packages/account/src/crash-dumps.ts"]
+    },
+    {
       "id": "tool.mobile",
       "label": "手机版（Android / iOS，KMP）",
       "aliases": ["Android", "iOS", "手机", "mobile", "APK", "TestFlight", "KMP", "Kotlin"],

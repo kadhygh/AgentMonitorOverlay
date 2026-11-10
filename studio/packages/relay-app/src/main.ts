@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, crashReporter, ipcMain, nativeImage, nativeTheme, Notification, protocol, safeStorage, shell, Tray } from "electron";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -20,7 +20,7 @@ import {
   type ShellInfo,
   type UpdateInfo,
 } from "@amo-studio/relay";
-import { readAccount } from "@amo-studio/account";
+import { crashDumpsChoice, readAccount, startCrashDumps } from "@amo-studio/account";
 import { badgedImage, overlayImage, TrayMenu } from "@amo-studio/traymenu";
 import { Accounts } from "./accounts.js";
 import { Attention, writeAttention } from "./attention.js";
@@ -55,6 +55,8 @@ const CONTENT_URL = `${SCHEME}://content/index.html`;
 const LOADER_URL = `${SCHEME}://shell/loader.html`;
 
 app.setPath("userData", join(home, "electron"));
+// 崩溃转储 (2026-11-10): Crashpad minidumps in electron\Crashpad, on the platform's test channel (@amo-studio/account).
+startCrashDumps({ app, crashReporter }, "AMO 中转", crashDumpsChoice(null), testMode);
 if (process.platform === "win32") app.setAppUserModelId("AMO.Relay");
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, supportFetchAPI: true, corsEnabled: true } }]);
 

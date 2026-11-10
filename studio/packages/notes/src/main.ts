@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, crashReporter, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { accountFile, ensureDevice, programsFile, readAccount, readAccountInfo, readDevice, readJsonFile } from "@amo-studio/account";
+import { accountFile, crashDumpsChoice, ensureDevice, startCrashDumps, programsFile, readAccount, readAccountInfo, readDevice, readJsonFile } from "@amo-studio/account";
 import { centreAt, PAD_MIN, placePad, TODO_SIZE, type Rect } from "./placement.js";
 import { startNotesServer, type NotesServer, type NotesShell } from "./server.js";
 import { NotesStore } from "./store.js";
@@ -31,6 +31,8 @@ const startHidden = process.argv.includes("--hidden");
 
 // Chromium's profile and the single-instance lock live with its home, never in the shared %APPDATA%\Electron.
 app.setPath("userData", join(home, "electron"));
+// 崩溃转储 (2026-11-10): Crashpad minidumps in electron\Crashpad, on the platform's test channel (@amo-studio/account).
+startCrashDumps({ app, crashReporter }, "AMO 便签", crashDumpsChoice(null), testMode);
 // Its own taskbar group and login entry, also when it runs from AMO Studio.exe.
 if (process.platform === "win32") app.setAppUserModelId("AMO.Notes");
 

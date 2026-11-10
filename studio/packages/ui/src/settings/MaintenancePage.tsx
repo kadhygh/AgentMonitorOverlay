@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MaintenanceCli, MaintenanceInfo } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
+import { CrashDumpsSection } from "./CrashDumpsSection.js";
 
 // 设置 → 维护 (2026-10-20): whether this Studio runs from its git checkout, and a terminal in that repo running the
 // person's own Claude Code, to work on Studio itself (2026-10-21: as they would open it themselves, no model of Studio's).
@@ -71,6 +72,7 @@ export function MaintenancePage({ link }: { link: HostLink }) {
           </div>
         )}
       </section>
+      <CrashDumpsSection />
       {source && (
         <section className="settings-section" aria-label="维护终端">
           <span className="settings-heading">维护终端</span>

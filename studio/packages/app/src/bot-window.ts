@@ -112,11 +112,16 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
       if (!w.isVisible()) {
         if (options.testMode) w.showInactive();
         else {
-          const size = { width: w.getBounds().width, height: w.getBounds().height };
+          // The size is set with every move, never taken from the window (2026-11-10): with setPosition the window grew
+          // while flying on the control machine (150 % scaling; most likely "keep the current size" converted between
+          // DIPs and pixels on each move, not seen at 100 %), ~19 resizes a second, up to 25198×24448, and Electron's main
+          // process died (0x80000003, five times 10-31..11-10: Studio vanished; the Host and the sessions kept running).
+          const scale = options.scale();
+          const size = { width: Math.round(BOT_W * scale), height: Math.round(BOT_H * scale) };
           const start = from ? { x: from.x + from.width - size.width, y: from.y + Math.max(0, from.height - 260) } : screen.getCursorScreenPoint();
           const area = screen.getDisplayNearestPoint({ x: start.x + size.width / 2, y: start.y + size.height / 2 }).workArea;
           flight = takeOff(start, size, area);
-          w.setPosition(Math.round(flight.x), Math.round(flight.y));
+          w.setBounds({ x: Math.round(flight.x), y: Math.round(flight.y), ...size });
           applyShape();
           w.showInactive();
           if (reshape) clearTimeout(reshape);
@@ -141,7 +146,7 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
             flight = fly(flight, dt, size, area);
             const x = Math.round(flight.x);
             const y = Math.round(flight.y);
-            if (x !== before[0] || y !== before[1]) win.setPosition(x, y);
+            if (x !== before[0] || y !== before[1]) win.setBounds({ x, y, ...size });
           }, FRAME_MS);
         }
         options.note(`bot flies: ${message}`);

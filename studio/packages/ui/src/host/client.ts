@@ -9,6 +9,16 @@ export type Passage = { itemId: string; start: number; end: number; quote: strin
 export type FolderResult<T> = { ok: true; value: T } | { ok: false; error: string };
 /** A folder and its folders; `parent` null at a drive's root. */
 export type FolderListing = { path: string; parent: string | null; folders: string[] };
+/** 崩溃转储 (packages/app/src/main.ts, amo:crash-dumps-get): `running` this run, `next` the next start. */
+export type CrashDumpsInfo = {
+  running: boolean;
+  next: { on: boolean; why: "env" | "setting" | "test-channel" | "stable-channel" | "no-platform" };
+  setting: boolean | null;
+  channel: "test" | "stable" | null;
+  dir: string;
+  count: number;
+  newest: number | null;
+};
 
 declare global {
   interface Window {
@@ -73,6 +83,14 @@ declare global {
         get(): Promise<number>;
         set(scale: number): Promise<void>;
         onChange(cb: (scale: number) => void): () => void;
+      };
+      /** 设置 → 维护 → 崩溃转储 (2026-11-10, Electron): Crashpad minidumps of this Studio's processes. */
+      crashDumps?: {
+        get(): Promise<CrashDumpsInfo>;
+        /** true / false: the person's choice; null: back to what the channel says. From the next start. */
+        set(on: boolean | null): Promise<CrashDumpsInfo>;
+        /** Opens the folder; an error message, or "" when it opened. */
+        open(): Promise<string>;
       };
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board; `topicId`: that topic's
