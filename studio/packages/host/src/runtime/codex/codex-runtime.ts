@@ -5,7 +5,7 @@ import { codexThreadParams, profileGone, type CodexConfig } from "../profiles.js
 import { McpIdentities } from "../../mcp/identity.js";
 import { codexAutoCompactConfig } from "../compact.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
-import { RuntimeBase, STOP_GRACE_MS, type RuntimeEvents, type SendOptions } from "../runtime.js";
+import { RuntimeBase, STOP_GRACE_MS, type ForkSpec, type RuntimeEvents, type SendOptions } from "../runtime.js";
 import { withDelivery } from "../items.js";
 import type { CodexServerHandle } from "./server-manager.js";
 import { codexUsage, isTokenExpired, reviewTarget, STANDARD_TIER, toModelOption, type CodexModel, type CodexSkill, type GetAccountRateLimitsResponse } from "./account.js";
@@ -383,17 +383,23 @@ export class CodexRuntime extends RuntimeBase {
     await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId });
   }
 
-  /** Forks with an explicit provider so the fork never falls back to the server default. */
-  async fork(sessionId: Id, profileId?: Id): Promise<Session> {
+  /**
+   * Forks with an explicit provider so the fork never falls back to the server default. `through`: only up to that turn
+   * (thread/fork's lastTurnId, 2026-11-10).
+   */
+  async fork(sessionId: Id, spec: ForkSpec = {}): Promise<Session> {
     const parent = this.requireSession(sessionId);
     if (!parent.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
-    const profile = this.profile(profileId ?? parent.profileId);
+    const profile = this.profile(spec.profileId ?? parent.profileId);
     const handle = await this.handleFor(parent.profileId);
     const token = this.options.identities?.issue();
-    const r = await handle.client.request("thread/fork", { threadId: parent.runtimeRef, ...this.threadParams(profile, token) });
-    // thread/started for the fork may already have created the session.
-    const fork = this.findByThread(r.thread.id) ?? this.events.adoptThread(r.thread, parent, "fork", parent.profileId);
+    const r = await handle.client.request("thread/fork", { threadId: parent.runtimeRef, ...(spec.through ? { lastTurnId: spec.through.turnId } : {}), ...this.threadParams(profile, token) });
+    // thread/started for the fork may already have created the session (as a fork under the parent).
+    let fork = this.findByThread(r.thread.id) ?? this.events.adoptThread(r.thread, parent, "fork", parent.profileId, spec.title);
     if (token) this.options.identities!.bind(token, fork.id);
+    if (spec.peer) fork = this.store.setSessionPlacement(fork.id, "main", null);
+    if (spec.options) fork = this.updateSession(fork.id, { options: spec.options });
+    if (spec.title && fork.title !== spec.title) fork = await this.rename(fork.id, spec.title);
     return fork;
   }
 

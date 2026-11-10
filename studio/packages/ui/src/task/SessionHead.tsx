@@ -73,6 +73,8 @@ export function SessionHead({
   const vscode = useVsCode(link);
   const fail = (err: unknown) => onError(err instanceof HostApiError ? err.message : String(err));
   const dir = remote ? undefined : workdir;
+  // DSH shows it greyed (2026-11-10, the user: 灰掉就行); a Claude subagent has no conversation of its own.
+  const canFork = !session.archivedAt && !remote && !(session.runtime === "claude" && session.kind === "sub");
   // DSH sessions (stage 17) have no terminal of their own to hand to, and no fork.
   const terminal = !session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub");
   const pick = (f: () => void) => () => {
@@ -128,21 +130,7 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
           <span className="bar-label">{tracked ? "追踪中" : "追踪"}</span>
         </button>
       )}
-      {!session.archivedAt && !remote && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
-        <>
-          {onTrack && <span className="head-sep" aria-hidden="true" />}
-          <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={onFork} data-testid="session-fork">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="4.5" cy="3.5" r="1.7" />
-              <circle cx="4.5" cy="12.5" r="1.7" />
-              <circle cx="11.5" cy="5" r="1.7" />
-              <path d="M4.5 5.2v5.6M11.5 6.7c0 2.8-3.4 2.9-6.2 4.3" />
-            </svg>
-            <span className="bar-label">分支</span>
-          </button>
-        </>
-      )}
-      {/* 归档 out of ⋯, right of 分支 (2026-10-28); an archived session is restored from its banner below. */}
+      {/* 归档 out of ⋯ (2026-10-28; 分支 went into ⋯ 2026-11-10); an archived session is restored from its banner below. */}
       {/* A remote task's session is archived on its own computer too (2026-10-30). */}
       {!session.archivedAt && (
         <button type="button" className="bar-btn labeled soft-danger" aria-label="归档会话" title="归档会话：变成只读，从它开出的分支一起归档；之后可以恢复" disabled={busy} onClick={onArchive} data-testid="session-archive">
@@ -154,7 +142,7 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
         type="button"
         className="bar-btn"
         aria-label="会话的更多操作"
-        title={["更多", [dir && vscode && "VS Code", dir && "资源管理器", terminal && "在终端打开", "书签", onBindTodo && "绑定到待办"].filter(Boolean).join("、")].join("：")}
+        title={["更多", [canFork && "分支", dir && vscode && "VS Code", dir && "资源管理器", terminal && "在终端打开", "书签", onBindTodo && "绑定到待办"].filter(Boolean).join("、")].join("：")}
         onClick={(e) => setSessionMenu(below(e.currentTarget))}
         data-testid="session-more"
       >
@@ -166,6 +154,22 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
       </button>
       {sessionMenu && (
         <PopMenu at={sessionMenu} label="会话" onClose={() => setSessionMenu(null)} testId="session-menu">
+          {/* 分支 (on the bar until 2026-11-10): from the latest turn; each turn has its own under its reply. */}
+          {canFork && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                title={session.runtime === "dsh" ? "DeepSeek 会话不能分支：DSH 不支持" : "从最新一轮分出一个新会话，原会话不受影响；也可以点每轮回复下面的分支图标"}
+                disabled={busy || !session.runtimeRef || session.runtime === "dsh"}
+                onClick={pick(onFork)}
+                data-testid="session-fork"
+              >
+                从最新一轮分支…
+              </button>
+              <div className="menu-sep" role="separator" />
+            </>
+          )}
           {/* Where the session works, opened outside Studio (on the bar until 2026-11-03, 问题 #15). */}
           {dir && vscode && (
             <button type="button" role="menuitem" title={`VS Code 打开文件夹：${dir}`} onClick={pick(() => void openInEditor(link, { path: dir }).catch(fail))} data-testid="session-vscode">

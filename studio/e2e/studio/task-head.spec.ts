@@ -111,30 +111,28 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByTestId("note-count")).toBeVisible();
   await expect(page.getByLabel("输入消息")).toHaveValue("写到一半的话");
 
-  // The session bar: 追踪 (2026-11-03, 问题 #15), 分支 with the git-branch glyph, 归档 right of it on a red-tinted face
-  // (2026-10-28), ⋯ (the openers outside Studio since 11-03, 书签); no 仅工作台.
+  // The session bar: 追踪 (2026-11-03, 问题 #15), 归档 on a red-tinted face (2026-10-28), ⋯ (分支 since 2026-11-10, the
+  // openers outside Studio since 11-03, 书签); no 仅工作台.
   await expect(page.getByTestId("writer")).toHaveCount(0);
   const bar = page.getByTestId("thread-head");
   await expect(bar.getByTestId("session-track")).toHaveText("追踪");
   await expect(bar.getByRole("button", { name: "在终端打开" })).toHaveCount(0);
-  await expect(bar.getByTestId("session-fork").locator("svg circle")).toHaveCount(3);
-  const forkBox = await bar.getByTestId("session-fork").boundingBox();
-  expect(forkBox!.height).toBeGreaterThanOrEqual(30);
+  await expect(bar.getByTestId("session-fork")).toHaveCount(0);
   await screenshot(app, "stage-14", "S14-I-session-bar", page);
   const archive = bar.getByTestId("session-archive");
-  expect((await archive.boundingBox())!.x).toBeGreaterThan(forkBox!.x);
+  expect((await archive.boundingBox())!.height).toBeGreaterThanOrEqual(30);
   await expect(archive).toHaveClass(/soft-danger/);
-  // 「B」 (2026-10-28): the face of 分支 beside it, only the glyph in deep red — the task's 归档 the same.
+  // 「B」 (2026-10-28): a plain face, only the glyph in deep red — the task's 归档 the same.
   const glyph = (el: Element) => getComputedStyle(el.querySelector("svg")!).color;
   expect(await archive.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
-  expect(await archive.evaluate(glyph)).not.toBe(await bar.getByTestId("session-fork").evaluate(glyph));
+  expect(await archive.evaluate(glyph)).not.toBe(await bar.getByTestId("session-track").evaluate(glyph));
   expect(await page.getByTestId("task-archive").evaluate(glyph)).toBe(await archive.evaluate(glyph));
   await page.getByTestId("session-more").click();
   const { vscode } = await studio.api<{ vscode: boolean }>("GET", "/api/open-in/apps");
   // (绑定到待办… follows when 便签 is there to bind to.)
   const items = page.getByTestId("session-menu").getByRole("menuitem");
   await expect(items.first()).toBeVisible();
-  expect((await items.allTextContents()).slice(0, vscode ? 4 : 3)).toEqual([...(vscode ? ["VS Code 打开文件夹"] : []), "在资源管理器中显示", "在终端打开", "书签"]);
+  expect((await items.allTextContents()).slice(0, vscode ? 5 : 4)).toEqual(["从最新一轮分支…", ...(vscode ? ["VS Code 打开文件夹"] : []), "在资源管理器中显示", "在终端打开", "书签"]);
   await screenshot(app, "studio", "issue15-session-menu", page);
   await page.keyboard.press("Escape");
   await archive.hover();

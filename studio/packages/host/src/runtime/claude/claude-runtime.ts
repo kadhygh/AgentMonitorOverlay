@@ -7,7 +7,7 @@ import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
-import { RuntimeBase, STOP_GRACE_MS, type NewItemBody, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
+import { RuntimeBase, STOP_GRACE_MS, type ForkSpec, type NewItemBody, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
 import { withDelivery } from "../items.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { claudeAutoCompactEnv } from "../compact.js";
@@ -409,29 +409,33 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     await Promise.race([live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`)), new Promise((r) => setTimeout(r, grace).unref?.())]);
   }
 
-  /** Copies the transcript into a new Claude session (no model call); the branch continues from there. */
-  async fork(sessionId: Id, profileId?: Id): Promise<Session> {
+  /**
+   * Copies the transcript into a new Claude session (no model call); the branch continues from there. `through.forkPoint`:
+   * only up to that message (the end of a turn, 2026-11-10).
+   */
+  async fork(sessionId: Id, spec: ForkSpec = {}): Promise<Session> {
     const parent = this.requireSession(sessionId);
     if (parent.kind === "sub") throw Object.assign(new Error("Claude 的子 agent 没有独立的对话，不能分支"), { code: "read_only" });
-    const profile = this.profile(profileId ?? parent.profileId);
+    const profile = this.profile(spec.profileId ?? parent.profileId);
     const workspace = this.store.getWorkspace(parent.workspaceId);
     if (!workspace || !parent.runtimeRef) throw new Error(`session ${sessionId} cannot be forked`);
     const home = this.homeOf(parent.id);
     if (!hasTranscript(parent.runtimeRef, home)) throw Object.assign(new Error("这个会话还没有对话内容，不能分支"), { code: "conflict" });
     // The copy stays in the parent's config dir, so the branch runs the way the parent did.
     if (home.login === "local" && !this.isSubscription(profile)) throw Object.assign(new Error("这个会话用本机 Claude Code 的登录，分支只能继续用 Claude 订阅"), { code: "bad_request" });
-    const title = `${parent.title || "会话"} · 分支`;
-    const forked = await withConfigDir(home, () => forkSession(parent.runtimeRef!, { dir: workspace.path, title }));
+    const title = spec.title || `${parent.title || "会话"} · 分支`;
+    const upTo = spec.through?.forkPoint;
+    const forked = await withConfigDir(home, () => forkSession(parent.runtimeRef!, { dir: workspace.path, title, ...(upTo ? { upToMessageId: upTo } : {}) }));
     const child = this.createSession({
       taskId: parent.taskId,
       topicId: parent.topicId,
-      parentId: parent.id,
-      kind: "fork",
+      parentId: spec.peer ? null : parent.id,
+      kind: spec.peer ? "main" : "fork",
       profileId: profile.id,
       workspaceId: parent.workspaceId,
       title,
       runtimeRef: forked.sessionId,
-      options: parent.options,
+      options: spec.options ?? parent.options,
     });
     rememberSessionLogin(this.store, child.id, home.login);
     return child;

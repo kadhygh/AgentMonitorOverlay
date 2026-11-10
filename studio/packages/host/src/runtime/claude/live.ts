@@ -82,7 +82,8 @@ export interface Live {
   /** The model call streaming now: when its first output came and its output tokens so far (the turn's speed). */
   call?: { firstAt: number | null; tokens: number } | null;
   /** The turn in progress (from the first message of a run to its result). */
-  turn: { id: string; itemId: Id } | null;
+  /** `lastMessage`: the uuid of its latest transcript message so far (its turn item's forkPoint when it ends). */
+  turn: { id: string; itemId: Id; lastMessage?: string } | null;
   /** Agent items still streaming, oldest first. */
   streaming: Id[];
   /** Thinking items still streaming, oldest first, with when they started. */

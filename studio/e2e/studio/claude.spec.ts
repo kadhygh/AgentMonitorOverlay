@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { StateSnapshot, Workspace } from "@amo-studio/protocol";
-import { launchStudio, screenshot, type Studio } from "../support/studio.js";
+import { forkLatest, launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // Claude sessions end to end: the real Claude Agent SDK in the Host, routed to the mock Anthropic API, inside the test's
 // own data dir (its claude-home is Studio's CLAUDE_CONFIG_DIR). No model budget.
@@ -83,7 +83,7 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await screenshot(studio.app, "send-now", "send-now-02-after", page);
 
   // Branch: a new Claude session under this one, which carries the context.
-  await page.getByRole("button", { name: "分支", exact: true }).click();
+  await forkLatest(page);
   const rows = page.getByTestId("session-row");
   await expect(rows).toHaveCount(2);
   await composer.fill("in the branch");
@@ -103,7 +103,9 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-SUB: helper");
   await expect(composer).toBeDisabled();
   await expect(composer).toHaveAttribute("placeholder", /子 agent 不能单独接收消息/);
-  await expect(page.getByRole("button", { name: "分支", exact: true })).toHaveCount(0);
+  await page.getByTestId("session-more").click();
+  await expect(page.getByTestId("session-fork")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await screenshot(studio.app, "stage-4", "S4-04-claude-subagent", page);
 
   // Studio's own Claude config dir holds the transcripts.

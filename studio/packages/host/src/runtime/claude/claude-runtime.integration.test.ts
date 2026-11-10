@@ -324,6 +324,25 @@ describe("ClaudeRuntime", () => {
     await expect(runtime.fork(fresh.id)).rejects.toThrow(/还没有对话内容/);
   }, 120_000);
 
+  it("forks through a chosen turn: each turn records its last message, and the branch remembers only up to it (分支, 2026-11-10)", async () => {
+    const parent = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "remember the apples" });
+    await until(() => agentTexts(parent.id).includes("MOCK: remember the apples") && status(parent.id) === "idle", "first turn");
+    await runtime.sendMessage(parent.id, "now the pears");
+    await until(() => agentTexts(parent.id).includes("MOCK: now the pears") && status(parent.id) === "idle", "second turn");
+    const turns = items(parent.id).filter((i) => i.type === "turn");
+    expect(turns).toHaveLength(2);
+    const first = turns[0]!;
+    if (first.type !== "turn") throw new Error("not a turn");
+    expect(first.forkPoint).toMatch(/^[0-9a-f-]{36}$/);
+    const branch = await runtime.fork(parent.id, { through: { turnId: first.turnId, forkPoint: first.forkPoint! }, peer: true, title: "只到苹果" });
+    expect(branch).toMatchObject({ kind: "main", parentId: null, title: "只到苹果" });
+    await runtime.sendMessage(branch.id, "in the branch");
+    await until(() => agentTexts(branch.id).includes("MOCK: in the branch"), "branch reply");
+    const sent = JSON.stringify(mock.requests.at(-1)!.body.messages);
+    expect(sent).toContain("MOCK: remember the apples");
+    expect(sent).not.toContain("pears");
+  }, 180_000);
+
   it("runs the subscription on the person's own Claude Code login, whatever was chosen before (2026-10-27: no token mode); sessions keep the way they started", async () => {
     // A stand-in for ~/.claude with a login in it (the CLI sends its access token to the mock as it would to Anthropic).
     const mine = join(root, "my-claude");
@@ -367,7 +386,7 @@ describe("ClaudeRuntime", () => {
       const branch = await local.fork(s.id);
       await local.sendMessage(branch.id, "in my branch");
       await until(() => agentTexts(branch.id).includes("MOCK: in my branch"), "local branch reply");
-      await expect(local.fork(s.id, "claude-mock")).rejects.toThrow(/只能继续用 Claude 订阅/);
+      await expect(local.fork(s.id, { profileId: "claude-mock" })).rejects.toThrow(/只能继续用 Claude 订阅/);
 
       // Claude 多账号 (2026-11-03): a second account in a dir of its own (its login written here as `auth login` would),
       // linked to the default dir's records.

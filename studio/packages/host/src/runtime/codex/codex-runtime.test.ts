@@ -162,6 +162,18 @@ describe("CodexRuntime", () => {
     expect(items(fork.id).some((i) => i.type === "notice")).toBe(false);
   });
 
+  it("forks through a chosen turn, as a peer with its own title and options (分支, 2026-11-10)", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "first" });
+    await until(idle(s.id), "first");
+    await runtime.sendMessage(s.id, "second");
+    await until(() => items(s.id).filter((i) => i.type === "turn" && i.state === "completed").length === 2, "second");
+    const first = items(s.id).find((i) => i.type === "turn")!;
+    const fork = await runtime.fork(s.id, { through: { turnId: first.type === "turn" ? first.turnId : "" }, peer: true, title: "只到第一轮", options: { effort: "low" } });
+    expect(fork).toMatchObject({ kind: "main", parentId: null, title: "只到第一轮", options: { effort: "low" } });
+    expect(servers.fakes.get("p-ds")!.threads.get(fork.runtimeRef!)!.turns).toHaveLength(1);
+    expect(servers.fakes.get("p-ds")!.threads.get(s.runtimeRef!)!.turns).toHaveLength(2);
+  });
+
   it("adopts a fork made by another client and warns when its provider drifted", async () => {
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");

@@ -321,3 +321,29 @@
 .todo-bind-tag { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
 /* Under the task head (stage 16): the description, 拆任务提案 and 传话 keep the archived banner's margins. */
 .taskpage > .task-desc, .taskpage > .plan-banner, .taskpage > .relay-banner { margin: 10px 24px 0; }
+
+/* 分支 (2026-11-10, ForkDialog.tsx): one column, the settings folded under a summary line. */
+.fork-dialog { width: 600px; gap: 12px; }
+.fork-head { display: flex; align-items: baseline; gap: 10px; }
+.fork-from { color: var(--text-faint); font-size: var(--fs-cap); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fork-field { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; }
+.fork-field > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fork-label { color: var(--text-dim); font-size: var(--fs-cap); letter-spacing: var(--ls-label); line-height: var(--ctl); white-space: nowrap; }
+.fork-select, .fork-input { width: 100%; height: var(--ctl); border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--bg); color: var(--text); padding: 0 10px; font: inherit; font-size: var(--fs-sm); }
+.fork-seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--border); border-radius: var(--r-btn); overflow: hidden; }
+.fork-seg button { border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--text-dim); height: var(--ctl-s); padding: 0 14px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.fork-seg button:last-child { border-right: 0; }
+.fork-seg button[aria-checked="true"] { background: var(--selected); color: var(--primary); font-weight: 600; }
+.fork-summary { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--bg); color: var(--text); padding: 4px 10px; font: inherit; cursor: pointer; }
+.fork-summary .fork-label { line-height: 1.6; }
+.fork-summary-text { flex: 1; min-width: 0; color: var(--text-dim); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fork-summary-chev { color: var(--text-faint); font-size: var(--fs-cap); white-space: nowrap; }
+.fork-more { display: flex; flex-direction: column; gap: 12px; border-left: 2px solid var(--border); padding-left: 12px; }
+.fork-sub { display: flex; flex-direction: column; gap: 6px; }
+.fork-sub .fork-label { line-height: 1.4; }
+.fork-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fork-mcp { display: flex; flex-wrap: wrap; gap: 6px; }
+.fork-chip { border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--chip); color: var(--text-faint); padding: 1px 9px; font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.fork-chip[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+.fork-actions { display: flex; align-items: center; gap: 8px; }
+.fork-actions .spacer { flex: 1; }

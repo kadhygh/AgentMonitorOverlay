@@ -81,6 +81,27 @@
       "next": ["studio/plans/done/message-delivery.md", "studio/plans/done/send-now.md", "studio/plans/done/subsession-mention-2026-11-05.md"]
     },
     {
+      "id": "studio.fork",
+      "label": "会话分支（从某一轮分出）",
+      "aliases": ["fork", "分支", "分支弹窗", "ForkDialog", "forkSession", "thread/fork", "lastTurnId", "upToMessageId", "forkPoint", "forkOf", "平级会话"],
+      "category": "host",
+      "purpose": "从会话的某一轮分出新会话（子会话挂在下面，平级会话并列）：Codex 按 turnId 截（thread/fork 的 lastTurnId），Claude 按每轮记下的最后一条消息截（forkSession 的 upToMessageId，turn 条目的 forkPoint）；新会话复制到那一轮为止的条目，可改标题、同渠道的模型、强度、Fast、审批、（Claude）MCP。DSH 不支持分支。",
+      "steps": [
+        "截到哪、复制哪些条目：features/sessions/fork.ts（forkTurns / itemsThrough）。",
+        "各 runtime 的截断：claude-runtime.ts、codex-runtime.ts 的 fork(sessionId, ForkSpec)；新 runtime 不支持就抛错，并在 forkTurns 里写明原因。",
+        "界面：每轮回复下面的分支图标（Transcript.tsx TurnFooter）和会话 ⋯ 里的「从最新一轮分支…」都打开 ForkDialog。"
+      ],
+      "anchors": [
+        { "label": "分支（服务）", "path": "studio/packages/host/src/features/sessions/service.ts", "anchor": "async fork(sessionId: Id, body: unknown" },
+        { "label": "轮次和复制", "path": "studio/packages/host/src/features/sessions/fork.ts", "anchor": "export function forkTurns" },
+        { "label": "ForkSpec", "path": "studio/packages/host/src/runtime/runtime.ts", "anchor": "export interface ForkSpec" },
+        { "label": "Claude 每轮的截断点", "path": "studio/packages/host/src/runtime/claude/messages.ts", "anchor": "function noteMessage" },
+        { "label": "分支弹窗", "path": "studio/packages/ui/src/task/ForkDialog.tsx", "anchor": "export function ForkDialog" }
+      ],
+      "related": ["studio.sessions", "ui.chat"],
+      "next": ["studio/plans/done/session-fork.md"]
+    },
+    {
       "id": "studio.tasks",
       "label": "任务和看板",
       "aliases": ["task", "TasksFeature", "看板", "board", "任务页", "说明", "交接", "handoff", "worktree"],

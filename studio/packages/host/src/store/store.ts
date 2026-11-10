@@ -316,6 +316,22 @@ export class Store extends DocumentStore {
     return s;
   }
 
+  /** 分支 as a peer (2026-11-10): a fork made a main session beside its parent. Only these columns are written. */
+  setSessionPlacement(id: Id, kind: Session["kind"], parentId: Id | null): Session {
+    this.db.prepare("UPDATE sessions SET kind = ?, parent_id = ? WHERE id = ?").run(kind, parentId, id);
+    const s = this.getSession(id);
+    if (!s) throw new Error(`session ${id} not found`);
+    return s;
+  }
+
+  /** 分支: where the session was forked from (its source session and turn). Only this column is written. */
+  setSessionForkOf(id: Id, forkOf: { sessionId: Id; turn: number }): Session {
+    this.db.prepare("UPDATE sessions SET fork_of = ? WHERE id = ?").run(JSON.stringify(forkOf), id);
+    const s = this.getSession(id);
+    if (!s) throw new Error(`session ${id} not found`);
+    return s;
+  }
+
   /** session_start with report: the session this one's turns are reported to. Only this column is written. */
   setSessionReportTo(id: Id, to: Id): Session {
     this.db.prepare("UPDATE sessions SET report_to = ? WHERE id = ?").run(to, id);

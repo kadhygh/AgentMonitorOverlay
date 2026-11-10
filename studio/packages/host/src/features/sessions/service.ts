@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -8,6 +8,26 @@ import { roleUpdate } from "../../core/role.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
+import { forkTurns, itemsThrough } from "./fork.js";
+import { newId, type SessionItemInput } from "../../store/store.js";
+
+/** Options with some changed (model, effort, permission: a value, or null / "" back to the default; fast: a boolean or null). */
+function patchOptions(base: SessionOptions, patch: unknown): SessionOptions {
+  const p = patch && typeof patch === "object" ? (patch as Record<string, unknown>) : {};
+  const next: SessionOptions = { ...base };
+  for (const key of ["model", "effort", "permission"] as const) {
+    if (!(key in p)) continue;
+    const value = optionValue(p[key], key);
+    if (value) next[key] = value;
+    else delete next[key];
+  }
+  if ("fast" in p) {
+    if (typeof p.fast === "boolean") next.fast = p.fast;
+    else if (p.fast === null) delete next.fast;
+    else throw new HostError("bad_request", "fast must be true, false or null");
+  }
+  return next;
+}
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
@@ -39,19 +59,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
   updateSessionOptions(sessionId: Id, patch: unknown): Promise<Session> {
     const s = this.store.getSession(sessionId);
     if (!s) throw new HostError("not_found", `session ${sessionId} not found`);
-    const p = patch && typeof patch === "object" ? (patch as Record<string, unknown>) : {};
-    const next: SessionOptions = { ...s.options };
-    for (const key of ["model", "effort", "permission"] as const) {
-      if (!(key in p)) continue;
-      const value = optionValue(p[key], key);
-      if (value) next[key] = value;
-      else delete next[key];
-    }
-    if ("fast" in p) {
-      if (typeof p.fast === "boolean") next.fast = p.fast;
-      else if (p.fast === null) delete next.fast;
-      else throw new HostError("bad_request", "fast must be true, false or null");
-    }
+    const next = patchOptions(s.options, patch);
     return this.wrap(() => this.runtime.setOptions(sessionId, next));
   }
 
@@ -184,11 +192,49 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     return this.wrap(() => this.runtime.setWakeChoice!(sessionId, choice));
   }
 
-  async fork(sessionId: Id, profileId?: Id): Promise<Session> {
+  /** 分支弹窗: the session's turns and which of them can be forked through. */
+  forkTurns(sessionId: Id): ForkTurn[] {
+    const s = this.requireSession(sessionId);
+    return forkTurns(this.store.listItems(s.id), s.runtime).map(({ forkPoint: _point, ...t }) => t);
+  }
+
+  /**
+   * 分支 (2026-11-10, plans/done/session-fork.md): a new session from this one's conversation through a turn (the latest
+   * finished one by default) — under it (`as: "sub"`) or beside it (`peer`), with its own title and the copied options
+   * changed as asked. It starts with the conversation's items up to there, as the model remembers it.
+   */
+  async fork(sessionId: Id, body: unknown = {}): Promise<Session> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be forked");
-    if (profileId) this.requireProfile(profileId);
-    return this.wrap(() => this.runtime.fork(sessionId, profileId));
+    if (s.runtime === "dsh") throw new HostError("bad_request", "DeepSeek 会话不能分支：DSH 不支持");
+    const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const profileId = typeof b.profileId === "string" && b.profileId ? b.profileId : undefined;
+    if (profileId && this.requireProfile(profileId).runtime !== s.runtime) throw new HostError("bad_request", "分支只能用同一个渠道的模型");
+    if (b.as !== undefined && b.as !== "sub" && b.as !== "peer") throw new HostError("bad_request", "as 要写 sub（子会话）或 peer（平级会话）");
+    const items = this.store.listItems(s.id);
+    const turns = forkTurns(items, s.runtime);
+    const pick = typeof b.turnId === "string" && b.turnId ? turns.find((t) => t.turnId === b.turnId) : [...turns].reverse().find((t) => t.state !== "running");
+    if (b.turnId && !pick) throw new HostError("not_found", "这个会话里没有这一轮");
+    if (pick && !pick.forkable) throw new HostError("bad_request", pick.why ?? "这一轮不能分支");
+    const title = b.title === undefined || b.title === null || b.title === "" ? `${s.title || "会话"} · ${pick ? `第 ${pick.n} 轮分支` : "分支"}` : boundedText(b.title, "title", 100);
+    const asked = b.options && typeof b.options === "object" ? (b.options as Record<string, unknown>) : {};
+    const options = patchOptions(s.options, asked);
+    const mcp = this.f.mcp.chooseFor(s.workspaceId, s.taskId, s.runtime, asked.mcp, s.options.mcp ?? {});
+    if (mcp) options.mcp = mcp;
+    const through = pick ? { turnId: pick.turnId, ...(s.runtime === "claude" && pick.forkPoint ? { forkPoint: pick.forkPoint } : {}) } : undefined;
+    const child = await this.wrap(() => this.runtime.fork(s.id, { ...(profileId ? { profileId } : {}), ...(through ? { through } : {}), title, peer: b.as === "peer", options }));
+    // Its conversation in Studio: what the model remembers (the copied transcript or thread), ending where it was cut.
+    // Told as they go in: the list may have read the new session already.
+    const add = (input: SessionItemInput) => this.publish({ type: "item.appended", item: this.store.appendItem(input) });
+    for (const it of itemsThrough(items, pick?.turnId)) {
+      const { seq: _seq, ...rest } = it;
+      add({ ...rest, id: newId("i"), sessionId: child.id } as SessionItemInput);
+    }
+    const from = s.title || "会话";
+    add({ type: "notice", level: "info", message: pick ? `从「${from}」第 ${pick.n} 轮分出：上面是原会话到这一轮为止的对话，原会话不受影响。` : `从「${from}」分出，原会话不受影响。`, id: newId("i"), sessionId: child.id, createdAt: new Date().toISOString() } as SessionItemInput);
+    const session = pick ? this.store.setSessionForkOf(child.id, { sessionId: s.id, turn: pick.n }) : this.store.getSession(child.id)!;
+    this.publish({ type: "session.upserted", session });
+    return session;
   }
 
   async archive(sessionId: Id): Promise<Session[]> {

@@ -525,7 +525,10 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     "thread/fork": (client, params) => {
       const parent = requireThread(params);
       const t = newThread({ ...params, cwd: parent.cwd }, { forkedFromId: parent.id });
-      t.turns = parent.turns.map((turn) => ({ ...turn, items: [...turn.items] }));
+      // lastTurnId (codex-cli 0.162): through that turn, inclusive; the turns after it are left out.
+      const last = typeof params.lastTurnId === "string" ? parent.turns.findIndex((turn) => turn.id === params.lastTurnId) : -1;
+      if (typeof params.lastTurnId === "string" && last < 0) throw rpcError(-32602, `no turn ${params.lastTurnId}`);
+      t.turns = (last >= 0 ? parent.turns.slice(0, last + 1) : parent.turns).map((turn) => ({ ...turn, items: [...turn.items] }));
       client.subscriptions.add(t.id);
       notify(parent.id, "thread/started", { thread: threadView(t) }, [client]);
       return threadResponse(t);

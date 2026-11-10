@@ -341,6 +341,10 @@ function TreeLevel({
         const starter = delegatedBy(s, all);
         const kind = starter ? "委派会话" : KIND[s.kind];
         const project = elsewhere(s);
+        // 分支 (2026-11-10): where it was forked from; a peer stands beside its source, so its row says so too.
+        const source = s.forkOf ? all.find((x) => x.id === s.forkOf!.sessionId) : undefined;
+        const forkedFrom = s.forkOf ? `从「${source?.title || "会话"}」第 ${s.forkOf.turn} 轮分出` : "";
+        const peer = !!s.forkOf && s.kind === "main";
         return (
           <div key={s.id} className="tree-node" role="none">
             <div className="tree-line">
@@ -350,7 +354,7 @@ function TreeLevel({
                 className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
                 aria-current={s.id === selected}
                 aria-level={depth + 1}
-                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : "", project ? `在项目「${project}」里工作（和任务的项目不同）` : ""].filter(Boolean).join("\n")}
+                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : "", forkedFrom ? `${forkedFrom}${peer ? "，平级会话，单独归档" : ""}` : "", project ? `在项目「${project}」里工作（和任务的项目不同）` : ""].filter(Boolean).join("\n")}
                 onClick={() => onSelect(s.id)}
                 data-testid="session-row"
                 data-kind={s.kind}
@@ -359,6 +363,11 @@ function TreeLevel({
               >
                 <span className="tree-icon">{starter ? DELEGATED_ICON : TREE_ICON[s.kind]}</span>
                 <span className="srow-title">{s.title || "新会话"}</span>
+                {peer && (
+                  <span className="tree-ws" title={forkedFrom} data-testid="session-forked-from">
+                    第 {s.forkOf!.turn} 轮分出
+                  </span>
+                )}
                 {project && (
                   <span className="tree-ws" data-testid="session-project">
                     {project}

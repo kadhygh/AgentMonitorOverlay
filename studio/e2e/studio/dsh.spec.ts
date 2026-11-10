@@ -45,10 +45,11 @@ test("a DSH session: approval card, a message waits for the turn, no fork or ter
   await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
 
-  // DSH has no fork and no terminal of its own.
-  await expect(page.getByTestId("session-fork")).toHaveCount(0);
+  // DSH has no fork (greyed in ⋯, none under the turns, 2026-11-10) and no terminal of its own.
+  await expect(page.getByTestId("turn-fork")).toHaveCount(0);
   await page.getByTestId("session-more").click();
   await expect(page.getByTestId("session-menu")).toBeVisible();
+  await expect(page.getByTestId("session-fork")).toBeDisabled();
   await expect(page.getByTestId("session-terminal")).toHaveCount(0);
   await page.keyboard.press("Escape");
 

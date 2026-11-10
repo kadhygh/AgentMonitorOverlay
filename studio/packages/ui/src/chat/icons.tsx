@@ -97,6 +97,15 @@ export const IconCopy = () => (
     <path d="M10.8 5.2V3.6c0-1-.8-1.8-1.8-1.8H3.6c-1 0-1.8.8-1.8 1.8V9c0 1 .8 1.8 1.8 1.8h1.6" />
   </Svg>
 );
+/** 分支: the same branch as the session's old 分支 button (2026-11-10: under each turn, beside 复制). */
+export const IconFork = () => (
+  <Svg>
+    <circle cx="4.5" cy="3.5" r="1.7" />
+    <circle cx="4.5" cy="12.5" r="1.7" />
+    <circle cx="11.5" cy="5" r="1.7" />
+    <path d="M4.5 5.2v5.6M11.5 6.7c0 2.8-3.4 2.9-6.2 4.3" />
+  </Svg>
+);
 export const IconCheck = () => (
   <Svg>
     <path d="m3 8.4 3.2 3.1L13 4.6" />

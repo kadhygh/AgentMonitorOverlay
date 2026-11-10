@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { AccountUsage, Annotation, FolderAccessStatus, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, FolderAccessStatus, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TurnState, TopicDoc, Workspace } from "./entities.js";
 import type { CanvasRoutes } from "./canvas.js";
 import type { ChannelRoutes } from "./channels.js";
 import type { ChatFileRoutes } from "./chatfiles.js";
@@ -24,6 +24,32 @@ export const HOST_DEFAULT_PORT = 47900;
  * person, shown as it is (e.g. the data was migrated by a newer Studio).
  */
 export const HOST_START_FAILED = "amo:host-start-failed";
+
+/** One turn in the 分支 dialog's list. */
+export interface ForkTurn {
+  turnId: string;
+  /** 1-based, oldest first. */
+  n: number;
+  state: TurnState;
+  endedAt?: Timestamp;
+  /** The person's message that opened it and its last reply, cut short. */
+  prompt: string;
+  reply: string;
+  forkable: boolean;
+  /** Why it cannot be forked through (still running, from before Claude recorded fork points, DSH). */
+  why?: string;
+}
+
+/** POST /api/sessions/:id/fork (分支弹窗, 2026-11-10). */
+export interface ForkRequest {
+  /** Another profile of the same runtime (Claude: only the subscription when the session uses the local login). */
+  profileId?: Id;
+  turnId?: string;
+  as?: "sub" | "peer";
+  title?: string;
+  options?: { model?: string | null; effort?: string | null; permission?: string | null; fast?: boolean | null; mcp?: Record<string, boolean> };
+}
+
 export interface HostStartFailedMessage {
   type: typeof HOST_START_FAILED;
   message: string;
@@ -757,7 +783,14 @@ export interface HostRoutes
   "POST /api/sessions/:id/items/:itemId/resend": { req: void; res: { mode: "start" | "steer" | "queue" } };
   /** Claude (stage 15): stop the session's loop, or switch going on by itself after a usage limit (Session.wake). */
   "POST /api/sessions/:id/wake": { req: { stopLoop: true } | { autoContinue: boolean }; res: Session };
-  "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
+  /**
+   * 分支 (2026-11-10: 精确到每轮, the dialog): `turnId` the turn to fork through (its turn item's turnId; absent: the
+   * latest finished one); `as` sub (under this session, archived with it; the default) or peer (a main session beside
+   * it); `options` changes to the copied model, effort, Fast, permissions and (Claude) MCP. The runtime stays the same.
+   */
+  "POST /api/sessions/:id/fork": { req: ForkRequest; res: Session };
+  /** 分支弹窗: the session's turns, oldest first, and which can be forked through. */
+  "GET /api/sessions/:id/fork-turns": { req: void; res: ForkTurn[] };
   /** Renames the session in its runtime too (Codex thread name, Claude session title). */
   "PATCH /api/sessions/:id": { req: { title: string }; res: Session };
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */

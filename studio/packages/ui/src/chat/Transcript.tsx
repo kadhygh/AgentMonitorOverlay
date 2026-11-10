@@ -3,7 +3,7 @@ import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } fr
 import { splitAnnotationRefs, splitRoleUpdate } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
-import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
+import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconFork, IconTerminal, IconSparkle } from "./icons.js";
 import { ProcessGroup, Shimmer, MemberRow } from "./ProcessRows.js";
 import { buildTranscript, clock, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, windowStart, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
@@ -53,17 +53,34 @@ interface TranscriptProps {
    * them; the row says so.
    */
   waitsForSubagents?: boolean;
+  /** 分支 from a finished turn (2026-11-10): the icon beside 复制 under each turn; absent where the session cannot be forked. */
+  onFork?(turnId: string): void;
 }
 
 export type DeliveryAction = "now" | "resend";
 
 /** onDelivery for the person's messages, however deep in the turns they are drawn. */
 const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean; waitsForSubagents: boolean }>({ onDelivery: undefined, givingWay: false, waitsForSubagents: false });
+/**
+ * onFork for each turn's footer. `claude`: a Claude turn from before fork points (none recorded) can only be forked
+ * when it is the latest (plans/done/session-fork.md), so the older ones show no button.
+ */
+const ForkContext = createContext<{ onFork: TranscriptProps["onFork"]; claude: boolean }>({ onFork: undefined, claude: false });
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false, waitsForSubagents = false }: TranscriptProps) {
+function TranscriptBody(props: TranscriptProps) {
+  const claude = props.session?.runtime === "claude";
+  const fork = useMemo(() => ({ onFork: props.onFork, claude }), [props.onFork, claude]);
+  return (
+    <ForkContext.Provider value={fork}>
+      <TranscriptInner {...props} />
+    </ForkContext.Provider>
+  );
+}
+
+function TranscriptInner({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false, waitsForSubagents = false }: TranscriptProps) {
   const delivery = useMemo(() => ({ onDelivery, givingWay, waitsForSubagents }), [onDelivery, givingWay, waitsForSubagents]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
@@ -259,6 +276,8 @@ function TurnView({
       {finished && seg.answer && !seg.answer.streaming && (
         <TurnFooter
           answer={seg.answer}
+          turnId={seg.turn?.turnId}
+          forkable={latest || !!seg.turn?.forkPoint}
           usage={seg.turn?.usage}
           speed={outputSpeed(seg.turn ?? undefined)}
           approx={seg.turn?.decode?.basis === "request"}
@@ -484,8 +503,10 @@ type SubsUsage = { count: number; input: number; cachedInput: number; output: nu
 const SPEED_TITLE = "输出 token ÷ 生成用时：每次模型调用从第一个输出 token 到结束（不含等首个 token、命令、工具和等你确认的时间，和 DSH 一样）";
 const APPROX_SPEED_TITLE = "子 agent 的速度是估算：输出 token ÷ 每次调用从发出请求到写完的时间（含等第一个 token 的时间，Studio 拿不到子 agent 的逐字输出），所以比主会话的生成速度偏低，不能直接比";
 
-function TurnFooter({ answer, usage, speed, approx, subs, endedAt, model, always }: { answer: AgentItem; usage?: TurnUsage; speed: number | null; approx: boolean; subs: SubsUsage | null; endedAt?: string; model: string; always: boolean }) {
+function TurnFooter({ answer, turnId, forkable, usage, speed, approx, subs, endedAt, model, always }: { answer: AgentItem; turnId?: string; forkable: boolean; usage?: TurnUsage; speed: number | null; approx: boolean; subs: SubsUsage | null; endedAt?: string; model: string; always: boolean }) {
   const [copied, setCopied] = useState(false);
+  const fork = useContext(ForkContext);
+  const onFork = fork.onFork && (forkable || !fork.claude) ? fork.onFork : undefined;
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1500);
@@ -502,6 +523,11 @@ function TurnFooter({ answer, usage, speed, approx, subs, endedAt, model, always
       >
         {copied ? <IconCheck /> : <IconCopy />}
       </button>
+      {onFork && turnId && (
+        <button type="button" className="icon-btn" aria-label="从这一轮分支" title="从这一轮分支：新会话带上到这一轮为止的对话，原会话不受影响" onClick={() => onFork(turnId)} data-testid="turn-fork">
+          <IconFork />
+        </button>
+      )}
       <span className="turn-foot-time">{clock(endedAt ?? answer.createdAt)}</span>
       {usage && <UsageButton usage={usage} speed={speed} approx={approx} subs={subs} model={model} />}
       {speed !== null && (

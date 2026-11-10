@@ -155,6 +155,15 @@ export async function launchFirstRun(portableDir: string): Promise<{ app: Electr
 export type WindowKind = "main" | "focus" | "scratchpad" | "review" | "marks" | "viewer" | "canvas-mini" | "plan";
 
 /** Saves a PNG of the (hidden) main window, or another window, to studio/screenshots/<stage>/<name>.png. */
+/** 分支 (2026-11-10): from ⋯ at the latest turn, with the dialog as it opens (a fork under the session). */
+export async function forkLatest(page: Page): Promise<void> {
+  await page.getByTestId("session-more").click();
+  await page.getByTestId("session-fork").click();
+  await expect(page.getByTestId("fork-submit")).toBeEnabled();
+  await page.getByTestId("fork-submit").click();
+  await expect(page.getByTestId("fork-dialog")).toHaveCount(0);
+}
+
 export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
   if (page) await settlePaint(page);
   // Entrance animations (popups, notices) finish first; endless ones (spinners) are left alone. At most 2 s: one in a

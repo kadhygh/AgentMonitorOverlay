@@ -30,6 +30,12 @@ export interface MessageDeps {
   scheduleIdle(sessionId: Id, live: Live): void;
 }
 
+/** 分支 (2026-11-10): the turn's latest transcript message, to fork through the turn later (forkSession's upToMessageId). */
+function noteMessage(live: Live, m: SDKMessage): void {
+  const uuid = (m as { uuid?: unknown }).uuid;
+  if (live.turn && typeof uuid === "string" && uuid) live.turn.lastMessage = uuid;
+}
+
 export class ClaudeMessages {
   constructor(
     private readonly core: ClaudeCore,
@@ -88,6 +94,7 @@ export class ClaudeMessages {
       case "assistant": {
         if (!live.running) turns.started(sessionId, live);
         turns.clearRetry(live);
+        noteMessage(live, m);
         // A command that runs without the model (/cost, /context…): its output comes as an assistant message marked
         // with the stdout it was made from (CLI 2.1.296; spikes/s12-e-claude-cli.mjs).
         if ((m as { local_command_source?: unknown }).local_command_source !== undefined) {
@@ -135,6 +142,7 @@ export class ClaudeMessages {
         return;
       }
       case "user": {
+        noteMessage(live, m);
         const content = m.message.content;
         if (!Array.isArray(content)) return;
         for (const block of content) {

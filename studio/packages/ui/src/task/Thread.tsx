@@ -89,6 +89,8 @@ interface ThreadProps {
   onInterrupt(): void;
   /** 立即发送 a waiting message / 重新发送 one never read (the buttons under it). */
   onDelivery?(itemId: string, action: DeliveryAction): void;
+  /** 分支 from a turn (the icon under its reply); absent where the session cannot be forked. */
+  onFork?(turnId: string): void;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -112,7 +114,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -598,7 +600,7 @@ ${d}` : back));
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
                 <SubagentStatusContext.Provider value={subagentStatus}>
-                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} />
+                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork } : {})} />
                 </SubagentStatusContext.Provider>
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>

@@ -88,6 +88,7 @@ export function toSession(r: Row): Session {
     runtimeRef: strOrNull(r.runtime_ref),
     options: parseOptions(r.options),
     ...parseWake(r.wake),
+    ...parseForkOf(r.fork_of),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
@@ -96,6 +97,16 @@ export function toSession(r: Row): Session {
 }
 
 /** Only a session something will wake carries the field. */
+function parseForkOf(v: unknown): { forkOf?: { sessionId: string; turn: number } } {
+  if (typeof v !== "string" || !v) return {};
+  try {
+    const o = JSON.parse(v) as { sessionId?: unknown; turn?: unknown };
+    return typeof o.sessionId === "string" && typeof o.turn === "number" ? { forkOf: { sessionId: o.sessionId, turn: o.turn } } : {};
+  } catch {
+    return {};
+  }
+}
+
 function parseWake(v: unknown): { wake?: SessionWake } {
   if (typeof v !== "string" || !v) return {};
   try {

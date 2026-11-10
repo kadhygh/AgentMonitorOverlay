@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
@@ -11,6 +11,7 @@ import { StartingCover } from "../lib/StartingCover.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
+import { ForkDialog } from "./ForkDialog.js";
 import { flash } from "./ReplyNav.js";
 import { annotationRange, flashAnnotation, flashRange, highlightsSupported, scrollToBox } from "../review/highlights.js";
 import { REVEAL_ITEM_EVENT, type DeliveryAction } from "../chat/Transcript.js";
@@ -238,12 +239,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       const next = own.find((s) => !s.archivedAt && s.id !== id && s.parentId !== id);
       setSelected(next?.id ?? null);
     });
+  // 分支 (2026-11-10): the dialog asks from which turn and what the new session is; ⋯ opens it at the latest turn.
+  const [forking, setForking] = useState<{ sessionId: string; turnId?: string } | null>(null);
+  const forkable = !!session && !copy && !session.archivedAt && session.runtime !== "dsh" && session.runtime !== "remote" && !(session.runtime === "claude" && session.kind === "sub") && !!session.runtimeRef;
+  const forkSessionId = forkable ? session!.id : null;
+  const forkTurn = useCallback((turnId: string) => forkSessionId && setForking({ sessionId: forkSessionId, turnId }), [forkSessionId]);
   // A branch makes something to choose between: the list shows for this task (the remembered choice stays).
-  const fork = (id: string) =>
-    run(() => call(link, "POST /api/sessions/:id/fork", { id }, {}), (s) => {
-      setSelected(s.id);
-      setSessionsHiddenState(false);
-    });
+  const forked = (s: Session) => {
+    setForking(null);
+    setSelected(s.id);
+    setSessionsHiddenState(false);
+  };
   const openTerminal = (s: Session) =>
     run(() => call(link, "POST /api/sessions/:id/terminal", { id: s.id }, { launch: true }), (r) =>
       setToast(
@@ -615,6 +621,16 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           )}
         </div>
       )}
+      {forking && own.some((s) => s.id === forking.sessionId) && (
+        <ForkDialog
+          link={link}
+          session={own.find((s) => s.id === forking.sessionId)!}
+          profile={profile(own.find((s) => s.id === forking.sessionId)!.profileId)}
+          {...(forking.turnId ? { turnId: forking.turnId } : {})}
+          onClose={() => setForking(null)}
+          onForked={forked}
+        />
+      )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
       {todoBind && <TodoBindDialog view={todoBind.view} target={todoBind.target} onClose={() => setTodoBind(null)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
@@ -668,7 +684,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {...(!task.archivedAt ? { tracked: focusPins.has(task.id), onTrack: () => focusPins.toggle(task.id) } : {})}
               onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
               onTerminal={() => void openTerminal(session)}
-              onFork={() => void fork(session.id)}
+              onFork={() => setForking({ sessionId: session.id })}
               onArchive={() => void archive(session.id)}
               onError={showError}
               {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: session.id, sessionTitle: session.title }) } : {})}
@@ -697,6 +713,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onSend={send}
               onInterrupt={() => session && void interrupt(session.id)}
               onDelivery={deliver}
+              {...(forkSessionId ? { onFork: forkTurn } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}

@@ -5,6 +5,22 @@ import { newId, type HostEventInput, type SessionItemInput, type Store } from ".
 import { withDelivery } from "./items.js";
 import { profileGone } from "./profiles.js";
 
+/** 分支 (2026-11-10, 精确到每轮 and the dialog): what the new session is; everything left out is as before. */
+export interface ForkSpec {
+  /** Another profile of the same runtime. */
+  profileId?: Id;
+  /**
+   * The turn to fork through: Codex its turnId (thread/fork's lastTurnId); Claude its forkPoint (forkSession's
+   * upToMessageId), none to copy the whole transcript. Absent: everything.
+   */
+  through?: { turnId: string; forkPoint?: string };
+  title?: string;
+  /** A main session beside the parent (no parentId) instead of a fork under it. */
+  peer?: boolean;
+  /** The new session's options (default: the parent's). */
+  options?: SessionOptions;
+}
+
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
 // belongs to. Codex and Claude implement the same operations; a few are runtime-specific (see the comments).
 
@@ -55,7 +71,8 @@ export interface SessionRuntimeApi {
    * item goes again, with its `images`; `now` as for sendMessage.
    */
   resend?(sessionId: Id, itemId: Id, images: readonly Attachment[], options?: SendOptions): Promise<{ mode: SendMode }>;
-  fork(sessionId: Id, profileId?: Id): Promise<Session>;
+  /** A new session from this one's conversation (no model call): see ForkSpec. */
+  fork(sessionId: Id, spec?: ForkSpec): Promise<Session>;
   archive(sessionId: Id): Promise<Session[]>;
   unarchive(sessionId: Id): Promise<Session[]>;
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void>;
@@ -229,8 +246,8 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   interrupt(sessionId: Id) {
     return this.forSession(sessionId).interrupt(sessionId);
   }
-  fork(sessionId: Id, profileId?: Id) {
-    return this.forSession(sessionId).fork(sessionId, profileId);
+  fork(sessionId: Id, spec?: ForkSpec) {
+    return this.forSession(sessionId).fork(sessionId, spec);
   }
   archive(sessionId: Id) {
     return this.forSession(sessionId).archive(sessionId);

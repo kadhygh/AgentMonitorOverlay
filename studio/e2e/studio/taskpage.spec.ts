@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Session, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
-import { launchStudio, screenshot, type Studio } from "../support/studio.js";
+import { forkLatest, launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 let studio: Studio | undefined;
 
@@ -38,7 +38,7 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).tasks[0]!.column).toBe("review");
 
   // Fork: indented under its parent, same model, and selected afterwards.
-  await page.getByRole("button", { name: "分支", exact: true }).click();
+  await forkLatest(page);
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(1)).toHaveAttribute("data-kind", "fork");
   await expect(rows.nth(1)).toHaveAttribute("data-depth", "1");
@@ -84,12 +84,11 @@ test("细线树: a fork of a fork hangs one level deeper, each level on its own 
   const { page, app } = studio;
   await openTaskWithReply(studio);
   const rows = page.getByTestId("session-row");
-  const fork = page.getByRole("button", { name: "分支", exact: true });
-  await fork.click();
+  await forkLatest(page);
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
   // Fork the fork: it is selected now, so 分支 branches it.
-  await fork.click();
+  await forkLatest(page);
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(2)).toHaveAttribute("data-kind", "fork");
   await expect(rows.nth(2)).toHaveAttribute("data-depth", "2");
@@ -99,6 +98,57 @@ test("细线树: a fork of a fork hangs one level deeper, each level on its own 
   await rows.first().click();
   await expect(page.getByTestId("session-detail")).toContainText("2 个分支");
   await screenshot(app, "stage-14", "S14-P-session-tree", page);
+});
+
+test("分支 from a chosen turn: the dialog's turn, 平级会话, title and effort; the branch has the conversation up to there (2026-11-10)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const { session } = await openTaskWithReply(studio);
+  const composer = page.getByLabel("输入消息");
+  await composer.fill("再改一下导出");
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 再改一下导出", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
+
+  // Under the first turn's reply, beside 复制.
+  const first = page.getByTestId("turn-foot").first();
+  await first.hover();
+  await first.getByTestId("turn-fork").click();
+  const dialog = page.getByTestId("fork-dialog");
+  await expect(dialog.getByTestId("fork-turn")).toHaveValue(/.+/);
+  await expect(dialog).toContainText("带上第 1 到第 1 轮，后面 1 轮不带");
+  await expect(dialog.getByTestId("fork-title")).toHaveValue("先看看现状 · 第 1 轮分支");
+  await dialog.getByTestId("fork-mode-peer").click();
+  await dialog.getByTestId("fork-title").fill("只看现状");
+  await dialog.getByTestId("fork-more").click();
+  await dialog.getByTestId("effort").getByRole("button").first().click();
+  await expect(dialog.getByTestId("fork-more")).toContainText("改了 1 项");
+  await screenshot(app, "studio", "fork-dialog", page);
+  await dialog.getByTestId("fork-submit").click();
+  await expect(dialog).toHaveCount(0);
+
+  // Beside the source, not under it; it says where it came from; its conversation ends at the first turn.
+  const rows = page.getByTestId("session-row");
+  await expect(rows).toHaveCount(2);
+  const branch = rows.filter({ hasText: "只看现状" });
+  await expect(branch).toHaveAttribute("data-kind", "main");
+  await expect(branch).toHaveAttribute("data-depth", "0");
+  await expect(branch.getByTestId("session-forked-from")).toHaveText("第 1 轮分出");
+  await expect(page.getByTestId("msg-agent")).toHaveCount(1);
+  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先看看现状");
+  await expect(page.getByText("从「先看看现状」第 1 轮分出")).toBeVisible();
+  const made = (await studio.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.title === "只看现状")!;
+  expect(made).toMatchObject({ kind: "main", parentId: null, forkOf: { sessionId: session.id, turn: 1 } });
+  expect(made.options.effort).toBeTruthy();
+  await screenshot(app, "studio", "fork-peer", page);
+
+  // It goes on from there: the model remembers the first turn only.
+  await composer.fill("在分支里");
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 在分支里", { timeout: 30_000 });
+  const sent = JSON.stringify(studio.mock!.requests.at(-1));
+  expect(sent).toContain("先看看现状");
+  expect(sent).not.toContain("再改一下导出");
 });
 
 test("细线树: a session folds what hangs under it to ▸ N, kept after a reload; selecting a session inside opens it (10-22)", async () => {
@@ -115,7 +165,7 @@ test("细线树: a session folds what hangs under it to ▸ N, kept after a relo
   const rows = page.getByTestId("session-row");
   await expect(rows).toHaveCount(2);
   // A fork too: the main session has a subagent and a fork under it.
-  await page.getByRole("button", { name: "分支", exact: true }).click();
+  await forkLatest(page);
   await expect(rows).toHaveCount(3);
   await rows.first().click();
 

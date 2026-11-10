@@ -360,4 +360,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE tasks ADD COLUMN first_message TEXT;
   `,
+  // 26: 分支 (2026-11-10): the session and turn a fork or a peer fork came from (JSON {sessionId, turn}); NULL otherwise.
+  `
+  ALTER TABLE sessions ADD COLUMN fork_of TEXT;
+  `,
 ];

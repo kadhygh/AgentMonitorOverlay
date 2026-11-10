@@ -43,6 +43,7 @@ export class ClaudeTurns {
             ...it,
             state,
             endedAt: this.core.now().toISOString(),
+            ...(turn.lastMessage ? { forkPoint: turn.lastMessage } : {}),
             ...(usage
               ? {
                   usage: {
