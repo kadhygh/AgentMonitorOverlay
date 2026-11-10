@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { viewerHash, ViewerSet } from "./viewer-rules.js";
+import { safeFileName, viewerHash, ViewerSet } from "./viewer-rules.js";
 
 describe("viewerHash", () => {
   it("opens a 查看包 by its id only", () => {
@@ -58,5 +58,17 @@ describe("ViewerSet", () => {
     set.closed("b");
     expect(set.isPinned("b")).toBe(false);
     expect(set.all()).toEqual([]);
+  });
+});
+
+describe("safeFileName", () => {
+  it("keeps the name, without folders or what Windows refuses", () => {
+    expect(safeFileName("shot.png")).toBe("shot.png");
+    expect(safeFileName("任务文件夹/docs/截图 1.png")).toBe("截图 1.png");
+    expect(safeFileName("C:\\a\\b.png")).toBe("b.png");
+    expect(safeFileName('a:b*c?"d<e>|.png')).toBe("a_b_c__d_e__.png");
+    expect(safeFileName("name. ")).toBe("name");
+    expect(safeFileName("")).toBe("图片");
+    expect(safeFileName("..")).toBe("图片");
   });
 });

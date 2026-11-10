@@ -50,8 +50,6 @@ a.file-link.file-chip:hover .file-chip-name { text-decoration: underline; text-u
 .fp-row.marked { background: var(--attention-bg); }
 .fp-row.marked .fp-gutter { color: var(--attention); background: var(--attention-bg); box-shadow: inset 2px 0 var(--attention); }
 
-.fp-image { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
-.fp-image img { max-width: 100%; height: auto; border: 1px solid var(--border); background: var(--panel); }
 .fp-md { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 24px; background: var(--panel); font-size: var(--fs-sm); line-height: var(--lh); }
 /* 2026-10-19: a rendered file keeps the source view's colours (code.css), so links, code and headings stand out. */
 .fp-md .md-h { color: var(--shiki-token-keyword); }

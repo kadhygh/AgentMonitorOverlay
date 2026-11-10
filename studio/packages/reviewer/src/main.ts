@@ -8,6 +8,7 @@ import type { HostEvent } from "@amo-studio/protocol";
 import { setupReviewWindows } from "./review-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
 import { installWindowControls } from "./window-controls.js";
+import { installSaveFile } from "./save-file.js";
 
 // AMO Reviewer (2026-10-23): Git Review, the viewer and 查看包 as a program of their own, for any tool or model, not
 // only AMO Studio (plans/done/reviewer-standalone.md). It runs a Host of its own with no models — its own data dir, the same
@@ -126,6 +127,8 @@ async function start(): Promise<void> {
   ipcMain.handle("amo:open-external", (_event, url: string) => (/^https?:\/\//.test(String(url)) ? shell.openExternal(String(url)) : undefined));
   // The pages draw their own title bars and window buttons (2026-10-29).
   installWindowControls();
+  // 另存为 of a picture (2026-11-11): the system's save dialog.
+  installSaveFile();
   ipcMain.on("amo:min-width", (event, px: number) => {
     const w = BrowserWindow.fromWebContents(event.sender);
     if (w && !w.isDestroyed() && Number.isFinite(px) && px > 0) w.setMinimumSize(Math.min(Math.round(px), 1600), w.getMinimumSize()[1] ?? 0);

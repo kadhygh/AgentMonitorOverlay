@@ -6,6 +6,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
   app: "reviewer",
   host: (): Promise<{ url: string; token: string } | null> => electron.ipcRenderer.invoke("amo:host"),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
+  /** 另存为 (2026-11-11): the system's save dialog, then the file written there (`bytes`, else read from `url`). */
+  saveFile: (input: { name: string; bytes?: Uint8Array; url?: string }): Promise<{ saved: boolean; path?: string; error?: string }> => electron.ipcRenderer.invoke("amo:save-file", input),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   setMinWidth: (px: number): void => electron.ipcRenderer.send("amo:min-width", px),
   /** The window's own title bar buttons (2026-10-29: no system title bar, as in Studio). */

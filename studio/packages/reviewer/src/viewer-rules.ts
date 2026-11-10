@@ -84,3 +84,11 @@ export class ViewerSet<W> {
     return [...(this.preview ? [this.preview] : []), ...this.pinned];
   }
 }
+
+/** 另存为 (2026-11-11): the name offered in the save dialog — no folder parts, none of the characters Windows refuses. */
+export function safeFileName(name: string): string {
+  const base = String(name ?? "").split(/[\\/]/).pop() ?? "";
+  // eslint-disable-next-line no-control-regex
+  const clean = base.replace(/[<>:"|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/, "").trim();
+  return clean || "图片";
+}

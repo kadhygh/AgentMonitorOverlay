@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useRef } from "react";
+import { ImageView } from "./ImageView.js";
 
 // 看大图 (2026-11-06): a picture of a rendered HTML or Markdown file shown enlarged over the page, instead of the viewer
 // opening it in place of the page (the user clicked a screenshot in a report and could not get back). Esc, a click
-// beside it or × closes it; the wheel zooms, a drag moves it once it is larger than the pane.
+// beside it or × closes it. 2026-11-11: the picture itself is the viewer's ImageView (fitted, wheel and buttons zoom,
+// drag once larger, right-click 另存为…), as a picture file is shown.
 
 export type ZoomedImage = {
   /** What the <img> loads. */
@@ -14,23 +16,15 @@ export type ZoomedImage = {
   reveal?: () => void;
 };
 
-const MIN = 0.1;
-const MAX = 8;
-
 export function ImageZoom({ image, onClose }: { image: ZoomedImage; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
-  /** null: fitted to the pane; else the scale against the picture's own size. */
-  const [scale, setScale] = useState<number | null>(null);
-  const [at, setAt] = useState({ x: 0, y: 0 });
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
-  const [broken, setBroken] = useState(false);
-  const drag = useRef<{ x: number; y: number; from: { x: number; y: number }; moved: boolean } | null>(null);
 
   // The keys reach this window only: the page's frame gave the focus away when it asked for the picture.
   useEffect(() => {
-    box.current?.focus();
+    box.current?.querySelector<HTMLElement>(".iv")?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      // A menu open over the picture (右键) takes Esc first.
+      if (e.key !== "Escape" || document.querySelector(".ctx-menu")) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -39,79 +33,12 @@ export function ImageZoom({ image, onClose }: { image: ZoomedImage; onClose: () 
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  /** The scale it shows at when fitted: the whole picture in the pane, never larger than its own size. */
-  const fitted = () => {
-    const el = box.current;
-    if (!el || !natural) return 1;
-    return Math.min(1, (el.clientWidth - 48) / natural.w, (el.clientHeight - 96) / natural.h);
-  };
-  const shown = scale ?? fitted();
-
-  const onWheel = (e: ReactWheelEvent) => {
-    if (!natural) return;
-    const next = Math.min(MAX, Math.max(MIN, shown * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-    setScale(next);
-    if (next <= fitted()) setAt({ x: 0, y: 0 });
-  };
-  const onDown = (e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
-    drag.current = { x: e.clientX, y: e.clientY, from: at, moved: false };
-  };
-  const onMove = (e: ReactPointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const dx = e.clientX - d.x;
-    const dy = e.clientY - d.y;
-    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-    d.moved = true;
-    if (shown > fitted()) setAt({ x: d.from.x + dx, y: d.from.y + dy });
-  };
-  const onUp = (e: ReactPointerEvent) => {
-    const d = drag.current;
-    drag.current = null;
-    // A click beside the picture closes it; on it, nothing (a drag neither).
-    if (d && !d.moved && !(e.target as Element).closest(".iz-img, .iz-bar")) onClose();
-  };
-
   return (
-    <div
-      className="iz"
-      ref={box}
-      tabIndex={-1}
-      role="dialog"
-      aria-label={`看大图：${image.name}`}
-      onWheel={onWheel}
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      data-testid="image-zoom"
-    >
-      <div className="iz-bar" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="iz" ref={box} role="dialog" aria-label={`看大图：${image.name}`} onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="image-zoom">
+      <div className="iz-bar">
         <span className="iz-name" title={image.name}>
           {image.name}
         </span>
-        {natural && (
-          <span className="iz-size">
-            {natural.w} × {natural.h} · {Math.round(shown * 100)}%
-          </span>
-        )}
-        {scale !== null && (
-          <button
-            type="button"
-            className="btn-ghost small"
-            onClick={() => {
-              setScale(null);
-              setAt({ x: 0, y: 0 });
-            }}
-          >
-            适应窗口
-          </button>
-        )}
-        {natural && scale !== 1 && (
-          <button type="button" className="btn-ghost small" onClick={() => setScale(1)}>
-            原始大小
-          </button>
-        )}
         {image.open && (
           <button type="button" className="btn-ghost small" onClick={image.open} data-testid="image-zoom-open">
             在查看器中打开
@@ -126,21 +53,8 @@ export function ImageZoom({ image, onClose }: { image: ZoomedImage; onClose: () 
           ×
         </button>
       </div>
-      {broken ? (
-        <div className="iz-broken">这张图打不开：{image.name}</div>
-      ) : (
-        <img
-          className="iz-img"
-          src={image.url}
-          alt={image.name}
-          draggable={false}
-          style={natural ? { width: natural.w * shown, height: natural.h * shown, transform: `translate(${at.x}px, ${at.y}px)`, cursor: shown > fitted() ? "grab" : "default" } : { visibility: "hidden" }}
-          onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth || 1, h: e.currentTarget.naturalHeight || 1 })}
-          onError={() => setBroken(true)}
-          data-testid="image-zoom-img"
-        />
-      )}
-      <div className="iz-hint">Esc 或点旁边关闭 · 滚轮缩放{shown > fitted() ? " · 拖动查看" : ""}</div>
+      <ImageView key={image.url} url={image.url} name={image.name} className="iz-view" margin={24} imgTestId="image-zoom-img" onBackgroundClick={onClose} />
+      <div className="iz-hint">Esc 或点旁边关闭 · 滚轮缩放 · 放大后拖动 · 右键另存为</div>
     </div>
   );
 }

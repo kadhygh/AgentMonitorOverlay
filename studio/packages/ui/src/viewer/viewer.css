@@ -40,11 +40,25 @@
 .iz { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(10, 12, 14, 0.82); outline: none; user-select: none; }
 .iz-bar { position: absolute; top: 8px; left: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 6px; background: var(--panel-raised); color: var(--text); box-shadow: 0 2px 10px var(--shadow-soft); z-index: 1; }
 .iz-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; }
-.iz-size { flex: none; color: var(--text-dim); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .iz-x { font-size: 16px; line-height: 1; padding-inline: 8px; }
-.iz-img { flex: none; max-width: none; max-height: none; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); background: #fff; }
-.iz-broken { color: #e6e6e6; font-size: var(--fs-sm); }
 .iz-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: rgba(255, 255, 255, 0.7); font-size: var(--fs-sm); pointer-events: none; }
+/* 图片缩放、拖拽 (2026-11-11): ImageView — a picture in its pane, fitted when it opens, zoomed and dragged like an image viewer. */
+.iv { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; outline: none; user-select: none; touch-action: none; }
+.iv:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+.iv.pannable { cursor: grab; }
+.iv.dragging { cursor: grabbing; }
+.iv-img { position: absolute; left: 0; top: 0; max-width: none; max-height: none; outline: 1px solid var(--border); background: var(--panel); }
+.iv-broken { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: var(--fs-sm); }
+.iv-tools { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-raised); color: var(--text); box-shadow: 0 2px 10px var(--shadow-soft); font-size: var(--fs-sm); cursor: default; }
+.iv-size { margin-right: 6px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.iv-pct { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+.iv-tools .btn-ghost[aria-pressed="true"] { color: var(--primary); }
+/* Over a rendered page (看大图): below its bar, above its hint; the picture on its own background. */
+.iz-view { position: absolute; inset: 52px 0 30px 0; }
+.iz-view .iv-img { outline: none; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); background: #fff; }
+.iz-view .iv-broken { color: #e6e6e6; }
+/* It takes the focus as it opens (its keys): the overlay itself says where it is, no ring around it. */
+.iz-view:focus-visible { box-shadow: none; }
 .vw-rendered .md-img { cursor: zoom-in; }
 ::highlight(amo-passage) { background-color: var(--tint-strong); text-decoration: underline 2px var(--primary); }
 ::highlight(amo-passage-hot) { background-color: var(--selection); color: var(--text); }

@@ -4,9 +4,9 @@
     {
       "id": "tool.reviewer",
       "label": "AMO Reviewer（Git Review 和查看器）",
-      "aliases": ["Reviewer", "Git Review", "查看器", "viewer", "HTML 批注", "位置批注", "amo-review", "ReviewApp", "ViewerApp"],
+      "aliases": ["Reviewer", "Git Review", "查看器", "viewer", "HTML 批注", "位置批注", "amo-review", "ReviewApp", "ViewerApp", "图片", "看大图", "缩放", "另存为", "链接"],
       "category": "tool",
-      "purpose": "Git Review 和文件查看器（含 HTML 的位置批注），可以单独用，Studio 里也带着同一份（AGENTS.md 架构约束第 4 条：只有一份）。独立程序是 reviewer 包的 Electron 入口，界面在 ui 包，后台用 Host。",
+      "purpose": "Git Review 和文件查看器（含 HTML 的位置批注），可以单独用，Studio 里也带着同一份（AGENTS.md 架构约束第 4 条：只有一份）。独立程序是 reviewer 包的 Electron 入口，界面在 ui 包，后台用 Host。图片（本机的、远程任务取来的、查看包里的、网页和 Markdown 里点开的大图）都由 ImageView 显示：适应窗口、滚轮缩放、拖动、右键另存为（主进程的 amo:save-file 弹系统保存对话框，Studio 和独立 Reviewer 都装）。渲染的 HTML / Markdown 里的链接由 RenderedReview 的 follow 处理：网址用浏览器开，#标题页内跳，图片看大图，别的文件在查看器里开（远程任务的经 viewRemoteFile 从那台电脑取）。",
       "anchors": [
         { "label": "独立程序入口", "path": "studio/packages/reviewer/src/main.ts", "anchor": "parseArgs" },
         { "label": "Review 窗口", "path": "studio/packages/reviewer/src/review-window.ts", "anchor": "export function setupReviewWindows" },
@@ -14,6 +14,10 @@
         { "label": "Review 界面", "path": "studio/packages/ui/src/gitreview/ReviewApp.tsx", "anchor": "export function ReviewApp" },
         { "label": "查看器界面", "path": "studio/packages/ui/src/viewer/ViewerApp.tsx", "anchor": "export function ViewerApp" },
         { "label": "批注组件", "path": "studio/packages/ui/src/review/AnnotationPanel.tsx" },
+        { "label": "图片：缩放、拖拽、右键菜单", "path": "studio/packages/ui/src/viewer/ImageView.tsx", "anchor": "export function ImageView" },
+        { "label": "图片：适应窗口和长图的规则", "path": "studio/packages/ui/src/viewer/imageFit.ts", "anchor": "export const LONG_RATIO" },
+        { "label": "另存为（主进程）", "path": "studio/packages/reviewer/src/save-file.ts", "anchor": "export function installSaveFile" },
+        { "label": "渲染页面里的链接", "path": "studio/packages/ui/src/viewer/RenderedReview.tsx", "anchor": "const follow = (href: string)" },
         { "label": "命令行入口", "path": "studio/scripts/amo-review.mjs" },
         { "label": "改动说明", "path": "studio/packages/reviewer/CHANGELOG.md" }
       ],

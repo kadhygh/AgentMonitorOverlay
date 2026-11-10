@@ -12,6 +12,7 @@ import { useVsCode } from "./FileLinks.js";
 import { fileName, folderOf } from "./paths.js";
 import { openViewer } from "../viewer/open.js";
 import { readStored, writeStored } from "../lib/stored.js";
+import { ImageView } from "../viewer/ImageView.js";
 
 // The quick look (stage 12, S12-C, after DSH's document preview): a file beside the conversation without leaving it.
 // Code with line numbers and colours, scrolled to and marking a line; Markdown rendered or as source; images; a
@@ -102,9 +103,8 @@ export function FileContent({
 }) {
   if (isImage(file.path))
     return (
-      <div className="fp-image">
-        <img src={`${rawFileUrl(link, file)}&v=${reload}`} alt={fileName(file.path)} data-testid="file-preview-image" />
-      </div>
+      // 图片缩放、拖拽、右键另存为 (2026-11-11): fitted when it opens, zoomed and dragged as in an image viewer.
+      <ImageView url={`${rawFileUrl(link, file)}&v=${reload}`} name={fileName(file.path)} imgTestId="file-preview-image" />
     );
   if (loaded.state === "loading") return <div className="fp-empty">读取中…</div>;
   if (loaded.state === "error")

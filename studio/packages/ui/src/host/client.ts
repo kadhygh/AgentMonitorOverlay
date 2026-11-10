@@ -40,6 +40,8 @@ declare global {
       setAppIcon?(face: string | null): void;
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
+      /** 另存为 (2026-11-11, Studio and the Reviewer): the system's save dialog, then the file written there (`bytes`, else read from `url`). */
+      saveFile?(input: { name: string; bytes?: Uint8Array; url?: string }): Promise<{ saved: boolean; path?: string; error?: string }>;
       /** The 便签 program (2026-10-30): text and pictures together. */
       copyRich?(input: { text: string; images: Uint8Array[] }): Promise<void>;
       setMinWidth?(px: number): void;
