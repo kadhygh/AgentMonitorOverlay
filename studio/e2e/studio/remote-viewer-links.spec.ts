@@ -122,7 +122,7 @@ test("B follows the links of a remote task's Markdown and HTML one level down, f
   await link("docs/shot.png").click();
   await expect(viewer.getByTestId("viewer-name")).toHaveText("shot.png", { timeout: 30_000 });
   mkdirSync(join(root, "saved-on-b"), { recursive: true });
-  await exerciseImageView(b.app, viewer, { imgTestId: "file-preview-image", saveTo: join(root, "saved-on-b", "shot.png"), bytes: shot, width: 1400 });
+  await exerciseImageView(b.app, viewer, { imgTestId: "file-preview-image", saveTo: join(root, "saved-on-b", "shot.png"), bytes: shot, width: 1400, height: 900 });
   await screenshot(b.app, "studio", "remote-viewer-image", viewer, "viewer");
 
   // From a 查看包 B's turn opened: the Markdown item's link, and the page item's.

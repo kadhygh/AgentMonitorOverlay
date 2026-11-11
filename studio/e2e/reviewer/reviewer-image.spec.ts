@@ -66,7 +66,7 @@ test("a picture in the Reviewer's viewer opens fitted whole, zooms, drags, and s
   const viewer = await windowAt(app, "reviewer.html#viewer");
   await expect(viewer.getByTestId("viewer-name")).toHaveText("shot.png");
   mkdirSync(join(root, "saved"), { recursive: true });
-  await exerciseImageView(app, viewer, { imgTestId: "file-preview-image", saveTo: join(root, "saved", "shot.png"), bytes: shot, width: 1800 });
+  await exerciseImageView(app, viewer, { imgTestId: "file-preview-image", saveTo: join(root, "saved", "shot.png"), bytes: shot, width: 1800, height: 1100 });
   await viewer.getByTestId("file-preview-image").click({ button: "right" });
   await expect(viewer.getByTestId("image-view-menu")).toBeVisible();
   await screenshot(app, "reviewer", "viewer-image-menu", viewer, "viewer");

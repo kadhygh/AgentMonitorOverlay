@@ -8,7 +8,7 @@ import { useInWindow, useMenuDismiss } from "./ContextMenu.js";
 
 export interface MenuAction {
   label: string;
-  /** One letter, shown on the right and pressed to run it. */
+  /** One letter, shown on the right and pressed to run it (a shortcut with Ctrl, e.g. Ctrl+C, is only shown: the page runs it). */
   key?: string;
   run(): void;
   disabled?: boolean;

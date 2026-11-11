@@ -4,9 +4,9 @@
     {
       "id": "tool.reviewer",
       "label": "AMO Reviewer（Git Review 和查看器）",
-      "aliases": ["Reviewer", "Git Review", "查看器", "viewer", "HTML 批注", "位置批注", "amo-review", "ReviewApp", "ViewerApp", "图片", "看大图", "缩放", "另存为", "链接"],
+      "aliases": ["Reviewer", "Git Review", "查看器", "viewer", "HTML 批注", "位置批注", "amo-review", "ReviewApp", "ViewerApp", "图片", "看大图", "缩放", "另存为", "复制图片", "链接"],
       "category": "tool",
-      "purpose": "Git Review 和文件查看器（含 HTML 的位置批注），可以单独用，Studio 里也带着同一份（AGENTS.md 架构约束第 4 条：只有一份）。独立程序是 reviewer 包的 Electron 入口，界面在 ui 包，后台用 Host。图片（本机的、远程任务取来的、查看包里的、网页和 Markdown 里点开的大图）都由 ImageView 显示：适应窗口、滚轮缩放、拖动、右键另存为（主进程的 amo:save-file 弹系统保存对话框，Studio 和独立 Reviewer 都装）。渲染的 HTML / Markdown 里的链接由 RenderedReview 的 follow 处理：网址用浏览器开，#标题页内跳，图片看大图，别的文件在查看器里开（远程任务的经 viewRemoteFile 从那台电脑取）。",
+      "purpose": "Git Review 和文件查看器（含 HTML 的位置批注），可以单独用，Studio 里也带着同一份（AGENTS.md 架构约束第 4 条：只有一份）。独立程序是 reviewer 包的 Electron 入口，界面在 ui 包，后台用 Host。图片（本机的、远程任务取来的、查看包里的、网页和 Markdown 里点开的大图）都由 ImageView 显示：适应窗口、滚轮缩放、拖动、右键另存为（主进程的 amo:save-file 弹系统保存对话框，Studio 和独立 Reviewer 都装）、Ctrl+C 复制图片（amo:copy-image 写剪贴板，非 PNG/JPEG 先在页面里转成 PNG；有文字选区或焦点在输入框时让给文字，lib/saveFile.ts 的 textWantsCopy）。渲染的 HTML / Markdown 里的链接由 RenderedReview 的 follow 处理：网址用浏览器开，#标题页内跳，图片看大图，别的文件在查看器里开（远程任务的经 viewRemoteFile 从那台电脑取）。",
       "anchors": [
         { "label": "独立程序入口", "path": "studio/packages/reviewer/src/main.ts", "anchor": "parseArgs" },
         { "label": "Review 窗口", "path": "studio/packages/reviewer/src/review-window.ts", "anchor": "export function setupReviewWindows" },

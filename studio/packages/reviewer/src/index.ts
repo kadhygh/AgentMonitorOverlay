@@ -3,4 +3,4 @@
 export { reviewHash, setupReviewWindows, type ReviewWindowOptions } from "./review-window.js";
 export { setupViewerWindows, type ViewerWindowOptions } from "./viewer-window.js";
 export { installWindowControls, sendMaximized } from "./window-controls.js";
-export { installSaveFile } from "./save-file.js";
+export { installCopyImage, installSaveFile } from "./save-file.js";

@@ -13,7 +13,7 @@ import { platformDataDir, removeStudioRunning, resolveDataDir, writeStudioRunnin
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
 import { findRelayExe, openInRelay } from "./relay-link.js";
-import { installSaveFile, installWindowControls, sendMaximized, setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
+import { installCopyImage, installSaveFile, installWindowControls, sendMaximized, setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
 import { installCanvasWindow } from "./canvas-window.js";
@@ -378,6 +378,8 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
   installWindowControls();
   // 另存为 of a picture (2026-11-11): the system's save dialog, from any window.
   installSaveFile();
+  // 复制图片 (2026-11-11): Ctrl+C on a picture puts the picture itself on the clipboard.
+  installCopyImage({ testMode });
   // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
   // Tests never touch the user's clipboard; they read the recorded text instead.
   // A page's top bar needs this much width (CSS px, lib/fitWidth.ts): the window keeps at least that, never less than

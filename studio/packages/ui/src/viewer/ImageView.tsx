@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ActionMenu } from "../lib/ActionMenu.js";
-import { saveFileAs } from "../lib/saveFile.js";
+import { canCopyImages, copyImage, saveFileAs, textWantsCopy } from "../lib/saveFile.js";
 import { canPan, fitLayout, MAX_SCALE, MIN_SCALE, panBy, zoomAt, ZOOM_STEP, type ImageLayout, type Size } from "./imageFit.js";
 
 // 图片缩放、拖拽 + 右键另存为 (2026-11-11, the user: 控制端在会话里 review 一张图片时要能放大、缩小，放大后能拖动，像常规的图片
@@ -9,7 +9,9 @@ import { canPan, fitLayout, MAX_SCALE, MIN_SCALE, panBy, zoomAt, ZOOM_STEP, type
 // zooms where the pointer is, a drag moves it once it is larger than the pane, a double-click goes between fitted and
 // its own size, + − 0 1 from the keyboard; the buttons in the corner do the same. A right-click on it: 另存为…, which
 // the system's save dialog takes. Used by the viewer and 查看包 for a picture file (this computer's, or a remote task's
-// copy fetched to this one — the same <img> either way) and by 看大图 over a rendered page (ImageZoom).
+// copy fetched to this one — the same <img> either way) and by 看大图 over a rendered page (ImageZoom). 复制图片 (the same
+// day): Ctrl+C, the 复制 button and the menu put the picture itself on the clipboard — unless the Ctrl+C is for text
+// (a box has the focus, or text is selected: textWantsCopy), which is copied as always.
 
 /** Room around a fitted picture. */
 const MARGIN = 12;
@@ -35,6 +37,7 @@ export function ImageView({
   onBackgroundClick?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const img = useRef<HTMLImageElement>(null);
   const [pane, setPane] = useState<Size | null>(null);
   const [natural, setNatural] = useState<Size | null>(null);
   const [broken, setBroken] = useState(false);
@@ -141,6 +144,27 @@ export function ImageView({
   };
 
   const save = () => void saveFileAs(url, name);
+  const copyable = canCopyImages();
+  const copy = () => void copyImage(url, img.current);
+
+  // Ctrl+C anywhere in the window while this picture is shown (the viewer has no other text then), except for text.
+  const copyKey = useRef({ copy, ready: false });
+  copyKey.current = { copy, ready: !!natural && !broken && copyable };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.code !== "KeyC" || e.defaultPrevented || !copyKey.current.ready) return;
+      const el = box.current;
+      // Not one kept hidden (the viewer's 改动 mode, a 查看包's other item); 看大图 over a page takes it from the page's.
+      if (!el || !el.getClientRects().length || textWantsCopy()) return;
+      const over = document.querySelector(".iz .iv");
+      if (over && over !== el) return;
+      e.preventDefault();
+      setMenu(null);
+      copyKey.current.copy();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const pct = shown ? Math.round(shown.scale * 100) : null;
 
   return (
@@ -165,6 +189,7 @@ export function ImageView({
         </div>
       ) : (
         <img
+          ref={img}
           className="iv-img"
           src={url}
           alt={name}
@@ -199,6 +224,12 @@ export function ImageView({
           <button type="button" className="btn-ghost small" aria-pressed={!!view && Math.abs(view.scale - 1) < 1e-6} title="图片本来的大小（1）" onClick={() => toActual()} data-testid="image-view-actual">
             原始大小
           </button>
+          {copyable && (
+            <button type="button" className="btn-ghost small" title="把这张图片复制到剪贴板（Ctrl+C），可以粘贴到微信、Word、画图里" aria-keyshortcuts="Control+C" onClick={copy} data-testid="image-view-copy">
+              复制
+              <kbd className="gr-key">Ctrl+C</kbd>
+            </button>
+          )}
         </div>
       )}
       {menu && (
@@ -208,7 +239,10 @@ export function ImageView({
           onClose={() => setMenu(null)}
           testId="image-view-menu"
           groups={[
-            [{ label: "另存为…", key: "S", run: save }],
+            [
+              copyable && { label: "复制图片", key: "Ctrl+C", run: copy },
+              { label: "另存为…", key: "S", run: save },
+            ],
             [
               { label: "适应窗口", key: "0", run: () => setView(null) },
               { label: "原始大小", key: "1", run: () => toActual() },

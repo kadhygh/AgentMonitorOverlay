@@ -4,7 +4,9 @@ import { expect, type ElectronApplication, type Page } from "@playwright/test";
 
 // 图片缩放、拖拽 + 右键另存为 (2026-11-11): what the e2e tests of the viewer's pictures share — a PNG made here, and the
 // checks of ImageView (viewer/ImageView.tsx) any window showing a picture file goes through: fitted whole when it
-// opens, the wheel zooms, a drag moves it, 适应窗口 fits it again, a right-click offers 另存为… (the save dialog replaced).
+// opens, the wheel zooms, a drag moves it, 适应窗口 fits it again, a right-click offers 另存为… (the save dialog replaced),
+// and 复制图片 (Ctrl+C, the 复制 button, the menu) puts the picture on the clipboard — in tests the main process records
+// the picture's size instead of taking the person's clipboard.
 
 /** A PNG of one colour, with a darker band across its top (so a picture moved is seen moved). */
 export function png(width: number, height: number, rgb: [number, number, number]): Buffer {
@@ -36,13 +38,16 @@ export async function answerSaveDialog(app: ElectronApplication, filePath: strin
   }, filePath);
 }
 
+/** The pictures the program put on the clipboard so far (their sizes; tests record them instead). */
+export const copiedImages = (app: ElectronApplication) => app.evaluate(() => (globalThis as { __amoCopiedImages?: Array<{ width: number; height: number }> }).__amoCopiedImages ?? []);
+
 const box = async (page: Page, testId: string) => (await page.getByTestId(testId).boundingBox())!;
 
 /**
  * The picture shown in `page` (img `imgTestId` inside the ImageView `viewTestId`): fitted whole, zoomed by the wheel,
  * dragged, fitted again, and saved by 另存为… to `saveTo`, which then holds `bytes`.
  */
-export async function exerciseImageView(app: ElectronApplication, page: Page, { imgTestId, viewTestId = "image-view", saveTo, bytes, width }: { imgTestId: string; viewTestId?: string; saveTo: string; bytes: Buffer; width: number }): Promise<void> {
+export async function exerciseImageView(app: ElectronApplication, page: Page, { imgTestId, viewTestId = "image-view", saveTo, bytes, width, height }: { imgTestId: string; viewTestId?: string; saveTo: string; bytes: Buffer; width: number; height: number }): Promise<void> {
   const view = page.getByTestId(viewTestId);
   const img = page.getByTestId(imgTestId);
   await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 30_000 }).toBe(width);
@@ -87,11 +92,31 @@ export async function exerciseImageView(app: ElectronApplication, page: Page, { 
   await img.click({ button: "right" });
   const menu = page.getByTestId("image-view-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem").first()).toHaveText(/另存为…/);
+  // 复制图片 first, 另存为… next (2026-11-11).
+  await expect(menu.getByRole("menuitem").nth(0)).toHaveText(/复制图片/);
+  await expect(menu.getByRole("menuitem").nth(1)).toHaveText(/另存为…/);
   await answerSaveDialog(app, saveTo);
   await menu.getByRole("menuitem", { name: /另存为/ }).click();
   await expect(menu).toHaveCount(0);
   await expect.poll(() => existsSync(saveTo), { timeout: 10_000 }).toBe(true);
   expect(readFileSync(saveTo).equals(bytes)).toBe(true);
   await expect(page.getByTestId("toast").last()).toContainText("已保存");
+
+  // 复制图片: Ctrl+C, the 复制 button (its key shown on it), and the menu's 复制图片 (Ctrl+C) — the picture itself each time.
+  const before = (await copiedImages(app)).length;
+  const toast = page.getByTestId("toast").last();
+  await page.keyboard.press("Control+C");
+  await expect.poll(async () => (await copiedImages(app)).length).toBe(before + 1);
+  await expect(toast).toContainText(`已复制图片（${width} × ${height}）`);
+  const button = page.getByTestId("image-view-copy");
+  await expect(button).toContainText("Ctrl+C");
+  await button.click();
+  await expect.poll(async () => (await copiedImages(app)).length).toBe(before + 2);
+  await img.click({ button: "right" });
+  const item = menu.getByRole("menuitem", { name: /复制图片/ });
+  await expect(item).toContainText("Ctrl+C");
+  await item.click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(async () => (await copiedImages(app)).length).toBe(before + 3);
+  expect((await copiedImages(app)).slice(before)).toEqual([{ width, height }, { width, height }, { width, height }]);
 }
