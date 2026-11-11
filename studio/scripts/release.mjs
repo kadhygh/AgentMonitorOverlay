@@ -44,6 +44,7 @@ import { constants, setPriority, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { TOOLS, studio } from "./amo-tools.mjs";
 import { marketingVersion, releaseIos, withMarketingVersion } from "./ios-release.mjs";
+import { mutate as mutateMaint, noteRelease, recordFile as maintFile } from "./maint.mjs";
 
 const repo = resolve(studio, "..");
 const args = process.argv.slice(2);
@@ -379,6 +380,18 @@ async function markReleased(done, sha) {
   }
 }
 
+/** 维护记录 (scripts/maint.mjs, 2026-11-11): the items whose commits are in this build get its versions. Best effort. */
+function noteMaint(done, sha) {
+  try {
+    const tools = done.filter((p) => !p.t.ios).map((p) => ({ label: p.t.label, version: p.to, paths: p.t.paths }));
+    if (!tools.length || !existsSync(maintFile())) return;
+    const changed = mutateMaint((record) => noteRelease(record, sha, tools));
+    if (changed.length) console.log(`维护记录：${changed.map((i) => i.id).join(" ")} 记上了版本`);
+  } catch (err) {
+    console.log(`（维护记录没记上版本：${err.message}）`);
+  }
+}
+
 /** auto --if-due: the master a build failed on (kept in this checkout's git folder), not tried again by itself. */
 const failedFile = () => join(git("rev-parse", "--absolute-git-dir"), "amo-release-failed.json");
 function lastFailed() {
@@ -488,6 +501,7 @@ async function release(ids) {
     }
     console.log(`\n已发布到测试通道：${done.map((p) => `${p.t.label} ${p.to}${p.t.ios ? "（TestFlight）" : ""}`).join("、") || "无"}`);
     await markReleased(done, sha);
+    noteMaint(done, sha);
     for (const p of done.filter((d) => !d.t.ios)) console.log(`  转正式版：npm run release -- promote ${p.t.id} ${p.to}`);
     if (done.length < plan.length) {
       console.log("没发出去的下次再跑 release 会补发（版本号不再加）。");

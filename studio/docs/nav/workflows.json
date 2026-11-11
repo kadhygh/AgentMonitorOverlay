@@ -100,20 +100,22 @@
     {
       "id": "infra.release",
       "label": "发布：npm run release",
-      "aliases": ["发布", "release", "测试通道", "正式通道", "promote", "自动打包", "land", "下一版", "CHANGELOG", "tag", "relay-mac", "platform-prune"],
+      "aliases": ["发布", "release", "测试通道", "正式通道", "promote", "自动打包", "land", "下一版", "CHANGELOG", "tag", "relay-mac", "platform-prune", "维护记录", "轮次", "maint"],
       "category": "infra",
       "purpose": "所有工具的发布都走 `npm run release`（用法在 release.mjs 开头）：status / due / <工具…> / auto（跑测试、升版本、「下一版」改成版本标题、提交、打包、发到测试通道、打 tag）/ relay-service / ios / promote。只从提交过的 master 打包；自动打包（值守项）跑 `auto --if-due`。工具 id 和包的对应在 amo-tools.mjs。",
       "steps": [
         "改动说明写进各包 CHANGELOG.md「## 下一版」，没写的不发（工具和包见 amo-tools.mjs 的 TOOLS）。",
         "主工作区有没提交的改动时到值守目录发。中转服务只用 `release -- relay-service` 部署（先问用户）。",
-        "发布后自动删旧版本（留最新 3 个和两个通道指着的）。"
+        "发布后自动删旧版本（留最新 3 个和两个通道指着的）。",
+        "维护记录（本机，不进 git）：`node scripts/maint.mjs` 管轮次和编号 R12-3；发布后 release.mjs 给提交在包里的事项记上版本（noteMaint → noteRelease）。"
       ],
       "anchors": [
         { "label": "入口和用法", "path": "studio/scripts/release.mjs", "anchor": "case \"auto\"" },
         { "label": "工具清单", "path": "studio/scripts/amo-tools.mjs", "anchor": "export const TOOLS" },
         { "label": "上传和通道", "path": "studio/scripts/relay-mac.mjs" },
         { "label": "发布到平台", "path": "studio/scripts/platform-publish.mjs", "anchor": "export async function publish" },
-        { "label": "中转服务打包", "path": "studio/scripts/relay-release.mjs" }
+        { "label": "中转服务打包", "path": "studio/scripts/relay-release.mjs" },
+        { "label": "维护记录", "path": "studio/scripts/maint.mjs", "anchor": "export function noteRelease" }
       ],
       "related": ["flow.platformChangelog", "infra.packaging", "studio.duty", "tool.issues"],
       "next": ["studio/plans/release.md", "studio/packages/relay/README.md"]
