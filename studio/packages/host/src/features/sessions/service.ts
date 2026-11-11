@@ -472,6 +472,22 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
    * the session list's 归档 does — branches and subagents with it, and it can be unarchived there. One still in a turn
    * is refused unless `stop` is true: archiving closes its process and would cut the turn off.
    */
+  /**
+   * session_rename (2026-11-11, the user: 最好能直接修改 session 的名字…给 AMO 补一个接口，让 AI 能够改 session 和 task 的名字):
+   * the caller itself (no sessionId), or a session it started with session_start — the same ones it may archive.
+   */
+  async renamePeer(fromSessionId: Id, input: { sessionId?: unknown; title?: unknown }): Promise<Session> {
+    const from = this.requireSession(fromSessionId);
+    const id = input.sessionId === undefined || input.sessionId === null || input.sessionId === "" ? from.id : input.sessionId;
+    if (typeof id !== "string") throw new HostError("bad_request", "sessionId must be a string");
+    const title = boundedText(input.title, "title", 100);
+    if (id !== from.id) {
+      const s = this.store.getSession(id);
+      if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${id} 不是你用 session_start 开的，不能改名：只能改你自己，或你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
+    }
+    return this.renameSession(id, title);
+  }
+
   async archivePeer(fromSessionId: Id, input: { sessionId?: unknown; stop?: unknown }): Promise<Session[]> {
     const from = this.requireSession(fromSessionId);
     if (typeof input.sessionId !== "string" || !input.sessionId) throw new HostError("bad_request", "sessionId is required");

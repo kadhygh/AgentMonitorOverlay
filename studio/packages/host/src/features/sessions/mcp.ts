@@ -50,6 +50,21 @@ export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[
         }),
     },
     {
+      // 2026-11-11 (the user: 最好能直接修改 session 的名字): an AMO维护 session names itself by its number and what it does.
+      name: "session_rename",
+      title: "会话改名",
+      description:
+        "Rename a session, at once (no approval): yourself when sessionId is left out, or a session you started with session_start (as session_archive). The name shows in the task's session list and Focus; keep it short (at most 100 characters), e.g. what the session works on.",
+      inputSchema: { sessionId: z.string().optional(), title: z.string() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        writeAsync(caller, async (c) => {
+          const s = await service.sessions.renamePeer(c.sessionId, args);
+          return { sessionId: s.id, title: s.title };
+        }),
+    },
+    {
       // 问题 #6 (2026-11-01): what session_start opens, the session can put away again.
       name: "session_archive",
       title: "归档会话",

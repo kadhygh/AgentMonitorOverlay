@@ -395,3 +395,20 @@ describe("session_archive (收会话)", () => {
     expect(store.getSession(s.id)?.archivedAt).not.toBeNull();
   });
 });
+
+describe("session_rename (会话改名, 2026-11-11)", () => {
+  it("renames the caller itself, or a session it started; refuses the person's, another's, forPerson ones and an empty name", async () => {
+    expect((await service.sessions.renamePeer(caller.id, { title: "R12-1 · 修 Focus 闪烁" })).title).toBe("R12-1 · 修 Focus 闪烁");
+    expect(store.getSession(caller.id)?.title).toBe("R12-1 · 修 Focus 闪烁");
+    const s = await service.sessions.startPeer(caller.id, { text: "只改数值表" });
+    expect((await service.sessions.renamePeer(caller.id, { sessionId: s.id, title: "R12-2 · 数值表" })).title).toBe("R12-2 · 数值表");
+
+    const persons = await service.tasks.addSession(task.id, { profileId: "p-ds" });
+    await expect(service.sessions.renamePeer(caller.id, { sessionId: persons.id, title: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    const others = await service.sessions.startPeer(persons.id, { text: "另一个会话开的" });
+    await expect(service.sessions.renamePeer(caller.id, { sessionId: others.id, title: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    const forPerson = await service.sessions.startPeer(caller.id, { text: "人来处理", forPerson: true });
+    await expect(service.sessions.renamePeer(caller.id, { sessionId: forPerson.id, title: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    await expect(service.sessions.renamePeer(caller.id, { title: "  " })).rejects.toThrow(/title/);
+  });
+});

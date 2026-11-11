@@ -19,6 +19,7 @@ const GUIDE: Record<GuideSection, string> = {
 
 - board_list：看板上的任务（可按项目、专题、状态筛选）。task_get：一个任务的详情（说明、依赖、分组、进度、会话）。
 - task_describe：写任务说明（自己的任务，或同专题的任务）。说明显示在画布卡片和任务页上，几行讲清楚要做什么、目标和范围。
+- task_rename：改任务的名字（同样是自己的任务，或同专题的任务）；session_rename：改会话的名字（你自己，或你用 session_start 开的会话）。都不用人确认，名字短一点，写清在做什么。
 - task_note_add：在自己的任务上记一条进度，人让你记时才用，平时不用主动记。handoff_submit：交接摘要（做了什么、还剩什么），工作要交给下一个会话或人接手时用。
 - checklist_check：勾自己任务的清单项（较早的任务上可能有）。
 - session_tree：一个任务的会话树（主会话、分支、子 agent）。`,
