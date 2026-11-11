@@ -347,7 +347,7 @@ describe("DSH runtime", () => {
     const s = await start(host, "hi");
     await idle(host, s.id);
     const before = (await items(host, s.id)).length;
-    await expect(call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/deepseek-v4-flash 不收图片.*DeepSeek-V4.1-Flash/);
+    await expect(call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「deepseek-v4-flash」不收图片；点输入框下面的型号（Alt M）换成「DeepSeek-V4.1-Flash」再发/);
     expect((await items(host, s.id)).length).toBe(before);
 
     // Switched to V4.1-Flash: the process starts again on it, DSH offers images, the picture goes with the text.
@@ -364,6 +364,31 @@ describe("DSH runtime", () => {
       firstSession: { profileId: "dsh-deepseek", text: "第一句带图", options: { model: "deepseek-official/deepseek-flash" }, attachments: [await upload()] },
     });
     await until(() => items(host, f.id), (l) => replies(l).some((r) => r.includes("第一句带图 [1 张图 image/png]")));
+  });
+
+  it("a channel's own model names keep DSH's word that deepseek-flash takes images, and the process starts on the session's model (2026-11-11)", async () => {
+    // The person's 「Dxx-DS」: DeepSeek-V4.1-Flash was refused every picture — the catalog patch listed `deepseek-flash`
+    // without `inputModalities` (text only in DSH), and the agent always started on the channel's first model.
+    const host = await boot();
+    const upload = async () => {
+      const res = await fetch(`${host.info.url}/api/attachments?name=shot.png&type=image/png`, { method: "POST", headers: { authorization: `Bearer ${host.token}`, "content-type": "image/png" }, body: Buffer.from(TINY_PNG_BASE64, "base64") });
+      return ((await res.json()) as { id: string }).id;
+    };
+    const channel = await call<{ id: string }>(host, "POST", "/api/channels", { kind: "dsh", label: "Dxx-DS", baseUrl: "https://relay.example", key: "sk-relay", models: ["deepseek-v4-flash", "deepseek-flash"] });
+    const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
+    const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "中转看图", workspaceId: ws.id, firstSession: { profileId: channel.id, text: "hi" } });
+    await idle(host, session.id);
+    // On the channel's first model (text only): refused, pointing at the one of its names that takes images.
+    await expect(call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「deepseek-v4-flash」不收图片；点输入框下面的型号（Alt M）换成「deepseek-flash（DeepSeek-V4.1-Flash）」再发/);
+    await call(host, "PATCH", `/api/sessions/${session.id}/options`, { model: "deepseek-official/deepseek-flash" });
+    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "看图", attachments: [await upload()] });
+    await until(() => items(host, session.id), (l) => replies(l).some((r) => r.includes("看图 [1 张图 image/png]")));
+
+    // A channel whose names take no images: where to add one.
+    const only = await call<{ id: string }>(host, "POST", "/api/channels", { kind: "dsh", label: "只有 V4", baseUrl: "https://relay.example", key: "sk-relay", models: ["deepseek-v4-flash"] });
+    const { session: t } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "只有 V4", workspaceId: ws.id, firstSession: { profileId: only.id, text: "hi" } });
+    await idle(host, t.id);
+    await expect(call(host, "POST", `/api/sessions/${t.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「只有 V4」的型号都不收图片.*设置 → 模型 →「只有 V4」→ 编辑，在「模型」里加一行 deepseek-flash/);
   });
 
   it("runs a third-party DeepSeek channel: its address, its own key and its model (2026-10-19)", async () => {

@@ -23,8 +23,9 @@
 //                            runs until session/cancel
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
 // is the default; as in DSH, a model that is not offered cannot be picked. Images (2026-10-26): as DSH does, initialize
-// offers them only when the agent's default model takes them (deepseek-flash here); a prompt's images are counted in
-// the reply, and a prompt with images is refused when they were not offered.
+// offers them only when the agent's default model takes them (deepseek-flash here; in a `--patch` catalog only an entry
+// whose `inputModalities` has "image", as in DSH); a prompt's images are counted in the reply, and a prompt with images
+// is refused when they were not offered.
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -67,6 +68,19 @@ function patchedDefault(): string | null {
   const def = /^\s*model: (".*")\s*$/m.exec(readFileSync(path, "utf8"));
   return def ? (JSON.parse(def[1]!) as string) : null;
 }
+/**
+ * The models a `--patch` catalog says take images. As in DSH (llm-deepseek, 2026-11-11), a catalog replaces the
+ * built-in one and an entry takes images only when its `inputModalities` says so: a listed `deepseek-flash` without it
+ * is text only. null: no catalog, the built-in one's IMAGE_MODELS.
+ */
+function patchedImageModels(): Set<string> | null {
+  const at = process.argv.indexOf("--patch");
+  const path = at >= 0 ? process.argv[at + 1] : undefined;
+  if (!path || !existsSync(path)) return null;
+  const text = readFileSync(path, "utf8");
+  if (!/^\s*- id: (".*")\s*$/m.test(text)) return null;
+  return new Set([...text.matchAll(/^\s*- id: (".*")\s*\r?\n\s+inputModalities: \[([^\]]*)\]/gm)].filter((m) => m[2]!.includes('"image"')).map((m) => JSON.parse(m[1]!) as string));
+}
 /** The models a `--patch` file lists (`- id: "<name>"` under llm-deepseek), its `acp` default first. */
 function patchedModels(): Array<{ value: string; name: string; description?: string }> | null {
   const at = process.argv.indexOf("--patch");
@@ -101,7 +115,7 @@ const ACCOUNT_MODELS = SIGNED_IN
 const MODELS = patchedModels() ?? [...BUILTIN_MODELS, ...ACCOUNT_MODELS];
 const DEFAULT_NAME = patchedDefault();
 const DEFAULT_MODEL = MODELS.find((m) => JSON.stringify([PROVIDER, DEFAULT_NAME]) === m.value) ?? MODELS[0]!;
-const TAKES_IMAGES = IMAGE_MODELS.has((JSON.parse(DEFAULT_MODEL.value) as string[])[1]!);
+const TAKES_IMAGES = (patchedImageModels() ?? IMAGE_MODELS).has((JSON.parse(DEFAULT_MODEL.value) as string[])[1]!);
 const EFFORTS = ["off", "low", "high", "max"];
 
 function load(): Record<string, Stored> {

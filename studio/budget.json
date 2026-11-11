@@ -19,7 +19,7 @@
     },
     "dsh-dxx-ds": {
       "limit": 1000,
-      "used": 0
+      "used": 1
     }
   },
   "log": [
@@ -442,6 +442,11 @@
       "at": "2026-10-30T17:14:55.828Z",
       "provider": "deepseek",
       "note": "Android fixture Dxx-DS isolated remote smoke"
+    },
+    {
+      "at": "2026-11-11T07:17:49.859Z",
+      "provider": "dsh-dxx-ds",
+      "note": "dsh-images: one picture to deepseek-flash on Dxx-DS (2026-11-11)"
     }
   ]
 }
