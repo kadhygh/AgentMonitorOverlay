@@ -144,6 +144,10 @@
 .channel-site-models { display: flex; flex-wrap: wrap; gap: 6px; margin-left: 104px; max-height: 120px; overflow: auto; }
 .channel-site-models .chip.mono { font-family: var(--font-code); font-size: 12px; }
 .channel-site-models .chip[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+/* Which of those names take pictures (2026-11-11): each one lit (✓) or not. */
+.channel-images { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.channel-images .chip.mono { font-family: var(--font-code); font-size: 12px; }
+.channel-images .chip[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .channel-paths { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-left: 104px; }
 @media (max-width: 560px) {
   .channel-field { grid-template-columns: 1fr; }

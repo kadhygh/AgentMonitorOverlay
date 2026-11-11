@@ -54,17 +54,23 @@ describe("DSH models and permissions", () => {
     const yaml = catalogPatchYaml("Dxx-DS", ["deepseek-v4-flash", "deepseek-flash"], "deepseek-flash");
     expect(yaml).toContain('    models:\n      - id: "deepseek-v4-flash"\n      - id: "deepseek-flash"\n        inputModalities: ["text", "image"]\n    retryPolicy:');
     expect(yaml).toContain('    model: "deepseek-flash"\n');
+    // The channel's own 能看图: a relay's name for V4.1-Flash, and deepseek-flash put out.
+    const marked = catalogPatchYaml("中转", ["deepseek/deepseek-v4.1-flash", "deepseek-flash"], "deepseek-flash", new Set(["deepseek/deepseek-v4.1-flash"]));
+    expect(marked).toContain('      - id: "deepseek/deepseek-v4.1-flash"\n        inputModalities: ["text", "image"]\n      - id: "deepseek-flash"\n    retryPolicy:');
   });
 
   it("says why a picture was refused and where to change it (2026-11-11)", () => {
     const channel: ModelProfile = { id: "ch-1", runtime: "dsh", label: "Dxx-DS", custom: true, model: null, credentialId: "channel-ch-1" } as ModelProfile;
     const both = channelModels(["deepseek-v4-flash", "deepseek-flash"], null, null);
     expect(noImagesMessage(channel, both, "deepseek-official/deepseek-v4-flash", false)).toBe("「deepseek-v4-flash」不收图片；点输入框下面的型号（Alt M）换成「deepseek-flash（DeepSeek-V4.1-Flash）」再发（上下文不变）");
-    // No model of the channel takes images: where to add one.
+    // No model of the channel takes images: where to mark one.
     const one = channelModels(["deepseek-v4-flash"], null, null);
     expect(noImagesMessage(channel, one, undefined, false)).toBe(
-      "「Dxx-DS」的型号都不收图片（DeepSeek 能看图的是 deepseek-flash，即 DeepSeek-V4.1-Flash）：到 设置 → 模型 →「Dxx-DS」→ 编辑，在「模型」里加一行 deepseek-flash（这个网址要有它，可以点「从网址读取」看），保存后点输入框下面的型号（Alt M）换过去再发",
+      "「Dxx-DS」的型号都没标「能看图」：到 设置 → 模型 →「Dxx-DS」→ 编辑，在「能看图」那一行点亮能看图的型号（DeepSeek 能看图的是 DeepSeek-V4.1-Flash，官方叫 deepseek-flash；列表里没有就加一行，可以点「从网址读取」看这个网址叫它什么），保存后点输入框下面的型号（Alt M）换过去再发",
     );
+    // The channel's own marks: a relay's name lit is the one to switch to.
+    const relay = channelModels(["deepseek/v4-flash", "deepseek/v4.1-flash"], null, null);
+    expect(noImagesMessage(channel, relay, "deepseek-official/deepseek/v4-flash", false, (id) => id.endsWith("/deepseek/v4.1-flash"))).toBe("「deepseek/v4-flash」不收图片；点输入框下面的型号（Alt M）换成「deepseek/v4.1-flash」再发（上下文不变）");
     // Switched during a turn: the process still runs the old one until it ends.
     expect(noImagesMessage(channel, both, "deepseek-official/deepseek-flash", true)).toBe("型号刚换过：这一轮做完才用上「deepseek-flash（DeepSeek-V4.1-Flash）」，现在这个不收图片；等这一轮做完再发图片");
     // A model that takes images, yet DSH said no: nothing to pick.

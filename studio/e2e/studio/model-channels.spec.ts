@@ -246,13 +246,24 @@ test("a third-party DeepSeek channel run by DSH: its address, its own key and th
   await site.getByRole("button", { name: "deepseek/deepseek-v4.1-flash" }).click();
   await expect(form.getByTestId("channel-models")).toHaveValue("deepseek/deepseek-v4-pro\ndeepseek/deepseek-v4.1-flash");
   await screenshot(app, "stage-18", "S18-dsh-channel", page);
+  // 能看图 (2026-11-11): the relay's own name for V4.1-Flash is not known to take pictures until it is lit; a typed-in
+  // deepseek-flash (DSH's own name for it) comes lit.
+  const images = form.getByTestId("channel-image-models").getByRole("button");
+  await expect(images).toHaveText(["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"]);
+  await images.filter({ hasText: "deepseek/deepseek-v4.1-flash" }).click();
+  await expect(images.filter({ hasText: "deepseek/deepseek-v4.1-flash" })).toHaveAttribute("aria-pressed", "true");
+  await expect(images.filter({ hasText: "deepseek/deepseek-v4.1-flash" })).toHaveText("✓ deepseek/deepseek-v4.1-flash");
+  await form.getByTestId("channel-models").fill("deepseek/deepseek-v4-pro\ndeepseek/deepseek-v4.1-flash\ndeepseek-flash");
+  await expect(images).toHaveText(["deepseek/deepseek-v4-pro", "✓ deepseek/deepseek-v4.1-flash", "✓ deepseek-flash"]);
+  await screenshot(app, "studio", "dsh-channel-image-models", page);
+  await form.getByTestId("channel-models").fill("deepseek/deepseek-v4-pro\ndeepseek/deepseek-v4.1-flash");
   await form.getByTestId("channel-save").click();
   await expect(form).toHaveCount(0);
   const card = dialog.getByTestId("channel-page");
   await expect(card.getByTestId("channel-title")).toHaveText("中转 DeepSeek");
   await expect(card).toContainText("DSH 方案");
   const channel = (await studio.api<ModelChannel[]>("GET", "/api/channels")).find((c) => c.kind === "dsh")!;
-  expect(channel).toMatchObject({ label: "中转 DeepSeek", baseUrl: relayUrl, model: null, models: ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"], keySaved: true });
+  expect(channel).toMatchObject({ label: "中转 DeepSeek", baseUrl: relayUrl, model: null, models: ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"], imageModels: ["deepseek/deepseek-v4.1-flash"], keySaved: true });
   expect(JSON.stringify(channel)).not.toContain("sk-relay-ds");
 
   // A session on it: DSH starts with the channel's address, key and model.

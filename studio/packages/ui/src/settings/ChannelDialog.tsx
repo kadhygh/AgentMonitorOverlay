@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AMO_CHANNEL_KEYS, BALANCE_TEMPLATES, CHANNEL_KIND_LABEL, type BalanceConfig, type BalanceTemplate, type ChannelBalance, type ChannelInput, type ChannelKind, type ModelChannel } from "@amo-studio/protocol";
+import { AMO_CHANNEL_KEYS, BALANCE_TEMPLATES, CHANNEL_KIND_LABEL, DSH_IMAGE_MODEL_NAMES, type BalanceConfig, type BalanceTemplate, type ChannelBalance, type ChannelInput, type ChannelKind, type ModelChannel } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { balanceText } from "../lib/balance.js";
 import { Modal } from "../lib/Modal.js";
@@ -21,6 +21,8 @@ type Draft = {
   model: string;
   /** DSH: the site's model names, one per line. */
   models: string;
+  /** DSH: 能看图 lit or put out by the person in this dialog; a name not here keeps what it was (imageChecked). */
+  images: Record<string, boolean>;
   smallModel: string;
   claudeAuth: "bearer" | "x-api-key";
   key: string;
@@ -44,6 +46,7 @@ function draftOf(c: ModelChannel | null, kind: ChannelKind): Draft {
     baseUrl: c?.baseUrl ?? "",
     model: c?.model ?? "",
     models: (c?.models ?? []).join("\n"),
+    images: {},
     smallModel: c?.smallModel ?? "",
     claudeAuth: c?.claudeAuth ?? "bearer",
     key: "",
@@ -63,6 +66,14 @@ function draftOf(c: ModelChannel | null, kind: ChannelKind): Draft {
 /** The model names typed for a DSH channel: one per line (commas and spaces also split). */
 export function modelLines(text: string): string[] {
   return [...new Set(text.split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean))];
+}
+
+/**
+ * Whether a DSH channel's model name takes pictures in the dialog: what the person set here, else what the channel
+ * says for a name it already had, else whether DSH's own catalog says so (a deepseek-flash just typed in is lit).
+ */
+export function imageChecked(name: string, images: Record<string, boolean>, channel: ModelChannel | null): boolean {
+  return images[name] ?? (channel?.models?.includes(name) ? (channel.imageModels ?? []).includes(name) : DSH_IMAGE_MODEL_NAMES.includes(name));
 }
 
 function balanceOf(d: Draft): BalanceConfig | null {
@@ -101,7 +112,7 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
       baseUrl: d.baseUrl,
       // DSH: the list's first name is the default; empty = DSH's built-in models.
       model: d.kind === "dsh" ? null : d.model.trim() || null,
-      ...(d.kind === "dsh" ? { models: modelLines(d.models) } : {}),
+      ...(d.kind === "dsh" ? { models: modelLines(d.models), imageModels: modelLines(d.models).filter((m) => imageChecked(m, d.images, channel)) } : {}),
       balance: balanceOf(d),
       ...(d.kind === "claude" ? { smallModel: d.smallModel.trim() || null, claudeAuth: d.claudeAuth } : {}),
       ...(d.key.trim() ? { key: d.key.trim() } : { keyFrom: d.keyFrom }),
@@ -251,8 +262,24 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
                 ))}
               </div>
             )}
+            {/* 2026-11-11, the person: 渠道里标哪个型号能看图 — DSH sends pictures only to the names lit here. */}
+            {typed.length > 0 && (
+              <div className="channel-field">
+                <span>能看图</span>
+                <span className="channel-images" role="group" aria-label="能看图的型号" data-testid="channel-image-models">
+                  {typed.map((m) => {
+                    const on = imageChecked(m, d.images, channel);
+                    return (
+                      <button key={m} type="button" className="chip small mono" aria-pressed={on} title={on ? "能看图：DSH 会给它发图片；点一下取消" : "不收图片；这个型号能看图的话点亮它"} onClick={() => set({ images: { ...d.images, [m]: !on } })}>
+                        {on ? `✓ ${m}` : m}
+                      </button>
+                    );
+                  })}
+                </span>
+              </div>
+            )}
             <span className="settings-hint" data-testid="channel-dsh-hint">
-              DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）。第三方的模型名和官方不一样时（比如 deepseek/deepseek-v4-pro），在上面列出来，DSH 就按这些名字发请求。
+              DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）。第三方的模型名和官方不一样时（比如 deepseek/deepseek-v4-pro），在上面列出来，DSH 就按这些名字发请求。「能看图」里点亮的型号才能在会话里发图片：DeepSeek 能看图的是 DeepSeek-V4.1-Flash（官方名 deepseek-flash，填进来会自动点亮），第三方给它起了别的名字时自己点亮。
             </span>
           </>
         )}

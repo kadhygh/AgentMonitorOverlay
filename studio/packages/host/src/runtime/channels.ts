@@ -5,7 +5,7 @@ import { CLAUDE_BUILTIN_MODELS, CLAUDE_EFFORTS } from "./choices.js";
 import type { CredentialReader, CredentialStore } from "./credentials.js";
 import type { CodexProviderDef } from "./profiles.js";
 import type { DshProviderDef } from "./dsh/dsh-runtime.js";
-import { DSH_ACCOUNT_ORIGIN, dshAccountFile, readDshAuth } from "./dsh/install.js";
+import { DSH_ACCOUNT_ORIGIN, DSH_IMAGE_MODELS, dshAccountFile, readDshAuth } from "./dsh/install.js";
 
 // The model profiles as the Host runs them (设置 → 模型, 2026-10-15): the built-in ones, then the person's own channels
 // — a third-party Claude endpoint run by Claude Code, a third-party Codex endpoint (Responses API) run by Codex, or a
@@ -27,6 +27,8 @@ interface StoredChannel {
   model: string | null;
   /** DSH: the site's own model names. */
   models?: string[];
+  /** DSH: which of them take pictures, once the person said so (2026-11-11); absent = DSH_IMAGE_MODELS among them. */
+  imageModels?: string[];
   smallModel?: string | null;
   claudeAuth?: "bearer" | "x-api-key";
   keyFrom: string | null;
@@ -79,6 +81,17 @@ function modelId(value: unknown, what: string): string | null {
   const v = text(value, what, 100, false);
   if (/\s/.test(v)) throw new ChannelError("bad_request", `${what}不能有空格`);
   return v || null;
+}
+
+/** Which of a DSH channel's names take pictures: what the person ticked, else the ones DSH's own catalog says. */
+function channelImageModels(c: StoredChannel): string[] {
+  const models = c.models ?? [];
+  return c.imageModels ? c.imageModels.filter((m) => models.includes(m)) : models.filter((m) => DSH_IMAGE_MODELS.has(m));
+}
+
+/** The names of a DSH channel that take pictures, as sent: only the channel's own names count. */
+function imageList(value: unknown, models: readonly string[]): string[] {
+  return modelList(value).filter((m) => models.includes(m));
 }
 
 /** A DSH channel's model names: one word each, no repeats; [] when none. */
@@ -203,7 +216,10 @@ export class ChannelRegistry {
       channel.smallModel = modelId(input.smallModel, "快速模型");
       channel.claudeAuth = input.claudeAuth === "x-api-key" ? "x-api-key" : "bearer";
     }
-    if (kind === "dsh") channel.models = modelList(input.models);
+    if (kind === "dsh") {
+      channel.models = modelList(input.models);
+      if (input.imageModels !== undefined) channel.imageModels = imageList(input.imageModels, channel.models);
+    }
     this.checkLabel(channel.label, id);
     this.applySecrets(channel, input);
     this.save([...this.stored(), channel]);
@@ -222,6 +238,7 @@ export class ChannelRegistry {
       if (input.claudeAuth !== undefined) c.claudeAuth = input.claudeAuth === "x-api-key" ? "x-api-key" : "bearer";
     }
     if (c.kind === "dsh" && input.models !== undefined) c.models = modelList(input.models);
+    if (c.kind === "dsh" && input.imageModels !== undefined) c.imageModels = imageList(input.imageModels, c.models ?? []);
     if (input.balance !== undefined) c.balance = balanceConfig(input.balance);
     this.checkLabel(c.label, id);
     const keyBefore = this.keyOf(before);
@@ -365,7 +382,7 @@ export class ChannelRegistry {
       baseUrl: c.baseUrl,
       model: c.model,
       ...(c.kind === "claude" ? { smallModel: c.smallModel ?? null, claudeAuth: c.claudeAuth ?? "bearer" } : {}),
-      ...(c.kind === "dsh" ? { models: c.models ?? [] } : {}),
+      ...(c.kind === "dsh" ? { models: c.models ?? [], imageModels: channelImageModels(c) } : {}),
       keySaved: !!this.keyOf(c),
       keyFrom: c.keyFrom,
       balance: c.balance,
@@ -400,7 +417,7 @@ export class ChannelRegistry {
         // DSH talks to the channel's address with its key. Its models: the site's own names when the channel lists
         // them (DSH gets them as its catalog), else DSH's built-in ones; both as `deepseek-official/<name>`.
         const models = c.models ?? [];
-        dshProviders[c.id] = { baseUrl: c.baseUrl, ...(models.length ? { models } : {}) };
+        dshProviders[c.id] = { baseUrl: c.baseUrl, ...(models.length ? { models, imageModels: channelImageModels(c) } : {}) };
         const first = c.model ?? models[0];
         const model = first ? dshRouteModel(first) : null;
         next.push({ id: c.id, label: c.label, runtime: "dsh", provider: c.id, model, credentialId, ...flags });

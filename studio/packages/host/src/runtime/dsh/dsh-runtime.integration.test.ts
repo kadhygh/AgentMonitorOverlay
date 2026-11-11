@@ -384,11 +384,22 @@ describe("DSH runtime", () => {
     await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "看图", attachments: [await upload()] });
     await until(() => items(host, session.id), (l) => replies(l).some((r) => r.includes("看图 [1 张图 image/png]")));
 
-    // A channel whose names take no images: where to add one.
-    const only = await call<{ id: string }>(host, "POST", "/api/channels", { kind: "dsh", label: "只有 V4", baseUrl: "https://relay.example", key: "sk-relay", models: ["deepseek-v4-flash"] });
-    const { session: t } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "只有 V4", workspaceId: ws.id, firstSession: { profileId: only.id, text: "hi" } });
+    // A relay's own name for V4.1-Flash is text only to DSH until the channel says it takes images (its 能看图).
+    const relay = await call<{ id: string; imageModels?: string[] }>(host, "POST", "/api/channels", { kind: "dsh", label: "中转 V4.1", baseUrl: "https://relay.example", key: "sk-relay", models: ["deepseek/v4.1-flash"] });
+    expect(relay.imageModels).toEqual([]);
+    const { session: t } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "中转 V4.1", workspaceId: ws.id, firstSession: { profileId: relay.id, text: "hi" } });
     await idle(host, t.id);
-    await expect(call(host, "POST", `/api/sessions/${t.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「只有 V4」的型号都不收图片.*设置 → 模型 →「只有 V4」→ 编辑，在「模型」里加一行 deepseek-flash/);
+    await expect(call(host, "POST", `/api/sessions/${t.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「中转 V4.1」的型号都没标「能看图」.*设置 → 模型 →「中转 V4.1」→ 编辑，在「能看图」那一行点亮/);
+    // Marked while the session's process is still up: the next picture starts it again on the new catalog.
+    const marked = await call<{ imageModels?: string[] }>(host, "PATCH", `/api/channels/${relay.id}`, { imageModels: ["deepseek/v4.1-flash", "not-listed"] });
+    expect(marked.imageModels).toEqual(["deepseek/v4.1-flash"]);
+    await call(host, "POST", `/api/sessions/${t.id}/messages`, { text: "看图二", attachments: [await upload()] });
+    await until(() => items(host, t.id), (l) => replies(l).some((r) => r.includes("看图二 [1 张图 image/png]")));
+    // deepseek-flash can be put out too: what the person says counts.
+    const out = await call<{ imageModels?: string[] }>(host, "PATCH", `/api/channels/${channel.id}`, { imageModels: [] });
+    expect(out.imageModels).toEqual([]);
+    await idle(host, session.id);
+    await expect(call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/「Dxx-DS」的型号都没标「能看图」/);
   });
 
   it("runs a third-party DeepSeek channel: its address, its own key and its model (2026-10-19)", async () => {

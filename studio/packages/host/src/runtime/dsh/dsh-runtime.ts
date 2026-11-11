@@ -64,6 +64,8 @@ export interface DshProviderDef {
    * model's catalog id as is and a relay may know DeepSeek's models by other names (`deepseek/deepseek-v4-pro`).
    */
   models?: string[];
+  /** Which of `models` take pictures (2026-11-11, the channel's 能看图); absent: DSH_IMAGE_MODELS among them. */
+  imageModels?: string[];
 }
 
 export interface DshRuntimeOptions {
@@ -160,6 +162,8 @@ interface Live {
   killedOnStop?: boolean;
   /** DSH said at initialize that this process takes images (for `model`, its ACP agent's default). */
   images: boolean;
+  /** What the channel said takes pictures when the process started (imageKey). */
+  imageKey: string;
   /** The session's model when the process started (its ACP agent's default); undefined = DSH's own default. */
   model: string | undefined;
   transcript: DshTranscript;
@@ -379,13 +383,23 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
    */
   private async takesImages(session: Session, live: Live): Promise<Live> {
     const model = session.options.model;
-    if ((model ?? "") !== (live.model ?? "") && !live.inflight && !live.auto) {
+    const profile = this.profile(session.profileId);
+    // The channel's 能看图 changed since the process started (2026-11-11): its catalog says so only from the next start.
+    const stale = (model ?? "") !== (live.model ?? "") || this.imageKey(profile) !== live.imageKey;
+    if (stale && !live.inflight && !live.auto) {
       await this.release(session.id);
       live = await this.ensureLive(this.requireSession(session.id));
     }
     if (live.images) return live;
-    const profile = this.profile(session.profileId);
-    throw Object.assign(new Error(noImagesMessage(profile, this.pickable(profile), model, (model ?? "") !== (live.model ?? ""))), { code: "bad_request" });
+    const own = this.ownModels(profile);
+    const images = this.ownImages(profile);
+    const takes = (id: string) => (own ? images.has(id.slice(id.indexOf("/") + 1)) : DSH_IMAGE_MODELS.has(id.slice(id.indexOf("/") + 1)));
+    throw Object.assign(new Error(noImagesMessage(profile, this.pickable(profile), model, (model ?? "") !== (live.model ?? ""), takes)), { code: "bad_request" });
+  }
+
+  /** What the channel says takes pictures, to tell when a process started before it changed. */
+  private imageKey(profile: ModelProfile | null): string {
+    return profile && this.ownModels(profile) ? [...this.ownImages(profile)].join("\n") : "";
   }
 
   /** The models the session's picker offers on `profile` (as `choices` lists them), from what is known now. */
@@ -655,7 +669,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path, this.subagents), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, imageKey: this.imageKey(this.options.profiles.find((p) => p.id === session.profileId) ?? null), model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path, this.subagents), waiting: new Map(), idleTimer: null, measuredAt: 0, auto: null, mcpKey: "" };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
@@ -1178,6 +1192,13 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return models?.length ? models : null;
   }
 
+  /** Which of a channel's own names take pictures: its 能看图 (2026-11-11), else DSH_IMAGE_MODELS among them. */
+  private ownImages(profile: ModelProfile): ReadonlySet<string> {
+    const def = profile.provider ? this.options.providers?.[profile.provider] : undefined;
+    const models = def?.models ?? [];
+    return new Set(def?.imageModels ? def.imageModels.filter((m) => models.includes(m)) : models.filter((m) => DSH_IMAGE_MODELS.has(m)));
+  }
+
   /**
    * A channel's catalog as a DSH patch file (written fresh for each process), or null when it has none. The ACP agent
    * starts on the session's `model` when the channel lists it, else on the channel's default: DSH tells at initialize
@@ -1193,7 +1214,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const dir = join(this.options.dir, "patches");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `${profile.provider}-${first.replace(/[^A-Za-z0-9._-]+/g, "_")}.yml`);
-    writeFileSync(file, catalogPatchYaml(profile.label, models, first));
+    writeFileSync(file, catalogPatchYaml(profile.label, models, first, this.ownImages(profile)));
     return file;
   }
 
@@ -1332,16 +1353,17 @@ export function modelPatchYaml(provider: string, model: string): string {
 
 /**
  * The DSH patch that makes a channel's model names DSH's catalog on its DeepSeek route (`llm-deepseek` has no config
- * of its own to lose) and `first` the ACP agent's default. Names are JSON-quoted, which YAML reads as strings. A name
- * DSH's own catalog says takes images says so here too (DSH_IMAGE_MODELS): an entry without it is text only.
+ * of its own to lose) and `first` the ACP agent's default. Names are JSON-quoted, which YAML reads as strings. The
+ * names in `images` (the channel's 能看图; by default the ones DSH's own catalog says take them) say so: in DSH an entry
+ * without `inputModalities` is text only.
  */
-export function catalogPatchYaml(label: string, models: readonly string[], first: string): string {
+export function catalogPatchYaml(label: string, models: readonly string[], first: string, images: ReadonlySet<string> = DSH_IMAGE_MODELS): string {
   return [
     `# Written by AMO Studio for the channel ${JSON.stringify(label)}: the site's own model names. Rewritten on every start.`,
     `- id: ${DSH_KEY_PLUGIN}`,
     "  config:",
     "    models:",
-    ...models.flatMap((m) => [`      - id: ${JSON.stringify(m)}`, ...(DSH_IMAGE_MODELS.has(m) ? ['        inputModalities: ["text", "image"]'] : [])]),
+    ...models.flatMap((m) => [`      - id: ${JSON.stringify(m)}`, ...(images.has(m) ? ['        inputModalities: ["text", "image"]'] : [])]),
     ...retryPolicyYaml(),
     "- id: acp",
     "  config:",
@@ -1354,11 +1376,11 @@ export function catalogPatchYaml(label: string, models: readonly string[], first
 /**
  * Why a picture was refused and what the person can do about it, where they do it. `models`: what the session's
  * picker offers; `switched`: the session changed models during the turn going on (its process starts again after it).
+ * `takes`: whether a model id takes pictures (a channel's 能看图, else DSH's own catalog).
  * 2026-11-11: the old「换成能看图的型号，例如 DeepSeek-V4.1-Flash」named a model the person's channel did not list, and
  * not where to change it.
  */
-export function noImagesMessage(profile: ModelProfile, models: readonly ModelOption[], model: string | undefined, switched: boolean): string {
-  const takes = (id: string) => DSH_IMAGE_MODELS.has(id.slice(id.indexOf("/") + 1));
+export function noImagesMessage(profile: ModelProfile, models: readonly ModelOption[], model: string | undefined, switched: boolean, takes: (id: string) => boolean = (id) => DSH_IMAGE_MODELS.has(id.slice(id.indexOf("/") + 1))): string {
   const shown = (m: ModelOption) => (m.label === "deepseek-flash" ? `deepseek-flash（${DSH_IMAGE_MODEL_LABEL}）` : m.label);
   const current = model ? models.find((m) => m.id === model) : models.find((m) => m.isDefault);
   const name = current ? shown(current) : (model?.slice(model.indexOf("/") + 1) ?? "这个型号");
@@ -1369,7 +1391,7 @@ export function noImagesMessage(profile: ModelProfile, models: readonly ModelOpt
   const other = models.find((m) => takes(m.id));
   if (other) return `「${name}」不收图片；${picker}换成「${shown(other)}」再发（上下文不变）`;
   if (profile.custom)
-    return `「${profile.label}」的型号都不收图片（DeepSeek 能看图的是 deepseek-flash，即 ${DSH_IMAGE_MODEL_LABEL}）：到 设置 → 模型 →「${profile.label}」→ 编辑，在「模型」里加一行 deepseek-flash（这个网址要有它，可以点「从网址读取」看），保存后${picker}换过去再发`;
+    return `「${profile.label}」的型号都没标「能看图」：到 设置 → 模型 →「${profile.label}」→ 编辑，在「能看图」那一行点亮能看图的型号（DeepSeek 能看图的是 ${DSH_IMAGE_MODEL_LABEL}，官方叫 deepseek-flash；列表里没有就加一行，可以点「从网址读取」看这个网址叫它什么），保存后${picker}换过去再发`;
   return `「${name}」不收图片（DSH 说这个型号不支持图片输入）；${picker}换成 ${DSH_IMAGE_MODEL_LABEL} 再发`;
 }
 

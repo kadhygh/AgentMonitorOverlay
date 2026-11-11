@@ -62,6 +62,12 @@ export interface ModelChannel {
    * DSH's built-in catalog, whose names a relay may not know; the first is the default when `model` is empty.
    */
   models?: string[];
+  /**
+   * DSH (2026-11-11, the person: 渠道里标哪个型号能看图): which of `models` take pictures. DSH is told so in its
+   * catalog — a relay's own name for V4.1-Flash is text only to DSH otherwise. Never set: the names DSH's own catalog
+   * says take them (DSH_IMAGE_MODEL_NAMES).
+   */
+  imageModels?: string[];
   /** Claude: the model for background and quick work (ANTHROPIC_DEFAULT_HAIKU_MODEL); null = the CLI's default. */
   smallModel?: string | null;
   /** Claude: how the key is sent. "bearer" (ANTHROPIC_AUTH_TOKEN, most relays) or "x-api-key" (ANTHROPIC_API_KEY). */
@@ -102,6 +108,8 @@ export interface ChannelInput {
   model?: string | null;
   /** DSH: the site's model names; [] = DSH's built-in ones. */
   models?: string[];
+  /** DSH: which of the model names take pictures (only listed ones count). */
+  imageModels?: string[];
   smallModel?: string | null;
   claudeAuth?: "bearer" | "x-api-key";
   key?: string;
@@ -118,6 +126,13 @@ export const AMO_CHANNEL_KEYS: ReadonlyArray<{ id: string; label: string; kind: 
 
 /** At most this many model names on a DSH channel. */
 export const CHANNEL_MODELS_MAX = 30;
+
+/**
+ * The model names DSH's own catalog says take images (llm-deepseek's DEFAULT_MODELS: `deepseek-flash`, shown as
+ * DeepSeek-V4.1-Flash; `deepseek-v4-flash` and `deepseek-v4-pro` are text only). A DSH channel's names that are these
+ * take images unless the person unticks them (`imageModels`, 2026-11-11).
+ */
+export const DSH_IMAGE_MODEL_NAMES: readonly string[] = ["deepseek-flash"];
 
 /** A channel's balance as last asked. Numbers are in `unit`. */
 export interface ChannelBalance {
