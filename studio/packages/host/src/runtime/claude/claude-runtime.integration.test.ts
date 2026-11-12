@@ -369,9 +369,9 @@ describe("ClaudeRuntime", () => {
       expect(local.cachedUsage("claude-sub")).toBeNull();
       expect(fetched).not.toHaveBeenCalled();
       fetched.mockRestore();
-      // The local login reads the quota: 5 小时 and 每周 with their resets, as Claude Code's /usage reads them.
+      // The local login reads the quota: 5 小时, 每周 and Fable 每周 with their resets, as Claude Code's /usage reads them.
       const usage = (await local.usage("claude-sub", true)) as AccountUsage;
-      expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
+      expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }, { label: "Fable 每周", usedPercent: 48, model: "Fable" }] });
       // Once read, the cache has it.
       expect(local.cachedUsage("claude-sub")).toEqual(usage);
       expect(Date.parse(usage!.windows[0]!.resetsAt!) - Date.now()).toBeGreaterThan(90 * 60_000);
@@ -410,7 +410,7 @@ describe("ClaudeRuntime", () => {
       // The quota per account, the one in use first.
       const both = (await local.usage("claude-sub", true)) as AccountUsage[];
       expect(both.map((u) => u.account)).toMatchObject([{ id: second, current: true, label: "第二个" }, { id: "default", current: false }]);
-      expect(both[0]).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
+      expect(both[0]).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }, { label: "Fable 每周", usedPercent: 48, model: "Fable" }] });
       // Back to the default account; the added one goes, the shared records stay.
       await accounts.switchTo("default");
       accounts.remove(second);
