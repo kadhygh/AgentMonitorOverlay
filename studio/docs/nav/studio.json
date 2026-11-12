@@ -186,7 +186,7 @@
       "steps": [
         "加一条远程副本能用的写路由：在路由上写 remoteCopy（见 workflow.newRoute）。",
         "改被控端额度：A 侧 RemoteUsageSender（usage.ts），B 侧 RemoteUsageCopies，见 flow.remoteUsage。",
-        "加一个 B→A 的命令（例：rt.fork，2026-11-12）：protocol remote.ts 的 REMOTE_KINDS（只能小写，中转按 FRAME_KIND_RE 转发，不用改中转）和 RemoteCommandBodies；A 侧 grants.ts serve 里的 case；B 侧 copies.ts 里 ask。旧版不认识的命令会回 unknown_kind，要提前让界面知道就在 RemoteTaskSnapshot / task 推送里加一个可选标记（如 fork），B 存进 TaskRemote。"
+        "加一个 B→A 的命令（例：rt.fork，2026-11-12）：protocol remote.ts 的 REMOTE_KINDS（只能小写，中转按 FRAME_KIND_RE 转发、不用改中转；带大写的 rt.sendNow 就一直被挡，11-12 改成 rt.send-now，单测走真的中转服务端代码才测得出来）和 RemoteCommandBodies；A 侧 grants.ts serve 里的 case；B 侧 copies.ts 里 ask。旧版不认识的命令会回 unknown_kind，要提前让界面知道就在 RemoteTaskSnapshot / task 推送里加一个可选标记（如 fork），B 存进 TaskRemote。"
       ],
       "anchors": [
         { "label": "RemoteFeature", "path": "studio/packages/host/src/features/remote/service.ts", "anchor": "export class RemoteFeature" },

@@ -122,6 +122,9 @@
 .msg-delivery-btn { padding: 1px 8px; border: 1px solid var(--chat-hairline); border-radius: 999px; background: transparent; color: var(--chat-brand); font: inherit; cursor: pointer; }
 .msg-delivery-btn:hover:not(:disabled) { background: var(--chat-hover); }
 .msg-delivery-btn:disabled { color: var(--chat-caption); cursor: default; }
+/* 2026-11-12: why 立即发送 is greyed (a remote task's computer runs an older Studio), on its own line under the row. */
+.msg-delivery:has(.msg-delivery-off) { flex-wrap: wrap; justify-content: flex-end; }
+.msg-delivery-off { flex-basis: 100%; text-align: right; color: var(--chat-caption); }
 .msg-user { max-width: min(calc(var(--chat-width) * 0.702), 82%); padding: 9px 14px; border-radius: var(--r-l); background: var(--chat-bubble); color: var(--chat-label); white-space: pre-wrap; word-break: break-word; }
 .msg-text { white-space: pre-wrap; }
 /* A sent 快速提交 (2026-10-28): the tag in the composer's mention colour; its instructions on hover. */

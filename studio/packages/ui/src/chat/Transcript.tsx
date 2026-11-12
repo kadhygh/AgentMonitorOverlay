@@ -61,12 +61,14 @@ interface TranscriptProps {
    */
   forkRuntime?: Session["runtime"];
   forkOff?: string;
+  /** 立即发送 greyed, and why (2026-11-12): a remote task whose computer's Studio is too old to take it from this one. */
+  sendNowOff?: string;
 }
 
 export type DeliveryAction = "now" | "resend";
 
 /** onDelivery for the person's messages, however deep in the turns they are drawn. */
-const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean; waitsForSubagents: boolean }>({ onDelivery: undefined, givingWay: false, waitsForSubagents: false });
+const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"]; givingWay: boolean; waitsForSubagents: boolean; sendNowOff?: string }>({ onDelivery: undefined, givingWay: false, waitsForSubagents: false });
 /**
  * onFork for each turn's footer. `claude`: a Claude turn from before fork points (none recorded) can only be forked
  * when it is the latest (plans/done/session-fork.md), so the older ones show no button.
@@ -86,8 +88,8 @@ function TranscriptBody(props: TranscriptProps) {
   );
 }
 
-function TranscriptInner({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false, waitsForSubagents = false }: TranscriptProps) {
-  const delivery = useMemo(() => ({ onDelivery, givingWay, waitsForSubagents }), [onDelivery, givingWay, waitsForSubagents]);
+function TranscriptInner({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn, onDelivery, givingWay = false, waitsForSubagents = false, sendNowOff }: TranscriptProps) {
+  const delivery = useMemo(() => ({ onDelivery, givingWay, waitsForSubagents, ...(sendNowOff ? { sendNowOff } : {}) }), [onDelivery, givingWay, waitsForSubagents, sendNowOff]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded or folded, against how finished turns start: folded, except in 详细 (2026-11-04, the
@@ -412,7 +414,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
  * the turn's end; Codex: at its next step), or one whose process went before reading it.
  */
 function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delivery: NonNullable<Extract<SessionItem, { type: "user" }>["delivery"]>; withPerson: boolean }) {
-  const { onDelivery, givingWay, waitsForSubagents } = useContext(DeliveryContext);
+  const { onDelivery, givingWay, waitsForSubagents, sendNowOff } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
   // `held` (2026-11-04): from an agent or from Studio (中转回复, 值守, 传话…), in the session's inbox until its turn is over;
@@ -446,8 +448,8 @@ function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delive
           type="button"
           className="msg-delivery-btn"
           data-testid={waiting ? "send-now" : "resend"}
-          disabled={asked}
-          title={held ? "不等这一轮结束，现在就送进去：会打断当前这一步，让模型马上读到这条" : waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
+          disabled={asked || (waiting && !!sendNowOff)}
+          title={waiting && sendNowOff ? sendNowOff : held ? "不等这一轮结束，现在就送进去：会打断当前这一步，让模型马上读到这条" : waiting ? "打断当前这一步，让模型马上读到这条（Ctrl+Enter 发送也是这样）" : "把这条消息再发一次"}
           onClick={() => {
             setAsked(true);
             onDelivery(itemId, waiting ? "now" : "resend");
@@ -455,6 +457,11 @@ function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delive
         >
           {waiting ? "立即发送" : asked ? "正在发送…" : "重新发送"}
         </button>
+      )}
+      {onDelivery && waiting && sendNowOff && !interrupting && !behindPerson && (
+        <span className="msg-delivery-off" data-testid="send-now-off">
+          {sendNowOff}
+        </span>
       )}
     </div>
   );

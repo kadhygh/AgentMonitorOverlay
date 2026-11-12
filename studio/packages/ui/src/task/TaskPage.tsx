@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { REMOTE_FORK_SINCE, isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_SEND_NOW_SINCE, isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -245,6 +245,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // runtime there allows (an older one does not say it, nor fork: 分支 is greyed with what to update).
   const forkRuntime = session?.runtime === "remote" ? task.remote?.profiles.find((p) => p.id === session.profileId)?.runtime : session?.runtime;
   const forkOff = copy && !task.remote?.fork ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支` : undefined;
+  // 立即发送 likewise (2026-11-12): before, its command never got through the relay; an older one never heard it.
+  const sendNowOff = copy && !task.remote?.sendNow ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_SEND_NOW_SINCE} 或更新的版本，才能从这台电脑立即发送` : undefined;
   const forkable = !!session && !session.archivedAt && forkRuntime !== "dsh" && !(forkRuntime === "claude" && session.kind === "sub") && !!session.runtimeRef && (copy ? session.kind !== "sub" && copy.state !== "revoked" : session.runtime !== "remote");
   const forkSessionId = forkable ? session!.id : null;
   const forkTurn = useCallback((turnId: string) => forkSessionId && setForking({ sessionId: forkSessionId, turnId }), [forkSessionId]);
@@ -720,6 +722,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onSend={send}
               onInterrupt={() => session && void interrupt(session.id)}
               onDelivery={deliver}
+              {...(sendNowOff ? { sendNowOff } : {})}
               {...(forkSessionId ? { onFork: forkTurn, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}

@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
-import { REMOTE_FORK_SINCE, type RemoteState, type Session, type SessionItem, type StateSnapshot, type Task } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_SEND_NOW_SINCE, type RemoteState, type Session, type SessionItem, type StateSnapshot, type Task } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
 // 远程分支 (2026-11-12, the user: 远控模式下也能开分支). Two Studios paired through a relay started here (never the team
 // server): B, driving A's task, forks a session from its first turn; the branch is made on A (its model runs there),
-// shows on B with the conversation through that turn, and takes B's next message.
+// shows on B with the conversation through that turn, and takes B's next message. 远程立即发送 (the same day): B's
+// 立即发送 on a waiting message reaches A (its command was rt.sendNow, which the relay never let through).
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
 const account = (await import(pathToFileURL(join(studioRoot, "packages", "account", "dist", "index.js")).href)) as typeof import("../../packages/account/src/index.js");
@@ -69,7 +70,7 @@ async function pairedStudios(prefix: string): Promise<{ a: Studio; b: Studio }> 
 
 const replies = async (s: Studio, sessionId: string) => (await s.api<SessionItem[]>("GET", `/api/sessions/${sessionId}/items`)).flatMap((i) => (i.type === "agent" && !i.streaming ? [i.markdown] : []));
 
-test("B forks a remote task's session from its first turn: made on A, shown on B with the turns through it, and B goes on in it", async () => {
+test("B forks a remote task's session from its first turn: made on A, shown on B with the turns through it, and B goes on in it; B's 立即发送 reaches A; an older A greys both", async () => {
   test.setTimeout(300_000);
   const { a, b } = await pairedStudios("remote-fork");
   const { task, session } = await a.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "远程分支", firstSession: { profileId: "codex-mock", text: "先看看现状" } });
@@ -127,12 +128,34 @@ test("B forks a remote task's session from its first turn: made on A, shown on B
   expect((await replies(a, session.id)).some((t) => t.includes("分支里接着说"))).toBe(false);
   await screenshot(b.app, "studio", "remote-fork-peer", page);
 
-  // An older Studio on A (its snapshot has no fork): B greys 分支, saying what A has to update to. Made so by taking
-  // the mark off B's copy (A says it again only with its next snapshot or task push).
+  // 立即发送 from B (2026-11-12), in a Claude session A adds to the task (Claude queues what comes while it answers; a
+  // Codex text reply reads it at once): a message waiting behind a slow reply goes to A's model now.
+  const claude = await a.api<Session>("POST", `/api/tasks/${task.id}/sessions`, { profileId: "claude-mock", text: "你好" });
+  await until(() => replies(a, claude.id), (r) => r.some((t) => t.includes("MOCK")), "A's Claude reply");
+  await a.api("PATCH", `/api/sessions/${claude.id}`, { title: "Claude 会话" });
+  const claudeRow = rows.filter({ hasText: "Claude 会话" });
+  await claudeRow.click({ timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK", { timeout: 30_000 });
+  await composer.fill("[[slow]]");
+  await composer.press("Enter");
+  await expect.poll(async () => (await a.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === claude.id)?.status, { timeout: 30_000 }).toBe("running");
+  await composer.fill("插一句");
+  await composer.press("Enter");
+  const waiting = page.getByTestId("msg-delivery");
+  await expect(waiting).toHaveAttribute("data-delivery", "waiting", { timeout: 30_000 });
+  await expect(waiting.getByTestId("send-now")).toBeEnabled();
+  await expect(waiting.getByTestId("send-now-off")).toHaveCount(0);
+  await waiting.getByTestId("send-now").click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 插一句", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-delivery")).toHaveCount(0);
+  expect((await replies(a, claude.id)).some((t) => t.includes("MOCK: 插一句"))).toBe(true);
+
+  // An older Studio on A (its snapshot has no fork nor sendNow): B greys 分支 and 立即发送, saying what A has to update
+  // to. Made so by taking the marks off B's copy (A says them again only with its next snapshot or task push).
   const db = new DatabaseSync(join(b.dataDir, "studio.db"));
   try {
     const row = db.prepare("SELECT remote FROM tasks WHERE id = ?").get(task.id) as { remote: string };
-    const { fork: _fork, ...older } = JSON.parse(row.remote) as Record<string, unknown>;
+    const { fork: _fork, sendNow: _sendNow, ...older } = JSON.parse(row.remote) as Record<string, unknown>;
     db.prepare("UPDATE tasks SET remote = ? WHERE id = ?").run(JSON.stringify(older), task.id);
   } finally {
     db.close();
@@ -151,4 +174,18 @@ test("B forks a remote task's session from its first turn: made on A, shown on B
   await expect(page.getByTestId("session-fork")).toHaveAttribute("title", /要更新到/);
   await expect(page.getByTestId("session-fork-off")).toHaveText(`A 台式机 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支`);
   await screenshot(b.app, "studio", "remote-fork-old-peer", page);
+  await page.keyboard.press("Escape");
+
+  // 立即发送 greyed under a waiting message, the reason on its own line.
+  await claudeRow.click();
+  await composer.fill("[[slow]]");
+  await composer.press("Enter");
+  await expect.poll(async () => (await a.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === claude.id)?.status, { timeout: 30_000 }).toBe("running");
+  await composer.fill("再插一句");
+  await composer.press("Enter");
+  const greyed = page.getByTestId("msg-delivery");
+  await expect(greyed).toHaveAttribute("data-delivery", "waiting", { timeout: 30_000 });
+  await expect(greyed.getByTestId("send-now")).toBeDisabled();
+  await expect(greyed.getByTestId("send-now-off")).toHaveText(`A 台式机 上的 Studio 要更新到 ${REMOTE_SEND_NOW_SINCE} 或更新的版本，才能从这台电脑立即发送`);
+  await screenshot(b.app, "studio", "remote-send-now-old-peer", page);
 });

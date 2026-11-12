@@ -204,6 +204,8 @@ export interface TaskRemote {
   grantedAt: Timestamp;
   /** A forks the task's sessions for this computer (rt.fork, 2026-11-12); absent: an older A, which cannot. */
   fork?: boolean;
+  /** A takes 立即发送 from this computer (rt.send-now, 2026-11-12); absent: an older A, which never heard it. */
+  sendNow?: boolean;
   /** A's name of the task's project; null: A's common folder; absent: an older A, which does not say (RemoteTaskView.project). */
   project?: string | null;
   /** Each session's project as A names it (by session id), where A said: a session can work in another project than its task's. */
@@ -278,8 +280,13 @@ export const REMOTE_KINDS = {
   items: "rt.items",
   /** B → A: a message to a session; `now`: 立即发送 (2026-11-02; an older A ignores it and queues). {sessionId, text, now?} → {mode} */
   send: "rt.send",
-  /** B → A (立即发送, 2026-11-02): a waiting message of the session goes to the model now. {sessionId, itemId} → {ok} */
-  sendNow: "rt.sendNow",
+  /**
+   * B → A (立即发送, 2026-11-02): a waiting message of the session goes to the model now. {sessionId, itemId} → {ok}
+   * Lower case since 2026-11-12: the relay forwards only kinds of [a-z0-9._-] (FRAME_KIND_RE), so "rt.sendNow" was
+   * always refused there (「kind 不对」) and 立即发送 on a remote task never reached A. An older A knows only that name and
+   * never heard it, so nothing answers to it any more; A says it takes this one (RemoteTaskSnapshot.sendNow).
+   */
+  sendNow: "rt.send-now",
   /** B → A (2026-11-02): a message the session's process never read goes again. {sessionId, itemId} → {mode} */
   resend: "rt.resend",
   /** B → A: an approval answered; the first answer (here or on A) counts. {sessionId, approvalId, decision} → {ok} */
@@ -378,6 +385,8 @@ export interface RemoteTaskSnapshot {
   grantedAt: Timestamp;
   /** A answers rt.fork and rt.fork-turns (2026-11-12); an older A leaves it out. */
   fork?: true;
+  /** A answers rt.send-now (2026-11-12; before, the relay refused rt.sendNow); an older A leaves it out. */
+  sendNow?: true;
 }
 
 export interface RemoteListAnswer {
@@ -407,6 +416,8 @@ export interface RemoteProfileView {
  * one (RemoteTaskSnapshot.fork absent) — 分支 is greyed there, with this to update to.
  */
 export const REMOTE_FORK_SINCE = "0.9.66";
+/** The same for 立即发送 (rt.send-now, 2026-11-12): the first version whose 立即发送 reaches A at all. */
+export const REMOTE_SEND_NOW_SINCE = "0.9.66";
 
 /** rt.fork: ForkRequest without the options (a copy has no choices of A's models to pick from). */
 export interface RemoteForkAsk {
@@ -443,7 +454,7 @@ export type RemotePush =
   | { type: "granted"; taskId: Id; grantedAt: Timestamp }
   | { type: "revoked"; taskId: Id; reason: string }
   /** The task's title, description or column changed, or what new sessions may run on. */
-  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true }
+  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true; sendNow?: true }
   /** `project`: the session's project name on A (null: the common folder; 2026-11-09, an older A leaves it out). */
   | { type: "session"; session: Session; project?: string | null }
   /** An item appended or changed. */

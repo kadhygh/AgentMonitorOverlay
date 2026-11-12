@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -972,6 +972,33 @@ describe("远程分支 between two Hosts (2026-11-12)", () => {
     b.store.updateTask(task.id, { remote: older });
     await expect(b.service.sessions.fork(session.id)).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_FORK_SINCE}`);
     await expect(b.service.sessions.forkTurns(session.id)).rejects.toThrow("要更新到");
+  }, 60_000);
+});
+
+describe("远程立即发送 between two Hosts (2026-11-12)", () => {
+  it("B's 立即发送 on a waiting message gets through the relay (rt.send-now: rt.sendNow never did) and A's turn gives way to it; an older A is refused on B, saying what to update to", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    expect(copy!.remote!.sendNow).toBe(true);
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 第一句"), "B has A's items");
+
+    // A long command on A: what B sends now waits for it.
+    await b.service.sessions.sendMessage(session.id, "[[busy: 15000]]");
+    await until(() => items(a, session.id).some((i) => i.type === "tool" && i.status === "running"), Boolean, "A's command running");
+    await b.service.sessions.sendMessage(session.id, "现在就读");
+    const row = await until(() => items(b, session.id).find((i) => i.type === "user" && i.text === "现在就读" && i.delivery === "waiting"), Boolean, "B's copy says it waits");
+    await b.service.sessions.sendNow(session.id, row!.id);
+    // Answered long before the command would end: the turn gave way.
+    await until(() => agentTexts(a, session.id), (t) => t.includes("FAKE: 现在就读"), "A answers it now", 6000);
+    expect(items(a, session.id).flatMap((i) => (i.type === "turn" ? [i.state] : []))).toContain("interrupted");
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 现在就读"), "B sees it");
+
+    // An older A (no sendNow in its snapshot): refused here before anything is sent.
+    const { sendNow: _sendNow, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.service.sessions.sendNow(session.id, row!.id)).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_SEND_NOW_SINCE} 或更新的版本，才能从这台电脑立即发送`);
   }, 60_000);
 });
 

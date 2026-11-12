@@ -201,7 +201,7 @@ export class RemoteGrants {
 
   private taskPush(task: Task): RemotePush {
     const allowed = this.allowedFor(task.id);
-    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true };
+    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true, sendNow: true };
   }
 
   // ---- granting (the remote page, the task page)
@@ -310,7 +310,7 @@ export class RemoteGrants {
     const allowed = this.allowedFor(taskId);
     const sessions = this.store.listSessions({ taskId });
     const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
-    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true };
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */

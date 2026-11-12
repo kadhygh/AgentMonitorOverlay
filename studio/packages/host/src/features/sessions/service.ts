@@ -114,10 +114,11 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
 
   /** 立即发送 (2026-11-02): a message still waiting is read by the model now (see SessionRuntimeApi.sendNow). */
   async sendNow(sessionId: Id, itemId: Id): Promise<void> {
-    this.requireSession(sessionId);
+    const s = this.requireSession(sessionId);
     const item = this.store.getItem(itemId);
-    // One held in the inbox (2026-11-04): it goes now, and the running turn gives way to it.
-    if (item?.type === "user" && item.sessionId === sessionId && item.delivery === "held") return this.inbox.sendNow(sessionId, itemId);
+    // One held in the inbox (2026-11-04): it goes now, and the running turn gives way to it. A copy's held row is held
+    // in A's inbox (2026-11-12): A's sendNow does that there, as for a waiting one.
+    if (s.runtime !== "remote" && item?.type === "user" && item.sessionId === sessionId && item.delivery === "held") return this.inbox.sendNow(sessionId, itemId);
     const rt = this.runtime;
     if (!rt.sendNow) throw new HostError("bad_request", "this Host cannot send a waiting message now");
     await this.wrap(() => rt.sendNow!(sessionId, itemId));

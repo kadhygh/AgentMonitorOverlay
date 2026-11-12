@@ -1,4 +1,4 @@
-import { REMOTE_FORK_SINCE, REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -224,6 +224,8 @@ export class RemoteCopies {
       grantedAt: snap.grantedAt,
       // 远程分支 (2026-11-12): an older A does not fork for this computer; the task page greys 分支 and says to update it.
       ...(snap.fork ? { fork: true } : {}),
+      // 立即发送 (2026-11-12): an older A never got it (the relay refused its name); the button says to update A.
+      ...(snap.sendNow ? { sendNow: true } : {}),
       // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
       ...projectsOf(snap.task.project !== undefined ? snap.task.project : existing?.remote?.project, snap.sessionProjects ?? existing?.remote?.sessionProjects),
     };
@@ -333,8 +335,8 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const { fork: _fork, ...kept } = t.remote;
-        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}) };
+        const { fork: _fork, sendNow: _sendNow, ...kept } = t.remote;
+        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -481,7 +483,9 @@ export class RemoteCopies {
 
   /** 立即发送 (2026-11-02): a waiting message of the session, on A; the item's change comes back with A's push. */
   async sendNow(sessionId: Id, itemId: Id): Promise<void> {
-    const { peer } = this.target(sessionId);
+    const { task, peer } = this.target(sessionId);
+    // Said here, before anything goes (2026-11-12): an older A would never hear it.
+    if (!task.remote?.sendNow) throw new HostError("bad_request", `${task.remote?.name ?? "那台电脑"} 上的 Studio 要更新到 ${REMOTE_SEND_NOW_SINCE} 或更新的版本，才能从这台电脑立即发送`);
     await this.ask(peer, REMOTE_KINDS.sendNow, { sessionId, itemId });
   }
 
