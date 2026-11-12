@@ -75,7 +75,8 @@ ${people}
 
 ${taskCommands}**文件和批注**
 - ${tasks ? `${q("put <本机文件> --task <taskId>")}（或 \`--thread <threadId>\`）` : q("put <本机文件> --thread <threadId>")}：传文件，返回 fileId；同名再传就是新版本。先发会话拿到 threadId，再把文档传进这个会话，对方在会话里打开、批注
-- ${q("file <fileId>")}：读文件内容和上面的批注（引文 + 意见）${flow}
+- ${q("file <fileId>")}：读文件内容和上面的批注（引文 + 意见）
+- ${q("download <fileId> [--dir <文件夹>]")}：把文件（对方发的图片、文档等附件）存到本机，打印完整路径，再用你自己的工具打开；不带 \`--dir\` 时存在系统临时目录。会话里有哪些文件，${q("replies <threadId>")} 的最后列着${flow}
 `;
   }
   return `${head}
@@ -87,7 +88,7 @@ ${taskCommands}**文件和批注**
 - \`relay_session_get\`：取会话内容。
 - \`relay_session_reply\`：then="ask" 追问（带 questions 是新一轮问题），then="done" 收尾并标记完成。
 - \`relay_session_handoff\`：交给我本人。
-${tasks ? "- 团队任务：`relay_task_list` / `relay_task_get` / `relay_task_create` / `relay_task_update` / `relay_task_transfer`；为任务发的会话带上 taskId。\n" : ""}- 文件：\`relay_file_put\` 传本机文件（同名是新版本），\`relay_file_get\` 读文件和批注。${flow}
+${tasks ? "- 团队任务：`relay_task_list` / `relay_task_get` / `relay_task_create` / `relay_task_update` / `relay_task_transfer`；为任务发的会话带上 taskId。\n" : ""}- 文件：\`relay_file_put\` 传本机文件（同名是新版本），\`relay_file_get\` 读文件和批注，\`relay_file_download\` 把文件（对方发的图片、文档等附件）存到本机、返回完整路径（小图片直接给出图片）。会话里有哪些文件，\`relay_session_get\` 的最后列着。${flow}
 `;
 }
 
@@ -184,6 +185,25 @@ export function newRepliesText(thread: Thread, since: NonNullable<ReturnType<typ
   if (r.state === "done" && r.takenAt !== null)
     return `${r.to} 已接手你发的会话「${thread.title}」（threadId ${thread.id}），不会逐条回复，会话已经结束，接下来由 ${r.to} 去做。下面是 ${r.to} 留给你的附言：照它调整就行，不用再追问；需要再找 ${r.to}，重新发一个会话。\n\n${threadAsText(thread, since.fresh, since.asked, places)}`;
   return `${r.to} 回复了你发的会话「${thread.title}」（threadId ${thread.id}）。下面只有你上次发言之后的新内容，之前的你已经看过（要看全文，${how}）。按回复接着推进：还没问清楚，就在这个会话里追问；已经敲定，就把会话标记完成，再按敲定的方案改文档、继续开发。\n\n${threadAsText(thread, since.fresh, since.asked, places)}`;
+}
+
+/** A size for people: 812 字节, 34 KB, 2.5 MB. */
+export function sizeText(n: number): string {
+  if (n < 1024) return `${n} 字节`;
+  if (n < 1024 * 1024) return `${Math.ceil(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * A session's files for an AI: what there is and how to get it (2026-11-12, the user: amo-relay 里的 AI 也能拿到附件).
+ * Files belong to the session, not to one message, so they are listed after its messages with who sent each and when.
+ * `how`: the tool or command that saves one on this machine, and the one that reads a text file's words. Empty when
+ * there are none.
+ */
+export function filesAsText(files: RelayFile[], how: { download: string; read: string }): string {
+  if (!files.length) return "";
+  const line = (f: RelayFile) => `- ${f.name} v${f.version} · ${f.type.split(";")[0]!.trim()} · ${sizeText(f.size)} · ${f.by} ${time(f.at)} 上传${f.notes ? ` · ${f.notes} 条批注` : ""} · fileId ${f.id}`;
+  return `### 会话里的文件（${files.length} 个）\n图片和别的文件用 ${how.download} 存到本机，拿到完整路径后打开看；文字文件也可以用 ${how.read} 直接读内容和批注。\n${files.map(line).join("\n")}`;
 }
 
 /** A team task for an AI: what it is, where it stands, what was decided, its sessions. */

@@ -494,6 +494,13 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   const doc = join(root, "bag-design.md");
   writeFileSync(doc, "# 背包\n\n初始 40 格，每升 10 级 +5 格。");
   expect(await exec("cmd.exe", ["/c", cli, "put", doc, "--thread", threadId])).toContain("已上传 bag-design.md v1");
+  // 2026-11-12: the session lists its files, and `download` saves one on this machine, the same bytes.
+  const listed = await exec("cmd.exe", ["/c", cli, "replies", threadId]);
+  expect(listed).toContain("### 会话里的文件（1 个）");
+  const docId = /- bag-design\.md v1 · text\/markdown · \d+ 字节 · 策划小张 .+ 上传 · fileId (\S+)/.exec(listed)![1]!;
+  const saved = await exec("cmd.exe", ["/c", cli, "download", docId, "--dir", join(root, "dl")]);
+  expect(saved).toContain(join(root, "dl", "bag-design.md"));
+  expect(readFileSync(join(root, "dl", "bag-design.md")).equals(readFileSync(doc))).toBe(true);
 
   // The coder: told it waits on them; the session has the attachment; only 回复并返回 — no task to take over.
   const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });

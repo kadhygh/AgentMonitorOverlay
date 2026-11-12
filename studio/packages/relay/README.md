@@ -174,6 +174,7 @@ MCP 提供这几个工具：
 - `relay_queue`：待我这边处理的会话
 - `relay_task_list` / `relay_task_get` / `relay_task_create` / `relay_task_update` / `relay_task_transfer`：团队任务
 - `relay_file_put` / `relay_file_get`：传文件到任务或会话、读文件和它的批注
+- `relay_file_download`（2026-11-12）：把文件（对方发的图片等附件）存到本机，返回完整路径；1 MB 以内的 PNG / JPEG / GIF / WebP 同时作为图片返回。默认存在 `%TEMP%\amo-relay-files\<fileId>\<文件名>`，`dir` 指定别的文件夹（已有同名的别的文件时另存成「名字 (2)」）。最大 20 MB，下载后核对 sha256。会话里有哪些文件，`relay_session_get` / `relay_inbox` / `relay_session_wait` 的最后列着（`src/download.ts`，`usage.ts` 的 `filesAsText`）
 
 阶段 1 的旧名（`relay_ask`、`relay_replies`、`relay_wait`、`relay_send`）还能用。
 
@@ -186,6 +187,7 @@ MCP 提供这几个工具：
 ```
 amo-relay serve | passwd | admin-password | rename | register | login | whoami | people | prompt | mcp | ask --json <file|-> | replies [id] | wait <id>
           | send <id> --body … [--then ask|done] | queue | handoff <id> --note …
+          | put <本机文件> --thread <id> | file <fileId> | download <fileId> [--dir <文件夹>]
 ```
 
 ## 接口

@@ -5,12 +5,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { get as httpGet, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { crc32, deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
+import { downloadFile, downloadsDir, safeFileName } from "./download.js";
 import type { RelayEvent } from "./protocol.js";
 import { acceptsGzip, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
@@ -544,7 +545,7 @@ describe("relay service", () => {
     expect(client.getInstructions()!.length).toBeLessThan(400);
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).not.toContain("relay_ask");
-    expect(names).toHaveLength(15);
+    expect(names).toHaveLength(16);
     const text = (r: unknown) => ((r as { content: Array<{ text: string }> }).content[0]?.text ?? "");
 
     expect(text(await client.callTool({ name: "relay_people", arguments: {} }))).toContain("程序老李");
@@ -614,6 +615,95 @@ describe("relay service", () => {
     expect(text(await client.callTool({ name: "relay_task_get", arguments: { taskId } }))).toContain(`- designdoc.md v2 · fileId ${again2.id}`);
     const notJoined = await createRelayMcp({ settings: () => null });
     expect(notJoined).toBeTruthy();
+  });
+
+  it("attachments for an AI (2026-11-12): listed with the session, saved on this machine byte for byte, refused clearly", async () => {
+    const { url, coder, plannerSettings } = await service();
+    const connect = async (o: Parameters<typeof createRelayMcp>[0]) => {
+      const mcp = await createRelayMcp(o);
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "claude-code", version: "1" });
+      await Promise.all([mcp.connect(a), client.connect(b)]);
+      closers.push(() => client.close());
+      return client;
+    };
+    type Result = { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean };
+    const call = async (client: Client, name: string, args: Record<string, unknown>) => (await client.callTool({ name, arguments: args })) as Result;
+    const text = (r: Result) => r.content.find((c) => c.type === "text")?.text ?? "";
+    const ai = await connect({ settings: () => plannerSettings });
+    const out = mkdtempSync(join(tmpdir(), "relay-dl-"));
+    closers.push(() => rmSync(out, { recursive: true, force: true }));
+
+    // The AI asks; the coder answers with a screenshot and a build, and a file whose name tries to leave the folder.
+    const threadId = /threadId: (\S+)/.exec(text(await call(ai, "relay_session_open", { to: "程序老李", title: "过热的表现", body: "枪管发红要多红？", questions: [{ text: "颜色" }] })))![1]!;
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(40_000)]);
+    const zip = randomBytes(300_000);
+    const shot = await coder.upload({ threadId }, "过热截图.png", png, "image/png");
+    const build = await coder.upload({ threadId }, "build.zip", zip, "application/zip");
+    const sly = await coder.upload({ threadId }, "../../CON.txt", new TextEncoder().encode("hi"), "text/plain");
+    await coder.send(threadId, { kind: "reply", answers: [{ questionId: "q1", text: "看截图" }] });
+
+    // Taken back first (reading the session counts as fetched): the reply and the files under it.
+    const back = text(await call(ai, "relay_inbox", {}));
+    expect(back).toContain("**颜色** → 看截图");
+    expect(back).toContain(`fileId ${build.id}`);
+    const got = text(await call(ai, "relay_session_get", { threadId }));
+    expect(got).toContain("### 会话里的文件（3 个）");
+    expect(got).toMatch(new RegExp(`- 过热截图\\.png v1 · image/png · 40 KB · 程序老李 \\S+ \\S+ 上传 · fileId ${shot.id}`));
+    expect(got).toContain(`- build.zip v1 · application/zip · 293 KB · 程序老李`);
+    expect(got).toContain("relay_file_download（fileId）");
+
+    // A picture: saved where asked, the same bytes, and handed over as an image too.
+    const pic = await call(ai, "relay_file_download", { fileId: shot.id, dir: out });
+    expect(pic.isError).toBeFalsy();
+    const picPath = join(out, "过热截图.png");
+    expect(text(pic)).toContain(`已下载：过热截图.png v1 · image/png · 40 KB · 程序老李 上传\n${picPath}`);
+    expect(readFileSync(picPath).equals(png)).toBe(true);
+    expect(pic.content.find((c) => c.type === "image")).toMatchObject({ mimeType: "image/png", data: png.toString("base64") });
+    // Again: the same bytes are there, not fetched twice; a different file of that name is kept, this one beside it.
+    expect(text(await call(ai, "relay_file_download", { fileId: shot.id, dir: out }))).toContain("本机已经有这个文件");
+    writeFileSync(picPath, "someone else's");
+    const beside = text(await call(ai, "relay_file_download", { fileId: shot.id, dir: out }));
+    expect(beside).toContain(join(out, "过热截图 (2).png"));
+    expect(readFileSync(picPath, "utf8")).toBe("someone else's");
+    expect(readFileSync(join(out, "过热截图 (2).png")).equals(png)).toBe(true);
+
+    // Not a picture: only the path, in the temp folder by default, one folder per fileId.
+    const bin = await call(ai, "relay_file_download", { fileId: build.id });
+    const binPath = join(downloadsDir(), build.id, "build.zip");
+    closers.push(() => rmSync(join(downloadsDir(), build.id), { recursive: true, force: true }));
+    expect(bin.content.map((c) => c.type)).toEqual(["text"]);
+    expect(text(bin)).toContain(binPath);
+    expect(readFileSync(binPath).equals(zip)).toBe(true);
+    // A name with folder parts or a device name stays one file inside the folder.
+    const slyText = text(await call(ai, "relay_file_download", { fileId: sly.id, dir: out }));
+    expect(slyText).toContain("已下载");
+    const slyPath = /\n(.+)\n/.exec(slyText)![1]!;
+    expect(dirname(slyPath)).toBe(out);
+    expect(basename(slyPath)).toBe(".._.._CON.txt");
+    expect(safeFileName("..\\..\\x/CON.txt")).toBe("_CON.txt");
+    expect(safeFileName("..")).toBe("file");
+    expect(safeFileName("a.png. ")).toBe("a.png");
+    expect(safeFileName(`${"长".repeat(200)}.png`)).toMatch(/^长{116}\.png$/);
+
+    // Refused, each saying why: over the limit (before a byte is read), an id the service does not know, a file of a
+    // session the account is not in, and a machine not signed in.
+    const small = await connect({ settings: () => plannerSettings, maxDownloadBytes: 100_000 });
+    const big = await call(small, "relay_file_download", { fileId: build.id, dir: out });
+    expect(big.isError).toBe(true);
+    expect(text(big)).toContain("build.zip 有 293 KB，超过下载上限 98 KB，没有下载");
+    expect(existsSync(join(out, "build.zip"))).toBe(false);
+    const none = await call(ai, "relay_file_download", { fileId: "f_0000000000000000" });
+    expect(none.isError).toBe(true);
+    expect(text(none)).toContain("没有这个文件");
+    const other = await new RelayClient(url).register("美术小周", "pw-zhou", { passphrase: "芝麻开门" });
+    await expect(downloadFile(new RelayClient(url, other.key), shot.id, { dir: out })).rejects.toThrow(/你不在这个对话里/);
+    const nobody = await connect({ settings: () => null });
+    const out2 = await call(nobody, "relay_file_download", { fileId: shot.id });
+    expect(out2.isError).toBe(true);
+    expect(text(out2)).toContain("这台机器还没加入 AMO 中转");
+    // fileBytes keeps to its limit on its own too (a service saying another size than it sends).
+    await expect(new RelayClient(url, plannerSettings.key).fileBytes(build.id, 1000)).rejects.toMatchObject({ code: "too_large" });
   });
 
   it("relay inbox (2026-10-30): one conversation takes back at once only the sessions it sent, each from its last word on, and not twice", async () => {

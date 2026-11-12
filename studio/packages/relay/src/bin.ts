@@ -10,7 +10,8 @@ import { startRelayServer } from "./server.js";
 import { createMirrors } from "./mirror.js";
 import { RelayStore } from "./store.js";
 import { takeInbox } from "./inbox.js";
-import { newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { filesAsText, newRepliesText, notesAsText, sessionStateText, sizeText, taskAsText, threadAsText, usagePrompt } from "./usage.js";
+import { downloadFile } from "./download.js";
 import { typeOf } from "./types.js";
 
 // amo-relay: the relay service, this machine's identity, and the relay for AIs without MCP (plans/done/relay.md).
@@ -25,6 +26,7 @@ import { typeOf } from "./types.js";
 //   ask --json <file|-> [--conv <mark>]   inbox --conv <mark>   replies [threadId] [--after n]   wait <threadId> [--minutes n]
 //   send <threadId> --body <text> [--then ask|done] [--conv <mark>]   queue   handoff <threadId> --note <text>
 //   tasks [--mine]   task <taskId>   transfer <taskId> --to <名字> [--status …] --reason <text>
+//   put <file> --task|--thread <id>   file <fileId>   download <fileId> [--dir <folder>]
 
 const USAGE = `amo-relay <command>
   serve    [--port ${RELAY_DEFAULT_PORT}] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--mirror | --no-mirror] [--name <服务名>] [--passphrase <邀请口令>]
@@ -48,7 +50,8 @@ const USAGE = `amo-relay <command>
   task     <taskId>                                （一个任务的说明、决策、会话）
   transfer <taskId> --to <名字> [--status 待处理|开发中|已完成|已搁置] --reason <文字>
   put      <本机文件> --task <taskId> | --thread <threadId> [--name <显示名>]   （传文件，同名就是新版本）
-  file     <fileId>                                （读文件和它的批注）`;
+  file     <fileId>                                （读文件和它的批注）
+  download <fileId> [--dir <文件夹>]               （把文件存到本机，打印完整路径；默认存在系统临时目录）`;
 
 function parse(argv: string[]): { cmd: string; pos: string[]; flags: Record<string, string> } {
   const [cmd = "", ...rest] = argv;
@@ -81,6 +84,13 @@ async function joined(): Promise<{ client: RelayClient; me: string }> {
   const s = await loadSettings();
   if (!s) throw new Error(`这台机器还没加入中转：先登录（AMO Relay 客户端，或 amo-relay login；身份在 ${relayHome()}）`);
   return { client: clientFromSettings(s), me: s.name };
+}
+
+/** A session's messages, then its files (2026-11-12, as the MCP): listing them must not cost the messages. */
+async function withFiles(client: RelayClient, threadId: string, text: string): Promise<string> {
+  const files = await client.files({ threadId }).catch(() => []);
+  const list = filesAsText(files, { download: "`relay download <fileId>`", read: "`relay file <fileId>`" });
+  return list ? `${text}\n\n${list}` : text;
 }
 
 async function readJsonArg(arg: string): Promise<unknown> {
@@ -190,14 +200,14 @@ async function main(): Promise<void> {
       const conv = flags.conv.trim();
       const items = await takeInbox(client, me, (c) => c === conv);
       if (!items.length) out("这个对话发出的会话还没有新回复。");
-      else out(items.map((i) => newRepliesText(i.thread, i, `用 relay replies ${i.thread.id}`)).join("\n\n---\n\n"));
+      else out((await Promise.all(items.map((i) => withFiles(client, i.thread.id, newRepliesText(i.thread, i, `用 relay replies ${i.thread.id}`))))).join("\n\n---\n\n"));
       return;
     }
     case "replies": {
       const { client, me } = await joined();
       if (pos[0]) {
         const { thread, messages } = await client.messages(pos[0], Number(flags.after ?? 0), { ai: true });
-        out(threadAsText(thread, messages));
+        out(await withFiles(client, thread.id, threadAsText(thread, messages)));
         return;
       }
       for (const t of await client.threads()) {
@@ -218,7 +228,7 @@ async function main(): Promise<void> {
         return;
       }
       const { thread } = await client.messages(pos[0], after);
-      out(threadAsText(thread, got, all.find((m) => m.kind === "request")));
+      out(await withFiles(client, thread.id, threadAsText(thread, got, all.find((m) => m.kind === "request"))));
       return;
     }
     case "send": {
@@ -300,7 +310,17 @@ async function main(): Promise<void> {
       out(`## ${f.name} v${f.version} · ${f.type} · ${f.size} 字节\n`);
       const text = /^text\/|json|xml|markdown/.test(f.type) ? await (await client.fileData(f.id)).text() : undefined;
       if (text !== undefined) out(text);
+      else out(`（不是文字文件，这里显示不了内容：用 relay download ${f.id} 存到本机再打开）`);
       out(`\n${notesAsText(f, notes, text)}`);
+      return;
+    }
+    case "download": {
+      if (!pos[0]) throw new Error("用法：amo-relay download <fileId> [--dir <文件夹>]");
+      const { client } = await joined();
+      const got = await downloadFile(client, pos[0], { dir: flags.dir && flags.dir !== "true" ? flags.dir : undefined });
+      const f = got.file;
+      out(`${got.reused ? "本机已经有这个文件（内容一致，没有重新下载）" : "已下载"}：${f.name} v${f.version} · ${f.type.split(";")[0]!.trim()} · ${sizeText(f.size)} · ${f.by} 上传`);
+      out(got.path);
       return;
     }
     case "handoff": {

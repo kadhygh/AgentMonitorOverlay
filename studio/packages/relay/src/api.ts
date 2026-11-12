@@ -151,6 +151,48 @@ export class RelayClient {
     }
     return res.blob();
   }
+  /**
+   * A file's bytes, read no further than `maxBytes` (2026-11-12, relay_file_download: an AI saving an attachment never
+   * takes in more than the limit, whatever the service sends).
+   */
+  async fileBytes(fileId: string, maxBytes: number): Promise<Uint8Array> {
+    let res: Response;
+    try {
+      res = await fetch(this.fileUrl(fileId), { headers: this.key ? { authorization: `Bearer ${this.key}` } : {} });
+    } catch (err) {
+      throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
+    }
+    const tooLarge = () => new RelayClientError(413, "too_large", `文件超过 ${maxBytes} 字节的上限，没有下载`);
+    if (Number(res.headers.get("content-length") ?? 0) > maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    const reader = res.body?.getReader();
+    if (!reader) return new Uint8Array(0);
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw tooLarge();
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) {
+      out.set(c, at);
+      at += c.byteLength;
+    }
+    return out;
+  }
   /** Where a file can be fetched or downloaded (the key rides along for a link). */
   fileUrl(fileId: string, opts: { download?: boolean; withKey?: boolean } = {}): string {
     const q = new URLSearchParams();

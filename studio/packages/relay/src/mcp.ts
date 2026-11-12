@@ -2,8 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, loadSettings, relayHome, type RelaySettings } from "./client.js";
 import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
-import { mcpInstructions, newRepliesText, notesAsText, sessionStateText, taskAsText, threadAsText } from "./usage.js";
+import { filesAsText, mcpInstructions, newRepliesText, notesAsText, sessionStateText, sizeText, taskAsText, threadAsText } from "./usage.js";
 import { takeInbox } from "./inbox.js";
+import { downloadFile } from "./download.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -16,13 +17,15 @@ import { typeOf } from "./types.js";
 
 export const RELAY_MCP_NAME = "amo-relay";
 
+type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
 interface ToolResult {
   [key: string]: unknown;
-  content: Array<{ type: "text"; text: string }>;
+  content: Content[];
   isError?: boolean;
 }
 
-const ok = (text: string): ToolResult => ({ content: [{ type: "text", text }] });
+const ok = (text: string | Content[]): ToolResult => ({ content: typeof text === "string" ? [{ type: "text", text }] : text });
 const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
 const NOT_JOINED = "这台机器还没加入 AMO 中转。请让使用者先在 AMO Relay 客户端里登录（或运行 amo-relay login）。";
 
@@ -33,6 +36,24 @@ export interface RelayMcpOptions {
   cli?: string;
   /** This conversation's mark (Via.conv); default a new one per process. */
   conv?: string;
+  /** relay_file_download's limit; default DOWNLOAD_MAX_BYTES (tests set a small one). */
+  maxDownloadBytes?: number;
+}
+
+/**
+ * A picture relay_file_download also hands over as an image (2026-11-12): the AI sees it at once, without opening the
+ * saved file. Only the kinds models read, and small ones: a big picture is a lot of tokens, and the path is there.
+ */
+const INLINE_IMAGE = /^image\/(png|jpeg|gif|webp)$/;
+const INLINE_IMAGE_BYTES = 1024 * 1024;
+/** How the texts point at the file tools. */
+const FILES_HOW = { download: "relay_file_download（fileId）", read: "relay_file_get" };
+
+/** A session's messages, then its files (2026-11-12): listing them must not cost the AI the messages. */
+async function withFiles(client: RelayClient, threadId: string, text: string): Promise<string> {
+  const files = await client.files({ threadId }).catch(() => []);
+  const list = filesAsText(files, FILES_HOW);
+  return list ? `${text}\n\n${list}` : text;
 }
 
 /** The server with its tools; `instructions` from the service's member list when it answers. */
@@ -60,7 +81,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     return client ? { kind: "ai" as const, client, conv } : { kind: "ai" as const, conv };
   };
 
-  const tool = (run: (client: RelayClient, me: string) => Promise<string>) => async (): Promise<ToolResult> => {
+  const tool = (run: (client: RelayClient, me: string) => Promise<string | Content[]>) => async (): Promise<ToolResult> => {
     const current = await settings();
     if (!current) return fail(NOT_JOINED);
     try {
@@ -108,20 +129,21 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       if (args.threadId) {
         const { thread, messages } = await client.messages(args.threadId, args.after ?? 0, { ai: true });
         const request = args.after ? await requestOf(client, thread) : undefined;
-        return messages.length ? threadAsText(thread, messages, request) : `${threadAsText(thread, [])}\n\n（#${args.after ?? 0} 之后没有新消息）`;
+        return withFiles(client, thread.id, messages.length ? threadAsText(thread, messages, request) : `${threadAsText(thread, [])}\n\n（#${args.after ?? 0} 之后没有新消息）`);
       }
       const mine = (await client.threads()).filter((t) => t.request && (t.request.from === me || t.request.to === me)).slice(0, 30);
       if (!mine.length) return "还没有会话。";
       return mine.map((t) => `- ${t.title} · ${t.request!.from} → ${t.request!.to} · ${sessionStateText(t.request!)} · threadId ${t.id} · 最新 #${t.lastSeq}`).join("\n");
     })();
-  const getDesc = "带 threadId：会话内容（逐条回答、结论、批注）；不带：我的会话列表。";
+  const getDesc = "带 threadId：会话内容（逐条回答、结论、批注，最后列出会话里的文件和 fileId）；不带：我的会话列表。";
   server.registerTool("relay_session_get", { title: "取会话", description: getDesc, inputSchema: getSchema, annotations: annotations(true) }, getSession);
 
   const inbox = async () =>
     tool(async (client, me) => {
       const items = await takeInbox(client, me, (c) => c === conv);
       if (!items.length) return "这个对话发出的会话还没有新回复。";
-      return items.map((i) => newRepliesText(i.thread, i, `用 relay_session_get（threadId ${i.thread.id}）`)).join("\n\n---\n\n");
+      const texts = await Promise.all(items.map((i) => withFiles(client, i.thread.id, newRepliesText(i.thread, i, `用 relay_session_get（threadId ${i.thread.id}）`))));
+      return texts.join("\n\n---\n\n");
     })();
   const inboxDesc = "一次取回这个对话发出、已经回到我这边的所有会话的新回复（每个只给上次发言之后的），取过的不再给。";
   server.registerTool("relay_inbox", { title: "取新回复", description: inboxDesc, inputSchema: {}, annotations: annotations(true) }, inbox);
@@ -135,7 +157,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
       const got = await client.wait({ threadId: args.threadId, after, timeoutMs: minutes * 60_000, signal: extra.signal, ai: true });
       if (!got.length) return `等了 ${minutes} 分钟还没有新回复。可以先做别的，之后用 relay_session_get 看（threadId ${thread.id}）。`;
       const { thread: now } = await client.messages(args.threadId, after);
-      return threadAsText(now, got, all.find((m) => m.kind === "request"));
+      return withFiles(client, now.id, threadAsText(now, got, all.find((m) => m.kind === "request")));
     })();
   const waitDesc = "等对方返回，最多 minutes 分钟（默认 5，最多 10）；没别的可做时再用。";
   server.registerTool("relay_session_wait", { title: "等回复", description: waitDesc, inputSchema: waitSchema, annotations: annotations(true) }, waitSession);
@@ -232,7 +254,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   );
   server.registerTool(
     "relay_file_get",
-    { title: "读文件", description: "读文件内容（文字类）和它的批注。", inputSchema: { fileId: z.string() }, annotations: annotations(true) },
+    { title: "读文件", description: "读文件内容（文字类）和它的批注；图片等别的文件用 relay_file_download。", inputSchema: { fileId: z.string() }, annotations: annotations(true) },
     async (args: { fileId: string }) =>
       tool(async (client) => {
         const [versions, notes] = await Promise.all([client.versions(args.fileId), client.notes(args.fileId)]);
@@ -240,8 +262,29 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
         const head = `## ${f.name} v${f.version}（共 ${f.versions} 个版本）· ${f.type} · ${f.size} 字节 · ${f.by} 上传`;
         const textual = /^text\/|json|xml|javascript|markdown|yaml|csv/.test(f.type) || /\.(md|markdown|txt|html?|json|csv|ya?ml|xml|js|ts|lua|ini|toml)$/i.test(f.name);
         const text = textual ? await (await client.fileData(f.id)).text() : undefined;
-        const body = text !== undefined ? text.slice(0, 200_000) : "（不是文字文件，没法在这里显示内容）";
+        const body = text !== undefined ? text.slice(0, 200_000) : `（不是文字文件，这里显示不了内容：用 relay_file_download（fileId ${f.id}）存到本机再打开）`;
         return `${head}\n\n${body}\n\n${notesAsText(f, notes, text)}`;
+      })(),
+  );
+  // Any file, a picture above all, onto this machine (2026-11-12, the user: AI 看到带附件的消息时，能把附件取下来).
+  // The path is the answer: every AI client opens a local file with its own tools (Claude reads pictures); a small
+  // picture comes along as an image too. What the account cannot open in its own client, the service refuses here.
+  server.registerTool(
+    "relay_file_download",
+    {
+      title: "下载文件",
+      description: "把会话或任务里的文件（对方发的图片、文档等附件）存到本机，返回完整路径，用你自己的读文件工具打开；1 MB 以内的图片同时直接给出图片。dir：存到这个文件夹（默认系统临时目录）。",
+      inputSchema: { fileId: z.string(), dir: z.string().optional().describe("本机文件夹的完整路径") },
+      annotations: annotations(false),
+    },
+    async (args: { fileId: string; dir?: string }) =>
+      tool(async (client) => {
+        const got = await downloadFile(client, args.fileId, { dir: args.dir, maxBytes: opts.maxDownloadBytes });
+        const f = got.file;
+        const type = f.type.split(";")[0]!.trim();
+        const head = `${got.reused ? "本机已经有这个文件（内容一致，没有重新下载）" : "已下载"}：${f.name} v${f.version} · ${type} · ${sizeText(f.size)} · ${f.by} 上传\n${got.path}`;
+        if (INLINE_IMAGE.test(type) && f.size <= INLINE_IMAGE_BYTES) return [{ type: "text", text: `${head}\n\n图片在下面。` }, { type: "image", data: Buffer.from(got.data).toString("base64"), mimeType: type }];
+        return `${head}\n\n用你的读文件工具打开这个路径。`;
       })(),
   );
 

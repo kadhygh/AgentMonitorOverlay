@@ -46,9 +46,9 @@
     {
       "id": "tool.relayService",
       "label": "AMO 中转服务（团队服务器）",
-      "aliases": ["中转", "relay", "中转服务", "RelayServer", "团队服务器", "Mac mini", "relay-service", "relay inbox", "中转 MCP"],
+      "aliases": ["中转", "relay", "中转服务", "RelayServer", "团队服务器", "Mac mini", "relay-service", "relay inbox", "中转 MCP", "中转附件", "附件", "relay_file_download"],
       "category": "tool",
-      "purpose": "跑在 Mac mini 上的局域网服务：策划的 AI 把要确认的事发给程序、人和人聊天；同时是平台的发布点（清单、文件）、设备通道（远程会话、手机）、问题页、待办、Claude Code / Codex 镜像。服务器上只有一份，部署只走 `npm run release -- relay-service`（会重启几秒，先问用户）。",
+      "purpose": "跑在 Mac mini 上的局域网服务：策划的 AI 把要确认的事发给程序、人和人聊天；同时是平台的发布点（清单、文件）、设备通道（远程会话、手机）、问题页、待办、Claude Code / Codex 镜像。服务器上只有一份，部署只走 `npm run release -- relay-service`（会重启几秒，先问用户）。AI 用的 MCP 和命令行（`amo-relay.mjs`）也在服务下发的客户端内容里，随 `relay-service` 部署到人手上：读会话时列出会话里的文件，`relay_file_download` / `relay download` 把附件存到本机（默认 `%TEMP%\\amo-relay-files\\<fileId>\\`，2026-11-12）。",
       "anchors": [
         { "label": "HTTP 服务", "path": "studio/packages/relay/src/server.ts", "anchor": "export async function startRelayServer" },
         { "label": "存储", "path": "studio/packages/relay/src/store.ts", "anchor": "export class RelayStore" },
@@ -58,6 +58,7 @@
         { "label": "平台的清单和文件", "path": "studio/packages/relay/src/platform.ts", "anchor": "manifestServed" },
         { "label": "工具镜像", "path": "studio/packages/relay/src/mirror.ts" },
         { "label": "命令行", "path": "studio/packages/relay/src/bin.ts" },
+        { "label": "AI 取附件（存到本机）", "path": "studio/packages/relay/src/download.ts", "anchor": "export async function downloadFile" },
         { "label": "改动说明（中转服务）", "path": "studio/packages/relay/CHANGELOG.md" }
       ],
       "related": ["tool.relayClient", "tool.issues", "studio.teamRelay", "studio.remote", "infra.release"],
