@@ -314,6 +314,27 @@ button.box-row:hover:not(:disabled) { border-color: var(--border-strong); backgr
 .drop.over::after { content: "松开上传"; position: absolute; inset: 8px; display: grid; place-items: center; border: 2px dashed var(--primary); border-radius: var(--r-l); background: color-mix(in srgb, var(--tint) 85%, transparent); color: var(--primary); font-weight: 600; z-index: 5; pointer-events: none; }
 .file-ico { width: 24px; height: 30px; flex: none; border: 1px solid var(--border-strong); border-radius: 2px; display: grid; place-items: end center; padding-bottom: 3px; font-family: var(--font-code); font-size: 8px; color: var(--text-dim); background: var(--panel-raised); }
 .file-row b { max-width: 40%; }
+/* A session with its files on the right (2026-11-10). */
+.view.session-view { flex-direction: row; }
+.session-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.head-tools { display: inline-flex; gap: 6px; margin-left: 6px; }
+.files-side { flex: none; width: 280px; min-height: 0; border-left: 1px solid var(--border); background: var(--bg-header); display: flex; flex-direction: column; }
+.files-side > .fs-drop, .files-side { min-height: 0; }
+.fs-drop { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fs-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px 14px; border-bottom: 1px solid var(--divider); }
+.fs-head b { font-family: var(--font-display); }
+.fs-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.fs-empty { padding: 8px 6px; }
+.fs-item { display: flex; align-items: flex-start; gap: 4px; border-radius: var(--r-l); }
+.fs-item:hover { background: var(--panel); }
+.fs-open { flex: 1; min-width: 0; height: auto; display: flex; align-items: flex-start; gap: 8px; padding: 6px; border: none; background: none; text-align: left; justify-content: flex-start; }
+.fs-open:hover:not(:disabled) { background: none; }
+.fs-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fs-text b { font-size: var(--fs-sm); }
+.fs-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.fs-dl { flex: none; padding: 8px 6px; font-size: var(--fs-cap); color: var(--primary); visibility: hidden; }
+.fs-item:hover .fs-dl, .fs-dl:focus { visibility: visible; }
+.fs-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--divider); }
 .atts { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; padding: 8px 24px; border-bottom: 1px solid var(--divider); }
 .att { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 4px; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); font-size: var(--fs-cap); }
 .att:hover:not(:disabled) { border-color: var(--primary); background: var(--panel); }

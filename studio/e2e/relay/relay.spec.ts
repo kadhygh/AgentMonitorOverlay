@@ -190,7 +190,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(b.page.locator(".page-crumb")).toContainText("任务 · 加特林");
 
   // Notes (2d): the coder opens the attachment, selects a passage and notes it.
-  await b.page.locator(".atts .att", { hasText: "designdoc.md" }).click();
+  await b.page.locator(".files-side .fs-open", { hasText: "designdoc.md" }).click();
   await expect(b.page.locator(".md-doc")).toContainText("基础射速每秒 12 发");
   await b.page.evaluate((quote) => {
     const root = document.querySelector(".md-doc")!;
@@ -216,13 +216,13 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".viewer-foot").getByRole("button", { name: "完成", exact: true }).click();
   // 复制给 AI carries the notes on the session's files, placed as Reviewer copies them (2026-11-05, the user: 复制给 AI
   // 里没有我的批注) — not only the ones a reply took along.
-  await b.page.locator(".head-actions").getByRole("button", { name: "复制给 AI" }).click();
+  await b.page.locator(".head-tools").getByRole("button", { name: "复制给 AI" }).click();
   await expect.poll(() => copiedText(b.app)).toContain("## 附件上的批注（1 条）");
   expect(await copiedText(b.app)).toContain("designdoc.md:3\n> 每秒 12 发\n升速曲线建议配表（程序老李）");
 
   // An HTML file in the session: its script does not run unless asked to.
-  await b.page.locator(".atts input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
-  await b.page.locator(".atts .att", { hasText: "原型.html" }).click();
+  await b.page.locator(".files-side input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
+  await b.page.locator(".files-side .fs-open", { hasText: "原型.html" }).click();
   const proto = b.page.frameLocator(".doc-frame").locator("body");
   await expect(proto).toContainText("原型说明：枪管发红");
   await expect(proto).not.toContainText("脚本运行了");
@@ -260,7 +260,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".msg.kind-reply .notes-in").last()).toContainText("designdoc.md v1：每秒 12 发");
   await shot(a.app, "16-reply-notes");
   // The planner's copy: the note the reply carried, with its line, and not twice.
-  await a.page.locator(".head-actions").getByRole("button", { name: "复制给 AI" }).click();
+  await a.page.locator(".head-tools").getByRole("button", { name: "复制给 AI" }).click();
   await expect.poll(() => copiedText(a.app)).toContain("附上的批注（1 条）：\n\ndesigndoc.md:3\n> 每秒 12 发\n升速曲线建议配表（程序老李）");
   expect(await copiedText(a.app)).not.toContain("## 附件上的批注");
 
@@ -501,7 +501,7 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await expect(row(b.page, "背包格子上限怎么存")).toContainText("等你处理");
   await row(b.page, "背包格子上限怎么存").click();
   await expect(b.page.locator(".page-crumb")).toHaveText("待处理");
-  await expect(b.page.locator(".atts .att", { hasText: "bag-design.md" })).toBeVisible();
+  await expect(b.page.locator(".files-side .fs-open", { hasText: "bag-design.md" })).toBeVisible();
   await expect(b.page.getByRole("button", { name: /接手任务/ })).toHaveCount(0);
   await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
   await b.page.locator(".reply-form .opt", { hasText: "服务端配置表" }).click();
@@ -607,7 +607,7 @@ test("2026-11-05: the viewer is a panel with Reviewer's note box; 已接手，�
 
     // The viewer: a panel, not a modal — nothing covers the conversation; it moves by its head.
     await row(b.page, "射速改完了，请审").click();
-    await b.page.locator(".atts .att", { hasText: "gatling.md" }).click();
+    await b.page.locator(".files-side .fs-open", { hasText: "gatling.md" }).click();
     const panel = b.page.locator(".dialog.viewer");
     await expect(panel.locator(".md-doc")).toContainText("基础射速每秒 12 发");
     await expect(b.page.locator(".overlay")).toHaveCount(0);

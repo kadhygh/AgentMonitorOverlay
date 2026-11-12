@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileChip, FileViewer, loadNotedFiles, PickFiles, useThreadFiles, useUpload } from "./Files.js";
+import { FilesSide, FileViewer, loadNotedFiles, useFilesSide, useThreadFiles, useUpload } from "./Files.js";
 import { sessionStatus, waitedText } from "./bits.js";
 import { Dialog, Field } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
@@ -43,6 +43,7 @@ export function SessionView(props: {
   const files = useThreadFiles(session, thread.id, thread.updatedAt);
   const [viewing, setViewing] = useState<string | null>(null);
   const { upload, busy: uploading } = useUpload(session, { threadId: thread.id }, toast);
+  const side = useFilesSide();
 
   const act = async (action: SessionAction, done: string) => {
     try {
@@ -197,7 +198,8 @@ export function SessionView(props: {
   }
 
   return (
-    <section className="view" aria-label={thread.title}>
+    <section className="view session-view" aria-label={thread.title}>
+      <div className="session-main">
       <header className="page-head">
         <div className="head-main">
           {!props.embedded && (
@@ -228,34 +230,34 @@ export function SessionView(props: {
             )}
             {r.verdict && <span className={`chip v-${r.verdict}`}>{VERDICT_LABEL[r.verdict]}</span>}
             {r.needsReply && r.takenAt == null && <span className="chip">需要回复</span>}
+            {/* Moved left from the head's right end, where the files side now is (2026-11-10, the user: 把复制给 ai 左移). */}
+            <span className="head-tools">
+              <button type="button" className="small" onClick={() => void copyAll()} title="复制整个会话（含逐条回答和附件上的批注），贴给 AI">
+                复制给 AI
+              </button>
+              {inStudio && (
+                <button type="button" className="small" onClick={() => void openStudio()} title="这个会话是这台电脑上的 AMO Studio 发的：去 Studio 里发起它的那个对话">
+                  在 Studio 里打开
+                </button>
+              )}
+            </span>
           </div>
         </div>
-        <div className="head-actions">
-          {inStudio && (
-            <button type="button" onClick={() => void openStudio()} title="这个会话是这台电脑上的 AMO Studio 发的：去 Studio 里发起它的那个对话">
-              在 Studio 里打开
+        {!side.open && (
+          <div className="head-actions">
+            <button type="button" onClick={() => side.setOpen(true)} title="打开文件边栏：双方在这个会话里发的文件">
+              文件{files.length ? ` ${files.length}` : ""}
             </button>
-          )}
-          <button type="button" onClick={() => void copyAll()} title="复制整个会话（含逐条回答和附件上的批注），贴给 AI">
-            复制给 AI
-          </button>
-        </div>
+          </div>
+        )}
       </header>
       <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onCopyNew={sinceMine ? () => void copyNew() : undefined} onAct={(a, t) => void act(a, t)} />
-      {(files.length > 0 || r.state !== "done") && (
-        <div className="atts">
-          <span className="muted tiny">附件</span>
-          {files.map((f) => (
-            <FileChip key={f.id} file={f} onOpen={setViewing} />
-          ))}
-          {!files.length && <span className="muted tiny">没有</span>}
-          {r.state !== "done" && <PickFiles small label={uploading ? "上传中…" : "＋ 附加文件"} disabled={uploading} onFiles={(fl) => void upload(fl)} />}
-        </div>
-      )}
       {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
       {taking && <TakeDialog session={session} thread={thread} onClose={() => setTaking(false)} toast={toast} />}
       <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
       {dock}
+      </div>
+      {side.open && <FilesSide session={session} files={files} onOpen={setViewing} onClose={() => side.setOpen(false)} onFiles={r.state !== "done" ? (fl) => void upload(fl) : undefined} uploading={uploading} />}
     </section>
   );
 }

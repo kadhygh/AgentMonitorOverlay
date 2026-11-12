@@ -116,15 +116,97 @@ export function FileRow({ file, onOpen }: { file: RelayFile; onOpen: (id: string
   );
 }
 
-/** A file chip, for a session's attachments. */
-export function FileChip({ file, onOpen }: { file: RelayFile; onOpen: (id: string) => void }) {
-  return (
-    <button type="button" className="att" onClick={() => onOpen(file.id)} title={`打开 ${file.name}`}>
-      <span className="file-ico">{file.name.split(".").pop()?.slice(0, 4)}</span>
-      {file.name} · v{file.version}
-      {file.notes > 0 && <span className="n">{file.notes} 条批注</span>}
-    </button>
+/**
+ * A session's files beside its messages (2026-11-10, the user: session 内能够看到双方发送过的文件，加上右侧的边栏):
+ * both sides' uploads, newest first, each with who sent it, when, its size, its version and notes; 附加文件 and
+ * dropping files at the bottom while the session is open. Replaces the row of chips above the messages.
+ */
+export function FilesSide({ session, files, onOpen, onClose, onFiles, uploading }: { session: Session; files: RelayFile[]; onOpen: (id: string) => void; onClose: () => void; onFiles?: (files: FileList) => void; uploading: boolean }) {
+  const me = session.me.name;
+  const sorted = useMemo(() => [...files].sort((a, b) => b.at - a.at), [files]);
+  const body = (
+    <>
+      <div className="fs-head">
+        <b>文件</b>
+        <span className="muted tiny">{files.length ? `${files.length} 个，双方发的都在这里` : ""}</span>
+        <span className="grow" />
+        <button type="button" className="small" onClick={onClose} title="收起文件边栏" aria-label="收起文件边栏">
+          收起 ›
+        </button>
+      </div>
+      <div className="fs-list">
+        {!sorted.length && <p className="muted tiny fs-empty">还没有文件{onFiles ? "。点下面的按钮，或把文件拖到这里" : ""}</p>}
+        {sorted.map((f) => (
+          <div key={f.id} className="fs-item">
+            <button type="button" className="fs-open" onClick={() => onOpen(f.id)} title={`打开 ${f.name}`}>
+              <span className="file-ico">{f.name.split(".").pop()?.slice(0, 4)}</span>
+              <span className="fs-text">
+                <b className="ellipsis">{f.name}</b>
+                <span className="muted tiny">
+                  {f.by === me ? "我" : f.by} · {timeText(f.at)} · {size(f.size)}
+                </span>
+                {(f.versions > 1 || f.notes > 0) && (
+                  <span className="fs-chips">
+                    {f.versions > 1 && <span className="chip">{`v${f.version} / 共 ${f.versions} 版`}</span>}
+                    {f.notes > 0 && <span className="chip attn">{f.notes} 条批注</span>}
+                  </span>
+                )}
+              </span>
+            </button>
+            <a className="fs-dl" href={session.client.fileUrl(f.id, { download: true, withKey: true })} download={f.name} title={`下载 ${f.name}`} aria-label={`下载 ${f.name}`}>
+              下载
+            </a>
+          </div>
+        ))}
+      </div>
+      {onFiles && (
+        <div className="fs-foot">
+          <PickFiles small label={uploading ? "上传中…" : "＋ 附加文件"} disabled={uploading} onFiles={onFiles} />
+          <span className="muted tiny">也可以把文件拖到这里</span>
+        </div>
+      )}
+    </>
   );
+  return (
+    <aside className="files-side" aria-label="会话里的文件">
+      {onFiles ? (
+        <DropZone onFiles={onFiles} className="fs-drop">
+          {body}
+        </DropZone>
+      ) : (
+        body
+      )}
+    </aside>
+  );
+}
+
+const SIDE_KEY = "amo-relay.filesSide";
+const NARROW = "(max-width: 959px)";
+
+/**
+ * Whether the files side is open: kept on this computer; in a narrow window it starts closed (and opening it there
+ * lasts for this view only).
+ */
+export function useFilesSide(): { open: boolean; setOpen: (v: boolean) => void } {
+  const [narrow, setNarrow] = useState(() => typeof matchMedia === "function" && matchMedia(NARROW).matches);
+  const [pref, setPref] = useState(() => localStorage.getItem(SIDE_KEY) !== "0");
+  const [narrowOpen, setNarrowOpen] = useState(false);
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const mq = matchMedia(NARROW);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const setOpen = useCallback(
+    (v: boolean) => {
+      if (narrow) return setNarrowOpen(v);
+      setPref(v);
+      localStorage.setItem(SIDE_KEY, v ? "1" : "0");
+    },
+    [narrow],
+  );
+  return { open: narrow ? narrowOpen : pref, setOpen };
 }
 
 /** A session's files (taken from its task, or uploaded into it), kept current. */
