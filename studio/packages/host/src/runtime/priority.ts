@@ -62,12 +62,18 @@ const STDERR_TAIL = 4000;
 
 /**
  * The SDK's own spawn (same command, pipes and abort signal) plus the lower priority. The SDK reads stderr only from
- * its own spawn, so the end of it goes to `log` when the process exits with an error.
+ * its own spawn, so the end of it goes to `log` when the process exits with an error. `trace` (Claude 多账号的排查,
+ * 2026-11-12): the pid with the env as the process really got it (see account-log.ts), and when it is gone — a process
+ * that outlives its session's close, an archive or an account switch shows as a start without an exit.
  */
-export function spawnClaudeProcess(log: (line: string) => void): (options: SpawnOptions) => SpawnedProcess {
+export function spawnClaudeProcess(log: (line: string) => void, trace?: { started(pid: number | undefined, env: Record<string, string | undefined>): void; exited(pid: number | undefined, code: number | null, signal: string | null): void }): (options: SpawnOptions) => SpawnedProcess {
   return ({ command, args, cwd, env, signal }) => {
     const child = spawn(command, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     lowerAgentPriority(child.pid, env);
+    if (trace) {
+      trace.started(child.pid, env);
+      child.once("exit", (code, sig) => trace.exited(child.pid, code, sig));
+    }
     let tail = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (s: string) => {

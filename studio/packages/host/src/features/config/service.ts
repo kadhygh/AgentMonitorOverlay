@@ -256,7 +256,8 @@ export class ConfigFeature extends Feature<"claudeAccounts" | "scratchpad"> {
         else {
           const o = v as Record<string, unknown>;
           if (!o || typeof o.footer !== "boolean" || typeof o.focus !== "boolean") throw new HostError("bad_request", "quotaDisplay entries are { footer: boolean, focus: boolean }");
-          next[id] = { footer: o.footer, focus: o.focus };
+          if (o.modelWeekly !== undefined && typeof o.modelWeekly !== "boolean") throw new HostError("bad_request", "quotaDisplay modelWeekly is a boolean");
+          next[id] = { footer: o.footer, focus: o.focus, ...(typeof o.modelWeekly === "boolean" ? { modelWeekly: o.modelWeekly } : {}) };
         }
       }
       this.store.setKv(QUOTA_DISPLAY_KEY, JSON.stringify(next));

@@ -831,6 +831,8 @@ export interface UsageWindow {
   /** 0–100; null when the account did not say. */
   usedPercent: number | null;
   resetsAt: Timestamp | null;
+  /** A model's own weekly limit ("Opus", "Fable"…): shown only when 设置 → 额度 turns those on (2026-11-13). */
+  model?: string;
 }
 
 /** How much of a subscription is used: the person's own GPT (Codex login) or Claude (setup-token) account. */
@@ -847,5 +849,13 @@ export interface AccountUsage {
    * Claude 多账号 (2026-11-03): which of the Claude subscription's accounts this is; one entry per account, the current
    * one first. Absent for every other subscription (and for Claude with a single account).
    */
-  account?: { id: Id; label: string; current: boolean };
+  account?: {
+    id: Id;
+    label: string;
+    current: boolean;
+    /** 2026-11-12 (the user: 最好能看到账号的真正 Claude 名称): the name, email and plan its Claude login carries (`.claude.json`). */
+    name?: string | null;
+    email?: string | null;
+    plan?: string | null;
+  };
 }

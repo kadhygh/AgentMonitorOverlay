@@ -428,6 +428,8 @@ export const SUBSESSION_EXTRA_MAX = 4000;
 export interface QuotaDisplay {
   footer: boolean;
   focus: boolean;
+  /** Also each model's own weekly limit (Fable 每周…); off unless turned on (the user, 2026-11-13: 做成设置选项，打开才会显示). */
+  modelWeekly?: boolean;
 }
 
 export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false };
@@ -459,6 +461,9 @@ export interface ClaudeAccount {
   email: string | null;
   /** "max", "pro", … */
   plan: string | null;
+  /** The account's own name at Claude and its plan as Claude names it ("Max", "Ultra"…), from the dir's `.claude.json` (2026-11-12). */
+  claudeName?: string | null;
+  claudePlan?: string | null;
   /** A sign-in under way in Studio (设置 → 模型 → 添加账号 / 重新登录). */
   login: ClaudeAccountLogin | null;
 }

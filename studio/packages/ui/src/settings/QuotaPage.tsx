@@ -35,7 +35,15 @@ export function QuotaPage({ link, settings }: { link: HostLink; settings: Studio
       {profiles && usage && rows.length === 0 && <span className="settings-hint">还没有能跟踪的额度。</span>}
       <div className="quota-list">
         {rows.map((p) => (
-          <QuotaRow key={p.id} link={link} profile={p} usage={usage?.find((u) => u.profileId === p.id)} display={quotaOf(settings, p.id)} onChange={(d) => void save(p.id, d)} />
+          <QuotaRow
+            key={p.id}
+            link={link}
+            profile={p}
+            usage={usage?.find((u) => u.profileId === p.id)}
+            models={[...new Set((usage ?? []).filter((u) => u.profileId === p.id).flatMap((u) => u.windows.flatMap((w) => (w.model ? [w.model] : []))))]}
+            display={quotaOf(settings, p.id)}
+            onChange={(d) => void save(p.id, d)}
+          />
         ))}
       </div>
       {error && (
@@ -47,14 +55,15 @@ export function QuotaPage({ link, settings }: { link: HostLink; settings: Studio
   );
 }
 
-function usageText(u: AccountUsage): string {
-  const parts = u.windows.flatMap((w) => (w.usedPercent === null ? [] : [`${w.label} 剩 ${Math.max(0, 100 - w.usedPercent)}%`]));
+function usageText(u: AccountUsage, display: QuotaDisplay): string {
+  const parts = u.windows.filter((w) => display.modelWeekly || !w.model).flatMap((w) => (w.usedPercent === null ? [] : [`${w.label} 剩 ${Math.max(0, 100 - w.usedPercent)}%`]));
   return parts.length ? parts.join(" · ") : (u.note ?? "还没有读到用量");
 }
 
-function QuotaRow({ link, profile, usage, display, onChange }: { link: HostLink; profile: ModelProfile; usage: AccountUsage | undefined; display: QuotaDisplay; onChange(d: QuotaDisplay): void }) {
+/** `models`: the models with a weekly limit of their own on this account (Fable…): a switch to show them (2026-11-13, off by default). */
+function QuotaRow({ link, profile, usage, models, display, onChange }: { link: HostLink; profile: ModelProfile; usage: AccountUsage | undefined; models: string[]; display: QuotaDisplay; onChange(d: QuotaDisplay): void }) {
   const { balance } = useBalance(link, profile);
-  const now = usage ? usageText(usage) : balance ? balanceText(balance) : profile.balance ? "正在查询…" : "—";
+  const now = usage ? usageText(usage, display) : balance ? balanceText(balance) : profile.balance ? "正在查询…" : "—";
   return (
     <div className="quota-row" data-testid="quota-row" data-id={profile.id}>
       <Mark profile={profile} small />
@@ -68,6 +77,12 @@ function QuotaRow({ link, profile, usage, display, onChange }: { link: HostLink;
         <input type="checkbox" checked={display.footer} onChange={(e) => onChange({ ...display, footer: e.target.checked })} aria-label={`在左下角显示 ${profile.label} 的额度`} data-testid="quota-footer" />
         左下角
       </label>
+      {models.length > 0 && (
+        <label className="channel-hide" title={`${models.join("、")} 有自己单独的每周额度；勾上后左下角和这里都显示它`}>
+          <input type="checkbox" checked={!!display.modelWeekly} onChange={(e) => onChange({ ...display, modelWeekly: e.target.checked })} aria-label={`显示 ${profile.label} 的 ${models.join("、")} 每周额度`} data-testid="quota-model-weekly" />
+          {models.join("、")} 每周
+        </label>
+      )}
       {/* Focus no longer shows 额度 (2026-10-29 evening, the user); the setting's `focus` stays in the data, unused. */}
     </div>
   );

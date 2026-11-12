@@ -297,12 +297,14 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** What the mock's /api/oauth/usage answers: 5 小时 37.4% (resets in 94 minutes), 每周 12% (in 3 days and a bit). */
+/** What the mock's /api/oauth/usage answers: 5 小时 37.4% (resets in 94 minutes), 每周 12% (in 3 days and a bit), Fable 每周 48%. */
 export const MOCK_CLAUDE_USAGE = (now = Date.now()) => ({
   five_hour: { utilization: 37.4, resets_at: new Date(now + 94 * 60_000 + 30_000).toISOString() },
   seven_day: { utilization: 12, resets_at: new Date(now + (3 * 24 * 60 + 125) * 60_000 + 30_000).toISOString() },
   seven_day_opus: null,
   seven_day_sonnet: null,
+  // Fable's weekly limit comes only here (as Anthropic answered on 2026-11-12).
+  limits: [{ kind: "weekly_scoped", group: "weekly", percent: 48, resets_at: new Date(now + (3 * 24 * 60 + 125) * 60_000 + 30_000).toISOString(), scope: { model: { id: null, display_name: "Fable" }, surface: null } }],
 });
 
 export interface ClaudeMockServer {

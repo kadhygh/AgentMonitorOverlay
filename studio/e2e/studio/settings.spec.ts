@@ -193,6 +193,8 @@ test("Claude 多账号: a second account in 设置, the quota per account at the
   const added = await studio.api<ClaudeAccountsState>("POST", "/api/claude-accounts", { label: "工作号", signIn: false });
   const work = added.accounts.find((a) => a.label === "工作号")!;
   writeFileSync(join(work.dir, ".credentials.json"), login("sk-ant-oat01-e2e-local-work", "pro"));
+  // Its name at Claude, as `claude auth login` leaves it in the dir's .claude.json (2026-11-13: shown under 工作号).
+  writeFileSync(join(work.dir, ".claude.json"), JSON.stringify({ oauthAccount: { displayName: "Sam", emailAddress: "sam@example.com", planDisplayName: "Pro" } }));
   // Its records are the default account's.
   expect(lstatSync(join(work.dir, "projects")).isSymbolicLink()).toBe(true);
 
@@ -213,10 +215,29 @@ test("Claude 多账号: a second account in 设置, the quota per account at the
   const current = page.locator('[data-testid="usage-account"][data-current="1"]');
   await expect(current).toContainText("正在使用");
   await expect(current).toContainText("剩 63%");
-  await page.getByTestId("usage-others-toggle").click();
+  // 方案 A (2026-11-13): every account open at once, the one in use without 切换; folded, what is left of the one in use.
+  await expect(current.getByTestId("usage-switch")).toHaveCount(0);
+  await expect(page.getByTestId("usage-peak")).toHaveText("Claude 剩 63%");
   const other = page.locator(`[data-testid="usage-account"][data-account="${work.id}"]`);
   await expect(other).toContainText("工作号");
+  await expect(other.getByTestId("usage-account-who")).toHaveText("Sam · Pro");
   await expect(other.getByTestId("usage-switch")).toBeDisabled();
+  // A model's own weekly limit (the mock's Fable 每周) only once 设置 → 额度 turns it on.
+  await expect(current.getByTestId("usage-window")).toHaveCount(2);
+  await page.getByRole("button", { name: "设置" }).click();
+  await dialog.getByRole("tab", { name: "额度" }).click();
+  const fable = dialog.locator('[data-testid="quota-row"][data-id="claude-subscription"]').getByTestId("quota-model-weekly");
+  await expect(fable).not.toBeChecked();
+  await expect(dialog.locator('[data-testid="quota-row"][data-id="claude-subscription"]')).toContainText("Fable 每周");
+  await screenshot(app, "settings", "quota-fable-switch", page);
+  await fable.click();
+  await expect(fable).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(current.getByTestId("usage-window")).toHaveCount(3);
+  await expect(current.getByTestId("usage-window").nth(2)).toContainText("Fable 每周");
+  await expect(current.getByTestId("usage-window").nth(2)).toContainText("剩 52%");
+  await expect(page.getByTestId("usage-peak")).toHaveText("Claude 剩 52%");
+  await screenshot(app, "settings", "claude-accounts-usage-fable", page);
   await expect(studio.api("PUT", "/api/claude-accounts/current", { id: work.id })).rejects.toThrow(/正在进行/);
   await screenshot(app, "settings", "claude-accounts-usage-busy", page);
 

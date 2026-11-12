@@ -73,18 +73,24 @@
 @container (max-width: 235px) {
   .usage-acct { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
 }
-/* Claude 多账号 (2026-11-03): the accounts not in use, folded under the one in use; each opens with 切换. */
+/* Claude 多账号 (2026-11-13, 方案 A): every account a card, its windows side by side; the one in use tinted, with a bar
+   on its left and 「✓ 正在使用」 instead of 切换. */
+.usage-card { display: flex; flex-direction: column; gap: 2px; padding: 7px 8px 8px; margin: 3px 0; border-radius: 7px; border: 1px solid var(--divider); }
+.usage-card.current { background: var(--selected); border-color: transparent; box-shadow: inset 3px 0 0 var(--primary); }
+.usage-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; line-height: 20px; }
+.usage-card-name { font-size: 12.5px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-card-tag { margin-left: auto; flex: none; font-size: 11px; color: var(--primary); white-space: nowrap; }
+.usage-card-head .usage-switch { margin-left: auto; flex: none; }
+.usage-card-who { font-size: 11px; color: var(--text-faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-card-grid { display: grid; gap: 8px; margin-top: 4px; }
+.usage-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.usage-cell-label { font-size: 10.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-cell-left { font-family: var(--font-code); font-size: 11.5px; color: var(--text); white-space: nowrap; }
+.usage-cell-left.hot { color: var(--error-text); }
+.usage-cell-reset { font-family: var(--font-code); font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
+/* UsageAccount with an account (the 远程 line shows another computer's that way). */
 .usage-acct-who { color: var(--text-dim); }
 .usage-acct-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.usage-acct-who .usage-switch { margin-left: auto; flex: none; }
-.usage-others { display: flex; flex-direction: column; border-top: 1px solid var(--divider); }
-.usage-others-toggle {
-  display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 0; border: none; background: transparent; color: var(--text-dim);
-  font-size: var(--fs-cap); text-align: left; cursor: pointer; min-width: 0;
-}
-.usage-others-toggle:hover { color: var(--text); }
-.usage-others-peaks { margin-left: auto; font-family: var(--font-code); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.usage-acct.other { padding-left: 8px; border-top: 1px solid var(--divider); }
 .usage-acct.other .usage-acct-name { font-weight: 500; color: var(--text-dim); }
 .usage-note.error { color: var(--error-text); }
 .usage-win { display: flex; flex-direction: column; gap: 3px; }

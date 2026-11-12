@@ -145,6 +145,8 @@ export interface Live {
   stopLoopAtEnd: boolean;
   /** The next message is Studio's own (wake), not the person's. */
   sendingForStudio: boolean;
+  /** Claude 多账号: the account the process was started on (local login only; for host.log, 2026-11-12). */
+  account: string | null;
 }
 
 /** A process's state before its query is made (`q` is set right after). */
@@ -199,6 +201,7 @@ export function newLive(push: Live["push"], end: Live["end"]): Live {
     afterLimit: null,
     stopLoopAtEnd: false,
     sendingForStudio: false,
+    account: null,
   };
 }
 

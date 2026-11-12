@@ -31,7 +31,9 @@ export function remoteWatch(sessions: readonly Session[], profiles: readonly Mod
  * quota (pushed by A, never asked for here). Nothing when A has no numbers for it — no 「未知」.
  */
 export function remoteQuota(usage: RemotePeerUsage | undefined, profileId: Id): { usage?: AccountUsage; balance?: ChannelBalance } | null {
-  const u = usage?.usage.find((x) => x.profileId === profileId);
+  const found = usage?.usage.find((x) => x.profileId === profileId);
+  // A model's own weekly limit (Fable 每周…) stays out of this line (2026-11-13: shown only where 设置 → 额度 turns it on).
+  const u = found ? { ...found, windows: found.windows.filter((w) => !w.model) } : undefined;
   const b = usage?.balances.find((x) => x.profileId === profileId);
   return u || b ? { ...(u ? { usage: u } : {}), ...(b ? { balance: b } : {}) } : null;
 }

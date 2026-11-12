@@ -72,7 +72,7 @@ export class ClaudeAccounts {
   private readonly logins = new Map<Id, { child: ChildProcess; state: ClaudeAccountLogin; timer: NodeJS.Timeout }>();
   private readonly listeners = new Set<() => void>();
   /** Set by the Claude runtime: why switching is not possible now (a session at work), and what to do before it. */
-  private guard: { blocked(): string | null; beforeSwitch(): Promise<void> } | null = null;
+  private guard: { blocked(): string | null; beforeSwitch(from?: Id, to?: Id): Promise<void> } | null = null;
 
   constructor(
     private readonly store: Store,
@@ -83,7 +83,7 @@ export class ClaudeAccounts {
     return this.options.root ?? join(homedir(), ".claude-accounts");
   }
 
-  setGuard(guard: { blocked(): string | null; beforeSwitch(): Promise<void> }): void {
+  setGuard(guard: { blocked(): string | null; beforeSwitch(from?: Id, to?: Id): Promise<void> }): void {
     this.guard = guard;
   }
 
@@ -128,6 +128,12 @@ export class ClaudeAccounts {
     return this.read().current;
   }
 
+  /** An account's name and the email `auth status` last gave (for host.log), or null when there is no such account. */
+  describe(id: Id): { label: string; email: string | null } | null {
+    const a = this.read().accounts.find((x) => x.id === id);
+    return a ? { label: labelOf(a), email: a.email ?? null } : null;
+  }
+
   /** How many accounts there are (one: everything looks as before multi-account). */
   count(): number {
     return this.read().accounts.length;
@@ -141,9 +147,13 @@ export class ClaudeAccounts {
   }
 
   /** Every signed-in or not account's home, for reading quotas (no linking: nothing runs there). */
-  homes(): Array<AccountHome & { label: string; current: boolean }> {
+  homes(): Array<AccountHome & { label: string; current: boolean; name: string | null; email: string | null; plan: string | null }> {
     const saved = this.read();
-    return saved.accounts.map((a) => ({ id: a.id, dir: a.dir, explicit: a.id !== DEFAULT_ACCOUNT || this.options.defaultExplicit, label: labelOf(a), current: a.id === saved.current }));
+    return saved.accounts.map((a) => {
+      const explicit = a.id !== DEFAULT_ACCOUNT || this.options.defaultExplicit;
+      const claude = claudeProfileOf(a.dir, explicit);
+      return { id: a.id, dir: a.dir, explicit, label: labelOf(a), current: a.id === saved.current, name: claude.name, email: a.email ?? claude.email, plan: claude.plan ?? a.plan ?? null };
+    });
   }
 
   private homeOf(a: SavedAccount): AccountHome {
@@ -158,16 +168,21 @@ export class ClaudeAccounts {
 
   state(): ClaudeAccountsState {
     const saved = this.read();
-    const accounts: ClaudeAccount[] = saved.accounts.map((a) => ({
-      id: a.id,
-      label: labelOf(a),
-      dir: a.dir,
-      isDefault: a.id === DEFAULT_ACCOUNT,
-      signedIn: localClaudeSignedIn(a.dir),
-      email: a.email ?? null,
-      plan: a.plan ?? null,
-      login: this.logins.get(a.id)?.state ?? null,
-    }));
+    const accounts: ClaudeAccount[] = saved.accounts.map((a) => {
+      const claude = claudeProfileOf(a.dir, a.id !== DEFAULT_ACCOUNT || this.options.defaultExplicit);
+      return {
+        id: a.id,
+        label: labelOf(a),
+        dir: a.dir,
+        isDefault: a.id === DEFAULT_ACCOUNT,
+        signedIn: localClaudeSignedIn(a.dir),
+        email: a.email ?? claude.email,
+        plan: a.plan ?? null,
+        claudeName: claude.name,
+        claudePlan: claude.plan,
+        login: this.logins.get(a.id)?.state ?? null,
+      };
+    });
     return { current: saved.current, accounts, switchBlocked: this.guard?.blocked() ?? null };
   }
 
@@ -203,7 +218,7 @@ export class ClaudeAccounts {
     if (localClaudeSignedIn(a.dir) === false) throw Object.assign(new Error(`账号「${labelOf(a)}」还没登录，先登录再切换`), { code: "conflict" });
     const blocked = this.guard?.blocked();
     if (blocked) throw Object.assign(new Error(blocked), { code: "conflict" });
-    await this.guard?.beforeSwitch();
+    await this.guard?.beforeSwitch(saved.current, id);
     const now = this.read();
     now.current = id;
     this.write(now);
@@ -335,6 +350,20 @@ export class ClaudeAccounts {
       if (entry.child.exitCode === null) entry.child.kill();
       this.logins.delete(id);
     }
+  }
+}
+
+/**
+ * The account as its Claude login knows it (2026-11-12, the user: 最好能看到账号的真正 Claude 名称): `oauthAccount` of the
+ * `.claude.json` the CLI uses for the dir — the dir's own when CLAUDE_CONFIG_DIR is set for it, else ~/.claude.json.
+ */
+export function claudeProfileOf(dir: string, explicit: boolean): { name: string | null; email: string | null; plan: string | null } {
+  try {
+    const a = (JSON.parse(readFileSync(explicit ? join(dir, ".claude.json") : join(homedir(), ".claude.json"), "utf8")) as { oauthAccount?: Record<string, unknown> }).oauthAccount ?? {};
+    const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+    return { name: text(a.displayName) ?? text(a.fullName), email: text(a.emailAddress), plan: text(a.planDisplayName) };
+  } catch {
+    return { name: null, email: null, plan: null };
   }
 }
 

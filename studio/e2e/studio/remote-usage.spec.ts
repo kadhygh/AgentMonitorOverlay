@@ -80,7 +80,7 @@ test("B's task page shows the quota A has read for the task's model, folded and 
   const ws = await a.api<{ id: string }>("POST", "/api/workspaces", { path: a.workspace("alpha") });
   const { task } = await a.api<{ task: Task }>("POST", "/api/tasks", { title: "远程看额度", workspaceId: ws.id, firstSession: { profileId: "claude-subscription", text: "hello" } });
   const read = await a.api<AccountUsage[]>("GET", "/api/usage?refresh=1");
-  expect(read.find((u) => u.profileId === "claude-subscription")).toMatchObject({ windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
+  expect(read.find((u) => u.profileId === "claude-subscription")).toMatchObject({ windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }, { label: "Fable 每周", usedPercent: 48, model: "Fable" }] });
   await a.api("POST", "/api/remote/grants", { taskId: task.id, account: "我", device: bDevice });
 
   // B: the numbers came with no asking; the task page shows them.

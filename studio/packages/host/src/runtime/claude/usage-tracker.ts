@@ -1,6 +1,6 @@
 import type { AccountUsage, ModelProfile, UsageWindow } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
-import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken } from "./claude-usage.js";
+import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken, type ClaudeUsageExtra } from "./claude-usage.js";
 import { readClaudeLogin } from "./claude-login.js";
 import { authStatus, type ClaudeAccounts } from "./accounts.js";
 import { requireClaudeCode } from "./executable.js";
@@ -16,10 +16,12 @@ export class ClaudeUsageTracker {
   private readonly updatedAt = new Map<string, string>();
   /** Each account's own answer (local login), per profile and account. */
   private readonly account = new Map<string, { at: number; value: AccountUsage }>();
+  /** The last 7-day breakdown logged per account. */
+  private readonly lastBreakdown = new Map<string, string>();
 
   constructor(
     private readonly store: Store,
-    private readonly opts: { accounts: ClaudeAccounts; baseUrl(profile: ModelProfile): string | undefined },
+    private readonly opts: { accounts: ClaudeAccounts; baseUrl(profile: ModelProfile): string | undefined; log?(line: string): void },
   ) {}
 
   /**
@@ -31,7 +33,7 @@ export class ClaudeUsageTracker {
     if (readClaudeLogin(this.store) === "local") {
       const homes = this.opts.accounts.homes();
       if (homes.length === 1) return this.accountUsage(profile, homes[0]!, refresh);
-      const list = await Promise.all(homes.map(async (h) => ({ ...(await this.accountUsage(profile, h, refresh)), account: { id: h.id, label: h.label, current: h.current } })));
+      const list = await Promise.all(homes.map(async (h) => ({ ...(await this.accountUsage(profile, h, refresh)), account: { id: h.id, label: h.label, current: h.current, name: h.name, email: h.email, plan: h.plan } })));
       return [...list.filter((u) => u.account.current), ...list.filter((u) => !u.account.current)];
     }
     const key = `${profile.id}|${this.opts.accounts.currentId()}`;
@@ -56,7 +58,7 @@ export class ClaudeUsageTracker {
     if (homes.length === 1) return this.account.get(`${profile.id}|${homes[0]!.id}`)?.value ?? null;
     const list = homes.flatMap((h) => {
       const v = this.account.get(`${profile.id}|${h.id}`)?.value;
-      return v ? [{ ...v, account: { id: h.id, label: h.label, current: h.current } }] : [];
+      return v ? [{ ...v, account: { id: h.id, label: h.label, current: h.current, name: h.name, email: h.email, plan: h.plan } }] : [];
     });
     return list.length ? [...list.filter((u) => u.account.current), ...list.filter((u) => !u.account.current)] : null;
   }
@@ -79,7 +81,14 @@ export class ClaudeUsageTracker {
         token = localAccessToken(home.dir);
       }
       if (!token) throw new ClaudeUsageError(home.current || home.id === "default" ? "没找到本机 Claude Code 的登录：在终端运行 claude 登录一次" : "这个账号还没登录：在 设置 → 模型 → Claude 里登录");
-      const windows = await fetchClaudeUsage(this.opts.baseUrl(profile) || "https://api.anthropic.com", token);
+      const extra: ClaudeUsageExtra = { breakdown: null };
+      const windows = await fetchClaudeUsage(this.opts.baseUrl(profile) || "https://api.anthropic.com", token, undefined, extra);
+      // Claude 多账号的排查 (2026-11-12): where the week's use went (Claude Code, Chats…), into host.log when it changed —
+      // an account not in use whose Claude Code share still grows is used by something else on that login.
+      if (extra.breakdown && this.lastBreakdown.get(home.id) !== extra.breakdown) {
+        this.lastBreakdown.set(home.id, extra.breakdown);
+        if (this.opts.accounts.count() > 1) this.opts.log?.(`claude account: week of ${home.id}${home.current ? " (in use)" : ""} by where it went: ${extra.breakdown}`);
+      }
       value = { ...base, windows, note: windows.length ? null : "账号没有返回用量", updatedAt: new Date().toISOString() };
     } catch (err) {
       // Keep the last numbers, say why they are not fresh.

@@ -31,6 +31,7 @@ import { handoffKey, hasTranscript, importTranscript, readTranscript, withConfig
 import { ClaudeTurns } from "./turns.js";
 import { ClaudeUsageTracker } from "./usage-tracker.js";
 import { ClaudeAccounts } from "./accounts.js";
+import { authEnvSummary, dirAccountSummary, settingsAuthSummary, windowsSummary } from "./account-log.js";
 import { ClaudeWake } from "./wake-control.js";
 import { adoptedKey, isCompactSummary, listOutsideSessions, previewOutsideSession, sameFolder } from "./outside.js";
 
@@ -82,6 +83,8 @@ export interface ClaudeRuntimeOptions {
 
 /** How long after a process is up its MCP servers' statuses are read (they connect in the background). */
 const MCP_STATUS_DELAY_MS = 8_000;
+/** Claude 多账号的排查 (2026-11-12): how often host.log gets the processes and quotas while there are several accounts. */
+const ACCOUNT_TICK_MS = 5 * 60_000;
 
 /**
  * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
@@ -116,6 +119,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly commandCache = new Map<string, { at: number; list: SdkSlashCommand[] }>();
   /** The `/` command a session was last sent, to name the output of a command that runs without the model. */
   private readonly lastCommand = new Map<Id, string>();
+  /** Claude 多账号的排查 (2026-11-12): the last rate-limit line logged per session, each account's last quota logged. */
+  private readonly lastRateLog = new Map<Id, string>();
+  private readonly lastUsageLog = new Map<string, string>();
+  private accountTick: ReturnType<typeof setInterval> | null = null;
 
   /** The person's own config dir; `explicit` when they set CLAUDE_CONFIG_DIR (read once: helpers set it for a while). */
   private readonly local: { dir: string; explicit: boolean };
@@ -146,13 +153,16 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       clearIdle: (live) => this.clearIdle(live),
     };
     this.accounts = options.accounts ?? new ClaudeAccounts(this.store, { defaultDir: this.local.dir, defaultExplicit: this.local.explicit, ...(options.baseEnv ? { baseEnv: options.baseEnv } : {}) });
-    this.accounts.setGuard({ blocked: () => this.switchBlocked(), beforeSwitch: () => this.beforeAccountSwitch() });
-    this.usageTracker = new ClaudeUsageTracker(this.store, { accounts: this.accounts, baseUrl: (p) => (p.provider ? this.options.providers[p.provider]?.baseUrl : undefined) });
+    this.accounts.setGuard({ blocked: () => this.switchBlocked(), beforeSwitch: (from, to) => this.beforeAccountSwitch(from, to) });
+    this.usageTracker = new ClaudeUsageTracker(this.store, { accounts: this.accounts, baseUrl: (p) => (p.provider ? this.options.providers[p.provider]?.baseUrl : undefined), log: (line) => this.emit("log", line) });
     this.wake = new ClaudeWake(this.core, (sessionId) => {
       const profileId = this.store.getSession(sessionId)?.profileId;
       return profileId ? this.usageTracker.usedUpUntil(this.limitKey(profileId), this.now().getTime()) : null;
     });
-    this.turns = new ClaudeTurns(this.core, (sessionId, live, by) => this.wake.onTurnStart(sessionId, live, by));
+    this.turns = new ClaudeTurns(this.core, (sessionId, live, by) => {
+      this.wake.onTurnStart(sessionId, live, by);
+      this.traceTurnStart(sessionId, live, by);
+    });
     this.asks = new ClaudeAsks(this.core);
     this.subagents = new ClaudeSubagents(this.core, this.turns);
     this.messages = new ClaudeMessages(this.core, {
@@ -161,7 +171,16 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       wake: this.wake,
       recordRateLimit: (sessionId, info) => {
         const profileId = this.store.getSession(sessionId)?.profileId;
-        if (profileId) this.usageTracker.record(this.limitKey(profileId), info);
+        if (!profileId) return;
+        // Claude 多账号的排查 (2026-11-12): Anthropic's answer for the account this process bills, with the account
+        // Studio started it on — the two must be the same.
+        const live = this.live.get(sessionId);
+        const line = `${info.rateLimitType ?? "?"} ${typeof info.utilization === "number" ? info.utilization : "?"}${info.resetsAt ? ` resets ${new Date(info.resetsAt * 1000).toISOString()}` : ""}`;
+        if (this.lastRateLog.get(sessionId) !== line) {
+          this.lastRateLog.set(sessionId, line);
+          this.emit("log", `claude account: rate limit event in ${sessionId} (process on ${live?.account ?? "-"}, current ${this.accounts.currentId()}): ${line}`);
+        }
+        this.usageTracker.record(this.limitKey(profileId), info);
       },
       noteSkills: (sessionId, skills) => {
         const profileId = this.store.getSession(sessionId)?.profileId;
@@ -180,6 +199,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       },
     });
     this.recoverAfterRestart();
+    this.startAccountTick();
   }
 
   // ---- operations -------------------------------------------------------------------------------------------------
@@ -466,7 +486,93 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   async usage(profileId: Id, refresh = false): Promise<AccountUsage | AccountUsage[] | null> {
     const profile = this.profile(profileId);
     if (!this.isSubscription(profile)) return null;
-    return this.usageTracker.usage(profile, refresh);
+    const answer = await this.usageTracker.usage(profile, refresh);
+    this.logUsage(answer);
+    return answer;
+  }
+
+  /** Claude 多账号的排查 (2026-11-12): each account's quota into host.log whenever it changed (only with several accounts). */
+  private logUsage(answer: AccountUsage | AccountUsage[]): void {
+    if (!Array.isArray(answer)) return;
+    for (const u of answer) {
+      if (!u.account) continue;
+      const line = `${windowsSummary(u.windows)}${u.note ? ` (${u.note})` : ""}`;
+      const key = `${u.profileId}|${u.account.id}`;
+      if (this.lastUsageLog.get(key) === line) continue;
+      this.lastUsageLog.set(key, line);
+      this.emit("log", `claude account: quota of ${u.account.id} (${u.account.label}${u.account.current ? ", in use" : ", not in use"}): ${line}`);
+    }
+  }
+
+  private accountLabel(id: Id): string {
+    const a = this.accounts.describe(id);
+    return a ? `${a.label}${a.email && a.email !== a.label ? ` <${a.email}>` : ""}` : "?";
+  }
+
+  /**
+   * Claude 多账号的排查 (2026-11-12): what the process itself says it is signed in as (accountInfo answers from its own
+   * login, no model call), against the account Studio started it on.
+   */
+  private checkProcessAccount(sessionId: Id, live: Live): void {
+    const expected = live.account!;
+    withTimeout(live.q.accountInfo(), 60_000)
+      .then((info) => {
+        const want = this.accounts.describe(expected)?.email ?? null;
+        const mismatch = !!want && !!info.email && want.toLowerCase() !== info.email.toLowerCase();
+        this.emit(
+          "log",
+          `claude account: ${sessionId} process says ${info.email ?? "(no email)"} org=${info.organization ?? "-"} plan=${info.subscriptionType ?? "-"} tokenSource=${info.tokenSource ?? "-"} apiKeySource=${info.apiKeySource ?? "-"} provider=${info.apiProvider ?? "-"}${mismatch ? ` · WARNING: started on ${expected} (${want}), but signed in as someone else` : ""}`,
+        );
+      })
+      .catch((err: unknown) => {
+        if (this.live.get(sessionId) === live) this.emit("log", `claude account: ${sessionId} could not ask its process for the account: ${firstLine(err)}`);
+      });
+  }
+
+  /**
+   * Every turn start, for the account log (2026-11-12): a turn in a process of an account no longer current, and — the
+   * other side's lead: 归档时取消了「恢复后自动继续」，归档后它还在跑？ — a turn in an archived session. Studio never starts
+   * one there (archive closes the process, its wake timer skips archived sessions), so it can only be the CLI going on
+   * by itself in a process that did not go away: said so, and that process is closed.
+   */
+  private traceTurnStart(sessionId: Id, live: Live, by: "cli" | "person"): void {
+    const session = this.store.getSession(sessionId);
+    const current = this.accounts.currentId();
+    if (session?.archivedAt) {
+      this.emit("log", `claude account: WARNING turn started (by ${by}) in archived session ${sessionId} (process on ${live.account ?? "-"}, current ${current}): closing its process`);
+      setTimeout(() => {
+        if (this.live.get(sessionId) === live) void this.close(sessionId);
+      }, 0).unref?.();
+      return;
+    }
+    if (!live.account) return;
+    if (live.account !== current) this.emit("log", `claude account: WARNING turn started (by ${by}) in ${sessionId} in a process on ${live.account}, but the current account is ${current}`);
+    else this.emit("log", `claude account: turn starts in ${sessionId} (by ${by}) on ${live.account}`);
+  }
+
+  /**
+   * With several accounts: every 5 minutes, the Claude processes alive and the account each runs on, and each
+   * account's quota (logged when it changed) — so a quota that moves while nothing of Studio runs on that account
+   * shows up as such.
+   */
+  private startAccountTick(): void {
+    const tick = () => {
+      try {
+        if (this.accounts.count() < 2 || readClaudeLogin(this.store) !== "local") return;
+        const procs = [...this.live.entries()].map(([id, l]) => {
+          const s = this.store.getSession(id);
+          return `${id} on ${l.account ?? "-"} (${l.running ? "running" : "idle"}${s?.archivedAt ? ", ARCHIVED" : ""}${s?.wake ? `, wake ${s.wake.limit ? `limit autoContinue=${s.wake.limit.autoContinue}` : ""}${s.wake.loop ? " loop" : ""}` : ""})`;
+        });
+        const waking = this.store.listSessions().filter((s) => s.runtime === "claude" && s.wake && !this.live.has(s.id)).map((s) => `${s.id}${s.archivedAt ? " (archived)" : ""}`);
+        this.emit("log", `claude account: tick · current ${this.accounts.currentId()} · processes: ${procs.length ? procs.join(", ") : "none"}${waking.length ? ` · wake set without a process: ${waking.join(", ")}` : ""}`);
+        const profile = this.options.profiles.find((p) => p.runtime === "claude" && this.isSubscription(p));
+        if (profile) void this.usage(profile.id, true).catch(() => undefined);
+      } catch (err) {
+        this.emit("log", `claude account: tick failed: ${firstLine(err)}`);
+      }
+    };
+    this.accountTick = setInterval(tick, ACCOUNT_TICK_MS);
+    this.accountTick.unref?.();
   }
 
   /** 远程额度 (2026-11-06): what usage() last read, without asking the account. */
@@ -547,6 +653,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async archive(sessionId: Id): Promise<Session[]> {
     const changed = this.archiveTree(sessionId);
+    // Claude 多账号的排查 (2026-11-12, 那边: 归档的会话是不是还在跑): what was alive when it was archived.
+    const alive = changed.filter((s) => this.live.has(s.id));
+    if (alive.length || changed.some((s) => s.wake)) {
+      this.emit("log", `claude account: archived ${changed.map((s) => s.id).join(", ")}; closing ${alive.length ? alive.map((s) => `${s.id} on ${this.live.get(s.id)?.account ?? "-"}${this.live.get(s.id)?.running ? " (in a turn)" : ""}`).join(", ") : "no process"}${changed.some((s) => s.wake) ? ` · wake was set: ${changed.filter((s) => s.wake).map((s) => `${s.id}${s.wake?.limit ? ` limit autoContinue=${s.wake.limit.autoContinue}` : ""}${s.wake?.loop ? " loop" : ""}`).join(", ")}` : ""}`);
+    }
     await Promise.all(changed.map((s) => this.close(s.id)));
     return changed;
   }
@@ -614,6 +725,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   async closeAll(): Promise<void> {
     this.wake.shutdown();
     this.accounts.shutdown();
+    if (this.accountTick) clearInterval(this.accountTick);
+    this.accountTick = null;
     await Promise.all([...this.live.keys()].map((id) => this.close(id)));
     await Promise.all([...this.closing.values()]);
   }
@@ -724,12 +837,18 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         wake?.();
       },
     );
+    // 自动压缩点 (设置 → 模型) over the provider's own window; 命令行适配 (agent-env.ts) under everything.
+    const env = { ...shellHelpEnv(this.store), ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) };
+    // Claude 多账号的排查 (2026-11-12): which account this process is meant to bill, and what decides its login.
+    if (home.login === "local") {
+      live.account = this.accounts.currentId();
+      this.emit("log", `claude account: ${session.id} starts a process on account ${live.account} (${this.accountLabel(live.account)}) · ${authEnvSummary(env)} · ${settingsAuthSummary(home.dir)} · ${dirAccountSummary(home.dir, !!home.explicit)}`);
+    }
     live.q = query({
       prompt: input(),
       options: {
         cwd: workspace.path,
-        // 自动压缩点 (设置 → 模型) over the provider's own window; 命令行适配 (agent-env.ts) under everything.
-        env: { ...shellHelpEnv(this.store), ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) },
+        env,
         // As in a terminal: CLAUDE.md, settings, hooks, commands and skills of the project and of the config dir (Studio's
         // own with the token, the person's with the local login).
         settingSources: CLI_SETTING_SOURCES,
@@ -762,9 +881,18 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
         pathToClaudeCodeExecutable: exe,
-        spawnClaudeCodeProcess: spawnClaudeProcess((line) => this.emit("log", `${session.id}: ${line}`)),
+        spawnClaudeCodeProcess: spawnClaudeProcess(
+          (line) => this.emit("log", `${session.id}: ${line}`),
+          live.account
+            ? {
+                started: (pid, spawned) => this.emit("log", `claude account: ${session.id} pid ${pid ?? "?"} started on ${live.account} · ${authEnvSummary(spawned)}`),
+                exited: (pid, code, sig) => this.emit("log", `claude account: ${session.id} pid ${pid ?? "?"} (on ${live.account}) exited${code !== null ? ` code ${code}` : ""}${sig ? ` ${sig}` : ""}`),
+              }
+            : undefined,
+        ),
       },
     });
+    if (live.account) this.checkProcessAccount(session.id, live);
     // With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB the CLI starts in "default" whatever --permission-mode says (CLI 2.1.296,
     // checked in S12-B); switching once it runs works, so a session in another mode switches before its first message.
     const mode = claudePermissionMode(session.options.permission);
@@ -806,6 +934,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private finish(sessionId: Id, live: Live, err: unknown): void {
     if (live.finished) return;
     live.finished = true;
+    if (live.account) this.emit("log", `claude account: ${sessionId} query on ${live.account} ended (${live.closedByHost ? "closed by Studio" : err ? `error: ${firstLine(err)}` : "by the CLI"})`);
     if (this.live.get(sessionId) === live) this.live.delete(sessionId);
     this.clearIdle(live);
     for (const id of live.streaming) this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: live.text.get(id) ?? it.markdown, streaming: false } : it));
@@ -1033,10 +1162,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** Before switching: the idle processes on the old account close; their next message resumes on the new one. */
-  private async beforeAccountSwitch(): Promise<void> {
+  private async beforeAccountSwitch(from?: Id, to?: Id): Promise<void> {
     const ids = [...this.live.keys()].filter((id) => sessionClaudeLogin(this.store, id) === "local");
+    this.emit("log", `claude account: switching ${from ?? "?"} -> ${to ?? "?"}; closing ${ids.length} process(es)${ids.length ? `: ${ids.map((id) => `${id} on ${this.live.get(id)?.account ?? "-"}`).join(", ")}` : ""}`);
     await Promise.all(ids.map((id) => this.close(id)));
     await Promise.all(ids.map((id) => this.closing.get(id)));
+    const left = [...this.live.keys()].filter((id) => sessionClaudeLogin(this.store, id) === "local");
+    this.emit("log", `claude account: switch ${from ?? "?"} -> ${to ?? "?"}: processes closed${left.length ? `; WARNING still alive: ${left.join(", ")}` : ""}`);
   }
 
   private cwdOf(sessionId: Id): string | undefined {
