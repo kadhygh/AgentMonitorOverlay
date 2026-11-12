@@ -204,11 +204,12 @@
     {
       "id": "studio.teamRelay",
       "label": "会话里用 AMO 中转（team_ask）",
-      "aliases": ["teamrelay", "team_ask", "中转进会话", "TeamRelayFeature", "team_followup"],
+      "aliases": ["teamrelay", "team_ask", "中转进会话", "TeamRelayFeature", "team_followup", "team_file_get", "中转附件"],
       "category": "host",
-      "purpose": "会话里的 agent 以用户的名义、标成 AI 代发，用中转问团队里的人；人在 Studio 里确认才发，回复自动回到发起的会话（经会话收件箱）。",
+      "purpose": "会话里的 agent 以用户的名义、标成 AI 代发，用中转问团队里的人；人在 Studio 里确认才发，回复自动回到发起的会话（经会话收件箱）。回复和 team_session 后面列出这个中转会话里的文件（对方在 AI 上次发言后发来的标「新」），team_file_get 由 Host 用平台账号取下，存进数据目录的 `attachments/team/<fileId>/`，只能取本会话发出的中转会话里的文件（2026-11-13）。",
       "anchors": [
         { "label": "TeamRelayFeature", "path": "studio/packages/host/src/features/teamrelay/service.ts", "anchor": "export class TeamRelayFeature" },
+        { "label": "取中转会话里的文件", "path": "studio/packages/host/src/features/teamrelay/service.ts", "anchor": "async fileGet" },
         { "label": "给 agent 的工具", "path": "studio/packages/host/src/features/teamrelay/mcp.ts", "anchor": "team_ask" },
         { "label": "界面", "path": "studio/packages/ui/src/teamrelay/TeamRelay.tsx" }
       ],

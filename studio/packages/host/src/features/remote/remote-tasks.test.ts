@@ -1,3 +1,4 @@
+import { textOf } from "../../mcp/tool-kit.js";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -503,7 +504,7 @@ describe("wrapping up step 2", () => {
     const tools = amoToolsFor(b.service, null);
     const call = async (name: string, args: Record<string, unknown>) => {
       const r = await tools.find((t) => t.name === name)!.run(args);
-      return { error: !!r.isError, text: r.content[0]!.text };
+      return { error: !!r.isError, text: textOf(r.content[0]!) };
     };
     const board = await call("board_list", {});
     expect(board.text).toContain("B 自己的任务");

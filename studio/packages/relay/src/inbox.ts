@@ -11,6 +11,8 @@ export interface InboxItem {
   thread: Thread;
   fresh: Message[];
   asked: Message | undefined;
+  /** When `me` last wrote in it (0: never): files sent after that are new to the AI (Studio's 中转回复, 2026-11-13). */
+  lastWordAt: number;
 }
 
 /** Sessions back with `me` (or taken on with a note for the AI), handled by the AI, not fetched yet, whose conversation `match`es. */
@@ -26,7 +28,8 @@ export async function takeSession(client: RelayClient, me: string, threadId: str
   const { thread, messages } = await client.messages(threadId, 0, { ai: true });
   // 已接手 with a note for the AI: what is new is that event (sinceLastWord leaves events alone).
   const since = sinceLastWord(messages, me) ?? (thread.request?.takenAt != null && messages.length ? { fresh: messages.slice(-1), asked: undefined } : null);
-  return since ? { thread, ...since } : null;
+  const lastWordAt = messages.reduce((t, m) => (m.author === me && m.kind !== "event" ? Math.max(t, m.createdAt) : t), 0);
+  return since ? { thread, ...since, lastWordAt } : null;
 }
 
 export async function takeInbox(client: RelayClient, me: string, match: (conv: string) => boolean): Promise<InboxItem[]> {

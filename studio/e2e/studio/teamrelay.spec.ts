@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,17 +107,29 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
   await expect(page.getByTestId("task-card").filter({ hasText: "背包扩容" })).not.toContainText("已接手");
   await screenshot(app, "teamrelay", "T2-card-waiting", page);
 
-  // The coder replies in 中转: it comes into the session by itself, a new turn.
+  // The coder replies in 中转 with a screenshot attached: it comes into the session by itself, a new turn, with the
+  // session's files listed (2026-11-13).
+  const png = readFileSync(join(studioRoot, "packages", "app", "assets", "icon.png"));
+  const shot = await coder.upload({ threadId: thread!.id }, "配置表截图.png", png, "image/png");
   await coder.send(thread!.id, { kind: "reply", answers: [{ questionId: "q1", choice: "服务端配置表" }], body: "运营会调上限。", verdict: "change" });
   await page.getByTestId("task-card").filter({ hasText: "背包扩容" }).click();
   const transcript = page.getByTestId("thread");
   await expect(transcript).toContainText("【中转回复】", { timeout: 60_000 });
   await expect(transcript).toContainText("上限放哪");
   await expect(transcript).toContainText("服务端配置表");
+  await expect(transcript).toContainText("会话里的文件（1 个，1 个是你上次发言之后发来的");
+  await expect(transcript).toContainText(`配置表截图.png v1 · image/png`);
   await expect(page.getByTestId("teamsend-banner")).toHaveCount(0);
   expect((await coder.threads()).find((t) => t.id === thread!.id)!.request!.pickedAt).not.toBeNull();
   await screenshot(app, "teamrelay", "T3-reply-back", page);
   expect(session.id).toBeTruthy();
+
+  // The agent takes the screenshot off 中转 (team_file_get): into Studio's data folder, the same bytes.
+  await studio.api("POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: team_file_get ${JSON.stringify({ threadId: thread!.id, fileId: shot.id })}]]` });
+  await expect(transcript).toContainText("MOCK-MCP: 已取下：配置表截图.png v1", { timeout: 60_000 });
+  const saved = join(studio.dataDir, "attachments", "team", shot.id, "配置表截图.png");
+  expect(readFileSync(saved).equals(png)).toBe(true);
+  await screenshot(app, "teamrelay", "T3b-file-got", page);
 
   // 设置 → 功能 → 中转 (2026-10-30): asks can go without the person's 发送; off by default.
   await page.getByRole("button", { name: "设置" }).first().click();

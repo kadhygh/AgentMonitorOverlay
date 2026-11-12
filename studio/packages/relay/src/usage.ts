@@ -197,13 +197,16 @@ export function sizeText(n: number): string {
 /**
  * A session's files for an AI: what there is and how to get it (2026-11-12, the user: amo-relay 里的 AI 也能拿到附件).
  * Files belong to the session, not to one message, so they are listed after its messages with who sent each and when.
- * `how`: the tool or command that saves one on this machine, and the one that reads a text file's words. Empty when
- * there are none.
+ * `how`: the tool or command that saves one on this machine, and the one that reads a text file's words (Studio's
+ * team_* has none). `fresh`: the files sent since the reader last wrote, marked 新 (Studio's 中转回复, 2026-11-13).
+ * Empty when there are none.
  */
-export function filesAsText(files: RelayFile[], how: { download: string; read: string }): string {
+export function filesAsText(files: RelayFile[], how: { download: string; read?: string }, fresh?: (f: RelayFile) => boolean): string {
   if (!files.length) return "";
-  const line = (f: RelayFile) => `- ${f.name} v${f.version} · ${f.type.split(";")[0]!.trim()} · ${sizeText(f.size)} · ${f.by} ${time(f.at)} 上传${f.notes ? ` · ${f.notes} 条批注` : ""} · fileId ${f.id}`;
-  return `### 会话里的文件（${files.length} 个）\n图片和别的文件用 ${how.download} 存到本机，拿到完整路径后打开看；文字文件也可以用 ${how.read} 直接读内容和批注。\n${files.map(line).join("\n")}`;
+  const line = (f: RelayFile) => `- ${f.name} v${f.version} · ${f.type.split(";")[0]!.trim()} · ${sizeText(f.size)} · ${f.by} ${time(f.at)} 上传${f.notes ? ` · ${f.notes} 条批注` : ""}${fresh?.(f) ? " · 新" : ""} · fileId ${f.id}`;
+  const news = fresh ? files.filter(fresh).length : 0;
+  const read = how.read ? `；文字文件也可以用 ${how.read} 直接读内容和批注` : "";
+  return `### 会话里的文件（${files.length} 个${news ? `，${news} 个是你上次发言之后发来的，标了「新」` : ""}）\n图片和别的文件用 ${how.download} 存到本机，拿到完整路径后打开看${read}。\n${files.map(line).join("\n")}`;
 }
 
 /** A team task for an AI: what it is, where it stands, what was decided, its sessions. */

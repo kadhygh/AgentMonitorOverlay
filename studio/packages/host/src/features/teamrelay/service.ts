@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type TeamSend, type TeamThread } from "@amo-studio/protocol";
-import { RelayClient, RelayClientError, dueForAi, newRepliesText, takeSession, threadAsText, type Thread, type Via } from "@amo-studio/relay/light";
+import { RelayClient, RelayClientError, downloadFile, dueForAi, filesAsText, newRepliesText, takeSession, threadAsText, type Downloaded, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -20,10 +20,14 @@ const DECIDED_SHOWN_MS = 24 * 3600_000;
 const FILE_MAX = 20 * 1024 * 1024;
 const VIA_CLIENT = "AMO Studio";
 export const TEAM_NOT_SIGNED_IN = "要先在 AMO 平台里登录团队服务器，才能用中转找人。";
+/** How the texts point at the file tool. */
+const FILES_HOW = { download: "team_file_get（threadId, fileId）" };
+/** A file the service gives out has an id like f_<hex>; anything else is not one (and never reaches a path). */
+const FILE_ID = /^[\w-]{1,64}$/;
 
 type Questions = TeamSend["questions"];
 
-export class TeamRelayFeature extends Feature<"config" | "sessions"> {
+export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachments"> {
   private running = false;
   private abort: AbortController | null = null;
   private scanning: Promise<void> | null = null;
@@ -175,7 +179,36 @@ export class TeamRelayFeature extends Feature<"config" | "sessions"> {
   async read(threadId: unknown): Promise<string> {
     const { client } = this.relay();
     const { thread, messages } = await this.call(() => client.messages(text(threadId, "threadId"), 0, { ai: true }));
-    return threadAsText(thread, messages);
+    return this.withFiles(client, thread.id, threadAsText(thread, messages));
+  }
+
+  /**
+   * A 中转 session's messages, then its files (2026-11-13, the user: Studio 里的 team_* 那条路也要能拿到附件), as the
+   * relay's own MCP lists them; `fresh`: the ones to mark 新. Listing them must not cost the messages.
+   */
+  private async withFiles(client: RelayClient, threadId: string, words: string, fresh?: (f: RelayFile) => boolean): Promise<string> {
+    const files = await client.files({ threadId }).catch(() => [] as RelayFile[]);
+    const list = filesAsText(files, FILES_HOW, fresh);
+    return list ? `${words}\n\n${list}` : words;
+  }
+
+  /**
+   * team_file_get (2026-11-13): a file of a 中转 session this session sent, saved in Studio's data folder
+   * (attachments/team/<fileId>/<name>) with the platform's login — the agent never holds the key. Only the caller's own
+   * sessions' files: one of another session, or of any other thread the person is in, is refused. Limits, name cleaning
+   * and the sha256 check are relay_file_download's (downloadFile).
+   */
+  async fileGet(sessionId: Id, input: { threadId?: unknown; fileId?: unknown }): Promise<Downloaded> {
+    const thread = await this.ownThread(sessionId, input.threadId);
+    const fileId = text(input.fileId, "fileId");
+    const notHere = new HostError("bad_request", `文件 ${fileId} 不在中转会话「${thread.title}」里：只能取你这个会话发出的中转会话里的文件（fileId 在回复和 team_session 的「会话里的文件」里）。`);
+    if (!FILE_ID.test(fileId)) throw notHere;
+    const { client } = this.relay();
+    // In the session's list (latest versions), or an earlier version of one of them.
+    const listed = (await this.call(() => client.files({ threadId: thread.id }))).some((f) => f.id === fileId);
+    const inThread = listed || (await client.versions(fileId).then((v) => v.some((f) => f.id === fileId && f.threadId === thread.id), () => false));
+    if (!inThread) throw notHere;
+    return this.call(() => downloadFile(client, fileId, { dir: join(this.f.attachments.dir(), "team", fileId) }));
   }
 
   async members(): Promise<Array<{ name: string; nick: string; role: string; online: boolean }>> {
@@ -320,7 +353,8 @@ export class TeamRelayFeature extends Feature<"config" | "sessions"> {
       for (const t of threads) {
         const item = await takeSession(client, me, t.id);
         if (!item) continue;
-        parts.push(newRepliesText(item.thread, item, `用 team_session（threadId ${item.thread.id}）`));
+        // With the session's files (2026-11-13): those the other side sent since this session last wrote are 新.
+        parts.push(await this.withFiles(client, item.thread.id, newRepliesText(item.thread, item, `用 team_session（threadId ${item.thread.id}）`), (f) => f.by !== me && f.at > item.lastWordAt));
         if (item.thread.request?.state !== "done") replies++;
         const seen = this.view(item.thread, sessionId, next.get(t.id));
         next.set(t.id, { ...seen, deliveredAt: Date.now() });

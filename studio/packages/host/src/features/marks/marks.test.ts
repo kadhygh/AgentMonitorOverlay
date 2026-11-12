@@ -1,3 +1,4 @@
+import { textOf } from "../../mcp/tool-kit.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -188,7 +189,7 @@ describe("list_file_marks (AMO MCP)", () => {
     const tool = (caller: { sessionId: string } | null) => marksTools(toolContext(service, caller)).find((t) => t.name === "list_file_marks")!;
     const read = (caller: { sessionId: string } | null, args: Record<string, unknown> = {}) => {
       const r = tool(caller).run(args) as ToolResult; // a read answers at once
-      return r.isError ? { error: true, data: r.content[0]!.text } : { error: false, data: JSON.parse(r.content[0]!.text) as unknown };
+      return r.isError ? { error: true, data: textOf(r.content[0]!) } : { error: false, data: JSON.parse(textOf(r.content[0]!)) as unknown };
     };
     expect(read({ sessionId: session.id }).data).toEqual([{ path: join(dir, "drop.lua"), lines: "2-5", note: "掉落表", project: "game" }]);
     expect(read(null, { workspace: "game" }).data).toHaveLength(1);

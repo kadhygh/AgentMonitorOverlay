@@ -2,6 +2,11 @@ import { z } from "zod";
 import { fail, json, writeAsync, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
 import type { TeamSend } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
+import { sizeText } from "@amo-studio/relay/light";
+
+/** A picture team_file_get also hands over as an image (as relay_file_download): the kinds models read, small ones. */
+const INLINE_IMAGE = /^image\/(png|jpeg|gif|webp)$/;
+const INLINE_IMAGE_BYTES = 1024 * 1024;
 
 const questionsSchema = z
   .array(z.object({ text: z.string(), options: z.array(z.string()).optional() }))
@@ -71,11 +76,34 @@ export function teamRelayTools({ service, caller }: ToolContext): AmoTool[] {
     {
       name: "team_session",
       title: "读中转会话",
-      description: "A 中转 session in full: the request, every answer, verdicts, notes. Replies come into this conversation by themselves; use this to look back.",
+      description: "A 中转 session in full: the request, every answer, verdicts, notes, and the files in it (fileId for team_file_get). Replies come into this conversation by themselves; use this to look back.",
       inputSchema: { threadId: z.string() },
       readOnly: true,
       autoApprove: true,
       run: (args) => read(() => t.read(args.threadId)),
+    },
+    {
+      // 2026-11-13 (the user: Studio 里的 team_* 那条路也要能拿到附件): the files a reply lists, onto this computer.
+      name: "team_file_get",
+      title: "取中转会话里的文件",
+      description: "Save a file of a 中转 session you sent (a picture, a document the other side sent; its fileId is listed under 「会话里的文件」 in the reply and in team_session) on this computer, in Studio's data folder, and get its full path to open with your own tools. A picture up to 1 MB also comes as an image. Only files of your own 中转 sessions; at most 20 MB.",
+      inputSchema: { threadId: z.string(), fileId: z.string() },
+      readOnly: true,
+      autoApprove: true,
+      run: async (args) => {
+        if (!caller) return fail("这次调用没有 AMO 会话身份。");
+        try {
+          const got = await t.fileGet(caller.sessionId, args);
+          const f = got.file;
+          const type = f.type.split(";")[0]!.trim();
+          const head = `${got.reused ? "已经取过这个文件（内容一致，没有重新下载）" : "已取下"}：${f.name} v${f.version} · ${type} · ${sizeText(f.size)} · ${f.by} 上传\n${got.path}`;
+          if (INLINE_IMAGE.test(type) && f.size <= INLINE_IMAGE_BYTES) return { content: [{ type: "text" as const, text: `${head}\n\n图片在下面。` }, { type: "image" as const, data: Buffer.from(got.data).toString("base64"), mimeType: type }] };
+          return { content: [{ type: "text" as const, text: `${head}\n\n用你的读文件工具打开这个路径。` }] };
+        } catch (err) {
+          if (err instanceof HostError) return fail(err.message);
+          throw err;
+        }
+      },
     },
     {
       name: "team_sessions",

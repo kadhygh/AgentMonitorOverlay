@@ -1,3 +1,4 @@
+import { textOf } from "../../mcp/tool-kit.js";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,8 +56,8 @@ const items = () => service.canvases.canvas(topic.id).nodes.filter((n): n is Can
 const tool = (name: string) => amoToolsFor(service, { sessionId: caller.id }).find((t) => t.name === name)!;
 const run = async (name: string, args: Record<string, unknown>) => {
   const out = await tool(name).run(args);
-  if (out.isError) throw new Error(out.content[0]!.text);
-  return JSON.parse(out.content[0]!.text) as Record<string, unknown>;
+  if (out.isError) throw new Error(textOf(out.content[0]!));
+  return JSON.parse(textOf(out.content[0]!)) as Record<string, unknown>;
 };
 
 describe("画布审阅", () => {
@@ -87,12 +88,12 @@ describe("画布审阅", () => {
     await expect(run("canvas_item_update", { item: "#9", status: "done" })).rejects.toThrow(/no review item/);
     await run("canvas_callout", { target: "#1", kind: "question", text: "要不要兼容旧客户端？", options: ["兼容", "不兼容"] });
     const read = await tool("canvas_read").run({});
-    const outline = read.content[0]!.text;
+    const outline = textOf(read.content[0]!);
     expect(outline).toContain("#1【待看】协议改了");
     expect(outline).toContain("#2【已确认】重连");
     expect(outline).toContain("结论：保持现状");
     expect(outline).toContain("问题（等人回答） · 你写的");
-    const json = JSON.parse(read.content[1]!.text);
+    const json = JSON.parse(textOf(read.content[1]!));
     expect(json.groups[0].items.map((i: { num: number }) => i.num)).toEqual([1, 2]);
     expect(json.callouts).toMatchObject([{ kind: "question", state: "open", mine: true, on: "#1「协议改了」" }]);
   });

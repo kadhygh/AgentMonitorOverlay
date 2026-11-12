@@ -1,3 +1,4 @@
+import { textOf } from "../../mcp/tool-kit.js";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -191,7 +192,7 @@ describe("值守", { timeout: 30_000 }, () => {
     const tool = async (sessionId: string, name: string, args: Record<string, unknown> = {}) => {
       const t = amoToolsFor(service, { sessionId } as never).find((x) => x.name === name)!;
       const out = await t.run(args);
-      const text = out.content.map((c) => c.text).join("");
+      const text = out.content.map(textOf).join("");
       return { tool: t, error: !!out.isError, text, value: out.isError ? null : (JSON.parse(text) as Record<string, any>) };
     };
     writeFileSync(join(root, "alpha", "check.js"), "console.log('构建失败：3 个测试没过')");
@@ -249,7 +250,7 @@ describe("值守", { timeout: 30_000 }, () => {
     let finding: { text: string; sessionId?: string; title?: string } | null = { text: "新问题：#1 输入栏没缓存", title: "#1 输入栏没缓存" };
     duty.registerCheck({ name: "z.pending", label: "问题页", description: "看问题页", run: async () => finding });
     const t = amoToolsFor(service, { sessionId: setter.id } as never).find((x) => x.name === "duty_save")!;
-    const item = JSON.parse((await t.run({ title: "AMO 维护", schedule: { every: 60 }, action: { kind: "session", prompt: "照模板做", check: { kind: "builtin", name: "z.pending" } } })).content.map((c) => c.text).join("")).item;
+    const item = JSON.parse((await t.run({ title: "AMO 维护", schedule: { every: 60 }, action: { kind: "session", prompt: "照模板做", check: { kind: "builtin", name: "z.pending" } } })).content.map(textOf).join("")).item;
     duty.update(item.id, { enabled: false });
     const once = async (what: string) => {
       duty.runNow(item.id);

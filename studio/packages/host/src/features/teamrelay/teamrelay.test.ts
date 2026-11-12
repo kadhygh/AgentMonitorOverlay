@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -91,7 +92,7 @@ async function setup(signedIn = true) {
   const tool = async (sessionId: string, name: string, args: Record<string, unknown> = {}) => {
     const t = amoToolsFor(service, { sessionId } as never).find((x) => x.name === name)!;
     const out = await t.run(args);
-    return { text: out.content.map((c) => c.text).join(""), error: !!out.isError };
+    return { text: out.content.map((c) => (c.type === "text" ? c.text : "")).join(""), error: !!out.isError, content: out.content };
   };
   await until(() => service.teamLink.login(), (l) => !signedIn || !!l, "the platform's login");
   return { service, store, told, events, session, coderClient, tool, relay, relayStore, root, realInbox, alpha };
@@ -207,6 +208,64 @@ describe("会话里用中转", () => {
     const out = await setup(false);
     const t = out.session("任务");
     expect((await out.tool(t.id, "team_ask", { to: "程序老李", title: "x", body: "y" })).text).toContain("在 AMO 平台里登录");
+  });
+
+  it("attachments (2026-11-13): the reply lists the session's files, the new ones marked; team_file_get saves one byte for byte, only from the caller's own sessions", async () => {
+    const { service, told, session, coderClient, tool, root } = await setup();
+    service.config.updateSettings({ teamAutoSend: true });
+    const asking = session("过热");
+    const other = session("别的任务");
+    const doc = join(root, "gatling.md");
+    writeFileSync(doc, "# 加特林");
+    await tool(asking.id, "team_ask", { to: "程序老李", title: "过热的表现", body: "枪管发红要多红？", files: [doc] });
+    await tool(other.id, "team_ask", { to: "程序老李", title: "别的事", body: "另一件", files: [doc] });
+    const threads = await coderClient.threads();
+    const thread = threads.find((t) => t.title === "过热的表现")!;
+    const otherThread = threads.find((t) => t.title === "别的事")!;
+    const [otherDoc] = await coderClient.files({ threadId: otherThread.id });
+
+    // The coder answers with a screenshot and a build.
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(30_000)]);
+    const zip = randomBytes(200_000);
+    const shot = await coderClient.upload({ threadId: thread.id }, "过热截图.png", png, "image/png");
+    const build = await coderClient.upload({ threadId: thread.id }, "build.zip", zip, "application/zip");
+    await coderClient.send(thread.id, { kind: "reply", body: "看截图。" });
+    await until(() => told.length, (n) => n > 0, "the reply in the session");
+    const reply = told[0]!.text;
+    expect(told[0]!.sessionId).toBe(asking.id);
+    expect(reply).toContain("### 会话里的文件（3 个，2 个是你上次发言之后发来的，标了「新」）");
+    expect(reply).toContain("team_file_get（threadId, fileId）");
+    expect(reply).toMatch(new RegExp(`- 过热截图\\.png v1 · image/png · 30 KB · 程序老李 \\S+ \\S+ 上传 · 新 · fileId ${shot.id}`));
+    expect(reply).toMatch(/- gatling\.md v1 · .+ · 策划小王 \S+ \S+ 上传 · fileId /);
+    expect((await tool(asking.id, "team_session", { threadId: thread.id })).text).toContain(`fileId ${build.id}`);
+
+    // A picture: saved in the data folder, the same bytes, and as an image; a build: only its path.
+    const pic = await tool(asking.id, "team_file_get", { threadId: thread.id, fileId: shot.id });
+    expect(pic.error).toBe(false);
+    const picPath = join(root, "attachments", "team", shot.id, "过热截图.png");
+    expect(pic.text).toContain(`已取下：过热截图.png v1 · image/png · 30 KB · 程序老李 上传\n${picPath}`);
+    expect(readFileSync(picPath).equals(png)).toBe(true);
+    expect(pic.content.find((c) => c.type === "image")).toMatchObject({ mimeType: "image/png", data: png.toString("base64") });
+    const bin = await tool(asking.id, "team_file_get", { threadId: thread.id, fileId: build.id });
+    expect(bin.content.map((c) => c.type)).toEqual(["text"]);
+    expect(readFileSync(join(root, "attachments", "team", build.id, "build.zip")).equals(zip)).toBe(true);
+    expect((await tool(asking.id, "team_file_get", { threadId: thread.id, fileId: shot.id })).text).toContain("已经取过这个文件");
+
+    // Refused: the thread of another session; a file of another thread named with this one; no such file; not an id.
+    expect((await tool(other.id, "team_file_get", { threadId: thread.id, fileId: shot.id })).text).toContain("不是你这个会话发的");
+    for (const fileId of [otherDoc!.id, "f_0000000000000000", "../../studio.db"]) {
+      const refused = await tool(asking.id, "team_file_get", { threadId: thread.id, fileId });
+      expect(refused).toMatchObject({ error: true });
+      expect(refused.text).toContain("不在中转会话「过热的表现」里");
+    }
+    expect(existsSync(join(root, "attachments", "team", otherDoc!.id))).toBe(false);
+
+    // Signed out of the platform: says where to sign in.
+    const out = await setup(false);
+    const t = out.session("任务");
+    const signedOut = await out.tool(t.id, "team_file_get", { threadId: thread.id, fileId: shot.id });
+    expect(signedOut).toMatchObject({ error: true });
+    expect(signedOut.text).toContain("在 AMO 平台里登录");
   });
 
   it("a reply for a session at work waits in its inbox (shown, not steered in); one that cannot go in is 没送到, and 重新发送 sends it (2026-11-04)", async () => {

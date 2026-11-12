@@ -1,3 +1,4 @@
+import { textOf } from "../../mcp/tool-kit.js";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,7 +70,7 @@ async function setup(signedIn = true) {
   const tool = async (name: string, args: Record<string, unknown> = {}) => {
     const t = amoToolsFor(service, { sessionId: "s-x" } as never).find((x) => x.name === name)!;
     const out = await t.run(args);
-    const text = out.content.map((c) => c.text).join("");
+    const text = out.content.map(textOf).join("");
     return { text, error: !!out.isError, value: out.isError ? null : (JSON.parse(text) as Record<string, any>) };
   };
   if (signedIn) await until(() => service.teamLink.login(), (l) => !!l, "the platform's login");
@@ -183,7 +184,7 @@ describe("问题页 tools", () => {
     await tool(b.id, "issue_reply", { number: 2, body: "哪个列表？", status: "asking" });
     // On the page too, to copy into Studio's search.
     expect((await page.issue(1)).session).toBe(a.id);
-    expect(JSON.parse((await tool(a.id, "issue_list", {})).content.map((c) => c.text).join("")).issues).toContainEqual(expect.objectContaining({ number: 1, session: a.id }));
+    expect(JSON.parse((await tool(a.id, "issue_list", {})).content.map(textOf).join("")).issues).toContainEqual(expect.objectContaining({ number: 1, session: a.id }));
     await page.addIssueEntry(1, { body: "新建任务页那个" });
     expect(await service.issues.pendingWork()).toMatchObject({ text: expect.stringContaining("你回复了：#1"), title: expect.stringMatching(/^#1 /), sessionId: a.id });
     // Answers on issues two sessions took, or a new issue beside: no one session to go on in.

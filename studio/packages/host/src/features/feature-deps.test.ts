@@ -36,7 +36,7 @@ const GRAPH: Record<string, string[]> = {
   sessions: ["attachments", "collab", "config", "mcp", "remote", "review", "tasks"],
   taskplans: ["canvas", "collab", "sessions", "tasks"],
   tasks: ["canvas", "config", "mcp", "remote", "sessions"],
-  teamrelay: ["config", "sessions"],
+  teamrelay: ["attachments", "config", "sessions"],
   topics: ["tasks"],
   viewpacks: ["remote"],
 };

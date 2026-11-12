@@ -14,7 +14,8 @@ export interface McpCaller {
 
 export interface ToolResult {
   [key: string]: unknown;
-  content: Array<{ type: "text"; text: string }>;
+  /** Text; a picture too where the agent should see it at once (team_file_get, 2026-11-13). */
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
   isError?: boolean;
 }
 
@@ -33,6 +34,9 @@ export interface AmoTool {
   /** A write that waits for the runtime (session_start) answers with a promise. */
   run(args: Record<string, unknown>): ToolResult | Promise<ToolResult>;
 }
+
+/** An item's words; an image has none (callers and tests that read a result as text). */
+export const textOf = (c: ToolResult["content"][number]): string => (c.type === "text" ? c.text : "");
 
 export const json = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 
