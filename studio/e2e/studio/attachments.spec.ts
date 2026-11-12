@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import type { Session, Task, Workspace } from "@amo-studio/protocol";
 import { TINY_PNG_BASE64 } from "@amo-studio/testkit";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
+import { answerSaveDialog, copiedImages, png } from "../support/images.js";
 
 // Stage 11 (S11-B): images and file references in the conversation — paste, drop from Explorer, the paperclip, how the
 // transcript shows them. Real Codex app-server and the mock model, which says how many images it saw.
@@ -29,7 +30,7 @@ const composer = (page: Page) => page.getByLabel("输入消息");
 const lastAgent = (page: Page) => page.getByTestId("msg-agent").last();
 
 /** Pastes an in-memory PNG into the composer (or `into`), the way Ctrl+V with a screenshot does. */
-async function pasteImage(page: Page, name = "截图.png", into = composer(page)) {
+async function pasteImage(page: Page, name = "截图.png", into = composer(page), b64 = TINY_PNG_BASE64) {
   await into.evaluate(
     (el, { b64, name }) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -37,7 +38,7 @@ async function pasteImage(page: Page, name = "截图.png", into = composer(page)
       dt.items.add(new File([bytes], name, { type: "image/png" }));
       el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     },
-    { b64: TINY_PNG_BASE64, name },
+    { b64, name },
   );
 }
 
@@ -165,6 +166,77 @@ test("drops an image and a file from disk: thumbnail, file reference, both in th
   await expect(bubble.locator(".msg-text")).toHaveText("对照一下");
   await expect(bubble.getByTestId("msg-file")).toContainText("notes.md");
   await screenshot(studio.app, "stage-11", "S11-B-04-transcript-files", page);
+});
+
+test("a right click on a picture of the person's message opens the file menu: 复制图片, 另存为…, Explorer, the path (2026-11-12)", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("design");
+  const board = png(640, 400, [80, 140, 210]);
+  writeFileSync(join(dir, "board.png"), board);
+  // A picture file referenced by the message (its chip) first, then a picture pasted in (its thumbnail).
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  await studio.api("POST", "/api/tasks", { title: "看图", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: `看一下配色\n\n引用文件：\n- ${join(dir, "board.png")}` } });
+  await page.getByTestId("task-card").first().click();
+  await expect(lastAgent(page)).toContainText("MOCK: 看一下配色", { timeout: 30_000 });
+  const menu = page.getByTestId("file-menu");
+
+  // The referenced picture's chip: the file menu, with the picture first and all of the file's (it is in the project).
+  // (While it is in sight: the menu closes when the conversation scrolls, as Playwright would scroll to it later.)
+  const chip = page.getByTestId("msg-user").first().getByTestId("msg-file");
+  await expect(chip).toHaveAttribute("data-file-link", "", { timeout: 30_000 });
+  await chip.click({ button: "right" });
+  await expect(menu.getByRole("menuitem").nth(0)).toHaveText(/复制图片/);
+  for (const name of ["另存为…", "在查看器中打开", "查看未提交的改动", "在资源管理器中显示", "复制路径", "加书签"]) await expect(menu.getByRole("menuitem", { name })).toBeVisible();
+  await screenshot(app, "studio", "msg-file-image-menu", page);
+  const before = (await copiedImages(app)).length;
+  await page.keyboard.press("i");
+  await expect(menu).toHaveCount(0);
+  await expect.poll(async () => (await copiedImages(app)).slice(before)).toEqual([{ width: 640, height: 400 }]);
+
+  const pasted = png(320, 200, [200, 120, 60]);
+  await pasteImage(page, "截图.png", composer(page), pasted.toString("base64"));
+  await expect(page.getByTestId("attach-thumb")).toHaveAttribute("data-state", "ready");
+  await composer(page).fill("这张呢");
+  await composer(page).press("Enter");
+  await expect(lastAgent(page)).toContainText("[images: 1]", { timeout: 30_000 });
+
+  const thumb = page.getByTestId("msg-user").last().getByTestId("msg-image");
+  await expect.poll(() => thumb.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(320);
+  await thumb.click({ button: "right" });
+  await expect(menu).toBeVisible();
+  // The picture first; what a file in the data folder has nothing to do with (Git Review, 书签) is left out.
+  await expect(menu.getByRole("menuitem").nth(0)).toHaveText(/复制图片/);
+  await expect(menu.getByRole("menuitem").nth(1)).toHaveText(/另存为…/);
+  for (const name of ["在查看器中打开", "在侧栏预览", "在资源管理器中显示", "复制路径"]) await expect(menu.getByRole("menuitem", { name })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "查看未提交的改动" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "加书签" })).toHaveCount(0);
+  await screenshot(app, "studio", "msg-image-menu", page);
+
+  // 复制图片: the picture itself, at its size.
+  await menu.getByRole("menuitem", { name: /复制图片/ }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(async () => (await copiedImages(app)).slice(before + 1)).toEqual([{ width: 320, height: 200 }]);
+  await expect(page.getByTestId("toast").last()).toContainText("已复制图片（320 × 200）");
+  // 另存为… (the letter S): the save dialog, then the same bytes there.
+  const saveTo = join(studio.root, "saved", "pasted.png");
+  mkdirSync(join(studio.root, "saved"), { recursive: true });
+  await answerSaveDialog(app, saveTo);
+  await thumb.click({ button: "right" });
+  await page.keyboard.press("s");
+  await expect.poll(() => existsSync(saveTo), { timeout: 10_000 }).toBe(true);
+  expect(readFileSync(saveTo).equals(pasted)).toBe(true);
+  // 在资源管理器中显示: the attachment's own file (test mode only records it).
+  await thumb.click({ button: "right" });
+  const reveal = page.waitForResponse((r) => r.url().includes("/api/open-in") && r.request().method() === "POST");
+  await menu.getByRole("menuitem", { name: "在资源管理器中显示" }).click();
+  const asked = (await reveal).request().postDataJSON() as { path: string; app: string };
+  expect(asked.app).toBe("explorer");
+  expect(asked.path).toMatch(/attachments[\\/][^\\/]+\.png$/);
+  // 在侧栏预览: beside the conversation.
+  await thumb.click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "在侧栏预览" }).click();
+  await expect.poll(() => page.getByTestId("file-preview").getByTestId("file-preview-image").evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 30_000 }).toBe(320);
 });
 
 test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open the file selector", async () => {

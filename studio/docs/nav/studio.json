@@ -337,16 +337,18 @@
     {
       "id": "studio.files",
       "label": "文件：附件、@ 文件、书签、Studio 里的便签页、外部打开",
-      "aliases": ["附件", "attachments", "@ 文件", "chatfiles", "书签", "marks", "文件标记", "scratchpad", "openin", "VS Code 打开"],
+      "aliases": ["附件", "attachments", "@ 文件", "chatfiles", "书签", "marks", "文件标记", "scratchpad", "openin", "VS Code 打开", "文件标签", "文件链接", "file-chip", "file-menu", "右键菜单"],
       "category": "host",
-      "purpose": "会话和便签页里贴的图（存在数据目录 attachments/）、文件选择器和 @ 文件、对话里提到的路径哪些存在、书签（按专题，文件和对话片段）、Studio 里的便签页（scratchpad，和独立的 AMO 便签不是一个东西）、用 VS Code / 资源管理器打开。",
+      "purpose": "会话和便签页里贴的图（存在数据目录 attachments/）、文件选择器和 @ 文件、对话里提到的路径哪些存在、书签（按专题，文件和对话片段）、Studio 里的便签页（scratchpad，和独立的 AMO 便签不是一个东西）、用 VS Code / 资源管理器打开。界面上：对话里的文件链接和人消息里的文件标签、图片缩略图都由 FileLinks 出同一个右键菜单（file-menu；图片的先有 复制图片 / 另存为…，人贴的图是数据目录里的附件，不给 查看未提交的改动 和 加书签，2026-11-12）。人消息正文里写的文件名是纯文本，不变成链接。",
       "anchors": [
         { "label": "附件", "path": "studio/packages/host/src/features/attachments/service.ts", "anchor": "export class AttachmentsFeature" },
         { "label": "项目文件列表", "path": "studio/packages/host/src/features/files/service.ts", "anchor": "export class FilesFeature" },
         { "label": "对话里的路径", "path": "studio/packages/host/src/features/chatfiles/service.ts", "anchor": "export class ChatFilesFeature" },
         { "label": "书签", "path": "studio/packages/host/src/features/marks/service.ts", "anchor": "export class MarksFeature" },
         { "label": "Studio 便签页", "path": "studio/packages/host/src/features/scratchpad/service.ts", "anchor": "export class ScratchpadFeature" },
-        { "label": "外部打开", "path": "studio/packages/host/src/features/openin/service.ts", "anchor": "export class OpenInFeature" }
+        { "label": "外部打开", "path": "studio/packages/host/src/features/openin/service.ts", "anchor": "export class OpenInFeature" },
+        { "label": "对话里的文件链接和右键菜单（界面）", "path": "studio/packages/ui/src/files/FileLinks.tsx", "anchor": "export function FileLinks" },
+        { "label": "人消息里的图片和文件标签（界面）", "path": "studio/packages/ui/src/attach/MessageAttachments.tsx", "anchor": "export function MessageImages" }
       ],
       "related": ["ui.chat", "tool.notes"],
       "next": ["studio/plans/done/stage-11.md", "studio/plans/done/stage-12.md"]

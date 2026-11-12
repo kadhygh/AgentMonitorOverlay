@@ -1,21 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { remoteFileKind, type FileDiff } from "@amo-studio/protocol";
+import { PREVIEW_IMAGE_TYPES, remoteFileKind, type FileDiff } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { ActionMenu } from "../lib/ActionMenu.js";
 import { MarkdownFileLinks } from "../lib/markdown.js";
-import { isWebPage, openInApps, openInDefault, openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
+import { isWebPage, openInApps, openInDefault, openInEditor, rawFileUrl, revealInExplorer, type FileRef } from "../lib/openin.js";
+import { canCopyImages, copyImage, saveFileAs } from "../lib/saveFile.js";
 import { openReview } from "../gitreview/open.js";
 import { markOrShow } from "../marks/open.js";
 import { openViewer } from "../viewer/open.js";
 import { useExistingPath } from "./exists.js";
 import { showToast } from "../lib/toast.js";
-import { parseInlinePath, parseLinkTarget } from "./paths.js";
+import { fileName, parseInlinePath, parseLinkTarget } from "./paths.js";
 
 // Files named in the conversation become links (stage 12, S12-C). Stage 13: a click opens the file in the viewer
 // window (查看器; a change of this turn still opens in the quick look beside the conversation), Ctrl+click opens VS
 // Code, and a right click offers 在查看器中打开 / 在侧栏预览 / 查看未提交的改动 / 用 VS Code 打开 / 在资源管理器中显示 /
 // 复制路径 / 加书签, each with a letter (2026-10-28). A web page opens in the viewer too (2026-10-28; in the browser
 // from 10-26), 用浏览器打开 on the menu. The page wraps its conversation in <FileLinks>; outside it, plain text.
+// 2026-11-12: a picture's menu starts with 复制图片 / 另存为… (MenuImage), and the pictures in the person's own message
+// (MessageImages) take this menu too — before, a right click on them did nothing.
 
 /** What the quick look shows: a file (at a line or range), or a change to it first (本轮改动). */
 export interface PreviewTarget {
@@ -37,7 +40,7 @@ interface FileLinksValue {
   open(target: PreviewTarget): void;
   preview(target: PreviewTarget): void;
   editor(target: PreviewTarget): void;
-  menu(e: MouseEvent, target: PreviewTarget): void;
+  menu(e: MouseEvent, target: PreviewTarget, image?: MenuImage): void;
   /** 远程 (step 2): the conversation's files are on another computer. */
   remote?: boolean;
   /** …this remote task's (远程 Reviewer, 2026-11-02: its 查看包 and Review open from there too). */
@@ -49,7 +52,48 @@ const Ctx = createContext<FileLinksValue | null>(null);
 /** The surrounding <FileLinks>, or null outside one. */
 export const useFileLinks = () => useContext(Ctx);
 
-type Menu = { x: number; y: number; target: PreviewTarget } | null;
+/**
+ * 2026-11-12: a picture the menu also acts on as a picture — 复制图片 and 另存为…, as the viewer's ImageView offers. A
+ * picture the person sent (a thumbnail in their message) is an attachment in Studio's data folder: its file has
+ * nothing in a project to review or bookmark, so those two are left out for it.
+ */
+export interface MenuImage {
+  /** What an <img> loads it from (the Host). */
+  url: string;
+  /** What 另存为… offers. */
+  name: string;
+  /** The picture as the page drew it, when there is one (a kind the clipboard does not read is turned into PNG from it). */
+  img?: HTMLImageElement | null;
+  /** In the data folder (attachments/), not a project's file. */
+  attachment?: boolean;
+}
+
+type Menu = { x: number; y: number; target: PreviewTarget; image?: MenuImage } | null;
+
+const isPicture = (path: string) => {
+  const dot = path.lastIndexOf(".");
+  return dot >= 0 && !!PREVIEW_IMAGE_TYPES[path.slice(dot).toLowerCase()];
+};
+
+/** 复制图片 for a picture the page may not have drawn (a file link names it): drawn first, so any kind can be copied. */
+async function copyPicture(image: MenuImage): Promise<void> {
+  let img = image.img ?? null;
+  if (!img) {
+    const drawn = new Image();
+    drawn.src = image.url;
+    img = await drawn.decode().then(
+      () => drawn,
+      () => null,
+    );
+  }
+  await copyImage(image.url, img);
+}
+
+/** The menu's group for a picture: 复制图片, 另存为… (first, as in the viewer's picture menu). */
+const pictureGroup = (image: MenuImage | null) =>
+  image
+    ? [canCopyImages() && { label: "复制图片", key: "I", title: "把这张图片复制到剪贴板，可以粘贴到微信、Word、画图里", run: () => void copyPicture(image) }, { label: "另存为…", key: "S", title: "选一个位置保存这张图片", run: () => void saveFileAs(image.url, image.name) }]
+    : [];
 
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
@@ -128,7 +172,7 @@ export function FileLinks({
   const remote = useMemo<FileLinksValue | null>(() => {
     if (!remoteTask) return null;
     const open = (t: PreviewTarget) => viewRemoteFile(t, remoteTask, sessionId);
-    return { link, workspaceId, sessionId, vscode: false, remote: true, remoteTask, open, preview: open, editor: open, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) };
+    return { link, workspaceId, sessionId, vscode: false, remote: true, remoteTask, open, preview: open, editor: open, menu: (e, target, image) => setMenu({ x: e.clientX, y: e.clientY, target, ...(image ? { image } : {}) }) };
   }, [remoteTask, link, workspaceId, sessionId]);
 
   const fail = useCallback((err: unknown) => onError?.(message(err)), [onError]);
@@ -149,13 +193,17 @@ export function FileLinks({
   // A web page too opens in the viewer (2026-10-28): rendered there, its passages take comments; the browser is on the menu.
   const open = useCallback((t: PreviewTarget) => (t.diff ? onPreview(t) : viewFile(t, workspaceId, sessionId)), [onPreview, workspaceId, sessionId]);
   const value = useMemo<FileLinksValue>(
-    () => ({ link, workspaceId, sessionId, vscode, open, preview: onPreview, editor, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) }),
+    () => ({ link, workspaceId, sessionId, vscode, open, preview: onPreview, editor, menu: (e, target, image) => setMenu({ x: e.clientX, y: e.clientY, target, ...(image ? { image } : {}) }) }),
     [link, workspaceId, sessionId, vscode, open, onPreview, editor],
   );
 
   const t = menu?.target;
   const reviewIn = t ? (t.file.workspaceId ?? workspaceId) : null;
   const rendered = t && /\.(md|markdown|html?)$/i.test(t.file.path);
+  // A picture: the one handed over (a thumbnail), or the picture file a link names (read from this computer's Host).
+  const attachment = !!menu?.image?.attachment;
+  const picture: MenuImage | null =
+    menu?.image ?? (t && !remote && isPicture(t.file.path) ? { url: rawFileUrl(link, { path: t.file.path, ...(reviewIn ? { workspaceId: reviewIn } : {}) }), name: fileName(t.file.path) } : null);
 
   if (remote)
     return (
@@ -167,10 +215,15 @@ export function FileLinks({
             at={menu}
             testId="file-menu"
             onClose={() => setMenu(null)}
-            groups={[
-              [{ label: "在查看器中打开", key: "O", title: "从运行任务的电脑取过来再打开（文本、HTML、Markdown 和图片）", run: () => viewRemoteFile(t, remoteTask, sessionId) }],
-              [{ label: "复制路径", key: "C", title: "那台电脑上的路径", run: () => void copyText(t.file.path) }],
-            ]}
+            // A picture sent in the person's message is this computer's copy (an attachment here): only the picture itself.
+            groups={
+              attachment
+                ? [pictureGroup(picture)]
+                : [
+                    [{ label: "在查看器中打开", key: "O", title: "从运行任务的电脑取过来再打开（文本、HTML、Markdown 和图片）", run: () => viewRemoteFile(t, remoteTask, sessionId) }],
+                    [{ label: "复制路径", key: "C", title: "那台电脑上的路径", run: () => void copyText(t.file.path) }],
+                  ]
+            }
           />
         )}
       </Ctx.Provider>
@@ -186,6 +239,7 @@ export function FileLinks({
           testId="file-menu"
           onClose={() => setMenu(null)}
           groups={[
+            pictureGroup(picture),
             [
               {
                 label: "在查看器中打开",
@@ -194,7 +248,7 @@ export function FileLinks({
                 run: () => viewFile(t, workspaceId, sessionId),
               },
               { label: "在侧栏预览", key: "P", title: "在对话右边打开，不离开这段对话", run: () => onPreview(t) },
-              {
+              !attachment && {
                 label: "查看未提交的改动",
                 key: "D",
                 disabled: !reviewIn,
@@ -207,7 +261,7 @@ export function FileLinks({
             [{ label: "在资源管理器中显示", key: "E", run: () => void revealInExplorer(link, t.file).catch(fail) }],
             [
               { label: "复制路径", key: "C", run: () => void copyText(t.file.path) },
-              { label: "加书签", key: "B", run: () => void markOrShow(link, t.file, t.line, sessionId ?? undefined).catch(fail) },
+              !attachment && { label: "加书签", key: "B", run: () => void markOrShow(link, t.file, t.line, sessionId ?? undefined).catch(fail) },
             ],
           ]}
         />

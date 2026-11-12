@@ -6,7 +6,7 @@ import { copyText } from "../host/client.js";
 import { lineSuffix } from "@amo-studio/protocol";
 import { baseName, dirName, type FileRefItem } from "./refs.js";
 import { IconFile } from "./icons.js";
-import { FileLink } from "../files/FileLinks.js";
+import { FileLink, useFileLinks } from "../files/FileLinks.js";
 
 // What a person's message carries besides its text, as the transcript shows it: image thumbnails (click for a larger
 // view) and chips of the referenced files.
@@ -14,8 +14,14 @@ import { FileLink } from "../files/FileLinks.js";
 /** The Host link, for loading attachment images in the transcript (provided by the conversation). */
 export const AttachLink = createContext<HostLink | null>(null);
 
+/**
+ * 2026-11-12: a right click on a picture of the message opens the conversation's file menu (FileLinks) with 复制图片 /
+ * 另存为… first — before, nothing answered it, while the file links of a reply had their menu. A picture not kept here
+ * (no attachment: a remote task's not fetched yet) is a chip of its path, a file link where it exists.
+ */
 export function MessageImages({ images }: { images: readonly MessageImage[] }) {
   const link = useContext(AttachLink);
+  const files = useFileLinks();
   const [open, setOpen] = useState<string | null>(null);
   if (!images.length) return null;
   const src = (img: MessageImage) => (img.id && link ? attachmentUrl(link, img.id) : null);
@@ -23,15 +29,34 @@ export function MessageImages({ images }: { images: readonly MessageImage[] }) {
     <div className="msg-images" data-testid="msg-images">
       {images.map((img, i) => {
         const url = src(img);
-        return url ? (
-          <button key={`${img.path}-${i}`} type="button" className="msg-image" title="查看大图" onClick={() => setOpen(url)}>
-            <img src={url} alt={baseName(img.path)} loading="lazy" />
-          </button>
-        ) : (
-          <span key={`${img.path}-${i}`} className="file-chip" title={img.path}>
+        const chip = (
+          <span className="file-chip" title={img.path}>
             <IconFile />
             <span className="file-chip-name">{baseName(img.path)}</span>
           </span>
+        );
+        return url ? (
+          <button
+            key={`${img.path}-${i}`}
+            type="button"
+            className="msg-image"
+            title={files ? "查看大图 · 右键更多" : "查看大图"}
+            onClick={() => setOpen(url)}
+            onContextMenu={(e) => {
+              if (!files) return;
+              e.preventDefault();
+              e.stopPropagation();
+              files.menu(e, { file: { path: img.path } }, { url, name: baseName(img.path), img: e.currentTarget.querySelector("img"), attachment: true });
+            }}
+            data-testid="msg-image"
+          >
+            <img src={url} alt={baseName(img.path)} loading="lazy" />
+          </button>
+        ) : (
+          <FileLink key={`${img.path}-${i}`} path={img.path} className="file-chip" testId="msg-image-file" fallback={chip}>
+            <IconFile />
+            <span className="file-chip-name">{baseName(img.path)}</span>
+          </FileLink>
         );
       })}
       {open && <Lightbox src={open} onClose={() => setOpen(null)} />}
