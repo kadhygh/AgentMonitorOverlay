@@ -6,7 +6,7 @@ import type { RemoteCopies } from "./copies.js";
 
 // 远程, step 2 (2026-10-29): "remote" as one more way a session runs, beside Codex, Claude and DSH. This runtime sends
 // the sessions of copies (runtime "remote") to the paired device they run on. What a copy cannot do here (Git Review, a
-// terminal, a branch, its model) is refused with a reason the person can read. Since 2026-11-05 (plans/host-structure.md
+// terminal, its model) is refused with a reason the person can read. Since 2026-11-05 (plans/host-structure.md
 // 8a) it is registered in the RuntimeRouter like the others — HostService does it — instead of wrapping the router and
 // asking of every call whether its session is a copy: only copies' sessions and models reach it.
 
@@ -44,6 +44,7 @@ export class RemoteRuntime extends EventEmitter<RuntimeEvents> implements Sessio
   interrupt(sessionId: Id): Promise<void> {
     return this.copies().interrupt(sessionId);
   }
+  /** 分支 of a copy (2026-11-12) goes to A before a runtime is asked (SessionsFeature.fork → RemoteCopies.fork). */
   fork(): Promise<Session> {
     throw no("分支");
   }

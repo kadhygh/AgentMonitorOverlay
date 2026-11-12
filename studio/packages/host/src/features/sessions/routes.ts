@@ -27,7 +27,8 @@ export function sessionsRoutes(service: HostService): Route[] {
     route("POST /api/sessions/:id/items/:itemId/resend", ({ params }) => service.sessions.resend(params.id!, params.itemId!), { remoteCopy: "forward" }),
     route("POST /api/sessions/:id/wake", ({ params, body }) => service.sessions.setWakeChoice(params.id!, body)),
     route("POST /api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true }), { remoteCopy: "forward" }),
-    route("POST /api/sessions/:id/fork", ({ params, body }) => service.sessions.fork(params.id!, body)),
+    // 远程分支 (2026-11-12): a copy's session is forked on A (RemoteCopies.fork), with A's list of its turns.
+    route("POST /api/sessions/:id/fork", ({ params, body }) => service.sessions.fork(params.id!, body), { remoteCopy: "forward" }),
     route("GET /api/sessions/:id/fork-turns", ({ params }) => service.sessions.forkTurns(params.id!)),
     // 归档 / 恢复 one session of a copy (2026-10-30): done on A (RemoteCopies.archive); archiving the task deletes the copy.
     route("POST /api/sessions/:id/archive", ({ params }) => service.sessions.archive(params.id!), { remoteCopy: "forward" }),

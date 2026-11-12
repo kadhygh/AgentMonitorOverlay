@@ -55,6 +55,12 @@ interface TranscriptProps {
   waitsForSubagents?: boolean;
   /** 分支 from a finished turn (2026-11-10): the icon beside 复制 under each turn; absent where the session cannot be forked. */
   onFork?(turnId: string): void;
+  /**
+   * 远程分支 (2026-11-12): a remote task's copy says which CLI runs it on the other computer (Claude: only turns with a
+   * fork point), and `forkOff` why its icon is greyed (that computer's Studio is too old to fork for this one).
+   */
+  forkRuntime?: Session["runtime"];
+  forkOff?: string;
 }
 
 export type DeliveryAction = "now" | "resend";
@@ -65,14 +71,14 @@ const DeliveryContext = createContext<{ onDelivery: TranscriptProps["onDelivery"
  * onFork for each turn's footer. `claude`: a Claude turn from before fork points (none recorded) can only be forked
  * when it is the latest (plans/done/session-fork.md), so the older ones show no button.
  */
-const ForkContext = createContext<{ onFork: TranscriptProps["onFork"]; claude: boolean }>({ onFork: undefined, claude: false });
+const ForkContext = createContext<{ onFork: TranscriptProps["onFork"]; claude: boolean; off?: string }>({ onFork: undefined, claude: false });
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
 function TranscriptBody(props: TranscriptProps) {
-  const claude = props.session?.runtime === "claude";
-  const fork = useMemo(() => ({ onFork: props.onFork, claude }), [props.onFork, claude]);
+  const claude = (props.forkRuntime ?? props.session?.runtime) === "claude";
+  const fork = useMemo(() => ({ onFork: props.onFork, claude, ...(props.forkOff ? { off: props.forkOff } : {}) }), [props.onFork, claude, props.forkOff]);
   return (
     <ForkContext.Provider value={fork}>
       <TranscriptInner {...props} />
@@ -524,7 +530,7 @@ function TurnFooter({ answer, turnId, forkable, usage, speed, approx, subs, ende
         {copied ? <IconCheck /> : <IconCopy />}
       </button>
       {onFork && turnId && (
-        <button type="button" className="icon-btn" aria-label="从这一轮分支" title="从这一轮分支：新会话带上到这一轮为止的对话，原会话不受影响" onClick={() => onFork(turnId)} data-testid="turn-fork">
+        <button type="button" className="icon-btn" aria-label="从这一轮分支" title={fork.off ?? "从这一轮分支：新会话带上到这一轮为止的对话，原会话不受影响"} disabled={!!fork.off} onClick={() => onFork(turnId)} data-testid="turn-fork">
           <IconFork />
         </button>
       )}

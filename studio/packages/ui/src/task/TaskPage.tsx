@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -241,7 +241,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     });
   // 分支 (2026-11-10): the dialog asks from which turn and what the new session is; ⋯ opens it at the latest turn.
   const [forking, setForking] = useState<{ sessionId: string; turnId?: string } | null>(null);
-  const forkable = !!session && !copy && !session.archivedAt && session.runtime !== "dsh" && session.runtime !== "remote" && !(session.runtime === "claude" && session.kind === "sub") && !!session.runtimeRef;
+  // 远程分支 (2026-11-12, the user: 远控模式下也能开分支): a copy's session is forked on the computer it runs on, as its
+  // runtime there allows (an older one does not say it, nor fork: 分支 is greyed with what to update).
+  const forkRuntime = session?.runtime === "remote" ? task.remote?.profiles.find((p) => p.id === session.profileId)?.runtime : session?.runtime;
+  const forkOff = copy && !task.remote?.fork ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支` : undefined;
+  const forkable = !!session && !session.archivedAt && forkRuntime !== "dsh" && !(forkRuntime === "claude" && session.kind === "sub") && !!session.runtimeRef && (copy ? session.kind !== "sub" && copy.state !== "revoked" : session.runtime !== "remote");
   const forkSessionId = forkable ? session!.id : null;
   const forkTurn = useCallback((turnId: string) => forkSessionId && setForking({ sessionId: forkSessionId, turnId }), [forkSessionId]);
   // A branch makes something to choose between: the list shows for this task (the remembered choice stays).
@@ -627,6 +631,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           session={own.find((s) => s.id === forking.sessionId)!}
           profile={profile(own.find((s) => s.id === forking.sessionId)!.profileId)}
           {...(forking.turnId ? { turnId: forking.turnId } : {})}
+          {...(copy ? { remote: { name: copy.name, ...(forkRuntime ? { runtime: forkRuntime } : {}) } } : {})}
           onClose={() => setForking(null)}
           onForked={forked}
         />
@@ -685,6 +690,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
               onTerminal={() => void openTerminal(session)}
               onFork={() => setForking({ sessionId: session.id })}
+              {...(forkRuntime ? { forkRuntime } : {})}
+              {...(forkOff || copy?.blocked ? { forkOff: forkOff ?? copy!.blocked! } : {})}
               onArchive={() => void archive(session.id)}
               onError={showError}
               {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: session.id, sessionTitle: session.title }) } : {})}
@@ -713,7 +720,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onSend={send}
               onInterrupt={() => session && void interrupt(session.id)}
               onDelivery={deliver}
-              {...(forkSessionId ? { onFork: forkTurn } : {})}
+              {...(forkSessionId ? { onFork: forkTurn, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}

@@ -345,15 +345,18 @@ export class Store extends DocumentStore {
    * its parent must be here already.
    */
   putRemoteSession(s: Session): Session {
+    // kind, parent and forkOf follow A too (2026-11-12, 远程分支): A makes a 平级 branch as a fork and then puts it beside
+    // its source, and says where it came from last — the copy kept the first of them, without 「第 N 轮分出」.
     this.db
       .prepare(
-        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, wake, started_by, report_to, created_at, updated_at, archived_at, ended_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, wake, started_by, report_to, created_at, updated_at, archived_at, ended_at, fork_of)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = excluded.status, writer = excluded.writer, runtime_ref = excluded.runtime_ref, profile_id = excluded.profile_id,
-           options = excluded.options, wake = excluded.wake, started_by = excluded.started_by, report_to = excluded.report_to, updated_at = excluded.updated_at, archived_at = excluded.archived_at, ended_at = excluded.ended_at`,
+           options = excluded.options, wake = excluded.wake, started_by = excluded.started_by, report_to = excluded.report_to, updated_at = excluded.updated_at, archived_at = excluded.archived_at, ended_at = excluded.ended_at,
+           kind = excluded.kind, parent_id = excluded.parent_id, fork_of = excluded.fork_of`,
       )
       // A's Host from before endedAt: an ended session's updatedAt stands in, as Focus read it before.
-      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options ?? {}), s.wake ? JSON.stringify(s.wake) : null, s.startedBy ?? null, s.reportTo ?? null, s.createdAt, s.updatedAt, s.archivedAt, s.endedAt !== undefined ? s.endedAt : ENDED_STATUSES.includes(s.status) ? s.updatedAt : null);
+      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options ?? {}), s.wake ? JSON.stringify(s.wake) : null, s.startedBy ?? null, s.reportTo ?? null, s.createdAt, s.updatedAt, s.archivedAt, s.endedAt !== undefined ? s.endedAt : ENDED_STATUSES.includes(s.status) ? s.updatedAt : null, s.forkOf ? JSON.stringify(s.forkOf) : null);
     return this.getSession(s.id)!;
   }
 

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { NO_REMOTE_ALLOWED, REMOTE_KINDS, isCommon, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemotePush,type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type Session, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { NO_REMOTE_ALLOWED, REMOTE_KINDS, isCommon, REMOTE_PERMISSIONS, RUNTIME_LABELS, type HostEvent, type Id, type ModelProfile, type RemoteAllowed, type RemoteGrant, type RemoteItemsAnswer, type RemoteFileAsk, type RemotePermission, type RemoteProfileView, type RemotePush, type RemoteTaskSnapshot, type RemoteTaskView, type RemoteViewAsk, type ReviewOpenTarget, type Session, type SessionItem, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { FeatureHost } from "../../core/feature.js";
 import type { RemoteUses } from "./service.js";
@@ -176,9 +176,13 @@ export class RemoteGrants {
     return p ? `${RUNTIME_LABELS[p.runtime]} · ${p.label}` : pid;
   }
 
-  private profilesOf(taskId: Id, allowed: Id[]): Array<{ id: Id; label: string }> {
+  private profilesOf(taskId: Id, allowed: Id[]): RemoteProfileView[] {
     const ids = [...new Set([...this.store.listSessions({ taskId }).map((s) => s.profileId), ...allowed])];
-    return ids.map((pid) => ({ id: pid, label: this.labelOf(pid) }));
+    // Its runtime too (2026-11-12): the device greys 分支 on a DSH session's copy, as here.
+    return ids.map((pid) => {
+      const runtime = this.ctx.host.profiles.find((x) => x.id === pid)?.runtime;
+      return { id: pid, label: this.labelOf(pid), ...(runtime && runtime !== "remote" ? { runtime } : {}) };
+    });
   }
 
   private view(task: Task): RemoteTaskView {
@@ -197,7 +201,7 @@ export class RemoteGrants {
 
   private taskPush(task: Task): RemotePush {
     const allowed = this.allowedFor(task.id);
-    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed };
+    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true };
   }
 
   // ---- granting (the remote page, the task page)
@@ -306,7 +310,7 @@ export class RemoteGrants {
     const allowed = this.allowedFor(taskId);
     const sessions = this.store.listSessions({ taskId });
     const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
-    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt };
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
@@ -452,6 +456,24 @@ export class RemoteGrants {
             this.ctx.inbox().drop(claimed);
             throw err;
           }
+        }
+        case REMOTE_KINDS.forkTurns: {
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), false);
+          return ok({ turns: sessions.forkTurns(s.id) });
+        }
+        case REMOTE_KINDS.fork: {
+          // 远程分支 (2026-11-12, the user: 远控模式下也能开分支): made here as this computer's own 分支 is, on the
+          // session's model — one 远端允许的模型 limits as a new session (rt.start), and under 远程权限上限 like it.
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
+          if (!this.allowedFor(s.taskId!).includes(s.profileId)) throw new HostError("bad_request", `${this.labelOf(s.profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里，不能从远程分支`);
+          const permission = this.permissionFor(s.profileId);
+          const forked = await sessions.fork(s.id, {
+            ...(typeof b.turnId === "string" && b.turnId ? { turnId: b.turnId } : {}),
+            ...(b.as === "sub" || b.as === "peer" ? { as: b.as } : {}),
+            ...(typeof b.title === "string" && b.title.trim() ? { title: b.title } : {}),
+            ...(permission ? { options: { permission } } : {}),
+          });
+          return ok({ session: this.store.getSession(forked.id) ?? forked });
         }
         case REMOTE_KINDS.drop: {
           // B archived its copy (2026-10-29): the grant ends without a word back — B has put the task away.

@@ -13,7 +13,12 @@ type Mode = "sub" | "peer";
 
 const defaultTitle = (session: Session, turn: ForkTurn | undefined) => `${session.title || "会话"} · ${turn ? `第 ${turn.n} 轮分支` : "分支"}`;
 
-export function ForkDialog({ link, session, profile, turnId, onClose, onForked }: { link: HostLink; session: Session; profile: ModelProfile | undefined; turnId?: string; onClose(): void; onForked(s: Session): void }) {
+/**
+ * `remote` (远程分支, 2026-11-12): the session is a remote task's copy — the branch is made on that computer (`name`),
+ * on the session's model and settings (this one has no list of that computer's models to pick from); `runtime`: its CLI
+ * there, where that computer said.
+ */
+export function ForkDialog({ link, session, profile, turnId, remote, onClose, onForked }: { link: HostLink; session: Session; profile: ModelProfile | undefined; turnId?: string; remote?: { name: string; runtime?: Session["runtime"] }; onClose(): void; onForked(s: Session): void }) {
   const [turns, setTurns] = useState<ForkTurn[] | null>(null);
   const [picked, setPicked] = useState<string | undefined>(turnId);
   const [mode, setMode] = useState<Mode>("sub");
@@ -28,7 +33,7 @@ export function ForkDialog({ link, session, profile, turnId, onClose, onForked }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { choices } = useProfileChoices(link, session.profileId);
-  const claude = session.runtime === "claude";
+  const claude = (remote ? remote.runtime : session.runtime) === "claude";
 
   useEffect(() => {
     call(link, "GET /api/sessions/:id/fork-turns", { id: session.id })
@@ -39,11 +44,11 @@ export function ForkDialog({ link, session, profile, turnId, onClose, onForked }
       })
       .catch((err: unknown) => setError(err instanceof HostApiError ? err.message : String(err)));
     // Codex's MCP is fixed when its app-server starts: a branch has the session's.
-    if (claude)
+    if (claude && !remote)
       call(link, "GET /api/sessions/:id/mcp", { id: session.id })
         .then((s) => setMcp(s.entries))
         .catch(() => setMcp([]));
-  }, [link, session.id, claude]);
+  }, [link, session.id, claude, !remote]);
 
   const turn = turns?.find((t) => t.turnId === picked);
   const current = useMemo(() => (choices ? activeModel(choices, { ...session.options, ...(model ? { model } : {}) }) : undefined), [choices, model, session.options]);
@@ -125,6 +130,12 @@ export function ForkDialog({ link, session, profile, turnId, onClose, onForked }
         <span className="fork-label">标题</span>
         <input className="fork-input" aria-label="标题" value={title ?? defaultTitle(session, turn)} maxLength={100} onChange={(e) => setTitle(e.target.value)} data-testid="fork-title" />
       </div>
+      {remote ? (
+        <div className="fork-field" data-testid="fork-remote">
+          <span className="fork-label">设置</span>
+          <span className="settings-hint">和原会话一样：分支建在 {remote.name} 上、在那边跑，用原会话的模型、思考强度和审批（那边设了远程权限上限的，按上限）。建好后在这里看、接着发消息。</span>
+        </div>
+      ) : (
       <button type="button" className="fork-summary" aria-expanded={more} onClick={() => setMore((v) => !v)} data-testid="fork-more">
         <span className="fork-label">设置</span>
         <span className="fork-summary-text">
@@ -133,7 +144,8 @@ export function ForkDialog({ link, session, profile, turnId, onClose, onForked }
         </span>
         <span className="fork-summary-chev">{more ? "收起 ▴" : "改 ▾"}</span>
       </button>
-      {more && choices && (
+      )}
+      {more && choices && !remote && (
         <div className="fork-more">
           <div className="fork-sub">
             <span className="fork-label">模型</span>

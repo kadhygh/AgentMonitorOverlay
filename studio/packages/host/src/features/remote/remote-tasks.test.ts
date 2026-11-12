@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -170,12 +170,10 @@ describe("remote tasks between two Hosts (step 2)", () => {
     // What only A does is refused on B (its Host and its runtime both).
     await expect(async () => b.service.tasks.updateTask(task.id, { column: "done" })).rejects.toThrow("远程任务");
     expect(() => guard(b, "POST", "/api/tasks/:id/unarchive", { id: task.id })).toThrow("A-PC 上的远程任务");
-    expect(() => guard(b, "POST", "/api/sessions/:id/fork", { id: session.id })).toThrow("A-PC 上的远程任务");
     expect(() => guard(b, "POST", "/api/sessions/:id/messages", { id: session.id })).not.toThrow();
     // A write added later that does not say whether a copy takes it is refused, not run here (2026-11-05, 8a).
     expect(() => b.service.remote.guardRoute(untypedRoute("POST", "/api/sessions/:id/something-new", () => ({ ok: true })), { id: session.id })).toThrow("A-PC 上的远程任务");
     expect(() => b.service.remote.guardRoute(untypedRoute("POST", "/api/sessions/:id/something-new", () => ({ ok: true }), { remoteCopy: "forward" }), { id: session.id })).not.toThrow();
-    await expect(b.service.sessions.fork(session.id)).rejects.toThrow("远程任务的会话不能在这台电脑上分支");
     // A's own tasks are never B's to reach.
     const other = await a.service.tasks.createTask({ title: "没授权的" });
     await expect(b.service.tasks.addSession(other.task.id, { profileId: remoteProfileId(aDevice, "p") })).rejects.toThrow();
@@ -927,6 +925,56 @@ describe("pictures and files B sends A (2026-10-29 evening)", () => {
   }, 60_000);
 });
 
+describe("远程分支 between two Hosts (2026-11-12)", () => {
+  it("B forks a session from a turn: made on A under the grant's limits, its copy on B carries the turns through it and takes B's messages; an older A or another model is refused, saying why", async () => {
+    const { a, b, toB, aDevice } = await paired();
+    const { task, session } = await taskOnA(a);
+    await a.service.sessions.sendMessage(session.id, "第二句");
+    await until(() => agentTexts(a, session.id), (t) => t.includes("FAKE: 第二句"), "A's second reply");
+    await until(() => a.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "A idle");
+    a.remote.setAllowed({ profiles: ["p"], defaultProfile: "p", permission: "read-only" });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    // A says it forks for B, and which CLI runs each model (B greys 分支 on a DSH session as A does).
+    expect(copy!.remote).toMatchObject({ fork: true, profiles: [{ id: remoteProfileId(aDevice, "p"), runtime: "codex" }] });
+    await until(() => agentTexts(b, session.id), (t) => t.includes("FAKE: 第二句"), "B has both turns");
+    expect(() => guard(b, "POST", "/api/sessions/:id/fork", { id: session.id })).not.toThrow();
+
+    // The dialog's turns are A's.
+    const turns = await b.service.sessions.forkTurns(session.id);
+    expect(turns.map((t) => [t.n, t.forkable])).toEqual([[1, true], [2, true]]);
+    expect(turns).toEqual(a.service.sessions.forkTurns(session.id));
+
+    const forked = await b.service.sessions.fork(session.id, { turnId: turns[0]!.turnId, as: "peer", title: "B 分的" });
+    // On A, as A's own 分支: beside the session, through turn 1, under 远程权限上限.
+    expect(a.store.getSession(forked.id)).toMatchObject({ taskId: task.id, runtime: "codex", profileId: "p", kind: "main", parentId: null, title: "B 分的", forkOf: { sessionId: session.id, turn: 1 }, options: { permission: "read-only" } });
+    // On B, a copy like the others, with the conversation through turn 1.
+    expect(b.store.getSession(forked.id)).toMatchObject({ runtime: "remote", profileId: remoteProfileId(aDevice, "p"), taskId: task.id, title: "B 分的" });
+    // Beside its source and saying where it came from, as on A (the copy kept A's first word of it before 2026-11-12).
+    await until(() => b.store.getSession(forked.id), (s) => s?.kind === "main" && s.parentId === null && s.forkOf?.turn === 1, "B's copy placed as A's");
+    expect(b.store.getSession(forked.id)!.forkOf).toEqual({ sessionId: session.id, turn: 1 });
+    await until(() => agentTexts(b, forked.id), (t) => t.includes("FAKE: 第一句"), "B has the fork's items");
+    expect(agentTexts(b, forked.id)).not.toContain("FAKE: 第二句");
+    // B drives it on.
+    await b.service.sessions.sendMessage(forked.id, "分支里发的");
+    await until(() => agentTexts(a, forked.id), (t) => t.includes("FAKE: 分支里发的"), "A's fork replies");
+    await until(() => agentTexts(b, forked.id), (t) => t.includes("FAKE: 分支里发的"), "B sees the fork's reply");
+    expect(agentTexts(a, session.id)).not.toContain("FAKE: 分支里发的");
+
+    // A copy cannot pick A's models or settings (it has no list of them).
+    await expect(b.service.sessions.fork(session.id, { options: { effort: "high" } })).rejects.toThrow("不能在这台电脑上改");
+    // A model A does not allow any more is refused on A.
+    a.remote.setAllowed({ profiles: ["q"], defaultProfile: "q", permission: "read-only" });
+    await expect(b.service.sessions.fork(session.id)).rejects.toThrow("不在 A-PC 允许远程使用的模型里");
+    await until(() => b.store.getTask(task.id)!.remote!.allowed.join(), (l) => l === remoteProfileId(aDevice, "q"), "B hears the new list");
+    // An older A (no fork in its snapshot): refused on B before anything is sent, saying what to update to.
+    const { fork: _fork, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.service.sessions.fork(session.id)).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_FORK_SINCE}`);
+    await expect(b.service.sessions.forkTurns(session.id)).rejects.toThrow("要更新到");
+  }, 60_000);
+});
+
 describe("remote files between two Hosts (step 3)", () => {
   it("B fetches a granted task's files from A, keeps them by task, asks again with what it has, and throws them away with the copy", async () => {
     const { a, b, toB } = await paired();
@@ -1028,6 +1076,7 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
         "forward PATCH /api/sessions/:id",
         "forward POST /api/sessions/:id/archive",
         "forward POST /api/sessions/:id/unarchive",
+        "forward POST /api/sessions/:id/fork",
         "local POST /api/sessions/:id/annotations",
         "local POST /api/sessions/:id/annotations/send",
       ].sort(),

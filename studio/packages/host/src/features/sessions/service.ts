@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkRequest, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -193,8 +193,10 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
   }
 
   /** 分支弹窗: the session's turns and which of them can be forked through. */
-  forkTurns(sessionId: Id): ForkTurn[] {
+  forkTurns(sessionId: Id): ForkTurn[] | Promise<ForkTurn[]> {
     const s = this.requireSession(sessionId);
+    // A remote task's copy (远程分支, 2026-11-12): the computer it runs on knows its runtime and fork points.
+    if (s.runtime === "remote") return this.f.remote.forkCopyTurns(s.id);
     return forkTurns(this.store.listItems(s.id), s.runtime).map(({ forkPoint: _point, ...t }) => t);
   }
 
@@ -206,6 +208,8 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
   async fork(sessionId: Id, body: unknown = {}): Promise<Session> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be forked");
+    // 远程分支 (2026-11-12): a copy's branch is made where the task runs; its copy comes back here (RemoteCopies.fork).
+    if (s.runtime === "remote") return this.f.remote.forkCopy(s.id, (body && typeof body === "object" ? body : {}) as ForkRequest);
     if (s.runtime === "dsh") throw new HostError("bad_request", "DeepSeek 会话不能分支：DSH 不支持");
     const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const profileId = typeof b.profileId === "string" && b.profileId ? b.profileId : undefined;

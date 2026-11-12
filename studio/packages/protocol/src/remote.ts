@@ -3,7 +3,7 @@
 // Needs the AMO platform's login (%APPDATA%\AMO\account.json): Studio has no login of its own.
 
 import type { ApprovalDecision } from "./api.js";
-import type { AccountUsage, Id, Session, SessionItem, TaskColumn, Timestamp } from "./entities.js";
+import type { AccountUsage, Id, Session, SessionItem, SessionRuntime, TaskColumn, Timestamp } from "./entities.js";
 import type { ChannelBalance } from "./channels.js";
 import type { QuestionReply } from "./questions.js";
 import { composeGitReviewMessage } from "./gitreview.js";
@@ -198,10 +198,12 @@ export interface TaskRemote {
   /** Why it was revoked, for the person. */
   reason?: string;
   /** A's models the task's sessions run on, as this computer names them (remoteProfileId), with A's names for them. */
-  profiles: Array<{ id: Id; label: string }>;
+  profiles: RemoteProfileView[];
   /** Of those, what new sessions may start with (A's 远端允许的模型); the first is the default. */
   allowed: Id[];
   grantedAt: Timestamp;
+  /** A forks the task's sessions for this computer (rt.fork, 2026-11-12); absent: an older A, which cannot. */
+  fork?: boolean;
   /** A's name of the task's project; null: A's common folder; absent: an older A, which does not say (RemoteTaskView.project). */
   project?: string | null;
   /** Each session's project as A names it (by session id), where A said: a session can work in another project than its task's. */
@@ -293,6 +295,14 @@ export const REMOTE_KINDS = {
   /** B → A: a new session in the task, on an allowed model. {taskId, profileId (A's), text?} → {session} */
   start: "rt.start",
   /**
+   * B → A (远程分支, 2026-11-12, the user: 远控模式下也能开分支): a branch of a session from one of its turns, made on A
+   * (the model runs there) as on A's own 分支 — under the session or beside it, with its title; its options are the
+   * session's, under A's 远程权限上限. RemoteForkAsk → {session}. A says it can in RemoteTaskSnapshot.fork.
+   */
+  fork: "rt.fork",
+  /** B → A (2026-11-12): the 分支 dialog's list of a session's turns, as A tells which can be forked. {sessionId} → {turns: ForkTurn[]} */
+  forkTurns: "rt.fork-turns",
+  /**
    * Step 3, B → A: a file of a granted task (HTML, Markdown or an image, under the task's folder or among its
    * attachments), one piece at a time. RemoteFileAsk → RemoteFileAnswer
    */
@@ -362,10 +372,12 @@ export interface RemoteTaskSnapshot {
   /** Each session's project name on A (null: the common folder), by session id (2026-11-09). An older A leaves it out. */
   sessionProjects?: Record<Id, string | null>;
   /** A's profiles the task's sessions run on, plus the allowed ones, with their names (A's ids). */
-  profiles: Array<{ id: Id; label: string }>;
+  profiles: RemoteProfileView[];
   /** A's ids of the models B may start sessions with; the first is the default. */
   allowed: Id[];
   grantedAt: Timestamp;
+  /** A answers rt.fork and rt.fork-turns (2026-11-12); an older A leaves it out. */
+  fork?: true;
 }
 
 export interface RemoteListAnswer {
@@ -380,6 +392,30 @@ export interface RemoteItemsAnswer {
   more: boolean;
 }
 
+/**
+ * One of A's models as a device sees it. `runtime` (2026-11-12, 远程分支): which CLI runs it on A, so B can tell what a
+ * copy's session can do (DSH: no 分支; Claude: only turns with a fork point); an older A leaves it out.
+ */
+export interface RemoteProfileView {
+  id: Id;
+  label: string;
+  runtime?: Exclude<SessionRuntime, "remote">;
+}
+
+/**
+ * The Studio version whose Host answers rt.fork (2026-11-12): what a device says when the task's computer has an older
+ * one (RemoteTaskSnapshot.fork absent) — 分支 is greyed there, with this to update to.
+ */
+export const REMOTE_FORK_SINCE = "0.9.66";
+
+/** rt.fork: ForkRequest without the options (a copy has no choices of A's models to pick from). */
+export interface RemoteForkAsk {
+  sessionId: Id;
+  turnId?: string;
+  as?: "sub" | "peer";
+  title?: string;
+}
+
 /** What each command carries. */
 export interface RemoteCommandBodies {
   "rt.list": Record<string, never>;
@@ -390,6 +426,8 @@ export interface RemoteCommandBodies {
   "rt.answer": { sessionId: Id; itemId: Id; reply: QuestionReply };
   "rt.interrupt": { sessionId: Id };
   "rt.start": { taskId: Id; profileId: Id; text?: string; uploads?: RemoteUpload[] };
+  "rt.fork": RemoteForkAsk;
+  "rt.fork-turns": { sessionId: Id };
   "rt.file": RemoteFileAsk;
   "rt.request": RemoteTaskRequestAsk;
   "rt.withdraw": { requestId: string };
@@ -405,7 +443,7 @@ export type RemotePush =
   | { type: "granted"; taskId: Id; grantedAt: Timestamp }
   | { type: "revoked"; taskId: Id; reason: string }
   /** The task's title, description or column changed, or what new sessions may run on. */
-  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[] }
+  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true }
   /** `project`: the session's project name on A (null: the common folder; 2026-11-09, an older A leaves it out). */
   | { type: "session"; session: Session; project?: string | null }
   /** An item appended or changed. */

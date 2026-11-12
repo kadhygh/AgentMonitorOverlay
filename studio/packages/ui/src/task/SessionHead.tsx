@@ -35,6 +35,8 @@ export function SessionHead({
   onRename,
   onTerminal,
   onFork,
+  forkRuntime = session.runtime,
+  forkOff,
   onArchive,
   onError,
   onBindTodo,
@@ -60,6 +62,9 @@ export function SessionHead({
   onRename(title: string): void;
   onTerminal(): void;
   onFork(): void;
+  /** 远程分支 (2026-11-12): a copy's runtime on the computer it runs on, and why 分支 is greyed (that Studio is too old). */
+  forkRuntime?: Session["runtime"];
+  forkOff?: string;
   onArchive(): void;
   onError(text: string): void;
   /** 绑定到待办 (问题 #10): absent where it cannot be done (a plain browser, a remote task's copy). */
@@ -74,7 +79,8 @@ export function SessionHead({
   const fail = (err: unknown) => onError(err instanceof HostApiError ? err.message : String(err));
   const dir = remote ? undefined : workdir;
   // DSH shows it greyed (2026-11-10, the user: 灰掉就行); a Claude subagent has no conversation of its own.
-  const canFork = !session.archivedAt && !remote && !(session.runtime === "claude" && session.kind === "sub");
+  // A copy's (2026-11-12) is made on the computer it runs on; its subagents and delegated sessions follow their parent there.
+  const canFork = !session.archivedAt && !(remote && session.kind === "sub") && !(forkRuntime === "claude" && session.kind === "sub");
   // DSH sessions (stage 17) have no terminal of their own to hand to, and no fork.
   const terminal = !session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub");
   const pick = (f: () => void) => () => {
@@ -160,13 +166,19 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
               <button
                 type="button"
                 role="menuitem"
-                title={session.runtime === "dsh" ? "DeepSeek 会话不能分支：DSH 不支持" : "从最新一轮分出一个新会话，原会话不受影响；也可以点每轮回复下面的分支图标"}
-                disabled={busy || !session.runtimeRef || session.runtime === "dsh"}
+                title={forkOff ?? (forkRuntime === "dsh" ? "DeepSeek 会话不能分支：DSH 不支持" : "从最新一轮分出一个新会话，原会话不受影响；也可以点每轮回复下面的分支图标")}
+                disabled={busy || !session.runtimeRef || forkRuntime === "dsh" || !!forkOff}
                 onClick={pick(onFork)}
                 data-testid="session-fork"
               >
                 从最新一轮分支…
               </button>
+              {/* Said in the menu, not only on hover (2026-11-12): why a remote task's 分支 is greyed. */}
+              {forkOff && (
+                <span className="menu-note fork-off-note" data-testid="session-fork-off">
+                  {forkOff}
+                </span>
+              )}
               <div className="menu-sep" role="separator" />
             </>
           )}

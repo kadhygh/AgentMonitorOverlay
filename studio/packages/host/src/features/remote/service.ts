@@ -1,5 +1,5 @@
 import { extname, isAbsolute } from "node:path";
-import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type ForkRequest, type ForkTurn, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { serverLabel, type Account, type Device } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -787,6 +787,15 @@ export class RemoteFeature extends Feature<RemoteUses> {
     return this.copies.start(task, input);
   }
 
+  /** 远程分支 (2026-11-12): a copy's session is forked on the computer it runs on. */
+  forkCopyTurns(sessionId: Id): Promise<ForkTurn[]> {
+    return this.copies.forkTurns(sessionId);
+  }
+
+  forkCopy(sessionId: Id, body: ForkRequest): Promise<Session> {
+    return this.copies.fork(sessionId, body);
+  }
+
   renameCopy(task: Task, title: string): Promise<Task> {
     return this.copies.renameTask(task, title);
   }
@@ -830,8 +839,8 @@ export class RemoteFeature extends Feature<RemoteUses> {
 
   /**
    * What a copy takes from this computer's own API (B's Host refuses the rest, 「B 能看到什么」): reading it, a message,
-   * an answer to an approval or question, 打断, a new session, renaming the task or a session and archiving or restoring
-   * a session (on A), and archiving the task (which deletes the copy). Changing the task's column, topic or 说明, a session's model, a branch, a terminal… are
+   * an answer to an approval or question, 打断, a new session, a branch (2026-11-12), renaming the task or a session and
+   * archiving or restoring a session (on A), and archiving the task (which deletes the copy). Changing the task's column, topic or 说明, a session's model, a terminal… are
    * A's to do. Each route that a copy takes says so where it is declared (`remoteCopy`, http/route.ts; 2026-11-05, it
    * was a list here that every new route had to be added to); a write to a task or session that does not say is refused.
    */

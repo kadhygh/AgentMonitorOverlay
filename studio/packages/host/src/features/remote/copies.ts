@@ -1,4 +1,4 @@
-import { REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteListAnswer, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -219,9 +219,11 @@ export class RemoteCopies {
       device: peer.device,
       name: this.ctx.peer(peer)?.name ?? existing?.remote?.name ?? peer.account,
       state: "active",
-      profiles: snap.profiles.map((p) => ({ id: remoteProfileId(peer.device, p.id), label: p.label })),
+      profiles: snap.profiles.map((p) => copyProfile(peer, p)),
       allowed: snap.allowed.map((p) => remoteProfileId(peer.device, p)),
       grantedAt: snap.grantedAt,
+      // 远程分支 (2026-11-12): an older A does not fork for this computer; the task page greys 分支 and says to update it.
+      ...(snap.fork ? { fork: true } : {}),
       // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
       ...projectsOf(snap.task.project !== undefined ? snap.task.project : existing?.remote?.project, snap.sessionProjects ?? existing?.remote?.sessionProjects),
     };
@@ -331,7 +333,8 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const remote: TaskRemote = { ...t.remote, profiles: p.profiles.map((x) => ({ id: remoteProfileId(peer.device, x.id), label: x.label })), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}) };
+        const { fork: _fork, ...kept } = t.remote;
+        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -527,6 +530,36 @@ export class RemoteCopies {
     return stored;
   }
 
+  /**
+   * 分支 dialog's turns of a copy's session (远程分支, 2026-11-12): A's list, as only A knows which can be forked (the
+   * session's runtime, Claude's fork points). An older A does not know the ask.
+   */
+  async forkTurns(sessionId: Id): Promise<ForkTurn[]> {
+    const { task, peer } = this.target(sessionId);
+    this.canFork(task);
+    const answer = await this.ask<{ turns?: ForkTurn[] }>(peer, REMOTE_KINDS.forkTurns, { sessionId });
+    return Array.isArray(answer.turns) ? answer.turns : [];
+  }
+
+  /**
+   * 分支 of a copy's session (远程分支, 2026-11-12, the user: 远控模式下也能开分支): made on A, where its model runs; its
+   * copy is kept here at once (A's pushes of it and of its items come too) and is driven from here like the others.
+   */
+  async fork(sessionId: Id, body: ForkRequest): Promise<Session> {
+    const { task, peer } = this.target(sessionId);
+    this.canFork(task);
+    if (body.profileId || (body.options && Object.keys(body.options).length)) throw new HostError("bad_request", "远程任务的分支用原会话的模型和设置，不能在这台电脑上改");
+    const ask: RemoteForkAsk = { sessionId, ...(body.turnId ? { turnId: body.turnId } : {}), ...(body.as ? { as: body.as } : {}), ...(body.title ? { title: body.title } : {}) };
+    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.fork, ask, START_MS);
+    const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
+    void this.catchUp(peer, session.id).catch(() => undefined);
+    return copy;
+  }
+
+  private canFork(task: Task): void {
+    if (!task.remote?.fork) throw new HostError("bad_request", `${task.remote?.name ?? "那台电脑"} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支`);
+  }
+
   /** 新会话 in a copy: on A, on a model A allows (the first message goes with it); the copy of it comes back. */
   async start(task: Task, input: NewSessionInput): Promise<Session> {
     const r = task.remote!;
@@ -541,6 +574,11 @@ export class RemoteCopies {
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;
   }
+}
+
+/** One of A's models as this computer names it, with A's runtime where A said (2026-11-12). */
+function copyProfile(peer: DeviceRef, p: RemoteProfileView): TaskRemote["profiles"][number] {
+  return { id: remoteProfileId(peer.device, p.id), label: p.label, ...(p.runtime ? { runtime: p.runtime } : {}) };
 }
 
 /** TaskRemote's project fields, only those A said. */
