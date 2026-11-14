@@ -1,0 +1,18 @@
+/* 事项清单 (2026-11-15, plans/collab-framework.md): in the task page's right column, above 留言 and 批注. A matter is a
+   row to click: its mark (never colour alone), what it is, where it stands. */
+.matters-panel { gap: 6px; }
+.matters-empty { font-size: 12px; line-height: 18px; color: var(--text-dim); }
+.matters-ended-head { margin-top: 6px; }
+.matter { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.matter:hover:not(:disabled) { border-color: var(--text-dim); }
+.matter:disabled { cursor: default; }
+.matter-mark { flex: none; width: 14px; font-weight: 700; line-height: 18px; text-align: center; color: var(--text-dim); }
+.matter-text { display: flex; flex-direction: column; min-width: 0; }
+.matter-title { font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.matter-note { font-size: 12px; line-height: 17px; color: var(--text-dim); overflow-wrap: anywhere; }
+/* What waits for the person stands out; what ended steps back. */
+.matter.you, .matter.failed { border-color: var(--attention-border); background: var(--attention-bg); }
+.matter.you .matter-mark, .matter.failed .matter-mark { color: var(--attention); }
+.matter.done { background: transparent; }
+.matter.done .matter-title { color: var(--text-dim); }
+.matters-more { align-self: flex-start; }

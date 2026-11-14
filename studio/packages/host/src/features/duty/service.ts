@@ -555,7 +555,7 @@ export class DutyFeature extends Feature<"sessions" | "tasks"> {
       if (older && this.sessions()[older.id] === item.id && older.taskId === task.id && !older.archivedAt && !sessionMoving(older) && older.status !== "error") {
         const repliesBefore = this.replies(older.id);
         // Through its inbox (2026-11-04), as every message of Studio's own: it is free (checked above), so it goes now.
-        await this.f.sessions.inbox.put(older.id, prompt);
+        await this.f.sessions.inbox.put(older.id, prompt, { kind: "duty", from: item.title });
         return started({ ok: true, summary: `在「${task.title}」的会话「${older.title || "未命名会话"}」里接着做`, sessionId: older.id, taskId: task.id, repliesBefore });
       }
       const session = other

@@ -71,7 +71,7 @@ export class RelaysFeature extends Feature<"collab" | "sessions" | "tasks"> {
       let held = false;
       if (session) {
         // The session's inbox (2026-11-04): it goes in once the session's turn is over, not into the running one.
-        held = !(await this.f.sessions.inbox.put(session.id, message)).delivered;
+        held = !(await this.f.sessions.inbox.put(session.id, message, { kind: "relay", from: lead?.title || "主控", sessionId: relay.fromSessionId })).delivered;
         sessionId = session.id;
       } else {
         const workspace = this.requireWorkspace(target.workspaceId);

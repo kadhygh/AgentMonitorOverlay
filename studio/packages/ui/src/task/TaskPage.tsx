@@ -40,6 +40,8 @@ import { canBindTodo, loadTodoForBind, TodoBindDialog, type TodoBindTarget } fro
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
+import { MattersPanel } from "../tracks/MattersPanel.js";
+import { experimentalOn } from "../lib/features.js";
 import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
 import { GrantDialog } from "./GrantDialog.js";
@@ -291,6 +293,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     passageShown.current = true;
     requestAnimationFrame(() => locatePassage(passage, 8));
   }, [passage, session?.id, items]);
+
+  /** 事项清单 (2026-11-15): scrolls to a row of the conversation — what came back, an approval that waits — and flashes it. */
+  function revealRow(itemId: string, tries: number) {
+    const id = CSS.escape(itemId);
+    const row = document.querySelector<HTMLElement>(`[data-row-id="${id}"], [data-item-id="${id}"]`);
+    if (!row) {
+      // In a folded turn, or above what is drawn: unfold it, then look again once it has rendered.
+      if (tries <= 0) return;
+      window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: itemId }));
+      requestAnimationFrame(() => requestAnimationFrame(() => revealRow(itemId, tries - 1)));
+      return;
+    }
+    scrollToBox(row, () => row.getBoundingClientRect());
+    flash(row);
+  }
 
   /** Scrolls to a bookmarked passage and flashes just its text (its block, where highlights are not available). */
   function locatePassage(p: Passage, tries: number) {
@@ -755,6 +772,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         <AnnotationPanel
           header={
             <>
+            {/* 事项清单 (2026-11-15; 设置 → 测试功能 → 脉络): the loops the session in front has going. */}
+            {session && experimentalOn(settings?.experimentalFeatures, "tracks") && (
+              <MattersPanel session={session} sessions={sessions} threads={teamThreads} items={items} decisions={decisions} onReveal={(itemId) => revealRow(itemId, 8)} onOpen={setSelected} />
+            )}
             <DecisionPanel decisions={decisions} task={task} current={session?.id ?? null} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} onOpen={setSelected} />
             <MailPanel
               mail={mail}

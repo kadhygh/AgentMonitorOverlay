@@ -114,7 +114,13 @@ test("会话里用中转: the session asks 程序老李, the person sends it, th
   await coder.send(thread!.id, { kind: "reply", answers: [{ questionId: "q1", choice: "服务端配置表" }], body: "运营会调上限。", verdict: "change" });
   await page.getByTestId("task-card").filter({ hasText: "背包扩容" }).click();
   const transcript = page.getByTestId("thread");
-  await expect(transcript).toContainText("【中转回复】", { timeout: 60_000 });
+  // 2026-11-15 (交流框架): a folded row saying who answered; the whole reply on a click.
+  const reply = transcript.getByTestId("msg-origin").filter({ hasText: "程序老李 回复（中转）" });
+  await expect(reply).toBeVisible({ timeout: 60_000 });
+  await expect(reply.getByTestId("msg-origin-brief")).toContainText("运营会调上限。");
+  await reply.scrollIntoViewIfNeeded();
+  await screenshot(app, "teamrelay", "T3a-reply-folded", page);
+  await reply.getByTestId("msg-origin-toggle").click();
   await expect(transcript).toContainText("上限放哪");
   await expect(transcript).toContainText("服务端配置表");
   await expect(transcript).toContainText("会话里的文件（1 个，1 个是你上次发言之后发来的");

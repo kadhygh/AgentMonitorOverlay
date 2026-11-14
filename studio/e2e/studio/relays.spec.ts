@@ -48,7 +48,7 @@ test("传话: confirmed from the task page and Focus, then a task that takes rel
   await expect(banner).toHaveCount(0);
   await expect(focus.getByTestId("focus-relay")).toHaveCount(0);
   const thread = page.getByTestId("thread");
-  await expect(thread).toContainText("【主控「迁移主控」传话】", { timeout: 30_000 });
+  await expect(thread.getByTestId("msg-origin").first()).toContainText("主控「迁移主控」传话", { timeout: 30_000 });
   await expect.poll(async () => (await studio!.api<Relay[]>("GET", "/api/relays"))[0]).toMatchObject({ state: "delivered", sessionId: targetSession.id });
 
   // 主控传话不用确认: the next one goes straight in.

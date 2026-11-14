@@ -26,6 +26,8 @@ export function sessionsRoutes(service: HostService): Route[] {
     route("POST /api/sessions/:id/items/:itemId/send-now", async ({ params }) => (await service.sessions.sendNow(params.id!, params.itemId!), { ok: true }), { remoteCopy: "forward" }),
     route("POST /api/sessions/:id/items/:itemId/resend", ({ params }) => service.sessions.resend(params.id!, params.itemId!), { remoteCopy: "forward" }),
     route("POST /api/sessions/:id/wake", ({ params, body }) => service.sessions.setWakeChoice(params.id!, body)),
+    // 打字时不插队 (2026-11-15): the composer says it was touched; the inbox holds what comes meanwhile (inbox.ts, typed).
+    route("POST /api/sessions/:id/typing", ({ params, body }) => (service.sessions.inbox.typed(params.id!, (body as { active?: unknown } | null)?.active !== false), { ok: true })),
     route("POST /api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true }), { remoteCopy: "forward" }),
     // 远程分支 (2026-11-12): a copy's session is forked on A (RemoteCopies.fork), with A's list of its turns.
     route("POST /api/sessions/:id/fork", ({ params, body }) => service.sessions.fork(params.id!, body), { remoteCopy: "forward" }),

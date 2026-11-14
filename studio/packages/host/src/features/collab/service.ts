@@ -1,4 +1,4 @@
-import { inTurn, type Id, type TaskNote, type MailMessage, type MailRecipient, type DecisionRequest, type ChecklistItem, type Session } from "@amo-studio/protocol";
+import { inTurn, type Id, type MessageOrigin, type TaskNote, type MailMessage, type MailRecipient, type DecisionRequest, type ChecklistItem, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError, boundedText, MAX_NOTE_CHARS, MAX_QUESTION_CHARS, MAX_OPTION_CHARS } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -74,7 +74,7 @@ export class CollabFeature extends Feature<"sessions"> {
     const session = this.requireSession(target);
     if (mail.to.kind === "task" && session.taskId !== mail.to.taskId) throw new HostError("bad_request", "that session is not part of the task the message was left for");
     if (mail.to.kind === "topic" && session.topicId !== mail.to.topicId) throw new HostError("bad_request", "that session is not one of the topic's own sessions");
-    await this.f.sessions.inbox.put(target, this.mailAsMessage(mail));
+    await this.f.sessions.inbox.put(target, this.mailAsMessage(mail), this.mailOrigin(mail));
     return this.setMailState(mail, "forwarded");
   }
 
@@ -147,6 +147,13 @@ export class CollabFeature extends Feature<"sessions"> {
       if (this.store.getMail(id)?.state !== "unread") continue; // read with mailbox_read during the turn
       void this.forwardMail(id).catch((err: unknown) => this.log(`${s.id}: the answer to a decision could not go into the session: ${err instanceof Error ? err.message : String(err)}`));
     }
+  }
+
+  /** Who a forwarded 留言 is from, as its row in the conversation says (2026-11-15, MessageOrigin). */
+  private mailOrigin(mail: MailMessage): MessageOrigin {
+    if (!mail.fromSessionId) return { kind: "mail", from: "我" };
+    const from = this.store.getSession(mail.fromSessionId);
+    return { kind: "mail", from: `会话「${from?.title || "会话"}」`, sessionId: mail.fromSessionId };
   }
 
   private mailAsMessage(mail: MailMessage): string {

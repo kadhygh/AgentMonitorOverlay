@@ -520,7 +520,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能往里发：只能发给你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
     if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了：要接着做就用 session_start 开个新的。`);
     const text = boundedText(input.text, "text", 20_000);
-    const { delivered, waiting } = await this.inbox.put(s.id, `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`);
+    const { delivered, waiting } = await this.inbox.put(s.id, `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`, { kind: "send", from: from.title || "未命名会话", sessionId: from.id });
     return { session: this.requireSession(s.id), delivered, waiting };
   }
 
@@ -691,7 +691,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
       text = mailed ? `【你开的会话${name}这一轮做完了，它已经用留言把结果发给你】` : `【你开的会话${name}这一轮做完了】\n${excerpt || "（它没有回复文字）"}`;
     }
     // Into the caller's inbox (2026-11-04): it goes in once the caller is free, rather than into its running turn.
-    this.inbox.put(to, text).catch(() => {
+    this.inbox.put(to, text, { kind: "report", from: s.title || "未命名会话", sessionId: s.id, state: turn.state === "interrupted" ? "stopped" : turn.state === "failed" ? "failed" : "done" }).catch(() => {
       // The caller is gone or archived: it can still read it as mail.
       try {
         this.f.collab.sendMail(s.id, { kind: "session", sessionId: to }, text);

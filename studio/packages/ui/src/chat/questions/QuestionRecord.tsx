@@ -27,7 +27,7 @@ function PendingRow({ item }: { item: QuestionItem }) {
   const open = seat?.isOpen(item.id) ?? false;
   const count = item.source === "mcp-form" ? 0 : (item.questions?.length ?? 0);
   return (
-    <div className="q-pending" data-testid="question-record" data-state="pending">
+    <div className="q-pending" data-testid="question-record" data-state="pending" data-row-id={item.id}>
       <IconSparkle />
       <span className="q-pending-text">
         {item.source === "mcp-form" ? `等你填写：${item.message || "表单"}` : `等你回答${count > 1 ? ` ${count} 个问题` : ""}：${item.questions?.[0]?.question ?? ""}`}

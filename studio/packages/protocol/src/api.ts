@@ -258,11 +258,12 @@ export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: s
     stage: "dev",
   },
   // 脉络 (2026-11-09, plans/tracks.md): one session carrying several things at once keeps where each line stands outside
-  // its context, so a compaction does not lose the quiet ones. Only the switch so far.
+  // its context, so a compaction does not lose the quiet ones. 2026-11-15 (plans/collab-framework.md): its first piece —
+  // the list of a session's 事项 in the task page's side column.
   {
     id: "tracks",
     label: "脉络",
-    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；会话顶上会多一个「对话 / 脉络」切换。现在打开还没有入口。",
+    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；现在做了第一块：任务页右边的侧栏（顶栏「侧栏」）最上面多一栏「还开着的事 / 已结束的事」，列出眼前这个会话经中转问了谁、等了多久，哪个子会话在跑，哪个审批在等你，点一条跳到对话里对应的位置。它是从 Studio 已有的记录里算出来的，不花模型的 token。AI 自己记「已定的事」、会话顶上的「对话 / 脉络」切换还没做。",
     stage: "dev",
   },
 ];
@@ -782,6 +783,12 @@ export interface HostRoutes
    */
   "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[]; now?: boolean; subsessions?: SubsessionSetup[] }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
+  /**
+   * 打字时不插队 (2026-11-15): the person touched this session's composer (`active`; said at most once a minute while
+   * they type) or emptied it by hand (not `active`). For five minutes after a touch, what agents and Studio send into
+   * the session is held and goes in behind the person's next message.
+   */
+  "POST /api/sessions/:id/typing": { req: { active: boolean }; res: { ok: true } };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
   "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };
   /** 重新发送 a message its process never read (delivery `unsent`): the same item goes again. */

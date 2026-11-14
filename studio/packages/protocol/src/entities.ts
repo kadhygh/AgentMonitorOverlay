@@ -351,6 +351,30 @@ export interface MessageImage {
 export type UserDelivery = "waiting" | "unsent" | "held";
 
 /**
+ * Who put a message into a session when it was not the person (交流框架, 2026-11-15, plans/collab-framework.md — the
+ * user: 子会话和主会话之间的往来现在都以用户气泡铺在对话里，影响人的判断). These went in as plain text, told apart only by a
+ * 【…】 line the model reads; kept on the row, the conversation shows them as what they are (an agent's or a colleague's
+ * words, folded) and the session's 事项 can be listed without reading the text. `start`: the first message of a session
+ * another one opened (session_start); `report`: that session's turn ended, told to the one that opened it; `send`:
+ * session_send; `team`: replies from AMO 中转 (team_ask); `relay`: 主控传话 (task_message); `mail`: a 留言 the person
+ * forwarded; `duty`: a 值守 item going on in its session. Rows from before have none: `messageOrigin` (origin.ts) reads
+ * the 【…】 line instead.
+ */
+export type MessageOriginKind = "start" | "report" | "send" | "team" | "relay" | "mail" | "duty";
+
+export interface MessageOrigin {
+  kind: MessageOriginKind;
+  /** Who said it, for the row's head: a session's or a task's title, the people who answered (中转), a 值守 item's title. */
+  from: string;
+  /** The session it came from, when it is one of this Host's. */
+  sessionId?: Id;
+  /** `team`: the 中转 sessions whose replies it brings. */
+  threadIds?: string[];
+  /** `report`: how the turn it tells of ended. */
+  state?: "done" | "stopped" | "failed";
+}
+
+/**
  * What a notice offers to do (2026-10-23). `folder-access`: DSH's write sandbox cannot be set up on the session's
  * folder for want of the person's full control of it; POST /api/sessions/:id/folder-access gives it. `state` follows
  * the fix (the row is updated in place).
@@ -394,9 +418,10 @@ export type SessionItem =
    * step); `unsent` — its process went before it was read (it can be sent again). Absent: it reached the model.
    * `withPerson` (2026-11-08): a held one that went in right behind the person's message that ended a pause (inbox.ts,
    * resume) — the model reads it next by itself, so the row says so and offers no 立即发送 (which would cut off the
-   * person's own turn; the user: 「留言的立即发送 触发了 打断重发」).
+   * person's own turn; the user: 「留言的立即发送 触发了 打断重发」). `origin` (2026-11-15): not the person's — who put it
+   * there (see MessageOrigin).
    */
-  | (ItemBase & { type: "user"; text: string; images?: MessageImage[]; delivery?: UserDelivery; withPerson?: true })
+  | (ItemBase & { type: "user"; text: string; images?: MessageImage[]; delivery?: UserDelivery; withPerson?: true; origin?: MessageOrigin })
   | (ItemBase & { type: "agent"; markdown: string; streaming: boolean })
   /** The model's thinking before or between steps. */
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })

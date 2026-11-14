@@ -155,6 +155,9 @@ describe("session_start (开会话)", () => {
     // The fake app-server answers with its own text; whatever it is, the report carries the reply.
     const [reply] = store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
     expect(reply && reply.type === "agent" && report.includes(reply.markdown.trim().slice(0, 20))).toBe(true);
+    // The row says who it is from (2026-11-15, MessageOrigin), and still does once it has gone in.
+    const row = store.listItems(caller.id).find((i) => i.type === "user" && i.text.includes("这一轮做完了"));
+    expect(row && row.type === "user" && row.origin).toEqual({ kind: "report", from: s.title || "未命名会话", sessionId: s.id, state: "done" });
     // Once only.
     await new Promise((r) => setTimeout(r, 300));
     expect(userTexts(caller.id).filter((t) => t.includes("这一轮做完了"))).toHaveLength(1);
@@ -238,6 +241,8 @@ describe("session_send (续发)", () => {
     await until(() => userTexts(s.id).length === 2);
     expect(userTexts(s.id)[1]).toContain(`【开启你的会话「主会话」（${caller.id}）发来】`);
     expect(userTexts(s.id)[1]).toContain("阶段 2：再加一列");
+    const sentRow = store.listItems(s.id).filter((i) => i.type === "user")[1];
+    expect(sentRow && sentRow.type === "user" && sentRow.origin).toEqual({ kind: "send", from: "主会话", sessionId: caller.id });
 
     await expect(service.sessions.sendPeer(caller.id, { sessionId: caller.id, text: "x" })).rejects.toThrow(/不能发给你自己/);
     const persons = await service.tasks.addSession(task.id, { profileId: "p-ds" });
@@ -272,6 +277,36 @@ describe("session_send (续发)", () => {
 
 // 会话收件箱 (2026-11-04, plans/done/message-delivery.md): what agents and Studio send waits on disk until the session is free.
 describe("the session inbox", () => {
+  // 打字时不插队 (2026-11-15, plans/collab-framework.md).
+  it("holds what comes while the person writes in the composer: it goes in behind their message, or once the box is emptied or has been still", { timeout: 20_000 }, async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });
+    const idle = () => until(() => store.getSession(s.id)?.status === "idle" && !service.sessions.inbox.held(s.id).length);
+    await idle();
+    const inbox = service.sessions.inbox;
+    inbox.typed(s.id, true);
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "打字时来的" })).toMatchObject({ delivered: false, waiting: 1 });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(store.getSession(s.id)?.status).toBe("idle");
+    expect(deliveries(s.id)).toEqual([undefined, "held"]);
+    // The person sends what they were writing: the held one follows it into the same stretch of work.
+    await service.sessions.sendMessage(s.id, "我写完的这句");
+    await idle();
+    const held = store.listItems(s.id).find((i) => i.type === "user" && i.text.includes("打字时来的"));
+    expect(held && held.type === "user" && held.withPerson).toBe(true);
+    expect(deliveries(s.id).every((d) => d === undefined)).toBe(true);
+    // Emptied by hand: nothing is being written any more.
+    inbox.typed(s.id, true);
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "又来一条" })).toMatchObject({ delivered: false, waiting: 1 });
+    inbox.typed(s.id, false);
+    await idle();
+    // Left alone for long enough.
+    inbox.typingHoldMs = 150;
+    inbox.typed(s.id, true);
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "第三条" })).toMatchObject({ delivered: false, waiting: 1 });
+    await idle();
+    expect(userTexts(s.id).filter((t) => t.includes("第三条"))).toHaveLength(1);
+  });
+
   it("goes on after a Host restart, and moves session_send's old queue in", { timeout: 15_000 }, async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "阶段 1" });
     await until(() => store.getSession(s.id)?.status === "idle");

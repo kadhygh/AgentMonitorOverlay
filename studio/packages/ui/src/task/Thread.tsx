@@ -137,6 +137,22 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
     pendingDraft.current = null;
     if (p) writeSessionDraft(p.id, p.text);
   }, []);
+  // 打字时不插队 (2026-11-15, plans/collab-framework.md): the Host hears that this composer is being written in — at
+  // most once a minute, its hold lasts five — and holds what agents send here until the person's message goes; emptied
+  // by hand, it hears that too. Only keys count: a draft left from yesterday holds nothing.
+  const typingSaid = useRef<{ id: string; at: number } | null>(null);
+  const sayTyping = (text: string) => {
+    if (!sessionId) return;
+    const active = !!text.trim();
+    const last = typingSaid.current?.id === sessionId ? typingSaid.current : null;
+    if (active ? last && Date.now() - last.at < 60_000 : !last) return;
+    typingSaid.current = active ? { id: sessionId, at: Date.now() } : null;
+    void call(link, "POST /api/sessions/:id/typing", { id: sessionId }, { active }).catch(() => undefined);
+  };
+  // Sent (the box is empty again, and the Host let the held ones in with the message): the next key says it anew.
+  useEffect(() => {
+    if (!draft) typingSaid.current = null;
+  }, [draft]);
   useEffect(() => {
     window.addEventListener("pagehide", flushDraft);
     return () => {
@@ -726,6 +742,7 @@ ${d}` : back));
                 onScroll={(e) => setInputScroll(e.currentTarget.scrollTop)}
                 onChange={(e) => {
                   setDraft(e.target.value);
+                  sayTyping(e.target.value);
                   mentions.track(e.target);
                   slash.track(e.target);
                 }}

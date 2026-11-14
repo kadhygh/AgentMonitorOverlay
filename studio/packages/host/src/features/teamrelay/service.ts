@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type TeamSend, type TeamThread } from "@amo-studio/protocol";
+import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type MessageOrigin, type TeamSend, type TeamThread } from "@amo-studio/protocol";
 import { RelayClient, RelayClientError, downloadFile, dueForAi, filesAsText, newRepliesText, takeSession, threadAsText, type Downloaded, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
@@ -349,6 +349,9 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
     }
     for (const [sessionId, threads] of bySession) {
       const parts: string[] = [];
+      // Who answered and in which 中转 sessions (2026-11-15): kept on the row as its origin.
+      const who: string[] = [];
+      const threadIds: string[] = [];
       let replies = 0;
       for (const t of threads) {
         const item = await takeSession(client, me, t.id);
@@ -356,12 +359,15 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
         // With the session's files (2026-11-13): those the other side sent since this session last wrote are 新.
         parts.push(await this.withFiles(client, item.thread.id, newRepliesText(item.thread, item, `用 team_session（threadId ${item.thread.id}）`), (f) => f.by !== me && f.at > item.lastWordAt));
         if (item.thread.request?.state !== "done") replies++;
+        threadIds.push(item.thread.id);
+        const to = item.thread.request?.to;
+        if (to && !who.includes(to)) who.push(to);
         const seen = this.view(item.thread, sessionId, next.get(t.id));
         next.set(t.id, { ...seen, deliveredAt: Date.now() });
       }
       if (!parts.length) continue;
       const how = replies ? "还没问清楚，用 team_followup 追问；已经敲定，用 team_done 标记完成，再按敲定的方案接着做。" : "对方已接手，会话已经结束，不用 team_done，也不用再追问。";
-      this.tell(sessionId, `【中转回复】\n\n${parts.join("\n\n---\n\n")}\n\n（AMO Studio 从中转转回来的，你用的是 ${me} 的身份。${how}）`);
+      this.tell(sessionId, `【中转回复】\n\n${parts.join("\n\n---\n\n")}\n\n（AMO Studio 从中转转回来的，你用的是 ${me} 的身份。${how}）`, { kind: "team", from: who.join("、") || "中转", threadIds });
     }
     this.saveThreads([...next.values()]);
   }
@@ -377,8 +383,8 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
    * kept across a restart, 没送到 with 重新发送 when it cannot go in. Before, it went as the person's messages do — steered
    * into a Codex turn — and one that failed was only a line in host.log, the reply already taken off the relay.
    */
-  private tell(sessionId: Id, message: string): void {
-    this.f.sessions.inbox.put(sessionId, message).catch((err: unknown) => console.log(`teamrelay: ${String(err)}`));
+  private tell(sessionId: Id, message: string, origin?: MessageOrigin): void {
+    this.f.sessions.inbox.put(sessionId, message, origin).catch((err: unknown) => console.log(`teamrelay: ${String(err)}`));
   }
 }
 

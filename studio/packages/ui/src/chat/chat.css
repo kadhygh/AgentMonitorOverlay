@@ -130,6 +130,27 @@
 /* A sent 快速提交 (2026-10-28): the tag in the composer's mention colour; its instructions on hover. */
 .msg-role-update.quick-commit { border-style: solid; border-color: color-mix(in srgb, var(--chat-mention) 45%, transparent); background: color-mix(in srgb, var(--chat-mention) 12%, transparent); color: var(--chat-mention); font-weight: 600; }
 
+/* ---- a message from an agent or from Studio (2026-11-15, 交流框架) ------------------------------------------------
+   Not the person's bubble: a folded row across the conversation — who it is from, two or three lines, all of it on a
+   click. The bar on the left is its only colour: the person's eye should pass over it unless it failed. */
+
+.msg-origin-row { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; }
+.msg-origin-row > .msg-delivery { justify-content: flex-start; }
+.turn-work > .msg-origin-row { margin: 6px 0; }
+.msg-origin { min-width: 0; border: 1px solid var(--chat-hairline); border-left: 3px solid var(--chat-dim); border-radius: var(--r-s); background: color-mix(in srgb, var(--chat-bubble) 35%, transparent); }
+.msg-origin[data-state="failed"] { border-left-color: var(--chat-error); }
+.msg-origin[data-state="stopped"] { border-left-color: var(--chat-warn); }
+.msg-origin-head { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; padding: 4px 10px; border: none; background: none; color: var(--chat-label); font: inherit; font-size: 13px; line-height: 20px; text-align: left; cursor: pointer; }
+.msg-origin-head > svg { flex: none; color: var(--chat-dim); }
+.msg-origin-head:hover { background: var(--chat-hover); }
+.msg-origin-mark { flex: none; color: var(--chat-success); font-weight: 600; }
+.msg-origin-mark.failed { color: var(--chat-error); }
+.msg-origin-mark.stopped { color: var(--chat-warn); }
+.msg-origin-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.msg-origin-note { flex: none; margin-left: auto; color: var(--chat-caption); font-size: 12px; }
+.msg-origin-brief { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 10px 8px 30px; color: var(--chat-dim); font-size: 13px; line-height: 20px; white-space: pre-line; word-break: break-word; cursor: pointer; }
+.msg-origin-body { padding: 4px 14px 12px 30px; border-top: 1px solid var(--chat-hairline); min-width: 0; overflow-wrap: anywhere; }
+
 /* ---- replies --------------------------------------------------------------------------------------------------- */
 
 .msg-agent { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
