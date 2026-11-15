@@ -51,7 +51,11 @@ test("崩溃转储 follows the platform's channel, and the person's switch wins 
   await expect(dialog.getByTestId("crash-dumps-state")).toContainText("下次打开 Studio 后开启");
   await expect(dialog.getByTestId("crash-dumps-count")).toHaveText("还没有转储。");
   await screenshot(app, "studio", "settings-crash-dumps", page);
-  await box.uncheck();
+  // click, not uncheck(): the box follows the main process's answer (shell-prefs.json written), and uncheck() looks
+  // at it right after the click — with the machine busy the answer came later and it failed with 「did not change its
+  // state」 (2026-11-16, a full e2e run; the same with the answer held back 0.4 s).
+  await box.click();
+  await expect(box).not.toBeChecked();
   await expect(dialog.getByTestId("crash-dumps-state")).toContainText("你自己关掉了它");
   expect(JSON.parse(readFileSync(join(dataDir, "shell-prefs.json"), "utf8")).crashDumps).toBe(false);
   await dialog.getByTestId("crash-dumps-default").click();
