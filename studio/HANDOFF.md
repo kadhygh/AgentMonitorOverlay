@@ -34,7 +34,7 @@
 | Host 结构 | `plans/host-structure.md`：8a–8c 已合进 master；剩一个 feature 环组 {collab、gitreview、projects、remote、review、sessions、tasks、viewpacks}，拆法写在方案里，没开工。项目梳理总表 `plans/done/cleanup-2026-11.md` |
 | 全景（userlayer） | 分支 `studio/panorama`（worktree `G:\PROJECT\AgentMonitorOverlay-panorama`）比 master 多 4 个提交：全景里抽屉打开会话（`plans/userlayer/framework.md` 第 1 步）、内存测量，没合 |
 | 脉络（tracks） | 11-09 开工，`plans/tracks.md`。第 0 步（测试功能「开发中」标签、「脉络」开关）合进 master，随 Studio 测试版发；之后在 worktree `G:\PROJECT\AgentMonitorOverlay-tracks`（分支 `studio/tracks`）用开发界面目录迭代。11-15：界面示例 v7（楼）和 alt（并排立面）做完，成品在主工作区 `studio/out/tracks/proto-v7.html`、`proto-alt.html`（源文件在那个 worktree 的 `plans/tracks/`，没提交）；用户倾向 v7，但要先用上真数据再定 |
-| 交流框架（事项 / 消息 / 板） | 11-15 和用户谈定概念，`plans/collab-framework.md`；第一版合进 master（消息带来源 `origin`、对话里折叠成一行、打字时不插队、「脉络」开关后的事项清单）。等用户用测试版后定下一步：Host 里的事项表、「已定的事」、来信开接待会话。顺带谈的审阅进度和批注卡片在 `plans/review-progress.md`，没开工 |
+| 交流框架（事项 / 消息 / 板） | 11-15 和用户谈定概念，`plans/collab-framework.md`；第一版合进 master（消息带来源 `origin`、对话里折叠成一行、「脉络」开关后的事项清单；打字时不插队用户当天说先去掉，改成脉络「详细设置」页里默认关的选项；这条线上做到一半的东西以后都先放那一页）。等用户用测试版后定下一步：Host 里的事项表、「已定的事」、来信开接待会话。顺带谈的审阅进度和批注卡片在 `plans/review-progress.md`，没开工 |
 | 远程会话 | 功能都在 master、已发布（`plans/done/remote-session.md`、`plans/done/remote-page-and-new-task.md`；11-06 加了远程任务页的被控端额度）。等用户用两台真电脑验收；会话级授权、模型细到型号、远程权限上限等用户 10-29 定先不做 |
 | Android Studio | 工程在 `mobile/`（KMP：`shared` + `app`），调试 APK 在 `mobile/out/`。真实手机和 Tailscale 实网没测（`plans/done/android-studio.md`） |
 | iOS Studio | `plans/ios.md`：签名 11-03 通了（jenkins-build 钥匙串），**等 App Store Connect API Key**（打包机 `~/.amo-ios/config` 两个 ID 空着、没有 .p8），之后 validate、问过用户再第一次上传。打包机上 LaunchAgent `com.amo.ios-build` 的残留没卸（等用户点头删 Mac 上的文件） |

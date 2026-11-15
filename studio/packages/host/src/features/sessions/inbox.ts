@@ -23,7 +23,8 @@ const TURN_SEEN_MS = 3000;
 /**
  * 打字时不插队 (2026-11-15, plans/collab-framework.md): how long after the person last touched a session's composer what
  * comes for it is still held. Long enough to write a careful answer, short enough that a box left with half a line
- * does not keep a reply out for the afternoon.
+ * does not keep a reply out for the afternoon. Behind 设置 → 测试功能 → 打字时不插队 (off by default; the user,
+ * 2026-11-15, the day it shipped: 「这个可以先去掉，等我体验一段时间」).
  */
 export const TYPING_HOLD_MS = 5 * 60_000;
 
@@ -81,7 +82,8 @@ export class SessionInbox extends Feature {
     const s = this.store.getSession(sessionId);
     if (!s || isRemoteCopy(s)) return;
     const was = this.stopTyping(sessionId);
-    if (active) {
+    // Off unless the person turned it on (设置 → 测试功能 → 打字时不插队; the user, 2026-11-15: 这个可以先去掉).
+    if (active && this.sessions.typingHoldOn()) {
       const timer = setTimeout(() => {
         this.typing.delete(sessionId);
         void this.flush(sessionId).catch(() => undefined);

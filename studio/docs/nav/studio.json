@@ -221,11 +221,12 @@
       "label": "交流框架：消息的来源、事项清单、打字时不插队",
       "aliases": ["交流框架", "事项", "事项清单", "MessageOrigin", "origin", "agent 交互", "折叠卡", "OriginMessage", "matters", "MattersPanel", "还开着的事", "打字时不插队", "typing", "脉络", "tracks"],
       "category": "host",
-      "purpose": "agent 和 Studio 送进会话的消息（子会话回报、session_send、中转回复、主控传话、留言、值守）在行上带 origin（谁发的、哪一类），对话里显示成折叠的一行而不是人的气泡；旧消息按给模型看的那行【…】认。「脉络」开关（测试功能）后任务页侧栏有事项清单，由界面从中转会话、会话列表、会话的行里算出来，Host 没有事项表。输入框有按键时界面告诉 Host，收件箱压住来信 5 分钟，随人的下一条消息一起送。",
+      "purpose": "agent 和 Studio 送进会话的消息（子会话回报、session_send、中转回复、主控传话、留言、值守）在行上带 origin（谁发的、哪一类），对话里显示成折叠的一行而不是人的气泡；旧消息按给模型看的那行【…】认。「脉络」开关（测试功能）后任务页侧栏有事项清单，由界面从中转会话、会话列表、会话的行里算出来，Host 没有事项表。脉络在 设置 → 测试功能 里有自己的一页（详细设置）：开发中的选项是 EXPERIMENTAL_FEATURES 里 parent 为 tracks 的行，默认关，只在脉络开着时生效。其中「打字时不插队」（typing-hold，用户 11-15：先去掉）开着时，输入框有按键界面就告诉 Host，收件箱压住来信 5 分钟，随人的下一条消息一起送。",
       "steps": [
         "新的「往会话里送一句话」的来源：inbox.put 的第三个参数给 origin；要新的一类就在 MessageOriginKind 加一个，origin.ts 的 originLabel 写它的标题，给模型看的首行有变化时改 HEADS 和 origin.test.ts。",
         "事项清单多一种事项：ui/src/tracks/matters.ts 的 sessionMatters 里加，matters.test.ts 里写上顺序；点它要跳到对话里的行，那一行的元素要带 data-row-id。",
-        "改压住来信的时长：sessions/inbox.ts 的 TYPING_HOLD_MS；界面多久说一次在 task/Thread.tsx 的 sayTyping（要比它短）。"
+        "改压住来信的时长：sessions/inbox.ts 的 TYPING_HOLD_MS；界面多久说一次在 task/Thread.tsx 的 sayTyping（要比它短）。",
+        "脉络里新的开发中选项：protocol/src/api.ts 的 ExperimentalFeature 加一个 id，EXPERIMENTAL_FEATURES 加一行带 parent: \"tracks\"；用的地方问 experimentalEnabled（Host）或 experimentalOn（界面），设置页自己会列出来。"
       ],
       "anchors": [
         { "label": "来源的类型", "path": "studio/packages/protocol/src/entities.ts", "anchor": "export interface MessageOrigin" },
@@ -234,7 +235,9 @@
         { "label": "对话里的折叠行", "path": "studio/packages/ui/src/chat/OriginMessage.tsx", "anchor": "export function OriginMessage" },
         { "label": "事项怎么算", "path": "studio/packages/ui/src/tracks/matters.ts", "anchor": "export function sessionMatters" },
         { "label": "事项清单面板", "path": "studio/packages/ui/src/tracks/MattersPanel.tsx", "anchor": "export function MattersPanel" },
-        { "label": "输入框告诉 Host", "path": "studio/packages/ui/src/task/Thread.tsx", "anchor": "const sayTyping" }
+        { "label": "输入框告诉 Host", "path": "studio/packages/ui/src/task/Thread.tsx", "anchor": "const sayTyping" },
+        { "label": "测试功能的清单和选项", "path": "studio/packages/protocol/src/api.ts", "anchor": "export function experimentalEnabled" },
+        { "label": "测试功能页和脉络的详细设置", "path": "studio/packages/ui/src/settings/ExperimentalSection.tsx", "anchor": "export function ExperimentalSection" }
       ],
       "related": ["studio.sessions", "studio.teamRelay", "studio.relays", "ui.chat"],
       "next": ["studio/plans/collab-framework.md", "studio/plans/tracks.md", "studio/plans/review-progress.md"]

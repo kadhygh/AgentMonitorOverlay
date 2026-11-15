@@ -740,6 +740,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onInterrupt={() => session && void interrupt(session.id)}
               onDelivery={deliver}
               {...(sendNowOff ? { sendNowOff } : {})}
+              typingHold={experimentalOn(settings?.experimentalFeatures, "typing-hold")}
               {...(forkSessionId ? { onFork: forkTurn, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}

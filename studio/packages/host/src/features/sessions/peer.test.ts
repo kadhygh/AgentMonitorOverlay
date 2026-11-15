@@ -283,11 +283,21 @@ describe("the session inbox", () => {
     const idle = () => until(() => store.getSession(s.id)?.status === "idle" && !service.sessions.inbox.held(s.id).length);
     await idle();
     const inbox = service.sessions.inbox;
+    // Off by default (测试功能 「打字时不插队」): a touched composer holds nothing.
+    inbox.typed(s.id, true);
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "没开开关时来的" })).toMatchObject({ delivered: true, waiting: 0 });
+    await idle();
+    // An option of 脉络: it counts only with 脉络 on too.
+    service.config.updateSettings({ experimentalFeatures: ["typing-hold"] });
+    inbox.typed(s.id, true);
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "只开了选项时来的" })).toMatchObject({ delivered: true, waiting: 0 });
+    await idle();
+    service.config.updateSettings({ experimentalFeatures: ["tracks", "typing-hold"] });
     inbox.typed(s.id, true);
     expect(await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "打字时来的" })).toMatchObject({ delivered: false, waiting: 1 });
     await new Promise((r) => setTimeout(r, 300));
     expect(store.getSession(s.id)?.status).toBe("idle");
-    expect(deliveries(s.id)).toEqual([undefined, "held"]);
+    expect(deliveries(s.id)).toEqual([undefined, undefined, undefined, "held"]);
     // The person sends what they were writing: the held one follows it into the same stretch of work.
     await service.sessions.sendMessage(s.id, "我写完的这句");
     await idle();

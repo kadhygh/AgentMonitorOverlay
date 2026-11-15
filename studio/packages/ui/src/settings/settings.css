@@ -18,6 +18,15 @@
 .feature-row input { margin-top: 3px; }
 .feature-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .feature-stage { margin-left: 6px; }
+/* 测试功能 → 详细设置 (2026-11-15): a feature's own page — what it has, and its options in development. */
+.feature-with-detail { display: flex; flex-direction: column; gap: 4px; }
+.feature-detail-open { align-self: flex-start; margin-left: 22px; }
+.feature-detail-head { gap: 10px; }
+.feature-group { margin-top: 6px; font-weight: 600; color: var(--text); }
+.feature-has { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+.feature-has li { font-size: 13px; }
+.feature-has li .settings-hint { display: block; margin-top: 2px; }
+.feature-row.off { opacity: 0.55; cursor: default; }
 
 /* 设置 in pages: the areas on the left, one page on the right (the dialog keeps its size between pages). */
 .settings-modal { position: relative; width: min(880px, calc(100vw - 40px)); height: min(640px, calc(100vh - 120px)); overflow: hidden; gap: 12px; }

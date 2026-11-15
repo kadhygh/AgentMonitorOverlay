@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkRequest, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { experimentalEnabled, inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkRequest, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -171,6 +171,11 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     } catch {
       return none;
     }
+  }
+
+  /** 测试功能 脉络 → 「打字时不插队」 is on (2026-11-15, the user: 先去掉，等我体验一段时间 — off by default; inbox.ts, typed). */
+  typingHoldOn(): boolean {
+    return experimentalEnabled(this.f.config.experimentalFeatures(), "typing-hold");
   }
 
   /** 停止, the person's (here or from another device): the inbox holds what comes until they write again (2026-11-04, the user). */

@@ -94,6 +94,23 @@ test("全景: off by default, turned on in 测试功能, opened from the left co
   await expect(dialog.getByTestId("experimental-panorama-stage")).toHaveText("开发中");
   await expect(dialog.getByTestId("experimental-tracks-stage")).toHaveText("开发中");
   await expect(dialog.getByTestId("experimental-tracks")).not.toBeChecked();
+  // 脉络's own page (2026-11-15): what it has, and its options in development — off, and dead while 脉络 is off.
+  await expect(dialog.getByTestId("experimental-typing-hold")).toHaveCount(0);
+  await dialog.getByTestId("experimental-tracks-open").click();
+  const detail = dialog.getByTestId("experimental-detail");
+  await expect(detail).toContainText("事项清单");
+  await expect(detail.getByTestId("experimental-typing-hold")).toBeDisabled();
+  await detail.getByTestId("experimental-tracks").check();
+  await expect(detail.getByTestId("experimental-typing-hold")).toBeEnabled();
+  await expect(detail.getByTestId("experimental-typing-hold")).not.toBeChecked();
+  await detail.getByTestId("experimental-typing-hold").check();
+  await expect.poll(async () => (await studio!.api<{ experimentalFeatures: string[] }>("GET", "/api/settings")).experimentalFeatures).toEqual(["tracks", "typing-hold"]);
+  await screenshot(app, "studio", "experimental-tracks-detail", page);
+  await detail.getByTestId("experimental-typing-hold").uncheck();
+  await detail.getByTestId("experimental-tracks").uncheck();
+  await expect.poll(async () => (await studio!.api<{ experimentalFeatures: string[] }>("GET", "/api/settings")).experimentalFeatures).toEqual([]);
+  await detail.getByTestId("experimental-back").click();
+  await expect(dialog.getByTestId("experimental-tracks-open")).toBeVisible();
   await toggle.check();
   await expect(toggle).toBeChecked();
   await expect.poll(async () => (await studio!.api<{ experimentalFeatures: string[] }>("GET", "/api/settings")).experimentalFeatures).toEqual(["panorama"]);

@@ -96,6 +96,8 @@ interface ThreadProps {
   forkOff?: string;
   /** 立即发送 greyed on a remote task's copy, and why (2026-11-12; Transcript's). */
   sendNowOff?: string;
+  /** 测试功能 「打字时不插队」 is on (2026-11-15): the composer tells the Host when it is written in. */
+  typingHold?: boolean;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -119,7 +121,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -137,12 +139,12 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
     pendingDraft.current = null;
     if (p) writeSessionDraft(p.id, p.text);
   }, []);
-  // 打字时不插队 (2026-11-15, plans/collab-framework.md): the Host hears that this composer is being written in — at
+  // 打字时不插队 (2026-11-15, plans/collab-framework.md; only with its 测试功能 switch on): the Host hears that this composer is being written in — at
   // most once a minute, its hold lasts five — and holds what agents send here until the person's message goes; emptied
   // by hand, it hears that too. Only keys count: a draft left from yesterday holds nothing.
   const typingSaid = useRef<{ id: string; at: number } | null>(null);
   const sayTyping = (text: string) => {
-    if (!sessionId) return;
+    if (!sessionId || !typingHold) return;
     const active = !!text.trim();
     const last = typingSaid.current?.id === sessionId ? typingSaid.current : null;
     if (active ? last && Date.now() - last.at < 60_000 : !last) return;

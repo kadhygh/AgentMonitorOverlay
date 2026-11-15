@@ -244,13 +244,26 @@ export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; h
  * 设置 → 测试功能 (2026-11-01, the user: 设置里加个测试功能页，这个功能加个开关): features still being tried out. The
  * opposite of OPTIONAL_FEATURES: off until the person turns one on, and the settings list the ones turned on.
  */
-export type ExperimentalFeature = "panorama" | "tracks";
+export type ExperimentalFeature = "panorama" | "tracks" | "typing-hold";
 
 /**
  * `dev` (2026-11-09, the user: 给测试功能全景加一个开发中的标记): still being built, shown as 「开发中」 beside its name —
  * what it does now is a first piece, or nothing yet.
  */
-export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: string; hint: string; stage?: "dev" }[] = [
+export const EXPERIMENTAL_FEATURES: readonly {
+  id: ExperimentalFeature;
+  label: string;
+  hint: string;
+  stage?: "dev";
+  /**
+   * An option of that feature (2026-11-15, the user: 给脉络单独加一个弹窗或者选项卡…我们开发中的有些东西可以先放在里面): listed
+   * on the feature's own page in 设置 → 测试功能 → 详细设置, not in the list; it counts only while the feature is on too
+   * (experimentalEnabled).
+   */
+  parent?: ExperimentalFeature;
+  /** What the feature has once it is on, with no switch of its own: said on its own page. */
+  has?: readonly { label: string; hint: string }[];
+}[] = [
   {
     id: "panorama",
     label: "全景",
@@ -263,10 +276,33 @@ export const EXPERIMENTAL_FEATURES: readonly { id: ExperimentalFeature; label: s
   {
     id: "tracks",
     label: "脉络",
-    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；现在做了第一块：任务页右边的侧栏（顶栏「侧栏」）最上面多一栏「还开着的事 / 已结束的事」，列出眼前这个会话经中转问了谁、等了多久，哪个子会话在跑，哪个审批在等你，点一条跳到对话里对应的位置。它是从 Studio 已有的记录里算出来的，不花模型的 token。AI 自己记「已定的事」、会话顶上的「对话 / 脉络」切换还没做。",
+    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；现在做了第一块（事项清单）。里面有什么、还有哪些开发中的选项可以单独打开，点「详细设置」看。",
     stage: "dev",
+    has: [
+      {
+        label: "事项清单",
+        hint: "任务页右边的侧栏（顶栏「侧栏」）最上面多一栏「还开着的事 / 已结束的事」：眼前这个会话经中转问了谁、等了多久，哪个子会话在跑，哪个审批、提问、决定在等你，还压着几条没送进去的消息；点一条跳到对话里对应的位置，或者去那个子会话。它是从 Studio 已有的记录里算出来的，不花模型的 token；你口头交代 AI 要做的事、谈定的结论现在还不会记在这里。",
+      },
+    ],
+  },
+  // 打字时不插队 (2026-11-15, plans/collab-framework.md): shipped on in 0.9.69; the same day the user: 「这个可以先去掉，
+  // 等我体验一段时间」 — off unless turned on, on 脉络's own page.
+  {
+    id: "typing-hold",
+    parent: "tracks",
+    stage: "dev",
+    label: "打字时不插队",
+    hint: "你在一个会话的输入框里打字时，别处送来的消息（子会话回报、中转回复、传话、留言）先不送进去：最近 5 分钟按过输入框就压着，等你发出下一条消息时排在它后面一起送；输入框清空了、或者 5 分钟没动，就照常送。关着时和以前一样：会话一空闲，来的消息马上送进去、AI 开始处理。",
   },
 ];
+
+/** Whether a feature being tried out is in effect: turned on, and — an option of another feature — that one on too. */
+export function experimentalEnabled(on: readonly ExperimentalFeature[] | undefined, id: ExperimentalFeature): boolean {
+  const list = on ?? [];
+  if (!list.includes(id)) return false;
+  const parent = EXPERIMENTAL_FEATURES.find((f) => f.id === id)?.parent;
+  return !parent || experimentalEnabled(list, parent);
+}
 
 /** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
 export interface StudioSettings {
@@ -786,7 +822,7 @@ export interface HostRoutes
   /**
    * 打字时不插队 (2026-11-15): the person touched this session's composer (`active`; said at most once a minute while
    * they type) or emptied it by hand (not `active`). For five minutes after a touch, what agents and Studio send into
-   * the session is held and goes in behind the person's next message.
+   * the session is held and goes in behind the person's next message. Only with 测试功能 脉络 → 「打字时不插队」 on; else nothing.
    */
   "POST /api/sessions/:id/typing": { req: { active: boolean }; res: { ok: true } };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */

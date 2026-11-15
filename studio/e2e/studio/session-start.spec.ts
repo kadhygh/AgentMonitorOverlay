@@ -59,7 +59,10 @@ for (const [profileId, other] of [["claude-mock", "codex-mock"], ["codex-mock", 
       await matter.click();
       await expect(report).toBeInViewport();
       await screenshot(studio.app, "studio", "matters-panel", page);
-      // 打字时不插队 (2026-11-15): while the person writes in the composer, what is forwarded here waits for their message.
+      // 打字时不插队 (2026-11-15; behind its own 测试功能 switch since the same day): while the person writes in the
+      // composer, what is forwarded here waits for their message.
+      await studio.api("PUT", "/api/settings", { experimentalFeatures: ["tracks", "typing-hold"] });
+      await page.waitForTimeout(500);
       await page.getByLabel("输入消息").pressSequentially("我先写一句");
       await page.waitForTimeout(500);
       const mail = await studio.api<{ id: string }>("POST", "/api/mail", { to: { kind: "session", sessionId: caller.id }, text: "打字时转来的留言" });
