@@ -276,12 +276,16 @@ export const EXPERIMENTAL_FEATURES: readonly {
   {
     id: "tracks",
     label: "脉络",
-    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；现在做了第一块（事项清单）。里面有什么、还有哪些开发中的选项可以单独打开，点「详细设置」看。",
+    hint: "一个会话里同时推进几件事时，把每条线做到哪、还欠什么、在等谁记在会话外面，上下文压缩了也不丢；现在做了两块（事项清单、脉络会话）。里面有什么、还有哪些开发中的选项可以单独打开，点「详细设置」看。",
     stage: "dev",
     has: [
       {
         label: "事项清单",
-        hint: "任务页右边的侧栏（顶栏「侧栏」）最上面多一栏「还开着的事 / 已结束的事」：眼前这个会话经中转问了谁、等了多久，哪个子会话在跑，哪个审批、提问、决定在等你，还压着几条没送进去的消息；点一条跳到对话里对应的位置，或者去那个子会话。它是从 Studio 已有的记录里算出来的，不花模型的 token；你口头交代 AI 要做的事、谈定的结论现在还不会记在这里。",
+        hint: "任务页右边的侧栏（顶栏「侧栏」）最上面多一栏「还开着的事 / 已结束的事」：眼前这个会话经中转问了谁、等了多久，哪个子会话在跑，哪个审批、提问、决定在等你，还压着几条没送进去的消息；点一条跳到对话里对应的位置，或者去那个子会话。它是从 Studio 已有的记录里算出来的，不花模型的 token；你口头交代 AI 要做的事、谈定的结论不在这一栏，在脉络会话的「要点」里。",
+      },
+      {
+        label: "脉络会话（楼）",
+        hint: "每个会话的对话上方多一行「对话 | 脉络」和一个「脉络会话」勾选框。点「脉络」：这个会话画成一栋楼，一轮一层，最新的在上面；它开的子会话是开出它那一层上的一块区域，回报是收到它那一层上的小卡，还没完的事（等你审批、子会话在跑、中转没回）在楼顶；点楼层右边显示那一轮，点卡片相关的楼层竖起来，「在对话里看这一轮」跳回对话。输入框一直在下面，照常发消息。勾上「脉络会话」：这个会话以后一打开就是楼，并且从你发的下一条消息起，AI 每轮结束时给这一轮写一行标题和一句结果、把你强调的事和谈定的结论记成「要点」（多花一点 token：每轮一次很短的工具调用）；没勾、或者勾之前的轮次，标题用对话里的话顶着。楼是每次打开时从会话记录现算的，旧会话也能看。",
       },
     ],
   },
@@ -825,6 +829,14 @@ export interface HostRoutes
    * the session is held and goes in behind the person's next message. Only with 测试功能 脉络 → 「打字时不插队」 on; else nothing.
    */
   "POST /api/sessions/:id/typing": { req: { active: boolean }; res: { ok: true } };
+  /**
+   * 脉络的楼 (2026-11-15, tower.ts): the session as a building, put together from its rows when asked for. PUT turns the
+   * session into a 脉络会话 (it opens as its building, and its AI is asked to title its rounds) or back.
+   */
+  "GET /api/sessions/:id/tracks": { req: void; res: import("./tower.js").TowerData };
+  "PUT /api/sessions/:id/tracks": { req: { on: boolean }; res: import("./tower.js").TowerData };
+  /** The sessions that are 脉络会话. */
+  "GET /api/tracks": { req: void; res: { on: Id[] } };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
   "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };
   /** 重新发送 a message its process never read (delivery `unsent`): the same item goes again. */
@@ -937,6 +949,8 @@ export type HostEvent = { seq: number } & (
   | { type: "teamsend.upserted"; send: import("./entities.js").TeamSend }
   /** The 中转 sessions this computer's sessions sent, all of them, when one changed. */
   | { type: "teamthreads.changed"; threads: import("./entities.js").TeamThread[] }
+  /** A session became a 脉络会话 or stopped being one, or its AI wrote a round's title or a point (track_note). */
+  | { type: "tracks.changed"; sessionId: Id; on: boolean }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

@@ -5,6 +5,7 @@ import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../../core/role.js";
+import { tracksHint } from "../../core/tracks.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
@@ -89,7 +90,10 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     }
     const images = this.images(attachments);
     if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
-    const update = this.roleUpdate(sessionId);
+    const role = this.roleUpdate(sessionId);
+    // 脉络会话 (2026-11-15): its AI is asked to title its rounds, once after it was turned on and after each compaction.
+    const tracks = experimentalEnabled(this.f.config.experimentalFeatures(), "tracks") ? tracksHint(this.store, sessionId) : null;
+    const update = { lines: [...role.lines, ...(tracks?.lines ?? [])], told: () => (role.told(), tracks?.told()) };
     // 2026-11-05: a message the person sent right after 停止 (a DSH session) never came back and left no trace; the
     // composer had already cleared it. One that fails, or is still on its way after SLOW_SEND_MS, is written to host.log.
     const started = Date.now();

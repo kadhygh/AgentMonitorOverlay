@@ -41,6 +41,7 @@ import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { MattersPanel } from "../tracks/MattersPanel.js";
+import { TowerSwitch, TowerView, useTracksOn } from "../tracks/TowerView.js";
 import { experimentalOn } from "../lib/features.js";
 import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
@@ -153,6 +154,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // 会话里用中转 (2026-10-30): what its sessions ask to send through 中转, and whom they wait on there.
   const teamSends = useTeamSends(link);
   const teamThreads = useTeamThreads(link);
+  // 脉络的楼 (2026-11-15, behind 测试功能「脉络」): a 脉络会话 opens as its building; the switch above the conversation goes
+  // to the other view for now (kept per session while the page is open). Not for a remote task's copy.
+  const tracksEnabled = experimentalOn(settings?.experimentalFeatures, "tracks") && !copy;
+  const tracksOn = useTracksOn(link, tracksEnabled);
+  const [towerPick, setTowerPick] = useState<Record<string, boolean>>({});
+  const showTower = !!session && tracksEnabled && (towerPick[session.id] ?? tracksOn.has(session.id));
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -307,6 +314,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     }
     scrollToBox(row, () => row.getBoundingClientRect());
     flash(row);
+  }
+
+  /** From the building: 「在对话里看这一轮」 (a row of this session) or 「打开子会话」 (another session, maybe a row of it). */
+  function openFromTower(target: { sessionId?: string; itemId?: string }) {
+    const to = target.sessionId && target.sessionId !== session?.id ? target.sessionId : null;
+    if (to) setSelected(to);
+    else if (session) setTowerPick((cur) => ({ ...cur, [session.id]: false }));
+    // The conversation is drawn (or the other session loaded) a moment later: look for the row then.
+    if (target.itemId) window.setTimeout(() => revealRow(target.itemId!, 12), to ? 400 : 60);
   }
 
   /** Scrolls to a bookmarked passage and flashes just its text (its block, where highlights are not available). */
@@ -717,6 +733,19 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
           )}
           {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
+          {session && tracksEnabled && (
+            <TowerSwitch
+              tower={showTower}
+              on={tracksOn.has(session.id)}
+              onView={(tower) => setTowerPick((cur) => ({ ...cur, [session.id]: tower }))}
+              onToggle={(on) =>
+                void run(
+                  () => call(link, "PUT /api/sessions/:id/tracks", { id: session.id }, { on }),
+                  () => setTowerPick((cur) => ({ ...cur, [session.id]: on })),
+                )
+              }
+            />
+          )}
           <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError} {...(copy ? { remoteTask: task.id } : {})}>
             <Thread
               link={link}
@@ -741,6 +770,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDelivery={deliver}
               {...(sendNowOff ? { sendNowOff } : {})}
               typingHold={experimentalOn(settings?.experimentalFeatures, "typing-hold")}
+              {...(showTower && session ? { cover: <TowerView key={session.id} link={link} sessionId={session.id} onOpen={openFromTower} /> } : {})}
               {...(forkSessionId ? { onFork: forkTurn, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}

@@ -35,6 +35,7 @@ import { RelaysFeature } from "./features/relays/service.js";
 import { TeamRelayFeature } from "./features/teamrelay/service.js";
 import { IssuesFeature } from "./features/issues/service.js";
 import { DutyFeature } from "./features/duty/service.js";
+import { TracksFeature } from "./features/tracks/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
@@ -99,6 +100,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly issues: IssuesFeature = new IssuesFeature(this);
   /** 值守 (2026-10-31): items that start a session, run a command or one of Studio's jobs at set times. */
   readonly duty: DutyFeature = new DutyFeature(this);
+  readonly tracks: TracksFeature = new TracksFeature(this);
   /** The runtimes of this computer, plus "remote" for copies of tasks paired devices granted it (远程 step 2). */
   readonly runtime: SessionRuntimeApi;
 

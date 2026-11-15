@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, SubsessionSetup, Task, Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
@@ -98,6 +98,8 @@ interface ThreadProps {
   sendNowOff?: string;
   /** 测试功能 「打字时不插队」 is on (2026-11-15): the composer tells the Host when it is written in. */
   typingHold?: boolean;
+  /** Shown over the conversation, in its place (脉络的楼, 2026-11-15); the composer stays under it. */
+  cover?: ReactNode;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -121,7 +123,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, cover, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -540,7 +542,12 @@ ${d}` : back));
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
         <ReplyNav scroller={scroller} itemCount={items.length} />
         {/* Ctrl+F finds in the conversation on the page (folded steps are not searched). */}
-        <FindBar active={!!session} container={scroller} within=".thread-inner" />
+        <FindBar active={!!session && !cover} container={scroller} within=".thread-inner" />
+        {cover && (
+          <div className="thread-cover" data-testid="thread-cover">
+            {cover}
+          </div>
+        )}
         <div
           className="thread"
           data-testid="thread"

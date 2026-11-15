@@ -1,0 +1,138 @@
+/* 脉络的楼（tower.html，2026-11-15）：从原型 v7 的样式改来。颜色不自带，用 Studio 的主题（styles/base.css 的变量，
+   跟着浅色 / 深色走）；这里只把原型用的名字对到 Studio 的变量上。 */
+:root {
+  --surface: var(--panel);
+  --surface-2: var(--panel-raised);
+  --line: var(--border);
+  --text-2: var(--text-dim);
+  --text-3: var(--text-faint);
+  /* 等你 = Studio 里「要人处理」的颜色；子会话、AI 在做 = 主色；等别人单独一个颜色；做完 = 绿 */
+  --accent: var(--attention);
+  --accent-fill: var(--primary);
+  --accent-soft: var(--tint);
+  --good: var(--running);
+  --crit: var(--error);
+  --neutral: var(--muted-dot);
+  --s2: var(--primary);
+  --s3: #5cc9b8;
+  --sans: var(--font-ui);
+  --serif: var(--font-display);
+  --mono: var(--font-code);
+  --scene-bg: var(--bg);
+  --slab: var(--panel);
+  --slab-side: var(--border);
+  --card: var(--panel-raised);
+  --rail: var(--panel);
+  --tip-bg: var(--menu-bg);
+  --tip-fg: var(--text);
+  --radius: 4px;
+}
+:root[data-theme="light"] { --s3: #2f7d73; --card: #ffffff; --slab: #fbfaf7; --slab-side: #ddd7ca; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]):not([data-theme="light"]) { --s3: #2f7d73; --card: #ffffff; --slab: #fbfaf7; --slab-side: #ddd7ca; } }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100vh; }
+.bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--text-2); flex: none; position: relative; z-index: 3; white-space: nowrap; }
+.brand { font-weight: 700; color: var(--text); font-size: 13px; }
+.crumb { color: var(--text); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sp { flex: 1; }
+.lbl { color: var(--text-3); font-size: 12px; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: var(--radius); padding: 2px; gap: 2px; flex: none; }
+.seg button { border: 0; background: transparent; color: var(--text-2); padding: 3px 10px; border-radius: 3px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px var(--shadow-soft); }
+.tbtn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text-2); padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.tbtn:hover, .tbtn.on { color: var(--text); border-color: var(--accent-fill); }
+.proto { font-size: 11px; color: var(--text-3); border: 1px dashed var(--line); border-radius: 3px; padding: 0 6px; }
+.ed { flex: 1; min-height: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr) 330px; position: relative; }
+.ed.noside { grid-template-columns: 52px minmax(0, 1fr); }
+.ed.noside #side { display: none; }
+#scenewrap { position: relative; min-width: 0; background: var(--scene-bg); overflow: hidden; }
+#scene { width: 100%; height: 100%; display: block; outline: none; }
+/* 电梯：左边一列楼层按钮，最新的在上面，楼高了就滚；点表示那层有事 */
+.rail { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border-right: 1px solid var(--line); padding: 6px 5px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.rail::-webkit-scrollbar { display: none; }
+.rail .cap { font: 600 10.5px var(--sans); color: var(--text-3); text-align: center; margin-bottom: 4px; letter-spacing: 0.05em; flex: none; }
+.rail button { position: relative; width: 40px; height: 22px; flex: none; border: 0; border-radius: 3px; background: transparent; color: var(--text-2); font: 600 11.5px var(--mono); cursor: pointer; }
+.rail button:hover { background: var(--surface-2); color: var(--text); }
+.rail button.on { background: var(--accent-fill); color: var(--on-primary); }
+.rail button.roof { font-family: var(--sans); }
+.rail .d { position: absolute; right: 3px; top: 4px; width: 6px; height: 6px; border-radius: 50%; }
+.rail .d.you { background: var(--accent); }
+.rail .d.other { background: var(--s3); }
+.help { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; color: var(--text-3); background: color-mix(in srgb, var(--surface) 82%, transparent); padding: 3px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; border: 1px solid var(--line); }
+.legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: calc(100% - 150px); font-size: 11.5px; color: var(--text-2); background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--line); pointer-events: none; }
+.legend b { margin-right: 3px; }
+#empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; }
+/* 右边：这一轮 / 这张卡 / 概览 */
+#side { background: var(--surface); overflow: auto; min-height: 0; border-left: 1px solid var(--line); position: relative; }
+#sideClose { position: absolute; right: 8px; top: 8px; border: 0; background: transparent; color: var(--text-3); font-size: 16px; line-height: 1; cursor: pointer; padding: 4px 6px; }
+#sideClose:hover { color: var(--text); }
+.ib { padding: 14px 16px 28px; font-size: 13px; line-height: 1.7; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11px var(--sans); letter-spacing: 0.03em; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); max-width: calc(100% - 28px); }
+.chip.sess { background: color-mix(in srgb, var(--s2) 14%, transparent); color: var(--s2); }
+.chip.you { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.chip.other { background: color-mix(in srgb, var(--s3) 16%, transparent); color: var(--s3); }
+.ib h3 { font-family: var(--serif); font-size: 18px; line-height: 1.4; margin: 10px 0 4px; overflow-wrap: anywhere; }
+.ib .desc { color: var(--text-2); margin: 0 0 10px; overflow-wrap: anywhere; }
+.ib h4 { font: 600 11px var(--sans); letter-spacing: 0.06em; color: var(--text-3); margin: 18px 0 6px; }
+.ib .act { margin-top: 16px; }
+.meta { font-size: 12px; color: var(--text-3); margin: 4px 0; }
+.todo { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.todo li { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12.5px; overflow-wrap: anywhere; }
+.todo li:first-child { border-top: 0; }
+.todo.pts li[data-f]:not([data-f=""]) { cursor: pointer; }
+.todo.pts li[data-f]:not([data-f=""]):hover { background: var(--surface-2); }
+.todo em { font-style: normal; color: var(--text-3); font-size: 11.5px; margin-left: 4px; }
+.todo .g { font-weight: 700; width: 14px; text-align: center; flex: none; }
+.g.you { color: var(--accent); }
+.g.other { color: var(--s3); }
+.g.ai { color: var(--s2); }
+.g.done { color: var(--good); }
+.g.inter { color: var(--accent); }
+.qa { border-radius: var(--radius); padding: 8px 11px; margin: 8px 0; font-size: 13px; background: var(--surface-2); overflow-wrap: anywhere; max-height: 46vh; overflow-y: auto; }
+.qa .who { display: block; font: 600 11px var(--sans); color: var(--text-3); }
+.qa.you { background: var(--accent-soft); }
+.qa p { margin: 2px 0; }
+details.work { margin: 6px 0; font-size: 12.5px; color: var(--text-2); }
+details.work summary { cursor: pointer; color: var(--text-3); }
+details.work > div { padding: 1px 0 1px 10px; overflow-wrap: anywhere; }
+details.work .todo { margin-top: 6px; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent-fill); }
+.btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-primary); font-weight: 600; }
+.cards { display: flex; flex-direction: column; gap: 8px; }
+.ocard { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 11px; cursor: pointer; background: var(--surface); overflow-wrap: anywhere; }
+.ocard:hover { border-color: var(--accent-fill); }
+.ocard .t { font-weight: 600; font-size: 13px; }
+.ocard .s { font-size: 12px; color: var(--text-3); }
+.ocard.you { border-left: 3px solid var(--accent); }
+.ocard.other { border-left: 3px solid var(--s3); }
+.ocard.ai { border-left: 3px solid var(--s2); }
+.ocard.inter { border-left: 3px dashed var(--accent); }
+code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 0 4px; border-radius: 3px; }
+#signs { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sign { position: absolute; left: 0; top: 0; pointer-events: auto; display: flex; align-items: center; gap: 9px; padding: 7px 16px 7px 8px; border: 0; border-radius: 6px; background: var(--sc); color: #fff; font: inherit; text-align: left; cursor: pointer; box-shadow: 0 4px 14px var(--shadow-soft); transform-origin: 50% 100%; white-space: nowrap; }
+.sign::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: var(--sc); }
+.sign i { width: 26px; height: 26px; border-radius: 50%; background: rgba(255, 255, 255, 0.24); display: grid; place-items: center; font-style: normal; font-weight: 900; font-size: 15px; flex: none; }
+.sign b { display: block; font-size: 15px; line-height: 1.25; }
+.sign em { display: block; font-style: normal; font-size: 11.5px; opacity: 0.9; line-height: 1.3; }
+.sign.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--sc), 0 6px 18px var(--shadow-soft); }
+/* 立面竖线上的图钉：圆点里写是谁（A / B / C）或状态（! ◐ ↩ ✓ ?），旁边可以带一小段字 */
+.pin { position: absolute; left: 0; top: 0; pointer-events: auto; display: flex; align-items: center; gap: 0; padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; transform-origin: 11px 50%; white-space: nowrap; }
+.pin i { width: 22px; height: 22px; border-radius: 50%; background: var(--pc); color: var(--pi, #fff); display: grid; place-items: center; font-style: normal; font: 800 12px var(--sans); box-shadow: 0 0 0 2px var(--surface), 0 1px 4px var(--shadow-soft); flex: none; }
+.pin span { margin-left: -6px; padding: 2px 9px 2px 12px; border-radius: 0 999px 999px 0; background: var(--surface); border: 1px solid var(--pc); border-left: 0; color: var(--text); font: 600 12px var(--sans); line-height: 16px; box-shadow: 0 1px 4px var(--shadow-soft); position: relative; z-index: -1; }
+.pin.on i, .pin:hover i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--pc); }
+.cmp { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; font: 700 12px var(--sans); color: var(--crit); background: var(--surface); border: 1px dashed var(--crit); border-radius: 999px; padding: 1px 10px; line-height: 17px; transform-origin: 50% 50%; }
+#gizmo { position: absolute; right: 6px; top: 6px; width: 120px; height: 130px; cursor: pointer; }
+#tip { position: absolute; z-index: 4; pointer-events: none; background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--line); font-size: 12px; padding: 3px 9px; border-radius: var(--radius); max-width: 460px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#vbar { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 8px 5px 14px; box-shadow: 0 6px 20px var(--shadow-soft); font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+#vbar .vt { font-weight: 700; color: var(--text); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.chk input { accent-color: var(--accent-fill); margin: 0; }
+.hidden { display: none !important; }
+/* 窄的时候（会话区不宽）：右边栏盖在场景上，不把场景挤没 */
+@media (max-width: 900px) {
+  .ed, .ed.noside { grid-template-columns: 52px minmax(0, 1fr); }
+  #side { position: absolute; right: 0; top: 0; bottom: 0; width: min(330px, calc(100% - 70px)); box-shadow: -8px 0 24px var(--shadow-soft); z-index: 5; }
+  .help { display: none; }
+}

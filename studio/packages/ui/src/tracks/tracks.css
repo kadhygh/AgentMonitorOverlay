@@ -1,3 +1,17 @@
+/* 脉络的楼 (2026-11-15): the switch above a session's conversation, and the building over the conversation (Thread's
+   cover; the composer stays under it). The building itself is tower.html in the iframe, with its own styles. */
+.tower-switch { flex: none; display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--divider); font-size: 12.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
+.tower-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--r-l); background: var(--chip); }
+.tower-seg button { border: 0; background: transparent; color: var(--text-dim); font: inherit; padding: 2px 12px; border-radius: var(--r-m); cursor: pointer; }
+.tower-seg button[aria-selected="true"] { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px var(--shadow-soft); }
+.tower-on { display: inline-flex; align-items: center; gap: 5px; color: var(--text); cursor: pointer; }
+.tower-on input { margin: 0; accent-color: var(--primary); }
+.tower-hint { overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
+.thread-cover { position: absolute; inset: 0; z-index: 6; display: flex; background: var(--bg); }
+.tower-view { position: relative; flex: 1; min-width: 0; display: flex; }
+.tower-view iframe { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
+.tower-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); font-size: 13px; pointer-events: none; }
+
 /* 事项清单 (2026-11-15, plans/collab-framework.md): in the task page's right column, above 留言 and 批注. A matter is a
    row to click: its mark (never colour alone), what it is, where it stands. */
 .matters-panel { gap: 6px; }

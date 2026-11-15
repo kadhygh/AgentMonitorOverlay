@@ -243,6 +243,32 @@
       "next": ["studio/plans/collab-framework.md", "studio/plans/tracks.md", "studio/plans/review-progress.md"]
     },
     {
+      "id": "studio.tracksTower",
+      "label": "脉络会话：把一个会话画成楼",
+      "aliases": ["脉络会话", "楼", "楼板", "tower", "TowerView", "TowerData", "track_note", "要点", "v7", "three.js", "tower.html", "脉络", "tracks"],
+      "category": "host",
+      "purpose": "测试功能「脉络」开着时，会话的对话上方有「对话 | 脉络」和「脉络会话」勾选。脉络视图是一栋楼：一轮一层、子会话是开出它那层上的区域、回报是小卡、没完的事在楼顶。楼不存：Host 每次从会话的行现算（TowerData）；只有会话是不是脉络会话、AI 用 track_note 写的每轮标题和要点存在 kv `tracks:<会话 id>`。勾上后随人的下一条消息告诉 AI 一次，每次压缩后再告诉一次。楼的页面是单独的 tower.html（three.js，原型 v7 的绘制代码改的），在 iframe 里，和外面的页面用 postMessage 传数据和「去对话里看」。",
+      "steps": [
+        "楼上多显示一种东西：protocol/src/tower.ts 的 TowerData 加字段，host 的 features/tracks/tower.ts 的 buildTower 里从行或会话里算出来（tracks.test.ts 写上），ui/src/tracks/tower/main.js 的 buildNodes 里变成卡片或线。",
+        "改一轮怎么切、没有 AI 标题时用什么顶：features/tracks/tower.ts 的 splitRounds 和 word。",
+        "改告诉 AI 的话或时机：core/tracks.ts 的 tracksHint（sessions/service.ts 的 sendMessage 把它接在「AMO 更新」后面）；工具说明在 features/tracks/mcp.ts。",
+        "改楼的画法、摆放、右边栏：ui/src/tracks/tower/main.js（纯 JS，不过类型检查）和 tower.css；改完 npm run build 后用 e2e/studio/tower.spec.ts 出截图看。",
+        "会话页上的切换和勾选：ui/src/tracks/TowerView.tsx 的 TowerSwitch，task/TaskPage.tsx 里的 showTower；楼盖在对话上靠 Thread 的 cover。"
+      ],
+      "anchors": [
+        { "label": "楼的数据形状", "path": "studio/packages/protocol/src/tower.ts", "anchor": "export interface TowerData" },
+        { "label": "从会话的行算出楼", "path": "studio/packages/host/src/features/tracks/tower.ts", "anchor": "export function buildTower" },
+        { "label": "切轮", "path": "studio/packages/host/src/features/tracks/tower.ts", "anchor": "export function splitRounds" },
+        { "label": "开关、track_note", "path": "studio/packages/host/src/features/tracks/service.ts", "anchor": "export class TracksFeature" },
+        { "label": "存什么、什么时候告诉 AI", "path": "studio/packages/host/src/core/tracks.ts", "anchor": "export function tracksHint" },
+        { "label": "会话里的楼和切换", "path": "studio/packages/ui/src/tracks/TowerView.tsx", "anchor": "export function TowerView" },
+        { "label": "楼的绘制（iframe 里那一页）", "path": "studio/packages/ui/src/tracks/tower/main.js", "anchor": "function buildNodes()" },
+        { "label": "端到端", "path": "studio/e2e/studio/tower.spec.ts", "anchor": "a 脉络会话 opens as its building" }
+      ],
+      "related": ["studio.collabFramework", "studio.sessions", "ui.chat"],
+      "next": ["studio/plans/tracks.md", "studio/plans/collab-framework.md"]
+    },
+    {
       "id": "studio.duty",
       "label": "值守（定时命令和定时会话）",
       "aliases": ["duty", "值守", "DutyFeature", "duty_save", "自动打包", "日常值守", "检查", "builtin check"],

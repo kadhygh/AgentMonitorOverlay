@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>脉络</title>
+  </head>
+  <body>
+    <!-- 脉络的楼：放在会话里的 iframe 里（src/tracks/TowerView.tsx），数据由外面的页面发进来。 -->
+    <div class="app">
+      <header class="bar">
+        <span class="brand">脉络</span>
+        <span class="crumb" id="crumb"></span>
+        <span class="proto">测试功能</span>
+        <span class="sp"></span>
+        <label class="chk" title="选中卡片或区域时，相关的楼层竖起来正对你"><input type="checkbox" id="autoV" checked />选中后竖起来</label>
+        <button class="tbtn" id="resetCam" title="镜头回到最上面几层">回到楼顶</button>
+        <button class="tbtn" id="sideBtn" title="右边栏：要点、楼顶的事、子会话；选中楼层或卡片时显示它的内容">右边栏</button>
+      </header>
+      <main class="ed">
+        <nav class="rail" id="rail" aria-label="楼层"></nav>
+        <section id="scenewrap">
+          <canvas id="scene" tabindex="0" aria-label="脉络三维图"></canvas>
+          <div id="signs"></div>
+          <canvas id="gizmo" aria-label="坐标轴"></canvas>
+          <div id="tip" class="hidden"></div>
+          <div id="vbar" class="hidden">
+            <span class="vt"></span><span class="lbl">其他楼层</span>
+            <div class="seg"><button data-o="semi">半透明</button><button data-o="hide">隐藏</button></div>
+            <button class="tbtn" id="vback" title="Esc">回到楼里</button>
+          </div>
+          <div class="legend">
+            <span><b style="color: var(--accent)">!</b>等你</span><span><b style="color: var(--s3)">◐</b>等别人</span><span><b style="color: var(--s2)">○</b>AI 在做</span><span><b style="color: var(--good)">✓</b>做完</span>
+            <span><b style="color: var(--s2)">┃</b>正面的竖线 = 一件事：通到楼顶还开着，断在半路做完了</span>
+          </div>
+          <div class="help">点楼层 看那一轮 · 点卡片、区域或线上的图钉 竖起来看 · 双击卡片 去对话里看 · <b>Alt</b>+左键 环绕 · 中键 平移 · 滚轮 缩放 · <b>↑ ↓</b> 换层</div>
+          <div id="empty" class="hidden">这个会话还没有内容。</div>
+        </section>
+        <aside id="side">
+          <button id="sideClose" title="收起右边栏">×</button>
+          <div id="sideBody" class="ib"></div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="./src/tracks/tower/main.js"></script>
+  </body>
+</html>

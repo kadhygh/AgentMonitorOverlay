@@ -17,7 +17,8 @@
     "@shikijs/langs": "4.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "shiki": "4.4.3"
+    "shiki": "4.4.3",
+    "three": "0.187.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",
