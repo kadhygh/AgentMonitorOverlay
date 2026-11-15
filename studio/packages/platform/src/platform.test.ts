@@ -510,8 +510,12 @@ describe("launch and the machine", () => {
     await platform.install("studio");
     // 2026-11-05 自动打包（Studio 0.9.43）里这条两次都失败在下面的 card().studio 上（card() 是 undefined），单独跑、全量重跑都过：
     // 登录或取频道没成功时工具列表是空的。先把它们说出来，下次失败能看出是哪一步。
+    // 2026-11-15 自动打包（Studio 0.9.72）里它又两次都失败了，但问题页只留错误的第一行，vitest 把对象缩成「{ …(4) }」，还是看不出是哪一步：
+    // 把实际的值（连同连接和安装的提示）放进断言的说明里，它在第一行。
     const before = platform.view();
-    expect({ loginError: before.loginError, connection: before.connection.state, tools: before.tools.map((t) => t.id), installed: before.tools.find((t) => t.id === "studio")?.installed }).toEqual({ loginError: null, connection: "online", tools: expect.arrayContaining(["studio"]), installed: "0.9.0" });
+    const studioTool = before.tools.find((t) => t.id === "studio");
+    const seen = { loginError: before.loginError, connection: before.connection, tools: before.tools.map((t) => t.id), installed: studioTool?.installed, result: studioTool?.result ?? null };
+    expect({ loginError: before.loginError, connection: before.connection.state, tools: before.tools.map((t) => t.id), installed: studioTool?.installed }, `登录、安装之后：${JSON.stringify(seen)}`).toEqual({ loginError: null, connection: "online", tools: expect.arrayContaining(["studio"]), installed: "0.9.0" });
     const card = () => platform.view().tools.find((t) => t.id === "studio")!;
     // No data dir: nothing to ask.
     expect(card().studio).toEqual({ hostUp: false, sessions: null, version: null, restart: "none", restarting: false });

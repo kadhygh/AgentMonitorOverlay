@@ -1,6 +1,6 @@
 # 带过来的小问题（阶段 8 之后）
 
-> 状态：进行中（长期记录：看过、定了怎么处理的遗留小问题，最近一条 2026-11-06）。还开着的：`platform.test.ts` 那条偶发失败加了诊断，等它再出现时照诊断改。每次出现的时间、提交号、重跑的文件数和用例数 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。原来文末的「暂缓（用户 2026-10-13 决定）」两项也删了：旧 AMO 部署在工程里的 Hook 10-23 随旧 AMO 一起清掉（`plans/done/remove-old-amo.md`）；Portable 包改成随发布打（`plans/release.md`）。
+> 状态：进行中（长期记录：看过、定了怎么处理的遗留小问题，最近一条 2026-11-06）。还开着的：`platform.test.ts` 那条偶发失败加了诊断（2026-11-15 又出现一次，诊断改成把实际值放在第一行），等它再出现时照诊断改。每次出现的时间、提交号、重跑的文件数和用例数 2026-11-06 删掉了，原文见 git 历史（提交 f46907f2 之前的版本）。原来文末的「暂缓（用户 2026-10-13 决定）」两项也删了：旧 AMO 部署在工程里的 Hook 10-23 随旧 AMO 一起清掉（`plans/done/remove-old-amo.md`）；Portable 包改成随发布打（`plans/release.md`）。
 
 | 问题 | 原因 | 处理 |
 |---|---|---|
@@ -14,6 +14,7 @@
 | 自动打包单测失败（Studio 0.9.49，master bb402b52，2026-11-06）：Claude 的「waits for the person on a command」、DSH 的「停止 stops a DSH goal…（问题 #13）」超时，`cli-features`、`codex-runtime` 两个集成测试文件的 `afterAll` 超过 10 秒 | 那一轮单测跑了 312 秒（平时 85～240 秒），机器忙：前两条单独重跑能过，是负载下的超时（`--retry=1` 两次都没赶上）。两个 `afterAll` 是关真进程：`closeAll` 等这个文件开的每个 Claude CLI 进程退出，Codex 那边依次停每个 Host 的 app-server（每个最多等 5 秒）；`cli-features` 的那个在机器空闲时全量跑也超了一次，而 hook 超时不吃 `--retry` | **已改**：这两个 `afterAll` 的时限放到 60 秒（和第 10 行 `server-manager` 一样），之后照打包的命令全量跑通过。另：值守目录 sync 后没先 typecheck，DSH 的「subagent」用例会因为旧的 testkit dist 每次超时（同第 13 行） |
 | 自动打包单测失败（Studio 0.9.51，master 67078c48，2026-11-07）：`kv-keys.test.ts`「lists every key the Host uses」说 `llm-deepseek (runtime/dsh/install.ts)` 没列进 kv 表（0.9.40 那次也是这条用例） | 不是偶发：这条用例把名字里带 `KEY` 的字符串常量都当成 kv 键，67078c48 新加的 `DSH_KEY_PLUGIN = "llm-deepseek"` 是 DSH 的插件名，不是 kv 键。那次提交只跑了 DSH 的单测 | **已改**：`llm-deepseek` 加进用例的 `NOT_KV`。以后加名字带 `KEY` 的常量又不是 kv 键的，同样加进去（或者改名不带 `KEY`）；改 Host 的提交顺手跑一下 `packages/host/src/store/kv-keys.test.ts` |
 | 自动打包单测失败：`platform.test.ts` 的「the Studio card … 重启 Studio」`TypeError: Cannot read properties of undefined (reading 'studio')`（2026-11-05，`--retry=1` 两次都失败） | 单独跑、照打包的命令全量跑都过。读 `.studio` 出错的是测试里的 `card()`：工具列表里没有 studio，只会是登录或取频道没成功（假服务器走真的 `fetch`，登录超时 10 秒），机器忙时可能。平台代码里读 `.studio` 的地方都有保护 | **记录 + 加了诊断**：这条用例在登录、安装之后先断言 `loginError`、连接状态、工具列表和装好的版本，下次再失败能直接看出是哪一步。再出现时照那一步改（比如这个用例的假服务器换成本地的 fetch 替身） |
+| 同一条又失败（Studio 0.9.72，master 167f32cd，2026-11-15，`--retry=1` 两次都失败）：诊断断言 `expected { …(4) } to deeply equal { loginError: null, …(3) }` | 诊断触发了，但问题页只留错误的第一行，vitest 把对象缩成了 `{ …(4) }`，还是看不出是登录、连接还是安装没成。值守目录里单独跑、照打包的命令全量跑（1416 条）都过 | **改了诊断**：实际的值（连接的提示、安装的结果文字）写进断言的说明，失败时在第一行。再出现时照那一步改 |
 | 自动打包停在「提交版本」（Studio 0.9.53，master 46c38ca7，2026-11-09）：`Your local changes to the following files would be overwritten by merge: studio/packages/app/CHANGELOG.md` | 不是代码的问题：发布提交要在主工作区 fast-forward 进 master，主工作区里有个会话往 `app/CHANGELOG.md`「下一版」写了几条、还没提交，git 拒绝覆盖。测试白跑了一遍，还叫来了值守 | **已改**：`auto --if-due` 开跑前先看主工作区里这次发布要改的文件（各工具的 `CHANGELOG.md`、`package.json`、`package-lock.json`）有没有没提交的改动，有就打一行「等主工作区提交：…」跳过，不跑测试也不算失败；那个会话提交后 master 一动就照常发。主工作区一直不提交，就一直不发（`release -- status` 看「下一版」条数） |
 
 偶发失败的通用处理：在问题页点「发布打包」重试，或者等 master 下次变动时自动打包自己再试；同一条反复出现再查。
