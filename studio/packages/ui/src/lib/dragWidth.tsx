@@ -16,6 +16,15 @@ export function useDragWidth(key: string, def: number, min: number, max: number,
   const start = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    // The pointer is the handle's until it is let go (2026-11-16, the user: 脉络开启之后，如果我拖拽 sessionlist 的宽度，会
+    // 卡住): over an iframe — the building beside the session list, an HTML viewer — its moves went to that page and
+    // never reached the window's listeners, so the column stopped following. shell.css also takes iframes out of the
+    // pointer's way while a column is dragged.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // a pointer already gone: the window's listeners below still work outside iframes
+    }
     const startX = e.clientX;
     const startW = width;
     let w = startW;

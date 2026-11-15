@@ -41,7 +41,7 @@ import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { MattersPanel } from "../tracks/MattersPanel.js";
-import { TowerSwitch, TowerView, useTracksOn } from "../tracks/TowerView.js";
+import { rememberedPopupBox, rememberPopupBox, TowerPopupHead, TowerSwitch, TowerView, useTracksOn, type PopupBox, type TowerPickTarget } from "../tracks/TowerView.js";
 import { experimentalOn } from "../lib/features.js";
 import type { ReadPlace } from "./readPlace.js";
 import { copyStatus, grantsOf, useRemote } from "../remote/remote.js";
@@ -104,12 +104,22 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   }, [selected, own]);
 
   const session = own.find((s) => s.id === selected) ?? null;
-  // The session looked at here, for coming back to this task after a restart (shell/lastPlace).
+  // 会话弹窗 (2026-11-16, the user: 点击某个卡片时，不要用侧边栏展示应该改成会话弹窗。弹窗开启时，下面的输入栏先隐藏，且输入栏的
+  // 内容也展示到弹窗里。弹窗应该能拖动，能 pin。弹窗也能加批注。): a card picked in the building opens that session's
+  // conversation over it, in the page's one Thread. A card of a session the building's session started selects that one
+  // (the conversation, the composer, annotations all follow `selected`) while the building stays its starter's
+  // (`towerFor`); the head and the 对话 | 脉络 row stay the building's too. It holds only while `selected` is the session
+  // it shows: picking another session anywhere else (the list, a jump) leaves it behind, and it is put away below.
+  const [popup, setPopup] = useState<(TowerPickTarget & { towerFor: string; pinned: boolean }) | null>(null);
+  const livePopup = popup && session && popup.sessionId === session.id ? popup : null;
+  const towerSession = (livePopup && own.find((s) => s.id === livePopup.towerFor)) || session;
+  // The session looked at here, for coming back to this task after a restart (shell/lastPlace): the building's, while a
+  // session it started is in the 会话弹窗.
   useEffect(() => {
-    if (session) rememberSession(task.id, session.id);
+    if (towerSession) rememberSession(task.id, towerSession.id);
     // 后退 / 前进: another session of this task is another place.
-    if (session) navHistory.pickSession(task.id, session.id);
-  }, [task.id, session?.id]);
+    if (towerSession) navHistory.pickSession(task.id, towerSession.id);
+  }, [task.id, towerSession?.id]);
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
   const allAnnotations = useAnnotations(link, session?.id ?? null);
@@ -122,6 +132,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // The model by name ("GPT-6.1 Sol", "Opus 5.5"), also when it is the profile's default.
   const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);
   const modelText = session ? sessionModelName(sessionChoices, session.options) : null;
+  // …and the building's, for the head while a session it started is in the 会话弹窗.
+  const { choices: headChoices } = useProfileChoices(link, towerSession?.profileId);
+  const headModelText = towerSession ? sessionModelName(towerSession === session ? sessionChoices : headChoices, towerSession.options) : null;
   const profile = (id: string) => profiles.find((p) => p.id === id);
   // 远程 (step 2, 2026-10-29): a copy of a task another computer granted this one (it runs there: no Git Review,
   // terminal, files or changes to the task here), or a task of this computer granted to other devices.
@@ -162,7 +175,18 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const tracksOff = copy && !task.remote?.kinds?.includes(REMOTE_KINDS.tracks) ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE} 或更新的版本，才能在这台电脑上看这个会话的脉络` : undefined;
   const tracksOn = useTracksOn(link, tracksEnabled);
   const [towerPick, setTowerPick] = useState<Record<string, boolean>>({});
-  const showTower = !!session && tracksEnabled && !tracksOff && (towerPick[session.id] ?? tracksOn.has(session.id));
+  const showTower = !!towerSession && tracksEnabled && !tracksOff && (towerPick[towerSession.id] ?? tracksOn.has(towerSession.id));
+  const popupOpen = !!livePopup && showTower;
+  // Put away once it no longer holds (another session picked, the building gone): no window left hanging.
+  useEffect(() => {
+    if (popup && !popupOpen) setPopup(null);
+  }, [popup, popupOpen]);
+  // Where it is, kept while the page is open (TowerView's rememberedPopupBox).
+  const [popupBox, setPopupBoxState] = useState<PopupBox | null>(rememberedPopupBox);
+  const setPopupBox = (box: PopupBox) => {
+    rememberPopupBox(box);
+    setPopupBoxState(box);
+  };
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -255,7 +279,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [forking, setForking] = useState<{ sessionId: string; turnId?: string } | null>(null);
   // 远程分支 (2026-11-12, the user: 远控模式下也能开分支): a copy's session is forked on the computer it runs on, as its
   // runtime there allows (an older one does not say it, nor fork: 分支 is greyed with what to update).
-  const forkRuntime = session?.runtime === "remote" ? task.remote?.profiles.find((p) => p.id === session.profileId)?.runtime : session?.runtime;
+  const runtimeOf = (s: Session | null) => (s?.runtime === "remote" ? task.remote?.profiles.find((p) => p.id === s.profileId)?.runtime : s?.runtime);
+  const forkRuntime = runtimeOf(session);
   const forkOff = copy && !task.remote?.fork ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支` : undefined;
   // 立即发送 likewise (2026-11-12): before, its command never got through the relay; an older one never heard it.
   const sendNowOff = copy && !task.remote?.sendNow ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_SEND_NOW_SINCE} 或更新的版本，才能从这台电脑立即发送` : undefined;
@@ -321,12 +346,57 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
 
   /** From the building: 「在对话里看这一轮」 (a row of this session) or 「打开子会话」 (another session, maybe a row of it). */
   function openFromTower(target: { sessionId?: string; itemId?: string }) {
-    const to = target.sessionId && target.sessionId !== session?.id ? target.sessionId : null;
+    const host = towerSession;
+    setPopup(null);
+    const to = target.sessionId && target.sessionId !== host?.id ? target.sessionId : null;
     if (to) setSelected(to);
-    else if (session) setTowerPick((cur) => ({ ...cur, [session.id]: false }));
+    else if (host) {
+      setSelected(host.id);
+      setTowerPick((cur) => ({ ...cur, [host.id]: false }));
+    }
     // The conversation is drawn (or the other session loaded) a moment later: look for the row then.
-    if (target.itemId) window.setTimeout(() => revealRow(target.itemId!, 12), to ? 400 : 60);
+    if (target.itemId) window.setTimeout(() => revealRow(target.itemId!, 12), to || host?.id !== session?.id ? 400 : 60);
   }
+
+  /** A card of the building picked (tower.pick): its session's conversation in the 会话弹窗, at its row; pinned stays pinned. */
+  function pickFromTower(target: TowerPickTarget) {
+    const host = towerSession;
+    if (!host || !own.some((s) => s.id === target.sessionId)) return;
+    const moved = target.sessionId !== session?.id;
+    setPopup({ ...target, towerFor: host.id, pinned: !!livePopup?.pinned });
+    if (moved) setSelected(target.sessionId);
+    if (target.itemId) window.setTimeout(() => revealRow(target.itemId!, 12), moved ? 400 : 60);
+  }
+  /** Closed (×, or the building's empty space / Esc while not pinned): the building's own session is selected again. */
+  function closePopup() {
+    if (livePopup && livePopup.towerFor !== livePopup.sessionId) setSelected(livePopup.towerFor);
+    setPopup(null);
+  }
+  /** 切到对话: the popup's session as a plain conversation, at the row read in the window (else the card's row). */
+  function popupToChat() {
+    if (!livePopup) return;
+    const scroller = document.querySelector<HTMLElement>(".thread-pane .thread");
+    const top = scroller?.getBoundingClientRect().top ?? 0;
+    const rows = scroller ? [...scroller.querySelectorAll<HTMLElement>("[data-row-id], [data-item-id]")] : [];
+    const reading = rows.find((r) => r.getBoundingClientRect().bottom > top + 8);
+    const at = reading?.dataset.rowId ?? reading?.dataset.itemId ?? livePopup.itemId;
+    setTowerPick((cur) => ({ ...cur, [livePopup.sessionId]: false }));
+    setPopup(null);
+    if (at) window.setTimeout(() => revealRow(at, 12), 60);
+  }
+  // Esc on the page closes an unpinned window too (in the building, the page itself says so: tower.unpick) — not while
+  // something else takes Esc: a text box being written in, a dialog or menu.
+  useEffect(() => {
+    if (!popupOpen || livePopup?.pinned) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const t = e.target as Element | null;
+      if (t?.closest?.("textarea, input, select, [contenteditable], [role='dialog'], [role='menu']") || document.querySelector('[role="dialog"], [role="menu"]')) return;
+      closePopup();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   /** Scrolls to a bookmarked passage and flashes just its text (its block, where highlights are not available). */
   function locatePassage(p: Passage, tries: number) {
@@ -403,10 +473,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       else await call(link, "POST /api/sessions/:id/items/:itemId/resend", { id, itemId });
     });
   };
-  const sessionWorkspace = session ? workspaces.find((w) => w.id === session.workspaceId) : undefined;
-  const workdir = sessionWorkspace?.path;
+  // The head's session: the building's while a session it started is in the 会话弹窗 (else the one selected).
+  const head = towerSession;
+  const headForkRuntime = runtimeOf(head);
+  const headWorkspace = head ? workspaces.find((w) => w.id === head.workspaceId) : undefined;
+  const workdir = headWorkspace?.path;
   // The session's project (2026-11-09): a copy's as its own computer names it (its workspace here is the common folder).
-  const sessionProject: string | null | undefined = !session ? undefined : task.remote ? (task.remote.sessionProjects?.[session.id] !== undefined ? task.remote.sessionProjects[session.id] : task.remote.project) : sessionWorkspace && !isCommon(sessionWorkspace) ? sessionWorkspace.name : null;
+  const sessionProject: string | null | undefined = !head ? undefined : task.remote ? (task.remote.sessionProjects?.[head.id] !== undefined ? task.remote.sessionProjects[head.id] : task.remote.project) : headWorkspace && !isCommon(headWorkspace) ? headWorkspace.name : null;
   const showError = (text: string) => setToast({ text, error: true });
 
   return (
@@ -703,9 +776,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             sessions={own}
             workspaces={workspaces}
             profiles={profiles}
-            selected={selected}
+            // While a session the building's started is in the 会话弹窗, the building's session is the one in front.
+            selected={towerSession?.id ?? selected}
             busy={busy}
-            onSelect={setSelected}
+            onSelect={(id) => {
+              setPopup(null);
+              setSelected(id);
+            }}
             onNewSession={(input) => void newSession(input)}
             onRestore={(id) => void restore(id)}
             unread={unread}
@@ -715,37 +792,44 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           />
         )}
         <div className="thread-col">
-          {session && (
+          {head && (
             <SessionHead
               link={link}
-              session={session}
+              session={head}
               topicId={task.topicId}
-              model={[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
+              model={[shortModel(profile(head.profileId)), headModelText].filter(Boolean).join(" · ")}
               {...(sessionProject !== undefined ? { project: sessionProject } : {})}
               workdir={workdir}
               busy={busy}
               {...(!task.archivedAt ? { tracked: focusPins.has(task.id), onTrack: () => focusPins.toggle(task.id) } : {})}
-              onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
-              onTerminal={() => void openTerminal(session)}
-              onFork={() => setForking({ sessionId: session.id })}
-              {...(forkRuntime ? { forkRuntime } : {})}
+              onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: head.id }, { title }))}
+              onTerminal={() => void openTerminal(head)}
+              onFork={() => setForking({ sessionId: head.id })}
+              {...(headForkRuntime ? { forkRuntime: headForkRuntime } : {})}
               {...(forkOff || copy?.blocked ? { forkOff: forkOff ?? copy!.blocked! } : {})}
-              onArchive={() => void archive(session.id)}
+              onArchive={() => void archive(head.id)}
               onError={showError}
-              {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: session.id, sessionTitle: session.title }) } : {})}
+              {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: head.id, sessionTitle: head.title }) } : {})}
             />
           )}
-          {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
-          {session && tracksEnabled && (
+          {head && <SessionBanners session={head} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(head.id)} onReclaim={() => void reclaim(head.id)} />}
+          {head && tracksEnabled && (
             <TowerSwitch
               {...(tracksOff ? { off: tracksOff } : {})}
               tower={showTower}
-              on={tracksOn.has(session.id)}
-              onView={(tower) => setTowerPick((cur) => ({ ...cur, [session.id]: tower }))}
+              on={tracksOn.has(head.id)}
+              onView={(tower) => {
+                // Back to the conversation: the window goes with the building, the building's session is in front.
+                if (!tower) closePopup();
+                setTowerPick((cur) => ({ ...cur, [head.id]: tower }));
+              }}
               onToggle={(on) =>
                 void run(
-                  () => call(link, "PUT /api/sessions/:id/tracks", { id: session.id }, { on }),
-                  () => setTowerPick((cur) => ({ ...cur, [session.id]: on })),
+                  () => call(link, "PUT /api/sessions/:id/tracks", { id: head.id }, { on }),
+                  () => {
+                    if (!on) closePopup();
+                    setTowerPick((cur) => ({ ...cur, [head.id]: on }));
+                  },
                 )
               }
             />
@@ -774,7 +858,28 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDelivery={deliver}
               {...(sendNowOff ? { sendNowOff } : {})}
               typingHold={experimentalOn(settings?.experimentalFeatures, "typing-hold")}
-              {...(showTower && session ? { cover: <TowerView key={session.id} link={link} sessionId={session.id} onOpen={openFromTower} /> } : {})}
+              {...(showTower && towerSession ? { cover: <TowerView key={towerSession.id} link={link} sessionId={towerSession.id} popup={popupOpen} onOpen={openFromTower} onPick={pickFromTower} onUnpick={() => livePopup && !livePopup.pinned && closePopup()} /> } : {})}
+              {...(popupOpen && livePopup && session
+                ? {
+                    float: {
+                      label: "会话弹窗",
+                      style: popupBox ? { left: popupBox.left, top: popupBox.top, width: popupBox.width, height: popupBox.height } : { visibility: "hidden" },
+                      chrome: (
+                        <TowerPopupHead
+                          // A session the building's started says which one it is.
+                          title={livePopup.sessionId === livePopup.towerFor ? session.title || "会话" : `子会话「${session.title || "未命名"}」`}
+                          {...(livePopup.title ? { sub: livePopup.title } : {})}
+                          box={popupBox}
+                          pinned={livePopup.pinned}
+                          onBox={setPopupBox}
+                          onPin={(pinned) => setPopup((cur) => (cur ? { ...cur, pinned } : cur))}
+                          onChat={popupToChat}
+                          onClose={closePopup}
+                        />
+                      ),
+                    },
+                  }
+                : {})}
               {...(forkSessionId ? { onFork: forkTurn, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})}
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}

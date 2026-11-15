@@ -7,7 +7,41 @@
 .tower-on { display: inline-flex; align-items: center; gap: 5px; color: var(--text); cursor: pointer; }
 .tower-on input { margin: 0; accent-color: var(--primary); }
 .tower-hint { overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
-.thread-cover { position: absolute; inset: 0; z-index: 6; display: flex; background: var(--bg); }
+/* The stage and the pane around Thread's conversation and composer (2026-11-16): nothing of their own without the
+   building, so the page lays out as before. With it, the stage is the building's area — the building in the
+   conversation's place and the composer under it, the conversation kept laid out behind it (hidden, except a question
+   card the agent waits on, which shows over the building as it did over the conversation) — or, with the 会话弹窗 open,
+   the building takes all of it and the pane floats over it with the conversation and the composer in it. */
+.thread-stage, .thread-pane { display: contents; }
+.thread-stage[data-tower] { flex: 1; min-height: 0; position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); }
+.thread-cover { position: relative; z-index: 1; grid-area: 1 / 1 / 2 / 2; min-height: 0; display: flex; background: var(--bg); }
+.thread-stage[data-tower="under"] .thread-wrap { grid-area: 1 / 1 / 2 / 2; z-index: 2; visibility: hidden; }
+.thread-stage[data-tower="under"] .thread-wrap > .q-popup { visibility: visible; }
+.thread-stage[data-tower="under"] .composer-dock { grid-area: 2 / 1 / 3 / 2; }
+.thread-stage[data-tower="float"] > .thread-cover { grid-area: 1 / 1 / 3 / 2; }
+/* overflow: clip, not hidden: a box that hides its overflow can still be scrolled by focus or scrollIntoView, which
+   slid the window's content sideways from under its head when something in it was wider than the window. */
+.thread-stage[data-tower="float"] > .thread-pane { position: absolute; z-index: 30; display: flex; flex-direction: column; box-sizing: border-box; min-width: 0; overflow: clip; border: 1px solid var(--border-strong); border-radius: calc(var(--r-l) + 2px); background: var(--panel); box-shadow: 0 18px 48px var(--shadow); }
+.thread-stage[data-tower="float"] .composer-dock { flex: none; min-width: 0; padding: 4px 12px 10px; }
+/* A narrow window: the model and options wrap among themselves (the paper clip and send keep their line), and the
+   numbers under the composer wrap, instead of running out of it. */
+.thread-stage[data-tower="float"] .chat-bar .session-options { flex: 0 1 auto; min-width: 0; }
+.thread-stage[data-tower="float"] .chat-bar .status-line { flex-wrap: wrap; row-gap: 2px; }
+.thread-stage[data-tower="float"] .composer-stats { flex-wrap: wrap; row-gap: 0; }
+.thread-stage[data-tower="float"] .composer-stats > * { white-space: nowrap; }
+/* While it is moved or sized, the building's iframe takes no pointer (it would take a fast drag from under it). */
+.thread-stage[data-moving] { user-select: none; }
+.thread-stage[data-moving] .thread-cover iframe { pointer-events: none; }
+/* The window's head: whose conversation, then 固定 / 切到对话 / ×; moved by it, sized by the corner. */
+.tower-popup-head { flex: none; display: flex; align-items: center; gap: 4px; min-width: 0; height: 34px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--divider); background: var(--panel-raised); cursor: move; user-select: none; touch-action: none; }
+.tower-popup-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; font-size: var(--fs-sm); color: var(--text); }
+.tower-popup-title b { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.tower-popup-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: var(--fs-cap); }
+.tower-popup-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.tower-popup-btn:hover { background: var(--chip); color: var(--text); }
+.tower-popup-btn.on { border-color: var(--border-strong); background: var(--chip); color: var(--text); font-weight: 600; }
+.tower-popup-btn.icon { width: 26px; padding: 0; }
+.tower-popup-resize { position: absolute; right: 0; bottom: 0; z-index: 25; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 58%, transparent 58%, transparent 70%, var(--border-strong) 70%, var(--border-strong) 78%, transparent 78%); }
 .tower-view { position: relative; flex: 1; min-width: 0; display: flex; }
 .tower-view iframe { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
 .tower-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); font-size: 13px; pointer-events: none; }

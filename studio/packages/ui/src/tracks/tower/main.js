@@ -21,7 +21,6 @@ const root = document.documentElement;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const inl = (s) => esc(s).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/^#{1,6}\s+/, "");
-const para = (t) => String(t).split("\n").filter((x) => x.trim()).map((x) => `<p>${inl(x)}</p>`).join("");
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }, del(k) { try { localStorage.removeItem(k); } catch {} } };
 const sstore = { get(k) { try { return JSON.parse(sessionStorage.getItem(k) || "null"); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 
@@ -33,6 +32,10 @@ const D = await new Promise((res) => {
   addEventListener("message", on); post({ type: "tower.ready" });
 });
 const SIG = JSON.stringify({ ...D, now: "" }), VIEW_KEY = "tower:view:" + D.sessionId;
+// 外面的会话弹窗关了（人点了 ×）：这里跟着取消选中、放平，不再往外说
+addEventListener("message", (e) => { if (e.source === parent && e.data?.type === "tower.popup" && !e.data.open && S.sel) { exitVertical(); select(null, true); } });
+// 弹窗还开着（这一页因为数据变了重载过）：把重载前选中的那张卡片重新标出来，不竖起来、不往外说
+addEventListener("message", (e) => { if (e.source !== parent || e.data?.type !== "tower.popup" || !e.data.open || S.sel) return; const k = sstore.get(VIEW_KEY)?.sel, n = k && NB[k]; if (!n) return; S.sel = k; n.kind === "region" ? drawRegion(n) : drawCard(n); renderSide(); dirty = true; });
 addEventListener("message", (e) => { if (e.source !== parent || e.data?.type !== "tower.data" || JSON.stringify({ ...e.data.data, now: "" }) === SIG) return; try { saveView(); } catch {} location.reload(); });
 const N = D.rounds.length, ROOF_F = N + 1, CMP = D.compact && D.compact.after <= N ? D.compact.after : 0;
 const SESS = Object.fromEntries(D.sessions.map((s) => [s.key, s])), REP = Object.fromEntries(D.reports.map((r) => [r.key, r]));
@@ -344,7 +347,7 @@ function floorTargets() {
     const F = FLOORS[f]; let t;
     if (col && col[f]) { const c = col[f]; t = { py: c.y + (c.z0 + c.z1) / 2, rx: Math.PI / 2, cx: (V.x0 + V.x1) / 2, w: V.x1 - V.x0, cz: (c.z0 + c.z1) / 2, d: c.z1 - c.z0, op: c.rel ? 1 : 0.35, lx: V.x0 + 1.2, lz: c.z0 + 0.6, tint: 0 }; }
     else if (col) t = { py: baseY(f), rx: 0, cx: 0, w: 2 * SX, cz: 0, d: 2 * SZ, op: 0, lx: -SX + 1.4, lz: SZ - 0.2 - LABEL_H, tint: 0 }; // 不在这一列的楼层：原地淡出
-    else { const up = S.selFloor != null && S.selFloor < ROOF_F && f > S.selFloor; t = { py: baseY(f) + (up ? LIFT : 0), rx: 0, cx: 0, w: 2 * SX, cz: 0, d: 2 * SZ, op: up ? 0.1 : 1, lx: -SX + 1.4, lz: SZ - 0.2 - LABEL_H, tint: f === ROOF_F ? (C.dark ? 0.1 : 0.06) : 0 }; } // 楼层名贴着前沿：楼层排紧以后，上一层只露出下一层前面这一条
+    else { const up = S.selFloor != null && S.selFloor < ROOF_F && f > S.selFloor; t = { py: baseY(f) + (up ? LIFT : 0), rx: 0, cx: 0, w: 2 * SX, cz: 0, d: 2 * SZ, op: up ? 0 : 1, lx: -SX + 1.4, lz: SZ - 0.2 - LABEL_H, tint: f === ROOF_F ? (C.dark ? 0.1 : 0.06) : 0 }; } // 楼层名贴着前沿：楼层排紧以后，上一层只露出下一层前面这一条
     if (f === ROOF_F && !(col && col[f])) { t.cz = SZ - ROOF_D / 2; t.d = ROOF_D; }
     F.tgt = t; if (!F.cur) F.cur = { ...t };
   }
@@ -617,8 +620,9 @@ window.addEventListener("mouseup", () => {
   if (d.mode === "node" && d.moved) return; // 拖过的卡片只在这一次打开里算数：区域是自动摆的，存下来的位置下次会和新卡叠在一起
   if (d.moved || (d.mode !== "click" && d.mode !== "node")) return; const k = pickAt(d.sx, d.sy);
   if (!k) { select(null); exitVertical(); return; }
-  if (k.startsWith("sign:")) { const key = k.slice(5); select(key); openSrc(key); return; }
-  if (k.startsWith("floor:")) { if (V.on) return; select(null); goFloor(+k.slice(6)); return; }
+  if (k.startsWith("sign:")) { select(k.slice(5)); return; }
+  // 点楼层名：去那一层，并在会话弹窗里打开那一轮（楼层名就是这一轮的标题；它的卡片多半被上一层挡着）
+  if (k.startsWith("floor:")) { if (V.on) return; const f = +k.slice(6); select(null, true); goFloor(f); post(f <= N ? pickOf("m" + f) : { type: "tower.unpick" }); return; }
   select(k);
 });
 cv.addEventListener("dblclick", (e) => { const r = cv.getBoundingClientRect(); const k = pickAt(e.clientX - r.left, e.clientY - r.top); if (k && NB[k]) openSrc(k); });
@@ -631,8 +635,8 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { if (V.on) { exitVertical(); select(null); } else { select(null); goFloor(null); } return; }
   if (!V.on && (e.key === "ArrowUp" || e.key === "ArrowDown")) { const cur = S.selFloor ?? (e.key === "ArrowUp" ? 0 : ROOF_F + 1); const f = cur + (e.key === "ArrowUp" ? 1 : -1); if (f >= 1 && f <= ROOF_F) { select(null); goFloor(f); } e.preventDefault(); }
 });
-/** 去某一层：镜头方向、远近不动（人转好的视角留着），只上下平移；上面的楼层升起来、变透明 */
-function goFloor(f, from) { if (f) { touched = true; showSide(true); } S.selFloor = f; floorTargets(); const b = from || cam; if (f) animateTo({ pivot: [b.pivot[0], baseY(f) + 1, b.pivot[2]], yaw: b.yaw, pitch: b.pitch, dist: b.dist }, from ? 520 : 360); for (const F of FLOORS.slice(1)) drawLabel(F); renderRail(); renderSide(); }
+/** 去某一层：镜头方向、远近不动（人转好的视角留着），只上下平移；上面的楼层升起来、藏掉（用户 2026-11-16：选中楼层后，楼层之上直接隐藏吧，半透明有点怪） */
+function goFloor(f, from) { if (f) touched = true; S.selFloor = f; floorTargets(); const b = from || cam; if (f) animateTo({ pivot: [b.pivot[0], baseY(f) + 1, b.pivot[2]], yaw: b.yaw, pitch: b.pitch, dist: b.dist }, from ? 520 : 360); for (const F of FLOORS.slice(1)) drawLabel(F); renderRail(); renderSide(); }
 
 /* ================= 循环：只在有变化时画 ================= */
 let last = performance.now(), frames = 0, fpsT = last, lastChange = 0, resPending = false, lastCam = null;
@@ -650,25 +654,47 @@ function loop(t) {
 
 /* ================= 电梯 ================= */
 function floorMarks(f) { if (f === ROOF_F) return D.roof.some((it) => it.s === "you") ? ["you"] : D.roof.length ? ["other"] : []; const s = new Set(); for (const n of NODES.filter((n) => n.floor === f && n.kind !== "region")) for (const it of n.items || []) if (it.s === "you" || it.s === "other") s.add(it.s); return [...s]; }
-function renderRail() {
-  const el = $("rail"); const fl = [ROOF_F, ...Array.from({ length: N }, (_, i) => N - i)];
-  const inCol = (f) => V.on && V.floors.some((x) => x.f === f && x.rel);
-  el.innerHTML = '<div class="cap">楼层</div>' + fl.map((f) => `<button data-f="${f}" class="${f === ROOF_F ? "roof" : ""} ${S.selFloor === f || inCol(f) ? "on" : ""}" title="${f === ROOF_F ? "楼顶 · 现在还没完的事" : f + "F · " + esc(ROUND(f).title)}">${f === ROOF_F ? "顶" : f}${floorMarks(f).slice(0, 1).map((m) => `<i class="d ${m}"></i>`).join("")}</button>`).join("");
-  for (const b of el.querySelectorAll("button")) b.onclick = () => { const sv = V.on ? V.saved : null; exitVertical(true); select(null); goFloor(+b.dataset.f, sv); };
-  el.querySelector("button.on")?.scrollIntoView({ block: "nearest" });
+/**
+ * 楼层导航在场景右上角，只列一小段（用户 2026-11-16：楼层导航改到右上角，而且一上来就展示了全部楼层，我觉得效果不太好）：
+ * 楼顶 + 连着的 RAIL_N 层，▲ ▼ 或滚轮翻；选中的楼层不在这一段里时这一段跟过去。上面、下面没列出来的楼层里有等着的事，▲ ▼ 上带点。
+ */
+const RAIL_N = 6;
+let railTop = null; // 这一段最上面是哪一层；null = 跟着最新的几层
+function railWindow() { const top = Math.max(Math.min(RAIL_N, N), Math.min(N, railTop ?? N)); return { top, bottom: Math.max(1, top - RAIL_N + 1) }; }
+function railMove(d) { const { top } = railWindow(); const t = Math.max(Math.min(RAIL_N, N), Math.min(N, top + d)); railTop = t >= N ? null : t; renderRail(true); }
+function renderRail(keep) {
+  const el = $("rail"); const inCol = (f) => V.on && V.floors.some((x) => x.f === f && x.rel);
+  // 选中的那一层（或竖起来的那几层里最高的）不在这一段里：这一段跟过去，把它放在中间
+  const cur = S.selFloor && S.selFloor <= N ? S.selFloor : V.on ? Math.max(0, ...V.floors.filter((x) => x.rel && x.f <= N).map((x) => x.f)) : 0;
+  if (!keep && cur) { const w = railWindow(); if (cur > w.top || cur < w.bottom) { const t = Math.min(N, cur + Math.floor(RAIL_N / 2)); railTop = t >= N ? null : t; } }
+  const { top, bottom } = railWindow(); const fl = [ROOF_F, ...Array.from({ length: top - bottom + 1 }, (_, i) => top - i)];
+  const mark = (list) => { const m = new Set(list.flatMap(floorMarks)); return m.has("you") ? '<i class="d you"></i>' : m.has("other") ? '<i class="d other"></i>' : ""; };
+  const range = (a, b) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
+  const more = (dir, list, label) => `<button class="more" data-d="${dir}" ${list.length ? "" : "disabled"} title="${list.length ? `${label}还有 ${list.length} 层` : `${label}没有了`}">${dir > 0 ? "▲" : "▼"}${mark(list)}</button>`;
+  el.innerHTML = `<div class="cap" title="一轮一层，最新的在上面">共 ${N} 层</div>` +
+    fl.slice(0, 1).map((f) => `<button data-f="${f}" class="roof ${S.selFloor === f || inCol(f) ? "on" : ""}" title="楼顶 · 现在还没完的事">顶${floorMarks(f).slice(0, 1).map((m) => `<i class="d ${m}"></i>`).join("")}</button>`).join("") +
+    (N > RAIL_N ? more(1, range(top + 1, N), "上面") : "") +
+    fl.slice(1).map((f) => `<button data-f="${f}" class="${S.selFloor === f || inCol(f) ? "on" : ""}" title="${f}F · ${esc(ROUND(f).title)}">${f}${floorMarks(f).slice(0, 1).map((m) => `<i class="d ${m}"></i>`).join("")}</button>`).join("") +
+    (N > RAIL_N ? more(-1, range(1, bottom - 1), "下面") : "");
+  for (const b of el.querySelectorAll("button[data-f]")) b.onclick = () => { const sv = V.on ? V.saved : null; exitVertical(true); select(null); goFloor(+b.dataset.f, sv); };
+  for (const b of el.querySelectorAll("button[data-d]")) b.onclick = () => railMove(+b.dataset.d * RAIL_N);
 }
+$("rail").addEventListener("wheel", (e) => { e.preventDefault(); e.stopPropagation(); railMove(e.deltaY < 0 ? 1 : -1); }, { passive: false });
 
 /* ================= 右边检视 ================= */
-function select(k) {
-  const old = S.sel; S.sel = k || null; if (k) { touched = true; if (NB[k]) showSide(true); }
+/**
+ * 选中一张卡片、一块区域或楼顶的一件事。它的内容不在右边栏里显示了（用户 2026-11-16：点击某个卡片时，不要用侧边栏展示应该改成会话弹窗）：
+ * 告诉外面的页面（tower.pick），由它在楼上面开会话弹窗——真的对话，滚到这一行，输入框也在里面。取消选中时说 tower.unpick（弹窗没固定就关）。
+ * quiet：外面的页面自己关了弹窗、或者紧接着要报另一件事时，不再往外说。
+ */
+function select(k, quiet) {
+  const old = S.sel; S.sel = k || null; if (k) touched = true;
   for (const key of [old, S.sel]) { const n = key && NB[key]; if (n) n.kind === "region" ? drawRegion(n) : drawCard(n); }
   const n = k && NB[k];
   if (n && $("autoV").checked) { enterVertical(k); } else if (!n) { /* 取消选中：留在原处 */ }
   renderSide(); dirty = true;
+  if (!quiet) post(n ? pickOf(k) : { type: "tower.unpick" });
 }
-function todoHTML(items) { return items?.length ? `<h4>待处理</h4><ul class="todo">${items.map((i) => `<li><span class="g ${i.s}">${GLYPH[i.s]}</span><span>${esc(i.t)}</span></li>`).join("")}</ul>` : ""; }
-const workHTML = (work) => (work?.length ? `<details class="work"><summary>做了 ${work.length} 步</summary>${work.map((w) => `<div>· ${inl(w)}</div>`).join("")}</details>` : "");
-function mainRoundHTML(r) { return `<span class="chip ${r.items?.some((i) => i.s === "you") ? "you" : ""}">主会话 · ${r.n}F · ${esc(r.time)}</span><h3>${esc(r.title)}</h3><p class="desc">${esc(r.desc)}</p>${r.labelled ? "" : `<p class="meta">这一层的标题是从对话里截的：AI 没给这一轮写标题。</p>`}<div class="qa you"><span class="who">这一轮的开头</span>${para(r.you) || "<p>（没有文字）</p>"}</div>${workHTML(r.work)}<div class="qa"><span class="who">AI 回的</span>${para(r.ai) || "<p>（还没有回复）</p>"}</div>${todoHTML(r.items)}`; }
 /** 要点：AI 用 track_note 记下的「人强调的事、谈定的结论」。还开着的在上面，处理完的折起来 */
 function pointsHTML() {
   const open = D.points.filter((p) => !p.done), done = D.points.filter((p) => p.done);
@@ -676,50 +702,34 @@ function pointsHTML() {
   if (!D.points.length) return `<p class="meta">还没有。${D.on ? "AI 会把你强调的事、谈定的结论记在这里。" : "把这个会话设成脉络会话后，AI 会把你强调的事、谈定的结论记在这里。"}</p>`;
   return `${open.length ? `<ul class="todo pts">${open.map(li).join("")}</ul>` : `<p class="meta">没有还开着的要点。</p>`}${done.length ? `<details class="work"><summary>已处理 ${done.length} 条</summary><ul class="todo pts">${done.map(li).join("")}</ul></details>` : ""}`;
 }
+/** 右边栏只放总览：要点、楼顶的事、子会话。点其中一项 = 选中它（竖起来 + 会话弹窗） */
 function renderSide() {
-  const el = $("sideBody"); const n = S.sel && NB[S.sel];
-  const wire = () => {
-    for (const c of el.querySelectorAll("[data-k]:not(#openSrc)")) c.onclick = () => select(c.dataset.k);
-    for (const c of el.querySelectorAll("li[data-f]")) if (c.dataset.f) c.onclick = () => { exitVertical(true); select(null); goFloor(Math.min(N, +c.dataset.f)); };
-    const b = el.querySelector("#openSrc"); if (b) b.onclick = () => openSrc(b.dataset.k);
-  };
-  if (!n && !V.on && S.selFloor && S.selFloor <= N) { // 点了某一层：右边直接显示这一轮，不用再去点那张卡
-    const r = ROUND(S.selFloor), reps = D.reports.filter((x) => x.floor === r.n);
-    el.innerHTML = `${mainRoundHTML(r)}${reps.length ? `<h4>这一轮收到的</h4><div class="cards">${reps.map((x) => `<div class="ocard" data-k="${x.key}"><div class="t">↩ ${esc(x.title)} · ${esc(x.meta)}</div><div class="s">${esc(x.desc)}</div></div>`).join("")}</div>` : ""}<p class="act"><button class="btn primary" id="openSrc" data-k="m${r.n}">在对话里看这一轮</button></p>`;
-    return wire();
-  }
-  if (!n) {
-    const unl = D.rounds.filter((r) => !r.labelled).length;
-    el.innerHTML = `<span class="chip">这个会话</span><h3>${esc(D.title)}</h3><p class="desc">${N} 轮${D.sessions.length ? `，开过 ${D.sessions.length} 个子会话` : ""}。一轮一层，最新的在上面；楼顶是现在还没完的事。${unl ? `有 ${unl} 层的标题是从对话里截的（AI 没写）。` : ""}</p>
+  const el = $("sideBody"); const unl = D.rounds.filter((r) => !r.labelled).length;
+  el.innerHTML = `<span class="chip">这个会话</span><h3>${esc(D.title)}</h3><p class="desc">${N} 轮${D.sessions.length ? `，开过 ${D.sessions.length} 个子会话` : ""}。一轮一层，最新的在上面；楼顶是现在还没完的事。点楼层名或卡片，在弹出的会话窗口里看那一轮。${unl ? `有 ${unl} 层的标题是从对话里截的（AI 没写）。` : ""}</p>
     <h4>要点 · AI 记下的</h4>${pointsHTML()}
-    <h4>楼顶 · 现在还没完的事</h4>${D.roof.length ? `<div class="cards">${D.roof.map((it) => `<div class="ocard ${it.s}" data-k="${esc(it.key)}"><div class="t">${GLYPH[it.s]} ${esc(it.title)}</div><div class="s">${esc(it.desc)}</div></div>`).join("")}</div>` : `<p class="meta">现在没有等着的事。</p>`}
-    ${D.sessions.length ? `<h4>子会话</h4><div class="cards">${D.sessions.map((s) => `<div class="ocard" data-k="reg:${s.key}"><div class="t"><span class="chip sess">${s.key}</span> ${esc(s.title)}</div><div class="s">${s.at}F 开的 · ${s.total} 轮 · ${GLYPH[s.state.s]} ${esc(s.state.t)}</div></div>`).join("")}</div>` : ""}`;
-    return wire();
-  }
-  let h = "", btn = "在对话里看这一轮";
-  if (n.kind === "region") { const s = SESS[n.sess];
-    h = `<span class="chip sess">子会话 ${n.sess} · ${s.at}F 开的 · ${s.total} 轮</span><h3>${esc(s.title)}</h3><p class="desc">${GLYPH[s.state.s]} ${esc(s.state.t)}</p><h4>它最近的几轮</h4><div class="cards">${s.rounds.filter((c) => NB[n.sess + "-" + c.n]).map((c) => `<div class="ocard" data-k="${n.sess}-${c.n}"><div class="t">${n.sess}${c.n} · ${esc(c.title)}</div><div class="s">${esc(c.time)} · 主会话在 ${c.at}F${c.items?.[0] ? " · " + GLYPH[c.items[0].s] + " " + esc(c.items[0].t) : ""}</div></div>`).join("")}</div>`;
-    btn = `打开子会话 ${n.sess}`; }
-  else if (n.kind === "roof") { const it = n.ref, o = NB[it.origin]; h = `<span class="chip ${it.s === "you" ? "you" : it.s === "other" ? "other" : "sess"}">楼顶 · ${STATE_TXT[it.s]}</span><h3>${esc(it.title)}</h3><p class="desc">${esc(it.desc)}</p><p class="meta">从 ${o.sess === "main" ? o.floor + "F" : "子会话 " + o.sess} 的「${esc(o.title)}」来</p>`; btn = it.sessionId ? `打开子会话${o.sess === "main" ? "" : " " + o.sess}` : "在对话里看那一轮"; }
-  else if (n.kind === "report") { const src = NB[n.from]; h = `<span class="chip sess">${n.floor}F · ${n.sess === "main" ? "中转回复" : "子会话 " + n.sess + " 回报"} · ${esc(n.meta)}</span><h3>${esc(n.title)}</h3><p class="desc">${esc(n.desc)}</p>${src ? `<p class="meta">来自 ${n.sess === "main" ? src.floor + "F" : n.sess} 的「${esc(src.title)}」</p>` : ""}`; btn = "在对话里看收到它的那一轮"; }
-  else if (n.kind === "sess") { const s = SESS[n.sess], c = s.rounds.find((x) => x.n === n.round);
-    h = c ? `<span class="chip sess">子会话 ${n.sess} · 第 ${c.n} 轮 · ${esc(c.time)} · 主会话那时在 ${c.at}F</span><h3>${esc(c.title)}</h3><p class="desc">${esc(c.desc)}</p><div class="qa you"><span class="who">这一轮的开头</span>${para(c.you) || "<p>（没有文字）</p>"}</div>${workHTML(c.work)}<div class="qa"><span class="who">它回的</span>${para(c.ai) || "<p>（还没有回复）</p>"}</div>${todoHTML(c.items)}` : `<span class="chip sess">子会话 ${n.sess}</span><h3>${esc(s.title)}</h3>`;
-    btn = `打开子会话 ${n.sess}，看这一轮`; }
-  else h = mainRoundHTML(ROUND(n.round));
-  el.innerHTML = `${h}<p class="act"><button class="btn primary" id="openSrc" data-k="${esc(S.sel)}">${btn}</button></p>`;
-  wire();
+    <h4>楼顶 · 现在还没完的事</h4>${D.roof.length ? `<div class="cards">${D.roof.map((it) => `<div class="ocard ${it.s} ${S.sel === it.key ? "on" : ""}" data-k="${esc(it.key)}"><div class="t">${GLYPH[it.s]} ${esc(it.title)}</div><div class="s">${esc(it.desc)}</div></div>`).join("")}</div>` : `<p class="meta">现在没有等着的事。</p>`}
+    ${D.sessions.length ? `<h4>子会话</h4><div class="cards">${D.sessions.map((s) => `<div class="ocard ${S.sel === "reg:" + s.key ? "on" : ""}" data-k="reg:${s.key}"><div class="t"><span class="chip sess">${s.key}</span> ${esc(s.title)}</div><div class="s">${s.at}F 开的 · ${s.total} 轮 · ${GLYPH[s.state.s]} ${esc(s.state.t)}</div></div>`).join("")}</div>` : ""}`;
+  for (const c of el.querySelectorAll("[data-k]")) c.onclick = () => select(c.dataset.k);
+  for (const c of el.querySelectorAll("li[data-f]")) if (c.dataset.f) c.onclick = () => { exitVertical(true); select(null); goFloor(Math.min(N, +c.dataset.f)); };
 }
 
 /* ================= 去对话里看：告诉外面的页面打开哪个会话、跳到哪一行（原型里的会话浮窗换成真的对话） ================= */
-function openSrc(k) {
-  const n = NB[k]; if (!n) return; const m = { type: "tower.open" };
-  if (n.kind === "roof") { const it = n.ref, o = NB[it.origin]; if (it.sessionId) m.sessionId = it.sessionId; else m.itemId = it.itemId || (o.sess === "main" ? ROUND(o.round)?.itemId : undefined); }
-  else if (n.kind === "region") m.sessionId = SESS[n.sess].sessionId;
-  else if (n.kind === "sess") { m.sessionId = SESS[n.sess].sessionId; m.itemId = SESS[n.sess].rounds.find((c) => c.n === n.round)?.itemId; }
+/** 一张卡片对应哪个会话的哪一行：主会话的一轮、回报、楼顶的事是这栋楼自己的会话；子会话的区域和它的各轮是那个子会话 */
+function pickOf(k) {
+  // title：卡片自己的话（哪一层、这一轮的标题），外面的弹窗把它写在会话名后面；整个子会话的区域没有（会话名就够了）
+  const n = NB[k]; const m = { type: "tower.pick", sessionId: D.sessionId, title: n.kind === "region" ? "" : n.kind === "main" || n.kind === "ask" ? `${n.round}F · ${n.title || ""}` : n.title || "" };
+  const sub = (s) => { m.sessionId = s.sessionId; return s; };
+  if (n.kind === "roof") { const it = n.ref, o = NB[it.origin], s = it.sessionId && D.sessions.find((x) => x.sessionId === it.sessionId); if (s) sub(s); else if (it.sessionId) m.sessionId = it.sessionId; else m.itemId = it.itemId || (o?.sess === "main" ? ROUND(o.round)?.itemId : undefined); }
+  else if (n.kind === "region") sub(SESS[n.sess]);
+  else if (n.kind === "sess") m.itemId = sub(SESS[n.sess]).rounds.find((c) => c.n === n.round)?.itemId;
   else if (n.kind === "report") m.itemId = REP[n.key].itemId;
   else m.itemId = ROUND(n.round).itemId;
-  post(m);
+  if (!m.itemId) delete m.itemId;
+  if (!m.title) delete m.title;
+  return m;
 }
+/** 双击卡片：离开脉络，到对话视图里看这一行 */
+function openSrc(k) { if (!NB[k]) return; const { title: _t, ...m } = pickOf(k); if (m.sessionId === D.sessionId) delete m.sessionId; post({ ...m, type: "tower.open" }); }
 
 /* ================= 顶栏、右边栏的开合、主题 ================= */
 function showSide(on) { document.querySelector(".ed").classList.toggle("noside", !on); $("sideBtn").classList.toggle("on", on); }
@@ -740,7 +750,7 @@ floorTargets();
 const saved = sstore.get(VIEW_KEY);
 if (saved?.cam) { Object.assign(cam, saved.cam); if (saved.n !== N && saved.selFloor == null) cam.pivot = [cam.pivot[0], cam.pivot[1] + (N - saved.n) * FH, cam.pivot[2]]; touched = true; }
 showSide(saved ? !!saved.side : innerWidth >= 1000);
-function saveView() { sstore.set(VIEW_KEY, { cam: touched ? { pivot: [...cam.pivot], yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist, ortho: cam.ortho } : null, n: N, selFloor: S.selFloor, side: !document.querySelector(".ed").classList.contains("noside") }); }
+function saveView() { sstore.set(VIEW_KEY, { cam: touched ? { pivot: [...cam.pivot], yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist, ortho: cam.ortho } : null, n: N, selFloor: S.selFloor, sel: S.sel, side: !document.querySelector(".ed").classList.contains("noside") }); }
 addEventListener("pagehide", () => { try { saveView(); } catch {} });
 window.addEventListener("resize", resize); new ResizeObserver(resize).observe(wrap); resize();
 renderRail(); renderSide(); requestAnimationFrame(loop);

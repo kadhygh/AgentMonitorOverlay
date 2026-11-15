@@ -254,7 +254,8 @@
         "改告诉 AI 的话或时机：core/tracks.ts 的 tracksHint（sessions/service.ts 的 sendMessage 把它接在「AMO 更新」后面）；工具说明在 features/tracks/mcp.ts。",
         "改楼的画法、摆放、右边栏：ui/src/tracks/tower/main.js（纯 JS，不过类型检查）和 tower.css；改完 npm run build 后用 e2e/studio/tower.spec.ts 出截图看。",
         "远程任务的副本：features/tracks/service.ts 的 view（副本就问任务所在的电脑，rt.tracks），构造函数里登记怎么答；界面上那边版本旧时的提示在 task/TaskPage.tsx 的 tracksOff。端到端 e2e/studio/remote-tower.spec.ts。",
-        "会话页上的切换和勾选：ui/src/tracks/TowerView.tsx 的 TowerSwitch，task/TaskPage.tsx 里的 showTower；楼盖在对话上靠 Thread 的 cover。"
+        "会话页上的切换和勾选：ui/src/tracks/TowerView.tsx 的 TowerSwitch，task/TaskPage.tsx 里的 showTower；楼盖在对话上靠 Thread 的 cover。",
+        "会话弹窗（点卡片弹出的对话窗口）：楼的页面发 tower.pick / tower.unpick（main.js 的 pickOf、select），ui/src/tracks/TowerView.tsx 收下来并画窗口的标题栏（TowerPopupHead：拖动、大小、固定）；窗口里是任务页那一个 Thread，靠它的 float 挪进去，排版在 tracks.css 的 .thread-stage / .thread-pane；开关和「楼是谁的」（towerFor）在 task/TaskPage.tsx。"
       ],
       "anchors": [
         { "label": "楼的数据形状", "path": "studio/packages/protocol/src/tower.ts", "anchor": "export interface TowerData" },

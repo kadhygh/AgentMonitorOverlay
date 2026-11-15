@@ -92,7 +92,7 @@ test("B opens a remote task's session as its building: read from A with its AI's
   expect((await onA()).on).toBe(true);
   expect((await a.api<{ on: string[] }>("GET", "/api/tracks")).on).toEqual([session.id]);
   const frame = page.frameLocator('[data-testid="tower-frame"]');
-  await expect(frame.locator("#rail button")).toHaveCount(2, { timeout: 30_000 });
+  await expect(frame.locator("#rail button[data-f]")).toHaveCount(2, { timeout: 30_000 });
 
   // B goes on under the building: the message runs on A, whose AI is told about 脉络 with it and titles the round.
   const note = `[[mcp: track_note ${JSON.stringify({ title: "从笔记本接着做", desc: "标题是 A 上的 AI 写的", points: ["远程也要能看脉络"] })}]]`;
@@ -102,14 +102,27 @@ test("B opens a remote task's session as its building: read from A with its AI's
   const sent = (await a.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`)).filter((i) => i.type === "user").at(-1)!;
   expect(sent.text).toContain("这个会话开了「脉络」");
   // B's building is drawn anew from A's: the new floor with its title, and the point.
-  await expect(frame.locator("#rail button")).toHaveCount(3, { timeout: 30_000 });
+  await expect(frame.locator("#rail button[data-f]")).toHaveCount(3, { timeout: 30_000 });
   await expect(frame.locator("#sideBody")).toContainText("远程也要能看脉络", { timeout: 30_000 });
-  await frame.locator('#rail button[data-f="2"]').click();
-  await expect(frame.locator("#sideBody h3")).toHaveText("从笔记本接着做");
+  // A card picked in the building itself (the page's own message, not a stand-in): the round opens in the 会话弹窗, the
+  // copy's conversation with its composer in it.
+  await frame.locator("body").evaluate(() => (window as unknown as { __tower: { select(k: string): void } }).__tower.select("m2"));
+  await expect(page.getByTestId("tower-popup")).toBeVisible();
+  await expect(page.getByTestId("tower-popup-title")).toContainText("从笔记本接着做");
+  await expect(page.getByTestId("tower-popup").getByLabel("输入消息")).toBeVisible();
   await page.waitForTimeout(1200);
   await screenshot(b.app, "studio", "remote-tower", page);
+  // Esc in the building: the card is let go and the window, not pinned, closes.
+  await frame.locator("#scene").press("Escape");
+  await expect(page.getByTestId("tower-popup")).toHaveCount(0);
+  // Its × says so to the building, which lets the card go.
+  await frame.locator("body").evaluate(() => (window as unknown as { __tower: { select(k: string): void } }).__tower.select("m2"));
+  await expect(page.getByTestId("tower-popup")).toBeVisible();
+  await page.getByTestId("tower-popup-close").click();
+  await expect(page.getByTestId("tower-popup")).toHaveCount(0);
+  await expect.poll(() => frame.locator("body").evaluate(() => (window as unknown as { __tower: { S: { sel: string | null } } }).__tower.S.sel)).toBeNull();
   // Back into the conversation on B, and the tick taken off from B is off on A.
-  await frame.locator("#openSrc").click();
+  await page.getByTestId("tower-view-chat").click();
   await expect(page.getByTestId("thread-cover")).toHaveCount(0);
   await page.getByTestId("tower-view-tower").click();
   await expect(page.getByTestId("thread-cover")).toBeVisible();

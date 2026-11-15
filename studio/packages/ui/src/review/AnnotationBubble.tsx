@@ -103,6 +103,7 @@ export function AnnotationBubble({
   onSave,
   onDelete,
   onClose,
+  keepInView = false,
 }: {
   scroller: RefObject<HTMLElement | null>;
   target: BubbleTarget;
@@ -110,6 +111,11 @@ export function AnnotationBubble({
   onSave(note: string): Promise<boolean>;
   onDelete?(): void;
   onClose(): void;
+  /**
+   * A short conversation (the 会话弹窗 over 脉络的楼, 2026-11-16): when it fits neither below nor above the passage, the
+   * conversation is scrolled when it opens so that it is seen whole below (its own quote says what it is about).
+   */
+  keepInView?: boolean;
 }) {
   const initial = target.kind === "edit" ? target.annotation.note : "";
   const quote = target.kind === "edit" ? target.annotation.quote : target.anchor.quote;
@@ -117,6 +123,17 @@ export function AnnotationBubble({
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const { style, ref, above } = usePlacement(scroller, target.at, 340);
+  useLayoutEffect(() => {
+    const s = scroller.current;
+    const h = ref.current?.offsetHeight ?? 0;
+    if (!keepInView || !s || !h) return;
+    // As usePlacement decides: above when it fits there and not below — then nothing to do.
+    const roomBelow = s.scrollTop + s.clientHeight - target.at.bottom;
+    if (roomBelow >= h + 12 || target.at.top - s.scrollTop > h + 12) return;
+    const over = target.at.bottom + 6 + h + 8 - (s.scrollTop + s.clientHeight);
+    // Never so far that its own top goes out of sight.
+    s.scrollTop += Math.max(0, Math.min(over, target.at.bottom + 6 - s.scrollTop));
+  }, []);
   // Moved by its head (2026-10-20), to see the text it covers while writing; it still scrolls with the conversation.
   // Sized by its corner too (2026-10-31, 问题 #2): FloatBox, shared with Reviewer's comment boxes.
   const left = typeof style.left === "number" ? style.left : 0;

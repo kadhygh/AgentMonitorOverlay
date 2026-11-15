@@ -122,6 +122,8 @@
 .col-resize { position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; }
 .col-resize:hover, .col-resize:active { background: var(--resize); }
 body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none !important; }
+/* An iframe under the pointer would take its moves (lib/dragWidth.tsx, 2026-11-16: 脉络's building beside the session list). */
+body.col-resizing iframe, body.col-resizing webview { pointer-events: none !important; }
 
 /* 后退 / 前进 (2026-10-19): two arrows after the brand. */
 .tb-nav { display: flex; align-items: center; gap: 2px; margin-left: 10px; }

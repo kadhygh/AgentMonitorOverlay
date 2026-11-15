@@ -43,15 +43,17 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .tbtn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text-2); padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .tbtn:hover, .tbtn.on { color: var(--text); border-color: var(--accent-fill); }
 .proto { font-size: 11px; color: var(--text-3); border: 1px dashed var(--line); border-radius: 3px; padding: 0 6px; }
-.ed { flex: 1; min-height: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr) 330px; position: relative; }
-.ed.noside { grid-template-columns: 52px minmax(0, 1fr); }
+.ed { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 330px; position: relative; }
+.ed.noside { grid-template-columns: minmax(0, 1fr); }
 .ed.noside #side { display: none; }
 #scenewrap { position: relative; min-width: 0; background: var(--scene-bg); overflow: hidden; }
 #scene { width: 100%; height: 100%; display: block; outline: none; }
 /* 电梯：左边一列楼层按钮，最新的在上面，楼高了就滚；点表示那层有事 */
-.rail { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border-right: 1px solid var(--line); padding: 6px 5px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
-.rail::-webkit-scrollbar { display: none; }
-.rail .cap { font: 600 10.5px var(--sans); color: var(--text-3); text-align: center; margin-bottom: 4px; letter-spacing: 0.05em; flex: none; }
+/* 楼层导航：场景右上角的一小块，只列楼顶和连着的几层（2026-11-16 用户：改到右上角，不要一上来就列全部楼层） */
+.rail { position: absolute; right: 8px; top: 8px; z-index: 3; display: flex; flex-direction: column; gap: 1px; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 4px; }
+.rail .cap { font: 600 10.5px var(--sans); color: var(--text-3); text-align: center; margin-bottom: 3px; white-space: nowrap; flex: none; }
+.rail button.more { height: 15px; font-size: 8.5px; color: var(--text-3); }
+.rail button:disabled { opacity: 0.3; cursor: default; background: transparent; }
 .rail button { position: relative; width: 40px; height: 22px; flex: none; border: 0; border-radius: 3px; background: transparent; color: var(--text-2); font: 600 11.5px var(--mono); cursor: pointer; }
 .rail button:hover { background: var(--surface-2); color: var(--text); }
 .rail button.on { background: var(--accent-fill); color: var(--on-primary); }
@@ -59,8 +61,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .rail .d { position: absolute; right: 3px; top: 4px; width: 6px; height: 6px; border-radius: 50%; }
 .rail .d.you { background: var(--accent); }
 .rail .d.other { background: var(--s3); }
-.help { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; color: var(--text-3); background: color-mix(in srgb, var(--surface) 82%, transparent); padding: 3px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; border: 1px solid var(--line); }
-.legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: calc(100% - 150px); font-size: 11.5px; color: var(--text-2); background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--line); pointer-events: none; }
+.help { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; max-width: calc(100% - 280px); overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; color: var(--text-3); background: color-mix(in srgb, var(--surface) 82%, transparent); padding: 3px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; border: 1px solid var(--line); }
+.legend { position: absolute; left: 12px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: calc(100% - 84px); font-size: 11.5px; color: var(--text-2); background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 4px 10px; border-radius: var(--radius); border: 1px solid var(--line); pointer-events: none; }
 .legend b { margin-right: 3px; }
 #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; }
 /* 右边：这一轮 / 这张卡 / 概览 */
@@ -123,7 +125,8 @@ code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); 
 .pin span { margin-left: -6px; padding: 2px 9px 2px 12px; border-radius: 0 999px 999px 0; background: var(--surface); border: 1px solid var(--pc); border-left: 0; color: var(--text); font: 600 12px var(--sans); line-height: 16px; box-shadow: 0 1px 4px var(--shadow-soft); position: relative; z-index: -1; }
 .pin.on i, .pin:hover i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--pc); }
 .cmp { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; font: 700 12px var(--sans); color: var(--crit); background: var(--surface); border: 1px dashed var(--crit); border-radius: 999px; padding: 1px 10px; line-height: 17px; transform-origin: 50% 50%; }
-#gizmo { position: absolute; right: 6px; top: 6px; width: 120px; height: 130px; cursor: pointer; }
+/* 视角坐标在右下角（2026-11-16 用户定）：右上角让给楼层导航 */
+#gizmo { position: absolute; right: 6px; bottom: 4px; width: 120px; height: 130px; cursor: pointer; }
 #tip { position: absolute; z-index: 4; pointer-events: none; background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--line); font-size: 12px; padding: 3px 9px; border-radius: var(--radius); max-width: 460px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #vbar { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 8px 5px 14px; box-shadow: 0 6px 20px var(--shadow-soft); font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
 #vbar .vt { font-weight: 700; color: var(--text); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
@@ -132,7 +135,7 @@ code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); 
 .hidden { display: none !important; }
 /* 窄的时候（会话区不宽）：右边栏盖在场景上，不把场景挤没 */
 @media (max-width: 900px) {
-  .ed, .ed.noside { grid-template-columns: 52px minmax(0, 1fr); }
+  .ed, .ed.noside { grid-template-columns: minmax(0, 1fr); }
   #side { position: absolute; right: 0; top: 0; bottom: 0; width: min(330px, calc(100% - 70px)); box-shadow: -8px 0 24px var(--shadow-soft); z-index: 5; }
   .help { display: none; }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, SubsessionSetup, Task, Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
@@ -100,6 +100,12 @@ interface ThreadProps {
   typingHold?: boolean;
   /** Shown over the conversation, in its place (脉络的楼, 2026-11-15); the composer stays under it. */
   cover?: ReactNode;
+  /**
+   * 会话弹窗 over the cover (2026-11-16, the user: 点击某个卡片时…改成会话弹窗。弹窗开启时，下面的输入栏先隐藏，且输入栏的内容也
+   * 展示到弹窗里): the conversation and its composer float over the building as one window — the same elements moved, so
+   * the draft, the attachments and the scroll stay theirs. `chrome`: its head (and grip), `style`: where it is.
+   */
+  float?: { chrome: ReactNode; style: CSSProperties; label: string };
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -123,7 +129,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, cover, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, cover, float, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -536,18 +542,27 @@ ${d}` : back));
         },
       };
 
+  // 脉络的楼 (2026-11-16): the stage and the pane are `display: contents` without a cover, so the page lays out as it
+  // always did; with one, the stage puts the building where the conversation was and the pane either leaves the
+  // composer under it (the conversation hidden behind) or floats both as the 会话弹窗. Always there, never added or
+  // taken away, so opening the window does not make the conversation's elements anew (its scroller, the observers and
+  // highlights on it stay).
+  const towerMode = cover ? (float ? "float" : "under") : undefined;
   return (
     <>
+      <div className="thread-stage" data-tower={towerMode}>
+      {cover && (
+        <div className="thread-cover" data-testid="thread-cover">
+          {cover}
+        </div>
+      )}
+      <div className="thread-pane" style={float?.style} {...(float ? { role: "region", "aria-label": float.label, "data-testid": "tower-popup" } : {})}>
+      {float?.chrome}
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
         <ReplyNav scroller={scroller} itemCount={items.length} />
-        {/* Ctrl+F finds in the conversation on the page (folded steps are not searched). */}
-        <FindBar active={!!session && !cover} container={scroller} within=".thread-inner" />
-        {cover && (
-          <div className="thread-cover" data-testid="thread-cover">
-            {cover}
-          </div>
-        )}
+        {/* Ctrl+F finds in the conversation on the page (folded steps are not searched); in the 会话弹窗 too. */}
+        <FindBar active={!!session && (!cover || !!float)} container={scroller} within=".thread-inner" />
         <div
           className="thread"
           data-testid="thread"
@@ -665,6 +680,7 @@ ${d}` : back));
               key={bubble.kind === "edit" ? bubble.annotation.id : `${bubble.anchor.itemId}:${bubble.anchor.start}`}
               scroller={scroller}
               target={bubble}
+              keepInView={!!float}
               onSave={(note) => (bubble.kind === "edit" ? onEditAnnotation(bubble.annotation.id, note) : onSaveAnnotation(bubble.anchor, note))}
               {...(bubble.kind === "edit"
                 ? {
@@ -838,6 +854,8 @@ ${d}` : back));
           <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh" && !isRemote} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
+      </div>
+      </div>
       {finding && session && (
         <FileSelector
           link={link}

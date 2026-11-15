@@ -376,7 +376,8 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
   // Its @ names (快速提交 among them) coloured as in the composer; what the message told the model of them on hover.
   const { text, names, commit, blocks } = splitMentionRefs(withRefs);
   return (
-    <div className="msg-user-row">
+    // data-row-id: a round of 脉络的楼 starts at its message; picking the round's card scrolls here (2026-11-16, 会话弹窗).
+    <div className="msg-user-row" data-row-id={item.id}>
       <div className="msg-user" data-testid="msg-user">
         {item.images?.length ? <MessageImages images={item.images} /> : null}
         {annotations.length > 0 && (
