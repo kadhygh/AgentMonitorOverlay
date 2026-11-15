@@ -133,6 +133,9 @@ function keyOf(req: IncomingMessage, url: URL): string | null {
 }
 
 /** Whether an Accept-Encoding takes gzip: `gzip` (or `x-gzip`, or `*` when gzip is not named) with a q above 0. */
+/** The ports above 1023 that fetch (and browsers, by the Fetch standard's 「bad port」 list) will not connect to. */
+export const FETCH_BAD_PORTS: ReadonlySet<number> = new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
 export function acceptsGzip(header: string | undefined): boolean {
   if (!header) return false;
   let star = false;
@@ -887,11 +890,22 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(opts.port ?? 0, opts.host ?? "0.0.0.0", () => resolve());
-  });
-  const port = (server.address() as AddressInfo).port;
+  const listen = (): Promise<number> =>
+    new Promise<number>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(opts.port ?? 0, opts.host ?? "0.0.0.0", () => {
+        server.off("error", reject);
+        resolve((server.address() as AddressInfo).port);
+      });
+    });
+  let port = await listen();
+  // A port the system picks (port 0, as every test does) can be one fetch refuses outright — 「fetch failed」, cause
+  // 「bad port」 — and this machine hands out 1024–15000, where 5060 and the like are: 自动打包 (Studio 0.9.73, 2026-11-16)
+  // stopped on todo.test.ts's relay at 127.0.0.1:5060. Take another one then; a port asked for by number stays as it is.
+  for (let tries = 0; !opts.port && FETCH_BAD_PORTS.has(port) && tries < 10; tries++) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    port = await listen();
+  }
   const shownHost = !opts.host || opts.host === "0.0.0.0" ? "127.0.0.1" : opts.host;
   return {
     url: `http://${shownHost}:${port}`,

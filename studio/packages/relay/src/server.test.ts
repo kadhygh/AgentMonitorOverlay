@@ -4,16 +4,17 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { get as httpGet, type IncomingHttpHeaders } from "node:http";
+import { Server as NetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { crc32, deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
 import { downloadFile, downloadsDir, safeFileName } from "./download.js";
 import type { RelayEvent } from "./protocol.js";
-import { acceptsGzip, startRelayServer, type RelayServer } from "./server.js";
+import { acceptsGzip, FETCH_BAD_PORTS, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 import { newRepliesText, usagePrompt } from "./usage.js";
 import { takeInbox } from "./inbox.js";
@@ -469,6 +470,34 @@ describe("relay service", () => {
     expect(acceptsGzip("*")).toBe(true);
     expect(acceptsGzip("*, gzip;q=0")).toBe(false);
     expect(acceptsGzip("identity")).toBe(false);
+  });
+
+  it("knows the ports fetch refuses, which a server on port 0 does not keep (2026-11-16: todo.test.ts got 5060)", async () => {
+    // The list is the Fetch standard's; this checks it against the fetch the tests and the clients use (refused before
+    // any connection, so nothing needs to listen there).
+    for (const port of FETCH_BAD_PORTS) {
+      const err = await fetch(`http://127.0.0.1:${port}/`).then(() => null, (e: Error) => e);
+      expect(String((err?.cause as Error | undefined)?.message ?? err?.cause), `port ${port}`).toMatch(/bad port/);
+    }
+    // The system handing out 5060 first: the server listens again and answers on the next one.
+    const real = NetServer.prototype.address;
+    let first = true;
+    const spy = vi.spyOn(NetServer.prototype, "address").mockImplementation(function (this: NetServer) {
+      const at = real.call(this);
+      if (first && at && typeof at === "object") {
+        first = false;
+        return { ...at, port: 5060 };
+      }
+      return at;
+    });
+    try {
+      server = await startRelayServer({ store: (store = new RelayStore(":memory:")), host: "127.0.0.1", port: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(first).toBe(false);
+    expect(server.port).not.toBe(5060);
+    expect((await fetch(`${server.url}/api/health`)).ok).toBe(true);
   });
 
   it("says when it has no platform dir", async () => {
