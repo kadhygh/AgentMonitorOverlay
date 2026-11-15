@@ -6,6 +6,7 @@ import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV }
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../../core/role.js";
 import { tracksHint } from "../../core/tracks.js";
+import { whiteboardHint, readWhiteboard } from "../../core/whiteboard.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
@@ -93,7 +94,20 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     const role = this.roleUpdate(sessionId);
     // 脉络会话 (2026-11-15): its AI is asked to title its rounds, once after it was turned on and after each compaction.
     const tracks = experimentalEnabled(this.f.config.experimentalFeatures(), "tracks") ? tracksHint(this.store, sessionId) : null;
-    const update = { lines: [...role.lines, ...(tracks?.lines ?? [])], told: () => (role.told(), tracks?.told()) };
+    // 白板 (2026-11-16): its AI is told what the board is (once, and after each compaction), and the notes the person pinned since.
+    const board = experimentalEnabled(this.f.config.experimentalFeatures(), "whiteboard") ? whiteboardHint(this.store, sessionId) : null;
+    const update = {
+      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? [])],
+      told: () => {
+        role.told();
+        tracks?.told();
+        if (!board?.lines.length) return;
+        board.told();
+        // The notes are 「已发给 AI」 now: the workbench reads the board again.
+        const now = readWhiteboard(this.store, sessionId);
+        this.publish({ type: "whiteboard.changed", sessionId, on: now.on, rev: now.rev, seenRev: now.seenRev });
+      },
+    };
     // 2026-11-05: a message the person sent right after 停止 (a DSH session) never came back and left no trace; the
     // composer had already cleared it. One that fails, or is still on its way after SLOW_SEND_MS, is written to host.log.
     const started = Date.now();
