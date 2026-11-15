@@ -5,7 +5,8 @@ import { route, type Route } from "../../http/route.js";
 export function tracksRoutes(service: HostService): Route[] {
   return [
     route("GET /api/tracks", () => ({ on: service.tracks.listOn() })),
-    route("GET /api/sessions/:id/tracks", ({ params }) => service.tracks.get(params.id!)),
-    route("PUT /api/sessions/:id/tracks", ({ params, body }) => service.tracks.setOn(params.id!, (body as { on?: unknown } | null)?.on)),
+    // 远程副本 (remoteCopy, http/route.ts; 2026-11-15): a copy's building, and its 脉络会话 tick, are the other computer's.
+    route("GET /api/sessions/:id/tracks", ({ params }) => service.tracks.view(params.id!)),
+    route("PUT /api/sessions/:id/tracks", ({ params, body }) => service.tracks.view(params.id!, (body as { on?: unknown } | null)?.on ?? null), { remoteCopy: "forward" }),
   ];
 }

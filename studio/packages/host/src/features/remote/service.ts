@@ -8,7 +8,7 @@ import { FileReply, type Route } from "../../http/route.js";
 import { underTaskFolder } from "./files.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
-import { RemoteGrants, type Answer, type RemoteContext } from "./grants.js";
+import { RemoteGrants, type Answer, type RemoteContext, type SessionKind } from "./grants.js";
 import { RemoteCopies } from "./copies.js";
 import { TaskAsks, TaskRequests } from "./requests.js";
 import { RemoteCreates } from "./create.js";
@@ -76,8 +76,15 @@ export class RemoteFeature extends Feature<RemoteUses> {
   private readonly answered = new CommandLog<{ kind: string; body: unknown }>();
   /** Commands being answered: the same id again waits for that answer instead of running twice. */
   private readonly inflight = new Map<string, Promise<Answer>>();
+  /**
+   * Session commands other features answer for a paired device (2026-11-15, 脉络: rt.tracks). They register here
+   * instead of this feature calling them: tracks already reaches sessions through 中转, and sessions reach this one, so
+   * a call from here would close a ring (feature-deps.test.ts).
+   */
+  private readonly sessionKinds = new Map<string, SessionKind>();
   private readonly context: RemoteContext = {
     host: this.host,
+    sessionKinds: this.sessionKinds,
     link: () => this.link,
     deviceName: () => this.device?.name ?? "授权的电脑",
     ownAccount: () => this.account?.name ?? null,
@@ -785,6 +792,20 @@ export class RemoteFeature extends Feature<RemoteUses> {
 
   startCopySession(task: Task, input: NewSessionInput): Promise<Session> {
     return this.copies.start(task, input);
+  }
+
+  /**
+   * As A: `kind` (an rt.… name of protocol's REMOTE_KINDS) about a session of a granted task is answered by `handle`,
+   * after the grant is checked; `write` tells the asks that change the session (refused once it is archived). B hears
+   * of it with the task (RemoteTaskSnapshot.kinds).
+   */
+  answerSession(kind: string, handle: SessionKind["handle"], write: SessionKind["write"] = () => false): void {
+    this.sessionKinds.set(kind, { handle, write });
+  }
+
+  /** As B: the same ask about a copy's session, sent to the computer it runs on. `old`: what to say when that one does not answer it. */
+  askCopy<T>(sessionId: Id, kind: string, body: Record<string, unknown>, old: (name: string) => string): Promise<T> {
+    return this.copies.askSession<T>(sessionId, kind, body, old);
   }
 
   /** 远程分支 (2026-11-12): a copy's session is forked on the computer it runs on. */

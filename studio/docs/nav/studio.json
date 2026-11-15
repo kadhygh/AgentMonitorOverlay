@@ -186,7 +186,7 @@
       "steps": [
         "加一条远程副本能用的写路由：在路由上写 remoteCopy（见 workflow.newRoute）。",
         "改被控端额度：A 侧 RemoteUsageSender（usage.ts），B 侧 RemoteUsageCopies，见 flow.remoteUsage。",
-        "加一个 B→A 的命令（例：rt.fork，2026-11-12）：protocol remote.ts 的 REMOTE_KINDS（只能小写，中转按 FRAME_KIND_RE 转发、不用改中转；带大写的 rt.sendNow 就一直被挡，11-12 改成 rt.send-now，单测走真的中转服务端代码才测得出来）和 RemoteCommandBodies；A 侧 grants.ts serve 里的 case；B 侧 copies.ts 里 ask。旧版不认识的命令会回 unknown_kind，要提前让界面知道就在 RemoteTaskSnapshot / task 推送里加一个可选标记（如 fork），B 存进 TaskRemote。"
+        "加一个 B→A 的命令（例：rt.fork，2026-11-12）：protocol remote.ts 的 REMOTE_KINDS（只能小写，中转按 FRAME_KIND_RE 转发、不用改中转；带大写的 rt.sendNow 就一直被挡，11-12 改成 rt.send-now，单测走真的中转服务端代码才测得出来）和 RemoteCommandBodies；A 侧 grants.ts serve 里的 case；B 侧 copies.ts 里 ask。旧版不认识的命令会回 unknown_kind，要提前让界面知道就在 RemoteTaskSnapshot / task 推送里加一个可选标记（如 fork），B 存进 TaskRemote。别的 feature 要答一条关于会话的命令（例：脉络的 rt.tracks，2026-11-15），不在 grants.ts 里加 case：它自己用 RemoteFeature.answerSession 登记（A 侧，授权照查），B 侧用 askCopy 问；A 答哪些会随任务快照的 kinds 告诉 B（TaskRemote.kinds）。这样 remote 不用依赖那个 feature。"
       ],
       "anchors": [
         { "label": "RemoteFeature", "path": "studio/packages/host/src/features/remote/service.ts", "anchor": "export class RemoteFeature" },
@@ -253,6 +253,7 @@
         "改一轮怎么切、没有 AI 标题时用什么顶：features/tracks/tower.ts 的 splitRounds 和 word。",
         "改告诉 AI 的话或时机：core/tracks.ts 的 tracksHint（sessions/service.ts 的 sendMessage 把它接在「AMO 更新」后面）；工具说明在 features/tracks/mcp.ts。",
         "改楼的画法、摆放、右边栏：ui/src/tracks/tower/main.js（纯 JS，不过类型检查）和 tower.css；改完 npm run build 后用 e2e/studio/tower.spec.ts 出截图看。",
+        "远程任务的副本：features/tracks/service.ts 的 view（副本就问任务所在的电脑，rt.tracks），构造函数里登记怎么答；界面上那边版本旧时的提示在 task/TaskPage.tsx 的 tracksOff。端到端 e2e/studio/remote-tower.spec.ts。",
         "会话页上的切换和勾选：ui/src/tracks/TowerView.tsx 的 TowerSwitch，task/TaskPage.tsx 里的 showTower；楼盖在对话上靠 Thread 的 cover。"
       ],
       "anchors": [

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -976,6 +976,51 @@ describe("远程分支 between two Hosts (2026-11-12)", () => {
   }, 60_000);
 });
 
+describe("远程任务的脉络 between two Hosts (2026-11-15)", () => {
+  it("B sees a copy's session as the building A puts together, and its 脉络会话 tick is A's; an older A is refused on B, saying what to update to", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    // What only A has: its AI's title of the round and a point.
+    a.service.tracks.note(session.id, { title: "A 写的标题", points: ["数值按策划表来"] });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    expect(copy!.remote!.kinds).toContain(REMOTE_KINDS.tracks);
+    await until(() => b.store.getSession(session.id), (s) => s?.runtime === "remote", "B's copy of the session");
+    expect(() => guard(b, "PUT", "/api/sessions/:id/tracks", { id: session.id })).not.toThrow();
+
+    const tower = await b.service.tracks.view(session.id);
+    expect(tower).toMatchObject({ sessionId: session.id, on: false, rounds: [{ n: 1, title: "A 写的标题", labelled: true }], points: [{ text: "数值按策划表来" }] });
+    expect(tower.rounds).toEqual(a.service.tracks.get(session.id).rounds);
+    expect(b.service.tracks.listOn()).toEqual([]);
+
+    // Ticked on B: on on A (whose AI is told with the next message), and listed on B so the session opens as its building there.
+    const heard: HostEvent[] = [];
+    b.service.on("event", (e) => heard.push(e));
+    expect((await b.service.tracks.view(session.id, true)).on).toBe(true);
+    expect(a.service.tracks.listOn()).toEqual([session.id]);
+    expect(b.service.tracks.listOn()).toEqual([session.id]);
+    expect(heard).toContainEqual(expect.objectContaining({ type: "tracks.changed", sessionId: session.id, on: true }));
+    // Unticked on A: B hears with its next look.
+    a.service.tracks.setOn(session.id, false);
+    expect((await b.service.tracks.view(session.id)).on).toBe(false);
+    expect(b.service.tracks.listOn()).toEqual([]);
+
+    // A change of the task (its push) leaves what A said it answers.
+    a.service.tasks.updateTask(task.id, { title: "改了名" });
+    await until(() => b.store.getTask(task.id)!.title, (t) => t === "改了名", "B hears the new title");
+    expect(b.store.getTask(task.id)!.remote!.kinds).toContain(REMOTE_KINDS.tracks);
+
+    // A session of a task not granted is not answered.
+    const other = await taskOnA(a, "没授权的");
+    await expect(a.remote.grants.serve(toB, REMOTE_KINDS.tracks, { sessionId: other.session.id })).resolves.toMatchObject({ kind: "error" });
+
+    // An older A (says no kinds): refused on B before anything is sent, saying what to update to.
+    const { kinds: _kinds, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.service.tracks.view(session.id)).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE}`);
+  }, 60_000);
+});
+
 describe("远程立即发送 between two Hosts (2026-11-12)", () => {
   it("B's 立即发送 on a waiting message gets through the relay (rt.send-now: rt.sendNow never did) and A's turn gives way to it; an older A is refused on B, saying what to update to", async () => {
     const { a, b, toB } = await paired();
@@ -1105,6 +1150,7 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
         "forward POST /api/sessions/:id/archive",
         "forward POST /api/sessions/:id/unarchive",
         "forward POST /api/sessions/:id/fork",
+        "forward PUT /api/sessions/:id/tracks",
         "local POST /api/sessions/:id/annotations",
         "local POST /api/sessions/:id/annotations/send",
       ].sort(),

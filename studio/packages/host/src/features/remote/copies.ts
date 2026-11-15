@@ -226,6 +226,8 @@ export class RemoteCopies {
       ...(snap.fork ? { fork: true } : {}),
       // 立即发送 (2026-11-12): an older A never got it (the relay refused its name); the button says to update A.
       ...(snap.sendNow ? { sendNow: true } : {}),
+      // What A's other features answer about a session (2026-11-15: rt.tracks); an older A says nothing.
+      ...(Array.isArray(snap.kinds) && snap.kinds.length ? { kinds: snap.kinds.filter((k) => typeof k === "string") } : {}),
       // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
       ...projectsOf(snap.task.project !== undefined ? snap.task.project : existing?.remote?.project, snap.sessionProjects ?? existing?.remote?.sessionProjects),
     };
@@ -558,6 +560,16 @@ export class RemoteCopies {
     const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;
+  }
+
+  /**
+   * A session command another feature of A answers (RemoteFeature.askCopy, 2026-11-15: rt.tracks). `old`: what to say
+   * when A does not have it (an older Studio there), said here before anything goes.
+   */
+  askSession<T>(sessionId: Id, kind: string, body: Record<string, unknown>, old: (name: string) => string): Promise<T> {
+    const { task, peer } = this.target(sessionId);
+    if (!task.remote?.kinds?.includes(kind)) throw new HostError("bad_request", old(task.remote?.name ?? "那台电脑"));
+    return this.ask<T>(peer, kind, { ...body, sessionId });
   }
 
   private canFork(task: Task): void {

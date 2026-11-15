@@ -77,7 +77,16 @@ export function TowerView({ link, sessionId, onOpen }: { link: HostLink; session
 }
 
 /** Above the conversation of a session, while 脉络 is on: which of the two to look at, and whether the session is a 脉络会话. */
-export function TowerSwitch({ tower, on, onView, onToggle }: { tower: boolean; on: boolean; onView(tower: boolean): void; onToggle(on: boolean): void }) {
+export function TowerSwitch({ tower, on, off, onView, onToggle }: { tower: boolean; on: boolean; off?: string; onView(tower: boolean): void; onToggle(on: boolean): void }) {
+  // A remote task whose own computer cannot answer for it yet: said in the row's place (the task page, tracksOff).
+  if (off)
+    return (
+      <div className="tower-switch" data-testid="tower-switch">
+        <span className="tower-hint" data-testid="tower-off">
+          脉络：{off}
+        </span>
+      </div>
+    );
   return (
     <div className="tower-switch" data-testid="tower-switch">
       <div className="tower-seg" role="tablist">

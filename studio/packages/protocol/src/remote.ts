@@ -206,6 +206,8 @@ export interface TaskRemote {
   fork?: boolean;
   /** A takes 立即发送 from this computer (rt.send-now, 2026-11-12); absent: an older A, which never heard it. */
   sendNow?: boolean;
+  /** The session commands A answers besides the first ones (RemoteTaskSnapshot.kinds, 2026-11-15: rt.tracks); absent: an older A. */
+  kinds?: string[];
   /** A's name of the task's project; null: A's common folder; absent: an older A, which does not say (RemoteTaskView.project). */
   project?: string | null;
   /** Each session's project as A names it (by session id), where A said: a session can work in another project than its task's. */
@@ -310,6 +312,13 @@ export const REMOTE_KINDS = {
   /** B → A (2026-11-12): the 分支 dialog's list of a session's turns, as A tells which can be forked. {sessionId} → {turns: ForkTurn[]} */
   forkTurns: "rt.fork-turns",
   /**
+   * B → A (远程也能看脉络, 2026-11-15, the user: 我是远端操控好像看不到): a session as its building, put together on A where
+   * its rows, its AI's titles and its 中转 are; with `on`, 脉络会话 turned on or off there first. {sessionId, on?} →
+   * {tower: TowerData}. Answered by the tracks feature (RemoteFeature.answerSession); A says it has it in
+   * RemoteTaskSnapshot.kinds.
+   */
+  tracks: "rt.tracks",
+  /**
    * Step 3, B → A: a file of a granted task (HTML, Markdown or an image, under the task's folder or among its
    * attachments), one piece at a time. RemoteFileAsk → RemoteFileAnswer
    */
@@ -387,6 +396,11 @@ export interface RemoteTaskSnapshot {
   fork?: true;
   /** A answers rt.send-now (2026-11-12; before, the relay refused rt.sendNow); an older A leaves it out. */
   sendNow?: true;
+  /**
+   * The session commands A's other features answer (RemoteFeature.answerSession, 2026-11-15; the first: rt.tracks), so
+   * B shows what needs one only when A has it. An older A leaves it out.
+   */
+  kinds?: string[];
 }
 
 export interface RemoteListAnswer {
@@ -418,6 +432,8 @@ export interface RemoteProfileView {
 export const REMOTE_FORK_SINCE = "0.9.66";
 /** The same for 立即发送 (rt.send-now, 2026-11-12): the first version whose 立即发送 reaches A at all. */
 export const REMOTE_SEND_NOW_SINCE = "0.9.66";
+/** The same for 脉络 of a remote task (rt.tracks, 2026-11-15). */
+export const REMOTE_TRACKS_SINCE = "0.9.72";
 
 /** rt.fork: ForkRequest without the options (a copy has no choices of A's models to pick from). */
 export interface RemoteForkAsk {
@@ -439,6 +455,7 @@ export interface RemoteCommandBodies {
   "rt.start": { taskId: Id; profileId: Id; text?: string; uploads?: RemoteUpload[] };
   "rt.fork": RemoteForkAsk;
   "rt.fork-turns": { sessionId: Id };
+  "rt.tracks": { sessionId: Id; on?: boolean };
   "rt.file": RemoteFileAsk;
   "rt.request": RemoteTaskRequestAsk;
   "rt.withdraw": { requestId: string };

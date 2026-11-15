@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { REMOTE_FORK_SINCE, REMOTE_SEND_NOW_SINCE, isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, isCommon, projectWorkspaces, remoteHeldTasks, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type SubsessionSetup, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
@@ -156,10 +156,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const teamThreads = useTeamThreads(link);
   // 脉络的楼 (2026-11-15, behind 测试功能「脉络」): a 脉络会话 opens as its building; the switch above the conversation goes
   // to the other view for now (kept per session while the page is open). Not for a remote task's copy.
-  const tracksEnabled = experimentalOn(settings?.experimentalFeatures, "tracks") && !copy;
+  // A copy (远程, 2026-11-15, the user: 我是远端操控好像看不到): its building comes from the computer it runs on (rt.tracks),
+  // which an older Studio there does not answer — then the row says so instead of the switch.
+  const tracksEnabled = experimentalOn(settings?.experimentalFeatures, "tracks");
+  const tracksOff = copy && !task.remote?.kinds?.includes(REMOTE_KINDS.tracks) ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE} 或更新的版本，才能在这台电脑上看这个会话的脉络` : undefined;
   const tracksOn = useTracksOn(link, tracksEnabled);
   const [towerPick, setTowerPick] = useState<Record<string, boolean>>({});
-  const showTower = !!session && tracksEnabled && (towerPick[session.id] ?? tracksOn.has(session.id));
+  const showTower = !!session && tracksEnabled && !tracksOff && (towerPick[session.id] ?? tracksOn.has(session.id));
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -735,6 +738,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
           {session && tracksEnabled && (
             <TowerSwitch
+              {...(tracksOff ? { off: tracksOff } : {})}
               tower={showTower}
               on={tracksOn.has(session.id)}
               onView={(tower) => setTowerPick((cur) => ({ ...cur, [session.id]: tower }))}

@@ -1,6 +1,6 @@
-import { TOWER_DESC_MAX, TOWER_POINTS_MAX, TOWER_POINT_MAX, TOWER_TITLE_MAX, type Id, type TowerData, type TowerPoint } from "@amo-studio/protocol";
+import { REMOTE_KINDS, REMOTE_TRACKS_SINCE, TOWER_DESC_MAX, TOWER_POINTS_MAX, TOWER_POINT_MAX, TOWER_TITLE_MAX, type Id, type TowerData, type TowerPoint } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
-import { Feature } from "../../core/feature.js";
+import { Feature, type FeatureHost } from "../../core/feature.js";
 import { readTracks, writeTracks } from "../../core/tracks.js";
 import { buildTower, splitRounds } from "./tower.js";
 
@@ -16,7 +16,39 @@ const words = (value: unknown): string => (typeof value === "string" ? value.rep
  * (tower.ts), so nothing is kept for it but what the rows do not have: whether the session opens as its building, and
  * what its AI wrote about its rounds (track_note) — core/tracks.ts, which the sessions feature reads too.
  */
-export class TracksFeature extends Feature<"teamRelay"> {
+export class TracksFeature extends Feature<"teamRelay" | "remote"> {
+  constructor(host: FeatureHost<"teamRelay" | "remote">) {
+    super(host);
+    // 远程 (2026-11-15, the user: 我是远端操控好像看不到): a paired device asks for a granted task's session as its building,
+    // or turns 脉络会话 on or off, and this computer answers as for its own workbench.
+    this.f.remote.answerSession(
+      REMOTE_KINDS.tracks,
+      (sessionId, body) => ({ tower: typeof body.on === "boolean" ? this.setOn(sessionId, body.on) : this.get(sessionId) }),
+      (body) => typeof body.on === "boolean",
+    );
+  }
+
+  /**
+   * What the workbench asks for. A copy of a remote task's session (远程) is asked of the computer it runs on: the AI's
+   * titles, the 中转 it waits on and whether it is a 脉络会话 are only there. What comes back says whether it is one, kept
+   * in this computer's list too so the session opens as its building here.
+   */
+  async view(sessionId: Id, on?: unknown): Promise<TowerData> {
+    if (on !== undefined && typeof on !== "boolean") throw new HostError("bad_request", "on must be true or false");
+    if (this.requireSession(sessionId).runtime !== "remote") return on === undefined ? this.get(sessionId) : this.setOn(sessionId, on);
+    const { tower } = await this.f.remote.askCopy<{ tower: TowerData }>(sessionId, REMOTE_KINDS.tracks, on === undefined ? {} : { on }, (name) => `${name} 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE} 或更新的版本，才能在这台电脑上看它的脉络`);
+    this.listed(sessionId, tower.on);
+    return tower;
+  }
+
+  /** The list of 脉络会话 has this one or not; said when that changed. */
+  private listed(sessionId: Id, on: boolean): void {
+    const list = this.listOn();
+    if (list.includes(sessionId) === on) return;
+    this.store.setKv(ON_KEY, JSON.stringify(on ? [...list, sessionId] : list.filter((id) => id !== sessionId)));
+    this.publish({ type: "tracks.changed", sessionId, on });
+  }
+
   get(sessionId: Id): TowerData {
     const session = this.requireSession(sessionId);
     // The sessions it started (session_start), archived ones too: they are part of what happened.
@@ -41,9 +73,7 @@ export class TracksFeature extends Feature<"teamRelay"> {
     const state = readTracks(this.store, sessionId);
     if (state.on !== on) {
       writeTracks(this.store, sessionId, { ...state, on, toldAt: 0 });
-      const rest = this.listOn().filter((id) => id !== sessionId);
-      this.store.setKv(ON_KEY, JSON.stringify(on ? [...rest, sessionId] : rest));
-      this.publish({ type: "tracks.changed", sessionId, on });
+      this.listed(sessionId, on);
     }
     return this.get(sessionId);
   }

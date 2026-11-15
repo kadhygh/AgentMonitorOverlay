@@ -32,6 +32,14 @@ export interface RemoteContext {
   /** The devices this computer allowed to pair (the owner side). */
   ownerPeers(): DeviceRef[];
   changed(): void;
+  /** Session commands other features answer (RemoteFeature.answerSession, 2026-11-15), by kind. */
+  sessionKinds: ReadonlyMap<string, SessionKind>;
+}
+
+/** One of them: `write` says whether this ask changes the session (then an archived one is refused). */
+export interface SessionKind {
+  handle(sessionId: Id, body: Record<string, unknown>): unknown;
+  write(body: Record<string, unknown>): boolean;
 }
 
 export type Answer = { kind: string; body: unknown };
@@ -310,7 +318,7 @@ export class RemoteGrants {
     const allowed = this.allowedFor(taskId);
     const sessions = this.store.listSessions({ taskId });
     const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
-    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true };
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true, kinds: [...this.ctx.sessionKinds.keys()] };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
@@ -503,8 +511,13 @@ export class RemoteGrants {
 ${from.device}
 ${taskId}`, ask, () => answerView({ host: this.ctx.host, task, root }, ask)));
         }
-        default:
-          return fail("unknown_kind", `${this.ctx.deviceName()} 的 Studio 不认识「${kind}」，可能版本不同`);
+        default: {
+          // What another feature answers about a granted task's session (answerSession, 2026-11-15: rt.tracks).
+          const more = this.ctx.sessionKinds.get(kind);
+          if (!more) return fail("unknown_kind", `${this.ctx.deviceName()} 的 Studio 不认识「${kind}」，可能版本不同`);
+          const s = this.sessionFor(from, id(b.sessionId, "sessionId"), more.write(b));
+          return ok(await more.handle(s.id, b));
+        }
       }
     } catch (err) {
       if (err instanceof HostError) return fail(err.code, err.message);
