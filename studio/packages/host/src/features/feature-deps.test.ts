@@ -40,6 +40,7 @@ const GRAPH: Record<string, string[]> = {
   topics: ["tasks"],
   tracks: ["remote", "teamrelay"],
   viewpacks: ["remote"],
+  whiteboard: [],
 };
 
 /**

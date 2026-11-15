@@ -41,6 +41,7 @@ import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { MattersPanel } from "../tracks/MattersPanel.js";
+import { useWhiteboardMarks, WhiteboardView } from "../whiteboard/WhiteboardView.js";
 import { rememberedPopupBox, rememberPopupBox, TowerPopupHead, TowerSwitch, TowerView, useTracksOn, type PopupBox, type TowerPickTarget } from "../tracks/TowerView.js";
 import { experimentalOn } from "../lib/features.js";
 import type { ReadPlace } from "./readPlace.js";
@@ -175,7 +176,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const tracksOff = copy && !task.remote?.kinds?.includes(REMOTE_KINDS.tracks) ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE} 或更新的版本，才能在这台电脑上看这个会话的脉络` : undefined;
   const tracksOn = useTracksOn(link, tracksEnabled);
   const [towerPick, setTowerPick] = useState<Record<string, boolean>>({});
-  const showTower = !!towerSession && tracksEnabled && !tracksOff && (towerPick[towerSession.id] ?? tracksOn.has(towerSession.id));
+  // 白板 (2026-11-16, behind 测试功能「白板」, plans/whiteboard.md): the session's whiteboard in the conversation's place, picked
+  // on the same row; it comes before the building while picked. Not for a remote task's copy yet.
+  const boardEnabled = experimentalOn(settings?.experimentalFeatures, "whiteboard") && !copy;
+  const boardMarks = useWhiteboardMarks(link, boardEnabled);
+  const [boardPick, setBoardPick] = useState<Record<string, boolean>>({});
+  const showBoard = !!towerSession && boardEnabled && !!boardPick[towerSession.id];
+  const showTower = !!towerSession && !showBoard && tracksEnabled && !tracksOff && (towerPick[towerSession.id] ?? tracksOn.has(towerSession.id));
   const popupOpen = !!livePopup && showTower;
   // Put away once it no longer holds (another session picked, the building gone): no window left hanging.
   useEffect(() => {
@@ -813,14 +820,29 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
           )}
           {head && <SessionBanners session={head} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(head.id)} onReclaim={() => void reclaim(head.id)} />}
-          {head && tracksEnabled && (
+          {head && (tracksEnabled || boardEnabled) && (
             <TowerSwitch
               {...(tracksOff ? { off: tracksOff } : {})}
+              tracks={tracksEnabled}
+              {...(boardEnabled
+                ? {
+                    board: {
+                      shown: showBoard,
+                      // Its AI wrote something the person has not looked at.
+                      dot: !showBoard && (boardMarks.get(head.id)?.rev ?? 0) > (boardMarks.get(head.id)?.seenRev ?? 0),
+                      onView: () => {
+                        closePopup();
+                        setBoardPick((cur) => ({ ...cur, [head.id]: true }));
+                      },
+                    },
+                  }
+                : {})}
               tower={showTower}
               on={tracksOn.has(head.id)}
               onView={(tower) => {
                 // Back to the conversation: the window goes with the building, the building's session is in front.
                 if (!tower) closePopup();
+                setBoardPick((cur) => ({ ...cur, [head.id]: false }));
                 setTowerPick((cur) => ({ ...cur, [head.id]: tower }));
               }}
               onToggle={(on) =>
@@ -858,6 +880,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDelivery={deliver}
               {...(sendNowOff ? { sendNowOff } : {})}
               typingHold={experimentalOn(settings?.experimentalFeatures, "typing-hold")}
+              {...(showBoard && towerSession ? { cover: <WhiteboardView key={towerSession.id} link={link} sessionId={towerSession.id} /> } : {})}
               {...(showTower && towerSession ? { cover: <TowerView key={towerSession.id} link={link} sessionId={towerSession.id} popup={popupOpen} onOpen={openFromTower} onPick={pickFromTower} onUnpick={() => livePopup && !livePopup.pinned && closePopup()} /> } : {})}
               {...(popupOpen && livePopup && session
                 ? {

@@ -31,3 +31,4 @@ export * from "./todo.js";
 export * from "./mcp.js";
 export * from "./origin.js";
 export * from "./tower.js";
+export * from "./whiteboard.js";

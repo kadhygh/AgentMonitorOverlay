@@ -56,6 +56,8 @@ import { dutyRoutes } from "./duty/routes.js";
 import { dutyTools } from "./duty/mcp.js";
 import { tracksRoutes } from "./tracks/routes.js";
 import { tracksTools } from "./tracks/mcp.js";
+import { whiteboardRoutes } from "./whiteboard/routes.js";
+import { whiteboardTools } from "./whiteboard/mcp.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -106,4 +108,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "duty", routes: dutyRoutes, tools: dutyTools },
   { name: "issues", routes: () => [], tools: issuesTools },
   { name: "tracks", routes: tracksRoutes, tools: tracksTools },
+  { name: "whiteboard", routes: whiteboardRoutes, tools: whiteboardTools },
 ];

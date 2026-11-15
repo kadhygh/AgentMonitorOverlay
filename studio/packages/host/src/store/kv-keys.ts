@@ -64,6 +64,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "sessions.inbox", scope: "global", owner: "features/sessions/inbox.ts", what: "收件箱里有待送消息的会话" },
   { key: "sessions.peer-queue", scope: "global", owner: "features/sessions/inbox.ts", what: "收件箱以前 session_send 的队列（启动时迁进收件箱，过一两个版本删）" },
   { key: "tracks.on", scope: "global", owner: "features/tracks/service.ts", what: "脉络会话的 id（勾了「脉络会话」的）" },
+  { key: "whiteboard.on", scope: "global", owner: "features/whiteboard/service.ts", what: "开了白板的会话的 id" },
   { key: "teamrelay.sends", scope: "global", owner: "features/teamrelay/service.ts", what: "中转：会话要发的（等人确认、已发出）" },
   { key: "teamrelay.threads", scope: "global", owner: "features/teamrelay/service.ts", what: "中转：会话发出的中转会话" },
   // 远程
@@ -87,6 +88,8 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },
   { key: "subsession-setup:", scope: "session", owner: "features/sessions/setups.ts", what: "@ 开子会话… 的设定（session_start 的 setup）" },
   { key: "tracks:", scope: "session", owner: "core/tracks.ts", what: "脉络会话：开没开、AI 用 track_note 写的每轮标题和要点" },
+  { key: "whiteboard:", scope: "session", owner: "core/whiteboard.ts", what: "白板：开没开、AI 写的节点、人的批注" },
+  { key: "whiteboard-view:", scope: "session", owner: "core/whiteboard.ts", what: "白板：AI 自己给的画它的页面（whiteboard_view）" },
   { key: "claude-handoff-seen:", scope: "session", owner: "runtime/claude/transcripts.ts", what: "已读过的子会话交回" },
   { key: "claude-adopted:", scope: "outside", owner: "runtime/claude/outside.ts", what: "接续已有会话：已经接过的原会话 → 接着做的 Studio 会话" },
   { key: "mcp-identity:session:", scope: "session", owner: "mcp/identity.ts", what: "会话的 MCP token" },

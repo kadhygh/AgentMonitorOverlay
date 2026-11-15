@@ -1,0 +1,47 @@
+/* 白板 (2026-11-16, plans/whiteboard.md): the whiteboard over a session's conversation (Thread's cover) — a line saying
+   where it stands, the page that draws it in a frame of its own (its styles are the page's and frame.ts's), and the
+   person's notes in a column beside it. wb-, not board-: that is the kanban board's (board/board.css). */
+.wb-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.wb-loading { align-items: center; justify-content: center; color: var(--text-dim); font-size: var(--fs-sm); }
+.wb-bar { flex: none; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--divider); font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; }
+.wb-bar b { font-weight: 600; color: var(--text); }
+.wb-state { flex: none; }
+.wb-dim { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
+.wb-push { margin-left: auto; }
+.wb-btn { flex: none; height: 24px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.wb-btn:hover:not(:disabled) { background: var(--panel-raised); }
+.wb-btn:disabled { opacity: 0.5; cursor: default; }
+.wb-btn.primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.wb-btn.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.wb-btn.quiet { border-color: transparent; background: transparent; color: var(--text-dim); }
+.wb-error { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--error-border); background: var(--error-bg); color: var(--error-text); font-size: 12.5px; }
+.wb-main { flex: 1; min-height: 0; display: flex; }
+.wb-main iframe { flex: 1; min-width: 0; height: 100%; border: 0; display: block; background: var(--bg); }
+.wb-notes { flex: none; width: 270px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 16px; border-left: 1px solid var(--divider); background: var(--panel); overflow-y: auto; font-size: var(--fs-sm); }
+.wb-notes-title { font-weight: 600; color: var(--text); }
+.wb-notes-title span { margin-left: 4px; font-weight: 400; color: var(--text-faint); }
+.wb-notes-head { margin-top: 6px; font-size: var(--fs-cap); color: var(--text-dim); }
+.wb-hint { margin: 0; font-size: var(--fs-cap); line-height: 18px; color: var(--text-dim); }
+.wb-edit { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--attention-border); border-radius: 6px; background: var(--attention-bg); }
+.wb-edit-where { font-size: var(--fs-cap); line-height: 17px; color: var(--text); overflow-wrap: anywhere; }
+.wb-edit textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--panel); color: var(--text); font: inherit; line-height: 19px; }
+.wb-edit-acts { display: flex; align-items: center; gap: 6px; }
+.wb-edit-acts .wb-dim { flex: 1; font-size: var(--fs-cap); }
+.wb-note { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; }
+.wb-note.on { border-color: var(--text-dim); }
+.wb-note.draft { border-style: dashed; }
+.wb-note-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-cap); color: var(--text-dim); }
+.wb-note-mark { flex: none; font-weight: 600; color: var(--text); }
+.wb-note-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-note-text { line-height: 19px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wb-note-reply { padding: 5px 8px; border-left: 2px solid var(--primary); background: var(--panel-raised); line-height: 19px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.wb-note-reply b { font-weight: 600; color: var(--text-dim); }
+.wb-note-acts { display: flex; justify-content: flex-end; gap: 4px; }
+.wb-note-acts button { border: 0; background: transparent; padding: 0 4px; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.wb-note-acts button:hover { color: var(--text); text-decoration: underline; }
+.wb-send { align-self: stretch; height: 28px; }
+.wb-closed { margin-top: 6px; }
+.wb-closed summary { font-size: var(--fs-cap); color: var(--text-dim); cursor: pointer; }
+.wb-closed .wb-note { margin-top: 6px; opacity: 0.75; }
+/* 「白板」 on the row above the conversation: a dot when its AI wrote something the person has not looked at. */
+.tower-seg button .wb-dot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--attention); vertical-align: 1px; }

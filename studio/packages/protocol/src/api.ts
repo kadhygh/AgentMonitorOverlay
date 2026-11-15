@@ -244,7 +244,7 @@ export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; h
  * 设置 → 测试功能 (2026-11-01, the user: 设置里加个测试功能页，这个功能加个开关): features still being tried out. The
  * opposite of OPTIONAL_FEATURES: off until the person turns one on, and the settings list the ones turned on.
  */
-export type ExperimentalFeature = "panorama" | "tracks" | "typing-hold";
+export type ExperimentalFeature = "panorama" | "tracks" | "typing-hold" | "whiteboard";
 
 /**
  * `dev` (2026-11-09, the user: 给测试功能全景加一个开发中的标记): still being built, shown as 「开发中」 beside its name —
@@ -288,6 +288,13 @@ export const EXPERIMENTAL_FEATURES: readonly {
         hint: "每个会话的对话上方多一行「对话 | 脉络」和一个「脉络会话」勾选框。点「脉络」：这个会话画成一栋楼，一轮一层，最新的在上面；它开的子会话是开出它那一层上的一块区域，回报是收到它那一层上的小卡，还没完的事（等你审批、子会话在跑、中转没回）在楼顶；点楼层右边显示那一轮，点卡片相关的楼层竖起来，「在对话里看这一轮」跳回对话。输入框一直在下面，照常发消息。勾上「脉络会话」：这个会话以后一打开就是楼，并且从你发的下一条消息起，AI 每轮结束时给这一轮写一行标题和一句结果、把你强调的事和谈定的结论记成「要点」（多花一点 token：每轮一次很短的工具调用）；没勾、或者勾之前的轮次，标题用对话里的话顶着。楼是每次打开时从会话记录现算的，旧会话也能看。",
       },
     ],
+  },
+  // 白板 (2026-11-16, plans/whiteboard.md; the user: 我觉得可能更需要的是一个 board，给 ai 来做数据临时存储…人只是看这个白板加批注).
+  {
+    id: "whiteboard",
+    label: "白板",
+    hint: "每个会话的对话上方多一项「白板」：AI 把确认下来的任务内容、推进计划、它给的每条建议、子会话查到的结论、定下来的事写成一块白板，有进展就改上面的节点；你不用翻对话，看白板就知道推进到哪了。你不改白板，只在上面写批注：点一个节点写，或者在任意位置右键写；批注攒着，随你的下一条消息一起带给 AI，它逐条回应。上下文压缩之后 AI 也靠它找回前面的事。在一个会话里点「开白板」才开始，开了之后 AI 多花一些 token 来写它。现在只有会话自己的白板，远程任务和手机上还没有。",
+    stage: "dev",
   },
   // 打字时不插队 (2026-11-15, plans/collab-framework.md): shipped on in 0.9.69; the same day the user: 「这个可以先去掉，
   // 等我体验一段时间」 — off unless turned on, on 脉络's own page.
@@ -851,6 +858,19 @@ export interface HostRoutes
   "PUT /api/sessions/:id/tracks": { req: { on: boolean }; res: import("./tower.js").TowerData };
   /** The sessions that are 脉络会话. */
   "GET /api/tracks": { req: void; res: { on: Id[] } };
+  /**
+   * 白板 (2026-11-16, whiteboard.ts): a session's working board — its AI writes it (whiteboard_update, whiteboard_view), the person
+   * looks and pins notes. PUT: `on` tells the session's AI to keep one (with the person's next message) or stops it;
+   * `seen` says the person has looked at it as it is now. The notes are the person's: written, rewritten while not
+   * sent yet, closed (or opened again), taken off; they go to the AI with the person's next message. GET /api/whiteboards:
+   * the sessions whose board is on, each with how far it is and how far the person has looked (the mark on 「白板」).
+   */
+  "GET /api/whiteboards": { req: void; res: { on: Array<{ sessionId: Id; rev: number; seenRev: number }> } };
+  "GET /api/sessions/:id/whiteboard": { req: void; res: import("./whiteboard.js").WhiteboardData };
+  "PUT /api/sessions/:id/whiteboard": { req: { on?: boolean; seen?: true }; res: import("./whiteboard.js").WhiteboardData };
+  "POST /api/sessions/:id/whiteboard/notes": { req: { nodeId?: string; x?: number; y?: number; quote?: string; text: string }; res: import("./whiteboard.js").WhiteboardData };
+  "PUT /api/sessions/:id/whiteboard/notes/:noteId": { req: { text?: string; closed?: boolean }; res: import("./whiteboard.js").WhiteboardData };
+  "DELETE /api/sessions/:id/whiteboard/notes/:noteId": { req: void; res: import("./whiteboard.js").WhiteboardData };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
   "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };
   /** 重新发送 a message its process never read (delivery `unsent`): the same item goes again. */
@@ -965,6 +985,8 @@ export type HostEvent = { seq: number } & (
   | { type: "teamthreads.changed"; threads: import("./entities.js").TeamThread[] }
   /** A session became a 脉络会话 or stopped being one, or its AI wrote a round's title or a point (track_note). */
   | { type: "tracks.changed"; sessionId: Id; on: boolean }
+  /** A session's 白板 changed: turned on or off, its AI wrote it, the person pinned a note, their notes went to the AI. */
+  | { type: "whiteboard.changed"; sessionId: Id; on: boolean; rev: number; seenRev: number }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

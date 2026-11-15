@@ -45,6 +45,7 @@ import "./taskplans/taskplans.css";
 import "./relays/relays.css";
 import "./teamrelay/teamrelay.css";
 import "./tracks/tracks.css";
+import "./whiteboard/whiteboard.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";

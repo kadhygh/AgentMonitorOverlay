@@ -253,8 +253,12 @@ export function TowerPopupHead({
   );
 }
 
-/** Above the conversation of a session, while 脉络 is on: which of the two to look at, and whether the session is a 脉络会话. */
-export function TowerSwitch({ tower, on, off, onView, onToggle }: { tower: boolean; on: boolean; off?: string; onView(tower: boolean): void; onToggle(on: boolean): void }) {
+/**
+ * Above the conversation of a session, while 脉络 or 白板 is on (设置 → 测试功能): which view of it to look at, and whether
+ * the session is a 脉络会话. `tracks` false: 脉络 is off, only 对话 | 白板. `board`: 白板 is on — whether it is shown, and
+ * whether its AI wrote something the person has not looked at (a dot).
+ */
+export function TowerSwitch({ tower, on, off, tracks = true, board, onView, onToggle }: { tower: boolean; on: boolean; off?: string; tracks?: boolean; board?: { shown: boolean; dot: boolean; onView(): void }; onView(tower: boolean): void; onToggle(on: boolean): void }) {
   // A remote task whose own computer cannot answer for it yet: said in the row's place (the task page, tracksOff).
   if (off)
     return (
@@ -267,18 +271,34 @@ export function TowerSwitch({ tower, on, off, onView, onToggle }: { tower: boole
   return (
     <div className="tower-switch" data-testid="tower-switch">
       <div className="tower-seg" role="tablist">
-        <button type="button" role="tab" aria-selected={!tower} onClick={() => onView(false)} data-testid="tower-view-chat">
+        <button type="button" role="tab" aria-selected={!tower && !board?.shown} onClick={() => onView(false)} data-testid="tower-view-chat">
           对话
         </button>
-        <button type="button" role="tab" aria-selected={tower} onClick={() => onView(true)} data-testid="tower-view-tower">
-          脉络
-        </button>
+        {board && (
+          <button type="button" role="tab" aria-selected={board.shown} title={board.dot ? "白板：AI 写了你还没看过的内容" : "白板：AI 写的任务内容、计划、建议和定下来的事；你看和批注"} onClick={board.onView} data-testid="view-whiteboard">
+            白板
+            {board.dot && <i className="wb-dot" data-testid="wb-dot" />}
+          </button>
+        )}
+        {tracks && (
+          <button type="button" role="tab" aria-selected={tower} onClick={() => onView(true)} data-testid="tower-view-tower">
+            脉络
+          </button>
+        )}
       </div>
+      {tracks && !board?.shown && <TowerTick on={on} onToggle={onToggle} />}
+    </div>
+  );
+}
+
+function TowerTick({ on, onToggle }: { on: boolean; onToggle(on: boolean): void }) {
+  return (
+    <>
       <label className="tower-on" title="勾上以后：这个会话一打开就是脉络；AI 每轮结束时给这一轮写一行标题、记下你强调的事（从你发的下一条消息起）。以前的轮次没有 AI 写的标题，用对话里的话顶着。">
         <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} data-testid="tower-on" />
         脉络会话
       </label>
       <span className="tower-hint">{on ? "打开就是脉络；AI 每轮写一行标题" : "勾上后打开就是脉络，AI 每轮写一行标题"}</span>
-    </div>
+    </>
   );
 }

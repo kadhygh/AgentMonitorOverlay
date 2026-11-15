@@ -271,6 +271,33 @@
       "next": ["studio/plans/tracks.md", "studio/plans/collab-framework.md"]
     },
     {
+      "id": "studio.whiteboard",
+      "label": "白板：AI 写、人批注的会话工作板",
+      "aliases": ["白板", "whiteboard", "board", "工作白板", "WhiteboardView", "WhiteboardData", "whiteboard_read", "whiteboard_update", "whiteboard_view", "节点", "白板批注", "renderBoard"],
+      "category": "host",
+      "purpose": "测试功能「白板」开着时，会话的对话上方多一项「白板」。白板是会话的 AI 写的一份数据（节点：任务内容、计划、建议、发现、决定…），人只看和批注：点一个节点，或在页面任意位置右键。批注攒着，随人的下一条消息带给 AI，AI 用 whiteboard_update 的 replies 回应。画它的是一页 HTML：Studio 自带的，或 AI 用 whiteboard_view 给的；放在沙箱 iframe 里。代码里叫 whiteboard：board 在项目里是看板。",
+      "steps": [
+        "节点或批注多一个字段：protocol/src/whiteboard.ts 的 WhiteboardNode / WhiteboardNote；host 的 features/whiteboard/service.ts 的 update（AI 写）或 addNote（人写）里收下来，read 里决定给不给 AI 看；whiteboard.test.ts 写上。",
+        "改告诉 AI 的话或时机（开了之后一次、压缩后一次、人新写的批注）：core/whiteboard.ts 的 whiteboardHint（sessions/service.ts 的 sendMessage 接在「AMO 更新」后面）；工具说明在 features/whiteboard/mcp.ts。",
+        "改 Studio 自带的画法：features/whiteboard/template.ts 的 DEFAULT_WHITEBOARD_VIEW（一段 HTML，不能有反引号和 ${）；一页能拿到什么写在同一个文件开头和 WHITEBOARD_VIEW_CONTRACT（AI 的工具说明用它）。",
+        "改页面外面那一层（主题变量、批注的图钉、选中节点、右键取位置）：ui/src/whiteboard/frame.ts 的 whiteboardShell（整段变成文本写进 iframe，只能用它自己里面的东西）；和外面说话的消息类型 WhiteboardFrameMessage。",
+        "改白板视图和批注栏：ui/src/whiteboard/WhiteboardView.tsx 和 whiteboard.css（类名 wb-）；「对话 | 白板 | 脉络」那一行在 ui/src/tracks/TowerView.tsx 的 TowerSwitch，选哪个在 task/TaskPage.tsx 的 showBoard；白板盖在对话上靠 Thread 的 cover。",
+        "端到端：e2e/studio/whiteboard.spec.ts（mock 模型按 [[mcp: whiteboard_update …]] 调工具）。"
+      ],
+      "anchors": [
+        { "label": "数据形状", "path": "studio/packages/protocol/src/whiteboard.ts", "anchor": "export interface WhiteboardData" },
+        { "label": "AI 写、人批注", "path": "studio/packages/host/src/features/whiteboard/service.ts", "anchor": "export class WhiteboardFeature" },
+        { "label": "存什么、什么时候告诉 AI", "path": "studio/packages/host/src/core/whiteboard.ts", "anchor": "export function whiteboardHint" },
+        { "label": "三个工具", "path": "studio/packages/host/src/features/whiteboard/mcp.ts", "anchor": "export function whiteboardTools" },
+        { "label": "自带的画法和页面的约定", "path": "studio/packages/host/src/features/whiteboard/template.ts", "anchor": "export const DEFAULT_WHITEBOARD_VIEW" },
+        { "label": "iframe 里的外层脚本", "path": "studio/packages/ui/src/whiteboard/frame.ts", "anchor": "function whiteboardShell" },
+        { "label": "白板视图和批注栏", "path": "studio/packages/ui/src/whiteboard/WhiteboardView.tsx", "anchor": "export function WhiteboardView" },
+        { "label": "端到端", "path": "studio/e2e/studio/whiteboard.spec.ts", "anchor": "a session's 白板" }
+      ],
+      "related": ["studio.tracksTower", "studio.collabFramework", "studio.sessions", "ui.chat"],
+      "next": ["studio/plans/whiteboard.md", "studio/plans/collab-framework.md"]
+    },
+    {
       "id": "studio.duty",
       "label": "值守（定时命令和定时会话）",
       "aliases": ["duty", "值守", "DutyFeature", "duty_save", "自动打包", "日常值守", "检查", "builtin check"],
