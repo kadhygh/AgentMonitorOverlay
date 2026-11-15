@@ -1153,6 +1153,7 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
         "forward PUT /api/sessions/:id/tracks",
         "local POST /api/sessions/:id/annotations",
         "local POST /api/sessions/:id/annotations/send",
+        "local PUT /api/sessions/:id/review-progress",
       ].sort(),
     );
   });

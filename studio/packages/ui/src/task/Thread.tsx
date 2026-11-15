@@ -7,7 +7,7 @@ import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
 import { navHistory } from "../shell/navHistory.js";
 import { FindBar } from "../gitreview/FindBar.js";
-import { Transcript, type DeliveryAction } from "../chat/Transcript.js";
+import { REVEAL_ITEM_EVENT, Transcript, type DeliveryAction } from "../chat/Transcript.js";
 import { SubagentStatusContext } from "../chat/ProcessRows.js";
 import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
@@ -46,6 +46,10 @@ import { cameFromFocus, forgetFocusJump } from "../lib/focusJump.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 import { useAnnotationMarks } from "./annotationMarks.js";
 import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./ThreadParts.js";
+import { ReviewBar, useReviewProgress, useSeenWatch, type ReviewView } from "../chat/ReviewProgress.js";
+import { nextUnreviewed, unreviewed } from "../chat/reviewLogic.js";
+import { scrollToBox } from "../review/highlights.js";
+import { flash } from "./ReplyNav.js";
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
@@ -98,6 +102,8 @@ interface ThreadProps {
   sendNowOff?: string;
   /** 测试功能 「打字时不插队」 is on (2026-11-15): the composer tells the Host when it is written in. */
   typingHold?: boolean;
+  /** 测试功能 「审阅进度」 is on (2026-11-16): each reply 没看 / 浏览过 / 审过, and 复盘 over the conversation. */
+  reviewProgress?: boolean;
   /** Shown over the conversation, in its place (脉络的楼, 2026-11-15); the composer stays under it. */
   cover?: ReactNode;
   /**
@@ -129,7 +135,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, cover, float, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, reviewProgress = false, cover, float, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -548,6 +554,55 @@ ${d}` : back));
   // taken away, so opening the window does not make the conversation's elements anew (its scroller, the observers and
   // highlights on it stay).
   const towerMode = cover ? (float ? "float" : "under") : undefined;
+
+  // 审阅进度 (2026-11-16, plans/review-progress.md, 测试功能): the Host's marks for this session; the replies' ends watched
+  // for 浏览过 while the conversation is in sight (not hidden behind 脉络's building); 复盘 over the conversation.
+  const progress = useReviewProgress(link, reviewProgress ? sessionId : null, reviewProgress, onError);
+  const [reviewMode, setReviewMode] = useState(false);
+  useEffect(() => setReviewMode(false), [sessionId]);
+  const [reviewKeys, setReviewKeys] = useState<string[]>([]);
+  useEffect(() => setReviewKeys([]), [sessionId]);
+  const watch = useSeenWatch(scroller, reviewProgress && progress.loaded && towerMode !== "under", progress.marks, progress.seen);
+  const review = useMemo<ReviewView | undefined>(() => (reviewProgress && progress.loaded ? { marks: progress.marks, mode: reviewMode, mark: progress.mark, watch } : undefined), [reviewProgress, progress.loaded, progress.marks, reviewMode, progress.mark, watch]);
+  const reviewLeft = review ? unreviewed(reviewKeys, review.marks).length : 0;
+  /**
+   * 下一条没审的: the first one not 审过 below the reply being read (from the top again past the last). The one it last
+   * went to counts as read while it is still in sight — at the end of the conversation a short reply never reaches the
+   * top of the view, and going by the top alone went to it again and again.
+   */
+  const lastReviewJump = useRef<string | null>(null);
+  const nextToReview = () => {
+    const el = scroller.current;
+    if (!el || !review) return;
+    const view = el.getBoundingClientRect();
+    const box = (k: string) => el.querySelector(`[data-item-id="${CSS.escape(k)}"]`)?.getBoundingClientRect();
+    const last = lastReviewJump.current && reviewKeys.includes(lastReviewJump.current) ? box(lastReviewJump.current) : undefined;
+    const reading =
+      last && last.bottom > view.top && last.top < view.bottom
+        ? lastReviewJump.current
+        : [...reviewKeys].reverse().find((k) => {
+            const b = box(k);
+            return b && b.top <= view.top + 8;
+          });
+    const id = nextUnreviewed(reviewKeys, review.marks, reading ?? null);
+    lastReviewJump.current = id;
+    if (id) revealReply(id, 12);
+  };
+  /** Scrolls to a reply, unfolding or drawing earlier turns first when it is not on the page yet (as 书签 do). */
+  const revealReply = (id: string, tries: number) => {
+    const reply = scroller.current?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
+    if (!reply) {
+      if (tries <= 0) return;
+      window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: id }));
+      requestAnimationFrame(() => requestAnimationFrame(() => revealReply(id, tries - 1)));
+      return;
+    }
+    stick.current = false;
+    scrollToBox(reply, () => reply.getBoundingClientRect());
+    flash(reply);
+  };
+  const reviewable = !!review && !!session && reviewKeys.length > 0;
+  const replyNav = <ReplyNav scroller={scroller} itemCount={items.length} />;
   return (
     <>
       <div className="thread-stage" data-tower={towerMode}>
@@ -560,7 +615,21 @@ ${d}` : back));
       {float?.chrome}
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
-        <ReplyNav scroller={scroller} itemCount={items.length} />
+        {/* 复盘's line takes the top of the conversation (the reply jumps move into it); off it, its switch sits beside them. */}
+        {reviewable && reviewMode ? (
+          <ReviewBar left={reviewLeft} onNext={nextToReview} onExit={() => setReviewMode(false)}>
+            {replyNav}
+          </ReviewBar>
+        ) : reviewable ? (
+          <div className="thread-tools">
+            <button type="button" className="review-open" onClick={() => setReviewMode(true)} title={`复盘：没审过的回复整块变色，一条条审过去${reviewLeft ? `（还有 ${reviewLeft} 条没审）` : ""}`} data-testid="review-open">
+              复盘
+            </button>
+            {replyNav}
+          </div>
+        ) : (
+          replyNav
+        )}
         {/* Ctrl+F finds in the conversation on the page (folded steps are not searched); in the 会话弹窗 too. */}
         <FindBar active={!!session && (!cover || !!float)} container={scroller} within=".thread-inner" />
         <div
@@ -645,7 +714,7 @@ ${d}` : back));
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
                 <SubagentStatusContext.Provider value={subagentStatus}>
-                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} />
+                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} {...(review ? { review, onReviewKeys: setReviewKeys } : {})} />
                 </SubagentStatusContext.Provider>
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>

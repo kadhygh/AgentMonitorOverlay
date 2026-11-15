@@ -324,9 +324,40 @@
 /* ---- footer ---------------------------------------------------------------------------------------------------- */
 
 .turn-foot { display: flex; align-items: center; gap: 4px; margin: 4px 0 0 -6px; min-height: 28px; color: var(--chat-dim); font-size: 12px; }
-.turn-foot[data-reveal="hover"] { opacity: 0; transition: opacity 120ms ease; }
-.turn:hover .turn-foot[data-reveal="hover"], .turn-foot[data-reveal="hover"]:focus-within { opacity: 1; }
-@media (hover: none) { .turn-foot[data-reveal="hover"] { opacity: 1; } }
+/* 审阅进度 (2026-11-16): its end of the reply (.turn-review) stays in sight; the rest of an older footer waits for hover. */
+.turn-foot[data-reveal="hover"] > :not(.turn-review) { opacity: 0; transition: opacity 120ms ease; }
+.turn:hover .turn-foot[data-reveal="hover"] > *, .turn-foot[data-reveal="hover"]:focus-within > * { opacity: 1; }
+@media (hover: none) { .turn-foot[data-reveal="hover"] > * { opacity: 1; } }
+
+/* ---- 审阅进度 (2026-11-16, plans/review-progress.md; 测试功能) ------------------------------------------------------------ */
+
+/* At the right end of the footer; empty (but 1px, so it can be watched for 浏览过) when nothing shows. */
+.turn-review { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; min-width: 1px; min-height: 1px; }
+.turn-review button { height: 24px; padding: 0 10px; border-radius: var(--r-btn); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.review-btn { border: 1px solid var(--chat-input-border); background: transparent; color: var(--chat-dim-hover); }
+.review-btn:hover { border-color: var(--running); color: var(--chat-label); }
+.review-tick { border: 1px solid transparent; background: transparent; color: var(--running-text); }
+.review-tick:hover { border-color: var(--chat-input-border); color: var(--chat-dim-hover); }
+.review-upto { border: 1px solid transparent; background: transparent; color: var(--chat-dim); }
+.review-upto:hover { background: var(--chat-hover); color: var(--chat-label); }
+.review-state { font-size: 12px; white-space: nowrap; }
+.turn-review[data-state="unseen"] .review-state { color: var(--attention); font-weight: 600; }
+.turn-review[data-state="seen"] .review-state { color: var(--chat-dim-hover); }
+
+/* 复盘: a round not 审过 is tinted as a whole — 没看 the most, 浏览过 a step lighter; 审过 stays as it is. The tint
+   reaches past the round's box (a spread shadow) so the text does not move. */
+.turn[data-review="unseen"], .turn[data-review="seen"] { border-radius: var(--r-l); }
+.turn[data-review="unseen"] { background: var(--attention-bg); box-shadow: 0 0 0 10px var(--attention-bg), -3px 0 0 10px var(--attention); }
+.turn[data-review="seen"] { background: color-mix(in srgb, var(--attention-bg) 45%, transparent); box-shadow: 0 0 0 10px color-mix(in srgb, var(--attention-bg) 45%, transparent); }
+
+/* The conversation's top right: 复盘 beside the reply jumps; in 复盘, its line over the conversation. */
+.thread-tools { position: absolute; top: 8px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; }
+.thread-tools > .reply-nav, .review-bar > .reply-nav { position: static; }
+.review-open { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--overlay); color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.review-open:hover { color: var(--text); background: var(--panel-raised); }
+.review-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 24px; border-bottom: 1px solid var(--attention-border); background: var(--attention-bg); font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; }
+.review-bar-title { font-weight: 600; color: var(--attention); }
+.review-bar-count { font-variant-numeric: tabular-nums; }
 .icon-btn {
   width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px;
   background: transparent; color: var(--chat-dim); cursor: pointer;

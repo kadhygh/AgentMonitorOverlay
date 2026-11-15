@@ -880,6 +880,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDelivery={deliver}
               {...(sendNowOff ? { sendNowOff } : {})}
               typingHold={experimentalOn(settings?.experimentalFeatures, "typing-hold")}
+              reviewProgress={experimentalOn(settings?.experimentalFeatures, "review-progress")}
               {...(showBoard && towerSession ? { cover: <WhiteboardView key={towerSession.id} link={link} sessionId={towerSession.id} /> } : {})}
               {...(showTower && towerSession ? { cover: <TowerView key={towerSession.id} link={link} sessionId={towerSession.id} popup={popupOpen} onOpen={openFromTower} onPick={pickFromTower} onUnpick={() => livePopup && !livePopup.pinned && closePopup()} /> } : {})}
               {...(popupOpen && livePopup && session

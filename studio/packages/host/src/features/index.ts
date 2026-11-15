@@ -56,6 +56,7 @@ import { dutyRoutes } from "./duty/routes.js";
 import { dutyTools } from "./duty/mcp.js";
 import { tracksRoutes } from "./tracks/routes.js";
 import { tracksTools } from "./tracks/mcp.js";
+import { reviewProgressRoutes } from "./reviewprogress/routes.js";
 import { whiteboardRoutes } from "./whiteboard/routes.js";
 import { whiteboardTools } from "./whiteboard/mcp.js";
 
@@ -108,5 +109,6 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "duty", routes: dutyRoutes, tools: dutyTools },
   { name: "issues", routes: () => [], tools: issuesTools },
   { name: "tracks", routes: tracksRoutes, tools: tracksTools },
+  { name: "reviewprogress", routes: reviewProgressRoutes },
   { name: "whiteboard", routes: whiteboardRoutes, tools: whiteboardTools },
 ];

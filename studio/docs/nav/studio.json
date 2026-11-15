@@ -298,6 +298,69 @@
       "next": ["studio/plans/whiteboard.md", "studio/plans/collab-framework.md"]
     },
     {
+      "id": "ui.reviewProgress",
+      "label": "审阅进度：对话里每条回复 没看 / 浏览过 / 审过，复盘",
+      "aliases": [
+        "审阅进度",
+        "review-progress",
+        "reviewProgress",
+        "ReviewProgress",
+        "ReviewMark",
+        "浏览过",
+        "审过",
+        "没看",
+        "复盘",
+        "TurnReview",
+        "ReviewBar",
+        "到这里为止都审过",
+        "下一条没审的"
+      ],
+      "category": "ui",
+      "purpose": "测试功能「审阅进度」开着时，对话里每一轮的最终回复有一个状态：没看、浏览过（回复末尾在屏幕上停过约 1.5 秒，窗口在前台）、审过（只能人点）。平时只有值得审的回复（超过一屏，或那一轮有审批、提问、文件改动、查看包）末尾有「审过」按钮；「复盘」把没审过的整轮标出颜色、数还有几条、跳到下一条。记在 Host（kv review-progress:<会话 id>，按回复行的 id），远程副本的进度留在看的这台电脑上。脉络的会话弹窗用的是同一个 Thread，自动带上。",
+      "steps": [
+        "改哪一轮算、哪些回复平时就有「审过」按钮、数还剩几条、下一条是哪条：ui/src/chat/reviewLogic.ts（纯函数，reviewLogic.test.ts）。",
+        "改「浏览过」怎么判（停多久、窗口在不在前台）、回复末尾的控件、复盘顶上那一条：ui/src/chat/ReviewProgress.tsx（useSeenWatch、TurnReview、ReviewBar）；样式在 chat/chat.css 的「审阅进度」一段。",
+        "复盘的开关、下一条没审的怎么滚过去：task/Thread.tsx（reviewMode、nextToReview、revealReply）；Transcript.tsx 把 TurnReview 放进 TurnFooter、整轮的 data-review。",
+        "改存什么、谁能写：host 的 features/reviewprogress/service.ts（update：浏览过不盖掉审过，撤回审过回到浏览过，不是这个会话的回复的 id 丢掉）；路由和事件在 protocol/src/api.ts（ReviewProgress、reviewprogress.changed）。",
+        "端到端：e2e/studio/review-progress.spec.ts。"
+      ],
+      "anchors": [
+        {
+          "label": "哪一轮算、显示什么",
+          "path": "studio/packages/ui/src/chat/reviewLogic.ts",
+          "anchor": "export function reviewControls"
+        },
+        {
+          "label": "记浏览过、回复末尾的控件",
+          "path": "studio/packages/ui/src/chat/ReviewProgress.tsx",
+          "anchor": "export function TurnReview"
+        },
+        {
+          "label": "复盘和跳到下一条",
+          "path": "studio/packages/ui/src/task/Thread.tsx",
+          "anchor": "const nextToReview"
+        },
+        {
+          "label": "Host 里的记录",
+          "path": "studio/packages/host/src/features/reviewprogress/service.ts",
+          "anchor": "export class ReviewProgressFeature"
+        },
+        {
+          "label": "端到端",
+          "path": "studio/e2e/studio/review-progress.spec.ts",
+          "anchor": "review-progress"
+        }
+      ],
+      "related": [
+        "ui.chat",
+        "studio.tracksTower",
+        "studio.collabFramework"
+      ],
+      "next": [
+        "studio/plans/review-progress.md"
+      ]
+    },
+    {
       "id": "studio.duty",
       "label": "值守（定时命令和定时会话）",
       "aliases": ["duty", "值守", "DutyFeature", "duty_save", "自动打包", "日常值守", "检查", "builtin check"],
