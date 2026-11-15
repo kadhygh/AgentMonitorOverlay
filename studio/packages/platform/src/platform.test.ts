@@ -481,9 +481,15 @@ describe("launch and the machine", () => {
 
   it("the Studio card: the Host's state and version; 重启 Studio — refused while sessions are at work, else the old one stops and the installed one opens (2026-10-29)", async () => {
     let health: Record<string, unknown> = { ok: true, pid: 4242, running: 0, version: "0.8.0" };
-    // The Host is a stand-in at 127.0.0.1:47999; the team server's requests go out for real.
+    // The Host is a stand-in (nothing listens there): its address answers from here, the team server's requests go out
+    // for real. Its port must not be the fake team server's (2026-11-16): that one takes a random free port of
+    // 47950–47999, and when it got 47999 — this stand-in's fixed port until now — its own requests were answered from
+    // here with the Host's health, so 登录 said 「这个地址上不是 AMO 的团队服务器」 and the tool list stayed empty. One run
+    // in 50, and again on the retry (the server is started once for the file): 自动打包 of Studio 0.9.43 and 0.9.72.
+    const hostPort = Number(new URL(server.url).port) === 47999 ? 47998 : 47999;
+    const hostUrl = `http://127.0.0.1:${hostPort}`;
     const routed = ((url: string | URL, init?: RequestInit) =>
-      String(url).startsWith("http://127.0.0.1:47999/") ? Promise.resolve(new Response(JSON.stringify(health), { status: 200, headers: { "content-type": "application/json" } })) : fetch(url, init)) as typeof fetch;
+      String(url).startsWith(`${hostUrl}/`) ?Promise.resolve(new Response(JSON.stringify(health), { status: 200, headers: { "content-type": "application/json" } })) : fetch(url, init)) as typeof fetch;
     let stop: StudioStop = { ok: false, reason: "running", running: 1 };
     let left: number[] = [];
     const waited: Array<readonly number[]> = [];
@@ -512,6 +518,7 @@ describe("launch and the machine", () => {
     // 登录或取频道没成功时工具列表是空的。先把它们说出来，下次失败能看出是哪一步。
     // 2026-11-15 自动打包（Studio 0.9.72）里它又两次都失败了，但问题页只留错误的第一行，vitest 把对象缩成「{ …(4) }」，还是看不出是哪一步：
     // 把实际的值（连同连接和安装的提示）放进断言的说明里，它在第一行。
+    // 2026-11-16 找到原因了（上面 hostPort 的说明：假团队服务器正好拿到 47999）；这条断言留着，别的原因再出现时照样能看出是哪一步。
     const before = platform.view();
     const studioTool = before.tools.find((t) => t.id === "studio");
     const seen = { loginError: before.loginError, connection: before.connection, tools: before.tools.map((t) => t.id), installed: studioTool?.installed, result: studioTool?.result ?? null };
@@ -521,7 +528,7 @@ describe("launch and the machine", () => {
     expect(card().studio).toEqual({ hostUp: false, sessions: null, version: null, restart: "none", restarting: false });
     const data = join(root, "studio-data");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "host.json"), JSON.stringify({ url: "http://127.0.0.1:47999", port: 47999, pid: 4242 }));
+    writeFileSync(join(data, "host.json"), JSON.stringify({ url: hostUrl, port: hostPort, pid: 4242 }));
     picks.push(data);
     await platform.pickStudioDataDir();
     expect(card().studio).toEqual({ hostUp: true, sessions: 0, version: "0.8.0", restart: "ready", restarting: false });
