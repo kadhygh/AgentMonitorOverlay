@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseRemoteProfileId, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, MAX_SUBSESSION_NOTES, SUBSESSION_NOTE_MAX, SUBSESSION_PERMISSIONS, type SubsessionNote, type SubsessionPermission, OPTIONAL_FEATURES, EXPERIMENTAL_FEATURES, type ExperimentalFeature, type ProjectGroup, type TopicGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn } from "../../runtime/claude/claude-login.js";
-import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
+import { autoCompactUnset, readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { readShellHelp, SHELL_HELP_KEY } from "../../runtime/agent-env.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
@@ -34,6 +34,7 @@ export class ConfigFeature extends Feature<"claudeAccounts" | "scratchpad"> {
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
       autoCompactTokens: readAutoCompact(this.store),
+      ...(autoCompactUnset(this.store) ? { autoCompactUnset: true } : {}),
       autoCompactProfiles: readAutoCompactProfiles(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
       claudeAccounts: this.f.claudeAccounts.state(),

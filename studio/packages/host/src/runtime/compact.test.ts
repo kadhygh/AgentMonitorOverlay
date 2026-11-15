@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_AUTO_COMPACT_TOKENS, type ModelProfile, type Workspace } from "@amo-studio/protocol";
+import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactFor, type ModelProfile, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { ClaudeRuntime } from "./claude/claude-runtime.js";
 import { StaticCredentialReader } from "./credentials.js";
@@ -89,5 +89,23 @@ describe("自动压缩点", () => {
 
     expect(service.config.updateSettings({ autoCompactProfiles: { "p-claude": null } }).autoCompactProfiles).toEqual({ "p-ds": 150_000 });
     expect(readAutoCompact(store, "p-claude")).toBe(300_000);
+  });
+
+  it("the Claude login and Codex's GPT have defaults of their own (420k, 500k) until the channel or the shared value is set", () => {
+    expect(readAutoCompact(store, "claude-subscription")).toBe(420_000);
+    expect(readAutoCompact(store, "codex-default")).toBe(500_000);
+    expect(readAutoCompact(store, "p-ds")).toBe(DEFAULT_AUTO_COMPACT_TOKENS);
+    expect(service.config.settings()).toMatchObject({ autoCompactTokens: DEFAULT_AUTO_COMPACT_TOKENS, autoCompactUnset: true });
+    expect(autoCompactFor(service.config.settings(), "claude-subscription")).toBe(420_000);
+    expect(autoCompactFor(service.config.settings(), "p-ds")).toBe(DEFAULT_AUTO_COMPACT_TOKENS);
+    // The channel's own value first (set straight in the store: these two are not among this test's profiles).
+    store.setKv("settings:auto-compact-profiles", JSON.stringify({ "claude-subscription": 412_000 }));
+    expect(readAutoCompact(store, "claude-subscription")).toBe(412_000);
+    expect(autoCompactFor(service.config.settings(), "claude-subscription")).toBe(412_000);
+    // A shared value the person chose is theirs for every channel without its own.
+    const s = service.config.updateSettings({ autoCompactTokens: 300_000 });
+    expect(s.autoCompactUnset).toBeUndefined();
+    expect(readAutoCompact(store, "codex-default")).toBe(300_000);
+    expect(autoCompactFor(s, "codex-default")).toBe(300_000);
   });
 });

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactFor, type AutoCompactChoice, type ModelProfile, type StudioSettings } from "@amo-studio/protocol";
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, autoCompactDefault, autoCompactFor, type AutoCompactChoice, type ModelProfile, type StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 
 // 自动压缩点 (2026-10-17): when a session summarises its conversation by itself. Every model call reads the whole
 // context, so a long session left to grow toward a 1M window costs more and more per step. S18 (2026-10-18): on each
-// channel's page, for that channel; a channel never set follows the shared value (272k unless changed before S18).
+// channel's page, for that channel; a channel never set follows the shared value (272k unless changed before S18) —
+// 2026-11-15: Claude's login and Codex's GPT have defaults of their own (420k, 500k) while nobody set that.
+// `shared` is what this channel gets without a value of its own.
 // DSH compacts by itself at 80% of the window and has no setting for it.
 
 const k = (tokens: number) => String(Math.round(tokens / 1000));
@@ -12,7 +14,7 @@ const k = (tokens: number) => String(Math.round(tokens / 1000));
 export function AutoCompactSection({ link, settings, profile }: { link: HostLink; settings: StudioSettings | null; profile: ModelProfile }) {
   const own = settings?.autoCompactProfiles?.[profile.id];
   const current = settings ? autoCompactFor(settings, profile.id) : null;
-  const shared = settings?.autoCompactTokens ?? null;
+  const shared = settings ? autoCompactFor({ ...settings, autoCompactProfiles: {} }, profile.id) : null;
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,8 +66,8 @@ export function AutoCompactSection({ link, settings, profile }: { link: HostLink
           </button>
         )}
         {current === null ? (
-          <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void save(DEFAULT_AUTO_COMPACT_TOKENS)} data-testid="auto-compact-default">
-            用 {k(DEFAULT_AUTO_COMPACT_TOKENS)}k
+          <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void save(autoCompactDefault(profile.id))} data-testid="auto-compact-default">
+            用 {k(autoCompactDefault(profile.id))}k
           </button>
         ) : (
           <button type="button" className="btn-ghost small" disabled={busy} onClick={() => void save("cli")} data-testid="auto-compact-cli">

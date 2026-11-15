@@ -364,6 +364,11 @@ export interface StudioSettings {
    * conversation by themselves; null leaves it to each CLI (near the model's whole window).
    */
   autoCompactTokens: number | null;
+  /**
+   * The person never chose the value above (2026-11-15): it is DEFAULT_AUTO_COMPACT_TOKENS, and the channels with a
+   * default of their own (AUTO_COMPACT_PROFILE_DEFAULTS) use that instead.
+   */
+  autoCompactUnset?: boolean;
   /** S18: channels (profile ids) with their own 自动压缩点, set on their page in 设置 → 模型; the rest use the above. */
   autoCompactProfiles: Record<string, AutoCompactChoice>;
   /** 项目分组 (2026-10-22): the left column's project groups, in order. */
@@ -401,13 +406,22 @@ export interface TopicGroup {
 export type AutoCompactChoice = number | "cli";
 
 /** The 自动压缩点 a channel's sessions get: its own, else the shared one; null = the CLI decides. */
-export function autoCompactFor(s: Pick<StudioSettings, "autoCompactTokens" | "autoCompactProfiles">, profileId: string): number | null {
+export function autoCompactFor(s: Pick<StudioSettings, "autoCompactTokens" | "autoCompactProfiles" | "autoCompactUnset">, profileId: string): number | null {
   const own = s.autoCompactProfiles?.[profileId];
-  return own === "cli" ? null : (own ?? s.autoCompactTokens);
+  return own === "cli" ? null : (own ?? (s.autoCompactUnset ? autoCompactDefault(profileId) : s.autoCompactTokens));
 }
 
 /** 自动压缩点 by default: the person's choice (2026-10-17), well below the 1M windows the CLIs would otherwise wait for. */
 export const DEFAULT_AUTO_COMPACT_TOKENS = 272_000;
+/**
+ * The channels whose default is their own (the user, 2026-11-15: claude 的默认上下文大小改成 42k，gpt 的改成 50k — 420k and
+ * 500k: 42k is under the smallest value allowed, and their own Claude channel stood at 412k): the Claude login and
+ * Codex's own GPT. The other channels (GLM, DeepSeek, the person's own) keep the default above: their windows differ.
+ * A value set on the channel's page comes first, then a shared value the person chose.
+ */
+export const AUTO_COMPACT_PROFILE_DEFAULTS: Readonly<Record<string, number>> = { "claude-subscription": 420_000, "codex-default": 500_000 };
+/** 自动压缩点 of a channel nobody set anything for. */
+export const autoCompactDefault = (profileId: string): number => AUTO_COMPACT_PROFILE_DEFAULTS[profileId] ?? DEFAULT_AUTO_COMPACT_TOKENS;
 export const AUTO_COMPACT_MIN = 50_000;
 export const AUTO_COMPACT_MAX = 1_000_000;
 

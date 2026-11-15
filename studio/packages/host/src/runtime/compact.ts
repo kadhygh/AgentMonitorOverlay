@@ -1,4 +1,4 @@
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, DEFAULT_AUTO_COMPACT_TOKENS, type AutoCompactChoice } from "@amo-studio/protocol";
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactDefault, type AutoCompactChoice } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
 import type { CodexConfig } from "./profiles.js";
 
@@ -14,7 +14,10 @@ const PROFILES_KEY = "settings:auto-compact-profiles";
 
 const valid = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= AUTO_COMPACT_MIN && n <= AUTO_COMPACT_MAX;
 
-/** The shared setting: tokens, or null to leave it to the CLIs. Unset: DEFAULT_AUTO_COMPACT_TOKENS. */
+/**
+ * The shared setting: tokens, or null to leave it to the CLIs. Unset: DEFAULT_AUTO_COMPACT_TOKENS — or, for a channel
+ * with a default of its own (2026-11-15: Claude 420k, GPT 500k), that.
+ */
 export function readAutoCompact(store: Store, profileId?: string): number | null {
   if (profileId) {
     const own = readAutoCompactProfiles(store)[profileId];
@@ -22,11 +25,14 @@ export function readAutoCompact(store: Store, profileId?: string): number | null
     if (own !== undefined) return own;
   }
   const raw = store.getKv(KEY)?.value;
-  if (raw === undefined) return DEFAULT_AUTO_COMPACT_TOKENS;
+  if (raw === undefined) return profileId ? autoCompactDefault(profileId) : DEFAULT_AUTO_COMPACT_TOKENS;
   if (raw === "cli") return null;
   const n = Number(raw);
   return valid(n) ? n : DEFAULT_AUTO_COMPACT_TOKENS;
 }
+
+/** Nobody chose the shared value: the channels' own defaults count (StudioSettings.autoCompactUnset). */
+export const autoCompactUnset = (store: Store): boolean => store.getKv(KEY) === undefined;
 
 export function writeAutoCompact(store: Store, tokens: number | null): void {
   store.setKv(KEY, tokens === null ? "cli" : String(tokens));
