@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Protector } from "@amo-studio/account";
-import { listenInStudioRange, removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
+import { listenInStudioRange, removeTempDir, standInPort, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
 import { PlatformClient } from "./client.js";
 import { planLaunch, type LaunchSpec } from "./launch.js";
 import { trayMenu } from "./tray.js";
@@ -483,10 +483,10 @@ describe("launch and the machine", () => {
     let health: Record<string, unknown> = { ok: true, pid: 4242, running: 0, version: "0.8.0" };
     // The Host is a stand-in (nothing listens there): its address answers from here, the team server's requests go out
     // for real. Its port must not be the fake team server's (2026-11-16): that one takes a random free port of
-    // 47950–47999, and when it got 47999 — this stand-in's fixed port until now — its own requests were answered from
+    // the spare range, and when it got its last one — this stand-in's fixed port until now — its own requests were answered from
     // here with the Host's health, so 登录 said 「这个地址上不是 AMO 的团队服务器」 and the tool list stayed empty. One run
     // in 50, and again on the retry (the server is started once for the file): 自动打包 of Studio 0.9.43 and 0.9.72.
-    const hostPort = Number(new URL(server.url).port) === 47999 ? 47998 : 47999;
+    const hostPort = standInPort(server.url);
     const hostUrl = `http://127.0.0.1:${hostPort}`;
     const routed = ((url: string | URL, init?: RequestInit) =>
       String(url).startsWith(`${hostUrl}/`) ?Promise.resolve(new Response(JSON.stringify(health), { status: 200, headers: { "content-type": "application/json" } })) : fetch(url, init)) as typeof fetch;

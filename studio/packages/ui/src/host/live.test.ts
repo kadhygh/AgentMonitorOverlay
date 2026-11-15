@@ -120,7 +120,9 @@ describe("sharedLive", () => {
   it("one read per Host for all its readers; again after a reconnect; the value stays when the last one goes", async () => {
     let reads = 0;
     const use = sharedLive<number>(() => ({ load: async () => ++reads, onEvent: (cur, e) => (e.type === "settings.updated" ? 100 : cur) }));
-    const link = { url: "http://127.0.0.1:47999", token: "t" };
+    // Nothing is asked of this address (the loads are the test's own); the Host's default port, not one of the range
+    // the fake servers pick from (scripts/test-ports.test.mjs).
+    const link = { url: "http://127.0.0.1:47900", token: "t" };
     const seen: string[] = [];
     const offA = use.subscribe(link, () => seen.push("a"));
     const offB = use.subscribe({ ...link }, () => seen.push("b")); // a reconnect hands a new object for the same Host

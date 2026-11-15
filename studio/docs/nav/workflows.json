@@ -138,7 +138,7 @@
     {
       "id": "infra.e2e",
       "label": "测试：e2e、假服务器和 mock 模型",
-      "aliases": ["e2e", "Playwright", "testkit", "mock", "假服务器", "launchStudio", "截图", "vitest"],
+      "aliases": ["e2e", "Playwright", "testkit", "mock", "假服务器", "launchStudio", "截图", "vitest", "端口", "standInPort", "listenInStudioRange", "偶发", "flaky", "打包失败"],
       "category": "infra",
       "purpose": "单测用 vitest（packages/*/src/**/*.test.ts 和 scripts/**/*.test.mjs）；e2e 用 Playwright，按程序分 project（studio、notes、reviewer、relay、platform）；testkit 有假的 Codex app-server、Anthropic、ACP agent、团队服务器。都用 BelowNormal 和 --maxWorkers=6 跑，截图放 screenshots/<程序>/。",
       "anchors": [
@@ -148,10 +148,12 @@
         { "label": "mock 模型", "path": "studio/packages/testkit/src/mock-model.ts" },
         { "label": "假 Codex", "path": "studio/packages/testkit/src/fake-app-server.ts", "anchor": "export async function startFakeAppServer" },
         { "label": "假 Anthropic", "path": "studio/packages/testkit/src/mock-anthropic.ts", "anchor": "export async function startMockAnthropic" },
-        { "label": "假团队服务器", "path": "studio/packages/testkit/src/fake-platform-server.ts", "anchor": "export async function startFakePlatformServer" }
+        { "label": "假团队服务器", "path": "studio/packages/testkit/src/fake-platform-server.ts", "anchor": "export async function startFakePlatformServer" },
+        { "label": "测试的端口：随机拿一个、假地址用的", "path": "studio/packages/testkit/src/ports.ts", "anchor": "export function standInPort" },
+        { "label": "不让测试写死随机端口段的检查", "path": "studio/scripts/test-ports.test.mjs", "anchor": "export function fixedSparePorts" }
       ],
       "related": ["infra.release"],
-      "next": ["studio/HANDOFF.md"]
+      "next": ["studio/HANDOFF.md", "studio/plans/maintenance.md"]
     },
     {
       "id": "infra.docs",
