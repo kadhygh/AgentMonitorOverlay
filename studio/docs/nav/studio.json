@@ -303,7 +303,7 @@
     },
     {
       "id": "ui.reviewProgress",
-      "label": "审阅进度：对话里每条回复右边的竖线，按块标读到哪、标「!」有问题，复盘",
+      "label": "审阅进度：对话最右边一条竖线，每条回复旁一段，按块标读到哪、标「!」有问题",
       "aliases": [
         "审阅进度",
         "review-progress",
@@ -316,18 +316,14 @@
         "竖线",
         "复盘",
         "ReadMarks",
-        "ReadFoot",
-        "ReviewBar",
-        "到这里为止都读过",
-        "下一处没读的",
         "reviewProgressHint"
       ],
       "category": "ui",
-      "purpose": "测试功能「审阅进度」开着时（第二版 2026-11-16），对话里每一轮的最终回复右边一条竖线：左键点某一块的高度＝这条回复从头读到这一块（同一处再点取消），右键＝这一块标「!」有问题。块＝渲染出来的 Markdown 顶层元素（一段、列表的一条、表格的一行、代码块，小标题跟着下一块）。什么都不自动标。「复盘」给没读到的块上底色、数还有几条没读完和几处有问题、跳到下一处没读的、在回复末尾「到这里为止都读过」。记在 Host（kv review-progress:<会话 id>，按回复行的 id），远程副本的进度留在看的这台电脑上。人新标的「!」和最后一条回复只读了一部分时，随人的下一条消息告诉 AI。脉络的会话弹窗用的是同一个 Thread，自动带上。",
+      "purpose": "测试功能「审阅进度」开着时（第二版 2026-11-16），对话里每一轮的最终回复右边一条竖线：左键点某一块的高度＝这条回复从头读到这一块（同一处再点取消），右键＝这一块标「!」有问题。块＝渲染出来的 Markdown 顶层元素（一段、列表的一条、表格的一行、代码块，小标题跟着下一块）。什么都不自动标。竖线在对话区最右边（滚动条左边），从对话开头连到结尾：回复之间是虚线，「读到这里」是线左边的小签（对话区窄时只是缺口）。这一轮还在跑时，写完的最终回复也有竖线。「复盘」11-16 晚删了（用户：有了右边的线就够了）。记在 Host（kv review-progress:<会话 id>，按回复行的 id），远程副本的进度留在看的这台电脑上。人新标的「!」和最后一条回复只读了一部分时，随人的下一条消息告诉 AI。脉络的会话弹窗用的是同一个 Thread，自动带上。",
       "steps": [
-        "改怎么分块、点一下算到哪、还剩几条、下一处是哪：ui/src/chat/reviewLogic.ts（纯函数 readBlocks、clickRead、unfinished、nextUnread…，reviewLogic.test.ts）。",
-        "改竖线、底色、「读到这里」怎么画、怎么量位置、复盘里回复末尾和顶上那一条：ui/src/chat/ReviewProgress.tsx（ReadMarks、useBands、blockElements、ReadFoot、ReviewBar）；样式在 chat/chat.css 的「审阅进度」一段（每一轮右边留的位置 --read-gutter、窄对话的容器查询）。",
-        "复盘的开关、下一处没读的怎么滚过去：task/Thread.tsx（reviewMode、nextToReview、revealReply）；Transcript.tsx 把 ReadMarks 放进回复（AgentReply 的 reading）、ReadFoot 放进 TurnFooter。",
+        "改怎么分块、点一下算到哪、哪条回复带竖线：ui/src/chat/reviewLogic.ts（纯函数 readBlocks、clickRead、reviewKey…，reviewLogic.test.ts）。",
+        "改竖线、「读到这里」怎么画、怎么量位置：ui/src/chat/ReviewProgress.tsx（ReadMarks、useBands、blockElements）；样式在 chat/chat.css 的「审阅进度」一段（虚线是 .thread 的背景；每一轮用 --read-edge 负边距伸到最右边，免得 content-visibility 把竖线裁掉；宽窄用容器查询 chat-thread）。",
+        "读进度从哪来：task/Thread.tsx（review，传给 Transcript）；Transcript.tsx 把 ReadMarks 放进回复（AgentReply 的 reading）。",
         "改存什么、谁能写：一次改动怎么改记录在 protocol/src/reviewprogress.ts（applyReviewChange，Host 和界面共用）；Host 的检查在 features/reviewprogress/service.ts，kv 的读写和旧数据在 core/reviewprogress.ts。",
         "改带给 AI 的话：host 的 core/reviewprogress.ts（reviewProgressHint），接在 features/sessions/service.ts 的 sendMessage 里（和 tracksHint、whiteboardHint 并排）。",
         "端到端：e2e/studio/review-progress.spec.ts。"
@@ -344,9 +340,9 @@
           "anchor": "export function ReadMarks"
         },
         {
-          "label": "复盘和跳到下一处",
+          "label": "读进度交给对话",
           "path": "studio/packages/ui/src/task/Thread.tsx",
-          "anchor": "const nextToReview"
+          "anchor": "const review = useMemo<ReviewView"
         },
         {
           "label": "一次改动怎么改记录",
