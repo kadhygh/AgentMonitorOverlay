@@ -46,6 +46,17 @@ export function remoteRoutes(service: HostService): Route[] {
       if (!service.requireTask(params.id!).remote) throw new HostError("not_found", "这不是远程任务");
       return { key: service.remote.copies.files.key(params.id!) };
     }),
+    // 补取 (2026-11-17): a copy's pictures that did not come, asked of its computer again.
+    route("POST /api/remote/tasks/:id/images", async ({ params, body }) => {
+      if (!service.requireTask(params.id!).remote) throw new HostError("not_found", "这不是远程任务");
+      await service.remote.copies.images.request(params.id!, str(obj(body).itemId, "itemId"));
+      return { ok: true as const };
+    }),
+    // 远程选 MCP (2026-11-17): the MCP servers a new session of a copy, or a task created there, would have on that computer.
+    route("GET /api/remote/tasks/:id/mcp", ({ params, query }) => service.remote.copies.taskMcp(service.requireTask(params.id!), str(query.get("profile"), "profile"))),
+    route("GET /api/remote/catalog/mcp", ({ query }) =>
+      service.remote.catalogMcp({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") }, query.get("workspace") || null, str(query.get("profile"), "profile")),
+    ),
     route("GET /api/remote/catalog", ({ query }) => service.remote.catalog({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") })),
     route("GET /api/remote/catalog/prompt-templates", ({ query }) =>
       service.remote.catalogTemplates({ account: str(query.get("account"), "account"), device: str(query.get("device"), "device") }, query.get("workspace") || null),

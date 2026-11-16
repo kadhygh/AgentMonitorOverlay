@@ -23,3 +23,12 @@
 .mcp-tray-foot { display: flex; align-items: center; gap: 10px; }
 .mcp-tray-foot .link-btn { margin-left: auto; }
 .edit-project-mcp { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }
+
+/* 远程选 MCP (2026-11-17): the MCP servers of the computer a remote task runs on, ticked for a new session there. */
+.rmcp { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rmcp-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.rmcp-chip { border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--chip); color: var(--text-faint); padding: 1px 9px; font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.rmcp-chip[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+.rmcp-chip:disabled { cursor: default; opacity: 0.7; }
+.rmcp-changed { color: var(--text-dim); }
+.rmcp-old { opacity: 0.75; }

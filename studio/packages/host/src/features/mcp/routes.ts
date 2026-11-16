@@ -11,7 +11,8 @@ export function mcpRoutes(service: HostService): Route[] {
     route("DELETE /api/mcp/servers/:id", ({ params }) => (service.mcp.remove(params.id!), { ok: true })),
     route("GET /api/mcp/projects/:id", ({ params }) => service.mcp.project(params.id!)),
     route("PUT /api/mcp/projects/:id", ({ params, body }) => service.mcp.setProject(params.id!, obj(body))),
-    route("GET /api/sessions/:id/mcp", ({ params }) => service.mcp.session(params.id!)),
-    route("PUT /api/sessions/:id/mcp", ({ params, body }) => service.mcp.setSession(params.id!, obj(body))),
+    // A remote task's copy (2026-11-17): its session's MCP is the computer's it runs on, read and changed there.
+    route("GET /api/sessions/:id/mcp", ({ params }) => (service.store.getSession(params.id!)?.runtime === "remote" ? service.remote.copies.sessionMcp(params.id!) : service.mcp.session(params.id!))),
+    route("PUT /api/sessions/:id/mcp", ({ params, body }) => (service.store.getSession(params.id!)?.runtime === "remote" ? service.remote.copies.setSessionMcp(params.id!, obj(body)) : service.mcp.setSession(params.id!, obj(body))), { remoteCopy: "forward" }),
   ];
 }

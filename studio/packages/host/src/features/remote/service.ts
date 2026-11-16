@@ -1,5 +1,5 @@
 import { extname, isAbsolute } from "node:path";
-import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type ForkRequest, type ForkTurn, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
+import { PREVIEW_IMAGE_TYPES, REMOTE_KINDS, REMOTE_TASK_FOLDER, type ForkRequest, type ForkTurn, type HostEvent, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type RemoteConnection, type RemoteIncomingRequest, type RemoteOutgoingRequest, type RemotePeer, type RemoteAcceptInput, type RemoteCatalog, type RemoteCreateAnswer, type RemoteCreateResult, type RemoteFetchedFile, type RemoteListAnswer, type RemoteMcpList, type RemoteOnlineDevices, type RemotePingResult, type RemotePush, type RemoteState, type Session, type Task } from "@amo-studio/protocol";
 import { serverLabel, type Account, type Device } from "@amo-studio/account";
 import type { DeviceEvent, DeviceRef, OnlineDevice, PairRequest, PeerView } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
@@ -9,7 +9,7 @@ import { underTaskFolder } from "./files.js";
 import { Feature } from "../../core/feature.js";
 import { Backoff, CommandError, CommandLog, DeviceLink, type RelayFrameIn } from "./link.js";
 import { RemoteGrants, type Answer, type RemoteContext, type SessionKind } from "./grants.js";
-import { RemoteCopies } from "./copies.js";
+import { mcpChoices, RemoteCopies } from "./copies.js";
 import { TaskAsks, TaskRequests } from "./requests.js";
 import { RemoteCreates } from "./create.js";
 import { sendAlong, UploadInbox } from "./uploads.js";
@@ -57,7 +57,7 @@ export interface RemoteOptions extends TeamLinkOptions {
  * The features remote and its parts (the context's host: grants, copies, views, uploads…) use: what A answers about a
  * granted task reads the Review, packs, files and templates there, and starts or sends into its sessions.
  */
-export type RemoteUses = "attachments" | "channels" | "chatFiles" | "gitReview" | "openIn" | "promptTemplates" | "sessions" | "tasks" | "viewPacks";
+export type RemoteUses = "attachments" | "channels" | "chatFiles" | "gitReview" | "mcp" | "openIn" | "promptTemplates" | "sessions" | "tasks" | "viewPacks";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const same = (a: DeviceRef, b: DeviceRef) => a.account === b.account && a.device === b.device;
@@ -328,6 +328,7 @@ export class RemoteFeature extends Feature<RemoteUses> {
     // 远程创建 (2026-10-29): what the device may pick, and the task made here now.
     if (f.kind === REMOTE_KINDS.catalog) return said(() => this.creates.serveCatalog(f.from));
     if (f.kind === REMOTE_KINDS.createTemplates) return said(() => ({ templates: this.creates.templates(f.from, body.workspaceId) }));
+    if (f.kind === REMOTE_KINDS.createMcp) return said(() => this.creates.mcp(f.from, body));
     if (f.kind === REMOTE_KINDS.upload) return said(() => this.inbox.receive(f.from, body));
     if (f.kind === REMOTE_KINDS.create) return this.creates.create(f.from, body).then((made): Answer => ({ kind: REMOTE_KINDS.ok, body: made }), failed);
     // Step 4: a request for a task, or taking one back.
@@ -727,6 +728,12 @@ export class RemoteFeature extends Feature<RemoteUses> {
     return Array.isArray(answer.templates) ? answer.templates : [];
   }
 
+  /** 远程选 MCP (2026-11-17): the device's MCP servers for a task created there in that project on that model (A's ids). */
+  async catalogMcp(peer: DeviceRef, workspaceId: Id | null, profileId: Id): Promise<RemoteMcpList> {
+    const p = this.creatable(peer);
+    return this.copies.ask<RemoteMcpList>(peer, REMOTE_KINDS.createMcp, { workspaceId, profileId }, 30_000, `${p.name} 不在线`);
+  }
+
   /**
    * Creates a task on the device (granted to this computer, its session started there) and answers once the copy is
    * here — it comes with the grant; asked for directly when it has not come after a while — or says it follows.
@@ -736,7 +743,7 @@ export class RemoteFeature extends Feature<RemoteUses> {
     // Pictures and files go first (2026-10-29 evening); A writes the 引用文件 block again with its own paths.
     const images = Array.isArray(body.attachments) && body.attachments.length ? this.host.sessions.images(body.attachments as Id[]) : [];
     const along = await sendAlong((pr, kind, b, ms, off) => this.copies.ask(pr, kind, b, ms, off), peer, p.name, typeof body.text === "string" ? body.text : "", images);
-    const ask = { title: typeof body.title === "string" ? body.title : "", text: along.text, topicId: body.topicId ?? null, workspaceId: body.workspaceId ?? null, profileId: body.profileId, ...(along.uploads.length ? { uploads: along.uploads } : {}) };
+    const ask = { title: typeof body.title === "string" ? body.title : "", text: along.text, topicId: body.topicId ?? null, workspaceId: body.workspaceId ?? null, profileId: body.profileId, ...(along.uploads.length ? { uploads: along.uploads } : {}), ...(mcpChoices(body.mcp) ? { mcp: mcpChoices(body.mcp) } : {}) };
     // Starting the session takes longest (as rt.start).
     const made = await this.copies.ask<RemoteCreateAnswer>(peer, REMOTE_KINDS.create, ask, 90_000, `${p.name} 不在线，任务没建`);
     // 安全 (2026-10-29): it waits for a yes there — kept with this computer's requests (撤回 there too).

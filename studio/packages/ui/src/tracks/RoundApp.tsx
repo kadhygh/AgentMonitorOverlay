@@ -170,7 +170,7 @@ function RoundWindow({ link, state, ask, task, session }: { link: HostLink; stat
           session={session}
           profile={state.profiles.find((p) => p.id === session.profileId)}
           turnId={forking}
-          {...(copy ? { remote: { name: copy.name, ...(forkRuntime ? { runtime: forkRuntime } : {}) } } : {})}
+          {...(copy ? { remote: { name: copy.name, ...(forkRuntime ? { runtime: forkRuntime } : {}), mcp: !!task.remote?.mcp } } : {})}
           onClose={() => setForking(null)}
           // The branch is a session of its own: the workbench opens it (the building goes, and this window with it).
           onForked={(s) => {

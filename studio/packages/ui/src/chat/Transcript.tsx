@@ -388,7 +388,7 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
     // data-row-id: a round of 脉络的楼 starts at its message; picking the round's card scrolls here (2026-11-16, 会话弹窗).
     <div className="msg-user-row" data-row-id={item.id}>
       <div className="msg-user" data-testid="msg-user">
-        {item.images?.length ? <MessageImages images={item.images} /> : null}
+        {item.images?.length ? <MessageImages images={item.images} itemId={item.id} /> : null}
         {annotations.length > 0 && (
           <span className="msg-anno-refs">
             {annotations.map((r) => (

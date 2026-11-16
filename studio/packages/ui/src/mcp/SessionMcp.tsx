@@ -1,26 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
-import type { McpApply, McpSessionState, Session } from "@amo-studio/protocol";
+import { REMOTE_MCP_SINCE, type McpApply, type McpSessionState, type Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { EntryLine, openMcpSettings, useMcpChanges } from "./shared.js";
 
 // The composer's 「MCP」 (2026-11-04, plans/done/mcp.md): which MCP servers this session has, ticked on or off for it alone;
 // the rest follow its project and 设置 → MCP. A new session of the same task starts with the same choices.
 
-/** The session's MCP, kept up to date; `refresh` reads the running process's statuses again (Claude). */
-export function useSessionMcp(link: HostLink, session: Session) {
+/**
+ * The session's MCP, kept up to date; `refresh` reads the running process's statuses again (Claude). A remote task's
+ * copy (2026-11-17): read on the computer it runs on, when that one lists it (`remoteOk`).
+ */
+export function useSessionMcp(link: HostLink, session: Session, remoteOk = false) {
   const [state, setState] = useState<McpSessionState | null>(null);
   const own = JSON.stringify(session.options.mcp ?? {});
   const refresh = useCallback(() => {
-    if (session.runtime === "remote") return;
+    if (session.runtime === "remote" && !remoteOk) return;
     call(link, "GET /api/sessions/:id/mcp", { id: session.id })
       .then(setState)
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read again when the session's own choices change
-  }, [link, session.id, session.runtime, own]);
+  }, [link, session.id, session.runtime, own, remoteOk]);
   useEffect(refresh, [refresh]);
   useMcpChanges(refresh);
   return { state, setState, refresh };
 }
+
+/** Why a remote copy's MCP cannot be picked here (2026-11-17): the computer it runs on has an older Studio. */
+export const remoteMcpOld = (name: string) => `${name} 上的 Studio 要更新到 ${REMOTE_MCP_SINCE} 或更新的版本，才能在这台电脑上改这个会话的 MCP`;
 
 const APPLY: Record<McpApply, string> = {
   now: "已生效，下一次调用工具就能用",
@@ -30,7 +36,8 @@ const APPLY: Record<McpApply, string> = {
   "not-running": "已保存",
 };
 
-export function SessionMcpTray({ link, session, state, onState, disabled }: { link: HostLink; session: Session; state: McpSessionState | null; onState(s: McpSessionState): void; disabled: boolean }) {
+/** `remote`: a remote task's copy — the computer it runs on (its MCP is that one's, changed there). */
+export function SessionMcpTray({ link, session, state, onState, disabled, remote }: { link: HostLink; session: Session; state: McpSessionState | null; onState(s: McpSessionState): void; disabled: boolean; remote?: string }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
 
@@ -62,8 +69,8 @@ export function SessionMcpTray({ link, session, state, onState, disabled }: { li
   return (
     <>
       <div className="tray-h">
-        MCP
-        <span className="tray-note">{state?.perSession === false ? "Codex 的 MCP 在它启动时就定了，这里只能看；它自己 config.toml 里的不在这里列" : "只改这个会话；同一任务新开的会话会沿用"}</span>
+        {remote ? `MCP（${remote} 上的）` : "MCP"}
+        <span className="tray-note">{state?.perSession === false ? "Codex 的 MCP 在它启动时就定了，这里只能看；它自己 config.toml 里的不在这里列" : `只改这个会话；同一任务新开的会话会沿用${remote ? `（改在 ${remote} 上）` : ""}`}</span>
       </div>
       <div className="mcp-tray-list" data-testid="mcp-tray">
         {!state && <span className="tray-note">正在读取…</span>}
@@ -86,9 +93,13 @@ export function SessionMcpTray({ link, session, state, onState, disabled }: { li
             {note.error ? note.text : `✓ ${note.text}`}
           </span>
         )}
-        <button type="button" className="link-btn" onClick={openMcpSettings} data-testid="mcp-manage">
-          管理 MCP…
-        </button>
+        {remote ? (
+          <span className="tray-note">要添加或删掉 MCP，在 {remote} 上的 设置 → MCP 里改</span>
+        ) : (
+          <button type="button" className="link-btn" onClick={openMcpSettings} data-testid="mcp-manage">
+            管理 MCP…
+          </button>
+        )}
       </div>
     </>
   );

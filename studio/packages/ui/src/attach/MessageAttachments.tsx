@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { MessageImage } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { attachmentUrl } from "../lib/attachments.js";
-import { copyText } from "../host/client.js";
+import { call, copyText, HostApiError } from "../host/client.js";
 import { lineSuffix } from "@amo-studio/protocol";
 import { baseName, dirName, type FileRefItem } from "./refs.js";
 import { IconFile } from "./icons.js";
@@ -14,14 +14,70 @@ import { FileLink, useFileLinks } from "../files/FileLinks.js";
 /** The Host link, for loading attachment images in the transcript (provided by the conversation). */
 export const AttachLink = createContext<HostLink | null>(null);
 
+/** Pictures asked of a remote task's computer already in this window (by item and picture): asked once by themselves. */
+const ASKED = new Set<string>();
+
+/**
+ * 补取 (2026-11-17, the user: 后来连上的控制端，对话里早先发过的文件读不到): in a remote task's conversation, a picture
+ * that does not load here (fetching it when its message came did not work) is asked of the computer the task runs on —
+ * once by itself as it shows, again with 再请求一次. While it comes, and when that computer cannot give it (gone there
+ * too: it says so), its place says so. The message comes back with this computer's own copy of the picture.
+ */
+export function useRemoteImages(itemId: string | undefined) {
+  const link = useContext(AttachLink);
+  const task = useFileLinks()?.remoteTask;
+  const [miss, setMiss] = useState<Record<string, string>>({});
+  if (!task || !itemId || !link) return null;
+  const ask = (key: string) => {
+    setMiss((m) => ({ ...m, [key]: ASKING }));
+    call(link, "POST /api/remote/tasks/:id/images", { id: task }, { itemId }).then(
+      () =>
+        setMiss((m) => {
+          const { [key]: _, ...rest } = m;
+          return rest;
+        }),
+      (err: unknown) => setMiss((m) => ({ ...m, [key]: err instanceof HostApiError ? err.message : String(err) })),
+    );
+  };
+  const failed = (key: string) => {
+    const once = `${itemId} ${key}`;
+    if (!ASKED.has(once)) {
+      ASKED.add(once);
+      ask(key);
+    } else setMiss((m) => (m[key] ? m : { ...m, [key]: "这张图片在这台电脑上没有，也没能从运行任务的电脑取过来" }));
+  };
+  return { miss, ask, failed };
+}
+
+const ASKING = "";
+
+/** A picture of a remote task that is not here: its name, and that it is coming or why it did not. */
+export function MissingImage({ path, state, onAgain }: { path: string; state: string; onAgain(): void }) {
+  return (
+    <span className="msg-image-miss" title={path} data-testid="msg-image-miss" role={state ? "alert" : "status"}>
+      <span className="file-chip">
+        <IconFile />
+        <span className="file-chip-name">{baseName(path)}</span>
+      </span>
+      <span className="msg-image-miss-note">{state === ASKING ? "正在从运行任务的电脑取这张图片…" : state}</span>
+      {state !== ASKING && (
+        <button type="button" className="link-btn" onClick={onAgain} data-testid="msg-image-again">
+          再请求一次
+        </button>
+      )}
+    </span>
+  );
+}
+
 /**
  * 2026-11-12: a right click on a picture of the message opens the conversation's file menu (FileLinks) with 复制图片 /
  * 另存为… first — before, nothing answered it, while the file links of a reply had their menu. A picture not kept here
  * (no attachment: a remote task's not fetched yet) is a chip of its path, a file link where it exists.
  */
-export function MessageImages({ images }: { images: readonly MessageImage[] }) {
+export function MessageImages({ images, itemId }: { images: readonly MessageImage[]; /** The message's, for 补取 in a remote task (2026-11-17). */ itemId?: string }) {
   const link = useContext(AttachLink);
   const files = useFileLinks();
+  const remote = useRemoteImages(itemId);
   const [open, setOpen] = useState<string | null>(null);
   if (!images.length) return null;
   const src = (img: MessageImage) => (img.id && link ? attachmentUrl(link, img.id) : null);
@@ -29,6 +85,10 @@ export function MessageImages({ images }: { images: readonly MessageImage[] }) {
     <div className="msg-images" data-testid="msg-images">
       {images.map((img, i) => {
         const url = src(img);
+        // By the picture as this computer has it: the message that comes back names this computer's copy.
+        const key = `${i}:${img.id ?? img.path}`;
+        const missing = remote?.miss[key];
+        if (url && remote && missing !== undefined) return <MissingImage key={key} path={img.path} state={missing} onAgain={() => remote.ask(key)} />;
         const chip = (
           <span className="file-chip" title={img.path}>
             <IconFile />
@@ -50,7 +110,7 @@ export function MessageImages({ images }: { images: readonly MessageImage[] }) {
             }}
             data-testid="msg-image"
           >
-            <img src={url} alt={baseName(img.path)} loading="lazy" />
+            <img src={url} alt={baseName(img.path)} loading="lazy" onError={remote ? () => remote.failed(key) : undefined} />
           </button>
         ) : (
           <FileLink key={`${img.path}-${i}`} path={img.path} className="file-chip" testId="msg-image-file" fallback={chip}>

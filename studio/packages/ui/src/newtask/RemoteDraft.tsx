@@ -14,6 +14,7 @@ import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
 import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
 import { readStored, writeStored } from "../lib/stored.js";
+import { RemoteMcpPick, useRemoteMcp } from "../mcp/RemoteMcp.js";
 
 // 新任务页的「在别的设备上」 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
@@ -162,6 +163,15 @@ export function RemoteDraft({
   };
 
   const problem = catalog ? catalogProblem(catalog) : null;
+  // 远程选 MCP (2026-11-17): which of that computer's MCP servers the task's session gets, read there for the project and
+  // model picked; what is changed here goes with the task (an older Studio there lists none: greyed).
+  const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
+  const mcpKey = `${deviceKey} ${projectId ?? ""} ${profileId ?? ""}`;
+  const mcp = useRemoteMcp(
+    target && catalog?.mcp && !problem && profileId ? () => call(link, "GET /api/remote/catalog/mcp", {}, undefined, { account: target.account, device: target.device, profile: profileId, ...(projectId ? { workspace: projectId } : {}) }) : null,
+    mcpKey,
+  );
+  useEffect(() => setMcpWant({}), [mcpKey]);
   const noCommon = catalog && !catalog.allowCommon ? `${catalog.name} 不允许不选项目（公共文件夹）：选一个项目` : undefined;
 
   // @: only 提示词模板… (no tasks, sessions or files of this computer), once the device's catalog is here.
@@ -195,7 +205,7 @@ export function RemoteDraft({
     try {
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
       const text = withFileRefs(draft.text.trim(), attach.files.map(attach.refOf));
-      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text, topicId, workspaceId: projectId, profileId, ...(images.length ? { attachments: images } : {}) });
+      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text, topicId, workspaceId: projectId, profileId, ...(images.length ? { attachments: images } : {}), ...(catalog.mcp && Object.keys(mcpWant).length ? { mcp: mcpWant } : {}) });
       rememberDevice(target.key);
       attach.reset();
       onDone();
@@ -353,6 +363,12 @@ export function RemoteDraft({
             ))}
             {catalog && !problem && <span className="drawer-note">只列 {catalog.name} 远端允许的模型</span>}
           </div>
+          {catalog && !problem && profileId && (
+            <div className="model-row remote-draft-mcp" data-testid="remote-draft-mcp">
+              <span className="drawer-note">MCP</span>
+              <RemoteMcpPick name={catalog.name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!catalog.mcp} disabled={busy} />
+            </div>
+          )}
         </div>
         <div className="cbar">
           <span className="drawer-note" data-testid="remote-draft-attach-note">

@@ -70,6 +70,10 @@ button.file-chip:hover { border-color: var(--border-strong); }
   border: 1px solid var(--chat-hairline); background: var(--panel);
 }
 .msg-files { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+/* 补取 (2026-11-17): a remote task's picture that is not here — its name, that it is coming or why not, and 再请求一次. */
+.msg-image-miss { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; max-width: 100%; white-space: normal; }
+.msg-image-miss-note { min-width: 0; color: var(--text-dim); font-size: 11.5px; overflow-wrap: anywhere; }
+.msg-image-miss-note:empty { display: none; }
 .msg-user .file-chip { max-width: 100%; background: color-mix(in srgb, var(--panel) 55%, transparent); }
 
 /* ---- large view ----------------------------------------------------------------------------------------------- */

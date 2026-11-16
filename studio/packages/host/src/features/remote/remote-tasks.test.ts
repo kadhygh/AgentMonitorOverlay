@@ -1,10 +1,10 @@
 import { textOf } from "../../mcp/tool-kit.js";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FILES_SINCE, REMOTE_FORK_SINCE, REMOTE_MCP_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -17,6 +17,7 @@ import { fitItem } from "./grants.js";
 import { amoToolsFor } from "../../mcp/tools.js";
 import { FEATURES } from "../index.js";
 import { untypedRoute } from "../../http/route.js";
+import { HostError } from "../../core/shared.js";
 
 // 远程, step 2 (plans/done/remote-session.md, 2026-10-29): A grants a task to a paired B; B's copy follows A, B's messages,
 // approvals, 打断 and new sessions run on A, a revoked grant stays readable on B, and catch-up goes by seq. Two Hosts
@@ -63,13 +64,14 @@ async function relayService(): Promise<{ url: string; keys: Record<string, strin
   return { url: relay.url, keys };
 }
 
-async function host(name: string, server: string, account: string, key: string) {
+/** `profiles`: the Host's models (the runtime runs Codex's only: PROFILES). */
+async function host(name: string, server: string, account: string, key: string, profiles: ModelProfile[] = PROFILES) {
   const home = tempDir(name);
   const env = { AMO_HOME: home, COMPUTERNAME: name };
   await saveAccount({ server, name: account, key }, { env, protector: fake });
   const store = new Store(join(tempDir(`${name}-data`), "studio.db"));
   const servers = new FakeServers(PROFILES);
-  const service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES);
+  const service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), profiles);
   const options = { env, protector: fake, watchMs: 30, backoff: new Backoff({ baseMs: 30, maxMs: 120 }), pingTimeoutMs: 2000 };
   service.remote.start(options);
   // Off until turned on (2026-10-30).
@@ -86,9 +88,9 @@ async function host(name: string, server: string, account: string, key: string) 
 const online = (s: RemoteState) => s.connection.state === "online";
 
 /** A (台式机的我) and B (笔记本的我), paired: A allowed B. */
-async function paired() {
+async function paired(aProfiles: ModelProfile[] = PROFILES) {
   const { url, keys } = await relayService();
-  const a = await host("A-PC", url, "台式机的我", keys["台式机的我"]!);
+  const a = await host("A-PC", url, "台式机的我", keys["台式机的我"]!, aProfiles);
   const b = await host("B-PC", url, "笔记本的我", keys["笔记本的我"]!);
   await until(a.state, online, "A online");
   await until(b.state, online, "B online");
@@ -1151,10 +1153,183 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
         "forward POST /api/sessions/:id/unarchive",
         "forward POST /api/sessions/:id/fork",
         "forward PUT /api/sessions/:id/tracks",
+        "forward PUT /api/sessions/:id/mcp",
         "local POST /api/sessions/:id/annotations",
         "local POST /api/sessions/:id/annotations/send",
         "local PUT /api/sessions/:id/review-progress",
       ].sort(),
     );
   });
+});
+
+describe("补取 between two Hosts (2026-11-17): a device that came later fetches what the conversation sent earlier", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const userOn = (h: Pair["a"], sessionId: string, has: string) =>
+    until(() => items(h, sessionId).filter((i): i is Extract<SessionItem, { type: "user" }> => i.type === "user").find((i) => i.text.includes(has)), Boolean, `the message «${has}»`);
+
+  it("a picture whose fetch failed is asked again; the files sent along come; gone on A it says so; what the task does not name is refused; an older A is told to update", async () => {
+    const { a, b, toB } = await paired();
+    const { task, session } = await taskOnA(a);
+    // Before B is there: two pictures and a file sent along (kept in A's attachments folder, named by its 引用文件).
+    const pic = a.service.attachments.save(Buffer.concat([PNG, Buffer.alloc(400, 1)]), { name: "早先的图.png", mime: "image/png" });
+    const gone = a.service.attachments.save(Buffer.concat([PNG, Buffer.alloc(300, 2)]), { name: "后来删掉的图.png", mime: "image/png" });
+    const file = a.service.attachments.saveFile(Buffer.from("早先发的说明"), "说明.txt");
+    await a.service.sessions.sendMessage(session.id, withFileRefs("看图和文件", [file.path]), [pic.id, gone.id]);
+    await userOn(a, session.id, "看图和文件");
+    await until(() => a.store.getSession(session.id)!.status, (s) => s === "idle" || s === "completed", "A idle");
+    // An attachment of A's no conversation of the task names, and a file outside the task's folder.
+    const other = a.service.attachments.saveFile(Buffer.from("别的任务的"), "别的.txt");
+    const outside = join(tempDir("outside"), "secret.txt");
+    writeFileSync(outside, "不该给");
+
+    // B comes later, and A does not answer its first picture fetches (no answer in time).
+    const files = b.remote.copies.files;
+    const fetch = files.fetch.bind(files);
+    let away = true;
+    files.fetch = (...args: Parameters<typeof fetch>) => (away && /\.png$/.test(args[1]) ? Promise.reject(new HostError("runtime_error", "结果未确认")) : fetch(...args));
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active", "B's copy");
+    expect(copy!.remote).toMatchObject({ attachedFiles: true });
+    const msg = await userOn(b, session.id, "看图和文件");
+    // Not here: the item still names A's pictures (they show broken) — nothing asks again by itself.
+    await new Promise((r) => setTimeout(r, 300));
+    const before = b.store.getItem(msg!.id) as Extract<SessionItem, { type: "user" }>;
+    expect(before.images!.map((im) => im.id)).toEqual([pic.id, gone.id]);
+    expect(() => b.service.attachments.get(pic.id)).toThrow();
+
+    // The person looks at it: asked of A now. One comes; the other is gone on A too, and B says so.
+    away = false;
+    rmSync(gone.path);
+    await expect(b.remote.copies.images.request(task.id, msg!.id)).rejects.toThrow("A-PC 上也没有这个文件了");
+    const after = b.store.getItem(msg!.id) as Extract<SessionItem, { type: "user" }>;
+    expect(after.images![0]!.id).not.toBe(pic.id);
+    expect(readFileSync(b.service.attachments.get(after.images![0]!.id!).path).equals(readFileSync(pic.path))).toBe(true);
+    // The one gone shows its name (not asked again by itself); its path still opens A's answer.
+    expect(after.images![1]).toEqual({ id: null, path: gone.path });
+    // Only a copy's own messages.
+    await expect(b.remote.copies.images.request(task.id, "i_nope")).rejects.toThrow("不在这个远程任务里");
+
+    // The file sent along (before: refused as 「不在任务的文件夹里」 on every device), by the path the message names.
+    const got = await b.remote.fetchFile(task.id, file.path);
+    expect(got).toMatchObject({ rel: `附件/${basename(file.path)}`, kind: "text", cached: false });
+    expect(readFileSync(got.path, "utf8")).toBe("早先发的说明");
+    // Gone on A since: the copy taken before, saying so.
+    rmSync(file.path);
+    expect(await b.remote.fetchFile(task.id, file.path)).toMatchObject({ cached: true, stale: "A-PC 上已经没有这个文件了，显示的是上次取来的版本" });
+    // Never taken and gone: A says it does not have it either.
+    await expect(b.remote.fetchFile(task.id, join(a.service.attachments.dir(), "nothing.txt"))).rejects.toThrow("A-PC 上也没有这个文件了");
+
+    // What the task does not name stays refused: another attachment of A's, a file outside the task's folder.
+    await expect(b.remote.fetchFile(task.id, other.path)).rejects.toThrow("不在任务的文件夹里");
+    await expect(b.remote.fetchFile(task.id, outside)).rejects.toThrow("不在任务的文件夹里");
+    await expect(b.remote.copies.ask(toA(a), REMOTE_KINDS.file, { taskId: task.id, path: outside, offset: 0 })).rejects.toThrow("不在任务的文件夹里");
+
+    // An older A (no attachedFiles): its refusal says what to update to, in case it was a file sent along.
+    const { attachedFiles: _f, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.remote.fetchFile(task.id, other.path)).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_FILES_SINCE}`);
+  }, 60_000);
+});
+
+describe("远程选 MCP between two Hosts (2026-11-17)", () => {
+  // A Claude model on A (the runtime here runs Codex's; a session on it is started on "p" with what it was given).
+  const A_PROFILES: ModelProfile[] = [...PROFILES, { id: "c", label: "C", runtime: "claude", provider: null, model: null }];
+
+  /** A with two MCP servers of Studio's, one with a key in its env and one with a header: neither may reach B. */
+  async function withMcp() {
+    const pair = await paired(A_PROFILES);
+    const { a } = pair;
+    a.service.mcp.create({ name: "figma", spec: { type: "stdio", command: "npx", args: ["figma-mcp-secret-arg"], env: { FIGMA_KEY: "sk-secret-123" } }, note: "设计稿" });
+    a.service.mcp.create({ name: "webtool", spec: { type: "http", url: "https://mcp.example.com/x", headers: { Authorization: "Bearer tok-456" } }, on: false });
+    // Sessions on "c" start on the runtime's "p", with the options A gave them.
+    const runtime = a.service.runtime as CodexRuntime;
+    const start = runtime.startSession.bind(runtime);
+    runtime.startSession = (input) => start({ ...input, profileId: input.profileId === "c" ? "p" : input.profileId });
+    return pair;
+  }
+
+  const leaks = (v: unknown) => JSON.stringify(v).match(/sk-secret|tok-456|npx|figma-mcp|mcp\.example|FIGMA_KEY|Authorization|"command"|"url"|"env"|"headers"|"args"|"summary"/g);
+
+  it("B lists A's MCP for a new session (names, sources, notes, on or not — nothing to run them with), its choice takes effect there, and names not on A's list are refused", async () => {
+    const { a, b, toB, aDevice } = await withMcp();
+    const { task } = await taskOnA(a);
+    // A Claude session of the task (its MCP can be chosen per session), as A has it.
+    const claudeOnA = a.store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", profileId: "c", runtime: "claude", workspaceId: task.workspaceId, title: "Claude 会话", status: "idle", writer: "studio", runtimeRef: null, options: {} } as never);
+    a.remote.setAllowed({ profiles: ["c", "p"], defaultProfile: "c", permission: null });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active" && t.remote.allowed.length === 2, "B's copy");
+    expect(copy!.remote).toMatchObject({ mcp: true });
+
+    const list = await b.remote.copies.taskMcp(copy!, remoteProfileId(aDevice, "c"));
+    expect(list).toEqual({ perSession: true, entries: [{ name: "figma", source: "studio", note: "设计稿", on: true, inherited: true }, { name: "webtool", source: "studio", on: false, inherited: false }] });
+    expect(leaks(list)).toBeNull();
+    // Codex there: its MCP is fixed when it starts, nothing to pick.
+    expect((await b.remote.copies.taskMcp(copy!, remoteProfileId(aDevice, "p"))).perSession).toBe(false);
+    // The frames on the way carry nothing to run them with either.
+    const raw = await b.remote.copies.ask(toA(a), REMOTE_KINDS.mcp, { taskId: task.id, profileId: "c" });
+    expect(leaks(raw)).toBeNull();
+
+    // A new session from B with webtool on, figma off: A starts it so.
+    const started = await b.service.tasks.addSession(task.id, { profileId: remoteProfileId(aDevice, "c"), text: "带 MCP 的会话", options: { mcp: { webtool: true, figma: false } } });
+    expect(a.store.getSession(started.id)!.options.mcp).toEqual({ webtool: true, figma: false });
+    // A name A does not have is refused there, before anything starts; so is a choice for Codex.
+    const sessions = a.store.listSessions({ taskId: task.id }).length;
+    await expect(b.service.tasks.addSession(task.id, { profileId: remoteProfileId(aDevice, "c"), options: { mcp: { "not-there": true } } })).rejects.toThrow("没有这个 MCP：not-there");
+    await expect(b.service.tasks.addSession(task.id, { profileId: remoteProfileId(aDevice, "p"), options: { mcp: { figma: true } } })).rejects.toThrow("Codex 的 MCP");
+    expect(a.store.listSessions({ taskId: task.id })).toHaveLength(sessions);
+
+    // A session's own MCP (the composer's): read on A, changed on A; only A's names.
+    await until(() => b.store.getSession(claudeOnA.id), Boolean, "B's copy of the Claude session");
+    const state = await b.remote.copies.sessionMcp(claudeOnA.id);
+    expect(state).toMatchObject({ runtime: "remote", perSession: true });
+    expect(state.entries.map((e) => [e.name, e.on, e.summary])).toEqual([["figma", true, ""], ["webtool", false, ""]]);
+    expect(leaks(await b.remote.copies.ask(toA(a), REMOTE_KINDS.mcp, { sessionId: claudeOnA.id }))).toBeNull();
+    expect(() => guard(b, "PUT", "/api/sessions/:id/mcp", { id: claudeOnA.id })).not.toThrow();
+    const changed = await b.remote.copies.setSessionMcp(claudeOnA.id, { choices: { figma: false } });
+    expect(changed.entries.find((e) => e.name === "figma")).toMatchObject({ on: false, choice: false });
+    expect(a.store.getSession(claudeOnA.id)!.options.mcp).toEqual({ figma: false });
+    await expect(b.remote.copies.setSessionMcp(claudeOnA.id, { choices: { "not-there": true } })).rejects.toThrow("A-PC 上没有这个 MCP：not-there");
+    // Codex's session there: to read only.
+    await expect(b.remote.copies.setSessionMcp(started.id, { choices: { figma: true } })).rejects.toThrow("Codex 的 MCP");
+
+    // 远程创建: the catalog says A lists them; the list for a project there; the choice goes with the task.
+    const proj = a.service.projects.addWorkspace({ path: tempDir("mcp-proj") });
+    a.remote.setAllowedProjects({ workspaceIds: [proj.id], common: false });
+    const catalog = await b.remote.catalog(toA(a));
+    expect(catalog.mcp).toBe(true);
+    const forCreate = await b.remote.catalogMcp(toA(a), proj.id, "c");
+    expect(forCreate.entries.map((e) => [e.name, e.on])).toEqual([["figma", true], ["webtool", false]]);
+    expect(leaks(forCreate)).toBeNull();
+    await expect(b.remote.catalogMcp(toA(a), null, "c")).rejects.toThrow("不允许远程任务不选项目");
+    // Another account's device: it waits for a yes on A, the choice kept with it; allowed, the session has it.
+    const made = await b.remote.create(toA(a), { title: "带 MCP 建的", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { webtool: true } });
+    expect(made.waiting!.preset).toMatchObject({ workspaceId: proj.id, profileId: "c", mcp: { webtool: true } });
+    await until(a.state, (s) => s.taskRequests.some((r) => r.id === made.waiting!.id), "held on A");
+    await a.remote.acceptRequest(made.waiting!.id, { workspaceId: proj.id, profileId: "c" });
+    const createdTask = a.store.listTasks().find((t) => t.title === "带 MCP 建的")!;
+    expect(a.store.listSessions({ taskId: createdTask.id })[0]!.options.mcp).toEqual({ webtool: true });
+    // Starting at once (安全 says so): the session has it straight away.
+    a.remote.setSecurity({ sameAccount: "run", otherAccount: "run" });
+    const direct = await b.remote.create(toA(a), { title: "直接建的", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { figma: false } });
+    expect(a.store.getSession(direct.sessionId!)!.options.mcp).toEqual({ figma: false });
+    await expect(b.remote.create(toA(a), { title: "名字不对", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { nope: true } })).rejects.toThrow("没有这个 MCP：nope");
+    expect(a.store.listTasks().some((t) => t.title === "名字不对")).toBe(false);
+  }, 60_000);
+
+  it("an older A (no mcp in its snapshot): picking its MCP is refused on B before anything goes, saying what to update to; a session without a choice still starts", async () => {
+    const { a, b, toB, aDevice } = await withMcp();
+    const { task } = await taskOnA(a);
+    a.remote.setAllowed({ profiles: ["c"], defaultProfile: "c", permission: null });
+    a.remote.grant(task.id, toB);
+    await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active" && t.remote.allowed.length === 1, "B's copy");
+    const { mcp: _mcp, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    const copy = b.store.getTask(task.id)!;
+    const old = `A-PC 上的 Studio 要更新到 ${REMOTE_MCP_SINCE}`;
+    await expect(b.remote.copies.taskMcp(copy, remoteProfileId(aDevice, "c"))).rejects.toThrow(old);
+    await expect(b.service.tasks.addSession(task.id, { profileId: remoteProfileId(aDevice, "c"), options: { mcp: { webtool: true } } })).rejects.toThrow(old);
+    await expect(b.remote.copies.sessionMcp(a.store.listSessions({ taskId: task.id })[0]!.id)).rejects.toThrow(old);
+    const plain = await b.service.tasks.addSession(task.id, { profileId: remoteProfileId(aDevice, "c"), text: "不选 MCP" });
+    expect(a.store.getSession(plain.id)!.options.mcp).toBeUndefined();
+  }, 60_000);
 });

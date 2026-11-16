@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, remoteFileKind, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, remoteFileKind, withFileRefs, type SessionItem } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
-import { attachedPaths, itemForPeer, readRemoteFile, resolveAsked, safeRel, type FileRoots } from "./files.js";
+import { attachedFiles, itemForPeer, readRemoteFile, resolveAsked, safeRel, type FileRoots } from "./files.js";
 
 // 远程 step 3 on A (2026-10-29): what a paired device may fetch of a granted task — under its folder (links and junctions
 // resolved first) or among the pictures of its conversations, HTML / Markdown / images by name and content, at most
@@ -103,7 +103,7 @@ describe("remote files on A (step 3)", () => {
     const finding: FileRoots = { ...roots, findByEnd: async (w) => (asked.push(w), w === "img/p.png" ? join(root, "docs", "img", "p.png") : null) };
     expect(await readRemoteFile(finding, { taskId: "t", path: "img/p.png", offset: 0 }, "A")).toMatchObject({ rel: "docs/img/p.png", kind: "image" });
     expect(await readRemoteFile(finding, { taskId: "t", path: "任务文件夹/img/p.png", offset: 0 }, "A")).toMatchObject({ rel: "docs/img/p.png" });
-    await expect(readRemoteFile(finding, { taskId: "t", path: "nope/x.md", offset: 0 }, "A")).rejects.toThrow("找不到这个文件");
+    await expect(readRemoteFile(finding, { taskId: "t", path: "nope/x.md", offset: 0 }, "A")).rejects.toThrow("上也没有这个文件了");
     expect(asked).toEqual(["img/p.png", "img/p.png", "nope/x.md"]);
   });
 
@@ -122,7 +122,7 @@ describe("remote files on A (step 3)", () => {
     await expect(ask("docs/fake.png")).rejects.toThrow("内容不像 .png 图片");
     await expect(ask("docs/bin.md")).rejects.toThrow("不是文本");
     await expect(ask("docs/log.txt")).rejects.toThrow("是二进制文件，不是文本");
-    await expect(ask("docs/nope.md")).rejects.toThrow("A 台式机 上找不到这个文件");
+    await expect(ask("docs/nope.md")).rejects.toThrow("A 台式机 上也没有这个文件了");
     await expect(ask("docs")).rejects.toThrow();
     writeFileSync(join(root, "big.png"), Buffer.concat([PNG, Buffer.alloc(REMOTE_FILE_MAX_BYTES)]));
     await expect(ask("big.png")).rejects.toThrow(/文件太大（20\.0 MB），远程最多 20\.0 MB/);
@@ -143,13 +143,33 @@ describe("remote files on A (step 3)", () => {
     await expect(readRemoteFile(roots, { taskId: "t", path: "docs/img/big.png", offset: REMOTE_FILE_CHUNK, expect: { size: first.size, mtime: first.mtime - 1000 } }, "A")).rejects.toThrow("传的时候被改了");
   });
 
+  it("gives what a conversation sent along (2026-11-17): pictures where their attachment is now, the files of its 引用文件 kept in the attachments folder, nothing it names elsewhere", async () => {
+    const { top, root, outside, attachments } = layout();
+    writeFileSync(join(attachments, "f1-说明.txt"), "说明");
+    // Written while the data folder was elsewhere (the AMO platform moved it since).
+    const before = join(top, "old-data", "attachments");
+    const user = { id: "u", sessionId: "s", seq: 1, createdAt: "", type: "user", text: withFileRefs("看", [join(before, "f1-说明.txt"), join(outside, "keys.md")]), images: [{ id: "att-1", path: join(before, "att-1.png") }] } as SessionItem;
+    const files = attachedFiles([user], attachments, (id) => (id === "att-1" ? join(attachments, "att-1.png") : null));
+    expect(files).toEqual([
+      { written: join(before, "att-1.png"), at: join(attachments, "att-1.png") },
+      { written: join(before, "f1-说明.txt"), at: join(attachments, "f1-说明.txt") },
+    ]);
+    const roots: FileRoots = { root, attachments, attached: () => files };
+    expect(await readRemoteFile(roots, { taskId: "t", path: join(before, "f1-说明.txt"), offset: 0 }, "A")).toMatchObject({ rel: "附件/f1-说明.txt", kind: "text" });
+    expect(await readRemoteFile(roots, { taskId: "t", path: join(before, "att-1.png"), offset: 0 }, "A")).toMatchObject({ rel: "附件/att-1.png", kind: "image" });
+    expect(await readRemoteFile(roots, { taskId: "t", path: "附件/f1-说明.txt", offset: 0 }, "A")).toMatchObject({ rel: "附件/f1-说明.txt" });
+    // A file the message names elsewhere, an attachment the task's messages do not name: not given.
+    await expect(readRemoteFile(roots, { taskId: "t", path: join(outside, "keys.md"), offset: 0 }, "A")).rejects.toThrow("不在任务的文件夹里");
+    await expect(readRemoteFile(roots, { taskId: "t", path: join(attachments, "att-other.png"), offset: 0 }, "A")).rejects.toThrow("不在任务的文件夹里");
+  });
+
   it("names a command's working directory by the task folder; keeps B's copies inside its folder", () => {
     const root = join(tmpdir(), "proj-x");
     const tool = { id: "i", sessionId: "s", seq: 1, createdAt: "", type: "tool", name: "shell", summary: "ls", status: "completed", cwd: join(root, "src") } as SessionItem;
     expect((itemForPeer(tool, root) as { cwd?: string }).cwd).toBe("任务文件夹\\src");
     expect((itemForPeer({ ...tool, cwd: root } as SessionItem, root) as { cwd?: string }).cwd).toBe("任务文件夹");
     expect((itemForPeer({ ...tool, cwd: "D:\\elsewhere" } as SessionItem, root) as { cwd?: string }).cwd).toBe("D:\\elsewhere");
-    expect(attachedPaths([{ ...tool, images: [{ id: null, path: "x.png" }] } as SessionItem, { id: "u", sessionId: "s", seq: 2, createdAt: "", type: "user", text: "", images: [{ id: "att-1", path: "y.png" }] } as SessionItem])).toEqual(["x.png", "y.png"]);
+    expect(attachedFiles([{ ...tool, images: [{ id: null, path: "x.png" }] } as SessionItem, { id: "u", sessionId: "s", seq: 2, createdAt: "", type: "user", text: "", images: [{ id: "att-1", path: "y.png" }] } as SessionItem], join(tmpdir(), "none"), () => null)).toEqual([{ written: "x.png", at: "x.png" }, { written: "y.png", at: "y.png" }]);
     expect(safeRel("docs/a.md")).toBe(join("docs", "a.md"));
     for (const bad of ["../x.md", "a/../../x", "C:/x.md", "a//b", "a/./b", "con:x"]) expect(() => safeRel(bad)).toThrow("位置不对");
   });

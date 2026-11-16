@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { Modal } from "../lib/Modal.js";
 import { activeModel, effortLabel, useProfileChoices } from "../lib/choices.js";
 import { EffortBars, FastToggle, Mark, PermissionTiles } from "../chat/pickers.js";
+import { RemoteMcpPick, type RemoteMcpLoad } from "../mcp/RemoteMcp.js";
 
 // 分支 (2026-11-10, plans/done/session-fork.md; the look picked from plans/done/session-fork-dialog.html): from which turn, under
 // the session or beside it, its title, and — folded until asked — the model of the same channel, effort, Fast,
@@ -18,7 +19,7 @@ const defaultTitle = (session: Session, turn: ForkTurn | undefined) => `${sessio
  * on the session's model and settings (this one has no list of that computer's models to pick from); `runtime`: its CLI
  * there, where that computer said.
  */
-export function ForkDialog({ link, session, profile, turnId, remote, onClose, onForked }: { link: HostLink; session: Session; profile: ModelProfile | undefined; turnId?: string; remote?: { name: string; runtime?: Session["runtime"] }; onClose(): void; onForked(s: Session): void }) {
+export function ForkDialog({ link, session, profile, turnId, remote, onClose, onForked }: { link: HostLink; session: Session; profile: ModelProfile | undefined; turnId?: string; remote?: { name: string; runtime?: Session["runtime"]; /** That computer lists its MCP to pick from (2026-11-17). */ mcp?: boolean }; onClose(): void; onForked(s: Session): void }) {
   const [turns, setTurns] = useState<ForkTurn[] | null>(null);
   const [picked, setPicked] = useState<string | undefined>(turnId);
   const [mode, setMode] = useState<Mode>("sub");
@@ -30,6 +31,8 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
   const [permission, setPermission] = useState<string | null>(session.options.permission ?? null);
   const [mcp, setMcp] = useState<McpEntry[] | null>(null);
   const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
+  // 远程选 MCP (2026-11-17): a remote copy's branch takes that computer's MCP of the session, as picked here.
+  const [remoteMcp, setRemoteMcp] = useState<RemoteMcpLoad>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { choices } = useProfileChoices(link, session.profileId);
@@ -48,7 +51,13 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
       call(link, "GET /api/sessions/:id/mcp", { id: session.id })
         .then((s) => setMcp(s.entries))
         .catch(() => setMcp([]));
-  }, [link, session.id, claude, !remote]);
+    // A copy's: read on the computer it runs on (an older Studio there has none to give).
+    if (claude && remote?.mcp)
+      call(link, "GET /api/sessions/:id/mcp", { id: session.id }).then(
+        (s) => setRemoteMcp({ list: { entries: s.entries.map((e) => ({ name: e.name, source: e.source, on: e.on, ...(e.note ? { note: e.note } : {}) })), perSession: s.perSession } }),
+        (err: unknown) => setRemoteMcp({ error: err instanceof HostApiError ? err.message : String(err) }),
+      );
+  }, [link, session.id, claude, !remote, !!remote?.mcp]);
 
   const turn = turns?.find((t) => t.turnId === picked);
   const current = useMemo(() => (choices ? activeModel(choices, { ...session.options, ...(model ? { model } : {}) }) : undefined), [choices, model, session.options]);
@@ -135,7 +144,14 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
           <span className="fork-label">设置</span>
           <span className="settings-hint">和原会话一样：分支建在 {remote.name} 上、在那边跑，用原会话的模型、思考强度和审批（那边设了远程权限上限的，按上限）。建好后在这里看、接着发消息。</span>
         </div>
-      ) : (
+      ) : null}
+      {remote && claude ? (
+        <div className="fork-field" data-testid="fork-remote-mcp">
+          <span className="fork-label">MCP</span>
+          <RemoteMcpPick name={remote.name} state={remoteMcp} want={mcpWant} onWant={setMcpWant} old={!remote.mcp} disabled={busy} />
+        </div>
+      ) : null}
+      {remote ? null : (
       <button type="button" className="fork-summary" aria-expanded={more} onClick={() => setMore((v) => !v)} data-testid="fork-more">
         <span className="fork-label">设置</span>
         <span className="fork-summary-text">

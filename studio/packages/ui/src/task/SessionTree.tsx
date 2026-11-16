@@ -14,6 +14,8 @@ import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { dutyOfSession, useDuty } from "../duty/duty.js";
+import { call } from "../host/client.js";
+import { RemoteMcpPick, useRemoteMcp } from "../mcp/RemoteMcp.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -52,9 +54,17 @@ interface SessionTreeProps {
   remote?: { name: string; allowed: readonly string[]; blocked: string | null };
 }
 
-/** 新会话 in a copy of a remote task: one of the models its own computer allows, nothing else to choose here. */
-function RemoteNewSession({ name, allowed, blocked, profiles, busy, onStart }: { name: string; allowed: readonly string[]; blocked: string | null; profiles: readonly ModelProfile[]; busy: boolean; onStart(profileId: string): void }) {
+/**
+ * 新会话 in a copy of a remote task: one of the models its own computer allows, and (远程选 MCP, 2026-11-17) which of
+ * that computer's MCP servers the session gets — read from there for the model picked (an older Studio there: greyed).
+ */
+function RemoteNewSession({ link, task, name, allowed, blocked, profiles, busy, onStart }: { link: HostLink; task: Task; name: string; allowed: readonly string[]; blocked: string | null; profiles: readonly ModelProfile[]; busy: boolean; onStart(profileId: string, mcp: Record<string, boolean>): void }) {
   const [pick, setPick] = useState(allowed[0] ?? "");
+  const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
+  const mcpOk = !!task.remote?.mcp;
+  const mcp = useRemoteMcp(mcpOk && pick && !blocked ? () => call(link, "GET /api/remote/tasks/:id/mcp", { id: task.id }, undefined, { profile: pick }) : null, `${task.id} ${pick}`);
+  // Another model may have another list (Codex: none to pick): what was changed goes.
+  useEffect(() => setMcpWant({}), [pick]);
   useEffect(() => {
     if (!allowed.includes(pick)) setPick(allowed[0] ?? "");
   }, [allowed.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -75,7 +85,11 @@ function RemoteNewSession({ name, allowed, blocked, profiles, busy, onStart }: {
               ))}
             </select>
           </label>
-          <button type="button" className="btn-primary small" disabled={busy || !pick || !!blocked} onClick={() => onStart(pick)} data-testid="remote-start">
+          <div className="stack-field">
+            MCP
+            <RemoteMcpPick name={name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!mcpOk} disabled={busy || !!blocked} />
+          </div>
+          <button type="button" className="btn-primary small" disabled={busy || !pick || !!blocked} onClick={() => onStart(pick, mcpWant)} data-testid="remote-start">
             在 {name} 上开始新会话
           </button>
         </>
@@ -159,8 +173,8 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
         )}
       </div>
 
-      {formOpen && remote && <RemoteNewSession name={remote.name} allowed={remote.allowed} blocked={remote.blocked} profiles={profiles} busy={busy} onStart={(profileId) => {
-        onNewSession({ profileId });
+      {formOpen && remote && <RemoteNewSession link={link} task={task} name={remote.name} allowed={remote.allowed} blocked={remote.blocked} profiles={profiles} busy={busy} onStart={(profileId, mcp) => {
+        onNewSession({ profileId, ...(Object.keys(mcp).length ? { options: { mcp } } : {}) });
         setCreating(false);
       }} />}
       {formOpen && !remote && (

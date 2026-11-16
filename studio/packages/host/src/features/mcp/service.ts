@@ -219,6 +219,22 @@ export class McpFeature extends Feature {
     return { ...(base ?? this.inherited(taskId) ?? {}), ...want };
   }
 
+  /**
+   * 远程选 MCP (2026-11-17): what a new session on `runtime` in `workspaceId` (null: the common folder) would have — the
+   * global level, the project's, then the task's latest choices (as startSession inherits them). Codex: Studio's servers
+   * on at the global level, nothing to pick per session (perSession false).
+   */
+  offered(workspaceId: Id | null, taskId: Id | null, runtime: string): { entries: McpEntry[]; perSession: boolean } {
+    const ws = (workspaceId ? this.store.getWorkspace(workspaceId) : null) ?? null;
+    if (runtime === "codex") return { entries: this.resolve(this.candidates(null).filter((c) => c.source === "studio"), [this.global().on ?? {}]), perSession: false };
+    return { entries: this.resolve(this.candidates(ws), [this.global().on ?? {}, ws ? this.projectChoices(ws.id) : {}, this.inherited(taskId) ?? {}]), perSession: true };
+  }
+
+  /** The names a session in `workspaceId` may turn on or off (another computer's choices are checked against them, 2026-11-17). */
+  names(workspaceId: Id | null): string[] {
+    return this.candidates((workspaceId ? this.store.getWorkspace(workspaceId) : null) ?? null).map((c) => c.name);
+  }
+
   // ---- for the runtimes ---------------------------------------------------------------------------------------------
 
   /**

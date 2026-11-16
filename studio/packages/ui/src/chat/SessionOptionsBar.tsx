@@ -5,7 +5,7 @@ import { activeModel, optionsSummary, sameOptions, useProfileChoices } from "../
 import { rememberPick } from "../lib/recents.js";
 import { EffortBars, FastToggle, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
 import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
-import { SessionMcpTray, useSessionMcp } from "../mcp/SessionMcp.js";
+import { remoteMcpOld, SessionMcpTray, useSessionMcp } from "../mcp/SessionMcp.js";
 
 // Under the composer: what the session runs with — model, effort, permissions — each one click away
 // (design/ui-directions/new-task.html, "会话中切换"). Clicking the model or the permissions opens that group above the
@@ -20,19 +20,25 @@ export function SessionOptionsBar({
   profile,
   presets,
   disabled,
+  remote,
 }: {
   link: HostLink;
   session: Session;
   profile: ModelProfile | undefined;
   presets: readonly SessionPreset[];
   disabled: boolean;
+  /**
+   * 远程选 MCP (2026-11-17): a remote task's copy — the computer it runs on, whether it lists its MCP (an older Studio
+   * does not: the button is greyed, saying so) and whether it can be changed now (granted, not archived).
+   */
+  remote?: { name: string; mcp: boolean; writable: boolean };
 }) {
   const { choices } = useProfileChoices(link, session.profileId);
   const [tray, setTray] = useState<Tray>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const mcp = useSessionMcp(link, session);
+  const mcp = useSessionMcp(link, session, !!remote?.mcp);
   const mcpOn = mcp.state?.entries.filter((e) => e.on).length ?? 0;
   const mine = presets.filter((p) => p.profileId === session.profileId);
   const model = choices ? activeModel(choices, session.options) : undefined;
@@ -116,7 +122,7 @@ export function SessionOptionsBar({
     <div className="session-options" ref={box}>
       {tray === "mcp" && (
         <div className="tray" role="dialog" aria-label="MCP" data-testid="options-tray">
-          <SessionMcpTray link={link} session={session} state={mcp.state} onState={mcp.setState} disabled={disabled} />
+          <SessionMcpTray link={link} session={session} state={mcp.state} onState={mcp.setState} disabled={remote ? !remote.writable : disabled} {...(remote ? { remote: remote.name } : {})} />
         </div>
       )}
       {tray && tray !== "mcp" && choices && (
@@ -183,16 +189,17 @@ export function SessionOptionsBar({
           <span aria-hidden="true">⛨</span>
           <span>{permission?.label ?? "默认权限"}</span>
         </button>
-        {session.runtime !== "remote" && (
+        {(session.runtime !== "remote" || remote) && (
           <button
             type="button"
             className="seg-btn"
             aria-expanded={tray === "mcp"}
+            disabled={!!remote && !remote.mcp}
             onClick={() => {
               if (tray !== "mcp") mcp.refresh();
               setTray((t) => (t === "mcp" ? null : "mcp"));
             }}
-            title="这个会话用哪些 MCP（Studio 自带的 amo 一直都在）"
+            title={remote ? (remote.mcp ? `这个会话用 ${remote.name} 上的哪些 MCP（Studio 自带的 amo 一直都在）` : remoteMcpOld(remote.name)) : "这个会话用哪些 MCP（Studio 自带的 amo 一直都在）"}
             data-testid="switch-mcp"
           >
             <span>MCP{mcp.state ? ` ${mcpOn}` : ""}</span>

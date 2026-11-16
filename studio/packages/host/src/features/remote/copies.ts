@@ -1,4 +1,4 @@
-import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_MCP_SINCE, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type McpApply, type McpChoices, type McpSessionState, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteMcpList, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -226,6 +226,9 @@ export class RemoteCopies {
       ...(snap.fork ? { fork: true } : {}),
       // 立即发送 (2026-11-12): an older A never got it (the relay refused its name); the button says to update A.
       ...(snap.sendNow ? { sendNow: true } : {}),
+      // 2026-11-17: the files sent along in its conversation, and its MCP servers to pick from (an older A has neither).
+      ...(snap.attachedFiles ? { attachedFiles: true } : {}),
+      ...(snap.mcp ? { mcp: true } : {}),
       // What A's other features answer about a session (2026-11-15: rt.tracks); an older A says nothing.
       ...(Array.isArray(snap.kinds) && snap.kinds.length ? { kinds: snap.kinds.filter((k) => typeof k === "string") } : {}),
       // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
@@ -337,8 +340,8 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const { fork: _fork, sendNow: _sendNow, ...kept } = t.remote;
-        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}) };
+        const { fork: _fork, sendNow: _sendNow, attachedFiles: _files, mcp: _mcp, ...kept } = t.remote;
+        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}), ...(p.attachedFiles ? { attachedFiles: true } : {}), ...(p.mcp ? { mcp: true } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -554,8 +557,12 @@ export class RemoteCopies {
   async fork(sessionId: Id, body: ForkRequest): Promise<Session> {
     const { task, peer } = this.target(sessionId);
     this.canFork(task);
-    if (body.profileId || (body.options && Object.keys(body.options).length)) throw new HostError("bad_request", "远程任务的分支用原会话的模型和设置，不能在这台电脑上改");
-    const ask: RemoteForkAsk = { sessionId, ...(body.turnId ? { turnId: body.turnId } : {}), ...(body.as ? { as: body.as } : {}), ...(body.title ? { title: body.title } : {}) };
+    // The model and its settings are the session's; its MCP (2026-11-17) may be picked from A's list.
+    const { mcp: asked, ...rest } = body.options ?? {};
+    if (body.profileId || Object.keys(rest).length) throw new HostError("bad_request", "远程任务的分支用原会话的模型和设置，不能在这台电脑上改");
+    const mcp = mcpChoices(asked);
+    if (mcp) this.canMcp(task);
+    const ask: RemoteForkAsk = { sessionId, ...(body.turnId ? { turnId: body.turnId } : {}), ...(body.as ? { as: body.as } : {}), ...(body.title ? { title: body.title } : {}), ...(mcp ? { mcp } : {}) };
     const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.fork, ask, START_MS);
     const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
     void this.catchUp(peer, session.id).catch(() => undefined);
@@ -572,6 +579,39 @@ export class RemoteCopies {
     return this.ask<T>(peer, kind, { ...body, sessionId });
   }
 
+  /** 远程选 MCP (2026-11-17): an older A has no list to pick from (and would start the session without the choice). */
+  private canMcp(task: Task): void {
+    if (!task.remote?.mcp) throw new HostError("bad_request", `${task.remote?.name ?? "那台电脑"} 上的 Studio 要更新到 ${REMOTE_MCP_SINCE} 或更新的版本，才能在这台电脑上选它的 MCP`);
+  }
+
+  /** A's MCP servers a new session of the copy would have on the model (this computer's id of it). */
+  async taskMcp(task: Task, profileId: Id): Promise<RemoteMcpList> {
+    const r = task.remote;
+    if (!r) throw new HostError("not_found", "这不是远程任务");
+    if (r.state !== "active") throw new HostError("read_only", "授权已收回");
+    this.canMcp(task);
+    const ref = parseRemoteProfileId(profileId);
+    if (!ref || ref.device !== r.device || !r.allowed.includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${r.name} 允许远程使用的模型里`);
+    return this.ask<RemoteMcpList>(peerOf(task), REMOTE_KINDS.mcp, { taskId: task.id, profileId: ref.profileId });
+  }
+
+  /** A copy's session's MCP, as A has it (the composer's MCP, 分支). */
+  async sessionMcp(sessionId: Id): Promise<McpSessionState> {
+    const { task, peer } = this.target(sessionId);
+    this.canMcp(task);
+    return sessionMcpState(sessionId, await this.ask<RemoteMcpList>(peer, REMOTE_KINDS.mcp, { sessionId }));
+  }
+
+  /** A copy's session's MCP choices changed here: changed on A, as A's composer would. */
+  async setSessionMcp(sessionId: Id, body: unknown): Promise<McpSessionState & { apply: McpApply }> {
+    const { task, peer } = this.target(sessionId);
+    this.canMcp(task);
+    const choices = (body && typeof body === "object" ? (body as { choices?: unknown }).choices : undefined) as McpChoices | undefined;
+    if (!choices || typeof choices !== "object" || Array.isArray(choices)) throw new HostError("bad_request", "choices must be an object of server names");
+    const list = await this.ask<RemoteMcpList>(peer, REMOTE_KINDS.mcpSet, { sessionId, choices });
+    return { ...sessionMcpState(sessionId, list), apply: list.apply ?? "next-message" };
+  }
+
   private canFork(task: Task): void {
     if (!task.remote?.fork) throw new HostError("bad_request", `${task.remote?.name ?? "那台电脑"} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支`);
   }
@@ -583,13 +623,29 @@ export class RemoteCopies {
     const ref = parseRemoteProfileId(input.profileId);
     if (!ref || ref.device !== r.device || !r.allowed.includes(input.profileId)) throw new HostError("bad_request", `这个模型不在 ${r.name} 允许远程使用的模型里`);
     const peer = peerOf(task);
+    // 远程选 MCP (2026-11-17): the new session's MCP as picked here from A's list (A takes only its own names).
+    const mcp = mcpChoices(input.options?.mcp);
+    if (mcp) this.canMcp(task);
     const images = input.attachments?.length ? this.ctx.host.sessions.images(input.attachments) : [];
     const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, r.name, input.text ?? "", images);
-    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(along.text.trim() ? { text: along.text } : {}), ...(along.uploads.length ? { uploads: along.uploads } : {}) }, START_MS);
+    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(along.text.trim() ? { text: along.text } : {}), ...(along.uploads.length ? { uploads: along.uploads } : {}), ...(mcp ? { mcp } : {}) }, START_MS);
     const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;
   }
+}
+
+/** MCP choices as asked here (`{name: true | false}`), undefined when none; anything else is refused. */
+export function mcpChoices(v: unknown): Record<string, boolean> | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "object" || Array.isArray(v) || Object.values(v).some((x) => typeof x !== "boolean")) throw new HostError("bad_request", "mcp 要写成 {\"名字\": true 或 false}");
+  return Object.keys(v).length ? (v as Record<string, boolean>) : undefined;
+}
+
+/** A's answer about a copy's session as this computer's composer reads a session's MCP (no command or address: summary empty). */
+function sessionMcpState(sessionId: Id, list: RemoteMcpList): McpSessionState {
+  const entries = (Array.isArray(list.entries) ? list.entries : []).map((e) => ({ name: e.name, source: e.source, summary: "", on: e.on, inherited: e.inherited ?? e.on, ...(e.choice !== undefined ? { choice: e.choice } : {}), ...(e.note ? { note: e.note } : {}) }));
+  return { sessionId, runtime: "remote", loadLocal: true, entries, perSession: list.perSession !== false, live: false };
 }
 
 /** One of A's models as this computer names it, with A's runtime where A said (2026-11-12). */

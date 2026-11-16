@@ -641,7 +641,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           session={own.find((s) => s.id === forking.sessionId)!}
           profile={profile(own.find((s) => s.id === forking.sessionId)!.profileId)}
           {...(forking.turnId ? { turnId: forking.turnId } : {})}
-          {...(copy ? { remote: { name: copy.name, ...(forkRuntime ? { runtime: forkRuntime } : {}) } } : {})}
+          {...(copy ? { remote: { name: copy.name, ...(forkRuntime ? { runtime: forkRuntime } : {}), mcp: !!task.remote?.mcp } } : {})}
           onClose={() => setForking(null)}
           onForked={forked}
         />

@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, REMOTE_KINDS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type HostEvent, type Id, type PromptTemplate, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemotePush, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
+import { DEFAULT_REMOTE_SECURITY, isCommon, NO_REMOTE_PROJECTS, REMOTE_KINDS, remoteCreateOpen, remoteStartFor, topicWorkspaceIds, type HostEvent, type Id, type PromptTemplate, type RemoteAllowedProjects, type RemoteCatalog, type RemoteCreateAnswer, type RemoteMcpList, type RemotePush, type RemoteSecurity, type RemoteStart, type Session, type SessionOptions, type Task } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
-import type { RemoteContext, RemoteGrants } from "./grants.js";
+import { mcpForPeer, type RemoteContext, type RemoteGrants } from "./grants.js";
 import type { TaskRequests } from "./requests.js";
 import { claimedText, heldOf, type Claimed } from "./uploads.js";
 
@@ -41,6 +41,8 @@ export interface GrantedTaskInput {
   profileId: Id;
   /** Pictures B sent along (this computer's attachment ids; 2026-10-29 evening). */
   attachments?: Id[];
+  /** The session's MCP choices the device picked (2026-11-17), checked against this computer's list already. */
+  mcp?: Record<string, boolean>;
 }
 
 /**
@@ -56,7 +58,7 @@ export async function startGrantedTask(ctx: RemoteContext, grants: RemoteGrants,
   grants.grant(task.id, to);
   granted?.(task);
   const permission = grants.permissionFor(input.profileId);
-  const options: SessionOptions | undefined = permission ? { permission } : undefined;
+  const options: SessionOptions | undefined = permission || input.mcp ? { ...(permission ? { permission } : {}), ...(input.mcp ? { mcp: input.mcp } : {}) } : undefined;
   try {
     // 远程 Reviewer (2026-11-02): its first turn is the device's — what the agent opens for the person shows there.
     grants.expectFirst(task.id, to);
@@ -257,7 +259,7 @@ export class RemoteCreates {
         .filter((t) => !t.archivedAt)
         .map((t) => ({ id: t.id, title: t.title, workspaceIds: topicWorkspaceIds(t, tasks, workspaces).filter((id) => allowed.has(id)), lastUsed: last.get(t.id) ?? null })),
     );
-    return { name: this.ctx.deviceName(), topics, projects, allowCommon: this.allowedProjects().common, models: this.models().map((id) => ({ id, label: this.grants.labelOf(id) })), confirm: this.confirms(from) };
+    return { name: this.ctx.deviceName(), topics, projects, allowCommon: this.allowedProjects().common, models: this.models().map((id) => ({ id, label: this.grants.labelOf(id) })), confirm: this.confirms(from), mcp: true };
   }
 
   /**
@@ -275,6 +277,30 @@ export class RemoteCreates {
     }
     if (typeof workspaceId !== "string" || !this.liveProjects().includes(workspaceId)) throw new HostError("bad_request", `这个项目不在 ${name} 远端允许的项目里（可能刚被取消勾选）`);
     return list.list(workspaceId);
+  }
+
+  /** The allowed project a device picked (null: the common folder, when allowed), else refused saying why. */
+  private pickedProject(workspaceId: unknown): Id | null {
+    const name = this.ctx.deviceName();
+    if (workspaceId === null || workspaceId === undefined || workspaceId === "") {
+      if (!this.allowedProjects().common) throw new HostError("bad_request", `${name} 不允许远程任务不选项目（公共文件夹）：选一个项目`);
+      return null;
+    }
+    if (typeof workspaceId !== "string" || !this.liveProjects().includes(workspaceId)) throw new HostError("bad_request", `这个项目不在 ${name} 远端允许的项目里（可能刚被取消勾选）`);
+    return workspaceId;
+  }
+
+  /**
+   * rt.create-mcp (远程选 MCP, 2026-11-17): the MCP servers a task created in that project on that model would start with
+   * — names, sources, notes and whether they are on (mcpForPeer), only for a project and model it may create with.
+   */
+  mcp(from: DeviceRef, body: Record<string, unknown>): RemoteMcpList {
+    this.requireOwner(from);
+    const workspaceId = this.pickedProject(body.workspaceId);
+    const profileId = typeof body.profileId === "string" ? body.profileId : "";
+    if (!this.models().includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${this.ctx.deviceName()} 远端允许的模型里（或现在用不了）`);
+    const list = this.ctx.host.mcp.offered(workspaceId ?? this.ctx.host.commonWorkspace().id, null, this.grants.runtimeOf(profileId));
+    return { entries: mcpForPeer(list.entries), perSession: list.perSession };
   }
 
   /** rt.create: checked against 远端允许的项目 and 远端允许的模型, then made, granted and started. */
@@ -300,17 +326,19 @@ export class RemoteCreates {
     if (!this.grants.allowed().profiles.length) throw new HostError("bad_request", `${name} 还没勾远端允许的模型：在那台电脑的 远程 → 远程设置 里勾`);
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     if (!this.models().includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${name} 远端允许的模型里（或现在用不了）`);
+    // 远程选 MCP (2026-11-17): only names this computer offers there (before the files are taken: a refusal leaves none).
+    const mcp = this.ctx.host.mcp.chooseFor(workspaceId ?? this.ctx.host.commonWorkspace().id, null, this.grants.runtimeOf(profileId), body.mcp, {});
     // Pictures and files B sent first (rt.upload) become this computer's attachments (a DSH session takes no pictures).
     const inbox = this.ctx.inbox();
     const claimed: Claimed = inbox.claim(from, body.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });
     // 安全: waits for a yes here (Focus, 远程) with what was picked and sent; nothing is made until then.
     if (this.confirms(from)) {
       const attached = claimed.images.length || claimed.files.length ? { attached: heldOf(claimed) } : {};
-      return { taskId: null, sessionId: null, waiting: this.requests.hold(from, { title, text, preset: { workspaceId, topicId, profileId }, ...attached }) };
+      return { taskId: null, sessionId: null, waiting: this.requests.hold(from, { title, text, preset: { workspaceId, topicId, profileId, ...(mcp ? { mcp } : {}) }, ...attached }) };
     }
     let made;
     try {
-      made = await startGrantedTask(this.ctx, this.grants, from, { title, text: claimedText(text, claimed), workspaceId, topicId, profileId, ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}) });
+      made = await startGrantedTask(this.ctx, this.grants, from, { title, text: claimedText(text, claimed), workspaceId, topicId, profileId, ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}), ...(mcp ? { mcp } : {}) });
     } catch (err) {
       inbox.drop(claimed);
       throw err;

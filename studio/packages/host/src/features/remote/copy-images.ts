@@ -19,7 +19,8 @@ type Known = Record<Id, Record<Id, Id | null>>;
 export class CopyImages {
   /** Pictures a message from here carries, until A's copy of the message comes back (by session). */
   private readonly sending = new Map<Id, Id[]>();
-  private readonly fetching = new Set<Id>();
+  /** A's picture → its fetch under way (asked twice at once, it is fetched once). */
+  private readonly fetching = new Map<Id, Promise<Id | null>>();
 
   constructor(
     private readonly ctx: RemoteContext,
@@ -100,27 +101,82 @@ export class CopyImages {
     return changed ? ({ ...item, images } as SessionItem) : item;
   }
 
-  /** A picture of A's this computer does not have: fetched, kept as an attachment, the item put again. */
-  private fetch(taskId: Id, itemId: Id, theirs: Id, path: string): void {
-    if (this.fetching.has(theirs)) return;
-    this.fetching.add(theirs);
+  /**
+   * One picture of A's fetched and kept as this computer's attachment (null: not a picture this computer keeps), and
+   * remembered for the task. A refusal is remembered too (null: not asked again by itself) and thrown; not reachable,
+   * nothing is remembered and it is thrown.
+   */
+  private fetchOne(taskId: Id, theirs: Id, path: string): Promise<Id | null> {
+    const had = this.fetching.get(theirs);
+    if (had) return had;
     const ext = /\.[^./\\]+$/.exec(path)?.[0].toLowerCase() ?? "";
-    void this.files
+    const run = this.files
       .fetch(taskId, path)
-      .then((f) => {
-        const mime = MIME[ext];
-        if (!mime || f.kind !== "image") return null;
-        return this.ctx.host.attachments.save(readFileSync(f.path), { name: basename(path), mime }).id;
-      })
-      // A refused it: not asked again. Away or not reachable: asked again when the item comes again.
-      .catch((err: unknown) => (err instanceof HostError && err.code !== "runtime_error" ? null : undefined))
+      .then(
+        (f) => {
+          const mime = MIME[ext];
+          return !mime || f.kind !== "image" ? null : this.ctx.host.attachments.save(readFileSync(f.path), { name: basename(path), mime }).id;
+        },
+        (err: unknown) => {
+          if (err instanceof HostError && err.code !== "runtime_error" && this.store.getTask(taskId)?.remote) this.remember(taskId, { [theirs]: null });
+          throw err;
+        },
+      )
       .then((mineId) => {
         // The copy may have been archived meanwhile: nothing is kept for it.
-        if (mineId === undefined || !this.store.getTask(taskId)?.remote) return;
-        this.remember(taskId, { [theirs]: mineId });
-        const item = this.store.getItem(itemId);
-        if (item) this.put(item);
+        if (this.store.getTask(taskId)?.remote) this.remember(taskId, { [theirs]: mineId });
+        return mineId;
       })
       .finally(() => this.fetching.delete(theirs));
+    this.fetching.set(theirs, run);
+    return run;
+  }
+
+  /** The item again as this computer keeps it (its pictures this computer's own now). */
+  private putAgain(taskId: Id, itemId: Id): void {
+    if (!this.store.getTask(taskId)?.remote) return;
+    const item = this.store.getItem(itemId);
+    if (item) this.put(item);
+  }
+
+  /** A picture of A's this computer does not have: fetched, kept as an attachment, the item put again. */
+  private fetch(taskId: Id, itemId: Id, theirs: Id, path: string): void {
+    void this.fetchOne(taskId, theirs, path).then(
+      () => this.putAgain(taskId, itemId),
+      // A refused it: the item shows its name (the refusal is remembered). Not reachable: the picture stays broken until
+      // the person looks at it (request) or the item comes again.
+      (err: unknown) => {
+        if (err instanceof HostError && err.code !== "runtime_error") this.putAgain(taskId, itemId);
+      },
+    );
+  }
+
+  /**
+   * 补取 (2026-11-17, the user: 后来连上的控制端，对话里早先发过的文件读不到): the pictures of one item of a copy that are
+   * not here, asked of A now — the person is looking at them. Before, a picture was asked for only when its item came:
+   * a device that came later gets a long conversation's items all at once, a fetch that then failed (no answer in time,
+   * A away for a moment) was never tried again — catching up asks only for items after the last one, so that item never
+   * came again — and it showed broken (A's attachment id, which this computer does not have). Throws A's reason when A
+   * cannot give it (gone there too: A says so).
+   */
+  async request(taskId: Id, itemId: Id): Promise<void> {
+    const item = this.store.getItem(itemId);
+    if (!item || this.store.getSession(item.sessionId)?.taskId !== taskId || !this.store.getTask(taskId)?.remote) throw new HostError("not_found", "这条消息不在这个远程任务里");
+    if ((item.type !== "user" && item.type !== "tool") || !item.images?.length) return;
+    const known = this.known()[taskId] ?? {};
+    let failed: unknown = null;
+    for (const im of item.images) {
+      if (!im.id || this.local(im.id)) continue;
+      // Fetched meanwhile (the item was stored before it came): only the item needs putting again.
+      const mine = known[im.id];
+      if (mine && this.local(mine)) continue;
+      try {
+        await this.fetchOne(taskId, im.id, im.path);
+      } catch (err) {
+        failed ??= err;
+      }
+    }
+    this.putAgain(taskId, itemId);
+    if (failed) throw failed instanceof HostError ? failed : new HostError("runtime_error", failed instanceof Error ? failed.message : String(failed));
   }
 }

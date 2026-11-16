@@ -376,6 +376,8 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   const isRemote = session?.runtime === "remote";
   const remoteSub = isRemote && session.kind === "sub";
   const blocked = isRemote ? (remote?.blocked ?? null) : null;
+  // The copy's own computer (远程选 MCP, 2026-11-17: the composer's MCP is that one's).
+  const copyRemote = isRemote && session?.taskId ? tasks?.find((t) => t.id === session.taskId)?.remote : undefined;
   const readOnly = !session || claudeSub || remoteSub || !!remote?.revoked || session.writer === "archived" || session.writer === "terminal-handoff";
   // An archived session has no composer (stage 14): the task page's banner says so and restores it.
   const archived = !!session && (session.writer === "archived" || !!session.archivedAt);
@@ -851,7 +853,7 @@ ${d}` : back));
                   e.currentTarget.value = "";
                 }}
               />
-              <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly || isRemote} />
+              <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly || isRemote} {...(isRemote && copyRemote ? { remote: { name: copyRemote.name, mcp: !!copyRemote.mcp, writable: !readOnly && !blocked && copyRemote.state === "active" } } : {})} />
               <span
                 className="composer-hint"
                 {...(blocked ? { "data-testid": "remote-blocked" } : {})}

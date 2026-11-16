@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { open, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
-import { MAX_TEXT_FILE_BYTES, PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_FONT_EXT, REMOTE_KINDS,REMOTE_TASK_FOLDER, remoteFileKind, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
+import { FILE_REFS_HEADING, MAX_TEXT_FILE_BYTES, PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, REMOTE_ATTACHMENTS_FOLDER, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, REMOTE_FILES_SINCE, REMOTE_FONT_EXT, REMOTE_KINDS, REMOTE_TASK_FOLDER, remoteFileKind, splitFileRefItems, type Id, type RemoteFetchedFile, type RemoteFileAnswer, type RemoteFileAsk, type RemoteFileKind, type SessionItem } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import { HostError } from "../../core/shared.js";
 import type { RemoteContext } from "./grants.js";
@@ -23,14 +23,25 @@ export interface FileRoots {
   root: string;
   /** Studio's attachments folder… */
   attachments: string;
-  /** …of which only these files: the pictures sent in the task's conversations (as their items name them; read when needed). */
-  attached(): readonly string[];
+  /**
+   * …of which only these files: what the task's conversations sent along (read when needed) — the pictures as their
+   * items name them, and since 2026-11-17 the files of their 引用文件 kept there (what a paired device sent). A string is
+   * a file named where it is; `{ written, at }` one its item names by `written` that is at `at` now (the data folder moved
+   * since, e.g. to where the AMO platform keeps it: on this computer it shows by its id, a device asks by its path).
+   */
+  attached(): ReadonlyArray<string | AttachedFile>;
   /**
    * A relative path not found from the folder: the one file of the task's folder whose path ends with it, as this
    * computer's own links find it (2026-10-30: an agent wrote `screenshots/…` from a subfolder; on A it opened, on B
    * 「找不到这个文件」).
    */
   findByEnd?(written: string): Promise<string | null>;
+}
+
+/** A file a conversation sent along: the path its item wrote, and where it is now. */
+export interface AttachedFile {
+  written: string;
+  at: string;
 }
 
 const win = process.platform === "win32";
@@ -119,7 +130,10 @@ const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, device: string): Promise<RemoteFileAnswer> {
   if (typeof ask.path !== "string" || ask.path.length > 2000) throw new HostError("bad_request", "文件路径不对");
   const asked = resolveAsked(roots, ask.path, typeof ask.cwd === "string" ? ask.cwd : undefined);
-  let where = real(asked);
+  const attached = roots.attached().map((a): AttachedFile => (typeof a === "string" ? { written: a, at: a } : a));
+  // 2026-11-17: a file the conversation sent along, by the path its item wrote: where it is now.
+  const named = attached.find((a) => key(normalize(a.written)) === key(asked));
+  let where = real(named ? named.at : asked) ?? (named ? real(asked) : null);
   if (!where && roots.findByEnd) {
     const p = ask.path.trim();
     const inTask = underTaskFolder(p);
@@ -127,12 +141,13 @@ export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, devic
     const found = rel ? await roots.findByEnd(rel) : null;
     where = found ? real(found) : null;
   }
-  if (!where) throw new HostError("not_found", `${device} 上找不到这个文件：${slash(ask.path)}`);
+  // Said so the person on the other computer knows it is not that computer's copy that is missing (2026-11-17, the user: 被控端也找不到，就明确告诉控制端).
+  if (!where) throw new HostError("not_found", `${device} 上也没有这个文件了（可能已经删掉或挪走）：${slash(ask.path)}`);
   const root = real(roots.root);
   const attachments = real(roots.attachments);
   let rel: string;
   if (root && inside(where, root)) rel = slash(relative(root, where));
-  else if (attachments && inside(where, attachments) && roots.attached().some((a) => key(real(a) ?? "") === key(where))) rel = `${REMOTE_ATTACHMENTS_FOLDER}/${basename(where)}`;
+  else if (attachments && inside(where, attachments) && attached.some((a) => key(real(a.at) ?? "") === key(where))) rel = `${REMOTE_ATTACHMENTS_FOLDER}/${basename(where)}`;
   else throw new HostError("read_only", "这个文件不在任务的文件夹里，不能远程查看（只能看任务文件夹和对话附件里的文件）");
   const ext = extOf(where);
   const kind = remoteFileKind(where) ?? (ask.pageAsset === true && REMOTE_FONT_EXT.has(ext) ? "font" : null);
@@ -165,10 +180,27 @@ export async function readRemoteFile(roots: FileRoots, ask: RemoteFileAsk, devic
   return { ...base, sha256, offset: 0, data: data.subarray(0, REMOTE_FILE_CHUNK).toString("base64") };
 }
 
-/** On A: the pictures sent in a task's conversations (user messages and tool calls name them by path). */
-export function attachedPaths(items: Iterable<SessionItem>): string[] {
-  const out: string[] = [];
-  for (const it of items) if ((it.type === "user" || it.type === "tool") && it.images) for (const im of it.images) if (im.path) out.push(im.path);
+/**
+ * On A (2026-11-17): what a task's conversations sent along, where each is now — the pictures (by their attachment, `now`
+ * gives its path here), and the files of a user message's 引用文件 that are in the attachments folder `dir` (a paired
+ * device's uploads: before, only pictures were given, and those files were refused as 「不在任务的文件夹里」 on every
+ * device). A path written under an older data folder is looked for in `dir` by its name (attachment names start with a
+ * random id). Files a message names elsewhere stay out: only the task's folder is given of those.
+ */
+export function attachedFiles(items: Iterable<SessionItem>, dir: string, now: (id: Id) => string | null): AttachedFile[] {
+  const out: AttachedFile[] = [];
+  const kept = (written: string): string | null => {
+    const here = join(dir, basename(written));
+    return basename(dirname(written)).toLowerCase() === basename(dir).toLowerCase() && existsSync(here) ? here : null;
+  };
+  for (const it of items) {
+    if ((it.type === "user" || it.type === "tool") && it.images) for (const im of it.images) if (im.path) out.push({ written: im.path, at: (im.id ? now(im.id) : null) ?? kept(im.path) ?? im.path });
+    if (it.type !== "user" || !it.text.includes(FILE_REFS_HEADING)) continue;
+    for (const ref of splitFileRefItems(it.text).refs) {
+      const at = inside(normalize(ref.path), dir) ? ref.path : kept(ref.path);
+      if (at) out.push({ written: ref.path, at });
+    }
+  }
   return out;
 }
 
@@ -355,6 +387,11 @@ export class RemoteFiles {
     } catch (err) {
       // Not reachable (offline, or no answer in time): the copy from last time, saying so.
       if (kept && err instanceof HostError && err.code === "runtime_error") return fromKept(`${name} 现在连不上，显示的是上次取来的版本`);
+      // Gone there since this computer took it (2026-11-17): what was taken then, saying so.
+      if (kept && err instanceof HostError && err.code === "not_found") return fromKept(`${name} 上已经没有这个文件了，显示的是上次取来的版本`);
+      // An older A gives only the pictures of the conversation, not the files sent along with a message (2026-11-17).
+      if (err instanceof HostError && err.code === "read_only" && r.attachedFiles !== true && !/授权/.test(err.message))
+        throw new HostError("read_only", `${err.message}。如果这是对话里随消息发过的附件：${name} 上的 Studio 要更新到 ${REMOTE_FILES_SINCE} 或更新的版本，才能从这台电脑取`);
       throw err;
     }
     const rel = first.rel;
