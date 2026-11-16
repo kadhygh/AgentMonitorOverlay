@@ -86,14 +86,14 @@ export function teamRelayTools({ service, caller }: ToolContext): AmoTool[] {
       // 2026-11-13 (the user: Studio 里的 team_* 那条路也要能拿到附件): the files a reply lists, onto this computer.
       name: "team_file_get",
       title: "取中转会话里的文件",
-      description: "Save a file of a 中转 session you sent (a picture, a document the other side sent; its fileId is listed under 「会话里的文件」 in the reply and in team_session) on this computer, in Studio's data folder, and get its full path to open with your own tools. A picture up to 1 MB also comes as an image. Only files of your own 中转 sessions; at most 20 MB.",
+      description: "Save a file of a 中转 session on this computer, in Studio's data folder, and get its full path to open with your own tools: one you sent (a picture, a document the other side sent) or one the person was sent or is in (e.g. a session pasted into this conversation). Its fileId is listed under 「会话里的文件」 in the reply and in team_session. A picture up to 1 MB also comes as an image. At most 20 MB.",
       inputSchema: { threadId: z.string(), fileId: z.string() },
       readOnly: true,
       autoApprove: true,
       run: async (args) => {
         if (!caller) return fail("这次调用没有 AMO 会话身份。");
         try {
-          const got = await t.fileGet(caller.sessionId, args);
+          const got = await t.fileGet(args);
           const f = got.file;
           const type = f.type.split(";")[0]!.trim();
           const head = `${got.reused ? "已经取过这个文件（内容一致，没有重新下载）" : "已取下"}：${f.name} v${f.version} · ${type} · ${sizeText(f.size)} · ${f.by} 上传\n${got.path}`;

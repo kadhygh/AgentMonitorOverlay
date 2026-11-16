@@ -219,6 +219,10 @@ test("register, an AI's request answered in the other client, updates, the servi
   await b.page.locator(".head-tools").getByRole("button", { name: "复制给 AI" }).click();
   await expect.poll(() => copiedText(b.app)).toContain("## 附件上的批注（1 条）");
   expect(await copiedText(b.app)).toContain("designdoc.md:3\n> 每秒 12 发\n升速曲线建议配表（程序老李）");
+  // …and the session's files with their fileId and how to save one (2026-11-16, the user: relay 里有附件，但是 ai 说拿不到).
+  expect(await copiedText(b.app)).toContain("### 会话里的文件（1 个）");
+  expect(await copiedText(b.app)).toContain("team_file_get（threadId, fileId）");
+  expect(await copiedText(b.app)).toMatch(/- designdoc\.md v1 · .+ · fileId f_[0-9a-f]{16}/);
 
   // An HTML file in the session: its script does not run unless asked to.
   await b.page.locator(".files-side input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });

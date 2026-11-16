@@ -5,7 +5,7 @@ import { Dialog, Field } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
-import { carriedNotes, fileNotesText, newRepliesText, notePlaces, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type NotePlaces, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
+import { carriedNotes, fileNotesText, filesAsText, newRepliesText, notePlaces, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type NotePlaces, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 import { writeUsageFile } from "./usageFile.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
@@ -74,11 +74,15 @@ export function SessionView(props: {
   // reply carried did, so the asker's own, ones written after replying or before it, and unticked ones were left out.
   // Each with its place (文件:行), its words and what was said, as Reviewer copies them.
   // `since`: only notes written after it (复制新回复). `body(places)` writes the messages, the carried notes with their lines.
+  // The session's files are listed after the messages, with their fileId and how an AI saves one (2026-11-16, the user:
+  // relay 里有附件，但是 ai 说拿不到 — a session pasted into a conversation said 「写在附件里」 and named no file), the ones
+  // sent since `since` marked 新.
   const withNotes = async (carried: ReadonlySet<string>, body: (places: NotePlaces) => string, since = 0) => {
     const noted = (await loadNotedFiles(session, files)).map((f) => ({ ...f, notes: f.notes.filter((n) => n.at > since || carried.has(n.id)) }));
     const rest = fileNotesText(noted, carried);
     const count = noted.reduce((s, f) => s + f.notes.filter((n) => !carried.has(n.id)).length, 0);
-    return { text: body(notePlaces(noted)) + (rest ? `\n\n${rest}` : ""), count };
+    const listed = filesAsText(files, FILES_HOW, since ? (f) => f.at > since : undefined);
+    return { text: body(notePlaces(noted)) + (listed ? `\n\n${listed}` : "") + (rest ? `\n\n${rest}` : ""), count };
   };
   const notesSaid = (n: number) => (n ? `，带上附件上的 ${n} 条批注` : "");
   const copyAll = async () => {
@@ -261,6 +265,9 @@ export function SessionView(props: {
     </section>
   );
 }
+
+/** How an AI the session is pasted to saves one of its files: Studio's own tool, the relay's MCP, its command line. */
+const FILES_HOW = { download: "AMO Studio 里的 team_file_get（threadId, fileId），或 AMO 中转的 relay_file_download（fileId）、命令行 relay download <fileId>" };
 
 const agoText = (ms: number) => (ms < 60_000 ? "刚刚" : `${waitedText(ms)}前`);
 

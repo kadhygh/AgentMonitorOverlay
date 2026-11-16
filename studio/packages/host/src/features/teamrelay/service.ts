@@ -193,15 +193,18 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
   }
 
   /**
-   * team_file_get (2026-11-13): a file of a 中转 session this session sent, saved in Studio's data folder
-   * (attachments/team/<fileId>/<name>) with the platform's login — the agent never holds the key. Only the caller's own
-   * sessions' files: one of another session, or of any other thread the person is in, is refused. Limits, name cleaning
-   * and the sha256 check are relay_file_download's (downloadFile).
+   * team_file_get (2026-11-13): a file of a 中转 session, saved in Studio's data folder (attachments/team/<fileId>/<name>)
+   * with the platform's login — the agent never holds the key. Limits, name cleaning and the sha256 check are
+   * relay_file_download's (downloadFile). Any session the person is in, not only the ones this conversation sent
+   * (2026-11-16, the user: relay 里有附件，但是 ai 说拿不到 — lks's AI asked dhy with a handoff attached, dhy pasted the session
+   * into a conversation, and team_session listed the file while team_file_get refused it): reading a file is reading,
+   * as team_session reads any of them and the person can download it in 中转. Following up and closing stay with the
+   * conversation that sent it (ownThread).
    */
-  async fileGet(sessionId: Id, input: { threadId?: unknown; fileId?: unknown }): Promise<Downloaded> {
-    const thread = await this.ownThread(sessionId, input.threadId);
+  async fileGet(input: { threadId?: unknown; fileId?: unknown }): Promise<Downloaded> {
+    const thread = await this.memberThread(input.threadId);
     const fileId = text(input.fileId, "fileId");
-    const notHere = new HostError("bad_request", `文件 ${fileId} 不在中转会话「${thread.title}」里：只能取你这个会话发出的中转会话里的文件（fileId 在回复和 team_session 的「会话里的文件」里）。`);
+    const notHere = new HostError("bad_request", `文件 ${fileId} 不在中转会话「${thread.title}」里（fileId 在回复和 team_session 的「会话里的文件」里）。`);
     if (!FILE_ID.test(fileId)) throw notHere;
     const { client } = this.relay();
     // In the session's list (latest versions), or an earlier version of one of them.
@@ -214,6 +217,16 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
   async members(): Promise<Array<{ name: string; nick: string; role: string; online: boolean }>> {
     const { client, me } = this.relay();
     return (await this.call(() => client.members())).filter((m) => m.name !== me).map((m) => ({ name: m.name, nick: m.nick, role: m.role, online: m.online }));
+  }
+
+  /** A 中转 session the person is in (asked, was asked, or a member of), fresh from the server. */
+  private async memberThread(threadId: unknown): Promise<Thread> {
+    const id = text(threadId, "threadId");
+    const { client, me } = this.relay();
+    const { thread } = await this.call(() => client.messages(id, Number.MAX_SAFE_INTEGER));
+    const r = thread.request;
+    if (!thread.members.includes(me) && r?.from !== me && r?.to !== me) throw new HostError("bad_request", `中转会话 ${id} 里没有你，取不了它的文件。`);
+    return thread;
   }
 
   /** A 中转 session the caller sent (it carries the caller's mark), fresh from the server. */

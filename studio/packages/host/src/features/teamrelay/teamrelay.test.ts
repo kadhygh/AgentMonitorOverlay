@@ -210,8 +210,8 @@ describe("会话里用中转", () => {
     expect((await out.tool(t.id, "team_ask", { to: "程序老李", title: "x", body: "y" })).text).toContain("在 AMO 平台里登录");
   });
 
-  it("attachments (2026-11-13): the reply lists the session's files, the new ones marked; team_file_get saves one byte for byte, only from the caller's own sessions", async () => {
-    const { service, told, session, coderClient, tool, root } = await setup();
+  it("attachments (2026-11-13): the reply lists the session's files, the new ones marked; team_file_get saves one byte for byte, from the sessions the person is in", async () => {
+    const { service, told, session, coderClient, tool, root, relayStore } = await setup();
     service.config.updateSettings({ teamAutoSend: true });
     const asking = session("过热");
     const other = session("别的任务");
@@ -251,8 +251,25 @@ describe("会话里用中转", () => {
     expect(readFileSync(join(root, "attachments", "team", build.id, "build.zip")).equals(zip)).toBe(true);
     expect((await tool(asking.id, "team_file_get", { threadId: thread.id, fileId: shot.id })).text).toContain("已经取过这个文件");
 
-    // Refused: the thread of another session; a file of another thread named with this one; no such file; not an id.
-    expect((await tool(other.id, "team_file_get", { threadId: thread.id, fileId: shot.id })).text).toContain("不是你这个会话发的");
+    // Another conversation of the person's may take it too (2026-11-16): reading is not following up.
+    expect((await tool(other.id, "team_file_get", { threadId: thread.id, fileId: shot.id })).error).toBe(false);
+
+    // A session the person was sent, pasted into a conversation (2026-11-16, the user: relay 里有附件，但是 ai 说拿不到):
+    // its handoff is theirs to take; one between two other people is not.
+    const { thread: handed } = await coderClient.ask({ to: "策划小王", title: "请接手（附 handoff）", body: "写在附件里。" });
+    const handoff = await coderClient.upload({ threadId: handed.id }, "README.md", Buffer.from("# Handoff"), "text/markdown");
+    expect((await tool(other.id, "team_session", { threadId: handed.id })).text).toContain(`fileId ${handoff.id}`);
+    const taken = await tool(other.id, "team_file_get", { threadId: handed.id, fileId: handoff.id });
+    expect(taken.error).toBe(false);
+    expect(readFileSync(join(root, "attachments", "team", handoff.id, "README.md"), "utf8")).toBe("# Handoff");
+    relayStore.register("美术小张", "pw-cccc");
+    const { thread: theirs } = await coderClient.ask({ to: "美术小张", title: "别人的事", body: "看图" });
+    const theirFile = await coderClient.upload({ threadId: theirs.id }, "a.png", png, "image/png");
+    const notMine = await tool(other.id, "team_file_get", { threadId: theirs.id, fileId: theirFile.id });
+    expect(notMine.error).toBe(true);
+    expect(existsSync(join(root, "attachments", "team", theirFile.id))).toBe(false);
+
+    // Refused: a file of another thread named with this one; no such file; not an id.
     for (const fileId of [otherDoc!.id, "f_0000000000000000", "../../studio.db"]) {
       const refused = await tool(asking.id, "team_file_get", { threadId: thread.id, fileId });
       expect(refused).toMatchObject({ error: true });
