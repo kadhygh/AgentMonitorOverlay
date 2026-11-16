@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ReviewRead, SessionItem } from "@amo-studio/protocol";
 import { parseBlocks } from "../lib/markdown.js";
 import { buildTranscript } from "./turns.js";
-import { blocksOf, clickRead, flagTotal, isFlagged, nextUnread, plainStart, readBlocks, readCount, readDone, readKeys, readLine, readUpTo, reviewKey, unfinished } from "./reviewLogic.js";
+import { blocksOf, clickRead, isFlagged, plainStart, readBlocks, readCount, reviewKey } from "./reviewLogic.js";
 
 // 审阅进度 (第二版 2026-11-16): which reply a round is read by, its blocks, what a click on the line at its right makes
-// of it, what 复盘 counts and where it goes next.
+// of it.
 
 let seq = 0;
 const base = (turnId: string) => ({ id: `i${++seq}`, sessionId: "s", seq, createdAt: "2026-11-16T00:00:00.000Z", raw: { runtime: "codex" as const, method: "x", turnId } });
@@ -17,15 +17,19 @@ const tool = (t: string, name: string): SessionItem => ({ ...base(t), type: "too
 const read = (n: ReviewRead["read"], flags: number[] = []): ReviewRead => ({ read: n, flags: flags.map((block) => ({ block, quote: "" })) });
 
 describe("审阅进度 in the conversation", () => {
-  it("keys a round by its final reply, once it is done, with how many blocks it has", () => {
+  it("keys a round by its final reply once it is written, also while the round goes on", () => {
     const done = agent("改好了\n\n- 一\n- 二", "t1");
     const between = agent("先看一下", "t1");
     const items = [turn("t1"), user("改一下", "t1"), between, tool("t1", "shell"), done, turn("t2", "running"), user("再来", "t2"), agent("正在写", "t2", true)];
     const segs = buildTranscript(items, true);
     expect(segs.map(reviewKey)).toEqual([done.id, null]);
-    expect(readKeys(segs)).toEqual([{ id: done.id, of: 3 }]);
+    expect(blocksOf(done as { markdown: string })).toHaveLength(3);
+    // The round still going: its reply once written counts (and goes into the work when the round works on after it).
+    const latest = agent("写完了这一段", "t2");
+    expect(buildTranscript([...items.slice(0, -1), latest], true).map(reviewKey)).toEqual([done.id, latest.id]);
+    expect(buildTranscript([...items.slice(0, -1), latest, tool("t2", "shell")], true).map(reviewKey)).toEqual([done.id, null]);
     // An empty reply has nothing to read.
-    expect(readKeys(buildTranscript([turn("t3"), user("嗯", "t3"), agent("  ", "t3")], false))).toEqual([]);
+    expect(buildTranscript([turn("t3"), user("嗯", "t3"), agent("  ", "t3")], false).map(reviewKey)).toEqual([null]);
   });
 
   it("splits a reply into blocks: paragraphs, list items, table rows, code; a heading goes with the block after it; a divider is none", () => {
@@ -95,34 +99,5 @@ describe("审阅进度 in the conversation", () => {
     expect(readCount(read(7), 5)).toBe(5);
     expect(isFlagged(read(0, [1, 3]), 3)).toBe(true);
     expect(isFlagged(read(0, [1, 3]), 2)).toBe(false);
-  });
-
-  it("says how far a reply was read, counts what is left and the 「!」, and marks up to a reply", () => {
-    expect([readLine(undefined, 4), readLine(read(2), 4), readLine(read(4), 4), readLine(read("all"), 4)]).toEqual(["还没读", "读到第 2 / 4 块", "读到底了", "读到底了"]);
-    expect(readDone(read(3), 4)).toBe(false);
-    const keys = [
-      { id: "a", of: 2 },
-      { id: "b", of: 3 },
-      { id: "c", of: 1 },
-      { id: "d", of: 4 },
-    ];
-    const replies = { a: read("all"), b: read(1, [2]), d: read(0, [0, 1]) };
-    expect(unfinished(keys, replies).map((k) => k.id)).toEqual(["b", "c", "d"]);
-    expect(flagTotal(keys, replies)).toBe(3);
-    expect(readUpTo(keys, replies, "c")).toEqual(["b", "c"]);
-    expect(readUpTo(keys, replies, "gone")).toEqual([]);
-  });
-
-  it("finds the next place not read below the reply being read, from the top again past the last", () => {
-    const keys = [
-      { id: "a", of: 2 },
-      { id: "b", of: 3 },
-      { id: "c", of: 1 },
-    ];
-    const replies = { a: read("all"), b: read(1) };
-    expect(nextUnread(keys, replies, null)).toEqual({ id: "b", block: 1 });
-    expect(nextUnread(keys, replies, "b")).toEqual({ id: "c", block: 0 });
-    expect(nextUnread(keys, replies, "c")).toEqual({ id: "b", block: 1 });
-    expect(nextUnread(keys, { a: read("all"), b: read(3), c: read(1) }, null)).toBeNull();
   });
 });

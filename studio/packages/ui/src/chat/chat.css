@@ -324,71 +324,59 @@
 /* ---- footer ---------------------------------------------------------------------------------------------------- */
 
 .turn-foot { display: flex; align-items: center; gap: 4px; margin: 4px 0 0 -6px; min-height: 28px; color: var(--chat-dim); font-size: 12px; }
-/* 审阅进度: its end of the reply in 复盘 (.read-foot) stays in sight; the rest of an older footer waits for hover. */
-.turn-foot[data-reveal="hover"] > :not(.read-foot) { opacity: 0; transition: opacity 120ms ease; }
-.turn:hover .turn-foot[data-reveal="hover"] > *, .turn-foot[data-reveal="hover"]:focus-within > * { opacity: 1; }
-@media (hover: none) { .turn-foot[data-reveal="hover"] > * { opacity: 1; } }
+.turn-foot[data-reveal="hover"] { opacity: 0; transition: opacity 120ms ease; }
+.turn:hover .turn-foot[data-reveal="hover"], .turn-foot[data-reveal="hover"]:focus-within { opacity: 1; }
+@media (hover: none) { .turn-foot[data-reveal="hover"] { opacity: 1; } }
 
 /* ---- 审阅进度 (plans/review-progress.md; 测试功能; 第二版 2026-11-16) ------------------------------------------------------- */
 
-/* Room at the right of each round for the line beside its reply (and, when the conversation is wide enough, the
-   「读到这里」 tag beside the line): inside the round, as an off-screen round paints nothing outside its box
-   (content-visibility above). The column grows by as much, so a wide conversation keeps its text as wide as before;
-   a narrow one (the 会话弹窗 goes down to 400px) gives up less and stands the tag up beside the line. */
-.thread[data-reading] { container: chat-thread / inline-size; }
-.thread[data-reading] .thread-inner { --read-gutter: 54px; max-width: calc(var(--chat-width) + var(--read-gutter)); }
-@container chat-thread (min-width: 600px) { .thread[data-reading] .thread-inner { --read-gutter: 100px; } }
-.thread[data-reading] .turn { padding-right: var(--read-gutter); }
+/* The line is at the conversation's right edge, beside the scrollbar, and goes all the way down: dotted between the
+   replies, a line of its own beside each reply (2026-11-16, the user: 右侧的看到哪的线，最好能连起来，不要一段一段 … 这条线
+   最好是在现有对话框的右侧，不应该影响中间主体的展示; demo A of out/review-progress/rail-directions.html). The text
+   column is as wide as without it. --read-edge is how far the column's right is from 4px inside the conversation's
+   right (cqw: the conversation's width); each round reaches out that far, with a padding of as much, so its box
+   (content-visibility above clips an off-screen round's painting to it) holds its reply's line. The dotted line is
+   the conversation's background, scrolling with it (local). */
+.thread[data-reading] {
+  container: chat-thread / inline-size; padding-right: 34px;
+  background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--chat-dim) 32%, transparent) 0 3px, transparent 3px 7px) right 14px top / 1px 100% no-repeat local;
+}
+.thread[data-reading] .thread-inner { --read-edge: calc((100cqw - min(100cqw, var(--chat-width))) / 2 + 30px); }
+.thread[data-reading] .turn { margin-right: calc(-1 * var(--read-edge)); padding-right: var(--read-edge); }
 
 /* The marks are drawn over and beside the reply (ReadMarks), the tints under its text: a stacking context of its own
    puts z-index -1 between the reply's box and its text. */
 .msg-agent[data-reading] { position: relative; z-index: 0; }
 .read-marks { position: absolute; inset: 0; pointer-events: none; user-select: none; }
-/* 复盘: the blocks not read (the user, 2026-11-16: 没看的块做标注感受更好一些), and the 「!」 ones in the error colour. */
-.read-tint { position: absolute; left: -10px; right: -6px; z-index: -1; border-radius: 6px; background: var(--attention-bg); box-shadow: inset 3px 0 0 var(--attention); }
-.read-tint.flag { background: var(--error-bg); box-shadow: inset 3px 0 0 var(--error); }
-/* Hovering the line: what a click would count as read, faintly. */
-.read-tint.preview { background: color-mix(in srgb, var(--running) 6%, transparent); box-shadow: none; }
+/* Hovering the line: what a click would count as read, faintly, under the text. */
+.read-tint { position: absolute; left: -10px; right: -6px; z-index: -1; border-radius: 6px; }
+.read-tint.preview { background: color-mix(in srgb, var(--running) 7%, transparent); }
 
-/* The line: quiet until the pointer is on it (the user: 平时很淡). A band per block, from halfway up the gap above it. */
-.read-rail { position: absolute; left: calc(100% + 4px); width: 28px; border-radius: 6px; pointer-events: auto; cursor: pointer; }
+/* A reply's part of the line: quiet until the pointer is on it (the user: 平时很淡). A band per block, from halfway up
+   the gap above it, without gaps between them. */
+.read-rail { position: absolute; left: calc(100% + var(--read-edge) - 22px); width: 22px; border-radius: 6px; pointer-events: auto; cursor: pointer; }
 .read-rail:hover { background: var(--chat-hover); }
 .read-seg { position: absolute; left: 0; right: 0; }
-.read-seg::before { content: ""; position: absolute; left: 13px; top: 1px; bottom: 1px; width: 2px; border-radius: 1px; background: color-mix(in srgb, var(--chat-dim) 30%, transparent); }
-.msg-agent:hover .read-seg::before { background: color-mix(in srgb, var(--chat-dim) 55%, transparent); }
+.read-seg::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: color-mix(in srgb, var(--chat-dim) 38%, transparent); }
+.read-seg:first-child::before { border-radius: 1px 1px 0 0; }
+.read-seg:last-child::before { border-radius: 0 0 1px 1px; }
 .read-rail:hover .read-seg::before { background: var(--chat-dim); }
-.read-seg[data-pre]::before { left: 12px; width: 4px; background: color-mix(in srgb, var(--running) 45%, transparent); }
-.read-seg[data-read]::before, .read-rail:hover .read-seg[data-read]::before { left: 12px; width: 4px; background: var(--running); }
+/* The preview and what is read come from the page's state, each above the hover colours (2026-11-16, the user: 点击读到
+   这里之后，如果鼠标拖回上面，竖线的颜色会变回去 — the preview was under .read-rail:hover's grey). */
+.read-rail .read-seg[data-pre]::before, .read-rail:hover .read-seg[data-pre]::before { left: 9px; width: 4px; background: color-mix(in srgb, var(--running) 45%, transparent); }
+.read-rail .read-seg[data-read]::before, .read-rail:hover .read-seg[data-read]::before { left: 9px; width: 4px; background: var(--running); }
 .read-seg[data-flag]::after {
-  content: "!"; position: absolute; left: 4px; top: 50%; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%;
-  background: var(--error); color: #fff; font: 700 12px/20px var(--font-ui); text-align: center;
+  content: "!"; position: absolute; left: 3px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%;
+  background: var(--error); color: #fff; font: 700 11px/16px var(--font-ui); text-align: center;
 }
-/* 读到这里: a line under the last block read, the tag outside the line (not over the reply's text, nor the 「!」 on it). */
-.read-at { position: absolute; left: -10px; right: -6px; height: 0; margin-top: -1px; border-top: 2px solid var(--running); }
-.read-at::after {
-  content: attr(data-label); position: absolute; left: calc(100% + 30px); top: 3px; padding: 4px 1px; writing-mode: vertical-rl;
-  border-radius: 999px; background: color-mix(in srgb, var(--running) 16%, var(--chat-panel)); border: 1px solid var(--running);
-  color: var(--running-text); font: 600 10.5px/1 var(--font-ui); letter-spacing: 1px; white-space: nowrap;
-}
-@container chat-thread (min-width: 600px) {
-  .read-at::after { left: calc(100% + 32px); top: -10px; padding: 3px 7px; writing-mode: horizontal-tb; letter-spacing: 0; font-size: 11px; }
+/* 读到这里: a tab on the line's left where the reading stopped — its words only where the conversation leaves room
+   beside the column; else a short green notch, so the reply's text is never under it. */
+.read-at { position: absolute; right: 13px; height: 6px; width: 7px; margin-top: -3px; border-radius: 3px 0 0 3px; background: var(--running); pointer-events: none; }
+@container chat-thread (min-width: 900px) {
+  .read-at { width: auto; height: 20px; margin-top: -10px; padding: 0 7px 0 8px; border-radius: 999px 0 0 999px; }
+  .read-at::after { content: attr(data-label); color: #fff; font: 600 11px/20px var(--font-ui); white-space: nowrap; }
 }
 
-/* 复盘, at the end of each reply: how far it was read, its 「!」, 到这里为止都读过. */
-.read-foot { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; color: var(--chat-dim); font-variant-numeric: tabular-nums; }
-.read-foot-flags { color: var(--error-text); font-weight: 600; }
-.read-upto { height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: var(--chat-dim-hover); font: inherit; font-size: 12px; cursor: pointer; }
-.read-upto:hover { border-color: var(--chat-input-border); background: var(--chat-hover); color: var(--chat-label); }
-
-/* The conversation's top right: 复盘 beside the reply jumps; in 复盘, its line over the conversation. */
-.thread-tools { position: absolute; top: 8px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; }
-.thread-tools > .reply-nav, .review-bar > .reply-nav { position: static; }
-.review-open { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--overlay); color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
-.review-open:hover { color: var(--text); background: var(--panel-raised); }
-.review-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 24px; border-bottom: 1px solid var(--attention-border); background: var(--attention-bg); font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; }
-.review-bar-title { font-weight: 600; color: var(--attention); }
-.review-bar-count { font-variant-numeric: tabular-nums; }
-.review-bar-flags { color: var(--error-text); font-weight: 600; }
 .icon-btn {
   width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px;
   background: transparent; color: var(--chat-dim); cursor: pointer;

@@ -7,7 +7,7 @@ import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
 import { navHistory } from "../shell/navHistory.js";
 import { FindBar } from "../gitreview/FindBar.js";
-import { REVEAL_ITEM_EVENT, Transcript, type DeliveryAction } from "../chat/Transcript.js";
+import { Transcript, type DeliveryAction } from "../chat/Transcript.js";
 import { SubagentStatusContext } from "../chat/ProcessRows.js";
 import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
@@ -46,10 +46,7 @@ import { cameFromFocus, forgetFocusJump } from "../lib/focusJump.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 import { useAnnotationMarks } from "./annotationMarks.js";
 import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./ThreadParts.js";
-import { blockElement, ReviewBar, useReviewProgress, type ReviewView } from "../chat/ReviewProgress.js";
-import { flagTotal, nextUnread, unfinished, type ReadKey } from "../chat/reviewLogic.js";
-import { scrollToBox } from "../review/highlights.js";
-import { flash } from "./ReplyNav.js";
+import { useReviewProgress, type ReviewView } from "../chat/ReviewProgress.js";
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
@@ -571,59 +568,11 @@ ${d}` : back));
   const towerMode = cover ? "under" : undefined;
 
   // 审阅进度 (plans/review-progress.md, 测试功能; 第二版 2026-11-16): the Host's record of how far this session's replies
-  // were read; each reply's line at its right is the Transcript's (ReadMarks); 复盘 over the conversation. Nothing is
+  // were read; each reply's line at its right is the Transcript's (ReadMarks). 复盘 was taken out on 2026-11-16 (the user: 现在的复盘我
+  // 觉得可以删掉，因为本体已经有右侧的看到哪的线了). Nothing is
   // recorded by itself (the user: 也不要做自动标记完成).
   const progress = useReviewProgress(link, reviewProgress ? sessionId : null, reviewProgress, onError);
-  const [reviewMode, setReviewMode] = useState(false);
-  useEffect(() => setReviewMode(false), [sessionId]);
-  const [readKeys, setReadKeys] = useState<ReadKey[]>([]);
-  useEffect(() => setReadKeys([]), [sessionId]);
-  const review = useMemo<ReviewView | undefined>(() => (reviewProgress && progress.loaded ? { replies: progress.replies, mode: reviewMode, change: progress.change } : undefined), [reviewProgress, progress.loaded, progress.replies, reviewMode, progress.change]);
-  const reviewLeft = review ? unfinished(readKeys, review.replies).length : 0;
-  const reviewFlags = review ? flagTotal(readKeys, review.replies) : 0;
-  /**
-   * 下一处没读的: the first block not read of the first reply not read to the end below the reply being read (from the
-   * top again past the last). The one it last went to counts as read while it is still in sight — at the end of the
-   * conversation a short reply never reaches the top of the view, and going by the top alone went to it again and again.
-   */
-  const lastReviewJump = useRef<string | null>(null);
-  const nextToReview = () => {
-    const el = scroller.current;
-    if (!el || !review) return;
-    const view = el.getBoundingClientRect();
-    const box = (k: string) => el.querySelector(`[data-item-id="${CSS.escape(k)}"]`)?.getBoundingClientRect();
-    const last = lastReviewJump.current && readKeys.some((k) => k.id === lastReviewJump.current) ? box(lastReviewJump.current) : undefined;
-    const reading =
-      last && last.bottom > view.top && last.top < view.bottom
-        ? lastReviewJump.current
-        : [...readKeys].reverse().find((k) => {
-            const b = box(k.id);
-            return b && b.top <= view.top + 8;
-          })?.id;
-    const next = nextUnread(readKeys, review.replies, reading ?? null);
-    lastReviewJump.current = next?.id ?? null;
-    if (next) revealReply(next.id, 12, next.block);
-  };
-  /**
-   * Scrolls to a reply (to its block `block` when given), unfolding or drawing earlier turns first when it is not on the
-   * page yet (as 书签 do).
-   */
-  const revealReply = (id: string, tries: number, block?: number) => {
-    const reply = scroller.current?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
-    if (!reply) {
-      if (tries <= 0) return;
-      window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: id }));
-      requestAnimationFrame(() => requestAnimationFrame(() => revealReply(id, tries - 1, block)));
-      return;
-    }
-    const item = block === undefined ? undefined : items.find((i) => i.id === id);
-    const target = (item?.type === "agent" && block !== undefined ? blockElement(reply, item, block) : null) ?? reply;
-    stick.current = false;
-    scrollToBox(target, () => target.getBoundingClientRect());
-    flash(target);
-  };
-  const reviewable = !!review && !!session && readKeys.length > 0;
-  const replyNav = <ReplyNav scroller={scroller} itemCount={items.length} />;
+  const review = useMemo<ReviewView | undefined>(() => (reviewProgress && progress.loaded ? { replies: progress.replies, change: progress.change } : undefined), [reviewProgress, progress.loaded, progress.replies, progress.change]);
   return (
     <>
       <div className="thread-stage" data-tower={towerMode}>
@@ -634,21 +583,7 @@ ${d}` : back));
       )}
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
-        {/* 复盘's line takes the top of the conversation (the reply jumps move into it); off it, its switch sits beside them. */}
-        {reviewable && reviewMode ? (
-          <ReviewBar left={reviewLeft} flags={reviewFlags} onNext={nextToReview} onExit={() => setReviewMode(false)}>
-            {replyNav}
-          </ReviewBar>
-        ) : reviewable ? (
-          <div className="thread-tools">
-            <button type="button" className="review-open" onClick={() => setReviewMode(true)} title={`复盘：回复里还没读到的段落带上底色，一处处读过去${reviewLeft ? `（还有 ${reviewLeft} 条回复没读完）` : ""}`} data-testid="review-open">
-              复盘
-            </button>
-            {replyNav}
-          </div>
-        ) : (
-          replyNav
-        )}
+        <ReplyNav scroller={scroller} itemCount={items.length} />
         {/* Ctrl+F finds in the conversation on the page (folded steps are not searched); not while the building covers it. */}
         <FindBar active={!!session && !cover} container={scroller} within=".thread-inner" />
         <div
@@ -734,7 +669,7 @@ ${d}` : back));
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
                 <SubagentStatusContext.Provider value={subagentStatus}>
-                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} {...(review ? { review, onReviewKeys: setReadKeys } : {})} />
+                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} {...(review ? { review } : {})} />
                 </SubagentStatusContext.Provider>
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>

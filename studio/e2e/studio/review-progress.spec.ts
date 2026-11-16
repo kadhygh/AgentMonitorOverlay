@@ -5,8 +5,8 @@ import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 // 审阅进度 (设置 → 测试功能 → 审阅进度; plans/review-progress.md). 第二版 (2026-11-16; the user: 右侧加一个竖线，左键点击是
 // 标记读到哪里，右键则是标记那个感叹号有问题 … 没看的块做标注感受更好一些，然后审过的按钮可以去掉了): each finished reply has a
 // line at its right; a left click on a block's height reads the reply down to it, a right click marks the block 「!」.
-// Nothing is recorded by itself. 复盘 tints the blocks not read, counts and goes to the next place. The new 「!」 go to
-// the AI with the person's next message, once.
+// Nothing is recorded by itself. The new 「!」 go to the AI with the person's next message, once. (复盘 went on
+// 2026-11-16.)
 
 let studio: Studio | undefined;
 
@@ -44,7 +44,7 @@ const FLAGGED = "有一处我拿不准：30 级和 31 级的 Boss 有 3 件掉�
 
 const box = async (l: Locator) => (await l.boundingBox())!;
 
-test("a line at each reply's right: left click reads down to a block, right click marks 「!」; 复盘 tints what is not read; the 「!」 go to the AI once", async () => {
+test("a line at each reply's right: left click reads down to a block, right click marks 「!」; the 「!」 go to the AI once", async () => {
   studio = await launchStudio({ transcriptView: "standard" });
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -60,7 +60,7 @@ test("a line at each reply's right: left click reads down to a block, right clic
 
   // Off: nothing of it on the page.
   await expect(page.getByTestId("read-rail")).toHaveCount(0);
-  await expect(page.getByTestId("review-open")).toHaveCount(0);
+  const textWidthOff = (await box(replies.nth(1).locator(".md"))).width;
 
   await studio.api("PUT", "/api/settings", { experimentalFeatures: ["review-progress"] });
   await expect(page.getByTestId("read-rail")).toHaveCount(3, { timeout: 15_000 });
@@ -71,13 +71,19 @@ test("a line at each reply's right: left click reads down to a block, right clic
   const ids = await replies.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.itemId!));
   const progress = async () => (await studio!.api<ReviewProgress>("GET", `/api/sessions/${session.id}/review-progress`)).replies;
 
-  // The line is beside the reply's text, not over it, and inside the round.
+  // The line is at the conversation's right edge, beside the scrollbar (2026-11-16, the user: 这条线最好是在现有对话框的
+  // 右侧，不应该影响中间主体的展示): not over the reply's text, inside the round's box (an off-screen round paints
+  // nothing outside it), and the text about as wide as with the feature off (the conversation gives up 10px of padding).
   await long.scrollIntoViewIfNeeded();
   const text = await box(long.locator(".md"));
   const rail = await box(long.getByTestId("read-rail"));
   const round = await box(page.getByTestId("turn").nth(1));
+  const edge = await page.getByTestId("thread").evaluate((el) => el.getBoundingClientRect().left + el.clientWidth);
   expect(rail.x).toBeGreaterThanOrEqual(text.x + text.width);
-  expect(rail.x + rail.width).toBeLessThanOrEqual(round.x + round.width);
+  expect(rail.x + rail.width).toBeLessThanOrEqual(round.x + round.width + 0.5);
+  expect(edge - (rail.x + rail.width)).toBeGreaterThanOrEqual(0);
+  expect(edge - (rail.x + rail.width)).toBeLessThanOrEqual(8);
+  expect(text.width).toBeGreaterThanOrEqual(textWidthOff - 11);
 
   // Nothing is recorded by itself: replies on screen, the window in front, seconds go by.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.isVisible())?.focus());
@@ -108,70 +114,40 @@ test("a line at each reply's right: left click reads down to a block, right clic
   await segs.nth(7).click({ button: "right" });
   await expect(segs.nth(7)).toHaveAttribute("data-flag", "true");
   await expect.poll(async () => (await progress())[ids[1]!]).toEqual({ read: 7, of: 9, at: "var rows = BossDrop.Query(bossId);", flags: [{ block: 7, quote: FLAGGED }] });
-  // No tint off 复盘: only the line, 读到这里 and the 「!」.
-  await expect(page.getByTestId("read-unread")).toHaveCount(0);
-  await expect(page.getByTestId("read-flag-tint")).toHaveCount(0);
   // The pointer off the line (it previews what a click would count as read).
   await page.mouse.move(5, 500);
   await screenshot(app, "studio", "review-progress-rail", page);
 
-  // 复盘: the blocks not read are tinted (from the 8th block down), the ones read are not; the 「!」 one in its colour.
-  await page.getByTestId("review-open").click();
-  const bar = page.getByTestId("review-bar");
-  await expect(bar).toBeVisible();
-  await expect(bar.getByTestId("review-left")).toHaveText("还有 3 条回复没读完");
-  await expect(bar.getByTestId("review-flags")).toContainText("1 处有问题");
-  const tint = await box(long.getByTestId("read-unread"));
-  const code = await box(long.locator(".md > *").nth(4));
-  const doubt = await box(long.locator(".md > *").nth(5));
-  const end = await box(long.locator(".md > *").nth(6));
-  expect(tint.y).toBeGreaterThan(code.y + code.height - 1);
-  expect(tint.y).toBeLessThanOrEqual(doubt.y + 1);
-  expect(tint.y + tint.height).toBeGreaterThanOrEqual(end.y + end.height - 1);
-  await expect(long.getByTestId("read-flag-tint")).toHaveCount(1);
-  // The short replies, never marked, are tinted whole.
-  await expect(replies.nth(0).getByTestId("read-unread")).toHaveCount(1);
-  await expect(replies.nth(2).getByTestId("read-unread")).toHaveCount(1);
-  // Each reply's end says how far it was read.
-  const feet = page.getByTestId("read-foot");
-  await expect(feet).toHaveCount(3);
-  await expect(feet.nth(1).getByTestId("read-line")).toHaveText("读到第 7 / 9 块");
-  await expect(feet.nth(1).getByTestId("read-foot-flags")).toHaveText("! 1 处有问题");
-  await expect(feet.nth(0).getByTestId("read-line")).toHaveText("还没读");
-  await long.scrollIntoViewIfNeeded();
-  await screenshot(app, "studio", "review-progress-review", page);
-  await theme(page, "dark");
-  await screenshot(app, "studio", "review-progress-review-dark", page);
-  await theme(page, "light");
+  // The pointer back up the line after a click (2026-11-16, the user: 如果鼠标拖回上面，竖线的颜色会变回去): what is read
+  // stays green, the preview of what a click would read is green too (fainter), not the hover's grey.
+  const lineColour = (i: number) => segs.nth(i).evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
+  const readColour = await lineColour(0);
+  const s8 = await box(segs.nth(8));
+  await page.mouse.move(s8.x + s8.width / 2, s8.y + s8.height / 2, { steps: 4 });
+  await expect(segs.nth(8)).toHaveAttribute("data-pre", "true");
+  const s1 = await box(segs.nth(1));
+  await page.mouse.move(s1.x + s1.width / 2, s1.y + s1.height / 2, { steps: 6 });
+  expect(await lineColour(0)).toBe(readColour);
+  expect(await lineColour(6)).toBe(readColour);
+  // Pointer at the 2nd block: the 9th is neither read nor in the preview — the hover's grey.
+  const hoverGrey = await lineColour(8);
+  await page.mouse.move(s8.x + s8.width / 2, s8.y + s8.height / 2, { steps: 6 });
+  expect(await lineColour(6)).toBe(readColour);
+  const previewColour = await lineColour(8);
+  expect(previewColour).not.toBe(hoverGrey);
+  expect(previewColour).not.toBe(readColour);
+  await page.mouse.move(5, 500);
 
-  // 下一处没读的 from the top: the first reply, then the first block not read of the long one.
-  await page.getByTestId("thread").evaluate((el) => (el.scrollTop = 0));
-  await bar.getByTestId("review-next").click();
-  await expect(replies.nth(0)).toBeInViewport();
-  await bar.getByTestId("review-next").click();
-  await expect(long.locator(".md > *").nth(5)).toBeInViewport();
-
-  // 到这里为止都读过 on the long reply: it and the one before, its 「!」 kept.
-  await feet.nth(1).getByTestId("read-upto").click();
-  await expect(bar.getByTestId("review-left")).toHaveText("还有 1 条回复没读完");
-  await expect.poll(progress).toEqual({ [ids[0]!]: { read: "all", flags: [] }, [ids[1]!]: { read: "all", of: 9, flags: [{ block: 7, quote: FLAGGED }] } });
-  await expect(long.getByTestId("read-unread")).toHaveCount(0);
-  await expect(feet.nth(1).getByTestId("read-line")).toHaveText("读到底了");
-  await bar.getByTestId("review-exit").click();
-  await expect(bar).toHaveCount(0);
-  await expect(page.getByTestId("read-foot")).toHaveCount(0);
-  await expect(page.getByTestId("read-unread")).toHaveCount(0);
+  // No 复盘 any more (2026-11-16, the user: 现在的复盘我觉得可以删掉，因为本体已经有右侧的看到哪的线了).
+  await expect(page.getByTestId("review-open")).toHaveCount(0);
 
   // Opened again (the page reloaded): read back from the Host.
   await page.reload();
   await expect(replies).toHaveCount(3, { timeout: 30_000 });
-  await expect(long.getByTestId("read-marks")).toHaveAttribute("data-read", "9", { timeout: 15_000 });
+  await expect(long.getByTestId("read-marks")).toHaveAttribute("data-read", "7", { timeout: 15_000 });
   await expect(long.getByTestId("read-seg").nth(7)).toHaveAttribute("data-flag", "true");
-  await page.getByTestId("review-open").click();
-  await expect(page.getByTestId("review-left")).toHaveText("还有 1 条回复没读完");
-  await page.getByTestId("review-exit").click();
 
-  // A narrow conversation: the line still beside the text and inside the round, 读到这里 stood up beside the line.
+  // A narrow conversation: the line still beside the text and inside the round, 读到这里 a notch on the line (no room for its words).
   const size = await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows().find((x) => x.isVisible())!;
     const [width, height] = w.getSize();
@@ -185,12 +161,19 @@ test("a line at each reply's right: left click reads down to a block, right clic
   const narrowRail = await box(long.getByTestId("read-rail"));
   const narrowRound = await box(page.getByTestId("turn").nth(1));
   expect(narrowRail.x).toBeGreaterThanOrEqual(narrowText.x + narrowText.width);
-  expect(narrowRail.x + narrowRail.width).toBeLessThanOrEqual(narrowRound.x + narrowRound.width);
+  expect(narrowRail.x + narrowRail.width).toBeLessThanOrEqual(narrowRound.x + narrowRound.width + 0.5);
   await narrowSeg.click();
   await expect(long.getByTestId("read-at")).toBeVisible();
   await page.mouse.move(5, 500);
   await expect(page.getByTestId("read-preview")).toHaveCount(0);
   await screenshot(app, "studio", "review-progress-narrow", page);
+  // A wide one: 读到这里 written out on the tab beside the line.
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((x) => x.isVisible())!.setSize(s.width + 480, s.height), size);
+  await expect.poll(async () => (await box(page.getByTestId("thread"))).width).toBeGreaterThan(900);
+  await long.getByTestId("read-at").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await expect.poll(async () => (await box(long.getByTestId("read-at"))).width).toBeGreaterThan(40);
+  await page.mouse.move(5, 500);
+  await screenshot(app, "studio", "review-progress-wide", page);
   await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((x) => x.isVisible())!.setSize(s.width, s.height), size);
 
   // The next message carries the new 「!」 to the AI — and the one after it does not again.

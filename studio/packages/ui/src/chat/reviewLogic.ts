@@ -5,16 +5,19 @@ import type { Segment } from "./turns.js";
 // 审阅进度 in the conversation (plans/review-progress.md, behind 测试功能「审阅进度」). 第二版 (2026-11-16; the user:
 // 复盘功能，我想的是逐行确认或者标记看到具体哪里 … 右侧加一个竖线，左键点击是标记读到哪里，右键则是标记那个感叹号有问题 … 没看的
 // 块做标注感受更好一些，然后审过的按钮可以去掉了): each round's final reply is read block by block. What is worked out
-// without the page — which reply counts, what its blocks are, what a click makes of it, how many are left, where the
-// next unread place is — is here, so it is tested on its own; ReviewProgress.tsx only finds the blocks' elements.
+// without the page — which reply counts, what its blocks are, what a click makes of it — is here, so it is tested on its
+// own; ReviewProgress.tsx only finds the blocks' elements. (复盘, its counts and 下一处没读的 went on 2026-11-16, the
+// user: 现在的复盘我觉得可以删掉，因为本体已经有右侧的看到哪的线了.)
 
 /**
- * The reply a round is read by: its final answer, once the round is over and the answer done (a reply still being
- * written is not one yet). Its row's id is the key the Host keeps the marks under. Null for a round without one.
+ * The reply a round is read by: its answer once it is written (a reply still being written is not one yet). Its row's
+ * id is the key the Host keeps the marks under. Null for a round without one. A round still going counts its latest
+ * reply too (2026-11-16, the user: 右侧的线，在本轮回复后才出现，前面的轮次正常出现 — the reply on screen had no line while
+ * the round went on behind it); when the round works on after it, that reply goes into the work and its line with it.
  */
 export function reviewKey(seg: Segment): string | null {
   const answer = seg.answer;
-  return !seg.running && answer && !answer.streaming && answer.markdown.trim() ? answer.id : null;
+  return answer && !answer.streaming && answer.markdown.trim() ? answer.id : null;
 }
 
 /**
@@ -106,20 +109,6 @@ export function blocksOf(reply: { markdown: string }): ReadBlock[] {
   return blocks;
 }
 
-/** A reply that is read, and how many blocks it has. */
-export interface ReadKey {
-  id: string;
-  of: number;
-}
-
-/** The rounds' replies, in order. */
-export function readKeys(segments: readonly Segment[]): ReadKey[] {
-  return segments.flatMap((s) => {
-    const id = reviewKey(s);
-    return id && s.answer ? [{ id, of: blocksOf(s.answer).length }] : [];
-  });
-}
-
 /** How many blocks of a reply of `of` were read from the top. */
 export function readCount(r: ReviewRead | undefined, of: number): number {
   if (!r) return 0;
@@ -136,43 +125,4 @@ export function clickRead(r: ReviewRead | undefined, block: number, of: number):
 
 export function isFlagged(r: ReviewRead | undefined, block: number): boolean {
   return !!r?.flags.some((f) => f.block === block);
-}
-
-/** Read to the end (an empty reply has nothing to read). */
-export function readDone(r: ReviewRead | undefined, of: number): boolean {
-  return readCount(r, of) >= of;
-}
-
-/** The replies not read to the end, in order. */
-export function unfinished(keys: readonly ReadKey[], replies: Readonly<Record<string, ReviewRead>>): ReadKey[] {
-  return keys.filter((k) => !readDone(replies[k.id], k.of));
-}
-
-/** The 「!」 on these replies. */
-export function flagTotal(keys: readonly ReadKey[], replies: Readonly<Record<string, ReviewRead>>): number {
-  return keys.reduce((n, k) => n + (replies[k.id]?.flags.length ?? 0), 0);
-}
-
-/** 到这里为止都读过: this reply and the ones before it not read to the end. Empty when it is not one of them. */
-export function readUpTo(keys: readonly ReadKey[], replies: Readonly<Record<string, ReviewRead>>, id: string): string[] {
-  const at = keys.findIndex((k) => k.id === id);
-  return at < 0 ? [] : unfinished(keys.slice(0, at + 1), replies).map((k) => k.id);
-}
-
-/**
- * 下一处没读的: the first block not read of the first reply not read to the end after the one being read (`after`: the
- * last reply above the place read, null at the top), and from the start again once there is none below.
- */
-export function nextUnread(keys: readonly ReadKey[], replies: Readonly<Record<string, ReviewRead>>, after: string | null): { id: string; block: number } | null {
-  const left = unfinished(keys, replies);
-  if (!left.length) return null;
-  const from = after === null ? -1 : keys.findIndex((k) => k.id === after);
-  const next = left.find((k) => keys.indexOf(k) > from) ?? left[0]!;
-  return { id: next.id, block: readCount(replies[next.id], next.of) };
-}
-
-/** 复盘's line at the end of a reply: how far it was read. */
-export function readLine(r: ReviewRead | undefined, of: number): string {
-  const n = readCount(r, of);
-  return n >= of ? "读到底了" : n === 0 ? "还没读" : `读到第 ${n} / ${of} 块`;
 }
