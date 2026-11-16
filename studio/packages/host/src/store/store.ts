@@ -332,6 +332,24 @@ export class Store extends DocumentStore {
     return s;
   }
 
+  /**
+   * 拖拽排序 (2026-11-17): the places of sessions side by side in the list. Only this column is written — not updatedAt,
+   * which Focus and the times in the list follow. Returns the sessions whose rank changed.
+   */
+  setSessionRanks(ranks: ReadonlyArray<readonly [Id, number]>): Session[] {
+    const put = this.db.prepare("UPDATE sessions SET rank = ? WHERE id = ?");
+    return this.transaction(() => {
+      const changed: Session[] = [];
+      for (const [id, rank] of ranks) {
+        const s = this.getSession(id);
+        if (!s || s.rank === rank) continue;
+        put.run(rank, id);
+        changed.push({ ...s, rank });
+      }
+      return changed;
+    });
+  }
+
   /** session_start with report: the session this one's turns are reported to. Only this column is written. */
   setSessionReportTo(id: Id, to: Id): Session {
     this.db.prepare("UPDATE sessions SET report_to = ? WHERE id = ?").run(to, id);
@@ -349,14 +367,14 @@ export class Store extends DocumentStore {
     // its source, and says where it came from last — the copy kept the first of them, without 「第 N 轮分出」.
     this.db
       .prepare(
-        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, wake, started_by, report_to, created_at, updated_at, archived_at, ended_at, fork_of)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, wake, started_by, report_to, created_at, updated_at, archived_at, ended_at, fork_of, rank)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = excluded.status, writer = excluded.writer, runtime_ref = excluded.runtime_ref, profile_id = excluded.profile_id,
            options = excluded.options, wake = excluded.wake, started_by = excluded.started_by, report_to = excluded.report_to, updated_at = excluded.updated_at, archived_at = excluded.archived_at, ended_at = excluded.ended_at,
-           kind = excluded.kind, parent_id = excluded.parent_id, fork_of = excluded.fork_of`,
+           kind = excluded.kind, parent_id = excluded.parent_id, fork_of = excluded.fork_of, rank = excluded.rank`,
       )
       // A's Host from before endedAt: an ended session's updatedAt stands in, as Focus read it before.
-      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options ?? {}), s.wake ? JSON.stringify(s.wake) : null, s.startedBy ?? null, s.reportTo ?? null, s.createdAt, s.updatedAt, s.archivedAt, s.endedAt !== undefined ? s.endedAt : ENDED_STATUSES.includes(s.status) ? s.updatedAt : null, s.forkOf ? JSON.stringify(s.forkOf) : null);
+      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options ?? {}), s.wake ? JSON.stringify(s.wake) : null, s.startedBy ?? null, s.reportTo ?? null, s.createdAt, s.updatedAt, s.archivedAt, s.endedAt !== undefined ? s.endedAt : ENDED_STATUSES.includes(s.status) ? s.updatedAt : null, s.forkOf ? JSON.stringify(s.forkOf) : null, typeof s.rank === "number" ? s.rank : null);
     return this.getSession(s.id)!;
   }
 

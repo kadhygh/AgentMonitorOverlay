@@ -93,6 +93,7 @@ export function toSession(r: Row): Session {
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
     endedAt: strOrNull(r.ended_at),
+    ...(typeof r.rank === "number" ? { rank: r.rank } : {}),
   };
 }
 

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, OutsideSessionList, OutsideSessionPreview, Session, SessionOptions, Task, TaskColumn, Workspace } from "@amo-studio/protocol";
-import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX, TASK_FIRST_MESSAGE_MAX } from "@amo-studio/protocol";
+import { inTurn, isCommon, MAIN_CANVAS_ID, removeTask, sessionSiblings, TASK_COLUMNS, TASK_DESCRIPTION_MAX, TASK_FIRST_MESSAGE_MAX } from "@amo-studio/protocol";
 import { HostError, sessionOptions, sessionMoving, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME, SCHEDULER_TASK_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
@@ -258,6 +258,29 @@ export class TasksFeature extends Feature<"canvases" | "config" | "mcp" | "remot
     return this.store.getTask(id)!;
   }
 
+  /**
+   * 拖拽排序 (2026-11-17, the user: task 里的 session list 和 session 下的子 session list，允许拖拽改排序): the order of
+   * sessions side by side in the task's list — its main sessions, or those under one session; never across levels, and
+   * none becomes another's child. `order` names some or all of one level; the rest of it keeps its order after them (a
+   * session started while the person dragged). Every session of the level gets its rank, so a later new one goes after
+   * them. A remote task's copy is reordered on its own computer, whose pushes bring the ranks back.
+   */
+  async orderSessions(taskId: Id, orderIn: unknown): Promise<Session[]> {
+    const task = this.requireTask(taskId);
+    if (task.archivedAt) throw new HostError("read_only", "任务已归档，会话的顺序不能改");
+    const order = sessionOrder(orderIn);
+    if (task.remote) return this.f.remote.orderCopy(task, order);
+    const live = this.store.listSessions({ taskId }).filter((s) => !s.archivedAt);
+    const level = sessionSiblings(live, order[0]!);
+    if (!level) throw new HostError("not_found", `这个任务里没有会话 ${order[0]}（或者它已经归档了）`);
+    const stray = order.find((id) => !level.includes(id));
+    if (stray) throw new HostError("bad_request", "只能在同一层里调整顺序：主会话之间，或者同一个会话下面的会话之间");
+    const ranked = [...order, ...level.filter((id) => !order.includes(id))];
+    const changed = this.store.setSessionRanks(ranked.map((id, i) => [id, i + 1] as const));
+    for (const session of changed) this.publish({ type: "session.upserted", session });
+    return changed;
+  }
+
   async addSession(taskId: Id, input: NewSessionInput): Promise<Session> {
     const task = this.requireTask(taskId);
     if (task.archivedAt) throw new HostError("read_only", "archived tasks cannot get new sessions");
@@ -350,4 +373,12 @@ function firstMessageOf(v: unknown): string {
   const text = v.trim();
   if (text.length > TASK_FIRST_MESSAGE_MAX) throw new HostError("bad_request", `a first message is limited to ${TASK_FIRST_MESSAGE_MAX} characters`);
   return text;
+}
+
+/** PUT /api/tasks/:id/session-order's `order` (and rt.order's): session ids, each once. */
+export function sessionOrder(v: unknown): Id[] {
+  const order = v && typeof v === "object" && !Array.isArray(v) ? (v as { order?: unknown }).order : v;
+  if (!Array.isArray(order) || !order.length || order.length > 1000 || !order.every((x) => typeof x === "string" && x.length > 0 && x.length <= 100)) throw new HostError("bad_request", "order 要是会话 id 的列表");
+  if (new Set(order).size !== order.length) throw new HostError("bad_request", "order 里有重复的会话");
+  return order as Id[];
 }

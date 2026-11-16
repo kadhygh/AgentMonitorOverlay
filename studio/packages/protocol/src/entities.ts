@@ -203,6 +203,12 @@ export interface Session {
    * null: no turn has ended yet. Absent: from a Host before it — readers take updatedAt.
    */
   endedAt?: Timestamp | null;
+  /**
+   * 拖拽排序 (2026-11-17, the user: task 里的 session list 和 session 下的子 session list，允许拖拽改排序): its place among
+   * the sessions it stands beside in the list (the task's main sessions, or those under one session); smaller first.
+   * Absent: never moved — after the ranked ones, by createdAt, so a new session goes to the end as before.
+   */
+  rank?: number;
 }
 
 /** The statuses a session is in once a turn has ended. */

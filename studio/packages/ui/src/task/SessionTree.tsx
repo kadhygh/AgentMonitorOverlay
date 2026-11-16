@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type Task, type Workspace } from "@amo-studio/protocol";
 import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, storedChoices } from "../lib/choices.js";
@@ -42,11 +42,44 @@ interface SessionTreeProps {
    * session; the task head's 新会话 opens it too.
    */
   onNewSession(): void;
+  /**
+   * 拖拽排序 (2026-11-17): saves the order of one level of the list (the main sessions, or those under one session).
+   * Absent: the list is not reordered here (an archived task).
+   */
+  onReorder?(order: string[]): Promise<unknown>;
+  /** Why the order cannot be changed here (a remote task whose computer has an older Studio); said when the person tries. */
+  reorderBlocked?: string | null;
+}
+
+/** 拖拽排序: the drag in progress and where it would land, shared by every level of the list. */
+interface OrderCtl {
+  dragging: string | null;
+  over: { id: string; after: boolean } | null;
+  start(id: string): boolean;
+  overAt(id: string, after: boolean | null): void;
+  end(): void;
+  /** Puts `id` at `to` among the rest of `level` (its index once `id` is taken out). */
+  move(level: readonly string[], id: string, to: number): void;
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. Shown or hidden as a whole by 会话 in the task head (2026-10-15). */
-export function SessionTree({ link: _link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread }: SessionTreeProps) {
-  const live = sessions.filter((s) => !s.archivedAt);
+export function SessionTree({ link: _link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, onReorder, reorderBlocked }: SessionTreeProps) {
+  // 拖拽排序 (2026-11-17): a new order shows at once; it stays until the sessions come back with it (or after a while).
+  const [moved, setMoved] = useState<Record<string, number> | null>(null);
+  const [orderNote, setOrderNote] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
+  const noteTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const say = (text: string) => {
+    setOrderNote(text);
+    clearTimeout(noteTimer.current);
+    noteTimer.current = setTimeout(() => setOrderNote(null), 8000);
+  };
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+  const live = sessions.filter((s) => !s.archivedAt).map((s) => (moved?.[s.id] !== undefined ? { ...s, rank: moved[s.id] } : s));
+  useEffect(() => {
+    if (moved && sessions.every((s) => moved[s.id] === undefined || s.rank === moved[s.id])) setMoved(null);
+  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
   const [showArchived, setShowArchived] = useState(false);
@@ -75,6 +108,41 @@ export function SessionTree({ link: _link, task, sessions, workspaces, profiles,
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tree = buildSessionTree(live, { delegated: true });
+  const order: OrderCtl | null =
+    closed || !onReorder
+      ? null
+      : {
+          dragging,
+          over,
+          start: (id) => {
+            if (reorderBlocked) {
+              say(reorderBlocked);
+              return false;
+            }
+            setDragging(id);
+            return true;
+          },
+          overAt: (id, after) => setOver(after === null ? (cur) => (cur?.id === id ? null : cur) : { id, after }),
+          end: () => {
+            setDragging(null);
+            setOver(null);
+          },
+          move: (level, id, to) => {
+            if (reorderBlocked) return say(reorderBlocked);
+            const rest = level.filter((x) => x !== id);
+            const next = [...rest.slice(0, to), id, ...rest.slice(to)];
+            if (next.every((x, i) => x === level[i])) return;
+            setMoved((m) => ({ ...m, ...Object.fromEntries(next.map((x, i) => [x, i + 1])) }));
+            onReorder(next).then(
+              // The sessions normally come back first; should they not, the list follows them again after a while.
+              () => setTimeout(() => setMoved(null), 3000),
+              (err: unknown) => {
+                setMoved(null);
+                say(`顺序没改成：${err instanceof Error ? err.message : String(err)}`);
+              },
+            );
+          },
+        };
   // The model by name when known ("Opus 5.5"), from the last list this install saw.
   const modelOf = (s: Session) => {
     const p = profile(s.profileId);
@@ -94,6 +162,11 @@ export function SessionTree({ link: _link, task, sessions, workspaces, profiles,
       <div className="slist-head">
         <span className="nav-label">会话 {live.length}</span>
       </div>
+      {orderNote && (
+        <div className="slist-note" role="status" data-testid="session-order-note">
+          {orderNote}
+        </div>
+      )}
 
       {!closed && live.length === 0 && (
         <div className="new-session-empty">
@@ -105,7 +178,7 @@ export function SessionTree({ link: _link, task, sessions, workspaces, profiles,
       )}
 
       <div className="slist tree" role="tree" aria-label="会话树">
-        <TreeLevel nodes={tree} all={live} elsewhere={elsewhere} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+        <TreeLevel nodes={tree} all={live} elsewhere={elsewhere} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} order={order} />
       </div>
       {selectedLive && <SessionDetail session={selectedLive} all={live} project={elsewhere(selectedLive)} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
 
@@ -216,6 +289,7 @@ function TreeLevel({
   onSelect,
   modelOf,
   folded,
+  order,
 }: {
   nodes: readonly SessionNode[];
   all: readonly Session[];
@@ -228,8 +302,16 @@ function TreeLevel({
   onSelect(id: string): void;
   modelOf(s: Session): string;
   folded: { has(id: string): boolean; toggle(id: string): void };
+  order: OrderCtl | null;
 }) {
   const duty = useDuty();
+  // 拖拽排序: this level's sessions, the only ones a session of it changes places with.
+  const level = nodes.map((n) => n.session.id);
+  const afterMiddle = (e: React.DragEvent<HTMLElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY > box.top + box.height / 2;
+  };
+  const ours = (id: string) => !!order?.dragging && order.dragging !== id && level.includes(order.dragging);
   return (
     <>
       {nodes.map((node) => {
@@ -253,16 +335,59 @@ function TreeLevel({
         const forkedFrom = s.forkOf ? `从「${source?.title || "会话"}」第 ${s.forkOf.turn} 轮分出` : "";
         const peer = !!s.forkOf && s.kind === "main";
         return (
-          <div key={s.id} className="tree-node" role="none">
-            <div className="tree-line">
+          <div key={s.id} className="tree-node" role="none" data-drop={order?.over?.id === s.id && ours(s.id) ? (order.over.after ? "after" : "before") : undefined} data-dragging={order?.dragging === s.id || undefined}>
+            <div
+              className="tree-line"
+              onDragOver={(e) => {
+                // Only among the sessions of its own level (2026-11-17: never across, never under another).
+                if (!order || !ours(s.id)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                order.overAt(s.id, afterMiddle(e));
+              }}
+              onDragLeave={(e) => {
+                if (order && !e.currentTarget.contains(e.relatedTarget as Node | null)) order.overAt(s.id, null);
+              }}
+              onDrop={(e) => {
+                if (!order || !ours(s.id)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const from = order.dragging!;
+                const rest = level.filter((x) => x !== from);
+                order.move(level, from, rest.indexOf(s.id) + (afterMiddle(e) ? 1 : 0));
+                order.end();
+              }}
+            >
               <button
                 type="button"
                 role="treeitem"
                 className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
                 aria-current={s.id === selected}
                 aria-level={depth + 1}
-                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : "", forkedFrom ? `${forkedFrom}${peer ? "，平级会话，单独归档" : ""}` : "", project ? `在项目「${project}」里工作（和任务的项目不同）` : ""].filter(Boolean).join("\n")}
+                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : "", forkedFrom ? `${forkedFrom}${peer ? "，平级会话，单独归档" : ""}` : "", project ? `在项目「${project}」里工作（和任务的项目不同）` : "", order && level.length > 1 ? "拖动可以调整顺序（同一层里），Alt ↑ / ↓ 也行" : ""].filter(Boolean).join("\n")}
                 onClick={() => onSelect(s.id)}
+                draggable={!!order && level.length > 1}
+                onDragStart={(e) => {
+                  if (!order) return;
+                  e.stopPropagation();
+                  if (!order.start(s.id)) return e.preventDefault();
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("application/x-amo-session", s.id);
+                }}
+                onDragEnd={() => order?.end()}
+                onKeyDown={(e) => {
+                  // Alt ↑ / ↓ moves it among its level, as dragging does (and not the conversation's Alt ↑ / ↓ to the replies).
+                  if (!order || !e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const to = level.indexOf(s.id) + (e.key === "ArrowDown" ? 1 : -1);
+                  if (to < 0 || to >= level.length) return;
+                  order.move(level, s.id, to);
+                  // The row moves in the list: keep it focused for the next press.
+                  setTimeout(() => document.querySelector<HTMLElement>(`[data-session-id="${s.id}"]`)?.focus());
+                }}
+                data-session-id={s.id}
                 data-testid="session-row"
                 data-kind={s.kind}
                 data-delegated={starter ? true : undefined}
@@ -335,7 +460,7 @@ function TreeLevel({
             </div>
             {open && node.children.length > 0 && (
               <div className={depth + 1 >= MAX_INDENT ? "tree-children flat" : "tree-children"} role="group">
-                <TreeLevel nodes={node.children} all={all} elsewhere={elsewhere} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+                <TreeLevel nodes={node.children} all={all} elsewhere={elsewhere} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} order={order} />
               </div>
             )}
           </div>

@@ -824,6 +824,11 @@ export class RemoteFeature extends Feature<RemoteUses> {
     return this.copies.fork(sessionId, body);
   }
 
+  /** 拖拽排序 (2026-11-17): a copy's sessions are put in order on the computer the task runs on. */
+  orderCopy(task: Task, order: Id[]): Promise<Session[]> {
+    return this.copies.order(task, order);
+  }
+
   renameCopy(task: Task, title: string): Promise<Task> {
     return this.copies.renameTask(task, title);
   }

@@ -1,4 +1,4 @@
-import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_MCP_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type McpApply, type McpChoices, type McpSessionState, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteMcpList, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_MCP_SINCE, REMOTE_ORDER_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type McpApply, type McpChoices, type McpSessionState, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteMcpList, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -230,6 +230,8 @@ export class RemoteCopies {
       ...(snap.attachedFiles ? { attachedFiles: true } : {}),
       ...(snap.sessionTitle ? { sessionTitle: true } : {}),
       ...(snap.mcp ? { mcp: true } : {}),
+      // 拖拽排序 (2026-11-17): an older A neither reorders nor sends ranks; the list says to update it.
+      ...(snap.order ? { order: true } : {}),
       // What A's other features answer about a session (2026-11-15: rt.tracks); an older A says nothing.
       ...(Array.isArray(snap.kinds) && snap.kinds.length ? { kinds: snap.kinds.filter((k) => typeof k === "string") } : {}),
       // Where A names its projects (2026-11-09; an older A does not: what was heard before stays).
@@ -341,8 +343,8 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const { fork: _fork, sendNow: _sendNow, attachedFiles: _files, mcp: _mcp, sessionTitle: _title, ...kept } = t.remote;
-        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}), ...(p.attachedFiles ? { attachedFiles: true } : {}), ...(p.mcp ? { mcp: true } : {}), ...(p.sessionTitle ? { sessionTitle: true } : {}) };
+        const { fork: _fork, sendNow: _sendNow, attachedFiles: _files, mcp: _mcp, sessionTitle: _title, order: _order, ...kept } = t.remote;
+        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}), ...(p.attachedFiles ? { attachedFiles: true } : {}), ...(p.mcp ? { mcp: true } : {}), ...(p.sessionTitle ? { sessionTitle: true } : {}), ...(p.order ? { order: true } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -615,6 +617,19 @@ export class RemoteCopies {
 
   private canFork(task: Task): void {
     if (!task.remote?.fork) throw new HostError("bad_request", `${task.remote?.name ?? "那台电脑"} 上的 Studio 要更新到 ${REMOTE_FORK_SINCE} 或更新的版本，才能从这台电脑开分支`);
+  }
+
+  /**
+   * 拖拽排序 (2026-11-17, the user: 远端也做): the order is set on A, as A's own list would set it; A's pushes of the
+   * sessions whose place changed come before its answer on the same link, so the copy has them when this returns.
+   */
+  async order(task: Task, order: Id[]): Promise<Session[]> {
+    const r = task.remote!;
+    if (r.state !== "active") throw new HostError("read_only", "授权已收回，不能再调整会话顺序");
+    if (!r.order) throw new HostError("bad_request", `${r.name} 上的 Studio 要更新到 ${REMOTE_ORDER_SINCE} 或更新的版本，才能从这台电脑调整会话的顺序`);
+    const before = new Map(this.store.listSessions({ taskId: task.id }).map((s) => [s.id, s.rank]));
+    await this.ask(peerOf(task), REMOTE_KINDS.order, { taskId: task.id, order });
+    return this.store.listSessions({ taskId: task.id }).filter((s) => s.rank !== before.get(s.id));
   }
 
   /** 新会话 in a copy: on A, on a model A allows (the first message goes with it); the copy of it comes back. */

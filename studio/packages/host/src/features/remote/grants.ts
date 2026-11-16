@@ -245,7 +245,7 @@ export class RemoteGrants {
 
   private taskPush(task: Task): RemotePush {
     const allowed = this.allowedFor(task.id);
-    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true, sendNow: true, attachedFiles: true, mcp: true, sessionTitle: true };
+    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true, sendNow: true, attachedFiles: true, mcp: true, sessionTitle: true, order: true };
   }
 
   // ---- granting (the remote page, the task page)
@@ -354,7 +354,7 @@ export class RemoteGrants {
     const allowed = this.allowedFor(taskId);
     const sessions = this.store.listSessions({ taskId });
     const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
-    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true, kinds: [...this.ctx.sessionKinds.keys()], attachedFiles: true, mcp: true, sessionTitle: true };
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true, kinds: [...this.ctx.sessionKinds.keys()], attachedFiles: true, mcp: true, sessionTitle: true, order: true };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
@@ -480,6 +480,13 @@ export class RemoteGrants {
             if (this.store.getTask(taskId)?.archivedAt) throw new HostError("read_only", "这个任务已经归档了");
             this.ctx.host.tasks.updateTask(taskId, { title: boundedText(b.title, "title", 200) });
           }
+          return ok({ ok: true });
+        }
+        case REMOTE_KINDS.order: {
+          // 拖拽排序 (2026-11-17): as here; the sessions whose place changed go to B with their own pushes, before this answer.
+          const taskId = id(b.taskId, "taskId");
+          this.grantFor(from, taskId);
+          await this.ctx.host.tasks.orderSessions(taskId, b.order);
           return ok({ ok: true });
         }
         case REMOTE_KINDS.archive: {

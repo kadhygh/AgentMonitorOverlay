@@ -12,6 +12,8 @@ export function tasksRoutes(service: HostService): Route[] {
     route("PATCH /api/tasks/:id", ({ params, body }) => service.tasks.patchTask(params.id!, obj(body) as never), { remoteCopy: "forward" }),
     route("POST /api/tasks/:id/sessions", ({ params, body }) => service.tasks.addSession(params.id!, obj(body) as never), { remoteCopy: "forward" }),
     route("POST /api/tasks/:id/archive", ({ params }) => service.tasks.archiveTask(params.id!), { remoteCopy: "forward" }),
+    // 拖拽排序 (2026-11-17): a copy's sessions are put in order on A (rt.order).
+    route("PUT /api/tasks/:id/session-order", ({ params, body }) => service.tasks.orderSessions(params.id!, body), { remoteCopy: "forward" }),
     route("POST /api/tasks/:id/unarchive", ({ params }) => service.tasks.unarchiveTask(params.id!)),
   ];
 }

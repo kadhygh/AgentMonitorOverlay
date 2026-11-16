@@ -270,6 +270,12 @@
 .tree-node { display: flex; flex-direction: column; min-width: 0; }
 .tree-line { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .tree-line > .srow.tree-row { flex: 1; }
+/* 拖拽排序 (2026-11-17): where a dragged session would land — a line above the row, or under the session and all that
+   hangs under it; the dragged one fades. Only rows of its own level take it. */
+.tree-node[data-drop="before"] > .tree-line { box-shadow: 0 -2px 0 var(--primary); }
+.tree-node[data-drop="after"] { box-shadow: 0 2px 0 var(--primary); }
+.tree-node[data-dragging] > .tree-line { opacity: 0.45; }
+.slist-note { margin: 0 4px 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--card); color: var(--text-dim); font-size: 12px; line-height: 1.5; }
 .tree-line:has(> .tree-row[aria-current="true"]) { border-radius: var(--r-m); background: var(--selected); }
 /* 「▾ N」: folds a session's subagents and forks (10-22); in the attention colour when something folded waits. */
 .tree-fold { flex: none; height: 20px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 11px; cursor: pointer; }

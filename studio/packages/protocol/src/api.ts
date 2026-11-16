@@ -840,6 +840,12 @@ export interface HostRoutes
   /** A topic session (专题会话): coordinates the topic's tasks; runs in one of its projects or the common space. */
   "POST /api/topics/:id/sessions": { req: NewSessionInput; res: Session };
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };
+  /**
+   * 拖拽排序 (2026-11-17): the order of sessions side by side in the task's list — the main sessions, or those under one
+   * session (never across). `order`: their ids as they should stand; the others of that level keep theirs after them.
+   * Returns the sessions whose place changed. A remote task's copy: done on its own computer (rt.order).
+   */
+  "PUT /api/tasks/:id/session-order": { req: { order: Id[] }; res: Session[] };
   /** `?after=<seq>`: only later ones. `?tail=<n>`: only the last n, and pending questions and approvals from before them (Focus shows a session's latest; 2026-10-24). */
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */

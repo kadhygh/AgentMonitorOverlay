@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_FILES_SINCE, REMOTE_FORK_SINCE, REMOTE_MCP_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FILES_SINCE, REMOTE_FORK_SINCE, REMOTE_MCP_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_ORDER_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -1147,6 +1147,7 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
         "forward POST /api/sessions/:id/questions/:itemId/answer",
         "forward POST /api/tasks/:id/sessions",
         "forward POST /api/tasks/:id/archive",
+        "forward PUT /api/tasks/:id/session-order",
         "forward PATCH /api/tasks/:id",
         "forward PATCH /api/sessions/:id",
         "forward POST /api/sessions/:id/archive",
@@ -1160,6 +1161,53 @@ describe("what a remote copy takes of this computer's API (remoteCopy, 2026-11-0
       ].sort(),
     );
   });
+});
+
+describe("拖拽排序 between two Hosts (2026-11-17)", () => {
+  const order = (h: Pair["a"], taskId: string) =>
+    h.store
+      .listSessions({ taskId })
+      .filter((s) => !s.parentId && !s.archivedAt)
+      .sort((x, y) => (x.rank ?? Infinity) - (y.rank ?? Infinity) || x.createdAt.localeCompare(y.createdAt))
+      .map((s) => s.title);
+
+  it("B's order is A's (set there, its ranks come back); A's own order shows on B; an older A is refused on B, saying what to update to", async () => {
+    const { a, b, toB } = await paired();
+    const { task } = await taskOnA(a);
+    for (const title of ["二", "三"]) await a.service.tasks.addSession(task.id, { profileId: "p", title });
+    a.store.updateSession(a.store.listSessions({ taskId: task.id })[0]!.id, { title: "一" });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active" && b.store.listSessions({ taskId: task.id }).length === 3, "B's copy");
+    expect(copy!.remote).toMatchObject({ order: true });
+    expect(() => guard(b, "PUT", "/api/tasks/:id/session-order", { id: task.id })).not.toThrow();
+    const byTitle = (h: Pair["a"], title: string) => h.store.listSessions({ taskId: task.id }).find((s) => s.title === title)!.id;
+
+    // Dragged on B: set on A, and the copy has A's ranks when the call returns.
+    const changed = await b.service.tasks.orderSessions(task.id, { order: [byTitle(b, "三"), byTitle(b, "一"), byTitle(b, "二")] });
+    expect(changed).toHaveLength(3);
+    expect(order(a, task.id)).toEqual(["三", "一", "二"]);
+    expect(order(b, task.id)).toEqual(["三", "一", "二"]);
+
+    // Changed on A: B follows.
+    await a.service.tasks.orderSessions(task.id, { order: [byTitle(a, "二")] });
+    await until(() => order(b, task.id), (o) => o.join() === "二,三,一", "A's order on B");
+    // A session started later goes to the end on both.
+    await b.service.tasks.addSession(task.id, { profileId: remoteProfileId(a.state().device!.id, "p"), title: "四" });
+    await until(() => order(b, task.id), (o) => o.join() === "二,三,一,四", "the new one last on B");
+    expect(order(a, task.id)).toEqual(["二", "三", "一", "四"]);
+
+    // Across levels is refused on A, said on B.
+    const sub = a.store.createSession({ taskId: task.id, topicId: null, parentId: byTitle(a, "一"), kind: "fork", runtime: "codex", profileId: "p", workspaceId: task.workspaceId, title: "分支", status: "idle", writer: "workbench", runtimeRef: null });
+    a.service.publish({ type: "session.upserted", session: sub });
+    await until(() => b.store.getSession(sub.id), Boolean, "the fork on B");
+    await expect(b.service.tasks.orderSessions(task.id, [sub.id, byTitle(b, "二")])).rejects.toThrow("只能在同一层里调整顺序");
+
+    // An older A (no order mark): refused on B before anything goes.
+    const { order: _o, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.service.tasks.orderSessions(task.id, [byTitle(b, "一")])).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_ORDER_SINCE}`);
+    expect(order(a, task.id)).toEqual(["二", "三", "一", "四"]);
+  }, 60_000);
 });
 
 describe("补取 between two Hosts (2026-11-17): a device that came later fetches what the conversation sent earlier", () => {

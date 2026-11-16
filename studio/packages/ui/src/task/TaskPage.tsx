@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { REMOTE_KINDS, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_KINDS, REMOTE_ORDER_SINCE, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { rememberSession } from "../shell/lastPlace.js";
 import { navHistory } from "../shell/navHistory.js";
@@ -153,6 +153,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // A copy (远程, 2026-11-15, the user: 我是远端操控好像看不到): its building comes from the computer it runs on (rt.tracks),
   // which an older Studio there does not answer — then the row says so instead of the switch.
   const tracksEnabled = experimentalOn(settings?.experimentalFeatures, "tracks");
+  // 拖拽排序 (2026-11-17): a copy's list is put in order on its own computer, which an older Studio there cannot do.
+  const orderOff = !copy ? null : copy.state === "revoked" ? "授权已收回：不能再调整会话的顺序" : !task.remote?.order ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_ORDER_SINCE} 或更新的版本，才能在这台电脑上调整会话的顺序` : null;
   const tracksOff = copy && !task.remote?.kinds?.includes(REMOTE_KINDS.tracks) ? `${copy.name} 上的 Studio 要更新到 ${REMOTE_TRACKS_SINCE} 或更新的版本，才能在这台电脑上看这个会话的脉络` : undefined;
   const tracksOn = useTracksOn(link, tracksEnabled);
   const [towerPick, setTowerPick] = useState<Record<string, boolean>>({});
@@ -691,6 +693,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             busy={busy}
             onSelect={setSelected}
             onNewSession={() => setCreating(true)}
+            onReorder={(order) => call(link, "PUT /api/tasks/:id/session-order", { id: task.id }, { order })}
+            reorderBlocked={orderOff}
             onRestore={(id) => void restore(id)}
             unread={unread}
           />

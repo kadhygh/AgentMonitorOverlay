@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TASK_COLUMNS, type SessionItem } from "./entities.js";
 import { exampleItems, exampleSessions, exampleTasks } from "./examples.js";
-import { buildSessionTree, collectSubtreeIds } from "./session-tree.js";
+import { buildSessionTree, collectSubtreeIds, sessionSiblings } from "./session-tree.js";
 
 describe("example data", () => {
   it("uses only known board columns", () => {
@@ -47,6 +47,25 @@ describe("buildSessionTree", () => {
     expect(buildSessionTree([delegated], { delegated: true }).map((n) => n.session.id)).toEqual(["s-second"]);
     // Archiving the starter does not take it along.
     expect(collectSubtreeIds(sessions, "s-main")).not.toContain("s-second");
+  });
+});
+
+describe("拖拽排序 (2026-11-17)", () => {
+  const main = exampleSessions.find((s) => s.id === "s-main")!;
+  const at = (id: string, createdAt: string, extra: Partial<typeof main> = {}) => ({ ...main, id, createdAt, parentId: null, ...extra });
+
+  it("orders each level by rank; sessions never moved come after the ranked ones, by createdAt", () => {
+    const sessions = [at("a", "2026-11-01"), at("b", "2026-11-02", { rank: 2 }), at("c", "2026-11-03", { rank: 1 }), at("d", "2026-11-04"), at("c1", "2026-11-05", { parentId: "c", rank: 2 }), at("c2", "2026-11-06", { parentId: "c", rank: 1 })];
+    const tree = buildSessionTree(sessions);
+    expect(tree.map((n) => n.session.id)).toEqual(["c", "b", "a", "d"]);
+    expect(tree[0]!.children.map((n) => n.session.id)).toEqual(["c2", "c1"]);
+  });
+
+  it("names a session's level as the list shows it — the main sessions, or those under one (a delegated one under its starter)", () => {
+    const sessions = [at("a", "2026-11-01"), at("b", "2026-11-02", { rank: 1 }), at("a1", "2026-11-03", { parentId: "a" }), at("d", "2026-11-04", { startedBy: "a" })];
+    expect(sessionSiblings(sessions, "a")).toEqual(["b", "a"]);
+    expect(sessionSiblings(sessions, "d")).toEqual(["a1", "d"]);
+    expect(sessionSiblings(sessions, "nope")).toBeNull();
   });
 });
 

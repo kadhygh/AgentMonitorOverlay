@@ -219,6 +219,8 @@ export interface TaskRemote {
   mcp?: boolean;
   /** A takes a new session's name with rt.start (新会话 dialog, 2026-11-17); absent: an older A, which names it itself. */
   sessionTitle?: boolean;
+  /** A reorders the task's sessions for this computer (rt.order, 2026-11-17); absent: an older A — the list cannot be dragged here. */
+  order?: boolean;
 }
 
 /** On A: a task granted to a paired device. */
@@ -383,6 +385,12 @@ export const REMOTE_KINDS = {
   mcpSet: "rt.mcp-set",
   /** B → A (2026-11-17): the MCP servers a task created there (the catalog's) would have. {workspaceId (A's; null: the common folder), profileId} → RemoteMcpList. A says it in RemoteCatalog.mcp. */
   createMcp: "rt.create-mcp",
+  /**
+   * B → A (拖拽排序, 2026-11-17, the user: 远端也做): the order of a task's sessions side by side, as PUT
+   * /api/tasks/:id/session-order takes it; the sessions whose place changed come back with their own pushes. {taskId,
+   * order} → {ok}. A says it answers in RemoteTaskSnapshot.order.
+   */
+  order: "rt.order",
   /** A → B: the answer to a command (`re` is its id). */
   ok: "rt.ok",
   /** A → B: something about a granted task changed (RemotePush). */
@@ -433,6 +441,8 @@ export interface RemoteTaskSnapshot {
   mcp?: true;
   /** A takes `title` with rt.start (2026-11-17). An older A leaves it out. */
   sessionTitle?: true;
+  /** A answers rt.order and its sessions carry their rank (2026-11-17). An older A leaves it out. */
+  order?: true;
 }
 
 export interface RemoteListAnswer {
@@ -472,6 +482,8 @@ export const REMOTE_FILES_SINCE = "0.9.76";
 export const REMOTE_MCP_SINCE = "0.9.76";
 /** The same for naming a new session started from a device (rt.start `title`, 2026-11-17). */
 export const REMOTE_SESSION_TITLE_SINCE = "0.9.76";
+/** The same for dragging a remote task's sessions into another order (rt.order, 2026-11-17). */
+export const REMOTE_ORDER_SINCE = "0.9.76";
 
 /**
  * 远程选 MCP (2026-11-17): one of A's MCP servers as a device sees it — what the person picks by, nothing to run it with
@@ -505,6 +517,7 @@ export interface RemoteCommandBodies {
   "rt.mcp": { sessionId: Id } | { taskId: Id; profileId: Id };
   "rt.mcp-set": { sessionId: Id; choices: McpChoices };
   "rt.create-mcp": { workspaceId: Id | null; profileId: Id };
+  "rt.order": { taskId: Id; order: Id[] };
   "rt.fork-turns": { sessionId: Id };
   "rt.tracks": { sessionId: Id; on?: boolean };
   "rt.file": RemoteFileAsk;
@@ -522,7 +535,7 @@ export type RemotePush =
   | { type: "granted"; taskId: Id; grantedAt: Timestamp }
   | { type: "revoked"; taskId: Id; reason: string }
   /** The task's title, description or column changed, or what new sessions may run on. */
-  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true; sendNow?: true; attachedFiles?: true; mcp?: true; sessionTitle?: true }
+  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true; sendNow?: true; attachedFiles?: true; mcp?: true; sessionTitle?: true; order?: true }
   /** `project`: the session's project name on A (null: the common folder; 2026-11-09, an older A leaves it out). */
   | { type: "session"; session: Session; project?: string | null }
   /** An item appended or changed. */
