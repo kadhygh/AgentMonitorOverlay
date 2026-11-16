@@ -24,8 +24,8 @@ import { QuestionRecord } from "./questions/QuestionRecord.js";
 import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
 import { RowBoundary } from "../lib/ErrorBoundary.js";
 import { pinScroll } from "../lib/scrollPin.js";
-import { ReviewContext, TurnReview, type ReviewView } from "./ReviewProgress.js";
-import { reviewKey, reviewKeys, reviewUpTo, stateOf } from "./reviewLogic.js";
+import { ReadFoot, ReadMarks, ReviewContext, type ReviewView } from "./ReviewProgress.js";
+import { readKeys, readUpTo, reviewKey, type ReadKey } from "./reviewLogic.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -66,10 +66,10 @@ interface TranscriptProps {
   forkOff?: string;
   /** 立即发送 greyed, and why (2026-11-12): a remote task whose computer's Studio is too old to take it from this one. */
   sendNowOff?: string;
-  /** 审阅进度 (2026-11-16, 测试功能): each reply's end shows and records it. Absent: nothing of it is drawn. */
+  /** 审阅进度 (测试功能; 第二版 2026-11-16): each reply's line at its right, and in 复盘 its tint and end. Absent: nothing of it is drawn. */
   review?: ReviewView;
-  /** 审阅进度: the replies that are reviewed, in order (all of the session's, not only the drawn ones), when they change. */
-  onReviewKeys?(keys: string[]): void;
+  /** 审阅进度: the replies that are read, in order, with their blocks (all of the session's, not only the drawn ones), when they change. */
+  onReviewKeys?(keys: ReadKey[]): void;
 }
 
 export type DeliveryAction = "now" | "resend";
@@ -101,14 +101,26 @@ function TranscriptInner({ session, items, annotations, model, busy, view, onApp
   const delivery = useMemo(() => ({ onDelivery, givingWay, waitsForSubagents, idle, ...(sendNowOff ? { sendNowOff } : {}) }), [onDelivery, givingWay, waitsForSubagents, idle, sendNowOff]);
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
-  // 审阅进度: the rounds' replies in order, told to the Thread (复盘's count and 下一条没审的) only when they change.
+  // 审阅进度: the rounds' replies in order, told to the Thread (复盘's count and 下一处没读的) only when they change.
   const reviewing = !!review;
-  const keys = useMemo(() => (reviewing ? reviewKeys(segments) : []), [reviewing, segments]);
-  const keysSaid = keys.join(" ");
+  const keys = useMemo(() => (reviewing ? readKeys(segments) : []), [reviewing, segments]);
+  const keysSaid = keys.map((k) => `${k.id}:${k.of}`).join(" ");
   const keysRef = useRef(keys);
   keysRef.current = keys;
   useEffect(() => onReviewKeys?.(keysRef.current), [keysSaid, onReviewKeys]);
-  const reviewCtx = useMemo<ReviewView | null>(() => (review ? { ...review, upTo: (id: string) => review.mark(reviewUpTo(keysRef.current, review.marks, id), true) } : null), [review]);
+  const reviewCtx = useMemo<ReviewView | null>(
+    () =>
+      review
+        ? {
+            ...review,
+            upTo: (id: string) => {
+              const ids = readUpTo(keysRef.current, review.replies, id);
+              if (ids.length) review.change({ readUpTo: ids });
+            },
+          }
+        : null,
+    [review],
+  );
   // Turns the person unfolded or folded, against how finished turns start: folded, except in 详细 (2026-11-04, the
   // user: the replies in between and the work's headings are what is read there) — 完全展开 does not fold at all.
   const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
@@ -259,11 +271,10 @@ function TurnView({
   const folded = canFold && !unfolded;
   const finished = !seg.running;
   const flat = view === "verbose" || (view === "detailed" && seg.running);
-  // 复盘 (审阅进度): the round is coloured by its reply's state (chat.css).
-  const review = useContext(ReviewContext);
-  const reviewId = review?.mode ? reviewKey(seg) : null;
+  // 审阅进度: a finished round's reply has the line at its right (ReadMarks).
+  const reading = !!useContext(ReviewContext) && reviewKey(seg) !== null;
   return (
-    <section className="turn" data-testid="turn" data-key={seg.key} data-recent={recent || undefined} data-running={seg.running || undefined} data-folded={folded || undefined} data-review={reviewId ? stateOf(review!.marks, reviewId) : undefined}>
+    <section className="turn" data-testid="turn" data-key={seg.key} data-recent={recent || undefined} data-running={seg.running || undefined} data-folded={folded || undefined}>
       {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} item={item} /> : null))}
       {finished && seg.rows.length > 0 && (
         <button
@@ -296,7 +307,7 @@ function TurnView({
             <CompactionRow key={row.key} item={row.item} />
           ) : null,
         )}
-      {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
+      {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} reading={reading} />}
       {finished && <TurnChanges items={segmentMembers(seg)} />}
       {seg.tail.map((item) => (
         <RowBoundary key={item.id}>
@@ -316,7 +327,7 @@ function TurnView({
           model={model}
           always={latest}
         >
-          <TurnReview seg={seg} />
+          <ReadFoot seg={seg} />
         </TurnFooter>
       )}
     </section>
@@ -504,11 +515,13 @@ function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delive
   );
 }
 
-function AgentReply({ item, highlights }: { item: AgentItem; highlights: readonly Annotation[] }) {
+/** `reading`: 审阅进度's marks are drawn over and beside it (ReadMarks, after the Markdown so they do not move it). */
+function AgentReply({ item, highlights, reading = false }: { item: AgentItem; highlights: readonly Annotation[]; reading?: boolean }) {
   return (
-    <div className="msg-agent" data-testid="msg-agent" data-item-id={item.id} data-item-type="agent" data-streaming={item.streaming || undefined}>
+    <div className="msg-agent" data-testid="msg-agent" data-item-id={item.id} data-item-type="agent" data-streaming={item.streaming || undefined} data-reading={reading || undefined}>
       {item.markdown ? <Markdown source={item.markdown} highlights={highlights} /> : null}
       {item.streaming && <span className="stream-caret" aria-label="生成中" />}
+      {reading && <ReadMarks item={item} />}
     </div>
   );
 }
@@ -553,7 +566,7 @@ type SubsUsage = { count: number; input: number; cachedInput: number; output: nu
 const SPEED_TITLE = "输出 token ÷ 生成用时：每次模型调用从第一个输出 token 到结束（不含等首个 token、命令、工具和等你确认的时间，和 DSH 一样）";
 const APPROX_SPEED_TITLE = "子 agent 的速度是估算：输出 token ÷ 每次调用从发出请求到写完的时间（含等第一个 token 的时间，Studio 拿不到子 agent 的逐字输出），所以比主会话的生成速度偏低，不能直接比";
 
-/** `children`: 审阅进度's end of the reply (TurnReview), at the right; it stays in sight while the rest waits for hover. */
+/** `children`: 审阅进度's end of the reply in 复盘 (ReadFoot), at the right; it stays in sight while the rest waits for hover. */
 function TurnFooter({ answer, turnId, forkable, usage, speed, approx, subs, endedAt, model, always, children }: { answer: AgentItem; turnId?: string; forkable: boolean; usage?: TurnUsage; speed: number | null; approx: boolean; subs: SubsUsage | null; endedAt?: string; model: string; always: boolean; children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const fork = useContext(ForkContext);

@@ -46,8 +46,8 @@ import { cameFromFocus, forgetFocusJump } from "../lib/focusJump.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 import { useAnnotationMarks } from "./annotationMarks.js";
 import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./ThreadParts.js";
-import { ReviewBar, useReviewProgress, useSeenWatch, type ReviewView } from "../chat/ReviewProgress.js";
-import { nextUnreviewed, unreviewed } from "../chat/reviewLogic.js";
+import { blockElement, ReviewBar, useReviewProgress, type ReviewView } from "../chat/ReviewProgress.js";
+import { flagTotal, nextUnread, unfinished, type ReadKey } from "../chat/reviewLogic.js";
 import { scrollToBox } from "../review/highlights.js";
 import { flash } from "./ReplyNav.js";
 
@@ -102,13 +102,13 @@ interface ThreadProps {
   sendNowOff?: string;
   /** 测试功能 「打字时不插队」 is on (2026-11-15): the composer tells the Host when it is written in. */
   typingHold?: boolean;
-  /** 测试功能 「审阅进度」 is on (2026-11-16): each reply 没看 / 浏览过 / 审过, and 复盘 over the conversation. */
+  /** 测试功能 「审阅进度」 is on (第二版 2026-11-16): the line at each reply's right (读到这里, 「!」), and 复盘 over the conversation. */
   reviewProgress?: boolean;
   /** Shown over the conversation, in its place (脉络的楼, 2026-11-15); the composer stays under it. */
   cover?: ReactNode;
   /**
    * The composer is in a 会话弹窗 window of this session (2026-11-16, the user: 弹窗开启时，下面的输入栏先隐藏，且输入栏的内容也
-   * 展示到弹窗里; a window of its own since 2026-11-17): a faint line in its place, `onShow` brings that window forward. The
+   * 展示到弹窗里; a window of its own since 2026-11-16): a faint line in its place, `onShow` brings that window forward. The
    * draft goes there and comes back through storage (sessionDraft.ts), which both windows read.
    */
   composerAway?: { onShow(): void };
@@ -189,7 +189,7 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
       }),
     [sessionId, flushDraft],
   );
-  // The same session's composer in another window (the 会话弹窗, 2026-11-17) wrote its draft: this one follows it, unless
+  // The same session's composer in another window (the 会话弹窗, 2026-11-16) wrote its draft: this one follows it, unless
   // something typed here is still waiting to be kept. Stepping aside for that window, what is here is kept at once.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -570,20 +570,21 @@ ${d}` : back));
   // Always there, never added or taken away, so the building does not make the conversation's elements anew.
   const towerMode = cover ? "under" : undefined;
 
-  // 审阅进度 (2026-11-16, plans/review-progress.md, 测试功能): the Host's marks for this session; the replies' ends watched
-  // for 浏览过 while the conversation is in sight (not hidden behind 脉络's building); 复盘 over the conversation.
+  // 审阅进度 (plans/review-progress.md, 测试功能; 第二版 2026-11-16): the Host's record of how far this session's replies
+  // were read; each reply's line at its right is the Transcript's (ReadMarks); 复盘 over the conversation. Nothing is
+  // recorded by itself (the user: 也不要做自动标记完成).
   const progress = useReviewProgress(link, reviewProgress ? sessionId : null, reviewProgress, onError);
   const [reviewMode, setReviewMode] = useState(false);
   useEffect(() => setReviewMode(false), [sessionId]);
-  const [reviewKeys, setReviewKeys] = useState<string[]>([]);
-  useEffect(() => setReviewKeys([]), [sessionId]);
-  const watch = useSeenWatch(scroller, reviewProgress && progress.loaded && towerMode !== "under", progress.marks, progress.seen);
-  const review = useMemo<ReviewView | undefined>(() => (reviewProgress && progress.loaded ? { marks: progress.marks, mode: reviewMode, mark: progress.mark, watch } : undefined), [reviewProgress, progress.loaded, progress.marks, reviewMode, progress.mark, watch]);
-  const reviewLeft = review ? unreviewed(reviewKeys, review.marks).length : 0;
+  const [readKeys, setReadKeys] = useState<ReadKey[]>([]);
+  useEffect(() => setReadKeys([]), [sessionId]);
+  const review = useMemo<ReviewView | undefined>(() => (reviewProgress && progress.loaded ? { replies: progress.replies, mode: reviewMode, change: progress.change } : undefined), [reviewProgress, progress.loaded, progress.replies, reviewMode, progress.change]);
+  const reviewLeft = review ? unfinished(readKeys, review.replies).length : 0;
+  const reviewFlags = review ? flagTotal(readKeys, review.replies) : 0;
   /**
-   * 下一条没审的: the first one not 审过 below the reply being read (from the top again past the last). The one it last
-   * went to counts as read while it is still in sight — at the end of the conversation a short reply never reaches the
-   * top of the view, and going by the top alone went to it again and again.
+   * 下一处没读的: the first block not read of the first reply not read to the end below the reply being read (from the
+   * top again past the last). The one it last went to counts as read while it is still in sight — at the end of the
+   * conversation a short reply never reaches the top of the view, and going by the top alone went to it again and again.
    */
   const lastReviewJump = useRef<string | null>(null);
   const nextToReview = () => {
@@ -591,32 +592,37 @@ ${d}` : back));
     if (!el || !review) return;
     const view = el.getBoundingClientRect();
     const box = (k: string) => el.querySelector(`[data-item-id="${CSS.escape(k)}"]`)?.getBoundingClientRect();
-    const last = lastReviewJump.current && reviewKeys.includes(lastReviewJump.current) ? box(lastReviewJump.current) : undefined;
+    const last = lastReviewJump.current && readKeys.some((k) => k.id === lastReviewJump.current) ? box(lastReviewJump.current) : undefined;
     const reading =
       last && last.bottom > view.top && last.top < view.bottom
         ? lastReviewJump.current
-        : [...reviewKeys].reverse().find((k) => {
-            const b = box(k);
+        : [...readKeys].reverse().find((k) => {
+            const b = box(k.id);
             return b && b.top <= view.top + 8;
-          });
-    const id = nextUnreviewed(reviewKeys, review.marks, reading ?? null);
-    lastReviewJump.current = id;
-    if (id) revealReply(id, 12);
+          })?.id;
+    const next = nextUnread(readKeys, review.replies, reading ?? null);
+    lastReviewJump.current = next?.id ?? null;
+    if (next) revealReply(next.id, 12, next.block);
   };
-  /** Scrolls to a reply, unfolding or drawing earlier turns first when it is not on the page yet (as 书签 do). */
-  const revealReply = (id: string, tries: number) => {
+  /**
+   * Scrolls to a reply (to its block `block` when given), unfolding or drawing earlier turns first when it is not on the
+   * page yet (as 书签 do).
+   */
+  const revealReply = (id: string, tries: number, block?: number) => {
     const reply = scroller.current?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
     if (!reply) {
       if (tries <= 0) return;
       window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: id }));
-      requestAnimationFrame(() => requestAnimationFrame(() => revealReply(id, tries - 1)));
+      requestAnimationFrame(() => requestAnimationFrame(() => revealReply(id, tries - 1, block)));
       return;
     }
+    const item = block === undefined ? undefined : items.find((i) => i.id === id);
+    const target = (item?.type === "agent" && block !== undefined ? blockElement(reply, item, block) : null) ?? reply;
     stick.current = false;
-    scrollToBox(reply, () => reply.getBoundingClientRect());
-    flash(reply);
+    scrollToBox(target, () => target.getBoundingClientRect());
+    flash(target);
   };
-  const reviewable = !!review && !!session && reviewKeys.length > 0;
+  const reviewable = !!review && !!session && readKeys.length > 0;
   const replyNav = <ReplyNav scroller={scroller} itemCount={items.length} />;
   return (
     <>
@@ -630,12 +636,12 @@ ${d}` : back));
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
         {/* 复盘's line takes the top of the conversation (the reply jumps move into it); off it, its switch sits beside them. */}
         {reviewable && reviewMode ? (
-          <ReviewBar left={reviewLeft} onNext={nextToReview} onExit={() => setReviewMode(false)}>
+          <ReviewBar left={reviewLeft} flags={reviewFlags} onNext={nextToReview} onExit={() => setReviewMode(false)}>
             {replyNav}
           </ReviewBar>
         ) : reviewable ? (
           <div className="thread-tools">
-            <button type="button" className="review-open" onClick={() => setReviewMode(true)} title={`复盘：没审过的回复整块变色，一条条审过去${reviewLeft ? `（还有 ${reviewLeft} 条没审）` : ""}`} data-testid="review-open">
+            <button type="button" className="review-open" onClick={() => setReviewMode(true)} title={`复盘：回复里还没读到的段落带上底色，一处处读过去${reviewLeft ? `（还有 ${reviewLeft} 条回复没读完）` : ""}`} data-testid="review-open">
               复盘
             </button>
             {replyNav}
@@ -649,6 +655,7 @@ ${d}` : back));
           className="thread"
           data-testid="thread"
           data-view={view}
+          data-reading={review ? "" : undefined}
           ref={scroller}
           onScroll={(e) => {
             const el = e.currentTarget;
@@ -727,7 +734,7 @@ ${d}` : back));
               <QuestionSeatContext.Provider value={seat}>
                 {/* A remote session's approvals grey while its computer is away (or the grant is gone): they are checked again there. */}
                 <SubagentStatusContext.Provider value={subagentStatus}>
-                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} {...(review ? { review, onReviewKeys: setReviewKeys } : {})} />
+                  <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy || !!blocked} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} {...(onDelivery && !readOnly && !blocked ? { onDelivery: deliver, ...(sendNowOff ? { sendNowOff } : {}) } : {})} givingWay={halting === "now"} waitsForSubagents={waitsForSubagents} {...(onFork && !readOnly && !blocked ? { onFork, ...(forkRuntime ? { forkRuntime } : {}), ...(forkOff ? { forkOff } : {}) } : {})} {...(review ? { review, onReviewKeys: setReadKeys } : {})} />
                 </SubagentStatusContext.Provider>
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>

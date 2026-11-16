@@ -4,7 +4,7 @@ import { readStoredJson, writeStoredJson } from "../lib/stored.js";
 // a restart emptied the box). One map in storage; an emptied box drops its entry, and only the most recent drafts stay.
 
 const KEY = "amo.sessionDrafts";
-/** The storage key: another window of the same session (the 会话弹窗, 2026-11-17) hears its draft change by it. */
+/** The storage key: another window of the same session (the 会话弹窗, 2026-11-16) hears its draft change by it. */
 export const SESSION_DRAFTS_KEY = KEY;
 const MAX = 50;
 

@@ -129,7 +129,7 @@ interface PrefsData {
   focusSize?: Size;
   /** 崩溃转储 (2026-11-10, 设置 → 维护): on or off; absent, the platform's channel decides (@amo-studio/account). */
   crashDumps?: boolean;
-  /** 会话弹窗 (2026-11-17): where the last one was left and how big. */
+  /** 会话弹窗 (2026-11-16): where the last one was left and how big. */
   round?: Rect;
 }
 

@@ -16,7 +16,7 @@ import type { CopyStatus } from "../remote/remote.js";
 import { Thread } from "./Thread.js";
 import type { ReadPlace } from "./readPlace.js";
 
-// One session's conversation and composer with everything they do wired (2026-11-17, split out of TaskPage.tsx): the
+// One session's conversation and composer with everything they do wired (2026-11-16, split out of TaskPage.tsx): the
 // task page's conversation, and the 会话弹窗 window of 脉络's building (tracks/RoundApp.tsx), are the same thing — sending,
 // approving, 立即发送, 分支, annotating, bookmarking, a remote task's copy — so they share this, not a copy of it.
 

@@ -4,7 +4,7 @@ import { flash } from "./ReplyNav.js";
 
 /**
  * Scrolls to a row of the conversation on the page — what came back, an approval that waits, a round picked in 脉络's
- * building — and flashes it (事项清单 2026-11-15; the 会话弹窗 window 2026-11-17). A row in a folded turn, or above what
+ * building — and flashes it (事项清单 2026-11-15; the 会话弹窗 window 2026-11-16). A row in a folded turn, or above what
  * is drawn, is unfolded first and looked for again once it has rendered, `tries` times at most.
  */
 export function revealRow(itemId: string, tries: number): void {

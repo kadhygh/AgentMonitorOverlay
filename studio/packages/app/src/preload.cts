@@ -144,7 +144,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** 计划窗口 (2026-11-09): the plan of a session (its latest, or the version `itemId`) in its own window. */
   openPlan: (target: { sessionId: string; itemId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-plan", target),
   /**
-   * 会话弹窗 (2026-11-17): a card of 脉络's building, its session's conversation in a window of its own (the one not
+   * 会话弹窗 (2026-11-16): a card of 脉络's building, its session's conversation in a window of its own (the one not
    * pinned is reused). From the workbench: open, close a building's (`all`: pinned ones too), bring one forward, and
    * which are open; from such a window: 固定, whether it is, and 到对话里看 (the workbench shows that row; it closes).
    */

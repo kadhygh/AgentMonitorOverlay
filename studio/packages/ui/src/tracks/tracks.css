@@ -20,7 +20,7 @@
 /* While a 会话弹窗 window shows the building's session, its composer is there: a faint line here says so. */
 .composer-away { flex-direction: row; justify-content: center; gap: 4px; padding: 8px 24px 10px; font-size: var(--fs-cap); color: var(--text-faint); }
 
-/* 会话弹窗 (2026-11-17): a window of its own (#round?…, RoundApp.tsx) — the head drags it and says whose conversation
+/* 会话弹窗 (2026-11-16): a window of its own (#round?…, RoundApp.tsx) — the head drags it and says whose conversation
    it is, then 固定 / 到对话里看 / ×; under it the session's conversation and composer, as in the task page. */
 .round-win { height: 100vh; display: flex; flex-direction: column; background: var(--panel); color: var(--text); }
 .round-win-head { flex: none; display: flex; align-items: center; gap: 4px; min-width: 0; height: 38px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--divider); background: var(--panel-raised); }

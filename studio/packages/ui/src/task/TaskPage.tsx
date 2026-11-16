@@ -163,7 +163,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const showBoard = !!session && boardEnabled && !!boardPick[session.id];
   const showTower = !!session && !showBoard && tracksEnabled && !tracksOff && (towerPick[session.id] ?? tracksOn.has(session.id));
   // 会话弹窗 (2026-11-16, the user: 点击某个卡片时，不要用侧边栏展示应该改成会话弹窗。弹窗开启时，下面的输入栏先隐藏，且输入栏的
-  // 内容也展示到弹窗里。弹窗应该能拖动，能 pin。弹窗也能加批注。) — since 2026-11-17 a window of its own (the user: 脉络点击的弹窗
+  // 内容也展示到弹窗里。弹窗应该能拖动，能 pin。弹窗也能加批注。) — since 2026-11-16 a window of its own (the user: 脉络点击的弹窗
   // 要独立弹窗，不然会被限制拖动范围; app/src/round-window.ts): a card picked in the building opens the conversation of its
   // session (the building's, or one it started) there, at its row. The windows are the building's: the one not pinned
   // is what the building has picked (closing it lets the card go, letting the card go closes it), and all of them go

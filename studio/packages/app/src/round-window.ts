@@ -3,7 +3,7 @@ import { displays, type ShellPrefs } from "./focus-window.js";
 import { placeRound, type Rect } from "./placement.js";
 import { roundHash, RoundSet, roundTarget } from "./round-rules.js";
 
-// 会话弹窗 as a window of its own (2026-11-17, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): a card picked in
+// 会话弹窗 as a window of its own (2026-11-16, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): a card picked in
 // 脉络's building opens that session's conversation, with its composer, in a window loaded with #round?…, which can go
 // anywhere — past the workbench's edge, onto another display. The workbench's windows' rules: owned by the workbench
 // (above it, not above other programs; they go when it hides or closes), and reused as the viewer is — the one not
@@ -107,7 +107,7 @@ export function installRoundWindows(options: RoundWindowOptions): void {
   // The workbench's page loaded again (F5): its building is drawn anew, with nothing picked.
   mainWindow.webContents.on("did-navigate", closeAll);
   // Quitting: closed before the workbench is. Left open to go with it, quitting never got to will-quit (the e2e's
-  // app.close() hung every time with one open, 2026-11-17; why, not found out).
+  // app.close() hung every time with one open, 2026-11-16; why, not found out).
   app.on("before-quit", closeAll);
 }
 

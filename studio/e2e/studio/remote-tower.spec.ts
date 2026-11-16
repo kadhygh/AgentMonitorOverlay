@@ -105,7 +105,7 @@ test("B opens a remote task's session as its building: read from A with its AI's
   await expect(frame.locator("#rail button[data-f]")).toHaveCount(3, { timeout: 30_000 });
   await expect(frame.locator("#sideBody")).toContainText("远程也要能看脉络", { timeout: 30_000 });
   // A card picked in the building itself (the page's own message, not a stand-in): the round opens in the 会话弹窗, the
-  // copy's conversation with its composer in it, in a window of its own (2026-11-17).
+  // copy's conversation with its composer in it, in a window of its own (2026-11-16).
   const rounds = () => b.app.windows().filter((w) => w.url().includes("#round"));
   const select = (k: string) => frame.locator("body").evaluate((_, key) => (window as unknown as { __tower: { select(k: string): void } }).__tower.select(key), k);
   const opened = b.app.waitForEvent("window", { predicate: (w) => w.url().includes("#round") });

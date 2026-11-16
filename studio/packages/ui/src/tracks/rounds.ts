@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// 会话弹窗 as windows of their own (2026-11-17, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围; app/src/round-window.ts):
+// 会话弹窗 as windows of their own (2026-11-16, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围; app/src/round-window.ts):
 // what the workbench hears about them and what such a window is asked to show. Pure, but for the hook.
 
 /** An open 会话弹窗 window, as the shell tells the workbench (amo:rounds). */

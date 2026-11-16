@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { roundHash, RoundSet, roundTarget } from "./round-rules.js";
 
-// 会话弹窗 as a window of its own (2026-11-17): what a page may ask, the window's address, and which window is reused.
+// 会话弹窗 as a window of its own (2026-11-16): what a page may ask, the window's address, and which window is reused.
 
 describe("round windows", () => {
   it("takes a card's request only with its task, session and building", () => {

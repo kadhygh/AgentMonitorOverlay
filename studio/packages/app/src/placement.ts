@@ -141,7 +141,7 @@ function keptOnScreen(saved: Rect, displays: readonly DisplayInfo[]): Rect | nul
   return saved.width <= a.width && saved.height <= a.height ? { ...saved } : clampInto(saved, a);
 }
 
-/** 会话弹窗 (2026-11-17): its size the first time, before one was remembered. */
+/** 会话弹窗 (2026-11-16): its size the first time, before one was remembered. */
 export const ROUND_SIZE: Size = { width: 600, height: 760 };
 const ROUND_GAP = 8;
 const ROUND_CASCADE = 28;

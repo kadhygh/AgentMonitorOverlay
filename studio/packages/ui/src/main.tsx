@@ -72,7 +72,7 @@ const viewer = location.hash.startsWith("#viewer");
 const canvasMini = location.hash.startsWith("#canvas-mini");
 // 计划窗口 (2026-11-09), loaded with #plan?session=…&item=….
 const plan = location.hash.startsWith("#plan");
-// 会话弹窗 (2026-11-17): a card of 脉络's building, its conversation in a window of its own (#round?task=…&session=…).
+// 会话弹窗 (2026-11-16): a card of 脉络's building, its conversation in a window of its own (#round?task=…&session=…).
 const round = location.hash.startsWith("#round");
 // The angry robot flying about the screen (2026-10-15 evening), loaded with #bot.
 const bot = location.hash === "#bot";

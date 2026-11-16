@@ -7,7 +7,7 @@ import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 // 脉络的楼 (2026-11-15; 设置 → 测试功能 → 脉络): a session marked 脉络会话 opens as its building (tower.html in an iframe
 // in the conversation's place, the composer still under it) — a floor per round, the session it started as a region, its
 // report as a card; its AI titles a round with track_note.
-// 会话弹窗 (2026-11-16; a window of its own since 2026-11-17, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): a card
+// 会话弹窗 (2026-11-16; a window of its own since 2026-11-16, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): a card
 // picked in the building (tower.pick) opens that session's conversation and its composer in a window of its own (#round?…),
 // owned by the workbench; the one not pinned is reused for the next card, a pinned one stays. Here the building's
 // messages are mostly sent as its page sends them (from its frame), and the building's own select() where its marking
@@ -267,7 +267,7 @@ test("Studio quits with 会话弹窗 windows open, a pinned one and one not", as
   await expect(first.getByTestId("round-pin")).toHaveAttribute("aria-pressed", "true");
   await openRound(app, page, { sessionId: session.id });
   expect(rounds(app)).toHaveLength(2);
-  // Left to go with the workbench, they kept quitting from finishing (app.close() hung, 2026-11-17).
+  // Left to go with the workbench, they kept quitting from finishing (app.close() hung, 2026-11-16).
   const s = studio;
   studio = undefined;
   await expect(Promise.race([s.close().then(() => "closed"), new Promise((r) => setTimeout(() => r("still running"), 30_000))])).resolves.toBe("closed");

@@ -7,6 +7,7 @@ import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../../core/role.js";
 import { tracksHint } from "../../core/tracks.js";
 import { whiteboardHint, readWhiteboard } from "../../core/whiteboard.js";
+import { readReviewProgress, reviewProgressHint } from "../../core/reviewprogress.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
@@ -96,11 +97,17 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     const tracks = experimentalEnabled(this.f.config.experimentalFeatures(), "tracks") ? tracksHint(this.store, sessionId) : null;
     // 白板 (2026-11-16): its AI is told what the board is (once, and after each compaction), and the notes the person pinned since.
     const board = experimentalEnabled(this.f.config.experimentalFeatures(), "whiteboard") ? whiteboardHint(this.store, sessionId) : null;
+    // 审阅进度 (2026-11-16): the blocks the person newly marked 「!」, and how far they read the last reply when only partly.
+    const reading = experimentalEnabled(this.f.config.experimentalFeatures(), "review-progress") ? reviewProgressHint(this.store, sessionId) : null;
     const update = {
-      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? [])],
+      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? []), ...(reading?.lines ?? [])],
       told: () => {
         role.told();
         tracks?.told();
+        if (reading?.lines.length) {
+          reading.told();
+          this.publish({ type: "reviewprogress.changed", sessionId, replies: readReviewProgress(this.store, sessionId).replies });
+        }
         if (!board?.lines.length) return;
         board.told();
         // The notes are 「已发给 AI」 now: the workbench reads the board again.

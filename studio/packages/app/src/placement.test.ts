@@ -85,7 +85,7 @@ describe("placement", () => {
     });
   });
 
-  // 会话弹窗 (2026-11-17): a window of its own beside the workbench, then where the last one was left.
+  // 会话弹窗 (2026-11-16): a window of its own beside the workbench, then where the last one was left.
   describe("会话弹窗", () => {
     const main = { x: 240, y: 70, width: 1440, height: 900 };
 

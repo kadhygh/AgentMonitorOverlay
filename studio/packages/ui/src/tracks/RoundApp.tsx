@@ -15,7 +15,7 @@ import { revealRow } from "../task/revealRow.js";
 import type { PreviewTarget } from "../files/FileLinks.js";
 import { parseRoundHash, type RoundAsk } from "./rounds.js";
 
-// 会话弹窗 as a window of its own (2026-11-17, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围; plans/tracks.md): the
+// 会话弹窗 as a window of its own (2026-11-16, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围; plans/tracks.md): the
 // conversation of a card picked in 脉络's building, loaded with #round?task=…&session=…&tower=…&item=…, scrolled to that
 // round, with its composer — the task page's own SessionThread, so sending, approving, answering, annotating and Ctrl+F
 // are the same here. The head drags the window and has 固定 (the next card opens another window; this one stays),

@@ -109,7 +109,7 @@ declare global {
       canvasMiniTop?(on?: boolean): Promise<boolean>;
       /** 计划窗口 (2026-11-09): a session's plan (its latest, or the version `itemId`) in a window of its own. */
       openPlan?(target: { sessionId: string; itemId?: string }): Promise<void>;
-      /** 会话弹窗 (2026-11-17): a card of 脉络's building in a window of its own (tracks/rounds.ts). */
+      /** 会话弹窗 (2026-11-16): a card of 脉络's building in a window of its own (tracks/rounds.ts). */
       round?: {
         open(target: { taskId: string; sessionId: string; towerFor: string; itemId?: string; title?: string }): Promise<void>;
         close(target: { towerFor: string; all?: boolean }): Promise<void>;

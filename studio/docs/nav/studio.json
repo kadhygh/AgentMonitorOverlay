@@ -255,7 +255,7 @@
         "改楼的画法、摆放、右边栏：ui/src/tracks/tower/main.js（纯 JS，不过类型检查）和 tower.css；改完 npm run build 后用 e2e/studio/tower.spec.ts 出截图看。",
         "远程任务的副本：features/tracks/service.ts 的 view（副本就问任务所在的电脑，rt.tracks），构造函数里登记怎么答；界面上那边版本旧时的提示在 task/TaskPage.tsx 的 tracksOff。端到端 e2e/studio/remote-tower.spec.ts。",
         "会话页上的切换和勾选：ui/src/tracks/TowerView.tsx 的 TowerSwitch，task/TaskPage.tsx 里的 showTower；楼盖在对话上靠 Thread 的 cover。",
-        "会话弹窗（点卡片开的独立窗口，2026-11-17）：楼的页面发 tower.pick / tower.unpick（main.js 的 pickOf、select），TowerView 收下来，task/TaskPage.tsx 的 pickFromTower 让 preload 的 round.open 开窗口；窗口本身在 app/src/round-window.ts（复用和固定的规矩在 round-rules.ts 的 RoundSet，位置在 placement.ts 的 placeRound），界面是 ui/src/tracks/RoundApp.tsx（#round?task=…&session=…&tower=…&item=…，地址在 tracks/rounds.ts 解析）。",
+        "会话弹窗（点卡片开的独立窗口，2026-11-16）：楼的页面发 tower.pick / tower.unpick（main.js 的 pickOf、select），TowerView 收下来，task/TaskPage.tsx 的 pickFromTower 让 preload 的 round.open 开窗口；窗口本身在 app/src/round-window.ts（复用和固定的规矩在 round-rules.ts 的 RoundSet，位置在 placement.ts 的 placeRound），界面是 ui/src/tracks/RoundApp.tsx（#round?task=…&session=…&tower=…&item=…，地址在 tracks/rounds.ts 解析）。",
         "会话弹窗里的对话和主窗口是同一套接线：task/SessionThread.tsx（发送、审批、批注、分支、书签……），任务页和 RoundApp 都用它；要给对话加一种操作，加在这里两边就都有。主窗口这边：开着的窗口列表（amo:rounds，tracks/rounds.ts 的 useRoundWindows）决定楼里选中的卡片（cardWindowOpen → TowerView 的 popup）和楼下面输入栏让位（composerInWindow → Thread 的 composerAway）；楼不在了 TaskPage 的 towerId 那个 effect 把窗口全关掉。草稿两边靠 sessionDraft.ts 的 localStorage 和 Thread 里的 storage 事件对上。"
       ],
       "anchors": [
@@ -303,51 +303,65 @@
     },
     {
       "id": "ui.reviewProgress",
-      "label": "审阅进度：对话里每条回复 没看 / 浏览过 / 审过，复盘",
+      "label": "审阅进度：对话里每条回复右边的竖线，按块标读到哪、标「!」有问题，复盘",
       "aliases": [
         "审阅进度",
         "review-progress",
         "reviewProgress",
         "ReviewProgress",
-        "ReviewMark",
-        "浏览过",
-        "审过",
-        "没看",
+        "ReviewRead",
+        "ReviewChange",
+        "读到这里",
+        "有问题",
+        "竖线",
         "复盘",
-        "TurnReview",
+        "ReadMarks",
+        "ReadFoot",
         "ReviewBar",
-        "到这里为止都审过",
-        "下一条没审的"
+        "到这里为止都读过",
+        "下一处没读的",
+        "reviewProgressHint"
       ],
       "category": "ui",
-      "purpose": "测试功能「审阅进度」开着时，对话里每一轮的最终回复有一个状态：没看、浏览过（回复末尾在屏幕上停过约 1.5 秒，窗口在前台）、审过（只能人点）。平时只有值得审的回复（超过一屏，或那一轮有审批、提问、文件改动、查看包）末尾有「审过」按钮；「复盘」把没审过的整轮标出颜色、数还有几条、跳到下一条。记在 Host（kv review-progress:<会话 id>，按回复行的 id），远程副本的进度留在看的这台电脑上。脉络的会话弹窗用的是同一个 Thread，自动带上。",
+      "purpose": "测试功能「审阅进度」开着时（第二版 2026-11-16），对话里每一轮的最终回复右边一条竖线：左键点某一块的高度＝这条回复从头读到这一块（同一处再点取消），右键＝这一块标「!」有问题。块＝渲染出来的 Markdown 顶层元素（一段、列表的一条、表格的一行、代码块，小标题跟着下一块）。什么都不自动标。「复盘」给没读到的块上底色、数还有几条没读完和几处有问题、跳到下一处没读的、在回复末尾「到这里为止都读过」。记在 Host（kv review-progress:<会话 id>，按回复行的 id），远程副本的进度留在看的这台电脑上。人新标的「!」和最后一条回复只读了一部分时，随人的下一条消息告诉 AI。脉络的会话弹窗用的是同一个 Thread，自动带上。",
       "steps": [
-        "改哪一轮算、哪些回复平时就有「审过」按钮、数还剩几条、下一条是哪条：ui/src/chat/reviewLogic.ts（纯函数，reviewLogic.test.ts）。",
-        "改「浏览过」怎么判（停多久、窗口在不在前台）、回复末尾的控件、复盘顶上那一条：ui/src/chat/ReviewProgress.tsx（useSeenWatch、TurnReview、ReviewBar）；样式在 chat/chat.css 的「审阅进度」一段。",
-        "复盘的开关、下一条没审的怎么滚过去：task/Thread.tsx（reviewMode、nextToReview、revealReply）；Transcript.tsx 把 TurnReview 放进 TurnFooter、整轮的 data-review。",
-        "改存什么、谁能写：host 的 features/reviewprogress/service.ts（update：浏览过不盖掉审过，撤回审过回到浏览过，不是这个会话的回复的 id 丢掉）；路由和事件在 protocol/src/api.ts（ReviewProgress、reviewprogress.changed）。",
+        "改怎么分块、点一下算到哪、还剩几条、下一处是哪：ui/src/chat/reviewLogic.ts（纯函数 readBlocks、clickRead、unfinished、nextUnread…，reviewLogic.test.ts）。",
+        "改竖线、底色、「读到这里」怎么画、怎么量位置、复盘里回复末尾和顶上那一条：ui/src/chat/ReviewProgress.tsx（ReadMarks、useBands、blockElements、ReadFoot、ReviewBar）；样式在 chat/chat.css 的「审阅进度」一段（每一轮右边留的位置 --read-gutter、窄对话的容器查询）。",
+        "复盘的开关、下一处没读的怎么滚过去：task/Thread.tsx（reviewMode、nextToReview、revealReply）；Transcript.tsx 把 ReadMarks 放进回复（AgentReply 的 reading）、ReadFoot 放进 TurnFooter。",
+        "改存什么、谁能写：一次改动怎么改记录在 protocol/src/reviewprogress.ts（applyReviewChange，Host 和界面共用）；Host 的检查在 features/reviewprogress/service.ts，kv 的读写和旧数据在 core/reviewprogress.ts。",
+        "改带给 AI 的话：host 的 core/reviewprogress.ts（reviewProgressHint），接在 features/sessions/service.ts 的 sendMessage 里（和 tracksHint、whiteboardHint 并排）。",
         "端到端：e2e/studio/review-progress.spec.ts。"
       ],
       "anchors": [
         {
-          "label": "哪一轮算、显示什么",
+          "label": "怎么分块、点一下算到哪",
           "path": "studio/packages/ui/src/chat/reviewLogic.ts",
-          "anchor": "export function reviewControls"
+          "anchor": "export function readBlocks"
         },
         {
-          "label": "记浏览过、回复末尾的控件",
+          "label": "竖线、底色和读到这里",
           "path": "studio/packages/ui/src/chat/ReviewProgress.tsx",
-          "anchor": "export function TurnReview"
+          "anchor": "export function ReadMarks"
         },
         {
-          "label": "复盘和跳到下一条",
+          "label": "复盘和跳到下一处",
           "path": "studio/packages/ui/src/task/Thread.tsx",
           "anchor": "const nextToReview"
+        },
+        {
+          "label": "一次改动怎么改记录",
+          "path": "studio/packages/protocol/src/reviewprogress.ts",
+          "anchor": "export function applyReviewChange"
         },
         {
           "label": "Host 里的记录",
           "path": "studio/packages/host/src/features/reviewprogress/service.ts",
           "anchor": "export class ReviewProgressFeature"
+        },
+        {
+          "label": "带给 AI 的话",
+          "path": "studio/packages/host/src/core/reviewprogress.ts",
+          "anchor": "export function reviewProgressHint"
         },
         {
           "label": "端到端",

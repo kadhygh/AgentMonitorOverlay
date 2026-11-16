@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cardWindowOpen, composerInWindow, parseRoundHash, roundChatTarget, roundList } from "./rounds.js";
 
-// 会话弹窗 as windows of their own (2026-11-17): what the workbench makes of the shell's list, and a window's address.
+// 会话弹窗 as windows of their own (2026-11-16): what the workbench makes of the shell's list, and a window's address.
 
 describe("会话弹窗 windows", () => {
   const list = roundList([

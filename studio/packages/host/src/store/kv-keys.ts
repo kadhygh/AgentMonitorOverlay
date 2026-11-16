@@ -88,7 +88,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },
   { key: "subsession-setup:", scope: "session", owner: "features/sessions/setups.ts", what: "@ 开子会话… 的设定（session_start 的 setup）" },
   { key: "tracks:", scope: "session", owner: "core/tracks.ts", what: "脉络会话：开没开、AI 用 track_note 写的每轮标题和要点" },
-  { key: "review-progress:", scope: "session", owner: "features/reviewprogress/service.ts", what: "审阅进度：这个会话每条回复浏览过、审过没有" },
+  { key: "review-progress:", scope: "session", owner: "core/reviewprogress.ts", what: "审阅进度：这个会话每条回复读到第几块、哪几块标了有问题" },
   { key: "whiteboard:", scope: "session", owner: "core/whiteboard.ts", what: "白板：开没开、AI 写的节点、人的批注" },
   { key: "whiteboard-view:", scope: "session", owner: "core/whiteboard.ts", what: "白板：AI 自己给的画它的页面（whiteboard_view）" },
   { key: "claude-handoff-seen:", scope: "session", owner: "runtime/claude/transcripts.ts", what: "已读过的子会话交回" },

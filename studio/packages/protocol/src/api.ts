@@ -306,11 +306,12 @@ export const EXPERIMENTAL_FEATURES: readonly {
     hint: "你在一个会话的输入框里打字时，别处送来的消息（子会话回报、中转回复、传话、留言）先不送进去：最近 5 分钟按过输入框就压着，等你发出下一条消息时排在它后面一起送；输入框清空了、或者 5 分钟没动，就照常送。关着时和以前一样：会话一空闲，来的消息马上送进去、AI 开始处理。",
   },
   // 审阅进度 (2026-11-16, plans/review-progress.md; the user: 我再想更新需要的功能是之前说的那个审核，阅读看到哪然后标记上。我们
-  // 可以在会话里加上): the conversation's piece first — each AI reply is 没看 / 浏览过 / 审过, kept by the Host.
+  // 可以在会话里加上): the conversation's piece first, kept by the Host. 第二版 (2026-11-16): read block by block, marked
+  // on a line at each reply's right (reviewprogress.ts).
   {
     id: "review-progress",
     label: "审阅进度",
-    hint: "对话里每一条 AI 回复记一个状态：没看、浏览过、审过。回复的末尾在屏幕上停过一会儿（窗口在前台），自动记成「浏览过」；「审过」只能你自己点。平时不添乱：只有超过一屏的回复、或者那一轮有审批、提问、文件改动、查看包的回复，末尾才有一个「审过」按钮，审过的回复末尾有一个小勾。对话右上角多一个「复盘」：打开后没审过的回复整块变色（没看的最显眼、浏览过的淡一些），顶上写还有几条没审，可以跳到下一条没审的，或者在某一条上点「到这里为止都审过」一次标完。进度记在这台电脑的 Studio 里，换会话、重启都在；脉络的会话弹窗里也一样。现在只做了对话，文档、查看包、Git 改动还不记。",
+    hint: "对话里每一条 AI 回复的右边多一条竖线，用来标你读到哪了。在竖线上某一段的高度左键点一下：这条回复从头读到这一段（下面画一道线，写「读到这里」）；再点别处位置跟着走，在同一处再点一次是取消。右键点一下：这一段标一个「!」，表示有问题；再右键一次取消。什么都不会自动标，滚过去不算读过。对话右上角的「复盘」：打开后没读到的段落带底色，顶上写还有几条回复没读完、几处有问题，可以跳到下一处没读的，或者在某一条回复末尾点「到这里为止都读过」一次标完。你发下一条消息时，新标的「!」和最后一条回复读到哪（只读了一部分时）会随消息告诉 AI。进度记在这台电脑的 Studio 里，换会话、重启都在；脉络的会话弹窗里也一样。现在只做了对话，文档、查看包、Git 改动还不记。",
     stage: "dev",
   },
 ];
@@ -321,19 +322,6 @@ export function experimentalEnabled(on: readonly ExperimentalFeature[] | undefin
   if (!list.includes(id)) return false;
   const parent = EXPERIMENTAL_FEATURES.find((f) => f.id === id)?.parent;
   return !parent || experimentalEnabled(list, parent);
-}
-
-/**
- * 审阅进度 (2026-11-16, plans/review-progress.md): a reply (by its row's id) the person has looked at. `seen` (浏览过):
- * its end stayed on screen a moment, recorded by itself; `reviewed` (审过): only by the person's click. A reply not in
- * `marks` is 没看.
- */
-export type ReviewMark = "seen" | "reviewed";
-
-/** One session's 审阅进度 on this computer. */
-export interface ReviewProgress {
-  sessionId: Id;
-  marks: Record<Id, ReviewMark>;
 }
 
 /** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
@@ -893,12 +881,12 @@ export interface HostRoutes
   "PUT /api/sessions/:id/whiteboard/notes/:noteId": { req: { text?: string; closed?: boolean }; res: import("./whiteboard.js").WhiteboardData };
   "DELETE /api/sessions/:id/whiteboard/notes/:noteId": { req: void; res: import("./whiteboard.js").WhiteboardData };
   /**
-   * 审阅进度 (2026-11-16, ReviewProgress): how far the person on this computer has read the session's replies. PUT:
-   * `seen` (the end of a reply stayed on screen; never takes 审过 away), `reviewed` (the person's 审过), `unreviewed`
-   * (审过 taken back: 浏览过 again). Ids that are not replies of the session are left out.
+   * 审阅进度 (reviewprogress.ts; 第二版 2026-11-16): how far the person on this computer read each of the session's
+   * replies, block by block, and the blocks they marked 「!」. PUT: one change (ReviewChange: `read`, `flag`, `readUpTo`);
+   * ids that are not replies of the session are refused (`read`, `flag`) or left out (`readUpTo`).
    */
-  "GET /api/sessions/:id/review-progress": { req: void; res: ReviewProgress };
-  "PUT /api/sessions/:id/review-progress": { req: { seen?: Id[]; reviewed?: Id[]; unreviewed?: Id[] }; res: ReviewProgress };
+  "GET /api/sessions/:id/review-progress": { req: void; res: import("./reviewprogress.js").ReviewProgress };
+  "PUT /api/sessions/:id/review-progress": { req: import("./reviewprogress.js").ReviewChange; res: import("./reviewprogress.js").ReviewProgress };
   /** 立即发送 on a message still waiting (delivery `waiting`): the running turn gives way and the model reads it now. Nothing when it is not waiting any more. */
   "POST /api/sessions/:id/items/:itemId/send-now": { req: void; res: { ok: true } };
   /** 重新发送 a message its process never read (delivery `unsent`): the same item goes again. */
@@ -1015,8 +1003,8 @@ export type HostEvent = { seq: number } & (
   | { type: "tracks.changed"; sessionId: Id; on: boolean }
   /** A session's 白板 changed: turned on or off, its AI wrote it, the person pinned a note, their notes went to the AI. */
   | { type: "whiteboard.changed"; sessionId: Id; on: boolean; rev: number; seenRev: number }
-  /** A session's 审阅进度 changed (a reply 浏览过, 审过, or 审过 taken back): all of its marks. */
-  | { type: "reviewprogress.changed"; sessionId: Id; marks: Record<Id, ReviewMark> }
+  /** A session's 审阅进度 changed (read to a block, a 「!」 on or off, 到这里为止都读过, the 「!」 told to the AI): all of it. */
+  | { type: "reviewprogress.changed"; sessionId: Id; replies: Record<Id, import("./reviewprogress.js").ReviewRead> }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

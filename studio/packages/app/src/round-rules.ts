@@ -1,4 +1,4 @@
-// 会话弹窗 as a window of its own (2026-11-17, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): the pure part —
+// 会话弹窗 as a window of its own (2026-11-16, the user: 脉络点击的弹窗要独立弹窗，不然会被限制拖动范围): the pure part —
 // what a page may ask a window to show, its address, and which window is reused. round-window.ts does the windows.
 
 /** A card picked in a building: the conversation of `sessionId` (the building's own session or one it started), at `itemId`. */

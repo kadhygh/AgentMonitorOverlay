@@ -687,7 +687,7 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
       installCanvasWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       // 计划窗口 (2026-11-09): a plan Claude asks to have reviewed, one window per session.
       installPlanWindows({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
-      // 会话弹窗 (2026-11-17): a card of 脉络's building, its conversation in a window of its own.
+      // 会话弹窗 (2026-11-16): a card of 脉络's building, its conversation in a window of its own.
       installRoundWindows({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow, prefs });
       if (!testMode) {
         // Displays unplugged, rearranged or rescaled: keep both windows reachable.

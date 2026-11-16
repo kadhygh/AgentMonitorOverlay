@@ -1,18 +1,20 @@
-import { experimentalEnabled, type Id, type ReviewMark, type ReviewProgress } from "@amo-studio/protocol";
+import { applyReviewChange, experimentalEnabled, type Id, type ReviewChange, type ReviewProgress } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { Feature, type FeatureHost } from "../../core/feature.js";
+import { readReviewProgress, writeReviewProgress } from "../../core/reviewprogress.js";
 
-/** One kv row per session (kv-keys.ts, scope session: deleted with its session). */
-const progressKey = (sessionId: Id) => `review-progress:${sessionId}`;
-/** Ids in one PUT: the UI sends a handful (浏览过 gathered for a second), or the replies up to one (到这里为止都审过). */
+/** Ids in one 到这里为止都读过: the replies up to one. */
 const MAX_IDS = 2000;
+/** More blocks than a reply could have: a number past it is a mistake, not a reply. */
+const MAX_BLOCKS = 100_000;
 
 /**
- * 审阅进度 (2026-11-16, plans/review-progress.md; the user: 我再想更新需要的功能是之前说的那个审核，阅读看到哪然后标记上): for
- * each AI reply of a session (by its row's id, not a scroll position) whether the person on this computer has looked at
- * it. 浏览过 is recorded by the conversation when the reply's end stayed on screen; 审过 only by the person's click — so
- * a 浏览过 never takes a 审过 away, and taking 审过 back leaves it 浏览过. Kept here rather than in the browser so the
- * task's cards, Focus and 脉络 can show it later. A remote task's copy keeps its own (it is this person's reading).
+ * 审阅进度 (plans/review-progress.md; 第二版 2026-11-16, the user: 不要做自动标记完成 … 右侧加一个竖线，左键点击是标记读到哪里，
+ * 右键则是标记那个感叹号有问题): for each AI reply of a session (by its row's id, not a scroll position) how many of its
+ * blocks the person on this computer read from the top, and the blocks they marked 「!」. Only what the person clicked
+ * is recorded. Kept here rather than in the browser so the task's cards, Focus and 脉络 can show it later, and the AI is
+ * told the new 「!」 with the next message (core/reviewprogress.ts). A remote task's copy keeps its own (it is this
+ * person's reading).
  */
 export class ReviewProgressFeature extends Feature<"config"> {
   constructor(host: FeatureHost<"config">) {
@@ -21,54 +23,66 @@ export class ReviewProgressFeature extends Feature<"config"> {
 
   get(sessionId: Id): ReviewProgress {
     this.requireSession(sessionId);
-    return { sessionId, marks: this.read(sessionId) };
+    return { sessionId, replies: readReviewProgress(this.store, sessionId).replies };
   }
 
-  /** The conversation's report: what it saw, what the person marked or took back. Refused while 测试功能「审阅进度」 is off. */
-  update(sessionId: Id, body: { seen?: unknown; reviewed?: unknown; unreviewed?: unknown } | null): ReviewProgress {
+  /** One change from the conversation (ReviewChange). Refused while 测试功能「审阅进度」 is off. */
+  update(sessionId: Id, body: unknown): ReviewProgress {
     this.requireSession(sessionId);
     if (!experimentalEnabled(this.f.config.experimentalFeatures(), "review-progress")) throw new HostError("bad_request", "测试功能「审阅进度」没有打开");
-    const seen = this.replies(sessionId, body?.seen, "seen");
-    const reviewed = this.replies(sessionId, body?.reviewed, "reviewed");
-    const unreviewed = this.replies(sessionId, body?.unreviewed, "unreviewed");
-    const marks = this.read(sessionId);
-    let changed = false;
-    const set = (id: Id, mark: ReviewMark) => {
-      if (marks[id] === mark) return;
-      marks[id] = mark;
-      changed = true;
+    const change = this.check(sessionId, body);
+    const state = readReviewProgress(this.store, sessionId);
+    const replies = applyReviewChange(state.replies, change);
+    if (JSON.stringify(replies) !== JSON.stringify(state.replies)) {
+      writeReviewProgress(this.store, sessionId, { ...state, replies });
+      this.publish({ type: "reviewprogress.changed", sessionId, replies });
+    }
+    return { sessionId, replies };
+  }
+
+  /** The change as sent, checked: numbers in range, ids that are this session's replies. */
+  private check(sessionId: Id, body: unknown): ReviewChange {
+    const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const change: ReviewChange = {};
+    const count = (v: unknown, field: string, min: number) => {
+      if (!Number.isInteger(v) || (v as number) < min || (v as number) > MAX_BLOCKS) throw new HostError("bad_request", `${field} 要是 ${min} 以上的整数`);
+      return v as number;
     };
-    for (const id of seen) if (!marks[id]) set(id, "seen");
-    for (const id of unreviewed) if (marks[id] === "reviewed") set(id, "seen");
-    for (const id of reviewed) set(id, "reviewed");
-    if (changed) {
-      this.store.setKv(progressKey(sessionId), JSON.stringify({ marks }));
-      this.publish({ type: "reviewprogress.changed", sessionId, marks });
+    const text = (v: unknown, field: string) => {
+      if (v === undefined) return "";
+      if (typeof v !== "string") throw new HostError("bad_request", `${field} 要是文字`);
+      return v;
+    };
+    if (b.read !== undefined) {
+      const r = (b.read ?? {}) as Record<string, unknown>;
+      const id = this.reply(sessionId, r.id, "read.id");
+      const of = count(r.of, "read.of", 1);
+      const blocks = count(r.blocks, "read.blocks", 0);
+      if (blocks > of) throw new HostError("bad_request", "read.blocks 不能比 read.of 大");
+      change.read = { id, blocks, of, at: text(r.at, "read.at") };
     }
-    return { sessionId, marks };
+    if (b.flag !== undefined) {
+      const f = (b.flag ?? {}) as Record<string, unknown>;
+      if (typeof f.on !== "boolean") throw new HostError("bad_request", "flag.on 要是 true 或 false");
+      change.flag = { id: this.reply(sessionId, f.id, "flag.id"), block: count(f.block, "flag.block", 0), quote: text(f.quote, "flag.quote"), on: f.on };
+    }
+    if (b.readUpTo !== undefined) {
+      const ids = b.readUpTo;
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new HostError("bad_request", "readUpTo 要是回复 id 的列表");
+      if (ids.length > MAX_IDS) throw new HostError("bad_request", `readUpTo 一次最多 ${MAX_IDS} 条`);
+      // A row of another session, or one gone, is left out (the conversation's list may be a moment old).
+      change.readUpTo = [...new Set(ids as string[])].filter((id) => this.isReply(sessionId, id));
+    }
+    return change;
   }
 
-  private read(sessionId: Id): Record<Id, ReviewMark> {
-    const raw = this.store.getKv(progressKey(sessionId))?.value;
-    if (!raw) return {};
-    try {
-      const v = JSON.parse(raw) as { marks?: Record<string, unknown> } | null;
-      const out: Record<Id, ReviewMark> = {};
-      for (const [id, mark] of Object.entries(v?.marks ?? {})) if (mark === "seen" || mark === "reviewed") out[id] = mark;
-      return out;
-    } catch {
-      return {};
-    }
+  private isReply(sessionId: Id, id: string): boolean {
+    const item = this.store.getItem(id);
+    return item?.sessionId === sessionId && item.type === "agent";
   }
 
-  /** The ids given that are replies of this session; others (a row of another session, one gone) are left out. */
-  private replies(sessionId: Id, value: unknown, field: string): Id[] {
-    if (value === undefined || value === null) return [];
-    if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) throw new HostError("bad_request", `${field} 要是回复 id 的列表`);
-    if (value.length > MAX_IDS) throw new HostError("bad_request", `${field} 一次最多 ${MAX_IDS} 条`);
-    return [...new Set(value as string[])].filter((id) => {
-      const item = this.store.getItem(id);
-      return item?.sessionId === sessionId && item.type === "agent";
-    });
+  private reply(sessionId: Id, id: unknown, field: string): Id {
+    if (typeof id !== "string" || !this.isReply(sessionId, id)) throw new HostError("bad_request", `${field} 不是这个会话的回复`);
+    return id;
   }
 }
