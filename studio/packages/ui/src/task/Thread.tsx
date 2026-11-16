@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode, type SetStateAction } from "react";
-import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode, type SetStateAction } from "react";
+import { readSessionDraft, SESSION_DRAFTS_KEY, writeSessionDraft } from "./sessionDraft.js";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, SubsessionNote, SubsessionSetup, Task, Workspace } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
@@ -107,11 +107,13 @@ interface ThreadProps {
   /** Shown over the conversation, in its place (脉络的楼, 2026-11-15); the composer stays under it. */
   cover?: ReactNode;
   /**
-   * 会话弹窗 over the cover (2026-11-16, the user: 点击某个卡片时…改成会话弹窗。弹窗开启时，下面的输入栏先隐藏，且输入栏的内容也
-   * 展示到弹窗里): the conversation and its composer float over the building as one window — the same elements moved, so
-   * the draft, the attachments and the scroll stay theirs. `chrome`: its head (and grip), `style`: where it is.
+   * The composer is in a 会话弹窗 window of this session (2026-11-16, the user: 弹窗开启时，下面的输入栏先隐藏，且输入栏的内容也
+   * 展示到弹窗里; a window of its own since 2026-11-17): a faint line in its place, `onShow` brings that window forward. The
+   * draft goes there and comes back through storage (sessionDraft.ts), which both windows read.
    */
-  float?: { chrome: ReactNode; style: CSSProperties; label: string };
+  composerAway?: { onShow(): void };
+  /** A small window of its own (the 会话弹窗): the annotation bubble scrolls the conversation to be seen whole. */
+  shortView?: boolean;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
@@ -135,7 +137,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, reviewProgress = false, cover, float, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
+export function Thread({ link, presets, session, firstMessage, profile, profiles = [], subsessionNotes = [], tasks = [], sessions = [], projects, items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onDelivery, onFork, forkRuntime, forkOff, sendNowOff, typingHold = false, reviewProgress = false, cover, composerAway, shortView = false, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [], remote }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -187,6 +189,21 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
       }),
     [sessionId, flushDraft],
   );
+  // The same session's composer in another window (the 会话弹窗, 2026-11-17) wrote its draft: this one follows it, unless
+  // something typed here is still waiting to be kept. Stepping aside for that window, what is here is kept at once.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if ((e.key !== SESSION_DRAFTS_KEY && e.key !== null) || !sessionId || pendingDraft.current) return;
+      const text = readSessionDraft(sessionId);
+      setHeld((h) => (h.id === sessionId && h.text === text ? h : { id: sessionId, text }));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [sessionId]);
+  const away = !!composerAway;
+  useEffect(() => {
+    if (away) flushDraft();
+  }, [away, flushDraft]);
   const view = useTranscriptView();
   const attach = useAttachments(link);
   // 找文件: the selector, opened with Ctrl+P or from the @ list (with what was typed after @).
@@ -548,12 +565,10 @@ ${d}` : back));
         },
       };
 
-  // 脉络的楼 (2026-11-16): the stage and the pane are `display: contents` without a cover, so the page lays out as it
-  // always did; with one, the stage puts the building where the conversation was and the pane either leaves the
-  // composer under it (the conversation hidden behind) or floats both as the 会话弹窗. Always there, never added or
-  // taken away, so opening the window does not make the conversation's elements anew (its scroller, the observers and
-  // highlights on it stay).
-  const towerMode = cover ? (float ? "float" : "under") : undefined;
+  // 脉络的楼 (2026-11-16): the stage is `display: contents` without a cover, so the page lays out as it always did; with
+  // one, it puts the building where the conversation was and the composer under it (the conversation hidden behind).
+  // Always there, never added or taken away, so the building does not make the conversation's elements anew.
+  const towerMode = cover ? "under" : undefined;
 
   // 审阅进度 (2026-11-16, plans/review-progress.md, 测试功能): the Host's marks for this session; the replies' ends watched
   // for 浏览过 while the conversation is in sight (not hidden behind 脉络's building); 复盘 over the conversation.
@@ -611,8 +626,6 @@ ${d}` : back));
           {cover}
         </div>
       )}
-      <div className="thread-pane" style={float?.style} {...(float ? { role: "region", "aria-label": float.label, "data-testid": "tower-popup" } : {})}>
-      {float?.chrome}
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
         {/* 复盘's line takes the top of the conversation (the reply jumps move into it); off it, its switch sits beside them. */}
@@ -630,8 +643,8 @@ ${d}` : back));
         ) : (
           replyNav
         )}
-        {/* Ctrl+F finds in the conversation on the page (folded steps are not searched); in the 会话弹窗 too. */}
-        <FindBar active={!!session && (!cover || !!float)} container={scroller} within=".thread-inner" />
+        {/* Ctrl+F finds in the conversation on the page (folded steps are not searched); not while the building covers it. */}
+        <FindBar active={!!session && !cover} container={scroller} within=".thread-inner" />
         <div
           className="thread"
           data-testid="thread"
@@ -749,7 +762,7 @@ ${d}` : back));
               key={bubble.kind === "edit" ? bubble.annotation.id : `${bubble.anchor.itemId}:${bubble.anchor.start}`}
               scroller={scroller}
               target={bubble}
-              keepInView={!!float}
+              keepInView={shortView}
               onSave={(note) => (bubble.kind === "edit" ? onEditAnnotation(bubble.annotation.id, note) : onSaveAnnotation(bubble.anchor, note))}
               {...(bubble.kind === "edit"
                 ? {
@@ -790,7 +803,15 @@ ${d}` : back));
           </div>
         )}
       </div>
-      {session && (
+      {session && composerAway && (
+        <div className="composer-dock composer-away" data-testid="composer-away">
+          <span>输入栏在会话弹窗里</span>
+          <button type="button" className="link-btn" onClick={composerAway.onShow} title="把开着这个会话的弹窗带到前面" data-testid="composer-away-show">
+            切到弹窗
+          </button>
+        </div>
+      )}
+      {session && !composerAway && (
         <div className="composer-dock" {...dropTarget}>
           {planReview && !readOnly && (
             <PlanReviewBar
@@ -923,7 +944,6 @@ ${d}` : back));
           <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh" && !isRemote} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
-      </div>
       </div>
       {finding && session && (
         <FileSelector

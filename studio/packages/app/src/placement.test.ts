@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centreIn, clampInto, displayFor, placeFocus, placeMain, refitFocus, resizeFocus, type DisplayInfo } from "./placement.js";
+import { centreIn, clampInto, displayFor, placeFocus, placeMain, placeRound, refitFocus, resizeFocus, type DisplayInfo } from "./placement.js";
 
 // Primary 1920x1080 at 100% (taskbar 40 high); a 4K monitor at 150% on its left (2560x1440 DIP, above the origin);
 // a 1280x1024 at 125% on its right.
@@ -82,6 +82,36 @@ describe("placement", () => {
 
     it("shrinks remembered bounds that no longer fit their display", () => {
       expect(placeMain({ x: 1950, y: 10, width: 1440, height: 900 }, size, all, 1)).toEqual({ x: 1920, y: 0, width: 1024, height: 779 });
+    });
+  });
+
+  // 会话弹窗 (2026-11-17): a window of its own beside the workbench, then where the last one was left.
+  describe("会话弹窗", () => {
+    const main = { x: 240, y: 70, width: 1440, height: 900 };
+
+    it("opens inside the workbench's right part when there is no room beside it", () => {
+      expect(placeRound(null, main, all)).toEqual({ x: 240 + 1440 - 600 - 32, y: 126, width: 600, height: 760 });
+    });
+
+    it("opens beside the workbench's right edge when there is room on its display", () => {
+      expect(placeRound(null, { x: 0, y: 0, width: 1000, height: 1000 }, all)).toEqual({ x: 1008, y: 56, width: 600, height: 760 });
+    });
+
+    it("is not taller than a short workbench needs, nor shorter than it can be used", () => {
+      expect(placeRound(null, { x: 0, y: 0, width: 1920, height: 1000 }, all).height).toBe(760);
+      expect(placeRound(null, { x: 0, y: 0, width: 1920, height: 400 }, all).height).toBe(420);
+    });
+
+    it("goes where the last one was left, on another display too", () => {
+      const saved = { x: 2000, y: 10, width: 500, height: 600 };
+      expect(placeRound(saved, main, all)).toEqual(saved);
+      expect(placeRound({ x: 5000, y: 100, width: 500, height: 600 }, main, all)).toEqual(placeRound(null, main, all));
+    });
+
+    it("steps down and right from one already open at the same place", () => {
+      const first = placeRound(null, main, all);
+      expect(placeRound(null, main, all, [first])).toEqual({ ...first, x: first.x + 28, y: first.y + 28 });
+      expect(placeRound(null, main, all, [{ ...first, x: first.x + 300 }])).toEqual(first);
     });
   });
 });

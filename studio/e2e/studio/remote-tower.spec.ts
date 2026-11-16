@@ -105,21 +105,36 @@ test("B opens a remote task's session as its building: read from A with its AI's
   await expect(frame.locator("#rail button[data-f]")).toHaveCount(3, { timeout: 30_000 });
   await expect(frame.locator("#sideBody")).toContainText("远程也要能看脉络", { timeout: 30_000 });
   // A card picked in the building itself (the page's own message, not a stand-in): the round opens in the 会话弹窗, the
-  // copy's conversation with its composer in it.
-  await frame.locator("body").evaluate(() => (window as unknown as { __tower: { select(k: string): void } }).__tower.select("m2"));
-  await expect(page.getByTestId("tower-popup")).toBeVisible();
-  await expect(page.getByTestId("tower-popup-title")).toContainText("从笔记本接着做");
-  await expect(page.getByTestId("tower-popup").getByLabel("输入消息")).toBeVisible();
+  // copy's conversation with its composer in it, in a window of its own (2026-11-17).
+  const rounds = () => b.app.windows().filter((w) => w.url().includes("#round"));
+  const select = (k: string) => frame.locator("body").evaluate((_, key) => (window as unknown as { __tower: { select(k: string): void } }).__tower.select(key), k);
+  const opened = b.app.waitForEvent("window", { predicate: (w) => w.url().includes("#round") });
+  await select("m2");
+  const win = await opened;
+  await expect(win.getByTestId("round-title")).toContainText("从笔记本接着做", { timeout: 30_000 });
+  await expect(win.getByLabel("输入消息")).toBeVisible();
+  await expect(page.getByTestId("composer-away")).toBeVisible();
   await page.waitForTimeout(1200);
   await screenshot(b.app, "studio", "remote-tower", page);
+  await screenshot(b.app, "studio", "remote-tower-popup", win, "round");
+  // Sent from the window: it runs on A, as from the composer under the building.
+  await win.getByLabel("输入消息").fill("从弹窗里接着问");
+  await win.getByRole("button", { name: "发送", exact: true }).click();
+  await until(() => a.api<Array<{ type: string; text?: string }>>("GET", `/api/sessions/${session.id}/items`), (items) => items.some((i) => i.type === "user" && i.text?.includes("从弹窗里接着问")), "A gets the message sent from B's window", 60_000);
+  await until(() => a.api<StateSnapshot>("GET", "/api/state"), (s) => s.sessions.find((x) => x.id === session.id)?.status !== "running", "A idle again", 60_000);
+  await expect(frame.locator("#rail button[data-f]")).toHaveCount(4, { timeout: 30_000 });
+  await expect(win.getByTestId("round-window")).toBeVisible();
   // Esc in the building: the card is let go and the window, not pinned, closes.
   await frame.locator("#scene").press("Escape");
-  await expect(page.getByTestId("tower-popup")).toHaveCount(0);
+  await expect.poll(() => rounds().length).toBe(0);
+  await expect(page.getByLabel("输入消息")).toBeVisible();
   // Its × says so to the building, which lets the card go.
-  await frame.locator("body").evaluate(() => (window as unknown as { __tower: { select(k: string): void } }).__tower.select("m2"));
-  await expect(page.getByTestId("tower-popup")).toBeVisible();
-  await page.getByTestId("tower-popup-close").click();
-  await expect(page.getByTestId("tower-popup")).toHaveCount(0);
+  const again = b.app.waitForEvent("window", { predicate: (w) => w.url().includes("#round") });
+  await select("m2");
+  const second = await again;
+  await expect(second.getByTestId("round-window")).toBeVisible({ timeout: 30_000 });
+  await second.getByTestId("round-close").click();
+  await expect.poll(() => rounds().length).toBe(0);
   await expect.poll(() => frame.locator("body").evaluate(() => (window as unknown as { __tower: { S: { sel: string | null } } }).__tower.S.sel)).toBeNull();
   // Back into the conversation on B, and the tick taken off from B is off on A.
   await page.getByTestId("tower-view-chat").click();

@@ -78,6 +78,9 @@ test("comments in the viewer's 文件 mode survive switching views, keep their p
   const line335 = (await code.locator('[data-line="new:335"]').boundingBox())!;
   const line336 = (await code.locator('[data-line="new:336"]').boundingBox())!;
   expect(Math.round(line336.y)).toBe(Math.round(line335.y + line335.height));
+  // The box comes in over 0.12 s from 6px higher (floatbox.css: toast-in). Measured before that is over, it was a
+  // pixel or two above the line's bottom (2026-11-17: 312.9 and 313.9 against 314, three runs in a row).
+  await float.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
   const box = (await float.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(line335.y + line335.height);
   const corner = (await float.getByTestId("comment-float-resize").boundingBox())!;

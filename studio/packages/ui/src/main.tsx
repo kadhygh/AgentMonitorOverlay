@@ -50,6 +50,7 @@ import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
 import { PlanApp } from "./plan/PlanApp.js";
+import { RoundApp } from "./tracks/RoundApp.js";
 import { BookmarkNotePrompt } from "./marks/NotePrompt.js";
 import { startResizeTrace, traceFocusInput } from "./lib/resizeTrace.js";
 
@@ -71,6 +72,8 @@ const viewer = location.hash.startsWith("#viewer");
 const canvasMini = location.hash.startsWith("#canvas-mini");
 // 计划窗口 (2026-11-09), loaded with #plan?session=…&item=….
 const plan = location.hash.startsWith("#plan");
+// 会话弹窗 (2026-11-17): a card of 脉络's building, its conversation in a window of its own (#round?task=…&session=…).
+const round = location.hash.startsWith("#round");
 // The angry robot flying about the screen (2026-10-15 evening), loaded with #bot.
 const bot = location.hash === "#bot";
 if (bot) document.documentElement.classList.add("bot-mode");
@@ -83,8 +86,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
-    <WindowBoundary {...(focus || bot ? {} : { title: review ? "Git Review" : marks ? "书签" : viewer ? "查看器" : canvasMini ? "画布小窗" : plan ? "计划" : "AMO Studio" })}>
-      {focus ? <FocusApp /> : bot ? <BotApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : canvasMini ? <CanvasMiniApp /> : plan ? <PlanApp /> : <App />}
+    <WindowBoundary {...(focus || bot ? {} : { title: review ? "Git Review" : marks ? "书签" : viewer ? "查看器" : canvasMini ? "画布小窗" : plan ? "计划" : round ? "会话弹窗" : "AMO Studio" })}>
+      {focus ? <FocusApp /> : bot ? <BotApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : canvasMini ? <CanvasMiniApp /> : plan ? <PlanApp /> : round ? <RoundApp /> : <App />}
       <Toaster />
       <BookmarkNotePrompt />
     </WindowBoundary>

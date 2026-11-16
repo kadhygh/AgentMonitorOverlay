@@ -129,6 +129,8 @@ interface PrefsData {
   focusSize?: Size;
   /** 崩溃转储 (2026-11-10, 设置 → 维护): on or off; absent, the platform's channel decides (@amo-studio/account). */
   crashDumps?: boolean;
+  /** 会话弹窗 (2026-11-17): where the last one was left and how big. */
+  round?: Rect;
 }
 
 /** Shell preferences that belong to this machine's windows rather than to the Host: Focus on/off and window places. */
@@ -176,6 +178,15 @@ export class ShellPrefs {
 
   setMain(main: NonNullable<PrefsData["main"]>): void {
     this.save({ main });
+  }
+
+  round(): Rect | null {
+    const r = this.data.round;
+    return r && [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0 ? r : null;
+  }
+
+  setRound(round: Rect): void {
+    this.save({ round });
   }
 
   uiScale(): number {

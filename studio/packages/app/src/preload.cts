@@ -143,6 +143,30 @@ electron.contextBridge.exposeInMainWorld("amo", {
   canvasMiniTop: (on?: boolean): Promise<boolean> => electron.ipcRenderer.invoke("amo:canvas-mini-top", on),
   /** 计划窗口 (2026-11-09): the plan of a session (its latest, or the version `itemId`) in its own window. */
   openPlan: (target: { sessionId: string; itemId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-plan", target),
+  /**
+   * 会话弹窗 (2026-11-17): a card of 脉络's building, its session's conversation in a window of its own (the one not
+   * pinned is reused). From the workbench: open, close a building's (`all`: pinned ones too), bring one forward, and
+   * which are open; from such a window: 固定, whether it is, and 到对话里看 (the workbench shows that row; it closes).
+   */
+  round: {
+    open: (target: { taskId: string; sessionId: string; towerFor: string; itemId?: string; title?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:round-open", target),
+    close: (target: { towerFor: string; all?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:round-close", target),
+    show: (sessionId: string): Promise<void> => electron.ipcRenderer.invoke("amo:round-show", sessionId),
+    list: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:rounds-get"),
+    onList: (cb: (list: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, list: unknown) => cb(list);
+      electron.ipcRenderer.on("amo:rounds", listener);
+      return () => electron.ipcRenderer.removeListener("amo:rounds", listener);
+    },
+    onChat: (cb: (target: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, target: unknown) => cb(target);
+      electron.ipcRenderer.on("amo:round-chat", listener);
+      return () => electron.ipcRenderer.removeListener("amo:round-chat", listener);
+    },
+    pin: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:round-pin"),
+    state: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:round-state"),
+    toChat: (itemId?: string): Promise<void> => electron.ipcRenderer.invoke("amo:round-chat", itemId),
+  },
   openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage; topicId?: string; calloutId?: string; settings?: "remote" }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   /** 在中转里打开 (2026-11-05): whether this computer has an AMO 中转 client Studio can find; and showing a thread in it. */

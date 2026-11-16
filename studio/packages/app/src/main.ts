@@ -18,6 +18,7 @@ import { TrayMenu, type MenuEntry } from "@amo-studio/traymenu";
 import { installMarksWindow } from "./marks-window.js";
 import { installCanvasWindow } from "./canvas-window.js";
 import { installPlanWindows } from "./plan-window.js";
+import { installRoundWindows } from "./round-window.js";
 import { ResizeTrace } from "./resize-trace.js";
 import { setupBotFlight } from "./bot-window.js";
 import { installFolderIpc } from "./folders.js";
@@ -686,6 +687,8 @@ if (!app.requestSingleInstanceLock() || quitAsked(process.argv)) {
       installCanvasWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       // 计划窗口 (2026-11-09): a plan Claude asks to have reviewed, one window per session.
       installPlanWindows({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
+      // 会话弹窗 (2026-11-17): a card of 脉络's building, its conversation in a window of its own.
+      installRoundWindows({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow, prefs });
       if (!testMode) {
         // Displays unplugged, rearranged or rescaled: keep both windows reachable.
         const refit = () => {

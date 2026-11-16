@@ -121,19 +121,51 @@ export function centreIn(size: Size, a: Rect): Rect {
  * to that display if it no longer fits), otherwise the default size centred on the primary display.
  */
 export function placeMain(saved: Rect | null, defaultSize: Size, displays: readonly DisplayInfo[], primaryId: number): Rect {
-  if (saved) {
-    const strip = { x: saved.x, y: saved.y, width: saved.width, height: TITLE_STRIP };
-    const reachable = displays.some((d) => {
-      const o = overlap(strip, d.workArea);
-      return !!o && o.width >= Math.min(MIN_VISIBLE_W, saved.width) && o.height >= TITLE_STRIP / 2;
-    });
-    if (reachable) {
-      const a = displayFor(saved, displays).workArea;
-      return saved.width <= a.width && saved.height <= a.height ? { ...saved } : clampInto(saved, a);
-    }
-  }
+  const kept = saved && keptOnScreen(saved, displays);
+  if (kept) return kept;
   const a = primaryOf(displays, primaryId).workArea;
   const width = Math.min(defaultSize.width, a.width);
   const height = Math.min(defaultSize.height, a.height);
   return { x: Math.round(a.x + (a.width - width) / 2), y: Math.round(a.y + (a.height - height) / 2), width, height };
+}
+
+/** Remembered bounds whose title strip can still be reached on some display (shrunk to that display if larger), else null. */
+function keptOnScreen(saved: Rect, displays: readonly DisplayInfo[]): Rect | null {
+  const strip = { x: saved.x, y: saved.y, width: saved.width, height: TITLE_STRIP };
+  const reachable = displays.some((d) => {
+    const o = overlap(strip, d.workArea);
+    return !!o && o.width >= Math.min(MIN_VISIBLE_W, saved.width) && o.height >= TITLE_STRIP / 2;
+  });
+  if (!reachable) return null;
+  const a = displayFor(saved, displays).workArea;
+  return saved.width <= a.width && saved.height <= a.height ? { ...saved } : clampInto(saved, a);
+}
+
+/** 会话弹窗 (2026-11-17): its size the first time, before one was remembered. */
+export const ROUND_SIZE: Size = { width: 600, height: 760 };
+const ROUND_GAP = 8;
+const ROUND_CASCADE = 28;
+
+/**
+ * Where a 会话弹窗 window opens: where the last one was left (pulled back on screen as the workbench is); the first
+ * time, beside the workbench's right edge when there is room on its display, else inside its right part — over the
+ * building, which is on that side. `open`: the windows already open, which a new one does not cover exactly (it steps
+ * down and right, as cascaded windows do).
+ */
+export function placeRound(saved: Rect | null, main: Rect, displays: readonly DisplayInfo[], open: readonly Rect[] = []): Rect {
+  const a = displayFor(main, displays).workArea;
+  let r = saved ? keptOnScreen(saved, displays) : null;
+  if (!r) {
+    const width = Math.min(ROUND_SIZE.width, a.width);
+    const height = Math.min(ROUND_SIZE.height, Math.max(420, main.height - 80), a.height);
+    const beside = main.x + main.width + ROUND_GAP;
+    const x = beside + width <= a.x + a.width ? beside : main.x + main.width - width - 32;
+    r = clampInto({ x, y: main.y + 56, width, height }, a);
+  }
+  for (let i = 0; i < 10; i++) {
+    const at = r;
+    if (!open.some((o) => Math.abs(o.x - at.x) < ROUND_GAP && Math.abs(o.y - at.y) < ROUND_GAP)) break;
+    r = clampInto({ ...at, x: at.x + ROUND_CASCADE, y: at.y + ROUND_CASCADE }, displayFor(at, displays).workArea);
+  }
+  return r;
 }
