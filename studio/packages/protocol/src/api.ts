@@ -68,6 +68,8 @@ export interface StateSnapshot {
 
 export interface NewSessionInput {
   profileId: Id;
+  /** 新会话 (2026-11-17): its name; left out (or blank), named as before (from its first message). */
+  title?: string;
   /** Topic sessions only: one of the topic's projects; the common space when omitted. Task sessions use the task's. */
   workspaceId?: Id;
   /** First user message; when present the session starts a turn right away. */

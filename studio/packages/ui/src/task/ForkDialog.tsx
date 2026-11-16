@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ForkRequest, ForkTurn, McpEntry, ModelProfile, Session } from "@amo-studio/protocol";
+import type { ForkRequest, ForkTurn, McpSessionState, ModelProfile, Session } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { Modal } from "../lib/Modal.js";
 import { activeModel, effortLabel, useProfileChoices } from "../lib/choices.js";
 import { EffortBars, FastToggle, Mark, PermissionTiles } from "../chat/pickers.js";
-import { RemoteMcpPick, type RemoteMcpLoad } from "../mcp/RemoteMcp.js";
+import { McpPick, mcpToSend, type McpOfferLoad } from "../mcp/McpPick.js";
+
+/** A session's MCP as the picker lists it (2026-11-17: one picker for 新任务, 新会话, 分支, here and remote). */
+const offerOf = (s: McpSessionState): McpOfferLoad => ({ list: { entries: s.entries.map((e) => ({ name: e.name, source: e.source, on: e.on, ...(e.note ? { note: e.note } : {}) })), perSession: s.perSession, ...(s.locked ? { locked: s.locked } : {}) } });
 
 // 分支 (2026-11-10, plans/done/session-fork.md; the look picked from plans/done/session-fork-dialog.html): from which turn, under
 // the session or beside it, its title, and — folded until asked — the model of the same channel, effort, Fast,
@@ -29,10 +32,9 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
   const [effort, setEffort] = useState<string | null>(session.options.effort ?? null);
   const [fast, setFast] = useState<boolean | undefined>(session.options.fast);
   const [permission, setPermission] = useState<string | null>(session.options.permission ?? null);
-  const [mcp, setMcp] = useState<McpEntry[] | null>(null);
+  // The session's MCP to start the branch from (a remote copy's: that computer's, 远程选 MCP 2026-11-17).
+  const [mcp, setMcp] = useState<McpOfferLoad>(null);
   const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
-  // 远程选 MCP (2026-11-17): a remote copy's branch takes that computer's MCP of the session, as picked here.
-  const [remoteMcp, setRemoteMcp] = useState<RemoteMcpLoad>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { choices } = useProfileChoices(link, session.profileId);
@@ -46,32 +48,29 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
         setPicked((t) => (list.some((x) => x.turnId === t && x.forkable) ? t : [...list].reverse().find((x) => x.forkable)?.turnId));
       })
       .catch((err: unknown) => setError(err instanceof HostApiError ? err.message : String(err)));
-    // Codex's MCP is fixed when its app-server starts: a branch has the session's.
-    if (claude && !remote)
-      call(link, "GET /api/sessions/:id/mcp", { id: session.id })
-        .then((s) => setMcp(s.entries))
-        .catch(() => setMcp([]));
-    // A copy's: read on the computer it runs on (an older Studio there has none to give).
-    if (claude && remote?.mcp)
+    // Codex's MCP is fixed when its app-server starts: a branch has the session's. A copy's is read on the computer it
+    // runs on (an older Studio there has none to give).
+    if (claude && (!remote || remote.mcp))
       call(link, "GET /api/sessions/:id/mcp", { id: session.id }).then(
-        (s) => setRemoteMcp({ list: { entries: s.entries.map((e) => ({ name: e.name, source: e.source, on: e.on, ...(e.note ? { note: e.note } : {}) })), perSession: s.perSession } }),
-        (err: unknown) => setRemoteMcp({ error: err instanceof HostApiError ? err.message : String(err) }),
+        (s) => setMcp(offerOf(s)),
+        (err: unknown) => setMcp({ error: err instanceof HostApiError ? err.message : String(err) }),
       );
   }, [link, session.id, claude, !remote, !!remote?.mcp]);
 
   const turn = turns?.find((t) => t.turnId === picked);
   const current = useMemo(() => (choices ? activeModel(choices, { ...session.options, ...(model ? { model } : {}) }) : undefined), [choices, model, session.options]);
-  const mcpOn = (e: McpEntry) => mcpWant[e.name] ?? e.on;
+  const mcpSend = mcpToSend(mcp, mcpWant);
+  const mcpCount = mcp && "list" in mcp ? mcp.list.entries.filter((e) => mcpWant[e.name] ?? e.on).length : null;
   const options: NonNullable<ForkRequest["options"]> = {
     ...(model !== (session.options.model ?? null) ? { model } : {}),
     ...(effort !== (session.options.effort ?? null) ? { effort } : {}),
     ...(fast !== session.options.fast ? { fast: fast ?? null } : {}),
     ...(permission !== (session.options.permission ?? null) ? { permission } : {}),
-    ...(Object.keys(mcpWant).length ? { mcp: mcpWant } : {}),
+    ...(mcpSend ? { mcp: mcpSend } : {}),
   };
   const changed = Object.keys(options).length;
   const permissionLabel = choices?.permissions.find((p) => p.id === (permission ?? choices.defaultPermission))?.label ?? "默认权限";
-  const summary = [current?.label ?? model ?? "默认型号", current?.efforts.length ? effortLabel(effort ?? current.defaultEffort ?? "") || "默认" : null, fast ? "Fast" : null, permissionLabel, mcp && claude ? `MCP ${mcp.filter(mcpOn).length} 个` : null].filter(Boolean).join(" · ");
+  const summary = [current?.label ?? model ?? "默认型号", current?.efforts.length ? effortLabel(effort ?? current.defaultEffort ?? "") || "默认" : null, fast ? "Fast" : null, permissionLabel, mcpCount !== null && claude ? `MCP ${mcpCount} 个` : null].filter(Boolean).join(" · ");
 
   const pickModel = (id: string) => {
     setModel(id);
@@ -148,7 +147,7 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
       {remote && claude ? (
         <div className="fork-field" data-testid="fork-remote-mcp">
           <span className="fork-label">MCP</span>
-          <RemoteMcpPick name={remote.name} state={remoteMcp} want={mcpWant} onWant={setMcpWant} old={!remote.mcp} disabled={busy} />
+          <McpPick where={remote.name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!remote.mcp} disabled={busy} />
         </div>
       ) : null}
       {remote ? null : (
@@ -186,27 +185,7 @@ export function ForkDialog({ link, session, profile, turnId, remote, onClose, on
           <div className="fork-sub">
             <span className="fork-label">MCP</span>
             {claude ? (
-              <div className="fork-mcp" role="group" aria-label="MCP">
-                {mcp === null && <span className="settings-hint">正在读取…</span>}
-                {mcp?.length === 0 && <span className="settings-hint">这个项目没有别的 MCP（Studio 自带的 amo 一直都在）。</span>}
-                {mcp?.map((e) => (
-                  <button
-                    key={e.name}
-                    type="button"
-                    className="fork-chip"
-                    aria-pressed={mcpOn(e)}
-                    title={e.note ?? e.summary}
-                    onClick={() => setMcpWant((w) => {
-                      const next = { ...w };
-                      if (!mcpOn(e) === e.on) delete next[e.name];
-                      else next[e.name] = !mcpOn(e);
-                      return next;
-                    })}
-                  >
-                    {mcpOn(e) ? "✓" : "○"} {e.name}
-                  </button>
-                ))}
-              </div>
+              <McpPick state={mcp} want={mcpWant} onWant={setMcpWant} disabled={busy} testId="fork-mcp" />
             ) : (
               <span className="settings-hint">和原会话一样：Codex 的 MCP 跟着它的后台进程，分支时改不了。</span>
             )}

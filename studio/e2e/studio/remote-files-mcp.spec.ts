@@ -67,7 +67,7 @@ function png(width: number, height: number, rgb: [number, number, number]): Buff
 async function upload(s: Studio, data: Buffer, name: string): Promise<{ id: string; path: string }> {
   const info = JSON.parse(readFileSync(join(s.dataDir, "host.json"), "utf8")) as { url: string };
   const token = readFileSync(join(s.dataDir, "host-token"), "utf8").trim();
-  const res = await fetch(`${info.url}/api/attachments?type=image/png&name=${encodeURIComponent(name)}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/png" }, body: data });
+  const res = await fetch(`${info.url}/api/attachments?type=image/png&name=${encodeURIComponent(name)}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/png" }, body: new Uint8Array(data) });
   return (await res.json()) as { id: string; path: string };
 }
 
@@ -198,21 +198,21 @@ test("远程选 MCP: B picks A's MCP servers for a task it creates there and cha
   await draft.getByRole("group", { name: "项目" }).getByRole("button", { name: /带 MCP 的项目/ }).click();
   await b.page.getByTestId("remote-draft-model").filter({ hasText: "Mock Claude" }).click();
   const pick = b.page.getByTestId("remote-draft-mcp");
-  await expect(pick.getByTestId("remote-mcp-figma")).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
-  await expect(pick.getByTestId("remote-mcp-webtool")).toHaveAttribute("aria-pressed", "false");
-  await pick.getByTestId("remote-mcp-figma").click();
-  await pick.getByTestId("remote-mcp-webtool").click();
-  await expect(pick.getByTestId("remote-mcp-figma")).toContainText("改过");
+  await expect(pick.getByTestId("mcp-pick-figma")).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect(pick.getByTestId("mcp-pick-webtool")).toHaveAttribute("aria-pressed", "false");
+  await pick.getByTestId("mcp-pick-figma").click();
+  await pick.getByTestId("mcp-pick-webtool").click();
+  await expect(pick.getByTestId("mcp-pick-figma")).toContainText("改过");
   expect(await leaked(b.page)).toBeNull();
   await b.page.getByTestId("remote-draft-text").fill("带着 webtool 开始");
   await screenshot(b.app, "studio", "remote-mcp-new-task", b.page);
   // Codex there cannot take a choice per session: listed, not to be ticked.
   await b.page.getByTestId("remote-draft-model").filter({ hasText: "Codex" }).click();
-  await expect(pick.getByTestId("remote-mcp-figma")).toBeDisabled({ timeout: 30_000 });
+  await expect(pick.getByTestId("mcp-pick-figma")).toBeDisabled({ timeout: 30_000 });
   await expect(pick).toContainText("Codex 的 MCP 在它启动时就定了");
   await b.page.getByTestId("remote-draft-model").filter({ hasText: "Mock Claude" }).click();
-  await pick.getByTestId("remote-mcp-figma").click();
-  await pick.getByTestId("remote-mcp-webtool").click();
+  await pick.getByTestId("mcp-pick-figma").click();
+  await pick.getByTestId("mcp-pick-webtool").click();
   await b.page.getByTestId("remote-draft-text").press("Enter");
 
   // Made on A with that choice.
@@ -238,21 +238,44 @@ test("远程选 MCP: B picks A's MCP servers for a task it creates there and cha
 
   // 新会话: the model there, and A's MCP for it.
   await b.page.getByTestId("new-session-toggle").click();
-  const form = b.page.getByTestId("remote-new-session");
-  const claude = await form.getByTestId("remote-model").locator("option", { hasText: "Mock Claude" }).getAttribute("value");
-  await form.getByTestId("remote-model").selectOption(claude!);
-  await expect(form.getByTestId("remote-mcp-figma")).toBeVisible({ timeout: 30_000 });
+  const form = b.page.getByTestId("new-session-dialog");
+  await form.getByTestId("new-session-remote-model").filter({ hasText: "Mock Claude" }).click();
+  await expect(form.getByTestId("mcp-pick-figma")).toBeVisible({ timeout: 30_000 });
   await screenshot(b.app, "studio", "remote-mcp-new-session", b.page);
-  await b.page.getByTestId("new-session-toggle").click();
+  await form.getByRole("button", { name: "取消" }).click();
 
   // 分支 of the Claude session: A's MCP to pick too.
   const foot = b.page.getByTestId("turn-foot").first();
   await foot.hover();
   await foot.getByTestId("turn-fork").click();
   const fork = b.page.getByTestId("fork-dialog");
-  await expect(fork.getByTestId("fork-remote-mcp").getByTestId("remote-mcp-webtool")).toBeVisible({ timeout: 30_000 });
+  await expect(fork.getByTestId("fork-remote-mcp").getByTestId("mcp-pick-webtool")).toBeVisible({ timeout: 30_000 });
   await screenshot(b.app, "studio", "remote-mcp-fork", b.page);
   await b.page.keyboard.press("Escape");
+
+  // 允许控制端选 MCP off on A (远程 → 远程设置 → 远端允许的模型): B's dialog lists A's MCP greyed, saying why.
+  await a.page.getByTestId("topbar-remote").click();
+  const aRemote = a.page.getByRole("dialog", { name: "远程", exact: true });
+  await aRemote.getByTestId("remote-settings-open").click();
+  const aSettings = a.page.getByRole("dialog", { name: "远程设置", exact: true });
+  const allowedModels = aSettings.getByTestId("remote-allowed");
+  await allowedModels.getByTestId("remote-allowed-mcp").locator("input").uncheck();
+  await expect(allowedModels.getByTestId("remote-allowed-mcp")).toContainText("会话按这台电脑默认的 MCP 开");
+  await allowedModels.getByTestId("remote-allowed-save").click();
+  await expect(aSettings.getByTestId("remote-settings-message")).toHaveText("已保存远端允许的模型");
+  await allowedModels.scrollIntoViewIfNeeded();
+  await screenshot(a.app, "studio", "remote-allowed-mcp-off", a.page);
+  expect((await a.api<RemoteState>("GET", "/api/remote")).allowed.mcp).toBe(false);
+  await b.page.getByTestId("new-session-toggle").click();
+  const lockedForm = b.page.getByTestId("new-session-dialog");
+  await lockedForm.getByTestId("new-session-remote-model").filter({ hasText: "Mock Claude" }).click();
+  await expect(lockedForm.getByTestId("mcp-pick-locked")).toContainText("A 台式机 的远程设置没有允许控制端选 MCP", { timeout: 30_000 });
+  await expect(lockedForm.getByTestId("mcp-pick-figma")).toBeDisabled();
+  await lockedForm.getByTestId("new-session-title").fill("按默认 MCP 开");
+  await screenshot(b.app, "studio", "remote-mcp-locked", b.page);
+  await lockedForm.getByTestId("remote-start").click();
+  await expect(lockedForm).toHaveCount(0, { timeout: 60_000 });
+  await expect.poll(async () => (await a.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.taskId === task.id && s.title === "按默认 MCP 开")?.profileId, { timeout: 30_000 }).toBe("claude-mock");
 
   // An older Studio on A (its snapshot has no mcp mark): B greys the MCP, saying what A has to update to; sessions still
   // start. Made so by taking the mark off B's copy (A says it again only with its next snapshot or task push).
@@ -271,6 +294,6 @@ test("远程选 MCP: B picks A's MCP servers for a task it creates there and cha
   await expect(b.page.getByTestId("switch-mcp")).toBeDisabled({ timeout: 30_000 });
   await expect(b.page.getByTestId("switch-mcp")).toHaveAttribute("title", `A 台式机 上的 Studio 要更新到 ${REMOTE_MCP_SINCE} 或更新的版本，才能在这台电脑上改这个会话的 MCP`);
   await b.page.getByTestId("new-session-toggle").click();
-  await expect(b.page.getByTestId("remote-new-session").getByTestId("remote-mcp")).toContainText(`A 台式机 上的 Studio 要更新到 ${REMOTE_MCP_SINCE} 或更新的版本`);
+  await expect(b.page.getByTestId("new-session-dialog").getByTestId("mcp-pick")).toContainText(`A 台式机 上的 Studio 要更新到 ${REMOTE_MCP_SINCE} 或更新的版本`);
   await screenshot(b.app, "studio", "remote-mcp-old-peer", b.page);
 });

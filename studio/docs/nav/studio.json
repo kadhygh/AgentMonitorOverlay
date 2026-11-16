@@ -62,12 +62,13 @@
     {
       "id": "studio.sessions",
       "label": "会话：发消息、收件箱、子会话",
-      "aliases": ["session", "SessionsFeature", "会话收件箱", "SessionInbox", "立即发送", "子会话", "session_start", "session_send", "消息投递", "@子会话", "subsession"],
+      "aliases": ["session", "SessionsFeature", "新会话", "NewSessionDialog", "会话收件箱", "SessionInbox", "立即发送", "子会话", "session_start", "session_send", "消息投递", "@子会话", "subsession"],
       "category": "host",
       "purpose": "会话的生命周期和消息：新建、发送、排队（一轮在跑时）、立即发送、停止；agent 和 Studio 自己往会话里送的东西（中转回复、值守、传话）统一走会话收件箱；session_start 开的子会话和 @ 子会话的设定（setup）。具体怎么跑交给 runtime。",
       "steps": [
         "新的「往会话里送一句话」的来源：走 SessionInbox，不要直接调 runtime 发送（人停下的会话要先压着，见 message-delivery 方案）。",
-        "子会话的默认设定：sessions/setups.ts（kv subsession-setup:），界面在 设置 → 子会话。"
+        "子会话的默认设定：sessions/setups.ts（kv subsession-setup:），界面在 设置 → 子会话。",
+        "新会话（2026-11-17）：任务页的「新会话」是弹窗 NewSessionDialog（名称、第一句话、模型、强度、审批、预设、MCP），远程副本用同一个；每个新会话都走 TasksFeature.startSession：名称截到 100 字，MCP 只校验这次要的（mcp.chooseFor，base {}），再把任务最近一个会话的选择垫在下面。可选的 MCP 由 GET /api/mcp/offer 给（McpFeature.offer）。"
       ],
       "anchors": [
         { "label": "SessionsFeature", "path": "studio/packages/host/src/features/sessions/service.ts", "anchor": "export class SessionsFeature" },
@@ -75,7 +76,9 @@
         { "label": "子会话设定", "path": "studio/packages/host/src/features/sessions/setups.ts", "anchor": "export function checkSetups" },
         { "label": "session_start 等工具", "path": "studio/packages/host/src/features/sessions/mcp.ts", "anchor": "session_start" },
         { "label": "对话区", "path": "studio/packages/ui/src/chat/Transcript.tsx", "anchor": "export const Transcript" },
-        { "label": "子会话设置页", "path": "studio/packages/ui/src/settings/SubsessionPage.tsx" }
+        { "label": "子会话设置页", "path": "studio/packages/ui/src/settings/SubsessionPage.tsx" },
+        { "label": "新会话弹窗", "path": "studio/packages/ui/src/task/NewSessionDialog.tsx", "anchor": "export function NewSessionDialog" },
+        { "label": "每个新会话走的路", "path": "studio/packages/host/src/features/tasks/service.ts", "anchor": "startSession" }
       ],
       "related": ["runtime.common", "ui.chat", "studio.relays", "studio.teamRelay"],
       "next": ["studio/plans/done/message-delivery.md", "studio/plans/done/send-now.md", "studio/plans/done/subsession-mention-2026-11-05.md"]
@@ -188,7 +191,7 @@
         "改被控端额度：A 侧 RemoteUsageSender（usage.ts），B 侧 RemoteUsageCopies，见 flow.remoteUsage。",
         "加一个 B→A 的命令（例：rt.fork，2026-11-12）：protocol remote.ts 的 REMOTE_KINDS（只能小写，中转按 FRAME_KIND_RE 转发、不用改中转；带大写的 rt.sendNow 就一直被挡，11-12 改成 rt.send-now，单测走真的中转服务端代码才测得出来）和 RemoteCommandBodies；A 侧 grants.ts serve 里的 case；B 侧 copies.ts 里 ask。旧版不认识的命令会回 unknown_kind，要提前让界面知道就在 RemoteTaskSnapshot / task 推送里加一个可选标记（如 fork），B 存进 TaskRemote。别的 feature 要答一条关于会话的命令（例：脉络的 rt.tracks，2026-11-15），不在 grants.ts 里加 case：它自己用 RemoteFeature.answerSession 登记（A 侧，授权照查），B 侧用 askCopy 问；A 答哪些会随任务快照的 kinds 告诉 B（TaskRemote.kinds）。这样 remote 不用依赖那个 feature。",
         "B 读 A 的文件（files.ts readRemoteFile，A 侧）：只给任务文件夹里的、任务对话里发过的附件（attachedFiles：消息里的图片按附件现在的位置、用户消息「引用文件」里放在附件文件夹的文件；数据目录挪过时按附件 id 或同名文件找）。B 侧对话里没取来的图片由界面 onError 自己补取（POST /api/remote/tasks/:id/images → copy-images.ts request），A 上也没有就照 A 的原话说（2026-11-17）。",
-        "远程选 MCP（2026-11-17）：A 只把名字、来源、说明、默认开关发给 B（grants.ts mcpForPeer，不带 command/env/headers/url），按需取（rt.mcp、新任务页 rt.create-mcp），B 的选择随 rt.start / rt.fork / 远程新建带回，A 用 mcp.chooseFor 只认自己列表里的名字；运行中改走 rt.mcp-set。旧 A 没有 mcp 标记：界面置灰，写明要更新到 REMOTE_MCP_SINCE。"
+        "远程选 MCP（2026-11-17）：A 只把名字、来源、说明、默认开关发给 B（grants.ts mcpForPeer，不带 command/env/headers/url），按需取（rt.mcp、新任务页 rt.create-mcp），B 的选择随 rt.start / rt.fork / 远程新建带回，A 用 mcp.chooseFor 只认自己列表里的名字；运行中改走 rt.mcp-set。旧 A 没有 mcp 标记：界面置灰，写明要更新到 REMOTE_MCP_SINCE。A 的远程设置「允许控制端选 MCP」关掉时（RemoteAllowed.mcp false）列表带 locked、界面置灰，A 也拒绝发来的非空选择（grants.ts mcpAsked）。B 的新会话弹窗（NewSessionDialog，2026-11-17）带名称走 rt.start 的 title，旧 A 没有 sessionTitle 标记时名称置灰（REMOTE_SESSION_TITLE_SINCE）。"
       ],
       "anchors": [
         { "label": "RemoteFeature", "path": "studio/packages/host/src/features/remote/service.ts", "anchor": "export class RemoteFeature" },
@@ -197,7 +200,7 @@
         { "label": "B 上的远程副本 runtime", "path": "studio/packages/host/src/features/remote/runtime.ts", "anchor": "export class RemoteRuntime" },
         { "label": "A 给哪些文件", "path": "studio/packages/host/src/features/remote/files.ts", "anchor": "export function attachedFiles" },
         { "label": "B 补取图片", "path": "studio/packages/host/src/features/remote/copy-images.ts", "anchor": "async request" },
-        { "label": "远程选 MCP 的界面", "path": "studio/packages/ui/src/mcp/RemoteMcp.tsx", "anchor": "export function RemoteMcpPick" },
+        { "label": "选 MCP 的界面（本机和远程共用）", "path": "studio/packages/ui/src/mcp/McpPick.tsx", "anchor": "export function McpPick" },
         { "label": "团队登录", "path": "studio/packages/host/src/core/teamlink.ts", "anchor": "export class TeamLink" },
         { "label": "协议", "path": "studio/packages/protocol/src/remote.ts", "anchor": "RemoteRoutes" },
         { "label": "远程对话框", "path": "studio/packages/ui/src/remote/RemoteDialog.tsx" },
@@ -396,7 +399,7 @@
     {
       "id": "studio.mcpServers",
       "label": "MCP 设置（会话用哪些 MCP 服务）",
-      "aliases": ["MCP 设置", "McpFeature", "mcp_server_save", ".mcp.json", "mcpServers", "远程选 MCP"],
+      "aliases": ["MCP 设置", "McpFeature", "mcp_server_save", ".mcp.json", "mcpServers", "远程选 MCP", "McpPick", "允许控制端选 MCP"],
       "category": "host",
       "purpose": "设置 → MCP、项目对话框、会话上的开关：Studio 自己的、用户 Claude Code 里的（~/.claude.json、项目 .mcp.json）MCP 服务，各会话开哪些；启动 runtime 时带上。远程任务的控制端也能选被控端的 MCP（只传名字，见 studio.remote；McpFeature.offered / names 给它用，2026-11-17）。",
       "anchors": [
@@ -404,7 +407,9 @@
         { "label": "读用户自己的配置", "path": "studio/packages/host/src/features/mcp/local.ts", "anchor": "export function userServers" },
         { "label": "启动时带上", "path": "studio/packages/host/src/runtime/mcp-launch.ts" },
         { "label": "设置页", "path": "studio/packages/ui/src/settings/McpPage.tsx" },
-        { "label": "给远程控制端的列表", "path": "studio/packages/host/src/features/mcp/service.ts", "anchor": "offered(" }
+        { "label": "给远程控制端的列表", "path": "studio/packages/host/src/features/mcp/service.ts", "anchor": "offered(" },
+        { "label": "新会话、新任务可选的 MCP（GET /api/mcp/offer）", "path": "studio/packages/host/src/features/mcp/service.ts", "anchor": "offer(" },
+        { "label": "选 MCP 的界面", "path": "studio/packages/ui/src/mcp/McpPick.tsx", "anchor": "export function McpPick" }
       ],
       "related": ["host.agentMcp", "runtime.common", "studio.remote"],
       "next": ["studio/plans/done/mcp.md"]

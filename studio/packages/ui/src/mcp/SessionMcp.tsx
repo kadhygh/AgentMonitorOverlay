@@ -70,7 +70,7 @@ export function SessionMcpTray({ link, session, state, onState, disabled, remote
     <>
       <div className="tray-h">
         {remote ? `MCP（${remote} 上的）` : "MCP"}
-        <span className="tray-note">{state?.perSession === false ? "Codex 的 MCP 在它启动时就定了，这里只能看；它自己 config.toml 里的不在这里列" : `只改这个会话；同一任务新开的会话会沿用${remote ? `（改在 ${remote} 上）` : ""}`}</span>
+        <span className="tray-note">{state?.locked ? state.locked : state?.perSession === false ? "Codex 的 MCP 在它启动时就定了，这里只能看；它自己 config.toml 里的不在这里列" : `只改这个会话；同一任务新开的会话会沿用${remote ? `（改在 ${remote} 上）` : ""}`}</span>
       </div>
       <div className="mcp-tray-list" data-testid="mcp-tray">
         {!state && <span className="tray-note">正在读取…</span>}
@@ -80,7 +80,7 @@ export function SessionMcpTray({ link, session, state, onState, disabled, remote
             <EntryLine key={e.name} entry={e} />
           ) : (
             <label key={e.name} className="mcp-entry" data-testid={`mcp-tray-${e.name}`}>
-              <input type="checkbox" checked={e.on} disabled={disabled || busy} onChange={(ev) => void choose(e.name, ev.target.checked === e.inherited ? null : ev.target.checked)} />
+              <input type="checkbox" checked={e.on} disabled={disabled || busy || !!state?.locked} onChange={(ev) => void choose(e.name, ev.target.checked === e.inherited ? null : ev.target.checked)} />
               <EntryLine entry={e} />
               {e.choice !== undefined && <span className="tray-note">本会话单独{e.choice ? "打开" : "关掉"}的</span>}
             </label>

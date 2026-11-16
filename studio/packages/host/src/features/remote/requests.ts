@@ -151,7 +151,8 @@ export class TaskRequests {
     const sent = claimedOf(r.attached, (aid) => host.attachments.get(aid));
     const along = profile.runtime === "dsh" ? { images: [], files: [...sent.files, ...sent.images.map((a) => ({ id: a.id, name: a.name, path: a.path }))] } : sent;
     // The MCP choices picked there (2026-11-17): those this project offers, when the model takes choices per session.
-    const known = profile.runtime === "codex" ? [] : host.mcp.names(input.workspaceId);
+    // 远程设置 turned picking off since it was asked (2026-11-17): the session gets this computer's defaults.
+    const known = profile.runtime === "codex" || this.grants.mcpLocked() ? [] : host.mcp.names(input.workspaceId);
     const mcp = Object.fromEntries(Object.entries(r.preset?.mcp ?? {}).filter(([n, v]) => typeof v === "boolean" && known.includes(n)));
     // The same path as 远程创建 (create.ts): made, granted, answered, its session started.
     let answered: RemoteTaskRequest | null = null;

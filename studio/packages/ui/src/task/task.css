@@ -325,6 +325,13 @@
 
 /* 分支 (2026-11-10, ForkDialog.tsx): one column, the settings folded under a summary line. */
 .fork-dialog { width: 600px; gap: 12px; }
+/* 新会话 (2026-11-17): a dialog like 分支's, wide enough for the model tiles; the first message a few lines high. */
+.new-session-dialog { width: 680px; max-width: calc(100vw - 40px); gap: 12px; }
+.new-session-dialog .new-session-text { height: auto; min-height: 64px; padding: 6px 10px; resize: vertical; line-height: 1.5; }
+.new-session-dialog .new-session-model { gap: 6px; }
+.new-session-dialog .new-session-model .cbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.new-session-dialog .presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.new-session-empty { margin: 0 0 10px; padding: 10px; border: 1px dashed var(--border); border-radius: var(--r-l); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .fork-head { display: flex; align-items: baseline; gap: 10px; }
 .fork-from { color: var(--text-faint); font-size: var(--fs-cap); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fork-field { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; }

@@ -1,4 +1,4 @@
-import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_MCP_SINCE, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type McpApply, type McpChoices, type McpSessionState, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteMcpList, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
+import { REMOTE_FORK_SINCE, REMOTE_KINDS, REMOTE_MCP_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_SEND_NOW_SINCE, parseRemoteProfileId, remoteProfileId, type ApprovalDecision, type Attachment, type ForkRequest, type ForkTurn, type Id, type McpApply, type McpChoices, type McpSessionState, type ModelProfile, type NewSessionInput, type PromptTemplate, type QuestionReply, type RemoteItemsAnswer, type RemoteForkAsk, type RemoteListAnswer, type RemoteMcpList, type RemoteProfileView, type RemotePush, type RemoteSyncing, type RemoteTaskSnapshot, type Session, type SessionItem, type Task, type TaskRemote } from "@amo-studio/protocol";
 import type { DeviceRef } from "@amo-studio/relay";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -228,6 +228,7 @@ export class RemoteCopies {
       ...(snap.sendNow ? { sendNow: true } : {}),
       // 2026-11-17: the files sent along in its conversation, and its MCP servers to pick from (an older A has neither).
       ...(snap.attachedFiles ? { attachedFiles: true } : {}),
+      ...(snap.sessionTitle ? { sessionTitle: true } : {}),
       ...(snap.mcp ? { mcp: true } : {}),
       // What A's other features answer about a session (2026-11-15: rt.tracks); an older A says nothing.
       ...(Array.isArray(snap.kinds) && snap.kinds.length ? { kinds: snap.kinds.filter((k) => typeof k === "string") } : {}),
@@ -340,8 +341,8 @@ export class RemoteCopies {
         if (!t?.remote || !same(t.remote, peer)) return void later(() => this.syncTask(peer, p.task.id));
         if (t.remote.state !== "active" || t.archivedAt) return;
         const before = this.profilesStamp();
-        const { fork: _fork, sendNow: _sendNow, attachedFiles: _files, mcp: _mcp, ...kept } = t.remote;
-        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}), ...(p.attachedFiles ? { attachedFiles: true } : {}), ...(p.mcp ? { mcp: true } : {}) };
+        const { fork: _fork, sendNow: _sendNow, attachedFiles: _files, mcp: _mcp, sessionTitle: _title, ...kept } = t.remote;
+        const remote: TaskRemote = { ...kept, profiles: p.profiles.map((x) => copyProfile(peer, x)), allowed: p.allowed.map((x) => remoteProfileId(peer.device, x)), ...(p.task.project !== undefined ? { project: p.task.project } : {}), ...(p.fork ? { fork: true } : {}), ...(p.sendNow ? { sendNow: true } : {}), ...(p.attachedFiles ? { attachedFiles: true } : {}), ...(p.mcp ? { mcp: true } : {}), ...(p.sessionTitle ? { sessionTitle: true } : {}) };
         this.publish({ type: "task.upserted", task: this.store.updateTask(t.id, { title: p.task.title, column: p.task.column, description: p.task.description ?? "", remote }) });
         this.profilesChanged(before);
         return;
@@ -626,9 +627,12 @@ export class RemoteCopies {
     // 远程选 MCP (2026-11-17): the new session's MCP as picked here from A's list (A takes only its own names).
     const mcp = mcpChoices(input.options?.mcp);
     if (mcp) this.canMcp(task);
+    // Its name (新会话 dialog, 2026-11-17): an older A would name it itself, so it is not sent there.
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (title && !r.sessionTitle) throw new HostError("bad_request", `${r.name} 上的 Studio 要更新到 ${REMOTE_SESSION_TITLE_SINCE} 或更新的版本，才能从这台电脑给新会话起名`);
     const images = input.attachments?.length ? this.ctx.host.sessions.images(input.attachments) : [];
     const along = await sendAlong((p, k, b, ms, off) => this.ask(p, k, b, ms, off), peer, r.name, input.text ?? "", images);
-    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(along.text.trim() ? { text: along.text } : {}), ...(along.uploads.length ? { uploads: along.uploads } : {}), ...(mcp ? { mcp } : {}) }, START_MS);
+    const { session } = await this.ask<{ session: Session }>(peer, REMOTE_KINDS.start, { taskId: task.id, profileId: ref.profileId, ...(along.text.trim() ? { text: along.text } : {}), ...(along.uploads.length ? { uploads: along.uploads } : {}), ...(mcp ? { mcp } : {}), ...(title ? { title } : {}) }, START_MS);
     const copy = this.store.getSession(session.id) ?? this.putSession(peer, session);
     void this.catchUp(peer, session.id).catch(() => undefined);
     return copy;
@@ -645,7 +649,7 @@ export function mcpChoices(v: unknown): Record<string, boolean> | undefined {
 /** A's answer about a copy's session as this computer's composer reads a session's MCP (no command or address: summary empty). */
 function sessionMcpState(sessionId: Id, list: RemoteMcpList): McpSessionState {
   const entries = (Array.isArray(list.entries) ? list.entries : []).map((e) => ({ name: e.name, source: e.source, summary: "", on: e.on, inherited: e.inherited ?? e.on, ...(e.choice !== undefined ? { choice: e.choice } : {}), ...(e.note ? { note: e.note } : {}) }));
-  return { sessionId, runtime: "remote", loadLocal: true, entries, perSession: list.perSession !== false, live: false };
+  return { sessionId, runtime: "remote", loadLocal: true, entries, perSession: list.perSession !== false, live: false, ...(typeof list.locked === "string" && list.locked ? { locked: list.locked } : {}) };
 }
 
 /** One of A's models as this computer names it, with A's runtime where A said (2026-11-12). */

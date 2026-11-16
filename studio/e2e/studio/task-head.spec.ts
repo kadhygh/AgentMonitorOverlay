@@ -86,12 +86,13 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByRole("complementary", { name: "会话" })).toHaveCount(0);
   await expect(page.getByTestId("session-row")).toHaveCount(0);
   await screenshot(app, "stage-14", "S14-I-sessions-hidden", page);
+  // 新会话 is a dialog (2026-11-17): the hidden list stays hidden while it is open.
   await page.getByTestId("new-session-toggle").click();
-  await expect(page.getByRole("button", { name: "开始新会话" })).toBeVisible();
-  await expect(page.getByTestId("session-row")).toHaveCount(1);
-  await expect(sessionsToggle).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("new-session-toggle").click();
-  await sessionsToggle.click();
+  const newSession = page.getByTestId("new-session-dialog");
+  await expect(newSession.getByRole("button", { name: "开始新会话" })).toBeVisible();
+  await expect(sessionsToggle).toHaveAttribute("aria-pressed", "false");
+  await newSession.getByRole("button", { name: "取消" }).click();
+  await expect(newSession).toHaveCount(0);
   await page.reload();
   // Back on the same task after the reload (2026-10-15: the place is remembered).
   await expect(page.locator(".page-head")).toContainText("掉落表");

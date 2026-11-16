@@ -6,7 +6,7 @@ import type { ApprovalDecision } from "./api.js";
 import type { AccountUsage, Id, Session, SessionItem, SessionRuntime, TaskColumn, Timestamp } from "./entities.js";
 import type { ChannelBalance } from "./channels.js";
 import type { QuestionReply } from "./questions.js";
-import type { McpApply, McpChoices, McpSource } from "./mcp.js";
+import type { McpChoices, McpOffer, McpOfferEntry } from "./mcp.js";
 import { composeGitReviewMessage } from "./gitreview.js";
 
 /**
@@ -217,6 +217,8 @@ export interface TaskRemote {
   attachedFiles?: boolean;
   /** A lists its MCP servers and takes this computer's choice of them (rt.mcp, 2026-11-17); absent: an older A. */
   mcp?: boolean;
+  /** A takes a new session's name with rt.start (新会话 dialog, 2026-11-17); absent: an older A, which names it itself. */
+  sessionTitle?: boolean;
 }
 
 /** On A: a task granted to a paired device. */
@@ -245,6 +247,11 @@ export interface RemoteAllowed {
   defaultProfile: Id | null;
   /** The permissions those sessions get (also sessions agents start in a granted task); null: the model's own default. */
   permission: RemotePermission | null;
+  /**
+   * 允许控制端选 MCP (2026-11-17, the user: 允许被控端在远程设置里设置…是否支持 mcp 选择): false — devices see this
+   * computer's MCP but cannot pick (their sessions get its defaults), and a choice they send is refused. Absent: allowed.
+   */
+  mcp?: boolean;
 }
 
 export const NO_REMOTE_ALLOWED: RemoteAllowed = { profiles: [], defaultProfile: null, permission: null };
@@ -424,6 +431,8 @@ export interface RemoteTaskSnapshot {
   attachedFiles?: true;
   /** A answers rt.mcp and rt.mcp-set and takes `mcp` with rt.start and rt.fork (2026-11-17). An older A leaves it out. */
   mcp?: true;
+  /** A takes `title` with rt.start (2026-11-17). An older A leaves it out. */
+  sessionTitle?: true;
 }
 
 export interface RemoteListAnswer {
@@ -461,30 +470,16 @@ export const REMOTE_TRACKS_SINCE = "0.9.72";
 export const REMOTE_FILES_SINCE = "0.9.76";
 /** The same for picking A's MCP servers from a device (rt.mcp, 2026-11-17). */
 export const REMOTE_MCP_SINCE = "0.9.76";
+/** The same for naming a new session started from a device (rt.start `title`, 2026-11-17). */
+export const REMOTE_SESSION_TITLE_SINCE = "0.9.76";
 
 /**
  * 远程选 MCP (2026-11-17): one of A's MCP servers as a device sees it — what the person picks by, nothing to run it with
- * (no command, address, env or header: those, and any key in them, never leave A).
+ * (no command, address, env or header: those, and any key in them, never leave A). The same shape as this computer's
+ * own offer (McpOffer, 2026-11-17: one picker for here and there).
  */
-export interface RemoteMcpEntry {
-  name: string;
-  source: McpSource;
-  /** A's note on it (why it is off by default…). */
-  note?: string;
-  /** On for the session (asked) or for a new one by default. */
-  on: boolean;
-  /** A session's: what it would be without the session's own choice, and that choice. */
-  inherited?: boolean;
-  choice?: boolean;
-}
-
-export interface RemoteMcpList {
-  entries: RemoteMcpEntry[];
-  /** false: Codex there — its MCP is fixed when its app-server starts, nothing to pick per session (the list is to read). */
-  perSession: boolean;
-  /** rt.mcp-set: when the change reaches the session. */
-  apply?: McpApply;
-}
+export type RemoteMcpEntry = McpOfferEntry;
+export type RemoteMcpList = McpOffer;
 
 /** rt.fork: ForkRequest without the model options (a copy has no choices of A's models to pick from); `mcp` since 2026-11-17. */
 export interface RemoteForkAsk {
@@ -505,7 +500,7 @@ export interface RemoteCommandBodies {
   "rt.answer": { sessionId: Id; itemId: Id; reply: QuestionReply };
   "rt.interrupt": { sessionId: Id };
   /** `mcp` (2026-11-17): the new session's MCP choices, names of A's list only. */
-  "rt.start": { taskId: Id; profileId: Id; text?: string; uploads?: RemoteUpload[]; mcp?: Record<string, boolean> };
+  "rt.start": { taskId: Id; profileId: Id; text?: string; uploads?: RemoteUpload[]; mcp?: Record<string, boolean>; /** The session's name (2026-11-17, RemoteTaskSnapshot.sessionTitle). */ title?: string };
   "rt.fork": RemoteForkAsk;
   "rt.mcp": { sessionId: Id } | { taskId: Id; profileId: Id };
   "rt.mcp-set": { sessionId: Id; choices: McpChoices };
@@ -527,7 +522,7 @@ export type RemotePush =
   | { type: "granted"; taskId: Id; grantedAt: Timestamp }
   | { type: "revoked"; taskId: Id; reason: string }
   /** The task's title, description or column changed, or what new sessions may run on. */
-  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true; sendNow?: true; attachedFiles?: true; mcp?: true }
+  | { type: "task"; task: RemoteTaskView; profiles: RemoteTaskSnapshot["profiles"]; allowed: Id[]; fork?: true; sendNow?: true; attachedFiles?: true; mcp?: true; sessionTitle?: true }
   /** `project`: the session's project name on A (null: the common folder; 2026-11-09, an older A leaves it out). */
   | { type: "session"; session: Session; project?: string | null }
   /** An item appended or changed. */

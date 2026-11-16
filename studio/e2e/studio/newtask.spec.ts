@@ -95,7 +95,7 @@ test("files a task into 待办 in the topic in scope, without starting a session
   await expect(page.getByTestId("task-first-message")).toContainText("先补边界：0 掉落和满背包");
   await screenshot(studio.app, "studio", "filed-first-message", page);
   await page.getByTestId("new-session-toggle").click();
-  await page.getByRole("button", { name: "开始新会话" }).click();
+  await page.getByTestId("new-session-dialog").getByRole("button", { name: "开始新会话" }).click();
   await expect(page.getByLabel("输入消息")).toHaveValue("Elite 掉落表补单元测试\n先补边界：0 掉落和满背包");
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).tasks.find((t) => t.id === task.id)!.firstMessage).toBeUndefined();
 });

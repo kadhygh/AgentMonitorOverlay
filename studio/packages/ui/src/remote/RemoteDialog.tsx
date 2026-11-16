@@ -658,13 +658,15 @@ function AllowedModels({ allowed, profiles, busy, onSave }: { allowed: RemoteAll
   const [picked, setPicked] = useState<string[]>(allowed.profiles);
   const [first, setFirst] = useState<string>(allowed.defaultProfile ?? "");
   const [permission, setPermission] = useState<RemotePermission | "">(allowed.permission ?? "");
+  // 允许控制端选 MCP (2026-11-17): on unless turned off.
+  const [mcp, setMcp] = useState(allowed.mcp !== false);
   const own = profiles.filter((p) => p.runtime !== "remote" && (!p.hidden || allowed.profiles.includes(p.id)) && (!p.unavailable || allowed.profiles.includes(p.id)));
-  const changed = JSON.stringify([picked, first, permission]) !== JSON.stringify([allowed.profiles, allowed.defaultProfile ?? "", allowed.permission ?? ""]);
+  const changed = JSON.stringify([picked, first, permission, mcp]) !== JSON.stringify([allowed.profiles, allowed.defaultProfile ?? "", allowed.permission ?? "", allowed.mcp !== false]);
   const firstOk = !first || !picked.length || picked.includes(first);
   return (
     <div className="remote-subsection" aria-label="远端允许的模型" data-testid="remote-allowed">
       <span className="remote-subheading">远端允许的模型</span>
-      <span className="settings-hint">被授权的设备在任务里新开会话时能选的模型（会话里 agent 委派的会话也照这个来）。一个都不勾时，只能用这个任务现在的会话已经在用的模型。</span>
+      <span className="settings-hint">控制端（被授权的设备）在任务里新开会话、分支、建任务时能选的模型（会话里 agent 委派的会话也照这个来）。一个都不勾时，只能用这个任务现在的会话已经在用的模型。</span>
       <div className="remote-allowed-list">
         {own.map((p) => (
           <label key={p.id} className="remote-allowed-item" data-testid="remote-allowed-item">
@@ -673,6 +675,11 @@ function AllowedModels({ allowed, profiles, busy, onSave }: { allowed: RemoteAll
           </label>
         ))}
       </div>
+      <label className="remote-allowed-item" data-testid="remote-allowed-mcp">
+        <input type="checkbox" checked={mcp} onChange={(e) => setMcp(e.target.checked)} />
+        允许控制端选 MCP
+        <span className="settings-hint">{mcp ? "控制端开会话时能开关这台电脑上的 MCP（只看得到名字，看不到命令和密钥）。" : "控制端看得到这台电脑上有哪些 MCP，但不能改：会话按这台电脑默认的 MCP 开。"}</span>
+      </label>
       <div className="settings-row">
         <span className="settings-label">默认</span>
         <select value={first} onChange={(e) => setFirst(e.target.value)} aria-label="默认的模型" data-testid="remote-allowed-default">
@@ -695,7 +702,7 @@ function AllowedModels({ allowed, profiles, busy, onSave }: { allowed: RemoteAll
           ))}
         </select>
         <span className="spacer" />
-        <button type="button" className="btn-primary small" disabled={busy || !changed || !firstOk} onClick={() => onSave({ profiles: picked, defaultProfile: first || null, permission: permission || null })} data-testid="remote-allowed-save">
+        <button type="button" className="btn-primary small" disabled={busy || !changed || !firstOk} onClick={() => onSave({ profiles: picked, defaultProfile: first || null, permission: permission || null, ...(mcp ? {} : { mcp: false }) })} data-testid="remote-allowed-save">
           保存
         </button>
       </div>

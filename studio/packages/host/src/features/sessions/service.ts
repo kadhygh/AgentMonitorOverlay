@@ -470,7 +470,8 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
         else if (fast && setup?.fast === undefined && agentFast === true) throw new HostError("bad_request", `${this.requireProfile(profileId).label}（${runs?.label ?? picked.model ?? "默认型号"}）没有 Fast：去掉 fast 再开`);
       }
     }
-    const mcp = this.f.mcp.chooseFor(workspace.id, task.id, this.requireProfile(profileId).runtime, input.mcp);
+    // Checked alone: startSession puts the task's latest choices under it.
+    const mcp = this.f.mcp.chooseFor(workspace.id, task.id, this.requireProfile(profileId).runtime, input.mcp, {});
     if (mcp) options = { ...options, mcp };
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [

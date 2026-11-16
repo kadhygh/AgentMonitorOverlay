@@ -14,7 +14,7 @@ import { ChoiceRow } from "./ChoiceRow.js";
 import type { TaskDraft } from "./draft.js";
 import { catalogProblem, catalogProjectChoices, catalogTopicChoices, defaultProject, keptPicks, PRESENCE_TAG, remoteTargets, targetKey } from "./remoteTargets.js";
 import { readStored, writeStored } from "../lib/stored.js";
-import { RemoteMcpPick, useRemoteMcp } from "../mcp/RemoteMcp.js";
+import { McpPick, mcpToSend, useMcpOffer } from "../mcp/McpPick.js";
 
 // 新任务页的「在别的设备上」 (plans/done/remote-page-and-new-task.md 4.1, 2026-10-29): 设备 first (paired devices that allowed
 // this computer; offline ones greyed), then 专题 / 项目 / 第一句话 / 模型 as on this computer, but from what that device
@@ -167,7 +167,7 @@ export function RemoteDraft({
   // model picked; what is changed here goes with the task (an older Studio there lists none: greyed).
   const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
   const mcpKey = `${deviceKey} ${projectId ?? ""} ${profileId ?? ""}`;
-  const mcp = useRemoteMcp(
+  const mcp = useMcpOffer(
     target && catalog?.mcp && !problem && profileId ? () => call(link, "GET /api/remote/catalog/mcp", {}, undefined, { account: target.account, device: target.device, profile: profileId, ...(projectId ? { workspace: projectId } : {}) }) : null,
     mcpKey,
   );
@@ -205,7 +205,7 @@ export function RemoteDraft({
     try {
       const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
       const text = withFileRefs(draft.text.trim(), attach.files.map(attach.refOf));
-      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text, topicId, workspaceId: projectId, profileId, ...(images.length ? { attachments: images } : {}), ...(catalog.mcp && Object.keys(mcpWant).length ? { mcp: mcpWant } : {}) });
+      const made = await call(link, "POST /api/remote/create", {}, { account: target.account, device: target.device, title: draft.title.trim(), text, topicId, workspaceId: projectId, profileId, ...(images.length ? { attachments: images } : {}), ...(catalog.mcp && mcpToSend(mcp, mcpWant) ? { mcp: mcpToSend(mcp, mcpWant)! } : {}) });
       rememberDevice(target.key);
       attach.reset();
       onDone();
@@ -366,7 +366,7 @@ export function RemoteDraft({
           {catalog && !problem && profileId && (
             <div className="model-row remote-draft-mcp" data-testid="remote-draft-mcp">
               <span className="drawer-note">MCP</span>
-              <RemoteMcpPick name={catalog.name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!catalog.mcp} disabled={busy} />
+              <McpPick where={catalog.name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!catalog.mcp} disabled={busy} />
             </div>
           )}
         </div>

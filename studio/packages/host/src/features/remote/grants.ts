@@ -8,6 +8,7 @@ import type { DeviceLink } from "./link.js";
 import { attachedFiles, itemForPeer, readRemoteFile, type FileRoots } from "./files.js";
 import { claimedText, type UploadInbox } from "./uploads.js";
 import { answerView, ViewAnswers } from "./views.js";
+import { offerEntries } from "../mcp/service.js";
 
 // 远程, step 2 on A (plans/done/remote-session.md, 2026-10-29): the tasks this computer granted to paired devices, what such
 // a device may ask of them, and what A tells it unasked as they change. The grant is the whole task: every session in
@@ -71,7 +72,7 @@ export const PERMISSION_OF: Record<Exclude<ModelProfile["runtime"], "remote">, R
  * note and whether it is on; never its command, address, env or headers (nor any key in them), nor a status's error.
  */
 export function mcpForPeer(entries: readonly McpEntry[]): RemoteMcpEntry[] {
-  return entries.map((e) => ({ name: e.name, source: e.source, ...(e.note ? { note: e.note } : {}), on: e.on, inherited: e.inherited, ...(e.choice !== undefined ? { choice: e.choice } : {}) }));
+  return offerEntries(entries);
 }
 
 /** An item small enough for one frame: its long texts cut, saying so. */
@@ -131,7 +132,7 @@ export class RemoteGrants {
     try {
       const v = JSON.parse(this.store.getKv(ALLOWED_KEY)?.value ?? "null") as RemoteAllowed | null;
       if (!v || typeof v !== "object" || !Array.isArray(v.profiles)) return NO_REMOTE_ALLOWED;
-      return { profiles: v.profiles.filter((x) => typeof x === "string"), defaultProfile: typeof v.defaultProfile === "string" ? v.defaultProfile : null, permission: REMOTE_PERMISSIONS.includes(v.permission as RemotePermission) ? v.permission : null };
+      return { profiles: v.profiles.filter((x) => typeof x === "string"), defaultProfile: typeof v.defaultProfile === "string" ? v.defaultProfile : null, permission: REMOTE_PERMISSIONS.includes(v.permission as RemotePermission) ? v.permission : null, ...(v.mcp === false ? { mcp: false } : {}) };
     } catch {
       return NO_REMOTE_ALLOWED;
     }
@@ -146,7 +147,8 @@ export class RemoteGrants {
     if (defaultProfile && profiles.length && !profiles.includes(defaultProfile)) throw new HostError("bad_request", "默认的模型要在允许的里面");
     const permission = b.permission === null || b.permission === undefined || b.permission === "" ? null : (b.permission as RemotePermission);
     if (permission !== null && !REMOTE_PERMISSIONS.includes(permission)) throw new HostError("bad_request", `permission 只能是 ${REMOTE_PERMISSIONS.join(" / ")}`);
-    const next: RemoteAllowed = { profiles, defaultProfile, permission };
+    if (b.mcp !== undefined && typeof b.mcp !== "boolean") throw new HostError("bad_request", "mcp 只能是 true 或 false");
+    const next: RemoteAllowed = { profiles, defaultProfile, permission, ...(b.mcp === false ? { mcp: false } : {}) };
     this.store.setKv(ALLOWED_KEY, JSON.stringify(next));
     // What granted tasks may start on changed: the devices hear it.
     this.pushTasks();
@@ -166,6 +168,27 @@ export class RemoteGrants {
    * A's profiles a session started from a paired device may run in this task: those of 远程设置 (the remote page), or (none chosen)
    * those the task's own sessions use. The default first.
    */
+  /**
+   * 允许控制端选 MCP (2026-11-17): why a paired device may not pick this computer's MCP, or undefined when it may. Checked
+   * here on every choice a device sends, not only by its picker being greyed.
+   */
+  mcpLocked(): string | undefined {
+    return this.allowed().mcp === false ? `${this.ctx.deviceName()} 的远程设置没有允许控制端选 MCP：会话按那台电脑默认的 MCP 开` : undefined;
+  }
+
+  /** The list's `locked`, when devices may not pick. */
+  lockedNote(): { locked?: string } {
+    const locked = this.mcpLocked();
+    return locked ? { locked } : {};
+  }
+
+  /** A device's MCP choices: refused when 远程设置 does not allow them. */
+  mcpAsked(v: unknown): unknown {
+    const locked = this.mcpLocked();
+    if (locked && v && typeof v === "object" && Object.keys(v).length) throw new HostError("bad_request", locked);
+    return v;
+  }
+
   allowedFor(taskId: Id): Id[] {
     const cfg = this.allowed();
     const usable = (pid: Id) => {
@@ -222,7 +245,7 @@ export class RemoteGrants {
 
   private taskPush(task: Task): RemotePush {
     const allowed = this.allowedFor(task.id);
-    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true, sendNow: true, attachedFiles: true, mcp: true };
+    return { type: "task", task: this.view(task), profiles: this.profilesOf(task.id, allowed), allowed, fork: true, sendNow: true, attachedFiles: true, mcp: true, sessionTitle: true };
   }
 
   // ---- granting (the remote page, the task page)
@@ -331,7 +354,7 @@ export class RemoteGrants {
     const allowed = this.allowedFor(taskId);
     const sessions = this.store.listSessions({ taskId });
     const sessionProjects = Object.fromEntries(sessions.map((s) => [s.id, this.projectName(s.workspaceId)]));
-    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true, kinds: [...this.ctx.sessionKinds.keys()], attachedFiles: true, mcp: true };
+    return { task: this.view(task), sessions, sessionProjects, profiles: this.profilesOf(taskId, allowed), allowed, grantedAt: g.grantedAt, fork: true, sendNow: true, kinds: [...this.ctx.sessionKinds.keys()], attachedFiles: true, mcp: true, sessionTitle: true };
   }
 
   /** The task's folder on this computer (its project's, or the common folder), as the device's paths are named from it. */
@@ -477,13 +500,15 @@ export class RemoteGrants {
           const plain = typeof b.text === "string" && b.text.trim() ? boundedText(b.text, "text", 100_000) : "";
           const permission = this.permissionFor(profileId);
           // 远程选 MCP (2026-11-17): only names this computer offers the task's project (checked before the files are taken).
-          const mcp = this.ctx.host.mcp.chooseFor(task.workspaceId, taskId, this.runtimeOf(profileId), b.mcp);
+          const mcp = this.ctx.host.mcp.chooseFor(task.workspaceId, taskId, this.runtimeOf(profileId), this.mcpAsked(b.mcp), {});
+          // Its name, as picked there (新会话 dialog, 2026-11-17).
+          const title = typeof b.title === "string" && b.title.trim() ? boundedText(b.title, "title", 100).trim() : "";
           const options: SessionOptions | undefined = permission || mcp ? { ...(permission ? { permission } : {}), ...(mcp ? { mcp } : {}) } : undefined;
           const claimed = this.ctx.inbox().claim(from, b.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });
           const text = claimedText(plain, claimed);
           try {
             if (text) this.sending.set(taskId, { account: from.account, device: from.device });
-            const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(text ? { text } : {}), ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}), ...(options ? { options } : {}) });
+            const session = await this.ctx.host.tasks.addSession(taskId, { profileId, ...(title ? { title } : {}), ...(text ? { text } : {}), ...(claimed.images.length ? { attachments: claimed.images.map((a) => a.id) } : {}), ...(options ? { options } : {}) });
             if (text) this.markTurn(session.id, from);
             return ok({ session: this.store.getSession(session.id) ?? session });
           } catch (err) {
@@ -501,6 +526,7 @@ export class RemoteGrants {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
           if (!this.allowedFor(s.taskId!).includes(s.profileId)) throw new HostError("bad_request", `${this.labelOf(s.profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里，不能从远程分支`);
           const permission = this.permissionFor(s.profileId);
+          this.mcpAsked(b.mcp);
           const forked = await sessions.fork(s.id, {
             ...(typeof b.turnId === "string" && b.turnId ? { turnId: b.turnId } : {}),
             ...(b.as === "sub" || b.as === "peer" ? { as: b.as } : {}),
@@ -516,7 +542,7 @@ export class RemoteGrants {
           if (typeof b.sessionId === "string") {
             const s = this.sessionFor(from, id(b.sessionId, "sessionId"), false);
             const state = await mcp.session(s.id);
-            return ok({ entries: mcpForPeer(state.entries), perSession: state.perSession } satisfies RemoteMcpList);
+            return ok({ entries: mcpForPeer(state.entries), perSession: state.perSession, ...this.lockedNote() } satisfies RemoteMcpList);
           }
           const taskId = id(b.taskId, "taskId");
           this.grantFor(from, taskId);
@@ -525,11 +551,11 @@ export class RemoteGrants {
           const profileId = id(b.profileId, "profileId");
           if (!this.allowedFor(taskId).includes(profileId)) throw new HostError("bad_request", `${this.labelOf(profileId)} 不在 ${this.ctx.deviceName()} 允许远程使用的模型里`);
           const list = mcp.offered(task.workspaceId, taskId, this.runtimeOf(profileId));
-          return ok({ entries: mcpForPeer(list.entries), perSession: list.perSession } satisfies RemoteMcpList);
+          return ok({ entries: mcpForPeer(list.entries), perSession: list.perSession, ...this.lockedNote() } satisfies RemoteMcpList);
         }
         case REMOTE_KINDS.mcpSet: {
           const s = this.sessionFor(from, id(b.sessionId, "sessionId"), true);
-          const choices = b.choices;
+          const choices = this.mcpAsked(b.choices) as Record<string, unknown> | undefined;
           if (!choices || typeof choices !== "object" || Array.isArray(choices) || Object.values(choices).some((v) => v !== null && typeof v !== "boolean")) throw new HostError("bad_request", "choices 要写成 {\"名字\": true、false 或 null}");
           // Only names of this computer's list for the session (2026-11-17): a device names nothing else here.
           const known = this.ctx.host.mcp.names(s.workspaceId);

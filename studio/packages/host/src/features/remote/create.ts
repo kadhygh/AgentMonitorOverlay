@@ -300,7 +300,7 @@ export class RemoteCreates {
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     if (!this.models().includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${this.ctx.deviceName()} 远端允许的模型里（或现在用不了）`);
     const list = this.ctx.host.mcp.offered(workspaceId ?? this.ctx.host.commonWorkspace().id, null, this.grants.runtimeOf(profileId));
-    return { entries: mcpForPeer(list.entries), perSession: list.perSession };
+    return { entries: mcpForPeer(list.entries), perSession: list.perSession, ...this.grants.lockedNote() };
   }
 
   /** rt.create: checked against 远端允许的项目 and 远端允许的模型, then made, granted and started. */
@@ -327,7 +327,7 @@ export class RemoteCreates {
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     if (!this.models().includes(profileId)) throw new HostError("bad_request", `这个模型不在 ${name} 远端允许的模型里（或现在用不了）`);
     // 远程选 MCP (2026-11-17): only names this computer offers there (before the files are taken: a refusal leaves none).
-    const mcp = this.ctx.host.mcp.chooseFor(workspaceId ?? this.ctx.host.commonWorkspace().id, null, this.grants.runtimeOf(profileId), body.mcp, {});
+    const mcp = this.ctx.host.mcp.chooseFor(workspaceId ?? this.ctx.host.commonWorkspace().id, null, this.grants.runtimeOf(profileId), this.grants.mcpAsked(body.mcp), {});
     // Pictures and files B sent first (rt.upload) become this computer's attachments (a DSH session takes no pictures).
     const inbox = this.ctx.inbox();
     const claimed: Claimed = inbox.claim(from, body.uploads, { noImages: this.ctx.host.profiles.find((p) => p.id === profileId)?.runtime === "dsh" });

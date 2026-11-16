@@ -44,7 +44,7 @@ test("开始 and 开始新会话 cover the page with a spinner while the session
   await app.context().route("**/api/tasks/*/sessions", slowPost(1500));
   await page.getByTestId("sessions-toggle").click();
   await page.getByTestId("new-session-toggle").click();
-  await page.getByRole("button", { name: "开始新会话" }).click();
+  await page.getByTestId("new-session-dialog").getByRole("button", { name: "开始新会话" }).click();
   await expect(page.locator(".thread-col").getByTestId("starting-cover")).toContainText("正在启动");
   await expect(page.getByTestId("session-row")).toHaveCount(2, { timeout: 30_000 });
   await expect(cover).toHaveCount(0);
@@ -54,7 +54,7 @@ test("开始 and 开始新会话 cover the page with a spinner while the session
   await app.context().unroute("**/api/tasks/*/sessions");
   await app.context().route("**/api/tasks/*/sessions", slowPost(600, true));
   await page.getByTestId("new-session-toggle").click();
-  await page.getByRole("button", { name: "开始新会话" }).click();
+  await page.getByTestId("new-session-dialog").getByRole("button", { name: "开始新会话" }).click();
   await expect(cover).toBeVisible();
   await expect(page.getByTestId("toast")).toContainText("模拟：启动失败");
   await expect(cover).toHaveCount(0);

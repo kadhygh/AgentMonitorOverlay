@@ -300,15 +300,22 @@ export class TasksFeature extends Feature<"canvases" | "config" | "mcp" | "remot
 
   async startSession(owner: { taskId: Id | null; topicId: Id | null }, workspace: Workspace, input: NewSessionInput): Promise<Session> {
     const options = await this.withDefaults(input.profileId, sessionOptions(input.options));
+    // 新会话 / 新任务 (2026-11-17): MCP picked for the session — only names its project offers, none for Codex — checked
+    // here, the one path every new session takes (the dialog, the new-task page, a paired device, session_start).
+    // What was asked is checked alone; the task's latest choices go under it (MCP 设置, 2026-11-04), so a server removed
+    // since one of them was made does not stop a new session.
+    const asked = options.mcp;
+    delete options.mcp;
+    const picked = asked ? this.f.mcp.chooseFor(workspace.id, owner.taskId, this.requireProfile(input.profileId).runtime, asked, {}) : undefined;
+    // Its name (新会话 dialog, 2026-11-17); blank: named from its first message as before.
+    const title = typeof input.title === "string" ? input.title.trim().slice(0, 100) : "";
     // MCP 设置 (2026-11-04): no level of its own for a task; a new session goes on with the task's latest choices.
-    if (!options.mcp) {
-      const inherited = this.f.mcp.inherited(owner.taskId);
-      if (inherited) options.mcp = inherited;
-    }
+    const inherited = this.f.mcp.inherited(owner.taskId);
+    if (inherited || picked) options.mcp = { ...(inherited ?? {}), ...(picked ?? {}) };
     const images = this.firstImages(input);
     // A first message with images goes as an ordinary message once the session exists (the runtimes start with text only).
     const resumeFrom = this.resumeFrom(input);
-    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text && !images.length ? { text: input.text } : {}), options, ...(resumeFrom ? { resumeFrom } : {}) }));
+    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(title ? { title } : {}), ...(input.text && !images.length ? { text: input.text } : {}), options, ...(resumeFrom ? { resumeFrom } : {}) }));
     if (images.length) await this.f.sessions.sendMessage(session.id, input.text ?? "", images);
     // The owner's updatedAt moves with its sessions so the board can sort by activity.
     if (owner.taskId) this.publish({ type: "task.upserted", task: this.store.updateTask(owner.taskId, {}) });

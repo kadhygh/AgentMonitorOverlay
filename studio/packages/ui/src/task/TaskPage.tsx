@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { REMOTE_KINDS, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, type Annotation, type ChecklistItem, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_KINDS, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { rememberSession } from "../shell/lastPlace.js";
 import { navHistory } from "../shell/navHistory.js";
@@ -10,6 +10,7 @@ import { SessionTree } from "./SessionTree.js";
 import { forkOffOf, SessionThread, sessionRuntime, useSessionData } from "./SessionThread.js";
 import { revealRow } from "./revealRow.js";
 import { ForkDialog } from "./ForkDialog.js";
+import { NewSessionDialog } from "./NewSessionDialog.js";
 import { flash } from "./ReplyNav.js";
 import { annotationRange, flashAnnotation, flashRange, highlightsSupported, scrollToBox } from "../review/highlights.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
@@ -189,7 +190,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     setSessionsHiddenState(on);
     writeFlag(SESSIONS_KEY, on);
   };
-  // The new-session form in the session list, opened from 新会话 in the head.
+  // The 新会话 dialog (2026-11-17; before, a form in the session list), opened from 新会话 in the head.
   const [creating, setCreating] = useState(false);
 
   async function run<T>(fn: () => Promise<T>, onDone?: (value: T) => void) {
@@ -239,8 +240,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   };
   // A task filed with a first sentence (放进待办, 2026-11-05): the new session's composer starts with it, to be read
   // and sent (not sent by itself: the person may have picked a model or want to add to it), and the task lets it go.
-  const newSession = (input: { profileId: string; options?: SessionOptions }) =>
+  const newSession = (input: NewSessionInput) =>
     run(starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input)), (s) => {
+      setCreating(false);
+      // Something to choose between now: the list shows for this task (as after 分支).
+      setSessionsHiddenState(false);
       const first = task.firstMessage;
       if (first && !copy) {
         writeSessionDraft(s.id, first);
@@ -416,12 +420,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             <button
               type="button"
               className="btn-ghost small with-icon"
-              aria-expanded={creating}
+              aria-haspopup="dialog"
               title={copy ? `在这个任务里开一个新会话（在 ${copy.name} 上跑，只能选那边允许的模型）` : "在这个任务里开一个新会话"}
-              onClick={() => {
-                setCreating(!creating);
-                if (!creating) setSessionsHidden(false);
-              }}
+              onClick={() => setCreating(true)}
               data-testid="new-session-toggle"
             >
               <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
@@ -646,6 +647,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           onForked={forked}
         />
       )}
+      {creating && !task.archivedAt && (
+        <NewSessionDialog
+          link={link}
+          task={task}
+          profiles={profiles}
+          {...(copy ? { remote: { name: copy.name, allowed: task.remote!.allowed, blocked: copy.blocked, mcp: !!task.remote?.mcp, sessionTitle: !!task.remote?.sessionTitle } } : {})}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onStart={(input) => void newSession(input)}
+        />
+      )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
       {todoBind && <TodoBindDialog view={todoBind.view} target={todoBind.target} onClose={() => setTodoBind(null)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
@@ -678,12 +690,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             selected={selected}
             busy={busy}
             onSelect={setSelected}
-            onNewSession={(input) => void newSession(input)}
+            onNewSession={() => setCreating(true)}
             onRestore={(id) => void restore(id)}
             unread={unread}
-            creating={creating}
-            onCreating={setCreating}
-            {...(copy ? { remote: { name: copy.name, allowed: task.remote!.allowed, blocked: copy.blocked } } : {})}
           />
         )}
         <div className="thread-col">

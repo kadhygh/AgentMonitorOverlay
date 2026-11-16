@@ -48,7 +48,7 @@ test("task page: column, fork, new session, terminal and archive", async () => {
 
   // A second independent session in the same task.
   await page.getByTestId("new-session-toggle").click();
-  await page.getByRole("button", { name: "开始新会话" }).click();
+  await page.getByTestId("new-session-dialog").getByRole("button", { name: "开始新会话" }).click();
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(2)).toHaveAttribute("data-depth", "0");
 

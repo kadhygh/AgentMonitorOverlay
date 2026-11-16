@@ -245,8 +245,8 @@ test("A grants a task; B works in it, sees approvals A's Focus leaves to it, rid
 
   // A new session from B: only the model A allows (the one the task uses), started on A.
   await b.page.getByTestId("new-session-toggle").click();
-  const form = b.page.getByTestId("remote-new-session");
-  await expect(form.getByTestId("remote-model").locator("option")).toHaveCount(1);
+  const form = b.page.getByTestId("new-session-dialog");
+  await expect(form.getByTestId("new-session-remote-model")).toHaveCount(1);
   await screenshot(b.app, "studio", "remote-b-new-session", b.page);
   await form.getByTestId("remote-start").click();
   await until(() => a.api<{ sessions: Session[] }>("GET", "/api/state").then((s) => s.sessions.filter((x) => x.taskId === task.id)), (l) => l.length === 2, "A has B's new session");

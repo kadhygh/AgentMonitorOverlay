@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { REMOTE_FILE_CHUNK, REMOTE_FILES_SINCE, REMOTE_FORK_SINCE, REMOTE_MCP_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
+import { REMOTE_FILE_CHUNK, REMOTE_FILES_SINCE, REMOTE_FORK_SINCE, REMOTE_MCP_SINCE, REMOTE_SESSION_TITLE_SINCE, REMOTE_KINDS, REMOTE_SEND_NOW_SINCE, REMOTE_TRACKS_SINCE, REMOTE_LOST_MS, remoteHeldTasks, remoteInUse, remoteProfileId, remoteQuitNote, remoteStartFor, splitFileRefItems, withFileRefs, type HostEvent, type ModelProfile, type RemoteCatalog, type RemoteState, type SessionItem } from "@amo-studio/protocol";
 import { saveAccount, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
 import { removeTempDir } from "@amo-studio/testkit";
@@ -1314,6 +1314,56 @@ describe("远程选 MCP between two Hosts (2026-11-17)", () => {
     expect(a.store.getSession(direct.sessionId!)!.options.mcp).toEqual({ figma: false });
     await expect(b.remote.create(toA(a), { title: "名字不对", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { nope: true } })).rejects.toThrow("没有这个 MCP：nope");
     expect(a.store.listTasks().some((t) => t.title === "名字不对")).toBe(false);
+  }, 60_000);
+
+  it("新会话 dialog (2026-11-17): B names the session on A; A's 远程设置 can stop devices picking its MCP — the lists say why, every choice sent is refused there, sessions still start", async () => {
+    const { a, b, toB, aDevice } = await withMcp();
+    const { task } = await taskOnA(a);
+    const claudeOnA = a.store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", profileId: "c", runtime: "claude", workspaceId: task.workspaceId, title: "Claude 会话", status: "idle", writer: "studio", runtimeRef: null, options: {} } as never);
+    a.remote.setAllowed({ profiles: ["c"], defaultProfile: "c", permission: null });
+    a.remote.grant(task.id, toB);
+    const copy = await until(() => b.store.getTask(task.id), (t) => t?.remote?.state === "active" && t.remote.allowed.length === 1, "B's copy");
+    expect(copy!.remote).toMatchObject({ sessionTitle: true });
+    const c = remoteProfileId(aDevice, "c");
+
+    // The name picked on B is the session's on A.
+    const named = await b.service.tasks.addSession(task.id, { profileId: c, title: "  从笔记本开的  " });
+    expect(a.store.getSession(named.id)!.title).toBe("从笔记本开的");
+
+    // 允许控制端选 MCP off: kept in A's settings; lists say so; every choice refused on A.
+    a.remote.setAllowed({ profiles: ["c"], defaultProfile: "c", permission: null, mcp: false });
+    expect(a.remote.state().allowed.mcp).toBe(false);
+    const locked = "A-PC 的远程设置没有允许控制端选 MCP";
+    expect((await b.remote.copies.taskMcp(copy!, c)).locked).toContain(locked);
+    await until(() => b.store.getSession(claudeOnA.id), Boolean, "B's copy of the Claude session");
+    expect((await b.remote.copies.sessionMcp(claudeOnA.id)).locked).toContain(locked);
+    const count = a.store.listSessions({ taskId: task.id }).length;
+    await expect(b.service.tasks.addSession(task.id, { profileId: c, options: { mcp: { webtool: true } } })).rejects.toThrow(locked);
+    await expect(b.remote.copies.setSessionMcp(claudeOnA.id, { choices: { figma: false } })).rejects.toThrow(locked);
+    await expect(b.remote.copies.ask(toA(a), REMOTE_KINDS.fork, { sessionId: claudeOnA.id, mcp: { figma: false } })).rejects.toThrow(locked);
+    expect(a.store.listSessions({ taskId: task.id })).toHaveLength(count);
+    expect(a.store.getSession(claudeOnA.id)!.options.mcp).toBeUndefined();
+    // Without a choice it still starts, with A's defaults.
+    const plain = await b.service.tasks.addSession(task.id, { profileId: c, text: "照默认的" });
+    expect(a.store.getSession(plain.id)!.options.mcp).toBeUndefined();
+
+    // 远程创建 too: the list says why, a choice is refused; one held from before is let in without it.
+    const proj = a.service.projects.addWorkspace({ path: tempDir("mcp-lock-proj") });
+    a.remote.setAllowedProjects({ workspaceIds: [proj.id], common: false });
+    expect((await b.remote.catalogMcp(toA(a), proj.id, "c")).locked).toContain(locked);
+    await expect(b.remote.create(toA(a), { title: "不让选", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { webtool: true } })).rejects.toThrow(locked);
+    a.remote.setAllowed({ profiles: ["c"], defaultProfile: "c", permission: null });
+    const held = await b.remote.create(toA(a), { title: "先等着的", text: "开始", topicId: null, workspaceId: proj.id, profileId: "c", mcp: { webtool: true } });
+    await until(a.state, (s) => s.taskRequests.some((r) => r.id === held.waiting!.id), "held on A");
+    a.remote.setAllowed({ profiles: ["c"], defaultProfile: "c", permission: null, mcp: false });
+    await a.remote.acceptRequest(held.waiting!.id, { workspaceId: proj.id, profileId: "c" });
+    const heldTask = a.store.listTasks().find((t) => t.title === "先等着的")!;
+    expect(a.store.listSessions({ taskId: heldTask.id })[0]!.options.mcp).toBeUndefined();
+
+    // An older A (no sessionTitle mark): a name is refused on B, saying what to update to.
+    const { sessionTitle: _t, ...older } = b.store.getTask(task.id)!.remote!;
+    b.store.updateTask(task.id, { remote: older });
+    await expect(b.service.tasks.addSession(task.id, { profileId: c, title: "起个名" })).rejects.toThrow(`A-PC 上的 Studio 要更新到 ${REMOTE_SESSION_TITLE_SINCE}`);
   }, 60_000);
 
   it("an older A (no mcp in its snapshot): picking its MCP is refused on B before anything goes, saying what to update to; a session without a choice still starts", async () => {

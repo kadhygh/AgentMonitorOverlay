@@ -119,6 +119,38 @@ export interface McpSessionState {
   perSession: boolean;
   /** Claude: whether the statuses are from its running process just now. */
   live: boolean;
+  /** A remote task's copy (2026-11-17): the computer it runs on does not let devices pick its MCP — why (McpOffer.locked). */
+  locked?: string;
+}
+
+/**
+ * 选 MCP (2026-11-17): one MCP server as a new session's setup offers it (新任务, 新会话, 分支, here or on a paired device)
+ * — what the person picks by: its name, where it comes from, the note, whether it is on. Nothing to run it with (no
+ * command, address, env or header), so the same list can go to another computer.
+ */
+export interface McpOfferEntry {
+  name: string;
+  source: McpSource;
+  note?: string;
+  /** On for the session (asked) or for a new one by default. */
+  on: boolean;
+  /** A session's: what it would be without the session's own choice, and that choice. */
+  inherited?: boolean;
+  choice?: boolean;
+}
+
+/** What a new session (or a session) may pick from (2026-11-17). */
+export interface McpOffer {
+  entries: McpOfferEntry[];
+  /** false: Codex — its MCP is fixed when its app-server starts, nothing to pick per session (the list is to read). */
+  perSession: boolean;
+  /** A change (PUT): when it reaches the session. */
+  apply?: McpApply;
+  /**
+   * A paired device's list of another computer's (2026-11-17): that computer's 远程设置 does not let devices pick its MCP —
+   * why, said so; the list is to read and sessions get that computer's defaults.
+   */
+  locked?: string;
 }
 
 /** `PUT` bodies: a name's choice, true/false, or null to follow the level above. */
@@ -156,6 +188,12 @@ export interface McpRoutes {
   "GET /api/mcp/projects/:id": { req: void; res: McpProjectState };
   "PUT /api/mcp/projects/:id": { req: { choices: McpChoices }; res: McpProjectState };
   "GET /api/sessions/:id/mcp": { req: void; res: McpSessionState };
+  /**
+   * 新会话 / 新任务 (2026-11-17): what a new session would have — `?profile=` (its model), `&task=` (a task's: its project,
+   * and its latest session's choices as a new session inherits them) or `&workspace=` (a new task's project; none: the
+   * common folder).
+   */
+  "GET /api/mcp/offer": { req: void; res: McpOffer };
   /** `apply`: when the change reaches the session. */
   "PUT /api/sessions/:id/mcp": { req: { choices: McpChoices }; res: McpSessionState & { apply: McpApply } };
 }

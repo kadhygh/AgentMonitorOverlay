@@ -1,12 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
-import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
-import { defaultProfile, rememberProfile, repick, shortModel } from "../lib/profiles.js";
+import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type Task, type Workspace } from "@amo-studio/protocol";
+import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, storedChoices } from "../lib/choices.js";
 import type { HostLink } from "../host/client.js";
-import { activeModel, useProfileChoices } from "../lib/choices.js";
-import { rememberPick, type ModelPick } from "../lib/recents.js";
-import { EffortBars, FastToggle } from "../chat/pickers.js";
-import { ModelRow } from "../newtask/ModelRow.js";
 import { useDragWidth } from "../lib/dragWidth.js";
 import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { wakeLabel } from "../chat/WakeBar.js";
@@ -14,8 +10,6 @@ import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { useStoredIds } from "../lib/storedIds.js";
 import { dutyOfSession, useDuty } from "../duty/duty.js";
-import { call } from "../host/client.js";
-import { RemoteMcpPick, useRemoteMcp } from "../mcp/RemoteMcp.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -39,86 +33,22 @@ interface SessionTreeProps {
   selected: string | null;
   busy: boolean;
   onSelect(id: string): void;
-  onNewSession(input: { profileId: string; options?: SessionOptions }): void;
   link: HostLink;
   onRestore(id: string): void;
   /** Unread mail per session id. */
   unread?: ReadonlyMap<string, number>;
-  /** The new-session form, opened from 新会话 in the task head (2026-10-14). */
-  creating: boolean;
-  onCreating(open: boolean): void;
   /**
-   * 远程 (step 2): a copy of another computer's task — new sessions start there, on the models it allows (this
-   * computer's ids of them), and not while `blocked` says why.
+   * Opens the 新会话 dialog (2026-11-17: a dialog, no longer a form in this list) — from the list of a task with no live
+   * session; the task head's 新会话 opens it too.
    */
-  remote?: { name: string; allowed: readonly string[]; blocked: string | null };
-}
-
-/**
- * 新会话 in a copy of a remote task: one of the models its own computer allows, and (远程选 MCP, 2026-11-17) which of
- * that computer's MCP servers the session gets — read from there for the model picked (an older Studio there: greyed).
- */
-function RemoteNewSession({ link, task, name, allowed, blocked, profiles, busy, onStart }: { link: HostLink; task: Task; name: string; allowed: readonly string[]; blocked: string | null; profiles: readonly ModelProfile[]; busy: boolean; onStart(profileId: string, mcp: Record<string, boolean>): void }) {
-  const [pick, setPick] = useState(allowed[0] ?? "");
-  const [mcpWant, setMcpWant] = useState<Record<string, boolean>>({});
-  const mcpOk = !!task.remote?.mcp;
-  const mcp = useRemoteMcp(mcpOk && pick && !blocked ? () => call(link, "GET /api/remote/tasks/:id/mcp", { id: task.id }, undefined, { profile: pick }) : null, `${task.id} ${pick}`);
-  // Another model may have another list (Codex: none to pick): what was changed goes.
-  useEffect(() => setMcpWant({}), [pick]);
-  useEffect(() => {
-    if (!allowed.includes(pick)) setPick(allowed[0] ?? "");
-  }, [allowed.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
-  const label = (id: string) => profiles.find((p) => p.id === id)?.label ?? id;
-  return (
-    <div className="new-session" aria-label="新会话" data-testid="remote-new-session">
-      {allowed.length === 0 ? (
-        <span className="settings-hint">{name} 没有允许远程新开会话的模型：在那台电脑顶栏的「远程」→「远程设置」里勾选。</span>
-      ) : (
-        <>
-          <label className="stack-field">
-            模型（{name} 允许的）
-            <select value={pick} onChange={(e) => setPick(e.target.value)} disabled={busy || !!blocked} aria-label="远程会话的模型" data-testid="remote-model">
-              {allowed.map((id) => (
-                <option key={id} value={id}>
-                  {label(id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="stack-field">
-            MCP
-            <RemoteMcpPick name={name} state={mcp} want={mcpWant} onWant={setMcpWant} old={!mcpOk} disabled={busy || !!blocked} />
-          </div>
-          <button type="button" className="btn-primary small" disabled={busy || !pick || !!blocked} onClick={() => onStart(pick, mcpWant)} data-testid="remote-start">
-            在 {name} 上开始新会话
-          </button>
-        </>
-      )}
-      {blocked && <span className="settings-hint">{blocked}</span>}
-    </div>
-  );
+  onNewSession(): void;
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. Shown or hidden as a whole by 会话 in the task head (2026-10-15). */
-export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, creating, onCreating, remote }: SessionTreeProps) {
+export function SessionTree({ link: _link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread }: SessionTreeProps) {
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
-  const [pick, setPick] = useState<ModelPick>({ profileId: defaultProfile(profiles)?.id ?? "", model: null });
-  const [effort, setEffort] = useState<string | null>(null);
-  const [fast, setFast] = useState<boolean | undefined>(undefined);
-  // A model hidden in 设置 → 模型 meanwhile gives way to the default (问题 #14).
-  useEffect(() => {
-    const next = repick(profiles, pick.profileId);
-    if (next !== null) {
-      setPick({ profileId: next, model: null });
-      setEffort(null);
-      setFast(undefined);
-    }
-  }, [profiles, pick.profileId]);
-  const [drawer, setDrawer] = useState(false);
-  const { choices } = useProfileChoices(link, pick.profileId);
-  const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
   const [showArchived, setShowArchived] = useState(false);
   // The list's width, dragged at its right edge (2026-10-15).
   const listW = useDragWidth("amo.sessionListWidth", 236, 180, 480);
@@ -128,11 +58,8 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   useEffect(() => {
     if (selectedArchived) setShowArchived(true);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The new-session form opens on demand (and when the task has no live session yet).
-  const setCreating = (v: boolean) => onCreating(v);
   // An archived task takes no new sessions (stage 14): its banner restores it first.
   const closed = !!task.archivedAt;
-  const formOpen = !closed && (creating || live.length === 0);
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
   // Folded sessions (10-22): their subagents, forks and 委派 sessions hide under「▸ N」, remembered per machine. A
@@ -166,47 +93,13 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
     <aside className="session-list" aria-label="会话" style={{ flexBasis: listW.width }}>
       <div className="slist-head">
         <span className="nav-label">会话 {live.length}</span>
-        {formOpen && live.length > 0 && (
-          <button type="button" className="btn-ghost small" onClick={() => setCreating(false)}>
-            收起
-          </button>
-        )}
       </div>
 
-      {formOpen && remote && <RemoteNewSession link={link} task={task} name={remote.name} allowed={remote.allowed} blocked={remote.blocked} profiles={profiles} busy={busy} onStart={(profileId, mcp) => {
-        onNewSession({ profileId, ...(Object.keys(mcp).length ? { options: { mcp } } : {}) });
-        setCreating(false);
-      }} />}
-      {formOpen && !remote && (
-        <div className="new-session" aria-label="新会话">
-          <ModelRow
-            link={link}
-            profiles={profiles}
-            pick={pick}
-            onPick={(next) => {
-              setPick(next);
-              setEffort(null);
-              setFast(undefined);
-            }}
-            drawer={drawer}
-            onToggleDrawer={() => setDrawer((v) => !v)}
-            small
-          />
-          {model && model.efforts.length > 0 && <EffortBars efforts={model.efforts} value={effort} fallback={model.defaultEffort} onChange={setEffort} small />}
-          <FastToggle fast={model?.fast} value={fast} onChange={setFast} small />
-          <button
-            type="button"
-            className="btn-primary small"
-            disabled={busy || !pick.profileId}
-            onClick={() => {
-              rememberProfile(pick.profileId);
-              rememberPick(pick);
-              const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}), ...(fast !== undefined && model?.fast ? { fast } : {}) };
-              onNewSession({ profileId: pick.profileId, ...(Object.keys(options).length ? { options } : {}) });
-              setCreating(false);
-            }}
-          >
-            开始新会话
+      {!closed && live.length === 0 && (
+        <div className="new-session-empty">
+          <span className="settings-hint">这个任务还没有会话。</span>
+          <button type="button" className="btn-primary small" disabled={busy} onClick={onNewSession} data-testid="new-session-empty">
+            开始新会话…
           </button>
         </div>
       )}
