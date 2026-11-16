@@ -106,7 +106,9 @@ describe("远程 Reviewer on A: packs", () => {
   });
 });
 
-describe("远程 Reviewer on A: git", () => {
+// git is a process per call (~100 ms here): two of these take 4.7–4.9 s alone and timed out at the default 5 s in every
+// full run of release relay-service on 2026-11-17, so the whole group gets the room gitreview's tests have.
+describe("远程 Reviewer on A: git", { timeout: 30_000 }, () => {
   it("reads the task's project, without A's folder in the answer", async () => {
     const status = await view<GitStatus>(ask("GET", `/api/workspaces/${repo.id}/git/status`));
     expect(status.repo).toBe(true);

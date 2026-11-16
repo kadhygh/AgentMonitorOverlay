@@ -56,7 +56,9 @@ const events = () => {
   return list;
 };
 
-describe("查看包", () => {
+// The git items' tests run git a few dozen times (~100 ms a call here): 3.6–4.7 s alone, past the default 5 s in the full
+// suite (2026-11-17, release relay-service stopped twice), so the group gets the room gitreview's tests have.
+describe("查看包", { timeout: 30_000 }, () => {
   it("makes a pack of several files with 重点, stores it and asks the workbench to show it", async () => {
     const seen = events();
     const { pack, merged } = await service.viewPacks.open(
