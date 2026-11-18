@@ -28,20 +28,12 @@ export interface OpenInResult {
   dryRun: boolean;
 }
 
-/** Largest file a quick look reads. */
-export const MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024;
-
 /**
- * Largest HTML or Markdown page a quick look reads (2026-11-18, the user: 预览上限调高到 8 MB): reports carry their
- * screenshots inline as data URIs, which 2 MB cut off; they are shown rendered, so the size does not reach the code view
- * unless the person switches to it. Plain text stays at MAX_TEXT_FILE_BYTES.
+ * Largest file a quick look reads (also a remote task's text files). 16 MB since 2026-11-18 (the user: 预览上限该成 16 MB，
+ * 都一起改好): reports carry their screenshots inline as data URIs, which the old 2 MB cut off. Safe for plain text too:
+ * the code view draws only the rows in sight and does not highlight long files.
  */
-export const MAX_PAGE_FILE_BYTES = 8 * 1024 * 1024;
-
-const PAGE_FILE_EXT = /\.(html?|md|markdown)$/i;
-
-/** The largest file a quick look reads at this path. */
-export const maxPreviewBytes = (path: string): number => (PAGE_FILE_EXT.test(path.trim()) ? MAX_PAGE_FILE_BYTES : MAX_TEXT_FILE_BYTES);
+export const MAX_TEXT_FILE_BYTES = 16 * 1024 * 1024;
 
 /** A file read for a quick look. `text` is absent when the file is binary or too large. */
 export interface TextFile {

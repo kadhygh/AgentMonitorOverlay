@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_PAGE_FILE_BYTES, type ModelProfile, type OpenInResult, type TextFile, type Workspace } from "@amo-studio/protocol";
+import { MAX_TEXT_FILE_BYTES, type ModelProfile, type OpenInResult, type TextFile, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -106,16 +106,16 @@ describe("quick look", () => {
     expect((await api("GET", `/api/fs/text?path=${encodeURIComponent(join(ws.path, "Assets"))}`)).status).toBe(400);
   });
 
-  it("reads HTML and Markdown pages up to 8 MB, other text up to 2 MB (2026-11-18)", async () => {
+  it("reads files up to 16 MB, beyond that tells it is too large (2026-11-18)", async () => {
     const ws = (await api<Workspace>("POST", "/api/workspaces", { path: makeProject() })).data;
     const three = "x".repeat(3 * 1024 * 1024);
-    for (const name of ["report.html", "notes.md", "big.log"]) writeFileSync(join(ws.path, name), three);
-    writeFileSync(join(ws.path, "huge.html"), "x".repeat(MAX_PAGE_FILE_BYTES + 1));
+    for (const name of ["report.html", "big.log"]) writeFileSync(join(ws.path, name), three);
+    writeFileSync(join(ws.path, "huge.html"), "x".repeat(MAX_TEXT_FILE_BYTES + 1));
     const read = async (name: string) => (await api<TextFile>("GET", `/api/fs/text?workspaceId=${ws.id}&path=${name}`)).data;
+    expect(MAX_TEXT_FILE_BYTES).toBe(16 * 1024 * 1024);
     expect((await read("report.html")).text?.length).toBe(three.length);
-    expect((await read("notes.md")).text?.length).toBe(three.length);
-    expect(await read("big.log")).toMatchObject({ tooLarge: true, size: three.length });
-    expect((await read("huge.html")).tooLarge).toBe(true);
+    expect((await read("big.log")).text?.length).toBe(three.length);
+    expect(await read("huge.html")).toMatchObject({ tooLarge: true, size: MAX_TEXT_FILE_BYTES + 1 });
   });
 
   it("serves images with the token in the query, nothing else", async () => {

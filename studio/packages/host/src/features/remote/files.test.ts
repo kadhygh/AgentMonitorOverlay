@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, remoteFileKind, withFileRefs, type SessionItem } from "@amo-studio/protocol";
+import { MAX_TEXT_FILE_BYTES, REMOTE_FILE_CHUNK, REMOTE_FILE_MAX_BYTES, remoteFileKind, withFileRefs, type SessionItem } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { attachedFiles, itemForPeer, readRemoteFile, resolveAsked, safeRel, type FileRoots } from "./files.js";
 
@@ -127,8 +127,8 @@ describe("remote files on A (step 3)", () => {
     writeFileSync(join(root, "big.png"), Buffer.concat([PNG, Buffer.alloc(REMOTE_FILE_MAX_BYTES)]));
     await expect(ask("big.png")).rejects.toThrow(/文件太大（20\.0 MB），远程最多 20\.0 MB/);
     // Text as the viewer shows it here: at most 2 MB.
-    writeFileSync(join(root, "big.log"), "x".repeat(2 * 1024 * 1024 + 1));
-    await expect(ask("big.log")).rejects.toThrow(/文件太大（2\.0 MB），远程看文本文件最多 2\.0 MB/);
+    writeFileSync(join(root, "big.log"), "x".repeat(MAX_TEXT_FILE_BYTES + 1));
+    await expect(ask("big.log")).rejects.toThrow(/文件太大（16\.0 MB），远程看文本文件最多 16\.0 MB/);
     expect(top).toBeTruthy();
   });
 
