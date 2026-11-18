@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import { MAX_TEXT_FILE_BYTES, PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, type Id, type OpenInApp, type OpenInApps, type OpenInRequest, type OpenInResult, type PageBase, type TextFile } from "@amo-studio/protocol";
+import { PAGE_ASSET_TYPES, PREVIEW_IMAGE_TYPES, maxPreviewBytes, type Id, type OpenInApp, type OpenInApps, type OpenInRequest, type OpenInResult, type PageBase, type TextFile } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
@@ -74,7 +74,7 @@ export class OpenInFeature extends Feature {
     if (!info) throw new HostError("not_found", `${path} does not exist`);
     if (info.isDirectory()) throw new HostError("bad_request", `${path} is a folder`);
     const base = { path, size: info.size, modifiedAt: info.mtime.toISOString() };
-    if (info.size > MAX_TEXT_FILE_BYTES) return { ...base, tooLarge: true };
+    if (info.size > maxPreviewBytes(path)) return { ...base, tooLarge: true };
     const data = await readFile(path);
     const text = decode(data);
     return text === null ? { ...base, binary: true } : { ...base, text };
