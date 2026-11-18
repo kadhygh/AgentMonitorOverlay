@@ -203,14 +203,19 @@ export class ReadModel {
     return { taskId, sessions: buildSessionTree(this.live(taskId)).map(toNode) };
   }
 
-  /** Registered projects and the common folder; with a project named, also its open tasks. */
+  /**
+   * Registered projects, their groups (2026-11-18, with project_group_save) and the common folder; with a project named,
+   * also its group and open tasks. Archived projects are left out of the list, as from every list in Studio.
+   */
   projectContext(workspace?: string) {
     const all = this.store.listWorkspaces();
+    const groups = this.service.config.projectGroups();
     if (!workspace) {
       const common = all.find(isCommon);
+      const live = new Map(all.filter((w) => !w.archivedAt).map((w) => [w.id, w.name]));
       return {
         workspaces: all
-          .filter((w) => !isCommon(w))
+          .filter((w) => !isCommon(w) && !w.archivedAt)
           .map((w) => ({
             id: w.id,
             name: w.name,
@@ -218,12 +223,18 @@ export class ReadModel {
             ...(w.description ? { description: w.description } : {}),
             openTasks: this.store.listTasks().filter((t) => t.column !== "done" && !t.archivedAt && t.workspaceId === w.id).length,
           })),
+        groups: groups.map((g) => ({ id: g.id, name: g.name, ...(g.description ? { description: g.description } : {}), projects: g.workspaceIds.flatMap((id) => (live.has(id) ? [live.get(id)!] : [])) })),
         commonFolder: common?.path ?? null,
       };
     }
     const id = this.workspaceId(workspace);
     const w = all.find((x) => x.id === id)!;
-    return { workspace: { id: w.id, name: w.name, path: w.path, ...(w.description ? { description: w.description } : {}) }, openTasks: this.boardList({ workspace: id }).tasks.filter((t) => t.column !== "done") };
+    const group = groups.find((g) => g.workspaceIds.includes(id));
+    return {
+      workspace: { id: w.id, name: w.name, path: w.path, ...(w.description ? { description: w.description } : {}), ...(w.archivedAt ? { archived: true } : {}) },
+      group: group ? { id: group.id, name: group.name } : null,
+      openTasks: this.boardList({ workspace: id }).tasks.filter((t) => t.column !== "done"),
+    };
   }
 
   /** A topic's canvas as structure: groups, tasks, notes, dependencies; no coordinates. */

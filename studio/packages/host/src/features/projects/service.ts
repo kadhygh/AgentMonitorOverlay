@@ -1,8 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { CanvasDoc, Id, Task, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Id, Session, Task, Workspace } from "@amo-studio/protocol";
 import { isCommon } from "@amo-studio/protocol";
-import { HostError } from "../../core/shared.js";
+import { HostError, sessionMoving } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Projects (workspaces): registering, archiving and removing them. */
@@ -17,6 +17,56 @@ export class ProjectsFeature extends Feature<"tasks"> {
     const ws = this.store.addWorkspace({ path, name: input.name?.trim() || basename(path) || path });
     this.publish({ type: "workspace.upserted", workspace: ws });
     return ws;
+  }
+
+  /**
+   * project_add (2026-11-18, the user: ai 可以添加工程): the folder as a project, with the name and note it was given;
+   * a folder already registered gives back that project unchanged rather than a second one. An archived one is refused
+   * as 添加项目 refuses it: restoring it brings its tasks back, which is the person's to do in 设置 → 数据管理.
+   */
+  ensureWorkspace(input: { path: string; name?: string; description?: string }): { workspace: Workspace; added: boolean } {
+    if (!input.path?.trim()) throw new HostError("bad_request", "path is required");
+    // An agent may write the folder in another case or with / (Windows folders do not care): the same project.
+    const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p));
+    const want = norm(input.path.trim());
+    const known = this.store.findWorkspaceByPath(resolve(input.path.trim())) ?? this.store.listWorkspaces().find((w) => norm(w.path) === want);
+    if (known?.archivedAt) throw new HostError("conflict", `这个文件夹是已归档的项目「${known.name}」：请人到 设置 → 数据管理 里恢复它（它的任务会一起恢复）`);
+    if (known) return { workspace: known, added: false };
+    // Checked before the folder is registered, so a refused name or note leaves nothing behind.
+    if ((input.name?.trim().length ?? 0) > 80) throw new HostError("bad_request", "name is too long (80 at most)");
+    if ((input.description?.length ?? 0) > 2000) throw new HostError("bad_request", "description is too long (2000 at most)");
+    const ws = this.addWorkspace({ path: input.path, ...(input.name !== undefined ? { name: input.name } : {}) });
+    return { workspace: input.description?.trim() ? this.updateWorkspace(ws.id, { description: input.description }) : ws, added: true };
+  }
+
+  /**
+   * What 归档项目 takes with it (project_remove's approval and refusal, 2026-11-18): the project's tasks not archived
+   * yet, and the sessions going with them — its tasks' and the topic sessions that run in it — that are still at work.
+   */
+  archiveFacts(id: Id): { workspace: Workspace; tasks: Task[]; moving: Session[] } {
+    const workspace = this.requireWorkspace(id);
+    const tasks = this.store.listTasks().filter((t) => t.workspaceId === id && !t.archivedAt);
+    const taskIds = new Set(tasks.map((t) => t.id));
+    const moving = this.store.listSessions().filter((s) => ((s.taskId && taskIds.has(s.taskId)) || (s.topicId && s.workspaceId === id)) && sessionMoving(s));
+    return { workspace, tasks, moving };
+  }
+
+  /**
+   * project_remove (2026-11-18, the user: ai 可以删除工程): what the person's 归档项目 in the left column does — the
+   * project leaves every list, its tasks and their sessions are archived, 设置 → 数据管理 restores it — and never
+   * the folder. Refused while one of those sessions is at work (in a turn, waiting for the person, on a /loop or a
+   * usage limit, in a terminal): archiving would cut it off, the asking session's own turn included; session_archive
+   * refuses the same.
+   */
+  async archiveForAgent(id: Id): Promise<{ workspace: Workspace; tasks: Task[] }> {
+    const { workspace, moving } = this.archiveFacts(id);
+    if (isCommon(workspace)) throw new HostError("conflict", "公共空间不是项目，不能移除");
+    if (workspace.archivedAt) throw new HostError("conflict", `项目「${workspace.name}」已经归档了`);
+    if (moving.length) {
+      const named = moving.slice(0, 5).map((s) => `「${s.title || "未命名会话"}」`).join("、");
+      throw new HostError("conflict", `项目「${workspace.name}」里还有 ${moving.length} 个会话在运行或等人（${named}${moving.length > 5 ? " 等" : ""}）：移除会打断它们。等它们停下再移除；你自己的会话也在其中时，请人在左栏右键这个项目「归档项目」。`);
+    }
+    return this.archiveWorkspace(id);
   }
 
   /** 编辑项目: the name shown in Studio (the folder is not renamed) and a note on the project, both optional. */

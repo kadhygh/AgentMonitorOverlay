@@ -7,6 +7,19 @@ import { approvalKey, ELICITATION, isApprovalMethod, USER_INPUT, type CodexCore,
 /** Codex's 完全访问 (never + danger-full-access), as the session's permission option. */
 const FULL_ACCESS = "full-auto";
 
+/**
+ * The AMO tool call a Codex MCP approval is about (2026-11-18, for AmoTool.approvalNote): Codex names the tool in its
+ * message (`Allow the amo MCP server to run tool "project_remove"?`, spikes/RESULTS.md) and, where it passes them, the
+ * arguments in `_meta.tool_params` — not seen from a real Codex yet; without them there is no note.
+ */
+export function amoCallOf(params: { serverName?: string; message?: string; _meta?: unknown }): { tool: string; args: Record<string, unknown> } | null {
+  if (params.serverName !== "amo") return null;
+  const tool = /tool "([a-z_]+)"/.exec(params.message ?? "")?.[1];
+  const meta = params._meta && typeof params._meta === "object" ? (params._meta as Record<string, unknown>) : null;
+  const args = meta?.tool_params;
+  return tool && args && typeof args === "object" && !Array.isArray(args) ? { tool, args: args as Record<string, unknown> } : null;
+}
+
 // What waits for the person in a Codex session (stage 16 split out of codex-runtime.ts): approvals (broadcast, first
 // answer wins), request_user_input and MCP forms (question items), request_user_input_async (a card; the answer is the
 // next message), and the session's status while they wait.
@@ -21,7 +34,7 @@ export class CodexAsks {
   onServerRequest(handle: CodexServerHandle, r: ServerRequest): void {
     if (r.method === USER_INPUT || (r.method === ELICITATION && elicitationForm((r.params as { requestedSchema?: unknown }).requestedSchema))) return this.onQuestion(handle, r);
     if (!isApprovalMethod(r.method)) return;
-    const params = r.params as { threadId?: string; turnId?: string; itemId?: string; command?: string | null; reason?: string | null; cwd?: string; message?: string; serverName?: string };
+    const params = r.params as { threadId?: string; turnId?: string; itemId?: string; command?: string | null; reason?: string | null; cwd?: string; message?: string; serverName?: string; _meta?: unknown };
     const s = params.threadId ? this.core.findByThread(params.threadId) : undefined;
     if (!s) return;
     const key = approvalKey(s.id, String(r.id));
@@ -32,12 +45,14 @@ export class CodexAsks {
     const toolItemId = params.itemId ? this.core.sessionState(s.id).items.get(params.itemId) : undefined;
     const tool = toolItemId ? this.core.store.getItem(toolItemId) : undefined;
     const toolSummary = tool?.type === "tool" ? (kind === "command" ? tool.input : tool.summary) || undefined : undefined;
+    const amo = elicitation ? amoCallOf(params) : null;
+    const note = amo ? this.core.approvalNote?.(s.id, amo.tool, amo.args) : undefined;
     const item = this.core.appendItem(s.id, {
       type: "approval",
       approvalId: String(r.id),
       kind,
       summary: elicitation ? (params.message ?? `MCP 服务 ${params.serverName ?? ""} 请求批准`) : (toolSummary ?? params.command ?? params.reason ?? r.method),
-      ...(elicitation ? (params.serverName ? { detail: `MCP：${params.serverName}` } : {}) : params.cwd ? { detail: params.cwd } : {}),
+      ...(note ? { detail: note } : elicitation ? (params.serverName ? { detail: `MCP：${params.serverName}` } : {}) : params.cwd ? { detail: params.cwd } : {}),
       state: "pending",
     }, { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) });
     this.approvals.set(key, { kind: elicitation ? "elicitation" : "approval", sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id });

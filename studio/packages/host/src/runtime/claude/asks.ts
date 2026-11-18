@@ -46,7 +46,8 @@ export class ClaudeAsks {
     const approvalId = ctx.toolUseID ?? randomUUID();
     const kind: ApprovalKind = toolName === "Bash" || toolName === "PowerShell" ? "command" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName) ? "fileChange" : "permissions";
     const summary = String(input.command ?? input.file_path ?? input.notebook_path ?? ctx.title ?? toolName);
-    const detail = ctx.description ?? (typeof input.description === "string" ? input.description : undefined);
+    // An AMO tool's own words on what the call changes come first (project_remove: the tasks that go with it).
+    const detail = this.core.approvalNote?.(sessionId, toolName, input) ?? ctx.description ?? (typeof input.description === "string" ? input.description : undefined);
     const item = this.core.appendItem(
       sessionId,
       { type: "approval", approvalId, kind, summary, ...(detail ? { detail } : {}), state: "pending" },

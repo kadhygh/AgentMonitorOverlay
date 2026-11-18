@@ -96,3 +96,25 @@ test("canvas changes from Codex and Claude sessions wait for the person's approv
   await expect(page.locator(".group-title", { hasText: "Codex 建的组" })).toBeVisible();
   await screenshot(studio.app, "stage-5", "S5-05-canvas-writes", page);
 });
+
+test("an agent removing a project waits for the person, and the card says what goes with it (2026-11-18)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const alpha = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const beta = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("beta") });
+  await studio.api("POST", "/api/tasks", { title: "掉落表", workspaceId: beta.id });
+  await studio.api("POST", "/api/tasks", { title: "整理项目", workspaceId: alpha.id, firstSession: { profileId: "claude-mock", text: `[[mcp: project_remove {"workspace":"beta"}]]` } });
+  await page.getByTestId("task-card").filter({ hasText: "整理项目" }).click();
+  // The note under the card comes from the tool (approvalNote), read before anything changes.
+  const card = page.getByTestId("approval").last();
+  await expect(card).toHaveAttribute("data-state", "pending", { timeout: 60_000 });
+  await expect(card).toContainText("从 Studio 里移除项目「beta」");
+  await expect(card).toContainText("它的 1 个任务（「掉落表」）和这些任务的会话一起归档");
+  await screenshot(studio.app, "studio", "ai-project-remove-approval", page);
+  await card.getByRole("button", { name: "拒绝" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toBeVisible({ timeout: 60_000 });
+  const state = await studio.api<{ workspaces: Workspace[] }>("GET", "/api/state");
+  const kept = state.workspaces.find((w) => w.id === beta.id);
+  expect(kept).toBeTruthy();
+  expect(kept!.archivedAt ?? null).toBeNull();
+});

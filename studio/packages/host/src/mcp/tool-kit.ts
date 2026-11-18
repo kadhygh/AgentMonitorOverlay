@@ -31,6 +31,11 @@ export interface AmoTool {
    * `tools.<name>.approval_mode = "approve"` for these; Claude lists them in allowedTools.
    */
   autoApprove: boolean;
+  /**
+   * For a write the person approves: what this call would change, in their words, under the approval card (2026-11-18,
+   * project_remove: how many tasks go with the project). Read before the call runs; a refusal it meets shows no note.
+   */
+  approvalNote?(args: Record<string, unknown>): string | undefined;
   /** A write that waits for the runtime (session_start) answers with a promise. */
   run(args: Record<string, unknown>): ToolResult | Promise<ToolResult>;
 }

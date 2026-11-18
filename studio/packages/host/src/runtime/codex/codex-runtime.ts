@@ -56,6 +56,8 @@ export interface CodexRuntimeOptions {
    */
   roleInstructions?: (draft: { taskId: Id | null; topicId: Id | null; workspaceId: Id }) => string | undefined;
   roleGiven?: (sessionId: Id) => void;
+  /** What an AMO tool call the person is asked to approve would change (AmoTool.approvalNote), for the card. */
+  approvalNote?: (sessionId: Id, toolName: string, args: Record<string, unknown>) => string | undefined;
 }
 
 /** Every change, already persisted (except `item.delta`, which carries the last persisted seq), and log lines. */
@@ -81,6 +83,7 @@ export class CodexRuntime extends RuntimeBase {
       findByThread: (threadId) => this.findByThread(threadId),
       handleFor: (profileId) => this.handleFor(profileId),
       profile: (id) => this.profile(id),
+      ...(options.approvalNote ? { approvalNote: options.approvalNote } : {}),
     };
     this.asks = new CodexAsks(core);
     this.events = new CodexEvents(

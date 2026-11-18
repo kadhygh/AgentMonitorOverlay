@@ -13,4 +13,6 @@ export const AUTO_APPROVED_WRITE_TOOLS = ["task_note_add", "session_rename", "ta
 // (S5-05: canvas_group_create ran without a prompt), so these are set to "prompt" explicitly.
 // mcp_server_save (MCP 设置, 2026-11-04): a server is a command run on this computer — never without the person's yes
 // (and so never for DSH, which leaves these out).
-export const PROMPTED_WRITE_TOOLS = ["canvas_group_create", "canvas_depend", "canvas_place", "mcp_server_save"] as const;
+// project_add / project_remove / project_group_save / project_group_delete (2026-11-18): the person's projects and
+// their groups — the same.
+export const PROMPTED_WRITE_TOOLS = ["canvas_group_create", "canvas_depend", "canvas_place", "mcp_server_save", "project_add", "project_remove", "project_group_save", "project_group_delete"] as const;

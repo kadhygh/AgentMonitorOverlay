@@ -84,4 +84,6 @@ export interface CodexCore extends RuntimeCore {
   findByThread(threadId: string): Session | undefined;
   handleFor(profileId: Id): Promise<CodexServerHandle>;
   profile(id: Id): ModelProfile;
+  /** What an AMO tool call the person is asked to approve would change (AmoTool.approvalNote), for the card. */
+  approvalNote?(sessionId: Id, toolName: string, args: Record<string, unknown>): string | undefined;
 }

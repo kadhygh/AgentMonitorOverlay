@@ -54,7 +54,9 @@
         { "label": "工具写法", "path": "studio/packages/host/src/mcp/tool-kit.ts", "anchor": "export interface AmoTool" },
         { "label": "amo_guide 的文字", "path": "studio/packages/host/src/features/guide/guide.ts", "anchor": "GUIDE" },
         { "label": "角色卡", "path": "studio/packages/host/src/features/guide/role.ts", "anchor": "export function roleCard" },
-        { "label": "角色判断", "path": "studio/packages/host/src/core/role.ts", "anchor": "roleFacts" }
+        { "label": "角色判断", "path": "studio/packages/host/src/core/role.ts", "anchor": "roleFacts" },
+        { "label": "要人批准的工具（Codex 设成 prompt，DSH 不给）", "path": "studio/packages/host/src/mcp/names.ts", "anchor": "PROMPTED_WRITE_TOOLS" },
+        { "label": "批准卡片上写这次会改什么（approvalNote）", "path": "studio/packages/host/src/mcp/tools.ts", "anchor": "export function amoApprovalNote" }
       ],
       "related": ["workflow.newMcpTool", "studio.topics", "studio.mcpServers"],
       "next": ["studio/plans/done/stage-15.md"]
@@ -113,12 +115,15 @@
     {
       "id": "studio.tasks",
       "label": "任务和看板",
-      "aliases": ["task", "TasksFeature", "看板", "board", "任务页", "说明", "交接", "handoff", "worktree"],
+      "aliases": ["task", "TasksFeature", "看板", "board", "任务页", "说明", "交接", "handoff", "worktree", "项目", "工程", "project_add", "project_remove", "项目分组", "project_group_save"],
       "category": "host",
-      "purpose": "任务（一个项目里的一件事，有自己的会话、看板列、说明、进度、交接）和项目、看板。Studio 从不替人建分支或合并（用户 10 月定）。",
+      "purpose": "任务（一个项目里的一件事，有自己的会话、看板列、说明、进度、交接）和项目、看板。Studio 从不替人建分支或合并（用户 10 月定）。项目：左栏右键「归档项目」= 任务和会话一起归档、文件夹不动；agent 用 project_add / project_remove / project_group_save / project_group_delete 加、移除项目和整理项目分组（每次人批准，2026-11-18），remove 就是归档项目，有会话在跑时拒绝。",
       "anchors": [
         { "label": "TasksFeature", "path": "studio/packages/host/src/features/tasks/service.ts", "anchor": "export class TasksFeature" },
         { "label": "ProjectsFeature", "path": "studio/packages/host/src/features/projects/service.ts", "anchor": "export class ProjectsFeature" },
+        { "label": "agent 移除项目的规则", "path": "studio/packages/host/src/features/projects/service.ts", "anchor": "async archiveForAgent" },
+        { "label": "项目的 MCP 工具", "path": "studio/packages/host/src/features/projects/mcp.ts", "anchor": "export function projectsTools" },
+        { "label": "项目分组（存在 Host 设置里）", "path": "studio/packages/host/src/features/config/service.ts", "anchor": "saveProjectGroup" },
         { "label": "看板", "path": "studio/packages/ui/src/board/Board.tsx", "anchor": "export function Board" },
         { "label": "任务页", "path": "studio/packages/ui/src/task/TaskPage.tsx", "anchor": "export function TaskPage" },
         { "label": "实体类型", "path": "studio/packages/protocol/src/entities.ts" }

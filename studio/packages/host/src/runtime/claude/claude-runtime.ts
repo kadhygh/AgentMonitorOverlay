@@ -16,7 +16,7 @@ import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLo
 import { keepsProcess } from "./wake.js";
 import { shellHelpEnv } from "../agent-env.js";
 import { agentsMdInstructions } from "./project-instructions.js";
-import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
+import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, amoApprovalNote, type AmoTool } from "../../mcp/tools.js";
 import { sameProcessPart, sdkServer, type McpLaunch, type McpSource } from "../mcp-launch.js";
 import { ClaudeAsks } from "./asks.js";
 import { BLOCKED_COMMANDS, claudeCommands } from "./commands.js";
@@ -151,6 +151,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       sendMessage: (id, text) => this.sendMessage(id, text),
       close: (id) => this.close(id),
       clearIdle: (live) => this.clearIdle(live),
+      approvalNote: (id, toolName, input) => {
+        const prefix = `mcp__${AMO_MCP_NAME}__`;
+        return toolName.startsWith(prefix) ? amoApprovalNote(this.options.mcpTools?.(id) ?? [], toolName.slice(prefix.length), input) : undefined;
+      },
     };
     this.accounts = options.accounts ?? new ClaudeAccounts(this.store, { defaultDir: this.local.dir, defaultExplicit: this.local.explicit, ...(options.baseEnv ? { baseEnv: options.baseEnv } : {}) });
     this.accounts.setGuard({ blocked: () => this.switchBlocked(), beforeSwitch: (from, to) => this.beforeAccountSwitch(from, to) });

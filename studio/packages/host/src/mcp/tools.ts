@@ -55,6 +55,20 @@ export function amoToolsFor(service: HostService, caller: McpCaller | null): Amo
 }
 
 /**
+ * The note under an approval card for an AMO tool call (AmoTool.approvalNote; 2026-11-18): from the tools of the
+ * session that asks, so it reads what the call itself would see. Nothing for another server's tools, or when the note
+ * cannot be made (a project that is not there: the call is refused with the reason anyway).
+ */
+export function amoApprovalNote(tools: readonly AmoTool[], toolName: string, args: Record<string, unknown>): string | undefined {
+  const t = tools.find((x) => x.name === toolName);
+  try {
+    return t?.approvalNote?.(args);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * 远程 (2026-10-29): a copy of a task another computer granted this one (Task.remote, sessions running "remote") is that
  * computer's task — agents here neither read nor change it (no notes, 说明, mail, sessions, canvas). Any tool given the id
  * of such a task or of one of its sessions answers so; board_list leaves them out (read-model.ts).

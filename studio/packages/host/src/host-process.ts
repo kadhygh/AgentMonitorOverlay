@@ -16,7 +16,7 @@ import { RuntimeRouter } from "./runtime/runtime.js";
 import { personClaudeConfig } from "./features/mcp/local.js";
 import type { McpLaunch } from "./runtime/mcp-launch.js";
 import type { McpServerSpec } from "@amo-studio/protocol";
-import { amoInstructions, amoToolsFor } from "./mcp/tools.js";
+import { amoApprovalNote, amoInstructions, amoToolsFor } from "./mcp/tools.js";
 import { shellHelpEnv } from "./runtime/agent-env.js";
 import { recordRole, roleCard, roleCardFor } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
@@ -249,6 +249,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           return undefined;
         }
       },
+      approvalNote: (sessionId, toolName, args): string | undefined => amoApprovalNote(amoToolsFor(service, { sessionId }), toolName, args),
       roleGiven: (sessionId): void => {
         try {
           recordRole(service, sessionId);

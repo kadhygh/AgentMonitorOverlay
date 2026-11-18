@@ -20,4 +20,6 @@ export interface ClaudeCore extends RuntimeCore {
   sendMessage(sessionId: Id, text: string): Promise<unknown>;
   close(sessionId: Id): Promise<void>;
   clearIdle(live: Live): void;
+  /** What an AMO tool call the person is asked to approve would change (AmoTool.approvalNote), for the card. */
+  approvalNote?(sessionId: Id, toolName: string, input: Record<string, unknown>): string | undefined;
 }
