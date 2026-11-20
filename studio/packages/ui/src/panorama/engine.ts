@@ -13,7 +13,7 @@ import type { PanoramaTheme, RGB } from "./themes.js";
 // not through @deck.gl/react, which is not checked against React 19.
 //
 // What it draws comes from the datalayer (datalayer.ts) and its layout (layout.ts), never from Studio's state. Looks
-// come from the theme table (themes.ts). Ported from the prototype (studio/plans/userlayer/v-deck3.html, #oblivion),
+// come from the theme table (themes.ts). Ported from the prototype (studio/plans/later/userlayer/v-deck3.html, #oblivion),
 // with its performance rules (README, v-deck2): layers that depend only on the data are built once per data change;
 // the pulses change only opacity, sizes and angles of a handful of objects; deck's own render loop stops when nothing
 // moves (and starts again on input); signs are placed once the camera has stopped; at most 1.5 device pixels; no

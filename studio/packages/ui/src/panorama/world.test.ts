@@ -6,8 +6,8 @@ import { placeTopics, ringArea, seedOf, topicShape, type TopicFrame } from "./re
 import { LOOKS, lookFrom } from "./themes.js";
 
 // World looks (2026-11-03, the user: a topic is a region of the map, an island or a metro zone). The demo data of the
-// preview (plans/userlayer/panorama-snapshot-topics.json, four topics, mining with three projects) is the input.
-const snap = JSON.parse(readFileSync(new URL("../../../../plans/userlayer/panorama-snapshot-topics.json", import.meta.url), "utf8")) as Omit<PanoramaInput, "now"> & { takenAt: string };
+// preview (plans/later/userlayer/panorama-snapshot-topics.json, four topics, mining with three projects) is the input.
+const snap = JSON.parse(readFileSync(new URL("../../../../plans/later/userlayer/panorama-snapshot-topics.json", import.meta.url), "utf8")) as Omit<PanoramaInput, "now"> & { takenAt: string };
 const data = toPanorama({ ...snap, now: snap.takenAt });
 const opts = (world: "terrain" | "metro") => ({ curve: "line" as const, span: true, fold: true, front: 2700, world });
 

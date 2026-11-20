@@ -1,11 +1,11 @@
 import type { CanvasItem, ChecklistItem, ModelProfile, Session, SessionStatus, Task, TaskColumn, Topic, TopicDoc, Workspace } from "@amo-studio/protocol";
 import { SESSION_LOOK } from "../lib/status.js";
 
-// 全景's data (2026-11-01): Studio's state turned into the datalayer's shape (studio/plans/userlayer/README.md, spec
+// 全景's data (2026-11-01): Studio's state turned into the datalayer's shape (studio/plans/later/userlayer/README.md, spec
 // 0.2: lanes / items / now). The page draws only from this, never from Studio's state, so the drawing (the userlayer)
 // can be swapped while the data stays — the point of the three layers. Pure, so it can move into the Host later.
 //
-// P1 (2026-11-02, plans/userlayer/panorama.md「节点的表达」): each task grows from its start towards its goal as a tree.
+// P1 (2026-11-02, plans/later/userlayer/panorama.md「节点的表达」): each task grows from its start towards its goal as a tree.
 // Its main sessions are the trunk, one round each (第 N 轮); a branch session, or one another session of the task
 // opened with session_start, forks off the round that opened it. The goal's state comes from the board column, its
 // distance from the task's checklist. Dependencies drawn on the canvas link the lanes.
@@ -20,7 +20,7 @@ import { SESSION_LOOK } from "../lib/status.js";
 // count until someone writes them), its documents (the shelf), its own sessions (the 主控 spine, which tasks are
 // proposed from) and the points found while working (decisions, questions, findings, notes: items too, on a round of a
 // task or on the topic's board). What AMO does not record yet (project fields, who proposed a task, points) comes in
-// through `extra`, written by hand in the preview and later by the topic's own agent (plans/userlayer/README.md「0.3」).
+// through `extra`, written by hand in the preview and later by the topic's own agent (plans/later/userlayer/README.md「0.3」).
 
 export const DATALAYER_SPEC = "amo.datalayer/0.3";
 

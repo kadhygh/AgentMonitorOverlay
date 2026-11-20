@@ -8,7 +8,7 @@ import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 // all, so the page only tells where things are (window.__panorama) and the mouse does the rest.
 //
 // P1 (2026-11-02): each task a tree — a dependency drawn on the canvas is an arc, a task's sessions are its rounds.
-// 11-04 (plans/userlayer/framework.md 第 0 步): the world looks (地形岛 by default, 地铁 by a switch in the corner,
+// 11-04 (plans/later/userlayer/framework.md 第 0 步): the world looks (地形岛 by default, 地铁 by a switch in the corner,
 // remembered on this machine), every live topic a region and the tasks in no topic one more; opened from the left
 // column under 全部任务 (the column stays), no longer a tab.
 

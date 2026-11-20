@@ -8,7 +8,7 @@ import { readStored } from "../lib/stored.js";
 // datalayer (datalayer.ts), never from Studio's state directly. The map itself (engine.ts, deck.gl) is loaded on first
 // use; when WebGL cannot start the page shows the same data as a plain list instead of a blank area.
 //
-// The same page runs outside Studio as the preview (preview.tsx, studio/plans/userlayer/panorama-preview.html) on a
+// The same page runs outside Studio as the preview (preview.tsx, studio/plans/later/userlayer/panorama-preview.html) on a
 // snapshot of real data: everything it shows comes in through its props, handed straight to the datalayer (the only
 // part that knows AMO's types), and what it asks of AMO goes out through onOpenTask.
 

@@ -2,9 +2,9 @@ import type { PanoramaData, PanoramaDoc, PanoramaItem, PanoramaLane, PanoramaPro
 import { placeTopics, seedOf, rng, topicShape, type ShapeEl, type ShapeGroup, type TopicFrame, type TopicShape, type WorldKind, type XY as RXY } from "./regions.js";
 
 // Where everything sits on the 全景 map, from the datalayer alone (no deck.gl here, so it is plain to test). Layout as
-// in the prototype (studio/plans/userlayer/v-deck3.html: areas in rows, oldest far away, a gently waving lane).
+// in the prototype (studio/plans/later/userlayer/v-deck3.html: areas in rows, oldest far away, a gently waving lane).
 //
-// P1 (2026-11-02, plans/userlayer/panorama.md「节点的表达」): each task is a tree growing east from its start (a
+// P1 (2026-11-02, plans/later/userlayer/panorama.md「节点的表达」): each task is a tree growing east from its start (a
 // beacon) towards its goal. The trunk is its rounds, evenly spaced. What one session opened (branch sessions, sessions
 // it started with session_start) leaves it as one branch on a track of its own above or below, its sessions along it in
 // the order they started — a 值守 session that opened ten others is one branch with ten nodes, not a broom of ten
@@ -23,7 +23,7 @@ import { placeTopics, seedOf, rng, topicShape, type ShapeEl, type ShapeGroup, ty
 // each topic is a block — its documents and board, its own sessions as a spine the tasks start from, a band per
 // project with a status board at its head and the project's tasks along it (planBlocks).
 //
-// World (2026-11-03, the user, studio/plans/userlayer/sketches): a topic is a region of the map, shaped by what stands
+// World (2026-11-03, the user, studio/plans/later/userlayer/sketches): a topic is a region of the map, shaped by what stands
 // in it (regions.ts: an island, `terrain`, or a metro map's zone, `metro`). Inside, the 主控 spine on the west, the header,
 // the documents' shelf and the 公告板 along the top; under them a band per project, its status board at the head and its
 // tasks as straight lanes, one a row; what a session opened leaves its round 45° down onto a sub-lane of its own,

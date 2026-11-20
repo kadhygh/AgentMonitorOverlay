@@ -7,7 +7,7 @@ import "./panorama.css";
 
 // 全景's preview outside Studio (P1, 2026-11-02): the same page, layout and drawing as the 全景 tab, fed a snapshot of
 // real data instead of the Host, so the person can look at it from another device (http://100.107.87.64:47130/ serves
-// studio/plans/userlayer/) without Studio being restarted. Built by studio/plans/userlayer/panorama-build.mjs; the
+// studio/plans/later/userlayer/) without Studio being restarted. Built by studio/plans/later/userlayer/panorama-build.mjs; the
 // snapshot is written by panorama-snapshot.mjs (structure and titles only, read from the Host without changing it).
 
 /** The datalayer's input as it was when the snapshot was taken (AMO's shapes are the datalayer's business). */

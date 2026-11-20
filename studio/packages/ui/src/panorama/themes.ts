@@ -3,7 +3,7 @@ import { WORLD_TYPE, type Curve } from "./layout.js";
 import type { WorldKind } from "./regions.js";
 
 // 全景's looks (2026-11-01): one table per theme, the engine and the page's panels both read it, so a new theme is a
-// new entry here. The user chose 冰白全息 (oblivion) from studio/plans/userlayer/v-deck3.html; it is the only one for
+// new entry here. The user chose 冰白全息 (oblivion) from studio/plans/later/userlayer/v-deck3.html; it is the only one for
 // now. The name 全景 is neutral on purpose: a star map is one theme of it, the data underneath stays the same.
 
 export type RGB = [number, number, number];
@@ -15,7 +15,7 @@ export type RGBA = [number, number, number, number];
  * the work in it (the skyline); `plinth` a base hugging the tree instead of a big frame around it, with `drafting`'s
  * small engineering marks (dimension lines, edge ticks, a coordinate) on it. All off is how P1 first looked.
  *
- * Then (2026-11-02, the user, plans/userlayer/panorama.md「节点的表达」): `front` the node furthest on as a taller,
+ * Then (2026-11-02, the user, plans/later/userlayer/panorama.md「节点的表达」): `front` the node furthest on as a taller,
  * brighter column and chevrons on the road on to the goal, flowing while the task runs; `fold` runs of smooth rounds
  * folded into one 「×N 轮」 stretch, spread out once zoomed in or clicked; `span` a footprint about fixed (近疏远密);
  * `curve` how the roads bend (layout.ts). The preview's address picks them (lookFrom).
@@ -23,7 +23,7 @@ export type RGBA = [number, number, number, number];
  * 2026-11-03 (the user): roads straight (`line`) again; `blocks` a block per topic — its projects' bands with their status
  * boards, its own sessions as a spine, its documents and board (layout.ts planBlocks).
  *
- * 2026-11-03, later (the user, plans/userlayer/sketches): `world` — each topic a region of the map instead, an island
+ * 2026-11-03, later (the user, plans/later/userlayer/sketches): `world` — each topic a region of the map instead, an island
  * (`terrain`) or a metro map's zone (`metro`), lanes straight lines with a tick at the start, a node a round, the front
  * a bright dot and its column, the goal a dashed ring; the per-round columns (`pillars`) off unless asked for.
  */

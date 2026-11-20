@@ -1,4 +1,4 @@
-/* 全景 (2026-11-01): the 冰白全息 look of studio/plans/userlayer/v-deck3.html (#oblivion). Colours come from the theme
+/* 全景 (2026-11-01): the 冰白全息 look of studio/plans/later/userlayer/v-deck3.html (#oblivion). Colours come from the theme
    table (panorama/themes.ts) as --pn-* variables set on .panorama; this file only arranges and dresses the panels. The
    page is dark in both of Studio's themes: the map is a lit-up hologram on graphite. */
 .panorama { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--pn-base); color: var(--pn-tx); font: 13px/1.6 var(--pn-font); }

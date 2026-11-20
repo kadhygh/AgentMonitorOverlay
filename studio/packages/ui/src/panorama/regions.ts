@@ -1,6 +1,6 @@
 // 全景's regions (2026-11-03, the user): a topic is a region of the map, its shape worked out from what stands in it —
 // the lanes, the status boards, the spine, the header — so it describes the parts (like an area on a map) with an
-// irregular beauty of its own. Two themes the user picked from studio/plans/userlayer/sketches (gen.mjs, sketches.html):
+// irregular beauty of its own. Two themes the user picked from studio/plans/later/userlayer/sketches (gen.mjs, sketches.html):
 //
 // - `terrain`: an island. A distance field from what stands in it, plus noise and a domain warp, cut at 0 by marching
 //   squares; no contour lines inside, a faint fill and a soft glow in from the coast; nothing outside (no islets, no

@@ -735,14 +735,14 @@
       "label": "全景（userlayer）",
       "aliases": ["全景", "panorama", "userlayer", "datalayer", "地形岛", "地铁"],
       "category": "ui",
-      "purpose": "全景视图：把所有专题、任务、会话画成一张图（数据层 datalayer、布局、渲染器）。三层（userlayer / datalayer / agentlayer）的原型在 plans/userlayer/。",
+      "purpose": "全景视图：把所有专题、任务、会话画成一张图（数据层 datalayer、布局、渲染器）。三层（userlayer / datalayer / agentlayer）的原型在 plans/later/userlayer/。",
       "anchors": [
         { "label": "全景页", "path": "studio/packages/ui/src/panorama/PanoramaPage.tsx", "anchor": "export function PanoramaPage" },
         { "label": "数据层", "path": "studio/packages/ui/src/panorama/datalayer.ts" },
         { "label": "布局", "path": "studio/packages/ui/src/panorama/layout.ts" }
       ],
       "related": ["ui.shell"],
-      "next": ["studio/plans/userlayer/framework.md", "studio/plans/userlayer/panorama.md"]
+      "next": ["studio/plans/later/userlayer/framework.md", "studio/plans/later/userlayer/panorama.md"]
     }
   ]
 }

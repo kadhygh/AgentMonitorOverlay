@@ -9,7 +9,7 @@ import type { ViewDef } from "../shell/views.js";
 import { readStored, writeStored } from "../lib/stored.js";
 
 /**
- * 全景 (设置 → 测试功能, 2026-11-01). 11-04 (plans/userlayer/framework.md 第 0 步): every live topic a block, and the
+ * 全景 (设置 → 测试功能, 2026-11-01). 11-04 (plans/later/userlayer/framework.md 第 0 步): every live topic a block, and the
  * tasks in no topic one more; opened from the left column (「全景」 under 全部任务, the user's call), not a tab. Only
  * while the person has turned it on; the deck.gl map inside loads on first use.
  */
