@@ -1,6 +1,6 @@
 # Cowork：人和各自的 agent 在中转上一起推进一件事
 
-> 状态：方案定了（2026-11-23），界面选了原型 A（`studio/out/relay-redesign/a-im.html`，不进仓库）；agent 状态和白板并发的做法用户 11-23 照建议定了，开工。传文件已另做完（`plans/done/relay-file-transfer.md`，11-23 合进 master），和这里无关。
+> 状态：第一版做完（2026-11-23），五步都做了，合进 master、中转服务部署、测试包发出（用户 11-23 授权「验证通过后直接打测试包、服务直接部署」，回来一起审）。等用户审，和找几个人真试；末尾「等用户回来看的」两件没定。界面照原型 A（`studio/out/relay-redesign/a-im.html`，不进仓库）。传文件另做完（`plans/done/relay-file-transfer.md`），和这里无关。
 >
 > 代码和文档里叫 cowork，界面上叫「协作」（用户 11-23）。
 
