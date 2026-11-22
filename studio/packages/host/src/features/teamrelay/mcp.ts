@@ -3,6 +3,7 @@ import { fail, json, writeAsync, type AmoTool, type ToolContext } from "../../mc
 import type { TeamSend } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { sizeText } from "@amo-studio/relay/light";
+import { coworkTools } from "./cowork-mcp.js";
 
 /** A picture team_file_get also hands over as an image (as relay_file_download): the kinds models read, small ones. */
 const INLINE_IMAGE = /^image\/(png|jpeg|gif|webp)$/;
@@ -18,7 +19,8 @@ const questionsSchema = z
  * person waits for the person in Studio itself (team_ask, team_followup; or goes at once when they turned that off),
  * the rest only reads or closes.
  */
-export function teamRelayTools({ service, caller }: ToolContext): AmoTool[] {
+export function teamRelayTools(ctx: ToolContext): AmoTool[] {
+  const { service, caller } = ctx;
   const t = service.teamRelay;
   const read = async (run: () => Promise<unknown>) => {
     try {
@@ -114,5 +116,7 @@ export function teamRelayTools({ service, caller }: ToolContext): AmoTool[] {
       autoApprove: true,
       run: () => (caller ? read(async () => t.sessionLines(caller.sessionId)) : fail("这次调用没有 AMO 会话身份。")),
     },
+    // 协作 (2026-11-23): cowork_read / post / ask / board / note.
+    ...coworkTools(ctx),
   ];
 }

@@ -1,0 +1,277 @@
+import { useEffect, useMemo, useState } from "react";
+import type { CoworkChoice, CoworkHandoff, CoworkJoin, ModelProfile, Session, Task, Workspace } from "@amo-studio/protocol";
+import { call, HostApiError, type HostLink } from "../host/client.js";
+import { useLiveResource } from "../host/live.js";
+import { Modal } from "../lib/Modal.js";
+import { defaultProfile, lastWorkspace, pickable, profileLabel, rememberProfile } from "../lib/profiles.js";
+import { OpenInRelay, useRelayAvailable } from "./TeamRelay.js";
+
+// 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): the Studio end. A session is brought into a 协作 on AMO 中转 from its
+// 「更多」 menu (拉进协作…); a line under its bar says which 协作 it is in, how its AI stands there (the state this Host
+// reports), its drafts waiting in 中转, 在中转里打开 and 退出. What the 协作 sends comes into the conversation folded as
+// one row (chat/OriginMessage.tsx). The whole 协作 is only seen in the 中转 client (the user, 11-23: 第一版只在中转客户端里看
+// 协作全貌). 转到我的会话 from the 中转 client asks here which session takes the 子会话 (CoworkHandoffs).
+
+export const COWORK_STATE: Record<CoworkJoin["state"], { mark: string; label: string; hint: string }> = {
+  idle: { mark: "✓", label: "待命", hint: "有人 @ 它时马上送进这个会话" },
+  busy: { mark: "◐", label: "处理中", hint: "正在跑一轮：@ 它的先排队，这一轮完了再送进来" },
+  owner: { mark: "!", label: "等主人", hint: "在等你（审批、提问、草稿，或输入框里有字）：@ 它的先排队，你这边空下来再送进来" },
+  offline: { mark: "○", label: "不在线", hint: "会话不在了或已归档" },
+};
+
+/** This computer's sessions in 协作, kept current. */
+export function useCoworkJoined(link: HostLink | null): CoworkJoin[] {
+  const [joined] = useLiveResource<CoworkJoin[]>(
+    { load: link ? () => call(link, "GET /api/cowork/joined", {}) : null, initial: [], onEvent: (cur, e) => (e.type === "cowork.joined.changed" ? e.joined : cur) },
+    [link],
+  );
+  return joined;
+}
+
+/** Under a session's bar: the 协作 it is in. */
+export function CoworkBar({ link, session, joined, onError }: { link: HostLink; session: Session; joined: readonly CoworkJoin[]; onError(text: string): void }) {
+  const mine = joined.filter((j) => j.sessionId === session.id);
+  const relay = useRelayAvailable();
+  const [busy, setBusy] = useState(false);
+  if (!mine.length) return null;
+  const leave = async (j: CoworkJoin) => {
+    setBusy(true);
+    try {
+      await call(link, "POST /api/cowork/leave", {}, { sessionId: session.id, coworkId: j.coworkId });
+    } catch (err) {
+      onError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="cowork-bar" data-testid="cowork-bar">
+      {mine.map((j) => {
+        const st = COWORK_STATE[j.state];
+        return (
+          <span key={j.coworkId} className="cowork-line" data-testid="cowork-line" data-state={j.state}>
+            <span className="cowork-mark">协作</span>
+            <span className="cowork-text" title={`在协作里显示为「${j.name}」`}>
+              「{j.coworkTitle}」{j.ended ? "（已结束）" : ""} · 这个会话的 AI：
+              <span className={`cowork-state ${j.state}`} title={st.hint} data-testid="cowork-state">
+                {st.mark} {st.label}
+              </span>
+              {j.queued > 0 && <span className="cowork-dim"> · 排队 {j.queued} 条</span>}
+            </span>
+            {j.drafts > 0 && (
+              <span className="cowork-drafts" title="「AI 发起 @ 和提问」关着：AI 想 @ 人或开子会话时先存成草稿，在中转里发出或不发" data-testid="cowork-drafts">
+                {j.drafts} 条草稿等你确认
+              </span>
+            )}
+            {relay && <OpenInRelay threadId={j.coworkId} title="在 AMO 中转里打开这个协作" />}
+            <button type="button" className="btn-ghost small dim" disabled={busy} title="让这个会话离开协作：排队给它的消息不再送进来；以后可以再拉进来" onClick={() => void leave(j)} data-testid="cowork-leave">
+              退出
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 拉进协作…: pick one of the person's 协作 and the name the session goes by there. */
+export function CoworkJoinDialog({ link, session, taskTitle, joined, onClose, onJoined }: { link: HostLink; session: Session; taskTitle: string; joined: readonly CoworkJoin[]; onClose(): void; onJoined(j: CoworkJoin): void }) {
+  const [list, setList] = useState<{ me: string; coworks: CoworkChoice[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pick, setPick] = useState<string>("");
+  const [label, setLabel] = useState((session.title?.trim() || taskTitle || "会话").slice(0, 60));
+  const [busy, setBusy] = useState(false);
+  const inIt = useMemo(() => new Set(joined.filter((j) => j.sessionId === session.id).map((j) => j.coworkId)), [joined, session.id]);
+  useEffect(() => {
+    let alive = true;
+    call(link, "GET /api/cowork/coworks", {}).then(
+      (v) => {
+        if (!alive) return;
+        setList(v);
+        setPick((cur) => cur || v.coworks.find((c) => !c.ended && !inIt.has(c.id))?.id || "");
+      },
+      (err: unknown) => alive && setError(err instanceof HostApiError ? err.message : String(err)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [link]); // eslint-disable-line react-hooks/exhaustive-deps
+  const join = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onJoined(await call(link, "POST /api/cowork/join", {}, { sessionId: session.id, coworkId: pick, label: label.trim() }));
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  const chosen = list?.coworks.find((c) => c.id === pick);
+  return (
+    <Modal className="cowork-dialog" label="拉进协作" testId="cowork-join-dialog" busy={busy} onClose={onClose}>
+      <span className="modal-title">拉进协作</span>
+      <span className="settings-hint">把这个会话拉进你在 AMO 中转里参加的一个协作：它就能以你的 AI 的身份在里面回复、提问、写白板，不用每次再问你。只有有人 @ 它、或回复它发起的子会话时才会送进这个会话，而且等这一轮做完、你没在打字时才送。</span>
+      {!list && !error && <span className="settings-hint">正在读你的协作…</span>}
+      {list && !list.coworks.length && <span className="settings-hint" data-testid="cowork-none">你还没有参加协作：先在 AMO 中转里发起一个，或请别人把你拉进去。</span>}
+      {list && list.coworks.length > 0 && (
+        <div className="cowork-choices" role="radiogroup" aria-label="协作">
+          {list.coworks.map((c) => {
+            const here = inIt.has(c.id);
+            return (
+              <label key={c.id} className={`cowork-choice${pick === c.id ? " on" : ""}${c.ended || here ? " off" : ""}`} data-testid="cowork-choice">
+                <input type="radio" name="cowork" value={c.id} checked={pick === c.id} disabled={c.ended || here} onChange={() => setPick(c.id)} />
+                <span className="cowork-choice-text">
+                  <b>{c.title}</b>
+                  {c.ended ? "（已结束）" : here ? "（已经在里面）" : ""}
+                  <span className="cowork-dim">
+                    {[c.members.join("、"), c.agents.length ? `${c.agents.length} 个 AI` : "", c.repo && `${c.repo}${c.branch ? ` · ${c.branch}` : ""}`].filter(Boolean).join(" · ")}
+                  </span>
+                  {c.goal.trim() && <span className="cowork-goal">{c.goal.trim()}</span>}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {list && list.coworks.length > 0 && (
+        <label className="cowork-label">
+          <span>在协作里叫</span>
+          <span className="cowork-name-preview">{list.me} 的 AI · </span>
+          <input value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)} aria-label="会话名" data-testid="cowork-label" />
+        </label>
+      )}
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <div className="description-dialog-actions">
+        {chosen && <span className="settings-hint">别人看到的是「{list!.me} 的 AI · {label.trim() || "会话"}」</span>}
+        <span className="spacer" />
+        <button type="button" className="btn-ghost" onClick={onClose}>
+          取消
+        </button>
+        <button type="button" className="btn-primary" disabled={busy || !chosen || !label.trim()} onClick={() => void join()} data-testid="cowork-join">
+          拉进协作
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * 转到我的会话 (2026-11-23): the 中转 client on this computer handed a 子会话 to Studio; this asks which session takes it — one
+ * of the person's (newest first) or a new task's — then the Host brings that session into the 协作 and gives it the 子会话
+ * in full, and the workbench goes there. Comes forward when one arrives.
+ */
+export function CoworkHandoffs({ link, tasks, sessions, workspaces, profiles }: { link: HostLink; tasks: readonly Task[]; sessions: readonly Session[]; workspaces: readonly Workspace[]; profiles: readonly ModelProfile[] }) {
+  const [handoffs] = useLiveResource<CoworkHandoff[]>(
+    {
+      load: () => call(link, "GET /api/cowork/handoffs", {}),
+      initial: [],
+      onEvent: (cur, e) => {
+        if (e.type !== "cowork.handoffs.changed") return cur;
+        if (e.added) void window.amo?.openInWorkbench?.({ show: true });
+        return e.handoffs;
+      },
+    },
+    [link],
+  );
+  const h = handoffs[0];
+  if (!h) return null;
+  return <HandoffDialog key={h.threadId} link={link} handoff={h} tasks={tasks} sessions={sessions} workspaces={workspaces} profiles={profiles} />;
+}
+
+function HandoffDialog({ link, handoff: h, tasks, sessions, workspaces, profiles }: { link: HostLink; handoff: CoworkHandoff; tasks: readonly Task[]; sessions: readonly Session[]; workspaces: readonly Workspace[]; profiles: readonly ModelProfile[] }) {
+  const taskOf = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  // The person's sessions that can take it: main sessions and branches of live tasks, here, newest first.
+  const choices = useMemo(
+    () =>
+      sessions
+        .filter((s) => s.kind !== "sub" && !s.archivedAt && s.writer !== "archived" && s.runtime !== "remote" && s.taskId && taskOf.get(s.taskId) && !taskOf.get(s.taskId)!.archivedAt && !taskOf.get(s.taskId)!.remote)
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+        .slice(0, 30),
+    [sessions, taskOf],
+  );
+  const live = workspaces.filter((w) => !w.archivedAt);
+  const [mode, setMode] = useState<"session" | "new">(choices.length ? "session" : "new");
+  const [sessionId, setSessionId] = useState(choices[0]?.id ?? "");
+  const [workspaceId, setWorkspaceId] = useState(() => live.find((w) => w.id === lastWorkspace())?.id ?? live[0]?.id ?? "");
+  const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const act = async (what: "accept" | "dismiss") => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (what === "dismiss") await call(link, "POST /api/cowork/handoff/dismiss", {}, { threadId: h.threadId });
+      else {
+        if (mode === "new") rememberProfile(profileId);
+        await call(link, "POST /api/cowork/handoff/accept", {}, mode === "new" ? { threadId: h.threadId, newTask: { workspaceId, profileId } } : { threadId: h.threadId, sessionId });
+      }
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  const sessionText = (s: Session) => `${taskOf.get(s.taskId!)?.title || "未命名任务"} · ${s.title || "会话"}`;
+  return (
+    <Modal className="cowork-dialog" label="转到我的会话" testId="cowork-handoff-dialog" busy={busy} onClose={() => void act("dismiss")}>
+      <span className="modal-title">转到我的会话</span>
+      <span className="settings-hint">
+        你在 AMO 中转里把协作「{h.coworkTitle}」的子会话「{h.title}」（{h.from} 问 {h.to}）转到了这里。选一个会话接手：它会被拉进这个协作，收到子会话的全文；你和它商量后，可以让它替你回复，也可以自己去回。
+      </span>
+      <div className="cowork-choices" role="radiogroup" aria-label="接手的会话">
+        <label className={`cowork-choice${mode === "session" ? " on" : ""}${choices.length ? "" : " off"}`}>
+          <input type="radio" name="handoff-mode" checked={mode === "session"} disabled={!choices.length} onChange={() => setMode("session")} data-testid="handoff-existing" />
+          <span className="cowork-choice-text">
+            <b>已有的会话</b>
+            <select value={sessionId} disabled={mode !== "session" || !choices.length} onChange={(e) => setSessionId(e.target.value)} aria-label="会话" data-testid="handoff-session">
+              {choices.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {sessionText(s)}
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
+        <label className={`cowork-choice${mode === "new" ? " on" : ""}`}>
+          <input type="radio" name="handoff-mode" checked={mode === "new"} onChange={() => setMode("new")} data-testid="handoff-new" />
+          <span className="cowork-choice-text">
+            <b>新开一个任务</b>
+            <span className="cowork-new-row">
+              <select value={workspaceId} disabled={mode !== "new"} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="项目" data-testid="handoff-workspace">
+                {live.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              <select value={profileId} disabled={mode !== "new"} onChange={(e) => setProfileId(e.target.value)} aria-label="模型" data-testid="handoff-profile">
+                {pickable(profiles, profileId).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {profileLabel(p)}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </span>
+        </label>
+      </div>
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <div className="description-dialog-actions">
+        <span className="spacer" />
+        <button type="button" className="btn-ghost" disabled={busy} onClick={() => void act("dismiss")} data-testid="handoff-dismiss">
+          不转了
+        </button>
+        <button type="button" className="btn-primary" disabled={busy || (mode === "session" ? !sessionId : !workspaceId || !profileId)} onClick={() => void act("accept")} data-testid="handoff-accept">
+          转过去
+        </button>
+      </div>
+    </Modal>
+  );
+}

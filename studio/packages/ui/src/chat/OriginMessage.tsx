@@ -3,6 +3,7 @@ import { originLabel, type MessageOrigin } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import { IconChevronDown, IconChevronRight } from "./icons.js";
 import { originBrief } from "./originBrief.js";
+import { OpenInRelay, useRelayAvailable } from "../teamrelay/TeamRelay.js";
 
 // 交流框架 (2026-11-15, plans/collab-framework.md): a message an agent or Studio put into the session — a sub-session's
 // report, a 中转 reply, the 主控's word, a forwarded 留言, 值守 — is not the person's, so it is not drawn as their bubble.
@@ -30,6 +31,7 @@ export function OriginMessage({ itemId, origin, body, children }: { itemId: stri
         {open ? (
           <div className="msg-origin-body" data-testid="msg-origin-body">
             <Markdown source={body.trim()} />
+            {origin.kind === "cowork" && origin.threadIds?.[0] && <CoworkRelayLink threadId={origin.threadIds[0]} />}
           </div>
         ) : (
           brief && (
@@ -40,6 +42,17 @@ export function OriginMessage({ itemId, origin, body, children }: { itemId: stri
         )}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** 协作 (2026-11-23): where it was said, in the AMO 中转 client (the whole 协作 is seen there, the user 11-23). */
+function CoworkRelayLink({ threadId }: { threadId: string }) {
+  const relay = useRelayAvailable();
+  if (!relay) return null;
+  return (
+    <div className="msg-origin-actions">
+      <OpenInRelay threadId={threadId} title="在 AMO 中转里打开协作里的这段对话" />
     </div>
   );
 }

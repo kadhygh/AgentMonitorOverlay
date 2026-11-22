@@ -980,9 +980,41 @@ export interface HostRoutes
   "GET /api/teamrelay/threads": { req: void; res: import("./entities.js").TeamThread[] };
   /**
    * 在 Studio 里打开 (2026-11-05): show this session in the workbench (a `ui.open` event the main window acts on). AMO 中转
-   * asks it for a session one of this computer's sessions sent; 404 when there is no such session.
+   * asks it for a session one of this computer's sessions sent; 404 when there is no such session. `cowork-to-<threadId>`
+   * (2026-11-23) is 转到我的会话 through a client that only knows this route: as POST /api/cowork/handoff (both ids "").
    */
   "POST /api/ui/open": { req: { sessionId: Id }; res: { taskId: Id; sessionId: Id } };
+  /**
+   * 协作 (2026-11-23, plans/cowork.md): this computer's sessions in 协作 on AMO 中转, as last seen (refreshed about every 30 s,
+   * and at once when one joins or leaves).
+   */
+  "GET /api/cowork/joined": { req: void; res: import("./entities.js").CoworkJoin[] };
+  /** The 协作 the person (`me`, their team account) is in, from the team server: what 拉进协作 offers. */
+  "GET /api/cowork/coworks": { req: void; res: { me: string; coworks: import("./entities.js").CoworkChoice[] } };
+  /** 拉进协作: the session joins it as 「<我> 的 AI · <label>」 (label: 会话名 by default). */
+  "POST /api/cowork/join": { req: { sessionId: Id; coworkId: string; label?: string }; res: import("./entities.js").CoworkJoin };
+  /** 退出协作: the session leaves it; what was queued for it there is dropped. */
+  "POST /api/cowork/leave": { req: { sessionId: Id; coworkId: string }; res: { ok: true } };
+  /**
+   * The composer of a session in a 协作 has text in it (or not any more): its agent is 「等主人」 while it has, and what the
+   * 协作 sends it waits. The workbench says so when it changes and again every minute while it has; unsaid for 3 minutes
+   * counts as empty.
+   */
+  "POST /api/sessions/:id/composer": { req: { hasText: boolean }; res: { ok: true } };
+  /**
+   * 转到我的会话 (2026-11-23): AMO 中转 on this computer hands a 子会话 (threadId) of a 协作 to Studio; the workbench comes forward
+   * and asks which session takes it. The person must be in the 协作.
+   */
+  "POST /api/cowork/handoff": { req: { threadId: string }; res: import("./entities.js").CoworkHandoff };
+  /** The handoffs not taken or put away yet. */
+  "GET /api/cowork/handoffs": { req: void; res: import("./entities.js").CoworkHandoff[] };
+  /**
+   * Takes one: into `sessionId`, or a new task's first session (`newTask`: its project and model). That session joins the
+   * 协作 and gets the 子会话 in full.
+   */
+  "POST /api/cowork/handoff/accept": { req: { threadId: string; sessionId?: Id; newTask?: { workspaceId: Id; profileId: Id } }; res: { taskId: Id; sessionId: Id } };
+  /** Puts one away (不转了). */
+  "POST /api/cowork/handoff/dismiss": { req: { threadId: string }; res: { ok: true } };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -1007,6 +1039,10 @@ export type HostEvent = { seq: number } & (
   | { type: "teamsend.upserted"; send: import("./entities.js").TeamSend }
   /** The 中转 sessions this computer's sessions sent, all of them, when one changed. */
   | { type: "teamthreads.changed"; threads: import("./entities.js").TeamThread[] }
+  /** 协作 (2026-11-23): this computer's sessions in 协作, all of them, when one joined, left or its state changed. */
+  | { type: "cowork.joined.changed"; joined: import("./entities.js").CoworkJoin[] }
+  /** 转到我的会话: the handoffs waiting, all of them; `added` is the one that just came (the workbench comes forward for it). */
+  | { type: "cowork.handoffs.changed"; handoffs: import("./entities.js").CoworkHandoff[]; added?: string }
   /** A session became a 脉络会话 or stopped being one, or its AI wrote a round's title or a point (track_note). */
   | { type: "tracks.changed"; sessionId: Id; on: boolean }
   /** A session's 白板 changed: turned on or off, its AI wrote it, the person pinned a note, their notes went to the AI. */

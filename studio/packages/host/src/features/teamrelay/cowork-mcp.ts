@@ -1,0 +1,74 @@
+import { z } from "zod";
+import { fail, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
+import { HostError } from "../../core/shared.js";
+import { BOARD_AI_MAX_CARDS } from "@amo-studio/relay/light";
+
+/**
+ * 协作's tools (2026-11-23, plans/cowork.md; cowork.ts), for a session the person brought into a 协作 on AMO 中转. None waits
+ * for approval here: bringing the session in was the person's authority for it to speak there as their AI; the service
+ * keeps an @ or a new 子会话 as a draft for the person while the 协作's 「AI 发起 @ 和提问」 is off, and the answer says so.
+ */
+export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
+  const c = service.teamRelay.cowork;
+  const run = async (fn: (sessionId: string) => Promise<string>) => {
+    if (!caller) return fail("这次调用没有 AMO 会话身份。");
+    try {
+      return { content: [{ type: "text" as const, text: await fn(caller.sessionId) }] };
+    } catch (err) {
+      if (err instanceof HostError) return fail(err.message);
+      throw err;
+    }
+  };
+  const coworkId = z.string().optional().describe("The 协作 (coworkId); may be left out when this session is in only one.");
+  return [
+    {
+      name: "cowork_read",
+      title: "读协作",
+      description:
+        "The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo). threadId: one 子会话 in full instead. after: read from that #seq.",
+      inputSchema: { coworkId, threadId: z.string().optional(), after: z.number().int().optional() },
+      readOnly: true,
+      autoApprove: true,
+      run: (args) => run((sid) => c.read(sid, args)),
+    },
+    {
+      name: "cowork_post",
+      title: "在协作里发言",
+      description:
+        "Say something in the 协作 as your person's AI: in its 群聊, or in a 子会话 (threadId) — a reply there, or 插话. replyTo: the #seq you answer (shown as 「回 X」). mentions: people to @ (account names); agentMentions: AIs to @ (their mark from cowork_read) — an @-ed AI is woken, nobody else is. While the 协作's 「AI 发起 @ 和提问」 is off, a message that @-s anyone is kept as a draft for your person to send or drop (the answer says so); without @ it goes at once.",
+      inputSchema: { coworkId, threadId: z.string().optional(), body: z.string().describe("Markdown."), replyTo: z.number().int().optional(), mentions: z.array(z.string()).optional(), agentMentions: z.array(z.string()).optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => run((sid) => c.post(sid, args)),
+    },
+    {
+      name: "cowork_ask",
+      title: "在协作里开子会话",
+      description:
+        "Ask a person in the 协作 to confirm one thing: a new 子会话 (everyone in the 协作 sees it and may join in; it shows as a card in the 群聊). Write the background and what to confirm in body; one question per point in questions. Replies in it come back into this conversation. While 「AI 发起 @ 和提问」 is off it is a draft until your person sends it. Then end your turn; do not go on in the unconfirmed direction.",
+      inputSchema: { coworkId, to: z.string().describe("Their account name (cowork_read lists the people)."), title: z.string().describe("One line."), body: z.string(), questions: z.array(z.object({ text: z.string(), options: z.array(z.string()).optional() })).optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => run((sid) => c.ask(sid, args)),
+    },
+    {
+      name: "cowork_board",
+      title: "协作白板",
+      description: `The 协作's 白板 (an infinite canvas several people and AIs change at once). Without ops: every card (id, kind, base version, place, text, marks such as 已过时, 有冲突, someone writing it). With ops, in order: {op:"add", item:{kind: note|ref|group|link|session, text, x, y, w, h, color, group, ref:{kind: file|commit|doc|url, path, commit, url, title}, from, to, session}}, {op:"set", id, base, fields:{x, y, w, h, color, text, group, stale, ref, from, to}}, {op:"delete", id}, {op:"restore", id}, {op:"undo", seq} (only your own). At most ${BOARD_AI_MAX_CARDS} cards per call. Give base (the version you read) when changing a card's text: a card someone is writing (locked) or rewrote since you read (stale) is not changed — read again, or put a new card beside it and link it. Never rewrite others' cards wholesale. A ref card for a file names the commit you read it at.`,
+      inputSchema: { coworkId, ops: z.array(z.record(z.string(), z.unknown())).optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => run((sid) => c.board(sid, args)),
+    },
+    {
+      name: "cowork_note",
+      title: "记协作事件",
+      description:
+        "Record an event in the 协作 (it wakes nobody; the others read it when they look): kind commit after you pushed — commit (its id) and files (the paths it changed: board cards citing an older commit of them are marked 已过时) — or kind note for anything else worth keeping. The real content still goes into the branch's documents.",
+      inputSchema: { coworkId, kind: z.enum(["commit", "note"]), text: z.string(), commit: z.string().optional(), files: z.array(z.string()).optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => run((sid) => c.note(sid, args)),
+    },
+  ];
+}

@@ -40,6 +40,7 @@ import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { TeamRelayBanner, useTeamSends, useTeamThreads } from "../teamrelay/TeamRelay.js";
 import { MattersPanel } from "../tracks/MattersPanel.js";
 import { useWhiteboardMarks, WhiteboardView } from "../whiteboard/WhiteboardView.js";
+import { CoworkBar, CoworkJoinDialog, useCoworkJoined } from "../teamrelay/Cowork.js";
 import { TowerSwitch, TowerView, useTracksOn, type TowerPickTarget } from "../tracks/TowerView.js";
 import { cardWindowOpen, composerInWindow, roundChatTarget, useRoundWindows } from "../tracks/rounds.js";
 import { experimentalOn } from "../lib/features.js";
@@ -138,6 +139,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [picking, setPicking] = useState<"topic" | null>(null);
   const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
   const [describing, setDescribing] = useState(false);
+  // 拉进协作 (2026-11-23): the session whose dialog is open.
+  const [coworking, setCoworking] = useState<string | null>(null);
   /** 绑定到待办 (问题 #10): the 便签's 待办 to pick from, for the task or one of its sessions. */
   const [todoBind, setTodoBind] = useState<{ view: TodoView; target: TodoBindTarget } | null>(null);
   const bindTodo = (target: TodoBindTarget) => void loadTodoForBind().then((view) => view && setTodoBind({ view, target }));
@@ -148,6 +151,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // 会话里用中转 (2026-10-30): what its sessions ask to send through 中转, and whom they wait on there.
   const teamSends = useTeamSends(link);
   const teamThreads = useTeamThreads(link);
+  const coworkJoined = useCoworkJoined(link);
   // 脉络的楼 (2026-11-15, behind 测试功能「脉络」): a 脉络会话 opens as its building; the switch above the conversation goes
   // to the other view for now (kept per session while the page is open). Not for a remote task's copy.
   // A copy (远程, 2026-11-15, the user: 我是远端操控好像看不到): its building comes from the computer it runs on (rt.tracks),
@@ -661,6 +665,19 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         />
       )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
+      {coworking && own.some((s) => s.id === coworking) && (
+        <CoworkJoinDialog
+          link={link}
+          session={own.find((s) => s.id === coworking)!}
+          taskTitle={task.title}
+          joined={coworkJoined}
+          onClose={() => setCoworking(null)}
+          onJoined={(j) => {
+            setCoworking(null);
+            setToast({ text: `已拉进协作「${j.coworkTitle}」，在里面叫「${j.name}」` });
+          }}
+        />
+      )}
       {todoBind && <TodoBindDialog view={todoBind.view} target={todoBind.target} onClose={() => setTodoBind(null)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
       <RelayBanner link={link} relays={relays} tasks={tasks} />
@@ -718,9 +735,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onArchive={() => void archive(head.id)}
               onError={showError}
               {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: head.id, sessionTitle: head.title }) } : {})}
+              {...(!copy && !head.archivedAt && head.kind !== "sub" ? { onCowork: () => setCoworking(head.id) } : {})}
             />
           )}
           {head && <SessionBanners session={head} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(head.id)} onReclaim={() => void reclaim(head.id)} />}
+          {head && !copy && <CoworkBar link={link} session={head} joined={coworkJoined} onError={showError} />}
           {head && (tracksEnabled || boardEnabled) && (
             <TowerSwitch
               {...(tracksOff ? { off: tracksOff } : {})}

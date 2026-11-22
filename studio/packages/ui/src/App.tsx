@@ -4,6 +4,7 @@ import type { Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
 import { QuickStart } from "./newtask/QuickStart.js";
+import { CoworkHandoffs } from "./teamrelay/Cowork.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import { useUnreadMail } from "./collab/useInbox.js";
 import { useOpenDecisions } from "./collab/DecisionPanel.js";
@@ -388,6 +389,8 @@ export function App() {
           }}
         />
       )}
+      {/* 转到我的会话 (2026-11-23): a 子会话 the 中转 client handed to Studio here asks which session takes it. */}
+      <CoworkHandoffs link={link} tasks={state.tasks} sessions={state.sessions} workspaces={state.workspaces} profiles={state.profiles} />
       {quickOpen && (
         <QuickStart
           link={link}

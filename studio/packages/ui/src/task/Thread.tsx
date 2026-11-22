@@ -38,6 +38,7 @@ import { unansweredPrompt } from "./takeBack.js";
 import type { AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
+import { useCoworkJoined } from "../teamrelay/Cowork.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { openReview } from "../gitreview/open.js";
@@ -168,6 +169,19 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   useEffect(() => {
     if (!draft) typingSaid.current = null;
   }, [draft]);
+  // 协作 (2026-11-23, teamrelay/cowork.ts): while this composer has words, the session's AI is 「等主人」 to its 协作 and what
+  // they send it waits. Said when that changes and again every minute while it holds (the Host forgets it after three).
+  const coworkJoined = useCoworkJoined(link);
+  const inCowork = !!sessionId && coworkJoined.some((j) => j.sessionId === sessionId);
+  const composerHasText = !!draft.trim();
+  useEffect(() => {
+    if (!inCowork || !sessionId) return;
+    const say = () => void call(link, "POST /api/sessions/:id/composer", { id: sessionId }, { hasText: composerHasText }).catch(() => undefined);
+    say();
+    if (!composerHasText) return;
+    const timer = setInterval(say, 60_000);
+    return () => clearInterval(timer);
+  }, [inCowork, sessionId, composerHasText, link]);
   useEffect(() => {
     window.addEventListener("pagehide", flushDraft);
     return () => {

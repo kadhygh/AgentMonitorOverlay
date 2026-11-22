@@ -548,11 +548,12 @@ export class CoworkStore {
     });
     const unread = (this.db.prepare("SELECT cowork_id, mark, read_seq FROM cowork_agents WHERE owner = ? AND left_at IS NULL AND substr(mark, 1, ?) = ?").all(me, prefix.length, prefix) as Row[]).flatMap((a) => {
       const threads = [String(a.cowork_id), ...this.sessionIds(String(a.cowork_id))];
+      // Not the ones that are deliveries for it (step 4, 2026-11-23): those reach it in full; 「N 条新的」 is the rest.
       const count = Number(
         (
           this.db
-            .prepare(`SELECT COUNT(*) AS n FROM messages WHERE thread_id IN (${threads.map(() => "?").join(",")}) AND seq > ? AND kind <> 'event' AND COALESCE(json_extract(via, '$.conv'), '') <> ?`)
-            .get(...threads, Number(a.read_seq), String(a.mark)) as Row
+            .prepare(`SELECT COUNT(*) AS n FROM messages WHERE thread_id IN (${threads.map(() => "?").join(",")}) AND seq > ? AND kind <> 'event' AND COALESCE(json_extract(via, '$.conv'), '') <> ? AND id NOT IN (SELECT message_id FROM cowork_deliveries WHERE cowork_id = ? AND agent = ?)`)
+            .get(...threads, Number(a.read_seq), String(a.mark), String(a.cowork_id), String(a.mark)) as Row
         ).n,
       );
       return count ? [{ coworkId: String(a.cowork_id), agent: String(a.mark), count }] : [];

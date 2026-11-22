@@ -80,6 +80,12 @@
 
 B 在子会话卡上点「转到我的会话」：跳到 B 的 Studio，选一个会话或新开一个，把这个子会话的全文送进去。那个会话也就被拉进了这个 Cowork，可以替 B 回复（显示「B 的 AI」），或者 B 看完自己回。中转客户端已经有「在 Studio 里打开」，照它的路走。
 
+**接法（第 4 步定，给第 3 步用）**：中转客户端只要把子会话的 threadId 交给本机 Studio 的 Host，Studio 自己弹窗问「由哪个会话接手 / 新开一个任务」、拉进协作、送全文、跳过去。按钮只在桌面客户端里、子会话的 `request.coworkId` 有值、我在这个协作里时显示。
+
+- **用现有的外壳就能接，不用改 `relay-app`**：调外壳已有的 `shell.openInStudio(conv)`（`relay-app/src/studio-link.ts`），`conv` 写 `studio:<本机设备号>:cowork-to-<threadId>`。外壳照旧找本机的 Studio、带 host-token POST `/api/ui/open {sessionId: "cowork-to-<threadId>"}`；Studio 认出 `cowork-to-` 前缀就当「转到我的会话」。返回 `null` 是成了（Studio 已弹窗并到前面），返回字符串是为什么没成（「Studio 没开着」等，直接 toast）；第 4 步之前的 Studio 会让外壳说成「Studio 里没有这个会话了（可能已经删掉）」，界面可以把它换成「更新 Studio 后再试」。本机设备号：`shell.transfer.device()`（传文件那版外壳起有）。按钮显不显示可以先问 `shell.studioHas(同一个 conv)`（本机有 Studio 在跑才是 true）。没有 `transfer` 的旧外壳拿不到设备号：按钮不显示，或提示更新中转桌面程序。
+- **以后外壳要改时的正式接口**：Host 的 `POST /api/cowork/handoff {threadId}`（同样要 host-token），效果一样。接手的那一步是 Studio 界面自己调的 `POST /api/cowork/handoff/accept`，中转客户端不用管。
+- Studio 收到后：要求我在那个协作里，否则报错；一小时没处理的自动收起；同一个子会话重复交只留一份。
+
 ## 信息怎么保持是新的（两台设备之间）
 
 | 层 | 放什么 | 怎么保持是新的 |
@@ -147,6 +153,20 @@ B 在子会话卡上点「转到我的会话」：跳到 B 的 Studio，选一�
 - **白板**：文字的软锁走 HTTP（`…/board/lock`，写的时候每隔几秒续一次）；在场走 /ws 帧或 HTTP。AI 不占锁；AI 碰到有人在写的卡、或者在它读过之后改过字的卡，被拒绝（`locked` / `stale`）；人的同类改动存成「另一版」。AI 一次调用超过 10 张卡，整次拒绝（403）。commit 事件带的文件会把引用旧提交的卡标成已过时（记在那个 agent 名下）。
 - **第 4 步（Studio）要留意**：AI 发起的子会话也是一个 request，`request.from` 是主人、`conv` 是它的标记，所以 Host 现在的 `teamrelay` 扫描（`dueForAi`）也会把回复当「中转回复」送回会话。接协作时要跳过 `request.coworkId` 有值的会话，只走待送，否则会送两次。
 - **第 3 步（界面）要留意**：`/api/threads` 里有协作的群聊（kind `cowork`）和子会话（request 带 `coworkId`，协作里的人都在里面，不只是问和答的两个人）；待处理、聊天的列表要把它们滤掉，放到协作里显示。
+
+### 第 4 步做成的样子（2026-11-23，Studio）
+
+代码在 `host/src/features/teamrelay/cowork.ts`（拉进、状态、送进会话、转到我的会话）、`cowork-text.ts`（送进会话的文字、工具的回答）、`cowork-mcp.ts`（`cowork_*`）、`host/src/core/cowork.ts`（人下一条消息带的话）；界面 `ui/src/teamrelay/Cowork.tsx`。导航索引 `studio.cowork`。按常理定的：
+
+- **入口**：会话「更多」菜单里的「拉进协作…」，弹窗选协作、填名字（只填「会话名」那段，前面固定是「我 的 AI · 」）。远程任务的副本、归档的会话、子 agent 没有这个入口。会话标题栏下一行写它在哪个协作、状态、排队几条、几条草稿等你，带「在中转里打开」（打开协作的群聊）和「退出」。
+- **状态**：在跑 = 处理中；审批、提问、计划待审、在终端里、有协作草稿、有 team_ask 待发、人点了停止还没再写、输入框有字 = 等主人；其他 = 待命；会话没了或归档 = 不在线，并且自动退出协作（排队给它的作废）。每 30 秒全报一次，变了 0.3 秒后再报。输入框有字由界面在变化时和之后每分钟报一次（`POST /api/sessions/:id/composer`，只对在协作里的会话），Host 3 分钟没再听到就当空了。
+- **送进会话**：只在「待命」时送；同一个会话同一个协作一次来的几条合成一条消息（一张卡）。消息开头一行 `【协作「标题」· 谁 在哪里做了什么】`，然后每条消息（带 #序号）、最后一段告诉它用 `cowork_post`（带 threadId、replyTo）回到协作里。先放进会话收件箱再 ack；ack 没成功的下次只补 ack，不再送一次。
+- **「协作里有 N 条新的」**：服务的 `unread` 变多了，就在人下一条消息末尾带一句（和白板、脉络的提示同一个地方）；送进一批 @ 时也顺带说；agent 用 `cowork_read` 读过就清掉。为此服务的 `unread` 改成不算已经作为待送给它的那几条（`relay/src/cowork.ts` inbox，向后兼容）。被拉进协作这件事也在下一条消息（或第一批待送）里告诉它一次。
+- **cowork_read**：不带 threadId 是全貌（目标、仓库分支、选项、成员和 AI 状态 + mark、开着的子会话、已定的事、最近的事件、它自己的草稿）+ 上次读之后的新消息，最多列最近 40 条；读到哪 Host 记着（kv），也可以带 after。带 threadId 是一个子会话全文加文件。
+- **cowork_board**：Host 记着这个 agent 上次读到的每张卡的文字版本，改字时没写 base 就替它补上，所以「读过之后被人改过」会被服务拒（stale）。超过 10 张卡在 Host 这边就拒，告诉它分批、先在协作里说一声。被拒的每条都写明怎么办。
+- **转到我的会话**：接法见上面「B 一键转到自己的会话」。Studio 弹窗列最近 30 个会话（主会话和分支，没归档、不是远程副本），或新开一个任务（项目 + 模型，任务名「协作：子会话标题」，会话名是子会话标题）。送进去的话让 AI 先和人在对话里商量，人让回时再用 `cowork_post` 回在子会话里。
+- **不送两次**：teamrelay 的扫描跳过带 `request.coworkId` 的会话；AI 用 `cowork_ask` 开的子会话也只走协作的待送。
+- 没做的：Studio 里不能决定草稿（在中转里发出 / 改 / 不发）；`cowork_*` 没有「定下结论」（`concludeCowork`），要的话再加一个工具；协作里的附件 AI 用 `team_file_get` 取（`cowork_read` 列出的子会话文件），群聊里的文件没列。
 
 ## 分几步做
 

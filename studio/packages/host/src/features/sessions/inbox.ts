@@ -151,6 +151,11 @@ export class SessionInbox extends Feature {
     for (const id of this.ids()) void this.flush(id).catch(() => undefined);
   }
 
+  /** The person stopped it and has not written since (协作 counts its agent 等主人 then, 2026-11-23). */
+  isPaused(sessionId: Id): boolean {
+    return this.paused.has(sessionId);
+  }
+
   /** The session's held rows, oldest first. */
   held(sessionId: Id): SessionItem[] {
     return this.store.findItems(sessionId, "user", { delivery: "held" });

@@ -363,10 +363,11 @@ export type UserDelivery = "waiting" | "unsent" | "held";
  * words, folded) and the session's 事项 can be listed without reading the text. `start`: the first message of a session
  * another one opened (session_start); `report`: that session's turn ended, told to the one that opened it; `send`:
  * session_send; `team`: replies from AMO 中转 (team_ask); `relay`: 主控传话 (task_message); `mail`: a 留言 the person
- * forwarded; `duty`: a 值守 item going on in its session. Rows from before have none: `messageOrigin` (origin.ts) reads
- * the 【…】 line instead.
+ * forwarded; `duty`: a 值守 item going on in its session; `cowork` (协作, 2026-11-23, plans/cowork.md): someone in a 协作 the
+ * session was brought into @-ed it or answered a 子会话 it started, or its owner handed it a 子会话 (转到我的会话). Rows
+ * from before have none: `messageOrigin` (origin.ts) reads the 【…】 line instead.
  */
-export type MessageOriginKind = "start" | "report" | "send" | "team" | "relay" | "mail" | "duty";
+export type MessageOriginKind = "start" | "report" | "send" | "team" | "relay" | "mail" | "duty" | "cowork";
 
 export interface MessageOrigin {
   kind: MessageOriginKind;
@@ -378,6 +379,8 @@ export interface MessageOrigin {
   threadIds?: string[];
   /** `report`: how the turn it tells of ended. */
   state?: "done" | "stopped" | "failed";
+  /** `cowork`: the 协作 and where in it (「在群聊里 @ 了你」「回复了子会话「X」」…); its thread is the first of `threadIds`. */
+  cowork?: { id: string; title: string; where: string };
 }
 
 /**
@@ -630,6 +633,59 @@ export interface TeamThread {
   deliveredAt: number | null;
   /** 已接手，不用回复 (2026-11-05): when `to` took it on without replying (it is done then); null/absent otherwise. */
   takenAt?: number | null;
+}
+
+/**
+ * 协作 (cowork, 2026-11-23, plans/cowork.md): one of this computer's sessions brought into a 协作 on AMO 中转, as the team
+ * server lists it, with what this Host last reported for it: idle 待命, busy 处理中, owner 等主人, offline 不在线 (the
+ * session is gone or archived).
+ */
+export interface CoworkJoin {
+  coworkId: string;
+  coworkTitle: string;
+  sessionId: Id;
+  /** Its mark on 中转 (`studio:<设备号>:<会话 id>`). */
+  mark: string;
+  /** 会话名 as shown there; `name` is 「<主人> 的 AI · <label>」. */
+  label: string;
+  name: string;
+  state: "idle" | "busy" | "owner" | "offline";
+  /** Messages for it still waiting on 中转 (排队中). */
+  queued: number;
+  /** Its drafts waiting for the person (「AI 发起 @ 和提问」 off): sent or dropped in AMO 中转. */
+  drafts: number;
+  /** The 协作 was ended (结束). */
+  ended: boolean;
+  joinedAt: number;
+}
+
+/** A 协作 the person is in, to bring a session into (拉进协作). */
+export interface CoworkChoice {
+  id: string;
+  title: string;
+  goal: string;
+  repo: string;
+  branch: string;
+  members: string[];
+  /** Its agents' names (「X 的 AI · 会话名」). */
+  agents: string[];
+  ended: boolean;
+  updatedAt: number;
+}
+
+/**
+ * 转到我的会话 (2026-11-23): the person, in AMO 中转, handed a 子会话 of a 协作 to Studio on this computer; the workbench asks
+ * which session takes it (or a new one). Kept until taken or put away, or for an hour.
+ */
+export interface CoworkHandoff {
+  threadId: string;
+  coworkId: string;
+  coworkTitle: string;
+  /** The 子会话's title, who asked and whom it waits on. */
+  title: string;
+  from: string;
+  to: string;
+  at: Timestamp;
 }
 export const TOPIC_DOC_BODY_MAX = 50_000;
 

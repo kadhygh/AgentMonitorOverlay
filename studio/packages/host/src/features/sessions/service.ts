@@ -8,6 +8,7 @@ import { roleUpdate } from "../../core/role.js";
 import { tracksHint } from "../../core/tracks.js";
 import { whiteboardHint, readWhiteboard } from "../../core/whiteboard.js";
 import { readReviewProgress, reviewProgressHint } from "../../core/reviewprogress.js";
+import { coworkHint } from "../../core/cowork.js";
 import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
@@ -99,11 +100,14 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     const board = experimentalEnabled(this.f.config.experimentalFeatures(), "whiteboard") ? whiteboardHint(this.store, sessionId) : null;
     // 审阅进度 (2026-11-16): the blocks the person newly marked 「!」, and how far they read the last reply when only partly.
     const reading = experimentalEnabled(this.f.config.experimentalFeatures(), "review-progress") ? reviewProgressHint(this.store, sessionId) : null;
+    // 协作 (2026-11-23): that it was brought into one, and 「协作里有 N 条新的」 (core/cowork.ts).
+    const cowork = coworkHint(this.store, sessionId);
     const update = {
-      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? []), ...(reading?.lines ?? [])],
+      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? []), ...(reading?.lines ?? []), ...(cowork?.lines ?? [])],
       told: () => {
         role.told();
         tracks?.told();
+        cowork?.told();
         if (reading?.lines.length) {
           reading.told();
           this.publish({ type: "reviewprogress.changed", sessionId, replies: readReviewProgress(this.store, sessionId).replies });

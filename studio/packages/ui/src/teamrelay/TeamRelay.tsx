@@ -73,7 +73,7 @@ export function useSeenTaken(threads: readonly TeamThread[]): { seen: readonly s
 export const takenText = (t: TeamThread) => `✓ ${t.to} 已接手「${t.title}」，不用回复`;
 
 /** Whether Studio can open threads in the AMO 中转 client here (it found one); asked once per page. */
-function useRelayAvailable(): boolean {
+export function useRelayAvailable(): boolean {
   const [on, setOn] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -86,9 +86,9 @@ function useRelayAvailable(): boolean {
 }
 
 /** 在中转里打开 (2026-11-05, J2/J3): the thread in the AMO 中转 client. */
-function OpenInRelay({ threadId }: { threadId: string }) {
+export function OpenInRelay({ threadId, title = "在 AMO 中转里打开这个会话" }: { threadId: string; title?: string }) {
   return (
-    <button type="button" className="btn-ghost small" title="在 AMO 中转里打开这个会话" data-testid="open-in-relay" onClick={() => void window.amo?.openInRelay?.(threadId)}>
+    <button type="button" className="btn-ghost small" title={title} data-testid="open-in-relay" onClick={() => void window.amo?.openInRelay?.(threadId)}>
       在中转里打开
     </button>
   );

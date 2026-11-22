@@ -150,6 +150,7 @@
 .msg-origin-note { flex: none; margin-left: auto; color: var(--chat-caption); font-size: 12px; }
 .msg-origin-brief { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 10px 8px 30px; color: var(--chat-dim); font-size: 13px; line-height: 20px; white-space: pre-line; word-break: break-word; cursor: pointer; }
 .msg-origin-body { padding: 4px 14px 12px 30px; border-top: 1px solid var(--chat-hairline); min-width: 0; overflow-wrap: anywhere; }
+.msg-origin-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 /* ---- replies --------------------------------------------------------------------------------------------------- */
 

@@ -40,6 +40,7 @@ export function SessionHead({
   onArchive,
   onError,
   onBindTodo,
+  onCowork,
 }: {
   link: HostLink;
   session: Session;
@@ -69,6 +70,8 @@ export function SessionHead({
   onError(text: string): void;
   /** 绑定到待办 (问题 #10): absent where it cannot be done (a plain browser, a remote task's copy). */
   onBindTodo?(): void;
+  /** 拉进协作 (2026-11-23, teamrelay/Cowork.tsx): absent where it cannot be (a remote task's copy, an archived session). */
+  onCowork?(): void;
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
@@ -148,7 +151,7 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
         type="button"
         className="bar-btn"
         aria-label="会话的更多操作"
-        title={["更多", [canFork && "分支", dir && vscode && "VS Code", dir && "资源管理器", terminal && "在终端打开", "书签", onBindTodo && "绑定到待办"].filter(Boolean).join("、")].join("：")}
+        title={["更多", [canFork && "分支", dir && vscode && "VS Code", dir && "资源管理器", terminal && "在终端打开", "书签", onBindTodo && "绑定到待办", onCowork && "拉进协作"].filter(Boolean).join("、")].join("：")}
         onClick={(e) => setSessionMenu(below(e.currentTarget))}
         data-testid="session-more"
       >
@@ -218,6 +221,11 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
           {onBindTodo && (
             <button type="button" role="menuitem" title="选一条便签里的待办绑定到这个会话：在待办里点它就回到这里" onClick={pick(onBindTodo)} data-testid="session-bind-todo">
               绑定到待办…
+            </button>
+          )}
+          {onCowork && (
+            <button type="button" role="menuitem" title="把这个会话拉进 AMO 中转上的一个协作：它以你的 AI 的身份在里面回复、提问、写白板" onClick={pick(onCowork)} data-testid="session-cowork">
+              拉进协作…
             </button>
           )}
         </PopMenu>

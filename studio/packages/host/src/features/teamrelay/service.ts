@@ -5,6 +5,7 @@ import { RelayClient, RelayClientError, downloadFile, dueForAi, filesAsText, new
 import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
+import { TeamCowork } from "./cowork.js";
 
 // 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): a session asks someone on the team to confirm something through
 // AMO 中转, as the person (the platform's login), marked as their AI's. Every send waits for the person first — in auto
@@ -27,7 +28,9 @@ const FILE_ID = /^[\w-]{1,64}$/;
 
 type Questions = TeamSend["questions"];
 
-export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachments"> {
+export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachments" | "tasks"> {
+  /** 协作 (2026-11-23, cowork.ts): this computer's sessions in coworks, their state, what comes for them, cowork_*. */
+  readonly cowork: TeamCowork = new TeamCowork(this.host, this);
   private running = false;
   private abort: AbortController | null = null;
   private scanning: Promise<void> | null = null;
@@ -39,6 +42,14 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
   // ---- who and where
 
   /** The 中转 client as the person, and this computer's mark prefix. */
+  /** For cowork.ts: the same login and refusals. */
+  relayLogin(): { client: RelayClient; me: string; prefix: string } {
+    return this.relay();
+  }
+  relayCall<T>(run: () => Promise<T>): Promise<T> {
+    return this.call(run);
+  }
+
   private relay(): { client: RelayClient; me: string; prefix: string } {
     const login = this.teamLink.login();
     if (!login) throw new HostError("bad_request", TEAM_NOT_SIGNED_IN);
@@ -301,11 +312,13 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
     if (this.running) return;
     this.running = true;
     void this.loop();
+    this.cowork.start();
   }
 
   stop(): void {
     this.running = false;
     this.abort?.abort();
+    this.cowork.stop();
   }
 
   private async loop(): Promise<void> {
@@ -347,7 +360,9 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
     const all = await client.threads();
     for (const t of all) this.lastSeq = Math.max(this.lastSeq, t.lastSeq);
     const before = this.threads();
-    const mine = all.filter((t) => t.request && t.request.from === me && t.request.conv?.startsWith(prefix));
+    // A 协作's 子会话 (request.coworkId, 2026-11-23) is a request too, sent as the person with the agent's mark: what comes
+    // back there reaches the agent only as the 协作's deliveries (cowork.ts), else it would go in twice.
+    const mine = all.filter((t) => t.request && !t.request.coworkId && t.request.from === me && t.request.conv?.startsWith(prefix));
     const next = new Map(before.map((t) => [t.threadId, t]));
     for (const t of mine) next.set(t.id, this.view(t, t.request!.conv!.slice(prefix.length), before.find((b) => b.threadId === t.id)));
 

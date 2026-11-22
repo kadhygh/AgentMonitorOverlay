@@ -67,6 +67,11 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "whiteboard.on", scope: "global", owner: "features/whiteboard/service.ts", what: "开了白板的会话的 id" },
   { key: "teamrelay.sends", scope: "global", owner: "features/teamrelay/service.ts", what: "中转：会话要发的（等人确认、已发出）" },
   { key: "teamrelay.threads", scope: "global", owner: "features/teamrelay/service.ts", what: "中转：会话发出的中转会话" },
+  // 协作 (2026-11-23)
+  { key: "teamrelay.cowork.joined", scope: "global", owner: "features/teamrelay/cowork.ts", what: "协作：这台电脑拉进协作的会话（上次从服务读到的，带报的状态）" },
+  { key: "teamrelay.cowork.handoffs", scope: "global", owner: "features/teamrelay/cowork.ts", what: "协作：中转客户端交过来、还没接手的子会话（转到我的会话）" },
+  { key: "teamrelay.cowork.read", scope: "global", owner: "features/teamrelay/cowork.ts", what: "协作：每个 agent 的 cowork_read 读到哪（序号）" },
+  { key: "teamrelay.cowork.tell", scope: "global", owner: "core/cowork.ts", what: "协作：人下一条消息要带给会话的话（被拉进协作、协作里有 N 条新的）" },
   // 远程
   { key: "remote.enabled", scope: "global", owner: "features/remote/service.ts", what: "远程为哪个账号打开（默认关闭）" },
   { key: "remote.pairs", scope: "global", owner: "features/remote/service.ts", what: "配对的设备" },

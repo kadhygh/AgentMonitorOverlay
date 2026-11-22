@@ -17,6 +17,8 @@ const HEADS: { kind: MessageOriginKind; re: RegExp; state?: MessageOrigin["state
   { kind: "start", re: /^【由本任务的会话「(.*?)」开启】\n/ },
   { kind: "start", re: /^【本任务的会话「(.*?)」应人的要求开启：人会在这里和你一起推进】\n/ },
   { kind: "mail", re: /^\[AMO 留言\] 来自(.+?)：\n\n/ },
+  // 协作 (2026-11-23, teamrelay/cowork.ts): 【协作「标题」· 程序老李 在群聊里 @ 了你】. The row's origin names the person.
+  { kind: "cowork", re: /^【协作「(.*?)」·[^】\n]*】\n/ },
 ];
 
 /**
@@ -27,7 +29,7 @@ export function messageOrigin(item: { text: string; origin?: MessageOrigin }): {
   for (const h of HEADS) {
     const m = h.re.exec(item.text);
     if (!m) continue;
-    const read: MessageOrigin = { kind: h.kind, from: h.from ?? (m[1] || "未命名会话"), ...(h.kind !== "relay" && h.kind !== "start" && h.kind !== "mail" && m[2] ? { sessionId: m[2] } : {}), ...(h.state ? { state: h.state } : {}) };
+    const read: MessageOrigin = { kind: h.kind, from: h.from ?? (m[1] || "未命名会话"), ...(h.kind !== "relay" && h.kind !== "start" && h.kind !== "mail" && h.kind !== "cowork" && m[2] ? { sessionId: m[2] } : {}), ...(h.state ? { state: h.state } : {}) };
     // A stored origin wins (it has what the line does not: the people who answered, the 中转 sessions); the line only
     // gives the body.
     return { origin: item.origin ?? read, body: item.text.slice(m[0].length) };
@@ -52,5 +54,7 @@ export function originLabel(origin: MessageOrigin): string {
       return `留言 · 来自${origin.from}`;
     case "duty":
       return `值守「${origin.from}」`;
+    case "cowork":
+      return origin.cowork ? `${origin.from} ${origin.cowork.where}（协作「${origin.cowork.title}」）` : `协作「${origin.from}」`;
   }
 }

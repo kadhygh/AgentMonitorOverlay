@@ -180,6 +180,8 @@ describe("协作：agent", () => {
     expect((await li.coworkInbox("studio:d_other:")).items).toEqual([]);
     expect((await wang.coworkInbox(liStudio)).items).toEqual([]);
     expect((await wang.cowork(id)).cowork.agents.find((a) => a.mark === LI_AI)?.queued).toBe(1);
+    // What was @-ed at it reaches it in full: not one of 「N 条新的」 (step 4, 2026-11-23).
+    expect(inbox.unread).toEqual([{ coworkId: id, agent: LI_AI, count: 4 }]);
 
     const { events } = await listen(wang);
     expect(await wang.ackCowork([inbox.items[0]!.delivery.id])).toEqual([]);
