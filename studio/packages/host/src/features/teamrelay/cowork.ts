@@ -1,5 +1,5 @@
 import { inTurn, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
-import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type AgentReport, type BoardItem, type BoardOp, type Cowork, type CoworkInbox, type CoworkInboxItem, type RelayClient, type RelayFile, type Via } from "@amo-studio/relay/light";
+import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type AgentReport, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type Message, type RelayClient, type RelayFile, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { coworkHint, coworkTold, resetCoworkTold, setCoworkTell } from "../../core/cowork.js";
@@ -430,7 +430,8 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       const { thread, messages } = await this.call(() => client.messages(threadId, 0));
       const files = await client.files({ threadId }).catch(() => [] as RelayFile[]);
       const list = filesAsText(files, { download: "team_file_get（threadId, fileId）" });
-      return list ? `${sessionText(thread, messages, detail.cowork, mark)}\n\n${list}` : sessionText(thread, messages, detail.cowork, mark);
+      const seen = await this.seenQueued(client, detail.deliveries, mark, messages);
+      return [sessionText(thread, messages, detail.cowork, mark), list, seen].filter(Boolean).join("\n\n");
     }
     const after = typeof input.after === "number" && input.after >= 0 ? input.after : this.readAt(coworkId, mark);
     const feed = await this.call(() => client.coworkFeed(coworkId, after, mark));
@@ -439,7 +440,23 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     this.setReadAt(coworkId, mark, Math.max(after, feed.lastSeq));
     resetCoworkTold(this.store, sessionId, `unread:${coworkId}`);
     setCoworkTell(this.store, sessionId, `unread:${coworkId}`, null);
-    return coworkOverview({ cowork: detail.cowork, events: detail.events, drafts: detail.drafts, mark, messages: feed.messages.slice(skipped), skipped, after, lastSeq: Math.max(after, feed.lastSeq), files: await this.coworkFiles(client, detail.cowork) });
+    const shown = feed.messages.slice(skipped);
+    const overview = coworkOverview({ cowork: detail.cowork, events: detail.events, drafts: detail.drafts, mark, messages: shown, skipped, after, lastSeq: Math.max(after, feed.lastSeq), files: await this.coworkFiles(client, detail.cowork) });
+    const seen = await this.seenQueued(client, detail.deliveries, mark, shown);
+    return seen ? `${overview}\n\n${seen}` : overview;
+  }
+
+  /**
+   * The @s and 子会话 replies waiting for this agent (排队中) that cowork_read just showed it: acked now as 送达, so they
+   * are not put into the conversation again once its turn ends (2026-11-23, the real-model run: DeepSeek read #13 and
+   * #14 with cowork_read mid-turn, did what they asked, and was woken for them afterwards only to say it already had).
+   */
+  private async seenQueued(client: RelayClient, deliveries: CoworkDelivery[], mark: string, shown: Message[]): Promise<string> {
+    const ids = new Set(shown.map((m) => m.id));
+    const seen = deliveries.filter((d) => d.agent === mark && d.state === "queued" && ids.has(d.messageId));
+    if (!seen.length) return "";
+    await this.ack(client, seen.map((d) => d.id));
+    return `（上面有 ${seen.length} 条是给你的（${seen.map((d) => `#${d.seq}`).join("、")}）：算你已经收到，不会再单独送进这个对话。要回的现在用 cowork_post 回。）`;
   }
 
   /** The files of the 群聊 and of every 子会话 (the latest FILE_SESSIONS of them), for cowork_read. */

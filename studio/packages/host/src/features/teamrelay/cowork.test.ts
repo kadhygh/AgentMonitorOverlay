@@ -304,4 +304,32 @@ describe("协作 in Studio", () => {
     // The one asked, by hand, may too (the service's rule): 美术小周 settles theirs.
     await artistClient.concludeCowork(c.id, toArtist.thread!.id, "不变");
   }, 30_000);
+  it("an @ it read with cowork_read while busy is 送达 then, not put into the conversation once it is free (2026-11-23, real-model run)", async () => {
+    const { service, told, session, coderClient, tool, setStatus } = await setup();
+    const c = await coderClient.createCowork({ title: "射速调整", members: ["策划小王"] });
+    const s = session("射速文档");
+    const j = await service.teamRelay.cowork.join(s.id, c.id);
+    const agentOf = async () => (await coderClient.cowork(c.id)).cowork.agents.find((a) => a.mark === j.mark)!;
+    await until(agentOf, (a) => a.state === "idle", "待命 reported");
+    setStatus(s.id, "running");
+    await until(agentOf, (a) => a.state === "busy", "处理中 reported");
+    const at = await coderClient.postCowork(c.id, { kind: "text", body: "warn 带上文件路径。", agentMentions: [j.mark] });
+    await until(async () => (await coderClient.cowork(c.id)).deliveries.map((d) => d.state), (st) => st[0] === "queued", "排队中");
+
+    // Mid-turn it reads the 协作: the @ is in what it read, and it is told it will not come again.
+    const read = await tool(s.id, "cowork_read");
+    expect(read.text).toContain("warn 带上文件路径。");
+    expect(read.text).toContain(`（上面有 1 条是给你的（#${at.message!.seq}）：算你已经收到，不会再单独送进这个对话。`);
+    expect((await coderClient.cowork(c.id)).deliveries.map((d) => d.state)).toEqual(["delivered"]);
+
+    // Its turn ends: nothing goes in; its answer in the 群聊 settles it.
+    setStatus(s.id, "idle");
+    await until(agentOf, (a) => a.state === "idle", "待命 again");
+    await new Promise((r) => setTimeout(r, 800));
+    expect(told).toHaveLength(0);
+    await tool(s.id, "cowork_post", { body: "已加上。", replyTo: at.message!.seq });
+    expect((await coderClient.cowork(c.id)).deliveries.map((d) => d.state)).toEqual(["replied"]);
+    // Read again: nothing waiting, nothing said about it.
+    expect((await tool(s.id, "cowork_read")).text).not.toContain("算你已经收到");
+  }, 30_000);
 });

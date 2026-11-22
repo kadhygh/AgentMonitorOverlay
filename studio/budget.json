@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 50
+      "used": 59
     },
     "glm": {
       "limit": 5000,
@@ -11,11 +11,11 @@
     },
     "gpt": {
       "limit": 300,
-      "used": 6
+      "used": 13
     },
     "claude": {
       "limit": 300,
-      "used": 0
+      "used": 11
     },
     "dsh-dxx-ds": {
       "limit": 1000,
@@ -447,6 +447,141 @@
       "at": "2026-11-11T07:17:49.859Z",
       "provider": "dsh-dxx-ds",
       "note": "dsh-images: one picture to deepseek-flash on Dxx-DS (2026-11-11)"
+    },
+    {
+      "at": "2026-11-22T19:06:14.093Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: 程序 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:06:14.116Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: 策划 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:06:38.466Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:07:33.085Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:08:11.019Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:09:07.091Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:09:16.204Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:10:10.825Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-06-08-sonnet-gpt6.2sol: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:12:34.178Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: 程序 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:12:34.200Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: 策划 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:12:58.574Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:13:03.139Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:13:22.832Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:13:36.530Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:13:53.235Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:14:12.980Z",
+      "provider": "claude",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:14:16.029Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-12-24-sonnet-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:15:59.343Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: 程序 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:15:59.367Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: 策划 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:16:43.439Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:17:21.405Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:18:25.488Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:18:54.316Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-15-48-gpt6.2sol-dxx-ds: planner turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:22:40.137Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-22-28-gpt6.2sol-dxx-ds: 程序 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:22:40.165Z",
+      "provider": "gpt",
+      "note": "cowork scenario 2026-11-22T19-22-28-gpt6.2sol-dxx-ds: 策划 briefs their AI"
+    },
+    {
+      "at": "2026-11-22T19:24:06.706Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-22-28-gpt6.2sol-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-22T19:25:39.307Z",
+      "provider": "deepseek",
+      "note": "cowork scenario 2026-11-22T19-22-28-gpt6.2sol-dxx-ds: coder turn from a delivery"
     }
   ]
 }
