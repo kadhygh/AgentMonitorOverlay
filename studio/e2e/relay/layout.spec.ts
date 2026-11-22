@@ -94,6 +94,10 @@ test("layout A: rail, list, main, 信息栏 — every page at 1280, 1080 and 960
   await zhou.send(g.id, { kind: "text", body: "枪管变红从第 3 秒开始，你看节奏对不对？" });
   await zhou.addMembers(g.id, ["策划小王"]);
   await planner.send(g.id, { kind: "text", body: "@程序老李 过热时枪管颜色读的是哪个字段？", mentions: ["程序老李"] });
+  // A 协作 (the service's step 1) with a 子会话 to me: neither its 群聊 nor the 子会话 belongs in 待处理 or 聊天 (step 3's page).
+  const cw = await planner.createCowork({ title: "射速改版", goal: "射速 10 → 12", members: ["程序老李"] });
+  await planner.send(cw.id, { kind: "text", body: "协作群里的话" });
+  await planner.askCowork(cw.id, { to: "程序老李", title: "协作里的子会话", body: "子会话问题" });
 
   await theme(page, "light");
   await size(app, 1280, 800);
@@ -101,6 +105,7 @@ test("layout A: rail, list, main, 信息栏 — every page at 1280, 1080 and 960
   await page.locator(".list-body .srow", { hasText: "加特林射速曲线怎么配" }).click();
   await expect(page.locator(".info-panel .fs-open")).toContainText("加特林射速.md");
   await expect(page.locator(".rail-item", { hasText: "待处理" }).locator(".badge")).toHaveText("2");
+  await expect(page.locator(".list-body")).not.toContainText("协作里的子会话");
   await noSideOverflow(page);
   await shot(app, "A01-queue-1280");
   await theme(page, "dark");
@@ -110,6 +115,7 @@ test("layout A: rail, list, main, 信息栏 — every page at 1280, 1080 and 960
   // 聊天: the group first, then each person with their topics.
   await page.locator(".rail-item", { hasText: "聊天" }).click();
   await expect(page.locator(".list-sec").first()).toHaveText("群聊 · 1");
+  await expect(page.locator(".list-body")).not.toContainText("射速改版");
   await page.locator(".list-body .chat-row.group").click();
   await expect(page.locator(".page-crumb")).toHaveText("群聊");
   await noSideOverflow(page);

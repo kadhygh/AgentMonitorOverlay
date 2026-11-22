@@ -46,6 +46,12 @@ type Dialogs =
   | { kind: "help"; section?: HelpSection }
   | { kind: "sendFiles"; to?: string };
 
+/**
+ * A 协作's 群聊 (kind cowork) or one of its 子会话 (a request with coworkId; the service since 协作 step 1, 2026-11-23):
+ * they come in the thread list like the rest but belong on the 协作 page (step 3), not in 待处理 or 聊天.
+ */
+export const ofCowork = (t: Thread) => t.kind === "cowork" || !!t.request?.coworkId;
+
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = useSession(session);
   const me = session.me.name;
@@ -93,13 +99,13 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups = useMemo(() => {
-    const sessions = threads.filter((t) => t.kind === "request");
+    const sessions = threads.filter((t) => t.kind === "request" && !ofCowork(t));
     const withStatus = sessions.map((t) => ({ t, s: sessionStatus(t, me, Date.now(), settings) }));
     const mine = withStatus.filter((x) => x.s.needsMe).map((x) => x.t);
     const waiting = withStatus.filter((x) => !x.s.needsMe && x.t.request!.state !== "done").map((x) => x.t);
     const done = withStatus.filter((x) => x.t.request!.state === "done").map((x) => x.t);
-    const chats = threads.filter((t) => t.kind !== "request" && !t.archived);
-    const archived = threads.filter((t) => t.kind !== "request" && t.archived);
+    const chats = threads.filter((t) => t.kind !== "request" && !ofCowork(t) && !t.archived);
+    const archived = threads.filter((t) => t.kind !== "request" && !ofCowork(t) && t.archived);
     const handed = full ? tasks.filter((t) => t.unseen && !t.archived) : [];
     return { mine, waiting, done, chats, archived, handed };
   }, [threads, tasks, me, settings, full]);
@@ -110,7 +116,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   // The view follows what is open (a notification, a resumed reload).
   useEffect(() => {
-    if (open) setView(open.kind === "request" ? "queue" : "chat");
+    if (open) setView(ofCowork(open) ? "cowork" : open.kind === "request" ? "queue" : "chat");
   }, [open?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Something open in the view when there is something.
   // Not before the list has loaded: a resumed conversation would be replaced.
@@ -130,6 +136,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       session.onMessage((m) => {
         if (m.author === me || m.kind === "event" || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
+        if (t && ofCowork(t)) return;
         const title =
           m.kind === "request"
             ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 发来会话`
@@ -170,7 +177,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       return;
     }
     const t = threads.find((x) => x.id === id);
-    setView(t && t.kind !== "request" ? "chat" : "queue");
+    setView(t && ofCowork(t) ? "cowork" : t && t.kind !== "request" ? "chat" : "queue");
     setOpenId(id);
   };
   const openThreadRef = useRef(openThread);
@@ -605,7 +612,7 @@ function PersonView(props: { name: string; session: Session; threads: Thread[]; 
   const me = props.session.me.name;
   const { members, connection } = useSession(props.session);
   const m = members.find((x) => x.name === props.name);
-  const between = props.threads.filter((t) => t.kind === "request" && t.members.includes(props.name) && t.members.includes(me) && props.name !== me);
+  const between = props.threads.filter((t) => t.kind === "request" && !ofCowork(t) && t.members.includes(props.name) && t.members.includes(me) && props.name !== me);
   const live = between.filter((t) => t.request!.state !== "done");
   // Their devices (layout A's member page): the ones a send can go to, online first.
   const [devices, setDevices] = useState<RelayDevice[] | null>(null);
