@@ -44,6 +44,7 @@ type Row = Record<string, unknown>;
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(8).toString("hex")}`;
 const AGENT_STATES = new Set(["idle", "busy", "owner", "offline"]);
+const BOARD_KIND_WORD: Record<string, string> = { note: "便签", session: "子会话卡", ref: "引用卡", group: "分组", link: "连线" };
 
 function cleanMark(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new RelayError("bad_request", "要带 AI 会话的标记（via.conv）");
@@ -812,8 +813,10 @@ export class CoworkStore {
 
   private bigEvents(id: string, actor: BoardActor, via: Via, big: BoardBigChange[]): CoworkEvent[] {
     const what = (b: BoardBigChange) => {
-      const name = b.item.text.split("\n")[0]!.slice(0, 40) || b.item.ref?.title || b.item.ref?.path || b.item.kind;
-      return b.kind === "add" ? `在白板上加了「${name}」` : b.kind === "delete" ? `删了白板上的「${name}」` : `把白板上的「${name}」标成已过时`;
+      const named = b.item.text.split("\n")[0]!.slice(0, 40) || b.item.ref?.title || b.item.ref?.path;
+      // A card with nothing written yet (a note just put up) goes by what it is, not by its kind's code (2026-11-23).
+      const name = named ? `「${named}」` : `一张${BOARD_KIND_WORD[b.item.kind] ?? "卡"}`;
+      return b.kind === "add" ? `在白板上加了${name}` : b.kind === "delete" ? `删了白板上的${name}` : `把白板上的${name}标成已过时`;
     };
     return big.map((b) => this.event(id, actor.name, via, "board", what(b), { cards: [b.item.id] }));
   }

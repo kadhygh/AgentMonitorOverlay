@@ -5,11 +5,12 @@ import { ChatList, ChatView, SharedGroups } from "./Chats.js";
 import { FileViewer, PickFiles } from "./Files.js";
 import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
-import { floatDemo, fullUi } from "./features.js";
-import { FloatDemo } from "./FloatDemo.js";
+import { fullUi } from "./features.js";
+import { CoworkList, CoworkView, CoworkWaitingRows, coworkUnreadCount, coworkWaiting, NewCoworkDialog } from "./Cowork.js";
+import { FloatArea } from "./Floats.js";
 import { FilterRow, ICONS, ListPane, ListRow, ListSection, Rail, RailItem } from "./Layout.js";
 import { errorText } from "./Messages.js";
-import { useMinuteTick, useSession, type Session } from "./session.js";
+import { coworkOf, useMinuteTick, useSession, type Session } from "./session.js";
 import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
@@ -26,8 +27,9 @@ import { transferBytesText, transferTitle } from "./shared.js";
 
 // After login, in layout A「IM 三栏」(2026-11-23, plans/cowork.md 第 8 条; the prototype studio/out/relay-redesign/a-im.html,
 // the frame's parts in Layout.tsx): the title bar (the service and how it is connected, the window's buttons); the
-// icon rail — 待处理 (tasks handed to me and the sessions waiting on me, then the ones waiting on others or on an AI,
-// then the finished ones), 协作 (step 3 fills it), 聊天 (groups, then each person's plain chat with their topics under
+// icon rail — 待处理 (tasks handed to me and the sessions waiting on me, what waits on me in the 协作, then the ones
+// waiting on others or on an AI, then the finished ones), 协作 (Cowork.tsx: its list, its 群聊 with the 信息栏, its 子会话
+// and 白板 floating over the page), 聊天 (groups, then each person's plain chat with their topics under
 // it; archived ones folded), 传文件 (sends to accept on this device, received, sent) and 成员; at its foot 说明, 设置 and
 // me — then the view's list, the open thing in the middle, and its 信息栏 on the right (a session's files), folded
 // until asked for up to 1100 px wide. Under each list what wants me (offline, newer versions); under 待处理's also what waits on me
@@ -45,16 +47,18 @@ type Dialogs =
   | { kind: "settings"; part?: SettingsPart }
   | { kind: "file"; id: string; scripts: boolean }
   | { kind: "help"; section?: HelpSection }
-  | { kind: "sendFiles"; to?: string };
+  | { kind: "sendFiles"; to?: string }
+  | { kind: "cowork" };
 
 /**
  * A 协作's 群聊 (kind cowork) or one of its 子会话 (a request with coworkId; the service since 协作 step 1, 2026-11-23):
- * they come in the thread list like the rest but belong on the 协作 page (step 3), not in 待处理 or 聊天.
+ * they come in the thread list like the rest but belong on the 协作 page, not in 待处理 or 聊天.
  */
-export const ofCowork = (t: Thread) => t.kind === "cowork" || !!t.request?.coworkId;
+export const ofCowork = (t: Thread) => !!coworkOf(t);
 
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
-  const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = useSession(session);
+  const st = useSession(session);
+  const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = st;
   const me = session.me.name;
   useMinuteTick();
   const full = fullUi();
@@ -70,7 +74,10 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [transferFilter, setTransferFilter] = useState<TransferFilter>("pending");
   const [chatQuery, setChatQuery] = useState("");
   const [peopleQuery, setPeopleQuery] = useState("");
-  // A thread panel open on the right (协作, step 3): narrow, the list column makes room for it (Layout.tsx).
+  // 协作: the one open, and a 子会话 to open in it (from 待处理, a notification, Studio's 在中转里打开).
+  const [coworkId, setCoworkId] = useState<string | null>(null);
+  const [coworkFocus, setCoworkFocus] = useState<{ sub?: string; n: number } | null>(null);
+  const [coworkQuery, setCoworkQuery] = useState("");
   const availability = transferAvailability({ device, transfersOk });
   // The engine that moves the bytes (transfer.ts): while signed in on a desktop client that has 传文件.
   const [engine, setEngine] = useState<TransferEngine | null>(null);
@@ -109,13 +116,15 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     return { mine, waiting, done, chats, archived, handed };
   }, [threads, tasks, me, settings, full]);
   const openTask = tasks.find((t) => t.id === taskId) ?? null;
-  const queueCount = groups.mine.length + groups.handed.length;
+  const waitingCowork = coworkWaiting(st, me).count;
+  const queueCount = groups.mine.length + groups.handed.length + waitingCowork;
   const open = threads.find((t) => t.id === openId) ?? null;
   const chatUnread = groups.chats.reduce((n, t) => n + t.unread, 0);
 
   // The view follows what is open (a notification, a resumed reload).
   useEffect(() => {
-    if (open) setView(ofCowork(open) ? "cowork" : open.kind === "request" ? "queue" : "chat");
+    if (open && ofCowork(open)) showCowork(coworkOf(open)!, open.kind === "request" ? open.id : undefined);
+    else if (open) setView(open.kind === "request" ? "queue" : "chat");
   }, [open?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Something open in the view when there is something.
   // Not before the list has loaded: a resumed conversation would be replaced.
@@ -127,6 +136,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   // The shell shows it on the taskbar and the tray (and AMO 平台's tray); signed out, nothing waits.
   useEffect(() => shell?.setUnread(queueCount + chatUnread + pendingFiles.length), [queueCount, chatUnread, pendingFiles.length]);
+  const openCowork = st.coworks.find((c) => c.id === coworkId) ?? null;
   useEffect(() => () => shell?.setUnread(0), []);
 
   // Notifications when the window is not looking at it.
@@ -135,7 +145,13 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       session.onMessage((m) => {
         if (m.author === me || m.kind === "event" || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
-        if (t && ofCowork(t)) return;
+        if (t && ofCowork(t)) {
+          // In a 协作 only what is for me: an @ of me, or a 子会话 that waits on me.
+          const c = session.snapshot.coworks.find((x) => x.id === coworkOf(t));
+          const forMe = m.mentions?.includes(me) || (t.kind === "request" && t.request?.to === me);
+          if (forMe) shell?.notify({ title: m.mentions?.includes(me) ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 在协作「${c?.title ?? ""}」里 @ 了你` : `协作「${c?.title ?? ""}」的子会话：${t.title}`, body: preview(m).slice(0, 120), threadId: m.threadId });
+          return;
+        }
         const title =
           m.kind === "request"
             ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 发来会话`
@@ -176,7 +192,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       return;
     }
     const t = threads.find((x) => x.id === id);
-    setView(t && ofCowork(t) ? "cowork" : t && t.kind !== "request" ? "chat" : "queue");
+    if (t && ofCowork(t)) return showCowork(coworkOf(t)!, t.kind === "request" ? t.id : undefined);
+    setView(t && t.kind !== "request" ? "chat" : "queue");
     setOpenId(id);
   };
   const openThreadRef = useRef(openThread);
@@ -185,6 +202,14 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     shell?.onOpenThread((id) => (openThreadRef.current(id), void shell?.takeOpenThread?.()));
     void shell?.takeOpenThread?.().then((id) => id && openThreadRef.current(id));
   }, []);
+
+  /** A 协作, and one of its 子会话 opened over it. */
+  function showCowork(id: string, sub?: string) {
+    setView("cowork");
+    setCoworkId(id);
+    // (one-shot: cleared when the 协作 is opened another way, so coming back does not open that 子会话 again)
+    setCoworkFocus(sub ? (f) => ({ sub, n: (f?.n ?? 0) + 1 }) : null);
+  }
 
   const showTask = (id: string, pane: TaskPane = "overview") => {
     setView("tasks");
@@ -198,7 +223,10 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     if (v === "queue") setOpenId((groups.mine[0] ?? groups.waiting[0])?.id ?? null);
     else if (v === "chat") setOpenId(groups.chats[0]?.id ?? null);
     else if (v === "transfers") setTransferFilter(pendingFiles.length ? "pending" : "in");
-    else setPerson((p) => p ?? members.find((m) => m.name !== me)?.name ?? null);
+    else if (v === "cowork") {
+      setCoworkFocus(null);
+      setCoworkId((c) => (c && st.coworks.some((x) => x.id === c) ? c : (st.coworks.find((x) => !x.endedAt) ?? st.coworks[0])?.id ?? null));
+    } else setPerson((p) => p ?? members.find((m) => m.name !== me)?.name ?? null);
   };
 
   const chatWith = async (name: string) => {
@@ -300,6 +328,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />
         ))}
         {!queueCount && <div className="list-empty">手上没有要处理的。</div>}
+        <CoworkWaitingRows session={session} onOpen={showCowork} />
         {pendingFiles.length > 0 && <FilterRow label="等你接收的文件" count={pendingFiles.length} hot current={false} onClick={() => switchView("transfers")} />}
         <ListSection title="等对方 / AI 处理中" count={groups.waiting.length} />
         {groups.waiting.map((t) => (
@@ -317,10 +346,20 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       </ListPane>
     );
   } else if (view === "cowork") {
-    // 协作 (plans/cowork.md): its list, 新建 and the group chat come with step 3; the place is kept for it.
     list = (
-      <ListPane title="协作" foot={strips}>
-        <div className="list-empty">协作还在做：几个人带着各自的 AI 一起推进一件事，群聊、子会话、白板都在这里。做好之前，人和人照旧在「聊天」里说。</div>
+      <ListPane
+        title="协作"
+        actions={
+          st.coworksOk && (
+            <button type="button" className="small primary" onClick={() => setDialog({ kind: "cowork" })}>
+              ＋ 发起协作
+            </button>
+          )
+        }
+        search={{ value: coworkQuery, onChange: setCoworkQuery, placeholder: "搜索协作、目标、成员" }}
+        foot={strips}
+      >
+        <CoworkList session={session} openId={coworkId} query={coworkQuery} onOpen={(id) => (setCoworkFocus(null), setCoworkId(id))} />
       </ListPane>
     );
   } else if (view === "tasks") {
@@ -455,7 +494,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         onOpenChat={(id) => (setView("chat"), setOpenId(id))}
       />
     );
-  else if (view === "cowork" && floatDemo()) main = <FloatDemo />;
+  else if (view === "cowork" && openCowork) main = <CoworkView key={openCowork.id} session={session} cowork={openCowork} toast={toast} focus={coworkFocus} />;
   else
     main = (
       <div className="placeholder">
@@ -470,8 +509,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           </>
         ) : view === "cowork" ? (
           <>
-            <h2>协作还在做</h2>
-            <p>做好后，几个人带着各自的 AI 在这里一起推进一件事：群聊是主体，子会话、目标和白板围着它。</p>
+            <h2>几个人带着各自的 AI 一起推进一件事</h2>
+            <p>群聊是主体：@ 人、@ 某个 AI（只有被 @ 的 AI 会被唤醒）；要和某人确认的事开成子会话，折叠成一张卡；目标、已定的事和白板围着它。点左上「＋ 发起协作」开始。</p>
           </>
         ) : view === "chat" ? (
           <>
@@ -486,7 +525,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   const rail: Array<[View, string, React.ReactNode, number]> = [
     ["queue", "待处理", ICONS.queue, queueCount],
-    ["cowork", "协作", ICONS.cowork, 0],
+    ["cowork", "协作", ICONS.cowork, coworkUnreadCount(session)],
     ...(full ? [["tasks", "任务", ICONS.tasks, 0] as [View, string, React.ReactNode, number]] : []),
     ["chat", "聊天", ICONS.chat, chatUnread],
     ["transfers", "传文件", ICONS.transfers, pendingFiles.length],
@@ -526,8 +565,18 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             <RailItem key={v} label={label} icon={icon} badge={n} current={view === v} onClick={() => switchView(v)} />
           ))}
         </Rail>
-        {listShown && list}
-        <main className="main-col">{main}</main>
+        {view === "cowork" ? (
+          // 协作's 子会话 and 白板 float over its whole page (list, 群聊, 信息栏), one set per 协作.
+          <FloatArea key={coworkId ?? ""} className="cowork-page">
+            {list}
+            <main className="main-col">{main}</main>
+          </FloatArea>
+        ) : (
+          <>
+            {listShown && list}
+            <main className="main-col">{main}</main>
+          </>
+        )}
       </div>
       {dialog?.kind === "session" && (
         <NewSessionDialog
@@ -575,6 +624,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           toast={toast}
         />
       )}
+      {dialog?.kind === "cowork" && <NewCoworkDialog session={session} onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), showCowork(id), toast("协作发起了：在信息栏里补目标，大家再把各自的 AI 拉进来"))} />}
       {dialog?.kind === "help" && <HelpDialog section={dialog.section} onClose={() => setDialog(null)} />}
       {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}

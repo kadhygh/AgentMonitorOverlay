@@ -13,13 +13,3 @@ export function fullUi(): boolean {
     return false;
   }
 }
-
-// 协作's floating windows (Floats.tsx) before step 3 uses them: localStorage amo-relay.floatDemo = "1" puts a few sample
-// ones on the 协作 page, for the layout e2e. Goes when the 协作 page is built.
-export function floatDemo(): boolean {
-  try {
-    return localStorage.getItem("amo-relay.floatDemo") === "1";
-  } catch {
-    return false;
-  }
-}

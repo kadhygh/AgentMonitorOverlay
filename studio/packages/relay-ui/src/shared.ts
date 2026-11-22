@@ -5,3 +5,4 @@ export { carriedNotes, fileNotesText, filesAsText, messageAsText, newRepliesText
 export type { NotedFile, NotePlaces } from "../../relay/src/usage.js";
 export type { McpHookup, PickedSend, ReceiveState, RelayShell, SavedAccount, ShellInfo, ShellTransfer, UpdateInfo } from "../../relay/src/shell-api.js";
 export * from "../../relay/src/transfer-protocol.js";
+export * from "../../relay/src/cowork-protocol.js";

@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { shell } from "./env.js";
-import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
+import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type BoardLock, type BoardOpRecord, type BoardPresence, type CoworkClientFrame, type CoworkDelivery, type CoworkDraft, type CoworkEvent, type CoworkListItem, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
 
 // One login: the client with its key, the thread list, the people, the team's tasks and settings, kept current by /ws (reconnecting, and
 // reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
@@ -40,15 +40,36 @@ interface State {
   transfersOk: boolean;
   /** The list has come from the service at least once. */
   transfersLoaded: boolean;
+  /** 协作 (2026-11-23, cowork-protocol.ts): the ones I am in, latest first. */
+  coworks: CoworkListItem[];
+  /** false: the service is from before 协作 (404). */
+  coworksOk: boolean;
+  /** Per cowork: its events (已定的事 among them), the deliveries (每条消息的去向) and my agents' drafts. */
+  coworkData: Record<string, CoworkData>;
+  /** Messages in a 协作 (its 群聊 or a 子会话) that @ me and I have not read: 待处理's 「@我」. */
+  mentions: Message[];
 }
+
+export interface CoworkData {
+  events: CoworkEvent[];
+  deliveries: CoworkDelivery[];
+  drafts: CoworkDraft[];
+}
+export type BoardPush = { type: "board"; ops: BoardOpRecord[] } | { type: "board-lock"; card: string; lock: BoardLock | null } | { type: "board-presence"; presence: BoardPresence[] };
+
+/** A 协作's 群聊 (kind cowork) or one of its 子会话 (a request with coworkId): they belong on the 协作 page. */
+export const coworkOf = (t: { kind: string; id: string; request?: { coworkId?: string | null } }): string | null => (t.kind === "cowork" ? t.id : (t.request?.coworkId ?? null));
+export const EMPTY_COWORK_DATA: CoworkData = { events: [], deliveries: [], drafts: [] };
+const upsert = <T extends { id: string | number }>(list: T[], x: T) => (list.some((y) => y.id === x.id) ? list.map((y) => (y.id === x.id ? x : y)) : [...list, x]);
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false };
+  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false, coworks: [], coworksOk: true, coworkData: {}, mentions: [] };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
   private noteListeners = new Set<(fileId: string) => void>();
   private transferListeners = new Set<(t: Transfer) => void>();
+  private boardListeners = new Set<(coworkId: string, p: BoardPush) => void>();
   private ws: WebSocket | null = null;
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +116,74 @@ export class Session {
   putTransfer(t: Transfer): void {
     const rest = this.state.transfers.filter((x) => x.id !== t.id);
     this.set({ transfers: [t, ...rest].sort((a, b) => b.createdAt - a.createdAt) });
+  }
+
+  /** A 协作's board changed (operations, a text lock, who is looking). */
+  onBoard(listener: (coworkId: string, p: BoardPush) => void): () => void {
+    this.boardListeners.add(listener);
+    return () => this.boardListeners.delete(listener);
+  }
+
+  /** What I show on an open board, over the socket (dropped while offline: it is repeated). */
+  sendFrame(f: CoworkClientFrame): void {
+    if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(f));
+  }
+
+  /** A cowork as the service has it now (after a change of mine), keeping what I have not read. */
+  putCowork(c: CoworkListItem | Omit<CoworkListItem, "unread" | "readSeq">): void {
+    const old = this.state.coworks.find((x) => x.id === c.id);
+    const item: CoworkListItem = { unread: old?.unread ?? 0, readSeq: old?.readSeq ?? 0, ...c };
+    this.set({ coworks: [item, ...this.state.coworks.filter((x) => x.id !== c.id)].sort((a, b) => b.updatedAt - a.updatedAt) });
+  }
+
+  /** A cowork's events, deliveries and my drafts, loaded (again) from the service. */
+  async loadCowork(id: string): Promise<void> {
+    const d = await this.client.cowork(id);
+    this.putCowork(d.cowork);
+    this.set({ coworkData: { ...this.state.coworkData, [id]: { events: d.events, deliveries: d.deliveries, drafts: d.drafts } } });
+  }
+
+  putDraft(d: CoworkDraft): void {
+    this.patchData(d.coworkId, (x) => ({ ...x, drafts: upsert(x.drafts, d) }));
+  }
+
+  putDelivery(d: CoworkDelivery): void {
+    this.patchData(d.coworkId, (x) => ({ ...x, deliveries: upsert(x.deliveries, d) }));
+  }
+
+  putEvent(e: CoworkEvent): void {
+    this.patchData(e.coworkId, (x) => ({ ...x, events: upsert(x.events, e) }));
+  }
+
+  private patchData(id: string, f: (d: CoworkData) => CoworkData): void {
+    this.set({ coworkData: { ...this.state.coworkData, [id]: f(this.state.coworkData[id] ?? EMPTY_COWORK_DATA) } });
+  }
+
+  private async reloadCoworks(threads: ThreadView[]): Promise<void> {
+    let list: CoworkListItem[];
+    try {
+      list = await this.client.coworks();
+    } catch (err) {
+      if (err instanceof RelayClientError && err.status === 404) this.set({ coworksOk: false });
+      return;
+    }
+    this.set({ coworks: list, coworksOk: true });
+    // Events, deliveries and drafts of the open ones (a small team: a few), and what @-ed me while I was away.
+    const data: Record<string, CoworkData> = {};
+    await Promise.all(
+      list
+        .filter((c) => !c.endedAt)
+        .map((c) =>
+          this.client.cowork(c.id).then(
+            (d) => void (data[c.id] = { events: d.events, deliveries: d.deliveries, drafts: d.drafts }),
+            () => undefined,
+          ),
+        ),
+    );
+    const me = this.me.name;
+    const unread = threads.filter((t) => coworkOf(t) && t.unread > 0);
+    const found = await Promise.all(unread.map((t) => this.client.messages(t.id, t.readSeq).then((r) => r.messages.filter((m) => m.author !== me && m.mentions?.includes(me)), () => [] as Message[])));
+    this.set({ coworkData: { ...this.state.coworkData, ...data }, mentions: found.flat() });
   }
 
   onMessage(listener: (m: Message) => void): () => void {
@@ -159,6 +248,7 @@ export class Session {
       const merged = threads.map((t) => (touched.has(t.id) ? (now.get(t.id) ?? t) : t));
       const added = [...touched].filter((id) => !listed.has(id)).flatMap((id) => (now.has(id) ? [now.get(id)!] : []));
       this.set({ threads: [...added, ...merged], members, tasks, settings });
+      await this.reloadCoworks(this.state.threads);
       if (this.state.device) await this.reloadTransfers();
     } finally {
       this.touched.delete(touched);
@@ -212,6 +302,17 @@ export class Session {
     else if (e.type === "settings") this.set({ settings: e.settings });
     else if (e.type === "left") this.set({ threads: this.state.threads.filter((t) => t.id !== e.threadId) });
     else if (e.type === "notes") for (const l of this.noteListeners) l(e.fileId);
+    else if (e.type === "cowork") this.putCowork(e.cowork);
+    else if (e.type === "cowork-left") this.set({ coworks: this.state.coworks.filter((c) => c.id !== e.coworkId) });
+    else if (e.type === "cowork-agent") {
+      const c = this.state.coworks.find((x) => x.id === e.coworkId);
+      if (c) this.putCowork({ ...c, agents: c.agents.some((a) => a.mark === e.agent.mark) ? c.agents.map((a) => (a.mark === e.agent.mark ? e.agent : a)) : [...c.agents, e.agent] });
+    } else if (e.type === "cowork-event") this.putEvent(e.event);
+    else if (e.type === "cowork-delivery") this.putDelivery(e.delivery);
+    else if (e.type === "cowork-draft") this.putDraft(e.draft);
+    else if (e.type === "board") for (const l of this.boardListeners) l(e.coworkId, { type: "board", ops: e.ops });
+    else if (e.type === "board-lock") for (const l of this.boardListeners) l(e.coworkId, { type: "board-lock", card: e.card, lock: e.lock });
+    else if (e.type === "board-presence") for (const l of this.boardListeners) l(e.coworkId, { type: "board-presence", presence: e.presence });
     else if (e.type === "transfer") {
       this.putTransfer(e.transfer);
       for (const l of this.transferListeners) l(e.transfer);
@@ -224,7 +325,7 @@ export class Session {
       this.set({ tasks: [{ ...e.task, unseen }, ...this.state.tasks.filter((t) => t.id !== e.task.id)] });
     }
     else if (e.type === "read") {
-      this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)) });
+      this.set({ threads: this.state.threads.map((t) => (t.id === e.threadId ? { ...t, readSeq: e.readSeq, unread: 0 } : t)), mentions: this.state.mentions.filter((m) => m.threadId !== e.threadId || m.seq > e.readSeq) });
     } else if (e.type === "message") {
       const mine = e.message.author === this.me.name;
       const old = this.state.threads.find((t) => t.id === e.thread.id);
@@ -235,7 +336,13 @@ export class Session {
         unread: mine ? 0 : (old?.unread ?? 0) + 1,
         archived: false,
       };
-      this.set({ threads: [view, ...this.state.threads.filter((t) => t.id !== e.thread.id)] });
+      // @-ed in a 协作 (待处理's 「@我」), until I read it.
+      const cw = coworkOf(e.thread);
+      const atMe = !mine && !!cw && !!e.message.mentions?.includes(this.me.name);
+      this.set({ threads: [view, ...this.state.threads.filter((t) => t.id !== e.thread.id)], ...(atMe ? { mentions: [...this.state.mentions, e.message] } : {}) });
+      // The cowork's row moves up with its 群聊 or a 子会话.
+      const c = cw ? this.state.coworks.find((x) => x.id === cw) : null;
+      if (c) this.putCowork({ ...c, updatedAt: Math.max(c.updatedAt, e.message.createdAt) });
       for (const l of this.messageListeners) l(e.message);
     }
   }
@@ -244,7 +351,7 @@ export class Session {
   markRead(threadId: string): void {
     const t = this.state.threads.find((x) => x.id === threadId);
     if (!t || (t.unread === 0 && t.readSeq >= t.lastSeq)) return;
-    this.set({ threads: this.state.threads.map((x) => (x.id === threadId ? { ...x, unread: 0, readSeq: x.lastSeq } : x)) });
+    this.set({ threads: this.state.threads.map((x) => (x.id === threadId ? { ...x, unread: 0, readSeq: x.lastSeq } : x)), mentions: this.state.mentions.filter((m) => m.threadId !== threadId) });
     void this.client.read(threadId).catch(() => undefined);
   }
 
