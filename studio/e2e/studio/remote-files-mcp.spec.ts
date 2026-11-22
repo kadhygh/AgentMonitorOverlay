@@ -7,6 +7,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { REMOTE_MCP_SINCE, withFileRefs, type RemoteState, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
+import { routeOnce } from "../support/routes.js";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
 
 // 远程补取和远程选 MCP (2026-11-17): two Studios on this machine (each its own AMO_HOME and data, the mock models), paired
@@ -129,7 +130,7 @@ test("补取: a picture that does not load on B is asked of A again — by itsel
   );
 
   // The picture does not load once (as when fetching it failed): asked of A by itself, then shown.
-  await b.page.route((u) => u.pathname === `/api/attachments/${mine}`, (r) => r.abort(), { times: 1 });
+  await routeOnce(b.page, (u) => u.pathname === `/api/attachments/${mine}`, (r) => r.abort());
   const asked = b.page.waitForRequest((r) => r.method() === "POST" && r.url().includes(`/api/remote/tasks/${task.id}/images`));
   const card = b.page.getByTestId("task-card").filter({ hasText: "早先发过图的任务" });
   await expect(card).toHaveAttribute("data-remote", "online", { timeout: 30_000 });
@@ -140,11 +141,11 @@ test("补取: a picture that does not load on B is asked of A again — by itsel
 
   // When A cannot give it, the place says why, with 再请求一次 (A's answer stood in here: unit tests cover A's side,
   // remote-tasks.test.ts 补取).
-  await b.page.route((u) => u.pathname === `/api/attachments/${mine}`, (r) => r.abort(), { times: 1 });
-  await b.page.route(
+  await routeOnce(b.page, (u) => u.pathname === `/api/attachments/${mine}`, (r) => r.abort());
+  await routeOnce(
+    b.page,
     (u) => u.pathname === `/api/remote/tasks/${task.id}/images`,
     (r) => r.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "not_found", message: `A 台式机 上也没有这个文件了（可能已经删掉或挪走）：${pic.path}` } }) }),
-    { times: 1 },
   );
   await b.page.reload();
   await b.page.waitForLoadState("domcontentloaded");
