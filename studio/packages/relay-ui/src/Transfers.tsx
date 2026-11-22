@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, timeText, useDisplayName, Who } from "./bits.js";
 import { Check, Dialog, Field } from "./Dialog.js";
 import { shell } from "./env.js";
 import { DropZone } from "./Files.js";
+import { FilterRow, ListSection } from "./Layout.js";
 import { errorText } from "./Messages.js";
 import type { Session } from "./session.js";
 import { myTarget, shellError, useTransferState, type LocalState, type TransferEngine } from "./transfer.js";
@@ -45,13 +46,8 @@ export function TransferNav(props: { session: Session; filter: TransferFilter; o
   useEffect(() => {
     if (props.availability === "ok") void tx?.receiveDir().then(setDir);
   }, [props.availability, tx]);
-  if (props.availability !== "ok") return <div className="nav-empty">传文件只能在桌面客户端里用。</div>;
-  const row = (f: TransferFilter, label: string) => (
-    <button key={f} type="button" className="nav-row" aria-current={props.filter === f ? "true" : undefined} onClick={() => props.onFilter(f)}>
-      <span className="name">{label}</span>
-      <span className="count">{filterTransfers(transfers, f, me, device?.id).length}</span>
-    </button>
-  );
+  if (props.availability !== "ok") return <div className="list-empty">传文件只能在桌面客户端里用。</div>;
+  const row = (f: TransferFilter, label: string) => <FilterRow key={f} label={label} count={filterTransfers(transfers, f, me, device?.id).length} hot={f === "pending"} current={props.filter === f} onClick={() => props.onFilter(f)} />;
   const change = async () => {
     try {
       const picked = await tx!.chooseDir(dir ?? undefined);
@@ -64,14 +60,11 @@ export function TransferNav(props: { session: Session; filter: TransferFilter; o
   };
   return (
     <>
-      <div className="nav-label">
-        传文件
-        <span className="rule" />
-      </div>
       {row("pending", "等你确认")}
       {row("in", "收到的")}
       {row("out", "发出的")}
       <div className="xfer-dir">
+        <ListSection title="接收设置" />
         <div className="muted tiny">收到的文件默认存到</div>
         <div className="xfer-dir-path" title={dir ?? ""}>
           {dir ?? "…"}
@@ -373,7 +366,8 @@ function AcceptDialog(props: { session: Session; engine: TransferEngine; transfe
   );
 }
 
-export function SendDialog(props: { session: Session; members: Member[]; onClose: () => void; onSent: () => void; toast: (t: string) => void }) {
+/** `to`: someone picked already (成员's 发文件): their online devices start chosen. */
+export function SendDialog(props: { session: Session; members: Member[]; to?: string; onClose: () => void; onSent: () => void; toast: (t: string) => void }) {
   const tx = shell!.transfer!;
   const me = props.session.me.name;
   const here = props.session.snapshot.device!;
@@ -418,6 +412,13 @@ export function SendDialog(props: { session: Session; members: Member[]; onClose
     return names.map((n) => ({ name: n, devices: byAccount.get(n) ?? [] }));
   }, [devices, props.members, me, here.id]);
 
+  const preset = useRef(props.to);
+  useEffect(() => {
+    if (!devices || !preset.current) return;
+    const to = preset.current;
+    preset.current = undefined;
+    setChosen(devices.filter((d) => d.account === to && d.online && !(d.account === me && d.id === here.id)).map((d) => key(d.account, d.id)));
+  }, [devices, me, here.id]);
   const toggle = (k: string, on: boolean) => setChosen((c) => (on ? [...new Set([...c, k])] : c.filter((x) => x !== k)));
   const send = async () => {
     if (!picked) return;

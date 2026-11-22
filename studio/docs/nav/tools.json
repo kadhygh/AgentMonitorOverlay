@@ -67,7 +67,7 @@
     {
       "id": "tool.relayClient",
       "label": "AMO 中转客户端（界面和外壳）",
-      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread"],
+      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread", "布局 A", "IM 三栏", "图标栏", "信息栏", "列表栏"],
       "category": "tool",
       "purpose": "中转的桌面客户端：外壳（relay-app，平台装、平台更新）加载从服务器热更新的界面（relay-ui）；和 Studio 互相跳转（中转 → Studio 找数据目录调 Host 的 /api/ui/open，Studio → 中转带 --open-thread 启动）。",
       "anchors": [
@@ -76,6 +76,8 @@
         { "label": "跳到 Studio", "path": "studio/packages/relay-app/src/studio-link.ts", "anchor": "export async function openInStudio" },
         { "label": "界面入口", "path": "studio/packages/relay-ui/src/main.tsx" },
         { "label": "会话页", "path": "studio/packages/relay-ui/src/SessionView.tsx" },
+        { "label": "布局 A 的框架（图标栏、列表栏、右边可收起的信息栏）", "path": "studio/packages/relay-ui/src/Layout.tsx", "anchor": "export function SidePanel" },
+        { "label": "各页的列表和主区（待处理、聊天、成员…）", "path": "studio/packages/relay-ui/src/Home.tsx", "anchor": "<Rail" },
         { "label": "改动说明（外壳）", "path": "studio/packages/relay-app/CHANGELOG.md" }
       ],
       "related": ["tool.relayService", "app.shell", "tool.platform", "tool.relayTransfer"],
@@ -86,7 +88,7 @@
       "label": "中转的传文件（设备之间传文件和文件夹）",
       "aliases": ["传文件", "文件传输", "发文件", "transfer", "transfers", "断点续传", ".part", "接收路径"],
       "category": "tool",
-      "purpose": "中转顶栏「传文件」（2026-11-23）：文件或文件夹经服务器发到自己或同事选定的设备，对方确认后才上传；一次 2 GB、服务器存 1 天、8 MB 分块、断点续传、sha256 校验、同名改「名字 (1)」。服务存传送表和分块内容（data/transfers）；外壳只做本机文件的读写（选过的文件、接收的文件夹）；上传下载和续传的逻辑在热更新的界面里。设备号是 device.json，跟着 /ws 连接登记。",
+      "purpose": "中转左边图标栏的「传文件」（2026-11-23）：文件或文件夹经服务器发到自己或同事选定的设备，对方确认后才上传；一次 2 GB、服务器存 1 天、8 MB 分块、断点续传、sha256 校验、同名改「名字 (1)」。服务存传送表和分块内容（data/transfers）；外壳只做本机文件的读写（选过的文件、接收的文件夹）；上传下载和续传的逻辑在热更新的界面里。设备号是 device.json，跟着 /ws 连接登记。",
       "anchors": [
         { "label": "共用的类型和上限", "path": "studio/packages/relay/src/transfer-protocol.ts", "anchor": "export const TRANSFER_MAX_BYTES" },
         { "label": "服务：传送表、分块写盘、清理", "path": "studio/packages/relay/src/transfers.ts", "anchor": "export class TransferStore" },

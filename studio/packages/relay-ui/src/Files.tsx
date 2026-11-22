@@ -117,23 +117,15 @@ export function FileRow({ file, onOpen }: { file: RelayFile; onOpen: (id: string
 }
 
 /**
- * A session's files beside its messages (2026-11-10, the user: session 内能够看到双方发送过的文件，加上右侧的边栏):
- * both sides' uploads, newest first, each with who sent it, when, its size, its version and notes; 附加文件 and
- * dropping files at the bottom while the session is open. Replaces the row of chips above the messages.
+ * A session's files in its 信息栏 (2026-11-10, the user: session 内能够看到双方发送过的文件，加上右侧的边栏; in layout A's
+ * right panel since 2026-11-23): both sides' uploads, newest first, each with who sent it, when, its size, its version
+ * and notes; 附加文件 and dropping files at the bottom while the session is open.
  */
-export function FilesSide({ session, files, onOpen, onClose, onFiles, uploading }: { session: Session; files: RelayFile[]; onOpen: (id: string) => void; onClose: () => void; onFiles?: (files: FileList) => void; uploading: boolean }) {
+export function FilesList({ session, files, onOpen, onFiles, uploading }: { session: Session; files: RelayFile[]; onOpen: (id: string) => void; onFiles?: (files: FileList) => void; uploading: boolean }) {
   const me = session.me.name;
   const sorted = useMemo(() => [...files].sort((a, b) => b.at - a.at), [files]);
   const body = (
     <>
-      <div className="fs-head">
-        <b>文件</b>
-        <span className="muted tiny">{files.length ? `${files.length} 个，双方发的都在这里` : ""}</span>
-        <span className="grow" />
-        <button type="button" className="small" onClick={onClose} title="收起文件边栏" aria-label="收起文件边栏">
-          收起 ›
-        </button>
-      </div>
       <div className="fs-list">
         {!sorted.length && <p className="muted tiny fs-empty">还没有文件{onFiles ? "。点下面的按钮，或把文件拖到这里" : ""}</p>}
         {sorted.map((f) => (
@@ -167,46 +159,13 @@ export function FilesSide({ session, files, onOpen, onClose, onFiles, uploading 
       )}
     </>
   );
-  return (
-    <aside className="files-side" aria-label="会话里的文件">
-      {onFiles ? (
-        <DropZone onFiles={onFiles} className="fs-drop">
-          {body}
-        </DropZone>
-      ) : (
-        body
-      )}
-    </aside>
+  return onFiles ? (
+    <DropZone onFiles={onFiles} className="files-block">
+      {body}
+    </DropZone>
+  ) : (
+    <div className="files-block">{body}</div>
   );
-}
-
-const SIDE_KEY = "amo-relay.filesSide";
-const NARROW = "(max-width: 959px)";
-
-/**
- * Whether the files side is open: kept on this computer; in a narrow window it starts closed (and opening it there
- * lasts for this view only).
- */
-export function useFilesSide(): { open: boolean; setOpen: (v: boolean) => void } {
-  const [narrow, setNarrow] = useState(() => typeof matchMedia === "function" && matchMedia(NARROW).matches);
-  const [pref, setPref] = useState(() => localStorage.getItem(SIDE_KEY) !== "0");
-  const [narrowOpen, setNarrowOpen] = useState(false);
-  useEffect(() => {
-    if (typeof matchMedia !== "function") return;
-    const mq = matchMedia(NARROW);
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  const setOpen = useCallback(
-    (v: boolean) => {
-      if (narrow) return setNarrowOpen(v);
-      setPref(v);
-      localStorage.setItem(SIDE_KEY, v ? "1" : "0");
-    },
-    [narrow],
-  );
-  return { open: narrow ? narrowOpen : pref, setOpen };
 }
 
 /** A session's files (taken from its task, or uploaded into it), kept current. */

@@ -65,7 +65,7 @@ async function login(page: Page, name: string): Promise<void> {
   await page.getByLabel("名字").fill(name);
   await page.getByLabel("密码", { exact: true }).fill("pw-1234");
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.locator(".view-tabs")).toBeVisible();
+  await expect(page.locator(".rail")).toBeVisible();
 }
 
 /** The next system picker in that client answers with these paths. */
@@ -98,8 +98,8 @@ test("a folder and a file to another person's computer and to my own other one: 
   mkdirSync(join(liInbox, "素材"), { recursive: true });
   writeFileSync(join(liInbox, "素材", "旧的.txt"), "old");
 
-  await desk.page.locator(".view-tab", { hasText: "传文件" }).click();
-  await expect(desk.page.locator(".scope-nav")).toContainText("这台电脑：台式机");
+  await desk.page.locator(".rail-item", { hasText: "传文件" }).click();
+  await expect(desk.page.locator(".list-pane")).toContainText("这台电脑：台式机");
   await desk.page.getByRole("button", { name: "＋ 发文件" }).first().click();
   const dialog = desk.page.getByRole("dialog", { name: "发文件" });
   await queuePick(desk.app, [join(src, "素材")]);
@@ -121,14 +121,14 @@ test("a folder and a file to another person's computer and to my own other one: 
   await expect(card(desk.page)).toContainText("等对方确认");
 
   // The 笔记本 hears of it on the tab and declines; 老李 too, and accepts into his folder.
-  await expect(laptop.page.locator(".view-tab", { hasText: "传文件" }).locator(".badge")).toHaveText("1");
-  await laptop.page.locator(".view-tab", { hasText: "传文件" }).click();
+  await expect(laptop.page.locator(".rail-item", { hasText: "传文件" }).locator(".badge")).toHaveText("1");
+  await laptop.page.locator(".rail-item", { hasText: "传文件" }).click();
   await expect(card(laptop.page)).toContainText("等你确认");
   await card(laptop.page).getByRole("button", { name: "拒绝" }).click();
   await expect(card(desk.page)).toContainText("笔记本：拒绝了");
 
-  await expect(li.page.locator(".view-tab", { hasText: "传文件" }).locator(".badge")).toHaveText("1");
-  await li.page.locator(".view-tab", { hasText: "传文件" }).click();
+  await expect(li.page.locator(".rail-item", { hasText: "传文件" }).locator(".badge")).toHaveText("1");
+  await li.page.locator(".rail-item", { hasText: "传文件" }).click();
   await shot(li.app, "45-transfer-pending");
   await card(li.page).getByRole("button", { name: "接收…" }).click();
   const accept = li.page.getByRole("dialog", { name: "接收文件" });
@@ -140,7 +140,7 @@ test("a folder and a file to another person's computer and to my own other one: 
   await expect(accept).toHaveCount(0);
 
   // Up from the 台式机, down to 老李's, in pieces; both end done.
-  await li.page.locator(".scope-nav .nav-row", { hasText: "收到的" }).click();
+  await li.page.locator(".list-body .filter-row", { hasText: "收到的" }).click();
   await expect(card(li.page)).toContainText("已收到", { timeout: 60_000 });
   await expect(card(desk.page)).toContainText("都收到了", { timeout: 30_000 });
   await expect(card(desk.page)).toContainText("老李的电脑：已收完");

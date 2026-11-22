@@ -88,15 +88,19 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
   const byId = new Map(questions.map((q) => [q.id, q]));
   const mine = m.author === me;
   const continues = !!prev && prev.author === m.author && m.kind === "text" && prev.kind === "text" && m.via.kind === prev.via.kind && m.createdAt - prev.createdAt < CONTINUES_MS;
+  const ai = m.via.kind === "ai";
+  // Layout A (2026-11-23): everyone on the left, a picture and a name line first — an AI's words with the AI's mark,
+  // mine with 「我」 and a tinted body.
   return (
     <article className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""}`}>
+      <div className="msg-av">{!continues && (ai ? <span className="avatar ai" title={`${m.author} 的 AI`}>AI</span> : <Avatar name={m.author} />)}</div>
+      <div className="msg-col">
       <div className="msg-head">
-        {!mine && <Avatar name={m.author} small />}
-        {!mine && (
-          <b>
-            <Who name={m.author} />
-          </b>
-        )}
+        <b>
+          <Who name={m.author} />
+          {ai ? " 的 AI" : ""}
+        </b>
+        {mine && <span className="me-tag">我</span>}
         {m.via.kind === "ai" && <span className="tag ai">AI 代发{m.via.client ? ` · ${m.via.client}` : ""}</span>}
         {m.kind === "request" && <span className="tag">会话</span>}
         {m.kind === "text" && m.questions && m.questions.length > 0 && <span className="tag">追问</span>}
@@ -152,6 +156,7 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
             ))}
           </div>
         )}
+      </div>
       </div>
     </article>
   );

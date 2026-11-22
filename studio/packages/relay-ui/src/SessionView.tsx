@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { FilesSide, FileViewer, loadNotedFiles, useFilesSide, useThreadFiles, useUpload } from "./Files.js";
-import { sessionStatus, waitedText } from "./bits.js";
+import { FilesList, FileViewer, loadNotedFiles, useThreadFiles, useUpload } from "./Files.js";
+import { sessionStatus, timeText, waitedText, Who } from "./bits.js";
+import { SideBlock, SidePanel, useSidePanel } from "./Layout.js";
 import { Dialog, Field } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
 import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
@@ -43,7 +44,8 @@ export function SessionView(props: {
   const files = useThreadFiles(session, thread.id, thread.updatedAt);
   const [viewing, setViewing] = useState<string | null>(null);
   const { upload, busy: uploading } = useUpload(session, { threadId: thread.id }, toast);
-  const side = useFilesSide();
+  // The 信息栏 on the right (layout A, 2026-11-23): the session's files, and who asked whom.
+  const side = useSidePanel("session");
 
   const act = async (action: SessionAction, done: string) => {
     try {
@@ -206,23 +208,23 @@ export function SessionView(props: {
       <div className="session-main">
       <header className="page-head">
         <div className="head-main">
-          {!props.embedded && (
-            <div className="page-crumb">
-              待处理
-              {!props.onOpenTask ? null : task ? (
-                <>
-                  {" / "}
-                  <button type="button" className="link" onClick={() => props.onOpenTask?.(task.id)}>
-                    任务 · {task.title}
-                  </button>
-                </>
-              ) : (
-                " / 单独会话"
-              )}
-            </div>
-          )}
           <h1 className="head-title">{thread.title}</h1>
           <div className="head-meta">
+            {!props.embedded && (
+              <span className="page-crumb">
+                待处理
+                {!props.onOpenTask ? null : task ? (
+                  <>
+                    {" / "}
+                    <button type="button" className="link" onClick={() => props.onOpenTask?.(task.id)}>
+                      任务 · {task.title}
+                    </button>
+                  </>
+                ) : (
+                  " / 单独会话"
+                )}
+              </span>
+            )}
             <span>
               {asker} → {r.to}
             </span>
@@ -247,13 +249,11 @@ export function SessionView(props: {
             </span>
           </div>
         </div>
-        {!side.open && (
-          <div className="head-actions">
-            <button type="button" onClick={() => side.setOpen(true)} title="打开文件边栏：双方在这个会话里发的文件">
-              文件{files.length ? ` ${files.length}` : ""}
-            </button>
-          </div>
-        )}
+        <div className="head-actions">
+          <button type="button" className="side-toggle" aria-pressed={side.open} onClick={() => side.setOpen(!side.open)} title={side.open ? "收起右边的信息栏" : "打开信息栏：双方在这个会话里发的文件"}>
+            {side.open ? "收起信息栏" : `信息栏${files.length ? ` · 文件 ${files.length}` : ""}`}
+          </button>
+        </div>
       </header>
       <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onCopyNew={sinceMine ? () => void copyNew() : undefined} onAct={(a, t) => void act(a, t)} />
       {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
@@ -261,7 +261,34 @@ export function SessionView(props: {
       <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
       {dock}
       </div>
-      {side.open && <FilesSide session={session} files={files} onOpen={setViewing} onClose={() => side.setOpen(false)} onFiles={r.state !== "done" ? (fl) => void upload(fl) : undefined} uploading={uploading} />}
+      {side.open && (
+        <SidePanel label="信息栏" title="会话信息" onClose={() => side.setOpen(false)} className="info-panel">
+          <SideBlock title="文件" count={files.length}>
+            <FilesList session={session} files={files} onOpen={setViewing} onFiles={r.state !== "done" ? (fl) => void upload(fl) : undefined} uploading={uploading} />
+          </SideBlock>
+          <SideBlock title="来往">
+            <dl className="facts">
+              <dt>发起</dt>
+              <dd>
+                <Who name={r.from} />
+                {r.byAi ? " 的 AI" : ""}
+              </dd>
+              <dt>交给</dt>
+              <dd>
+                <Who name={r.to} />
+              </dd>
+              <dt>开始</dt>
+              <dd>{timeText(thread.createdAt)}</dd>
+              {task && (
+                <>
+                  <dt>任务</dt>
+                  <dd className="ellipsis">{task.title}</dd>
+                </>
+              )}
+            </dl>
+          </SideBlock>
+        </SidePanel>
+      )}
     </section>
   );
 }

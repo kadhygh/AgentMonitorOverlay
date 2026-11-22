@@ -75,6 +75,11 @@ async function launch(who: string, extraArgs: string[] = [], extraEnv: Record<st
 /** What 复制… copied: kept in the test client, never on this machine's clipboard. */
 const copiedText = (app: ElectronApplication) => app.evaluate(() => (globalThis as unknown as { __relayCopied: () => string }).__relayCopied());
 
+/** Someone's plain chat in 聊天's list (layout A: their row, with the topics under it). */
+const direct = (page: Page, name: string) => page.locator(`.person-node[data-person="${name}"] > .chat-row`).first();
+/** A chat or topic row in 聊天's list. */
+const chatRow = (page: Page, text: string) => page.locator(".list-body .list-row", { hasText: text });
+
 async function shot(app: ElectronApplication, name: string): Promise<void> {
   const png = await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0]!.webContents.capturePage()).toPNG().toString("base64"));
   writeFileSync(join(shots, `${name}.png`), Buffer.from(png, "base64"));
@@ -89,7 +94,7 @@ async function register(page: Page, name: string, role: string, full = true): Pr
   await page.getByLabel("再输一次密码").fill("pw-1234");
   await page.getByLabel(/负责什么/).fill(role);
   await page.getByRole("button", { name: "注册并登录" }).click();
-  await expect(page.locator(".view-tabs")).toBeVisible();
+  await expect(page.locator(".rail")).toBeVisible();
 }
 
 test("register, an AI's request answered in the other client, updates, the service away and back", async () => {
@@ -118,7 +123,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   expect(asked).toContain("已发给 程序老李");
 
   // The coder sees it in 待处理 and answers one by one; a session from an AI cannot be closed by the person asked.
-  const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+  const row = (page: Page, text: string) => page.locator(".list-body .srow", { hasText: text });
   await expect(row(b.page, "技能冷却按等级递减")).toContainText("等你处理");
   await row(b.page, "技能冷却按等级递减").click();
   await expect(b.page.locator(".msg.kind-request")).toContainText("最低 3s");
@@ -163,7 +168,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   // Team tasks (2b): the planner makes one and opens a session under it; the coder takes the task over from the
   // session (it needs a reply, so the session goes back answered); hands it back for 验收; the planner sees it handed
   // to them, finishes and archives it. Settings are the team's: the coder's 流程速查 shows the planner's change.
-  await a.page.locator(".view-tab", { hasText: "任务" }).click();
+  await a.page.locator(".rail-item", { hasText: "任务" }).click();
   await a.page.getByRole("button", { name: "＋ 新任务" }).click();
   await shot(a.app, "18-new-task-dialog");
   await a.page.getByPlaceholder("比如：加特林").fill("加特林");
@@ -185,12 +190,14 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".session-list .srow", { hasText: "射速和过热怎么做" })).toContainText("在 程序老李 手里");
   await shot(a.app, "11-task-page");
 
-  await b.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await b.page.locator(".rail-item", { hasText: "待处理" }).click();
   await row(b.page, "射速和过热怎么做").click();
   await expect(b.page.locator(".page-crumb")).toContainText("任务 · 加特林");
 
   // Notes (2d): the coder opens the attachment, selects a passage and notes it.
-  await b.page.locator(".files-side .fs-open", { hasText: "designdoc.md" }).click();
+  // The 信息栏 starts folded in a window up to 1100 px wide (layout A); its button says how many files.
+  await b.page.getByRole("button", { name: "信息栏 · 文件 1" }).click();
+  await b.page.locator(".info-panel .fs-open", { hasText: "designdoc.md" }).click();
   await expect(b.page.locator(".md-doc")).toContainText("基础射速每秒 12 发");
   await b.page.evaluate((quote) => {
     const root = document.querySelector(".md-doc")!;
@@ -225,8 +232,8 @@ test("register, an AI's request answered in the other client, updates, the servi
   expect(await copiedText(b.app)).toMatch(/- designdoc\.md v1 · .+ · fileId f_[0-9a-f]{16}/);
 
   // An HTML file in the session: its script does not run unless asked to.
-  await b.page.locator(".files-side input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
-  await b.page.locator(".files-side .fs-open", { hasText: "原型.html" }).click();
+  await b.page.locator(".info-panel input[type=file]").setInputFiles({ name: "原型.html", mimeType: "text/html", buffer: Buffer.from("<p>原型说明：枪管发红</p><script>document.body.insertAdjacentHTML('beforeend', '<b>脚本运行了</b>')</script>") });
+  await b.page.locator(".info-panel .fs-open", { hasText: "原型.html" }).click();
   const proto = b.page.frameLocator(".doc-frame").locator("body");
   await expect(proto).toContainText("原型说明：枪管发红");
   await expect(proto).not.toContainText("脚本运行了");
@@ -269,25 +276,25 @@ test("register, an AI's request answered in the other client, updates, the servi
   expect(await copiedText(a.app)).not.toContain("## 附件上的批注");
 
   // The coder hands it back: 待处理 for the planner, gone once opened.
-  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
-  await b.page.locator(".view-tab", { hasText: "任务" }).click();
+  await a.page.locator(".rail-item", { hasText: "待处理" }).click();
+  await b.page.locator(".rail-item", { hasText: "任务" }).click();
   await b.page.locator(".card", { hasText: "加特林" }).click();
   await b.page.getByRole("button", { name: "流转…" }).click();
   await b.page.locator('.dialog [aria-label="交给"]').getByRole("radio", { name: /策划小王/ }).click();
   await b.page.locator('.dialog [aria-label="状态"]').getByRole("radio", { name: "待处理" }).click();
   await b.page.getByPlaceholder("比如：涉及武器底层，我来改接口").fill("接口改好了，请验收");
   await b.page.getByRole("button", { name: "流转", exact: true }).click();
-  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
-  await expect(a.page.locator(".scope-nav .srow", { hasText: "任务交给你：加特林" })).toContainText("接口改好了，请验收");
+  await a.page.locator(".rail-item", { hasText: "待处理" }).click();
+  await expect(a.page.locator(".list-body .srow", { hasText: "任务交给你：加特林" })).toContainText("接口改好了，请验收");
   await shot(a.app, "13-handed");
-  await a.page.locator(".scope-nav .srow", { hasText: "任务交给你：加特林" }).click();
+  await a.page.locator(".list-body .srow", { hasText: "任务交给你：加特林" }).click();
   await expect(a.page.locator(".head-meta").first()).toContainText("在 策划小王 手里");
-  await a.page.locator(".view-tab", { hasText: "待处理" }).click();
-  await expect(a.page.locator(".scope-nav .srow", { hasText: "任务交给你" })).toHaveCount(0);
+  await a.page.locator(".rail-item", { hasText: "待处理" }).click();
+  await expect(a.page.locator(".list-body .srow", { hasText: "任务交给你" })).toHaveCount(0);
 
   // Finished and archived; the board says so.
-  await a.page.locator(".view-tab", { hasText: "任务" }).click();
-  await a.page.locator(".nav-row", { hasText: "全部任务" }).click();
+  await a.page.locator(".rail-item", { hasText: "任务" }).click();
+  await a.page.locator(".filter-row", { hasText: "全部任务" }).click();
   await expect(a.page.locator(".column", { hasText: "待处理" }).locator(".card")).toContainText("加特林");
   await shot(a.app, "14-board");
   await a.page.locator(".card", { hasText: "加特林" }).click();
@@ -308,6 +315,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.keyboard.press("Enter");
   await shot(a.app, "21-settings-flow");
   await a.page.locator(".dialog-foot").getByRole("button", { name: "保存" }).click();
+  await b.page.locator(".rail-item", { hasText: "待处理" }).click();
   await b.page.getByRole("button", { name: "流程速查" }).click();
   await expect(b.page.locator(".dialog")).toContainText("先做一个可玩的原型");
   await b.page.locator(".dialog").getByRole("button", { name: "好" }).click();
@@ -321,13 +329,13 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(flowShortcut).not.toContainText("有更新");
 
   // Direct chat both ways, from 成员.
-  await b.page.locator(".view-tab", { hasText: "成员" }).click();
-  await b.page.locator(".nav-row", { hasText: "策划小王" }).click();
+  await b.page.locator(".rail-item", { hasText: "成员" }).click();
+  await b.page.locator(".person-row", { hasText: "策划小王" }).click();
   await b.page.getByRole("button", { name: "私聊" }).click();
   await b.page.getByPlaceholder("发给 策划小王…").fill("下午三点对一下数值？");
   await b.page.keyboard.press("Control+Enter");
-  await a.page.locator(".view-tab", { hasText: "聊天" }).click();
-  await a.page.locator(".person-node", { hasText: "程序老李" }).locator(".srow", { hasText: "普通聊天" }).click();
+  await a.page.locator(".rail-item", { hasText: "聊天" }).click();
+  await direct(a.page, "程序老李").click();
   await expect(a.page.locator(".msg.theirs")).toContainText("下午三点对一下数值？");
   await expect(a.page.locator(".topbar .win-controls")).toBeVisible();
   await shot(a.app, "05-direct-chat");
@@ -340,14 +348,14 @@ test("register, an AI's request answered in the other client, updates, the servi
   await a.page.getByPlaceholder("发给 程序老李…").fill("这个单独聊：暴击率上限定多少？");
   await a.page.keyboard.press("Control+Enter");
   await expect(a.page.locator(".msg.mine")).toContainText("暴击率上限");
-  await row(b.page, "数值平衡").click();
+  await chatRow(b.page, "数值平衡").click();
   await expect(b.page.locator(".msg.theirs")).toContainText("暴击率上限");
-  await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".srow", { hasText: "普通聊天" })).toBeVisible();
+  await expect(direct(b.page, "策划小王")).toBeVisible();
   await b.page.getByPlaceholder("发给 策划小王…").fill("先定 **60%**，超了收益太高");
   await b.page.keyboard.press("Control+Enter");
   await expect(a.page.locator(".msg.theirs")).toContainText("超了收益太高");
-  const sides = await a.page.locator(".msg .msg-body").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().right)));
-  expect(sides[0]).toBeGreaterThan(sides[1]! + 50);
+  // Layout A (2026-11-23): everyone on the left; mine marked 「我」.
+  await expect(a.page.locator(".msg.mine .me-tag").first()).toHaveText("我");
   await shot(a.app, "08-topic");
 
   // Archived on the planner's side only; the coder's next message brings it back.
@@ -361,7 +369,7 @@ test("register, an AI's request answered in the other client, updates, the servi
 
   // A group: @-ing someone into the plain chat brings them in, history and all; it shows under each of its people.
   const zhou = await new relay.RelayClient(server.url).register("美术小周", "pw-1234", { role: "美术" });
-  await a.page.locator(".person-node", { hasText: "程序老李" }).locator(".srow", { hasText: "普通聊天" }).click();
+  await direct(a.page, "程序老李").click();
   await a.page.getByPlaceholder("发给 程序老李…").fill("@美");
   await expect(a.page.locator(".mention-pop")).toContainText("美术小周");
   await a.page.keyboard.press("Enter");
@@ -373,16 +381,17 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(a.page.locator(".faces .face")).toHaveCount(3);
   await expect(a.page.locator(".msg").last()).toContainText("@美术小周");
   await shot(a.app, "19-group");
-  await expect(b.page.locator(".person-node", { hasText: "策划小王" })).toContainText("群聊 · 1");
+  await expect(b.page.locator(".list-sec", { hasText: "群聊" })).toHaveText("群聊 · 1");
   const zhouClient = new relay.RelayClient(server.url, zhou.key);
   const [group] = (await zhouClient.threads()).filter((t) => t.kind === "group");
   expect((await zhouClient.messages(group!.id)).messages.map((m) => m.body)).toContain("下午三点对一下数值？");
-  await b.page.locator(".view-tab", { hasText: "成员" }).click();
-  await expect(b.page.locator(".scope-nav .srow", { hasText: "美术小周" })).toContainText("3 人");
-  await b.page.locator(".view-tab", { hasText: "聊天" }).click();
+  await b.page.locator(".rail-item", { hasText: "成员" }).click();
+  await b.page.locator(".person-row", { hasText: "美术小周" }).click();
+  await expect(b.page.locator(".group-box")).toContainText("3 人");
+  await b.page.locator(".rail-item", { hasText: "聊天" }).click();
 
   // 我的资料 (2026-10-28): shown here, edited in AMO 平台's 账号 — the me-chip opens it with no way to edit.
-  await a.page.locator(".me-chip").click();
+  await a.page.locator(".rail .me-chip").click();
   const mine = a.page.locator(".settings-dialog");
   await expect(mine.locator(".settings-nav [aria-current=page]")).toHaveText("我的资料");
   await expect(mine.getByTestId("profile-in-platform")).toHaveText("在 AMO 平台的「账号」里改昵称、头像和负责什么，改完这里会跟着变。");
@@ -395,8 +404,8 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(mine.locator(".me-card b")).toHaveText("小王(策划小王)");
   await shot(a.app, "20-profile");
   await a.page.keyboard.press("Escape");
-  await expect(a.page.locator(".me-chip .me-name")).toHaveText("小王(策划小王)");
-  await expect(b.page.locator(".person-node", { hasText: "策划小王" }).locator(".aka")).toHaveText("(策划小王)");
+  await expect(a.page.locator(".rail .me-chip")).toHaveAttribute("title", /我的资料：小王\(策划小王\)/);
+  await expect(direct(b.page, "策划小王").locator(".aka")).toHaveText("(策划小王)");
 
   // A newer client on the service: the planner restarts and the loader installs it before the login screen.
   const manifestFile = join(publicDir, "client", "manifest.json");
@@ -411,9 +420,9 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(again.page.locator(".server-line")).toContainText("服务器在线");
   await expect(again.page.getByLabel("密码", { exact: true })).toHaveValue("pw-1234");
   await again.page.getByRole("button", { name: "登录" }).click();
-  await again.page.locator(".view-tab", { hasText: "聊天" }).click();
-  await row(again.page, "数值平衡").click();
-  const myState = again.page.locator(".me-chip .conn-chip");
+  await again.page.locator(".rail-item", { hasText: "聊天" }).click();
+  await chatRow(again.page, "数值平衡").click();
+  const myState = again.page.locator(".topbar .conn-chip .conn-text");
   await expect(myState).toHaveText("服务器在线");
 
   // Published while signed in: even with the window in the tray (not in use) it waits — the bottom left offers it; a
@@ -428,7 +437,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await again.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.showInactive());
   await updateStrip.click();
   await expect.poll(() => again.page.evaluate(async () => (await (window as unknown as { relayShell: { info(): Promise<{ contentVersion: string }> } }).relayShell.info()).contentVersion).catch(() => "reloading"), { timeout: 30_000 }).toBe(third);
-  await expect(again.page.locator(".scope-nav .srow[aria-current=true]")).toContainText("数值平衡", { timeout: 15_000 });
+  await expect(again.page.locator(".list-body [aria-current=true]")).toContainText("数值平衡", { timeout: 15_000 });
   await expect(again.page.locator(".head-title")).toHaveText("数值平衡");
   await expect(updateStrip).toHaveCount(0);
 
@@ -438,8 +447,8 @@ test("register, an AI's request answered in the other client, updates, the servi
   await server.close();
   await expect(again.page.locator(".strip.error")).toContainText("服务器离线", { timeout: 15_000 });
   await expect(myState).toHaveText("服务器离线");
-  await again.page.locator(".view-tab", { hasText: "成员" }).click();
-  await expect(again.page.locator(".scope-nav")).toContainText("在线状态未知");
+  await again.page.locator(".rail-item", { hasText: "成员" }).click();
+  await expect(again.page.locator(".list-pane")).toContainText("在线状态未知");
   await shot(again.app, "06-offline-bar");
   await b.page.getByRole("button", { name: "设置", exact: true }).click();
   await b.page.locator(".settings-nav").getByRole("button", { name: "我的资料" }).click();
@@ -453,7 +462,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   await expect(myState).toHaveText("服务器在线");
   await expect(b.page.locator(".server-line")).toContainText("服务器在线", { timeout: 15_000 });
   await b.page.getByRole("button", { name: "登录" }).click();
-  await expect(b.page.locator(".view-tabs")).toBeVisible();
+  await expect(b.page.locator(".rail")).toBeVisible();
 
   // Both themes: Studio's dark one too.
   // 设置 · 通用: dark, and a bigger font for the text.
@@ -464,7 +473,7 @@ test("register, an AI's request answered in the other client, updates, the servi
   expect(await b.page.evaluate(() => getComputedStyle(document.body).fontSize)).toBe("15px");
   await shot(b.app, "22-settings-general");
   await b.page.keyboard.press("Escape");
-  await b.page.locator(".view-tab", { hasText: "待处理" }).click();
+  await b.page.locator(".rail-item", { hasText: "待处理" }).click();
   await b.page.locator(".nav-fold", { hasText: "已完成" }).click();
   await row(b.page, "技能冷却按等级递减").click();
   await shot(b.app, "10-dark-session");
@@ -477,9 +486,9 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   const b = await launch("coder2");
   await register(b.page, "程序老赵", "程序 · 系统", false);
   for (const p of [a.page, b.page]) {
-    await expect(p.locator(".view-tab")).toHaveText(["待处理", "传文件", "聊天", "成员"]);
+    await expect(p.locator(".rail-item")).toHaveText(["待处理", "协作", "聊天", "传文件", "成员", "说明", "设置"]);
     await expect(p.getByRole("button", { name: /＋ 新/ })).toHaveCount(0);
-    await expect(p.locator(".shortcut")).toHaveText(["复制用法", "说明"]);
+    await expect(p.locator(".shortcut")).toHaveText(["复制用法"]);
   }
   await a.page.getByRole("button", { name: "复制用法" }).click();
   const usageFile = join(a.home, "AMO中转用法.md");
@@ -507,12 +516,13 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   expect(readFileSync(join(root, "dl", "bag-design.md")).equals(readFileSync(doc))).toBe(true);
 
   // The coder: told it waits on them; the session has the attachment; only 回复并返回 — no task to take over.
-  const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+  const row = (page: Page, text: string) => page.locator(".list-body .srow", { hasText: text });
   await expect(b.page.locator(".strip.attn")).toContainText("1 件等你处理");
   await expect(row(b.page, "背包格子上限怎么存")).toContainText("等你处理");
   await row(b.page, "背包格子上限怎么存").click();
   await expect(b.page.locator(".page-crumb")).toHaveText("待处理");
-  await expect(b.page.locator(".files-side .fs-open", { hasText: "bag-design.md" })).toBeVisible();
+  await b.page.getByRole("button", { name: "信息栏 · 文件 1" }).click();
+  await expect(b.page.locator(".info-panel .fs-open", { hasText: "bag-design.md" })).toBeVisible();
   await expect(b.page.getByRole("button", { name: /接手任务/ })).toHaveCount(0);
   await expect(b.page.getByRole("button", { name: "标记完成" })).toHaveCount(0);
   await b.page.locator(".reply-form .opt", { hasText: "服务端配置表" }).click();
@@ -568,8 +578,8 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   await shot(a.app, "31-tight-planner-done");
 
   // Between people: a chat, not a session.
-  await b.page.locator(".view-tab", { hasText: "成员" }).click();
-  await b.page.locator(".nav-row.person", { hasText: "策划小张" }).click();
+  await b.page.locator(".rail-item", { hasText: "成员" }).click();
+  await b.page.locator(".person-row", { hasText: "策划小张" }).click();
   await expect(b.page.getByRole("button", { name: "私聊" })).toBeVisible();
   await expect(b.page.getByRole("button", { name: "发起会话" })).toHaveCount(0);
   await shot(b.app, "32-tight-member");
@@ -608,7 +618,7 @@ test("2026-11-05: the viewer is a panel with Reviewer's note box; 已接手，�
     await register(a.page, "策划小孙", "策划", false);
     const b = await launch("coder4");
     await register(b.page, "程序老钱", "程序 · 战斗", false);
-    const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+    const row = (page: Page, text: string) => page.locator(".list-body .srow", { hasText: text });
     // The planner's Studio session asks twice (as AMO Studio does: AI 代发, the session's mark).
     const planner = new relay.RelayClient(server.url, store.login("策划小孙", "pw-1234").key);
     const via = { kind: "ai", client: "AMO Studio", conv: `studio:${DEVICE}:s-gatling` } as const;
@@ -618,7 +628,8 @@ test("2026-11-05: the viewer is a panel with Reviewer's note box; 已接手，�
 
     // The viewer: a panel, not a modal — nothing covers the conversation; it moves by its head.
     await row(b.page, "射速改完了，请审").click();
-    await b.page.locator(".files-side .fs-open", { hasText: "gatling.md" }).click();
+    await b.page.getByRole("button", { name: "信息栏 · 文件 1" }).click();
+    await b.page.locator(".info-panel .fs-open", { hasText: "gatling.md" }).click();
     const panel = b.page.locator(".dialog.viewer");
     await expect(panel.locator(".md-doc")).toContainText("基础射速每秒 12 发");
     await expect(b.page.locator(".overlay")).toHaveCount(0);
@@ -755,7 +766,7 @@ test("what waits shows outside the window: the taskbar flashes with the count, t
   await expect.poll(attention).toMatchObject({ count: 1, blink: false });
 
   // Answered: nothing waits on the coder; the planner (its own tray) has the reply waiting, blinking there.
-  const row = (page: Page, text: string) => page.locator(".scope-nav .srow", { hasText: text });
+  const row = (page: Page, text: string) => page.locator(".list-body .srow", { hasText: text });
   await row(b.page, "掉落表要不要分服").click();
   await b.page.getByPlaceholder("补充说明（支持 Markdown）").fill("可以，按服读配置。");
   await b.page.getByRole("button", { name: "回复并返回给 策划小周 的 AI" }).click();
@@ -800,7 +811,7 @@ test("a moved service: the last 3 servers offered, the last one picked; accounts
   await expect(page.getByText("这些账号是在别的服务器地址上记住的")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel("名字")).toHaveValue("搬家小周");
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.locator(".view-tabs")).toBeVisible();
+  await expect(page.locator(".rail")).toBeVisible();
   const saved = JSON.parse(readFileSync(join(root, "mover", "shell.json"), "utf8")) as { server: string; recent: string[] };
   expect(saved).toEqual({ server: moved, recent: [moved, gone, server.url] });
   expect(pageErrors).toEqual([]);
@@ -846,7 +857,7 @@ test("installed by AMO 平台: no 更新桌面程序 (the platform updates the s
     const zhaoHome = { env: { AMO_HOME: join(root, "platform-user", "amo-home") } };
     await account.saveAccount({ server: server.url, name: zhao.name, key: zhao.key }, zhaoHome);
     const fromPlatform = await launchFrom(join(app, "packages", "relay-app", "dist", "main.js"), "platform-user");
-    await expect(fromPlatform.page.locator(".view-tabs")).toBeVisible({ timeout: 30_000 });
+    await expect(fromPlatform.page.locator(".rail")).toBeVisible({ timeout: 30_000 });
     await expect(fromPlatform.page.getByRole("button", { name: "没有账号？注册一个" })).toHaveCount(0);
     // Its MCP and command line use that account too: a pointer to it, not its key in plain text (0d56e627, 2026-11-04).
     const settings = JSON.parse(readFileSync(join(root, "platform-user", "settings.json"), "utf8")) as Record<string, unknown>;
@@ -860,7 +871,7 @@ test("installed by AMO 平台: no 更新桌面程序 (the platform updates the s
     const sun = store.register("平台小孙", "pw-1234", "程序");
     const sunHome = { env: { AMO_HOME: join(root, "platform-later", "amo-home") } };
     await account.saveAccount({ server: server.url, name: sun.name, key: sun.key }, sunHome);
-    await expect(later.page.locator(".view-tabs")).toBeVisible({ timeout: 20_000 });
+    await expect(later.page.locator(".rail")).toBeVisible({ timeout: 20_000 });
     account.clearAccount(sunHome);
     await expect(later.page.getByTestId("platform-login")).toBeVisible({ timeout: 20_000 });
     await later.app.close();

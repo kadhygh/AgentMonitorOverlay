@@ -1,38 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import iconUrl from "./icon.svg";
-import { Avatar, PeopleContext, preview, sessionStatus, waitedText, Who } from "./bits.js";
-import { ChatTree, ChatView, GroupRows } from "./Chats.js";
+import { Avatar, PeopleContext, preview, sessionStatus, useDisplayName, waitedText, Who } from "./bits.js";
+import { ChatList, ChatView, SharedGroups } from "./Chats.js";
 import { FileViewer, PickFiles } from "./Files.js";
 import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
 import { fullUi } from "./features.js";
+import { FilterRow, FrameContext, ICONS, ListPane, ListRow, ListSection, Rail, RailItem } from "./Layout.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { SettingsDialog, type SettingsPart } from "./Settings.js";
-import { usagePointer, usagePrompt, type TaskView, type ThreadView as Thread } from "./shared.js";
-import { flowIsNew, markFlowSeen, SideFoot } from "./SideFoot.js";
+import { usagePointer, usagePrompt, type Member, type RelayDevice, type TaskView, type ThreadView as Thread } from "./shared.js";
+import { ConnChip, flowIsNew, markFlowSeen, QueueStrip, Shortcuts, StatusStrips } from "./SideFoot.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { writeUsageFile } from "./usageFile.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 import { saveResume, useUpdates } from "./update.js";
 import { TransferEngine } from "./transfer.js";
-import { pendingHere, SendDialog, transferAvailability, TransferMain, TransferNav, type TransferFilter } from "./Transfers.js";
+import { pendingHere, SendDialog, transferAvailability, TransferMain, TransferNav, type TransferAvailability, type TransferFilter } from "./Transfers.js";
 import { transferBytesText, transferTitle } from "./shared.js";
 
-// After login, in AMO Studio's layout (stages 2a–2b, plans/done/relay-tasks.md): the top bar with four views — 待处理 (tasks
-// handed to me and the sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones),
-// 任务 (the team's board, a task's page), 聊天 (the plain chat with each person and the topics next to it; archived
-// ones folded) and 成员 — the view's list on the left, the open one on the right. The top bar holds only those and
-// ＋ 新会话; the bottom of the left column (SideFoot) what wants me, the shortcuts, me and 设置. A newer client the
-// service publishes is applied once the window is not in use and nothing is typed.
-// Tightened (2026-10-28, features.ts): only 待处理 / 聊天 / 成员 and no ＋ 新会话 — sessions come from AIs, people chat;
-// the task views, transfers and the flow shortcuts come back with fullUi().
-// 传文件 (2026-11-23, Transfers.tsx): a tab of its own next to 待处理, with what waits to be accepted on this device.
+// After login, in layout A「IM 三栏」(2026-11-23, plans/cowork.md 第 8 条; the prototype studio/out/relay-redesign/a-im.html,
+// the frame's parts in Layout.tsx): the title bar (the service and how it is connected, the window's buttons); the
+// icon rail — 待处理 (tasks handed to me and the sessions waiting on me, then the ones waiting on others or on an AI,
+// then the finished ones), 协作 (step 3 fills it), 聊天 (groups, then each person's plain chat with their topics under
+// it; archived ones folded), 传文件 (sends to accept on this device, received, sent) and 成员; at its foot 说明, 设置 and
+// me — then the view's list, the open thing in the middle, and its 信息栏 on the right (a session's files), folded
+// until asked for up to 1100 px wide. Under each list what wants me (offline, newer versions); under 待处理's also what waits on me
+// and 复制用法. A newer client the service publishes is applied once the window is not in use and nothing is typed.
+// Tightened (2026-10-28, features.ts): no 任务 and no ＋ 新会话 — sessions come from AIs, people chat; the task views
+// and the flow shortcuts come back with fullUi().
 
-type View = "queue" | "tasks" | "chat" | "people" | "transfers";
+type View = "queue" | "cowork" | "tasks" | "chat" | "people" | "transfers";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
   | { kind: "oldShell" }
@@ -42,7 +44,7 @@ type Dialogs =
   | { kind: "settings"; part?: SettingsPart }
   | { kind: "file"; id: string; scripts: boolean }
   | { kind: "help"; section?: HelpSection }
-  | { kind: "sendFiles" };
+  | { kind: "sendFiles"; to?: string };
 
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = useSession(session);
@@ -58,8 +60,12 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [taskPane, setTaskPane] = useState<TaskPane>("overview");
   const [toastText, setToastText] = useState<string | null>(null);
   const [doneOpen, setDoneOpen] = useState(false);
-  const [archOpen, setArchOpen] = useState(false);
   const [transferFilter, setTransferFilter] = useState<TransferFilter>("pending");
+  const [chatQuery, setChatQuery] = useState("");
+  const [peopleQuery, setPeopleQuery] = useState("");
+  // A thread panel open on the right (协作, step 3): narrow, the list column makes room for it (Layout.tsx).
+  const [threadOpen, setThreadOpen] = useState(false);
+  const frame = useMemo(() => ({ setThreadOpen }), []);
   const availability = transferAvailability({ device, transfersOk });
   // The engine that moves the bytes (transfer.ts): while signed in on a desktop client that has 传文件.
   const [engine, setEngine] = useState<TransferEngine | null>(null);
@@ -252,26 +258,48 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   };
 
   const others = members.filter((m) => m.name !== me);
-  const peer = open && open.kind !== "request" ? (open.members.find((n) => n !== me) ?? me) : null;
-  const peers = peer ? threads.filter((t) => t.kind !== "request" && t.members.includes(peer) && (!t.archived || t.id === open!.id)) : [];
+  const show = useDisplayName();
+  const queueFoot = (
+    <>
+      <QueueStrip mine={groups.mine.length} handed={groups.handed.length} waiting={groups.waiting.length} onQueue={() => goQueue("mine")} onWaiting={() => goQueue("waiting")} />
+      <Shortcuts session={session} flowNew={flowIsNew(flowDoc, me, session.me.server)} flowShortcuts={full} onFlow={openFlow} onQuick={() => setDialog({ kind: "flow" })} onCopyUsage={() => void copyUsage()} />
+    </>
+  );
+  const strips = <StatusStrips session={session} updates={updates} shellUpdate={shellUpdate} onShellUpdate={() => setDialog({ kind: "oldShell" })} />;
 
-  let nav;
+  let list;
   if (view === "queue") {
-    nav = (
-      <>
-        <NavLabel title="待我处理" count={queueCount} />
+    list = (
+      <ListPane
+        title="待处理"
+        actions={
+          full && (
+            <button type="button" className="small primary" onClick={() => setDialog({ kind: "session" })}>
+              ＋ 新会话
+            </button>
+          )
+        }
+        foot={
+          <>
+            {strips}
+            {queueFoot}
+          </>
+        }
+      >
+        <ListSection title="待我处理" count={queueCount} />
         {groups.handed.map((t) => (
           <HandedRow key={t.id} task={t} current={false} onOpen={(id) => showTask(id)} />
         ))}
         {groups.mine.map((t) => (
           <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />
         ))}
-        {!queueCount && <div className="nav-empty">手上没有要处理的。</div>}
-        <NavLabel title="等对方 / AI 处理中" count={groups.waiting.length} />
+        {!queueCount && <div className="list-empty">手上没有要处理的。</div>}
+        {pendingFiles.length > 0 && <FilterRow label="等你接收的文件" count={pendingFiles.length} hot current={false} onClick={() => switchView("transfers")} />}
+        <ListSection title="等对方 / AI 处理中" count={groups.waiting.length} />
         {groups.waiting.map((t) => (
           <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />
         ))}
-        {!groups.waiting.length && <div className="nav-empty">没有。</div>}
+        {!groups.waiting.length && <div className="list-empty">没有。</div>}
         {groups.done.length > 0 && (
           <>
             <button type="button" className="nav-fold" onClick={() => setDoneOpen(!doneOpen)}>
@@ -280,25 +308,29 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             {doneOpen && groups.done.map((t) => <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />)}
           </>
         )}
-      </>
+      </ListPane>
+    );
+  } else if (view === "cowork") {
+    // 协作 (plans/cowork.md): its list, 新建 and the group chat come with step 3; the place is kept for it.
+    list = (
+      <ListPane title="协作" foot={strips}>
+        <div className="list-empty">协作还在做：几个人带着各自的 AI 一起推进一件事，群聊、子会话、白板都在这里。做好之前，人和人照旧在「聊天」里说。</div>
+      </ListPane>
     );
   } else if (view === "tasks") {
     const live = tasks.filter((t) => !t.archived);
-    const row = (f: TaskFilter, label: React.ReactNode, n: number) => (
-      <button
-        key={f.kind === "holder" ? `h:${f.name}` : f.kind}
-        type="button"
-        className="nav-row"
-        aria-current={!taskId && filterLabel(f) === filterLabel(taskFilter) ? "true" : undefined}
-        onClick={() => (setTaskFilter(f), setTaskId(null))}
+    const row = (f: TaskFilter, label: React.ReactNode, n: number) => <FilterRow key={f.kind === "holder" ? `h:${f.name}` : f.kind} label={label} count={n} current={!taskId && filterLabel(f) === filterLabel(taskFilter)} onClick={() => (setTaskFilter(f), setTaskId(null))} />;
+    list = (
+      <ListPane
+        title="任务"
+        actions={
+          <button type="button" className="small primary" onClick={() => setDialog({ kind: "task" })}>
+            ＋ 新任务
+          </button>
+        }
+        foot={strips}
       >
-        <span className="name">{label}</span>
-        <span className="count">{n}</span>
-      </button>
-    );
-    nav = (
-      <>
-        <NavLabel title="任务" count={live.length} />
+        <ListSection title="任务" count={live.length} />
         {(
           [
             [{ kind: "mine" }, "我手里的"],
@@ -306,41 +338,79 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             [{ kind: "all" }, "全部任务"],
           ] as Array<[TaskFilter, string]>
         ).map(([f, l]) => row(f, l, live.filter((t) => matches(t, f, me)).length))}
-        <NavLabel title="按持有人" count={members.length} />
+        <ListSection title="按持有人" count={members.length} />
         {members.map((m) =>
           row(
             { kind: "holder", name: m.name },
             <>
               <Avatar name={m.name} small />
-              {m.name}
+              {show(m.name)}
             </>,
             live.filter((t) => t.holder === m.name).length,
           ),
         )}
-      </>
+      </ListPane>
     );
   } else if (view === "transfers") {
-    nav = <TransferNav session={session} filter={transferFilter} onFilter={setTransferFilter} availability={availability} toast={toast} />;
+    list = (
+      <ListPane
+        title="传文件"
+        actions={
+          availability === "ok" && (
+            <button type="button" className="small primary" onClick={() => setDialog({ kind: "sendFiles" })}>
+              ＋ 发文件
+            </button>
+          )
+        }
+        foot={strips}
+      >
+        <TransferNav session={session} filter={transferFilter} onFilter={setTransferFilter} availability={availability} toast={toast} />
+      </ListPane>
+    );
   } else if (view === "chat") {
-    nav = <ChatTree session={session} openId={openId} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onNewTopic={newTopic} onArchive={(t, a) => void archive(t, a)} />;
+    list = (
+      <ListPane title="聊天" search={{ value: chatQuery, onChange: setChatQuery, placeholder: "搜索人、群、话题" }} foot={strips}>
+        <ChatList session={session} openId={openId} query={chatQuery} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onArchive={(t, a) => void archive(t, a)} />
+      </ListPane>
+    );
   } else {
-    nav = (
-      <>
-        <NavLabel title={connection === "offline" ? "成员 · 在线状态未知" : "成员"} count={members.length} />
-        {members.map((m) => (
-          <button key={m.name} type="button" className="nav-row person" aria-current={person === m.name ? "true" : undefined} onClick={() => setPerson(m.name)}>
-            <span className="name">
-              <Avatar name={m.name} small />
-              {m.name}
-              {m.name === me ? "（我）" : ""}
-              <span className="muted tiny ellipsis">{m.role}</span>
-            </span>
-            <span className={`dot ${m.online && connection !== "offline" ? "on" : ""}`} />
-          </button>
-        ))}
-        {!others.length && <div className="nav-empty">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
-        <GroupRows session={session} onOpen={(id) => (setView("chat"), setOpenId(id))} />
-      </>
+    const q = peopleQuery.trim().toLowerCase();
+    const shown = members.filter((m) => !q || [m.name, m.nick, m.role].some((w) => w.toLowerCase().includes(q)));
+    const unknown = connection === "offline";
+    const personRow = (m: Member) => (
+      <ListRow
+        key={m.name}
+        className="person-row"
+        avatar={<Avatar name={m.name} />}
+        title={
+          <>
+            <Who name={m.name} />
+            {m.name === me ? "（我）" : ""}
+          </>
+        }
+        sub={[m.role || "没写负责什么", unknown ? null : m.online ? "在线" : m.lastSeen ? seenText(Date.now() - m.lastSeen) : "不在线"].filter(Boolean).join(" · ")}
+        dot={m.online && !unknown ? "on" : "off"}
+        current={person === m.name}
+        onClick={() => setPerson(m.name)}
+      />
+    );
+    list = (
+      <ListPane title="成员" search={{ value: peopleQuery, onChange: setPeopleQuery, placeholder: "搜索成员" }} foot={strips}>
+        {unknown ? (
+          <>
+            <ListSection title="成员 · 在线状态未知" count={shown.length} />
+            {shown.map(personRow)}
+          </>
+        ) : (
+          <>
+            <ListSection title="在线" count={shown.filter((m) => m.online).length} />
+            {shown.filter((m) => m.online).map(personRow)}
+            <ListSection title="不在线" count={shown.filter((m) => !m.online).length} />
+            {shown.filter((m) => !m.online).map(personRow)}
+          </>
+        )}
+        {!others.length && <div className="list-empty">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
+      </ListPane>
     );
   }
 
@@ -364,9 +434,21 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   else if (view === "transfers") main = <TransferMain session={session} engine={engine} filter={transferFilter} availability={availability} onSend={() => setDialog({ kind: "sendFiles" })} toast={toast} />;
   else if (view === "tasks") main = <Board session={session} filter={taskFilter} onOpen={(id) => showTask(id)} toast={toast} />;
   else if (view === "chat" && open && open.kind !== "request")
-    main = <ChatView key={open.id} session={session} thread={open} toast={toast} onArchive={(t, a) => void archive(t, a)} />;
+    main = <ChatView key={open.id} session={session} thread={open} toast={toast} onArchive={(t, a) => void archive(t, a)} onNewTopic={newTopic} />;
   else if (view === "people" && person)
-    main = <PersonView name={person} session={session} threads={threads} onChat={(n) => void chatWith(n)} onAsk={full ? (n) => setDialog({ kind: "session", to: n }) : undefined} onOpen={(id) => (setView("queue"), setOpenId(id))} />;
+    main = (
+      <PersonView
+        name={person}
+        session={session}
+        threads={threads}
+        availability={availability}
+        onChat={(n) => void chatWith(n)}
+        onAsk={full ? (n) => setDialog({ kind: "session", to: n }) : undefined}
+        onSendFiles={(n) => setDialog({ kind: "sendFiles", to: n })}
+        onOpen={(id) => (setView("queue"), setOpenId(id))}
+        onOpenChat={(id) => (setView("chat"), setOpenId(id))}
+      />
+    );
   else
     main = (
       <div className="placeholder">
@@ -374,15 +456,20 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           <>
             <h2>手上的事都在左边</h2>
             {full ? (
-              <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点左下的「复制用法」。</p>
+              <p>待处理里只有要你动手的：收到的会话、返回给你的会话。点「＋ 新会话」请同事处理一件事；想让 AI 自己去问人，点左边列表下面的「复制用法」。</p>
             ) : (
-              <p>同事的 AI 卡住了、或方案想让你把关时，会发会话给你，出现在左边；你回复后，会话回到它手里。想让自己的 AI 这样找人，点左下的「复制用法」贴给它。人和人之间直接在「聊天」里说。</p>
+              <p>同事的 AI 卡住了、或方案想让你把关时，会发会话给你，出现在左边；你回复后，会话回到它手里。想让自己的 AI 这样找人，点左边列表下面的「复制用法」贴给它。人和人之间直接在「聊天」里说。</p>
             )}
+          </>
+        ) : view === "cowork" ? (
+          <>
+            <h2>协作还在做</h2>
+            <p>做好后，几个人带着各自的 AI 在这里一起推进一件事：群聊是主体，子会话、目标和白板围着它。</p>
           </>
         ) : view === "chat" ? (
           <>
             <h2>还没有对话</h2>
-            <p>在「成员」里点同事开始私聊；和同一个人还可以开多个话题。</p>
+            <p>点左边的同事开始私聊；在对话上方的「＋ 新话题」里，和同一个人还可以开多个话题。</p>
           </>
         ) : (
           <h2>选一个成员</h2>
@@ -390,72 +477,50 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       </div>
     );
 
-  const tabs: Array<[View, string, number]> = [
-    ["queue", "待处理", queueCount],
-    ["transfers", "传文件", pendingFiles.length],
-    ...(full ? [["tasks", "任务", 0] as [View, string, number]] : []),
-    ["chat", "聊天", chatUnread],
-    ["people", "成员", 0],
+  const rail: Array<[View, string, React.ReactNode, number]> = [
+    ["queue", "待处理", ICONS.queue, queueCount],
+    ["cowork", "协作", ICONS.cowork, 0],
+    ...(full ? [["tasks", "任务", ICONS.tasks, 0] as [View, string, React.ReactNode, number]] : []),
+    ["chat", "聊天", ICONS.chat, chatUnread],
+    ["transfers", "传文件", ICONS.transfers, pendingFiles.length],
+    ["people", "成员", ICONS.people, 0],
   ];
   const people = useMemo(() => new Map(members.map((m) => [m.name, m])), [members]);
+  const meShown = people.get(me)?.nick ? `${people.get(me)!.nick}(${me})` : me;
+  // A task's page has its own column of sessions: the list makes room for it.
+  const listShown = !(view === "tasks" && openTask);
   return (
     <PeopleContext.Provider value={people}>
-    <div className="app">
+    <FrameContext.Provider value={frame}>
+    <div className={`app layout-a ${threadOpen ? "thread-on" : ""}`}>
       <header className={`topbar ${ownTitleBar ? "own" : ""} ${macLights ? "mac" : ""}`}>
         <div className="brand">
           <img className="brand-mark" src={iconUrl} alt="" />
           <span className="brand-name">AMO 中转</span>
           <span className="brand-sep">{session.me.service}</span>
         </div>
-        <nav className="view-tabs">
-          {tabs.map(([v, label, n]) => (
-            <button key={v} type="button" className="view-tab" aria-current={view === v ? "page" : undefined} onClick={() => switchView(v)}>
-              {label}
-              {n > 0 && <span className="badge">{n}</span>}
-            </button>
-          ))}
-        </nav>
         <span className="grow" />
-        {view === "transfers" ? (
-          availability === "ok" && (
-            <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "sendFiles" })}>
-              ＋ 发文件
-            </button>
-          )
-        ) : !full ? null : view === "tasks" ? (
-          <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "task" })}>
-            ＋ 新任务
-          </button>
-        ) : (
-          <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "session" })}>
-            ＋ 新会话
-          </button>
-        )}
+        <ConnChip session={session} />
         <WindowControls />
       </header>
       <div className="body">
-        <aside className="side">
-          <div className="scope-nav">{nav}</div>
-          <SideFoot
-            session={session}
-            mine={groups.mine.length}
-            handed={groups.handed.length}
-            waiting={groups.waiting.length}
-            updates={updates}
-            shellUpdate={shellUpdate}
-            flowNew={flowIsNew(flowDoc, me, session.me.server)}
-            flowShortcuts={full}
-            onQueue={() => goQueue("mine")}
-            onWaiting={() => goQueue("waiting")}
-            onShellUpdate={() => setDialog({ kind: "oldShell" })}
-            onFlow={openFlow}
-            onQuick={() => setDialog({ kind: "flow" })}
-            onCopyUsage={() => void copyUsage()}
-            onProfile={() => setDialog({ kind: "settings", part: "profile" })}
-            onSettings={() => setDialog({ kind: "settings" })}
-            onHelp={() => setDialog({ kind: "help" })}
-          />
-        </aside>
+        <Rail
+          foot={
+            <>
+              <RailItem label="说明" icon={ICONS.help} title="中转怎么用：会话的状态和按钮是什么意思" onClick={() => setDialog({ kind: "help" })} />
+              <RailItem label="设置" icon={ICONS.settings} title="设置：字体大小、主题、接入 AI、我的资料" onClick={() => setDialog({ kind: "settings" })} />
+              <button type="button" className="me-chip" title={`我的资料：${meShown} · ${{ online: "服务器在线", connecting: "正在连接服务器", offline: "服务器离线" }[connection]}（昵称、头像、负责什么在 AMO 平台的「账号」里改）`} aria-label="我的资料" onClick={() => setDialog({ kind: "settings", part: "profile" })}>
+                <Avatar name={me} />
+                <span className={`me-dot ${connection}`} />
+              </button>
+            </>
+          }
+        >
+          {rail.map(([v, label, icon, n]) => (
+            <RailItem key={v} label={label} icon={icon} badge={n} current={view === v} onClick={() => switchView(v)} />
+          ))}
+        </Rail>
+        {listShown && list}
         <main className="main-col">{main}</main>
       </div>
       {dialog?.kind === "session" && (
@@ -493,6 +558,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         <SendDialog
           session={session}
           members={members}
+          to={dialog.to}
           onClose={() => setDialog(null)}
           onSent={() => {
             setDialog(null);
@@ -507,17 +573,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>
+    </FrameContext.Provider>
     </PeopleContext.Provider>
-  );
-}
-
-function NavLabel({ title, count }: { title: string; count: number }) {
-  return (
-    <div className="nav-label">
-      {title}
-      <span className="count">{count}</span>
-      <span className="rule" />
-    </div>
   );
 }
 
@@ -541,40 +598,89 @@ function SessionRow({ thread, me, current, onOpen, limits }: { thread: Thread; m
   );
 }
 
-function PersonView(props: { name: string; session: Session; threads: Thread[]; onChat: (name: string) => void; onAsk?: (name: string) => void; onOpen: (id: string) => void }) {
+/** 「刚刚在线」 / 「3 分钟前在线」. */
+const seenText = (ms: number) => (ms < 60_000 ? "刚刚在线" : `${waitedText(ms)}前在线`);
+
+function PersonView(props: { name: string; session: Session; threads: Thread[]; availability: TransferAvailability; onChat: (name: string) => void; onAsk?: (name: string) => void; onSendFiles: (name: string) => void; onOpen: (id: string) => void; onOpenChat: (id: string) => void }) {
   const me = props.session.me.name;
-  const m = props.session.snapshot.members.find((x) => x.name === props.name);
+  const { members, connection } = useSession(props.session);
+  const m = members.find((x) => x.name === props.name);
   const between = props.threads.filter((t) => t.kind === "request" && t.members.includes(props.name) && t.members.includes(me) && props.name !== me);
   const live = between.filter((t) => t.request!.state !== "done");
+  // Their devices (layout A's member page): the ones a send can go to, online first.
+  const [devices, setDevices] = useState<RelayDevice[] | null>(null);
+  useEffect(() => {
+    if (props.availability !== "ok") return;
+    let gone = false;
+    setDevices(null);
+    props.session.client
+      .transferDevices()
+      .then((d) => !gone && setDevices(d.filter((x) => x.account === props.name).sort((a, b) => Number(b.online) - Number(a.online) || b.lastSeen - a.lastSeen)))
+      .catch(() => !gone && setDevices([]));
+    return () => {
+      gone = true;
+    };
+  }, [props.session, props.name, props.availability]);
+  const state = connection === "offline" ? "在线状态未知" : m?.online ? "在线" : "不在线";
   return (
-    <section className="view">
-      <div className="person-head">
-        <Avatar name={props.name} />
-        <div className="grow">
-          <h2>{props.name}</h2>
-          <div className="dim small">
-            {m?.role || "（没写负责什么）"} · {m?.online ? "在线" : "不在线"}
+    <section className="view person-view">
+      <header className="page-head person-head">
+        <Avatar name={props.name} big />
+        <div className="head-main">
+          <h1 className="head-title">
+            <Who name={props.name} />
+            {props.name === me ? "（我）" : ""}
+          </h1>
+          <div className="head-meta">
+            {m?.role || "（没写负责什么）"} · {state}
           </div>
         </div>
         {props.name !== me && (
-          <>
+          <div className="head-actions">
             <button type="button" onClick={() => props.onChat(props.name)}>
               私聊
             </button>
+            {props.availability === "ok" && (
+              <button type="button" onClick={() => props.onSendFiles(props.name)} title="发文件或文件夹到对方的设备，对方确认后开始传">
+                发文件
+              </button>
+            )}
             {props.onAsk && (
               <button type="button" className="primary" onClick={() => props.onAsk!(props.name)}>
                 发起会话
               </button>
             )}
+          </div>
+        )}
+      </header>
+      <div className="pane">
+        {props.availability === "ok" && (
+          <>
+            <h3>
+              设备 <span className="muted tiny">登录过中转客户端的，发文件时能选</span>
+            </h3>
+            <div className="devs">
+              {devices === null && <span className="muted tiny">正在读设备…</span>}
+              {devices?.map((d) => (
+                <span key={d.id} className="dev">
+                  <span className={`dot ${d.online ? "on" : ""}`} />
+                  {d.name} · {d.online ? "在线" : d.lastSeen ? seenText(Date.now() - d.lastSeen) : "不在线"}
+                </span>
+              ))}
+              {devices?.length === 0 && <span className="muted tiny">还没有。对方登录一次桌面客户端就有了。</span>}
+            </div>
           </>
         )}
-      </div>
-      <div className="pane">
-        <h3>和你之间进行中的会话 · {live.length}</h3>
-        {live.map((t) => (
-          <SessionRow key={t.id} thread={t} me={me} current={false} onOpen={props.onOpen} />
-        ))}
-        {!live.length && <div className="muted tiny">没有。</div>}
+        {props.name !== me && (
+          <>
+            <h3>和你之间进行中的会话 · {live.length}</h3>
+            {live.map((t) => (
+              <SessionRow key={t.id} thread={t} me={me} current={false} onOpen={props.onOpen} />
+            ))}
+            {!live.length && <div className="muted tiny">没有。</div>}
+            <SharedGroups session={props.session} name={props.name} onOpen={props.onOpenChat} />
+          </>
+        )}
       </div>
     </section>
   );
