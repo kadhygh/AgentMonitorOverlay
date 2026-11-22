@@ -1,4 +1,5 @@
 import type { Issue, IssueBuildReport, IssueImage, IssueList, IssueRelease, IssuePatch, NewIssue, NewIssueEntry } from "./issues-protocol.js";
+import type { NewTransfer, RelayDevice, Transfer, TransferFile } from "./transfer-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
@@ -297,5 +298,60 @@ export class RelayClient {
     if (opts.threadId) q.set("thread", opts.threadId);
     if (opts.ai) q.set("via", "ai");
     return (await this.call<{ messages: Message[] }>("GET", `/api/wait?${q}`, undefined, opts.signal)).messages;
+  }
+  // ---- 传文件 (2026-11-23, transfer-protocol.ts)
+  async transferDevices(): Promise<RelayDevice[]> {
+    return (await this.call<{ devices: RelayDevice[] }>("GET", "/api/transfer-devices")).devices;
+  }
+  async transfers(): Promise<Transfer[]> {
+    return (await this.call<{ transfers: Transfer[] }>("GET", "/api/transfers")).transfers;
+  }
+  async transfer(id: string): Promise<Transfer> {
+    return (await this.call<{ transfer: Transfer }>("GET", `/api/transfers/${encodeURIComponent(id)}`)).transfer;
+  }
+  async createTransfer(t: NewTransfer): Promise<Transfer> {
+    return (await this.call<{ transfer: Transfer }>("POST", "/api/transfers", t)).transfer;
+  }
+  async answerTransfer(id: string, device: string, accept: boolean): Promise<Transfer> {
+    return (await this.call<{ transfer: Transfer }>("POST", `/api/transfers/${encodeURIComponent(id)}/answer`, { device, accept })).transfer;
+  }
+  async transferProgress(id: string, device: string, got: number, done = false): Promise<Transfer> {
+    return (await this.call<{ transfer: Transfer }>("POST", `/api/transfers/${encodeURIComponent(id)}/progress`, { device, got, done })).transfer;
+  }
+  async cancelTransfer(id: string): Promise<Transfer> {
+    return (await this.call<{ transfer: Transfer }>("POST", `/api/transfers/${encodeURIComponent(id)}/cancel`, {})).transfer;
+  }
+  /** A piece of a file, at the offset the service is at; `sha256` is the whole file's. */
+  async putTransferPiece(id: string, index: number, q: { device: string; offset: number; sha256: string }, data: Uint8Array, signal?: AbortSignal): Promise<TransferFile> {
+    const headers: Record<string, string> = { "content-type": "application/octet-stream" };
+    if (this.key) headers.authorization = `Bearer ${this.key}`;
+    const query = new URLSearchParams({ device: q.device, offset: String(q.offset), sha256: q.sha256 });
+    let res: Response;
+    try {
+      res = await fetch(`${this.server}/api/transfers/${encodeURIComponent(id)}/files/${index}?${query}`, { method: "PUT", headers, body: data as unknown as RequestInit["body"], signal });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
+    }
+    const out = (await res.json().catch(() => ({}))) as { file?: TransferFile; error?: string; message?: string };
+    if (!res.ok || !out.file) throw new RelayClientError(res.status, out.error ?? "error", out.message ?? `HTTP ${res.status}`);
+    return out.file;
+  }
+  /** Bytes start..end (inclusive) of a complete file, for a device of mine that accepted the send. */
+  async transferPiece(id: string, index: number, device: string, start: number, end: number, signal?: AbortSignal): Promise<Uint8Array> {
+    const headers: Record<string, string> = { range: `bytes=${start}-${end}` };
+    if (this.key) headers.authorization = `Bearer ${this.key}`;
+    let res: Response;
+    try {
+      res = await fetch(`${this.server}/api/transfers/${encodeURIComponent(id)}/files/${index}?device=${encodeURIComponent(device)}`, { headers, signal });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
   }
 }

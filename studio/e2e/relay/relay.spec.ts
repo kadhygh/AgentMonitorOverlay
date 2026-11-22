@@ -477,7 +477,7 @@ test("tightened: an AI's session answered over two rounds, closed by the AI; no 
   const b = await launch("coder2");
   await register(b.page, "程序老赵", "程序 · 系统", false);
   for (const p of [a.page, b.page]) {
-    await expect(p.locator(".view-tab")).toHaveText(["待处理", "聊天", "成员"]);
+    await expect(p.locator(".view-tab")).toHaveText(["待处理", "传文件", "聊天", "成员"]);
     await expect(p.getByRole("button", { name: /＋ 新/ })).toHaveCount(0);
     await expect(p.locator(".shortcut")).toHaveText(["复制用法", "说明"]);
   }

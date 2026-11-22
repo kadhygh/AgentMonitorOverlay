@@ -78,8 +78,27 @@
         { "label": "会话页", "path": "studio/packages/relay-ui/src/SessionView.tsx" },
         { "label": "改动说明（外壳）", "path": "studio/packages/relay-app/CHANGELOG.md" }
       ],
-      "related": ["tool.relayService", "app.shell", "tool.platform"],
+      "related": ["tool.relayService", "app.shell", "tool.platform", "tool.relayTransfer"],
       "next": ["studio/plans/done/relay-round-2026-11-05.md", "studio/plans/done/relay-tasks.md"]
+    },
+    {
+      "id": "tool.relayTransfer",
+      "label": "中转的传文件（设备之间传文件和文件夹）",
+      "aliases": ["传文件", "文件传输", "发文件", "transfer", "transfers", "断点续传", ".part", "接收路径"],
+      "category": "tool",
+      "purpose": "中转顶栏「传文件」（2026-11-23）：文件或文件夹经服务器发到自己或同事选定的设备，对方确认后才上传；一次 2 GB、服务器存 1 天、8 MB 分块、断点续传、sha256 校验、同名改「名字 (1)」。服务存传送表和分块内容（data/transfers）；外壳只做本机文件的读写（选过的文件、接收的文件夹）；上传下载和续传的逻辑在热更新的界面里。设备号是 device.json，跟着 /ws 连接登记。",
+      "anchors": [
+        { "label": "共用的类型和上限", "path": "studio/packages/relay/src/transfer-protocol.ts", "anchor": "export const TRANSFER_MAX_BYTES" },
+        { "label": "服务：传送表、分块写盘、清理", "path": "studio/packages/relay/src/transfers.ts", "anchor": "export class TransferStore" },
+        { "label": "服务：接口", "path": "studio/packages/relay/src/server.ts", "anchor": "/api/transfer-devices" },
+        { "label": "外壳：本机文件", "path": "studio/packages/relay-app/src/transfer-files.ts", "anchor": "export class TransferFiles" },
+        { "label": "外壳：给界面的接口", "path": "studio/packages/relay-app/src/transfer-ipc.ts" },
+        { "label": "界面：上传下载引擎", "path": "studio/packages/relay-ui/src/transfer.ts", "anchor": "export class TransferEngine" },
+        { "label": "界面：面板和对话框", "path": "studio/packages/relay-ui/src/Transfers.tsx" },
+        { "label": "e2e", "path": "studio/e2e/relay/transfer.spec.ts" }
+      ],
+      "related": ["tool.relayService", "tool.relayClient"],
+      "next": ["studio/plans/done/relay-file-transfer.md", "studio/plans/later/lan-file-transfer.md"]
     },
     {
       "id": "tool.issues",

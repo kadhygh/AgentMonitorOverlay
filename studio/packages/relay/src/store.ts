@@ -359,6 +359,10 @@ export class RelayStore {
         ["todo_accounts", "account"],
         ["issue_images", "by_name"],
         ["issues", "approved_by"],
+        // 传文件 (2026-11-23).
+        ["transfer_devices", "account"],
+        ["transfers", "from_account"],
+        ["transfer_targets", "account"],
       ];
       for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
       // A direct chat is found by its two names.

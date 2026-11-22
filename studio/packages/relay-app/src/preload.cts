@@ -4,6 +4,7 @@ import electron = require("electron");
 
 const { ipcRenderer } = electron;
 const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(`relay:${channel}`, ...args);
+const tx = (method: string, ...args: unknown[]) => ipcRenderer.invoke("relay:transfer", method, ...args);
 const send = (channel: string, ...args: unknown[]) => ipcRenderer.send(`relay:${channel}`, ...args);
 const on = (channel: string, listener: (value: never) => void) => {
   ipcRenderer.removeAllListeners(`relay:${channel}`);
@@ -52,4 +53,27 @@ electron.contextBridge.exposeInMainWorld("relayShell", {
   takeOpenThread: () => invoke("take-open-thread"),
   studioHas: (conv: string) => invoke("studio-has", conv),
   openInStudio: (conv: string) => invoke("open-in-studio", conv),
+  // 传文件 (2026-11-23, transfer-ipc.ts): one channel, method + arguments. Dropped files become paths here (webUtils),
+  // the only place that can tell them.
+  transfer: {
+    device: () => tx("device"),
+    pickFiles: (addTo?: string | null) => tx("pickFiles", addTo ?? null),
+    pickFolder: (addTo?: string | null) => tx("pickFolder", addTo ?? null),
+    dropped: (files: File[], addTo?: string | null) => tx("dropped", [...files].map((f) => electron.webUtils.getPathForFile(f)).filter(Boolean), addTo ?? null),
+    bind: (pick: string, id: string, keep?: string[]) => tx("bind", pick, id, keep),
+    read: (id: string, path: string, offset: number, length: number) => tx("read", id, path, offset, length),
+    hash: (id: string, path: string) => tx("hash", id, path),
+    forgetSend: (id: string) => tx("forgetSend", id),
+    receiveDir: () => tx("receiveDir"),
+    setReceiveDir: (dir: string) => tx("setReceiveDir", dir),
+    chooseDir: (current?: string) => tx("chooseDir", current),
+    prepare: (id: string, dir: string, plan: unknown) => tx("prepare", id, dir, plan),
+    received: (id: string) => tx("received", id),
+    partSize: (id: string, path: string) => tx("partSize", id, path),
+    write: (id: string, path: string, offset: number, data: Uint8Array) => tx("write", id, path, offset, data),
+    finish: (id: string, path: string, sha256: string) => tx("finish", id, path, sha256),
+    discard: (id: string) => tx("discard", id),
+    openFolder: (id: string) => tx("openFolder", id),
+    prune: (keep: string[]) => tx("prune", keep),
+  },
 });

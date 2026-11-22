@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { DEFAULT_SETTINGS, RelayClient, TICK_MS, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
+import { shell } from "./env.js";
+import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
 
 // One login: the client with its key, the thread list, the people, the team's tasks and settings, kept current by /ws (reconnecting, and
 // reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
@@ -31,14 +32,23 @@ interface State {
   /** The next reconnect, while offline. */
   retryAt: number | null;
   client: string | null;
+  /** 传文件 (2026-11-23): this computer, from a desktop shell that has 传文件; null in a browser or an older shell. */
+  device: { id: string; name: string } | null;
+  /** My sends and the ones to me, newest first (only with a device). */
+  transfers: Transfer[];
+  /** false: the service is from before 传文件 (it answers 404). */
+  transfersOk: boolean;
+  /** The list has come from the service at least once. */
+  transfersLoaded: boolean;
 }
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null };
+  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
   private noteListeners = new Set<(fileId: string) => void>();
+  private transferListeners = new Set<(t: Transfer) => void>();
   private ws: WebSocket | null = null;
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,8 +61,13 @@ export class Session {
   /** The thread on screen: its messages count as read while the window has focus. */
   openThread: string | null = null;
 
-  constructor(readonly me: Identity) {
+  /** `device`: this computer, when known already (tests); otherwise the desktop shell is asked at start. */
+  constructor(
+    readonly me: Identity,
+    device?: { id: string; name: string },
+  ) {
     this.client = new RelayClient(me.server, me.key);
+    if (device) this.state = { ...this.state, device };
   }
 
   get snapshot(): State {
@@ -68,6 +83,18 @@ export class Session {
   onNotes(listener: (fileId: string) => void): () => void {
     this.noteListeners.add(listener);
     return () => this.noteListeners.delete(listener);
+  }
+
+  /** A send changed (pushed by the service). */
+  onTransfer(listener: (t: Transfer) => void): () => void {
+    this.transferListeners.add(listener);
+    return () => this.transferListeners.delete(listener);
+  }
+
+  /** A send as the service has it now (after an answer of mine, or one the engine fetched). */
+  putTransfer(t: Transfer): void {
+    const rest = this.state.transfers.filter((x) => x.id !== t.id);
+    this.set({ transfers: [t, ...rest].sort((a, b) => b.createdAt - a.createdAt) });
   }
 
   onMessage(listener: (m: Message) => void): () => void {
@@ -86,6 +113,11 @@ export class Session {
     // list's answer and the socket's opening was lost until the next reload. What the socket brings while a load is on
     // its way is kept (see reload).
     this.opened = false;
+    // 传文件: the /ws connection says which device this is, so others can send to it.
+    if (shell?.transfer && !this.state.device) {
+      const d = await shell.transfer.device().catch(() => null);
+      if (d) this.set({ device: { id: d.id, name: d.name } });
+    }
     this.connect();
     await this.reload();
   }
@@ -127,14 +159,24 @@ export class Session {
       const merged = threads.map((t) => (touched.has(t.id) ? (now.get(t.id) ?? t) : t));
       const added = [...touched].filter((id) => !listed.has(id)).flatMap((id) => (now.has(id) ? [now.get(id)!] : []));
       this.set({ threads: [...added, ...merged], members, tasks, settings });
+      if (this.state.device) await this.reloadTransfers();
     } finally {
       this.touched.delete(touched);
     }
   }
 
+  async reloadTransfers(): Promise<void> {
+    try {
+      this.set({ transfers: await this.client.transfers(), transfersOk: true, transfersLoaded: true });
+    } catch (err) {
+      if (err instanceof RelayClientError && err.status === 404) this.set({ transfersOk: false });
+    }
+  }
+
   private connect(): void {
     if (this.closed) return;
-    const url = `${this.me.server.replace(/^http/, "ws")}/ws?key=${encodeURIComponent(this.me.key)}`;
+    const d = this.state.device;
+    const url = `${this.me.server.replace(/^http/, "ws")}/ws?key=${encodeURIComponent(this.me.key)}${d ? `&device=${encodeURIComponent(d.id)}&deviceName=${encodeURIComponent(d.name)}` : ""}`;
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
@@ -170,6 +212,10 @@ export class Session {
     else if (e.type === "settings") this.set({ settings: e.settings });
     else if (e.type === "left") this.set({ threads: this.state.threads.filter((t) => t.id !== e.threadId) });
     else if (e.type === "notes") for (const l of this.noteListeners) l(e.fileId);
+    else if (e.type === "transfer") {
+      this.putTransfer(e.transfer);
+      for (const l of this.transferListeners) l(e.transfer);
+    }
     else if (e.type === "task") {
       // Handed to me just now: new to me until I open it.
       const old = this.state.tasks.find((t) => t.id === e.task.id);

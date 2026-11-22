@@ -18,6 +18,9 @@ import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, Task
 import { writeUsageFile } from "./usageFile.js";
 import { macLights, ownTitleBar, WindowControls } from "./Window.js";
 import { saveResume, useUpdates } from "./update.js";
+import { TransferEngine } from "./transfer.js";
+import { pendingHere, SendDialog, transferAvailability, TransferMain, TransferNav, type TransferFilter } from "./Transfers.js";
+import { transferBytesText, transferTitle } from "./shared.js";
 
 // After login, in AMO Studio's layout (stages 2a–2b, plans/done/relay-tasks.md): the top bar with four views — 待处理 (tasks
 // handed to me and the sessions waiting on me, then the ones waiting on others or on an AI, then the finished ones),
@@ -27,8 +30,9 @@ import { saveResume, useUpdates } from "./update.js";
 // service publishes is applied once the window is not in use and nothing is typed.
 // Tightened (2026-10-28, features.ts): only 待处理 / 聊天 / 成员 and no ＋ 新会话 — sessions come from AIs, people chat;
 // the task views, transfers and the flow shortcuts come back with fullUi().
+// 传文件 (2026-11-23, Transfers.tsx): a tab of its own next to 待处理, with what waits to be accepted on this device.
 
-type View = "queue" | "tasks" | "chat" | "people";
+type View = "queue" | "tasks" | "chat" | "people" | "transfers";
 type Dialogs =
   | { kind: "session"; to?: string; taskId?: string }
   | { kind: "oldShell" }
@@ -37,10 +41,11 @@ type Dialogs =
   | { kind: "flow" }
   | { kind: "settings"; part?: SettingsPart }
   | { kind: "file"; id: string; scripts: boolean }
-  | { kind: "help"; section?: HelpSection };
+  | { kind: "help"; section?: HelpSection }
+  | { kind: "sendFiles" };
 
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
-  const { threads, members, connection, client, tasks, settings } = useSession(session);
+  const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = useSession(session);
   const me = session.me.name;
   useMinuteTick();
   const full = fullUi();
@@ -54,6 +59,18 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [toastText, setToastText] = useState<string | null>(null);
   const [doneOpen, setDoneOpen] = useState(false);
   const [archOpen, setArchOpen] = useState(false);
+  const [transferFilter, setTransferFilter] = useState<TransferFilter>("pending");
+  const availability = transferAvailability({ device, transfersOk });
+  // The engine that moves the bytes (transfer.ts): while signed in on a desktop client that has 传文件.
+  const [engine, setEngine] = useState<TransferEngine | null>(null);
+  useEffect(() => {
+    if (availability !== "ok" || !shell?.transfer) return;
+    const e = new TransferEngine(session, shell.transfer);
+    e.start();
+    setEngine(e);
+    return () => (e.stop(), setEngine(null));
+  }, [session, availability]);
+  const pendingFiles = useMemo(() => pendingHere(transfers, me, device?.id), [transfers, me, device?.id]);
   const openRef = useRef(openId);
   openRef.current = openId;
   const updates = useUpdates(client, null, (version) => saveResume({ openId: openRef.current, updatedTo: version }));
@@ -98,7 +115,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   }, [view, threads.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The shell shows it on the taskbar and the tray (and AMO 平台's tray); signed out, nothing waits.
-  useEffect(() => shell?.setUnread(queueCount + chatUnread), [queueCount, chatUnread]);
+  useEffect(() => shell?.setUnread(queueCount + chatUnread + pendingFiles.length), [queueCount, chatUnread, pendingFiles.length]);
   useEffect(() => () => shell?.setUnread(0), []);
 
   // Notifications when the window is not looking at it.
@@ -121,8 +138,31 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       }),
     [session, me],
   );
+  // 传文件: a send to accept on this device, heard while the window was elsewhere (or on another tab).
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(
+    () =>
+      session.onTransfer((t) => {
+        const d = session.snapshot.device?.id;
+        if (t.state !== "open" || !t.targets.some((x) => x.account === me && x.device === d && x.state === "pending")) return;
+        if (t.from === me && t.fromDevice === d) return;
+        if (document.hasFocus() && viewRef.current === "transfers") return;
+        // Once per send: a push of the same one (its sender's progress) is not news.
+        if (notifiedTransfers.current.has(t.id)) return;
+        notifiedTransfers.current.add(t.id);
+        shell?.notify({ title: t.from === me ? `你的「${t.fromDeviceName}」发来文件` : `${t.from} 发来文件`, body: `${transferTitle(t)} · ${transferBytesText(t.totalSize)}，点开确认接收`, threadId: `transfer:${t.id}` });
+      }),
+    [session, me],
+  );
+  const notifiedTransfers = useRef(new Set<string>());
   // A notification clicked, or AMO Studio's 在中转里打开 (2026-11-05: --open-thread, also the one the shell started with).
   const openThread = (id: string) => {
+    if (id.startsWith("transfer:")) {
+      setView("transfers");
+      setTransferFilter("pending");
+      return;
+    }
     const t = threads.find((x) => x.id === id);
     setView(t && t.kind !== "request" ? "chat" : "queue");
     setOpenId(id);
@@ -145,6 +185,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     if (v === "tasks") setTaskId(null);
     if (v === "queue") setOpenId((groups.mine[0] ?? groups.waiting[0])?.id ?? null);
     else if (v === "chat") setOpenId(groups.chats[0]?.id ?? null);
+    else if (v === "transfers") setTransferFilter(pendingFiles.length ? "pending" : "in");
     else setPerson((p) => p ?? members.find((m) => m.name !== me)?.name ?? null);
   };
 
@@ -278,6 +319,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         )}
       </>
     );
+  } else if (view === "transfers") {
+    nav = <TransferNav session={session} filter={transferFilter} onFilter={setTransferFilter} availability={availability} toast={toast} />;
   } else if (view === "chat") {
     nav = <ChatTree session={session} openId={openId} onOpen={setOpenId} onChatWith={(n) => void chatWith(n)} onNewTopic={newTopic} onArchive={(t, a) => void archive(t, a)} />;
   } else {
@@ -318,6 +361,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         onTransfer={(task, thread) => setDialog({ kind: "transfer", task, thread })}
       />
     );
+  else if (view === "transfers") main = <TransferMain session={session} engine={engine} filter={transferFilter} availability={availability} onSend={() => setDialog({ kind: "sendFiles" })} toast={toast} />;
   else if (view === "tasks") main = <Board session={session} filter={taskFilter} onOpen={(id) => showTask(id)} toast={toast} />;
   else if (view === "chat" && open && open.kind !== "request")
     main = <ChatView key={open.id} session={session} thread={open} toast={toast} onArchive={(t, a) => void archive(t, a)} />;
@@ -348,6 +392,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   const tabs: Array<[View, string, number]> = [
     ["queue", "待处理", queueCount],
+    ["transfers", "传文件", pendingFiles.length],
     ...(full ? [["tasks", "任务", 0] as [View, string, number]] : []),
     ["chat", "聊天", chatUnread],
     ["people", "成员", 0],
@@ -371,7 +416,13 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           ))}
         </nav>
         <span className="grow" />
-        {!full ? null : view === "tasks" ? (
+        {view === "transfers" ? (
+          availability === "ok" && (
+            <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "sendFiles" })}>
+              ＋ 发文件
+            </button>
+          )
+        ) : !full ? null : view === "tasks" ? (
           <button type="button" className="primary new-btn" onClick={() => setDialog({ kind: "task" })}>
             ＋ 新任务
           </button>
@@ -436,6 +487,20 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           onCopyUsage={() => void copyUsage()}
           onLogout={onLogout}
           onOpenFile={(id) => setDialog({ kind: "file", id, scripts: settings.flowScripts !== false && !!flowDoc && /\.html?$/i.test(flowDoc.name) })}
+        />
+      )}
+      {dialog?.kind === "sendFiles" && availability === "ok" && (
+        <SendDialog
+          session={session}
+          members={members}
+          onClose={() => setDialog(null)}
+          onSent={() => {
+            setDialog(null);
+            setView("transfers");
+            setTransferFilter("out");
+            toast("已发出，对方确认后开始上传");
+          }}
+          toast={toast}
         />
       )}
       {dialog?.kind === "help" && <HelpDialog section={dialog.section} onClose={() => setDialog(null)} />}

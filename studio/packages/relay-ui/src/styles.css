@@ -580,3 +580,42 @@ img.brand-mark { border: none; border-radius: 0; object-fit: contain; }
 .me-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .me-card-text b { font-family: var(--font-display); font-size: var(--fs-title); }
 .me-card-note { margin-top: 8px; font-size: var(--fs-sm); color: var(--text-dim); }
+
+/* 传文件 (2026-11-23, Transfers.tsx) */
+.xfer-dir { margin-top: auto; padding: 10px 8px 4px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.xfer-dir-path { font-family: var(--font-code); font-size: 11px; color: var(--text-dim); word-break: break-all; }
+.xfer-dir-pick { display: flex; align-items: center; gap: 10px; }
+.xfer-dir-pick .xfer-dir-path { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel-raised); }
+.xfer-list { display: flex; flex-direction: column; gap: 10px; }
+.xfer-card { border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel-raised); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+.xfer-card.st-cancelled, .xfer-card.st-expired { opacity: 0.75; }
+.xfer-top { display: flex; align-items: flex-start; gap: 10px; }
+.xfer-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.xfer-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.xfer-title b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-title .muted { flex: none; font-size: var(--fs-cap); }
+.xfer-who { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: var(--fs-sm); }
+.xfer-target { display: inline-flex; gap: 2px; padding: 0 8px; border-radius: 999px; background: var(--chip); font-size: var(--fs-cap); line-height: 20px; }
+.xfer-target.ts-declined { text-decoration: line-through; color: var(--text-faint); }
+.xfer-status { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: var(--fs-sm); }
+.xfer-status-text { color: var(--text-dim); }
+.xfer-bar { height: 4px; border-radius: 2px; background: var(--chip); overflow: hidden; }
+.xfer-bar span { display: block; height: 100%; background: var(--primary); transition: width 0.3s; }
+.xfer-acts { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.xfer-acts:empty { display: none; }
+.xfer-files { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-m); padding: 4px 0; background: var(--panel-raised); }
+.xfer-file { display: flex; justify-content: space-between; gap: 12px; padding: 2px 10px; font-size: var(--fs-cap); font-family: var(--font-code); }
+.xfer-file .muted { flex: none; }
+.xfer-drop { border: 1px dashed var(--border-strong); border-radius: var(--r-l); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.xfer-drop.over::after { content: "松开就加上"; }
+.xfer-roots { display: flex; flex-wrap: wrap; gap: 6px; }
+.xfer-roots .x { color: var(--text-faint); margin-left: 2px; }
+.xfer-drop-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.xfer-people { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+.xfer-person { display: flex; flex-direction: column; gap: 5px; }
+.xfer-person.none { opacity: 0.6; }
+.xfer-person-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.xfer-person-head .check-row { font-size: var(--fs-cap); }
+.xfer-devices { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 28px; }
+.xfer-devices .att { height: 28px; padding: 0 10px; }
+.xfer-person .muted.tiny { padding-left: 28px; }

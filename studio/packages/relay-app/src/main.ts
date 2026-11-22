@@ -28,6 +28,7 @@ import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
 import { openInStudio, studioHas } from "./studio-link.js";
+import { wireTransfer } from "./transfer-ipc.js";
 
 // AMO 中转's desktop client (plans/done/relay.md). This shell is fixed; what people see — login, conversations — is content
 // the service hands out (packages/relay-ui), kept in <home>/client and updated without a restart:
@@ -385,6 +386,8 @@ async function unplainSettings(): Promise<void> {
 }
 
 function wire(): void {
+  // 传文件 (2026-11-23, transfer-ipc.ts): the content's relayShell.transfer.
+  wireTransfer({ home, testMode, win: () => win });
   ipcMain.on("relay:loader-ready", () => (loaderReady?.(), (loaderReady = null)));
   ipcMain.on("relay:loader-server", (_e, value: string) => loaderAnswer?.({ kind: "server", value }));
   ipcMain.on("relay:loader-retry", () => loaderAnswer?.({ kind: "retry" }));

@@ -223,7 +223,7 @@ amo-relay serve | passwd | admin-password | rename | register | login | whoami |
 | `POST /api/threads/:id/messages` `{kind: text\|reply, body, answers, verdict, pass}` | 发消息或回复；回复会把会话还给发起方，`pass` 让一条普通消息也换手（继续追问） |
 | `POST /api/threads/:id/read` `{seq}` | 标记已读 |
 | `GET /api/wait?thread=&after=&timeout=` | 等对方的新消息，最多 10 分钟 |
-| `WS /ws?key=` | 推送 `hello` / `message` / `thread` / `archived` / `members` / `read` / `client` / `tick` |
+| `WS /ws?key=[&device=&deviceName=]` | 推送 `hello` / `message` / `thread` / `archived` / `members` / `read` / `client` / `tick` / `transfer`；带设备（新版桌面客户端，传文件用）时记下这台设备，连着就算在线 |
 
 ### 设备和配对（远程会话第 1 步，2026-10-29）
 
@@ -249,9 +249,24 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 | `GET /api/todo?device=&deviceName=&since=` | `{rev, items, devices, full}`：`since` 之后改过的（删掉的带 `deleted`）；`since` 是 0 或早于留着的删除标记时给全部（`full`） |
 | `POST /api/todo/ops` `{device, deviceName, ops}` | 按顺序应用改动：`put` 只写它带的字段（新的要有 `list`、`text`），`delete` 留 30 天标记；删掉的不会被 `put` 救回来。不合规的跳过，在 `rejected` 里按位置说明 |
 
+### 传文件（2026-11-23）
+
+文件或文件夹发到选定的设备（自己的或同事的），经服务中转。方案和做法在 `plans/done/relay-file-transfer.md`，格式在 `src/transfer-protocol.ts`，服务这边在 `src/transfers.ts`。内容存在数据目录的 `transfers/<传送号>/<文件序号>`（Mac 上 `~/Services/amo-relay/data/transfers`）：所有目标设备收完或拒绝、发送方取消、或者建立满 1 天就删，记录再留 7 天；服务启动时和每 10 分钟清一次。一次最多 2 GB、10000 个文件、50 台设备；建传送时磁盘要留得下所有进行中的传送还没传完的量再加 5 GB，不然拒绝。
+
+| | |
+|---|---|
+| `GET /api/transfer-devices` | `{devices: [{account, id, name, online, lastSeen}]}`：30 天内带设备连过 `/ws` 的设备 |
+| `GET /api/transfers`、`/api/transfers/:id` | 我发的和发给我（任一台设备）的，新的在前 |
+| `POST /api/transfers` `{device, deviceName, entries: [{path, size}], dirs, targets: [{account, device}]}` | 建一次传送，只带清单（`path` 用 `/` 分隔，Windows 认的名字），不带内容 |
+| `POST /api/transfers/:id/answer` `{device, accept}` | 这台设备接收或拒绝（接收后再拒绝 = 停止接收） |
+| `PUT /api/transfers/:id/files/:index?device=&offset=&sha256=` | 发送方那台设备传一块（最多 8 MB，请求体就是内容）；`offset` 要等于服务已有的字节数，不然 409，问 `GET /api/transfers/:id` 再接着传。`sha256` 是整个文件的，收完核对，对不上从头再传。至少一台设备接收了才收 |
+| `GET /api/transfers/:id/files/:index?device=` | 接收了的设备下载传完的文件，支持 `Range` |
+| `POST /api/transfers/:id/progress` `{device, got, done}` | 接收方报进度；`done` = 全部存好并核对过 |
+| `POST /api/transfers/:id/cancel` | 发送方取消 |
+
 ## 测试
 
-- 单测：`npx vitest run packages/relay packages/relay-app scripts`（`scripts` 是平台的发布）
+- 单测：`npx vitest run packages/relay packages/relay-app packages/relay-ui scripts`（`scripts` 是平台的发布；`relay-ui` 里是传文件的引擎对着真服务的续传测试）
 - e2e：`npm run relay:release && npx playwright test -c e2e/playwright.config.ts --project relay`
 
-e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；最后一个用平台的程序文件夹布局（`amoBuild.mode: "platform"`）启动客户端，确认它不提示、也不执行「更新桌面程序」，界面要新外壳时指向平台，程序文件夹里没多文件。截图存在 `screenshots/relay/`。平台「工具」页里的中转（列出、安装、带 `--server` 打开、更新）在 `npx playwright test -c e2e/playwright.config.ts --project platform`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。
+e2e 会启动两个客户端，依次跑：注册、AI 用命令行发会话、对方逐条回复并返回、AI 取回、本人接手后 AI 被拒、标记完成、私聊和话题、归档、两种自动更新、服务断开又恢复、深色主题；最后一个用平台的程序文件夹布局（`amoBuild.mode: "platform"`）启动客户端，确认它不提示、也不执行「更新桌面程序」，界面要新外壳时指向平台，程序文件夹里没多文件。截图存在 `screenshots/relay/`。传文件单独一个 `e2e/relay/transfer.spec.ts`：三个客户端（同一个人的两台电脑和另一个人的一台），发文件夹和文件、一台拒绝一台接收、同名改名、分块传完核对。平台「工具」页里的中转（列出、安装、带 `--server` 打开、更新）在 `npx playwright test -c e2e/playwright.config.ts --project platform`。发布前可以先 `node scripts/relay-release.mjs --out <临时目录>`，再用 `AMO_RELAY_E2E_RELEASE=<临时目录>` 跑 e2e，通过后再发布到正在运行的服务。

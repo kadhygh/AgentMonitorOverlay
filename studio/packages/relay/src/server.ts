@@ -20,6 +20,8 @@ import { RelayError, type RelayStore } from "./store.js";
 import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
 import { checkTodoDevice, TodoStore } from "./todo.js";
 import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js";
+import { checkTransferDevice, cleanDeviceName, TransferStore } from "./transfers.js";
+import { TRANSFER_CHUNK, type Transfer } from "./transfer-protocol.js";
 
 // The relay service (plans/done/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
@@ -60,6 +62,13 @@ export interface RelayServerOptions {
   /** 工具镜像 (mirror.ts, 2026-11-03: Claude Code, Codex): their admin calls and, for people signed in, their files;
    *  none = 404. Started and closed by whoever made them (bin.ts). */
   mirrors?: Partial<Record<MirrorTool, ToolMirror>>;
+  /** 传文件 (transfers.ts, 2026-11-23): where a send's content is kept; none = sends are refused. */
+  transfersDir?: string;
+  /** How often expired sends are cleared (default 10 min); the clock, free disk space and what to keep free (tests). */
+  transferSweepMs?: number;
+  transferNow?: () => number;
+  transferFreeBytes?: (dir: string) => Promise<number>;
+  transferReserveBytes?: number;
 }
 
 export interface RelayServer {
@@ -187,7 +196,43 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   pruneTimer.unref?.();
   // 待办 (2026-11-01, plans/done/todo.md): every account's todo lists, in the same database.
   const todo = new TodoStore(store.db);
+  // 传文件 (2026-11-23, transfers.ts): sends between devices, in the same database; their content in transfersDir.
+  const transfers = new TransferStore({ db: store.db, dir: opts.transfersDir, ...(opts.transferNow ? { now: opts.transferNow } : {}), ...(opts.transferFreeBytes ? { freeBytes: opts.transferFreeBytes } : {}), ...(opts.transferReserveBytes !== undefined ? { reserveBytes: opts.transferReserveBytes } : {}) });
+  const isMember = (n: string) => store.members().some((m) => m.name === n);
+  const deviceOnline = (account: string, device: string) => [...(sockets.get(account) ?? [])].some((ws) => socketDevice.get(ws) === device);
+  /** A send changed: to its people. Pieces come several a second: at most one push a second for those (`soon`). */
+  const transferTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const transferPushedAt = new Map<string, number>();
+  const transferChanged = (t: Transfer, soon = false) => {
+    if (closing) return;
+    const flush = () => {
+      transferTimers.delete(t.id);
+      transferPushedAt.set(t.id, Date.now());
+      const now = transfers.peek(t.id);
+      if (now) push(transfers.people(now), { type: "transfer", transfer: now });
+    };
+    if (!soon) {
+      clearTimeout(transferTimers.get(t.id));
+      return flush();
+    }
+    if (transferTimers.has(t.id)) return;
+    const wait = 1000 - (Date.now() - (transferPushedAt.get(t.id) ?? 0));
+    if (wait <= 0) return flush();
+    transferTimers.set(t.id, setTimeout(flush, wait));
+  };
+  const sweepTransfers = () => {
+    try {
+      for (const t of transfers.sweep()) transferChanged(t);
+    } catch {
+      // the next sweep tries again
+    }
+  };
+  sweepTransfers();
+  const transferSweep = setInterval(sweepTransfers, opts.transferSweepMs ?? 10 * 60_000);
+  transferSweep.unref?.();
   const sockets = new Map<string, Set<WebSocket>>();
+  /** The device a /ws connection said it is (desktop clients with 传文件, 2026-11-23). */
+  const socketDevice = new Map<WebSocket, string>();
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
   let closing = false;
@@ -610,6 +655,41 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       const body = await readJson(req);
       return send(res, 200, todo.apply(me, checkTodoDevice(body.device, body.deviceName), body.ops));
     }
+    // 传文件 (transfer-protocol.ts, 2026-11-23): sends to chosen devices of chosen people, through the service.
+    if (path === "/api/transfers" || path.startsWith("/api/transfers/") || path === "/api/transfer-devices") {
+      if (method === "GET" && path === "/api/transfer-devices") return send(res, 200, { devices: transfers.devices(isMember, deviceOnline) });
+      if (method === "GET" && path === "/api/transfers") return send(res, 200, { transfers: transfers.list(me) });
+      if (method === "POST" && path === "/api/transfers") {
+        const t = await transfers.create(me, await readJson(req), isMember);
+        transferChanged(t);
+        return send(res, 200, { transfer: t });
+      }
+      const xm = /^\/api\/transfers\/(x_[0-9a-f]{16})(?:\/(answer|progress|cancel)|\/files\/(\d+))?$/.exec(path);
+      if (!xm) throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+      const id = xm[1]!;
+      if (method === "GET" && !xm[2] && !xm[3]) return send(res, 200, { transfer: transfers.get(id, me) });
+      if (method === "POST" && xm[2]) {
+        const body = await readJson(req);
+        const t =
+          xm[2] === "answer" ? transfers.answer(me, id, body.device, body.accept !== false) : xm[2] === "progress" ? transfers.progress(me, id, body.device, body.got, body.done === true) : transfers.cancel(me, id);
+        transferChanged(t, xm[2] === "progress" && t.state === "open" && body.done !== true);
+        return send(res, 200, { transfer: t });
+      }
+      // A piece of a file: the raw bytes, where it goes in the query (offset, the whole file's sha256, the device).
+      if (method === "PUT" && xm[3]) {
+        if (Number(req.headers["content-length"] ?? 0) > TRANSFER_CHUNK) throw new RelayError("bad_request", `一块最多 ${TRANSFER_CHUNK / 1024 / 1024} MB`);
+        const data = await readRaw(req, TRANSFER_CHUNK);
+        const out = await transfers.writePiece(me, id, xm[3], { device: url.searchParams.get("device"), offset: url.searchParams.get("offset"), sha256: url.searchParams.get("sha256") }, data);
+        // Spaced out (a push carries the whole send) until the last file is complete.
+        transferChanged({ id } as Transfer, !out.allDone);
+        return send(res, 200, { file: out.file });
+      }
+      if (method === "GET" && xm[3]) {
+        const got = transfers.download(me, id, xm[3], url.searchParams.get("device"));
+        return sendRanged(req, res, got.path, got.size);
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
     if (method === "GET" && path === "/api/threads") return send(res, 200, { threads: store.threadsFor(me) });
     if (method === "POST" && path === "/api/threads/direct") {
       const body = await readJson(req);
@@ -872,7 +952,18 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       socket.destroy();
       return;
     }
+    // A desktop client with 传文件 says which device it is: kept, so it is offered to send to, and online while connected.
+    let device: string | null = null;
+    try {
+      if (url.searchParams.get("device")) device = checkTransferDevice(url.searchParams.get("device"));
+    } catch {
+      device = null;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (device) {
+        socketDevice.set(ws, device);
+        transfers.seenDevice(name, device, cleanDeviceName(url.searchParams.get("deviceName")));
+      }
       const set = sockets.get(name) ?? new Set();
       const wasOnline = set.size > 0;
       set.add(ws);
@@ -882,6 +973,10 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       ws.on("close", () => {
         set.delete(ws);
         lastSeen.set(name, Date.now());
+        if (device && !closing) {
+          socketDevice.delete(ws);
+          transfers.seenDevice(name, device, cleanDeviceName(url.searchParams.get("deviceName")));
+        }
         if (!set.size) {
           sockets.delete(name);
           pushMembers();
@@ -915,6 +1010,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       clearInterval(watchClient);
       clearInterval(tick);
       clearInterval(pruneTimer);
+      clearInterval(transferSweep);
+      for (const t of transferTimers.values()) clearTimeout(t);
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();
       devices.close();

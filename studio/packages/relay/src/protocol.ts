@@ -2,6 +2,8 @@
 // later the UI share. A small team on one LAN; people talk to each other directly, and an AI session can send a
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
+import type { Transfer } from "./transfer-protocol.js";
+
 export const RELAY_APP = "amo-relay";
 export const RELAY_VERSION = "0.7.14";
 export const RELAY_DEFAULT_PORT = 47120;
@@ -342,7 +344,10 @@ export type RelayEvent =
   /** A new client build was published: clients update themselves. */
   | { type: "client"; version: string | null }
   /** Every TICK_MS, so a client notices a service that went away without closing (a sleeping machine, the network). */
-  | { type: "tick" };
+  | { type: "tick" }
+  /** 传文件 (2026-11-23): a send changed (made, answered, a piece uploaded, saved, cancelled, expired): to its sender and
+   * every target account. */
+  | { type: "transfer"; transfer: Transfer };
 
 export interface Health {
   app: typeof RELAY_APP;
