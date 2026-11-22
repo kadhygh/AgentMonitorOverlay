@@ -296,7 +296,7 @@ export class CoworkStore {
   }
 
   /** 改标题、目标（留历史）、仓库分支、选项；`ended` 结束或重新打开. Anyone in it may. */
-  update(id: string, me: string, patch: CoworkPatch): { cowork: Cowork; events: CoworkEvent[] } {
+  update(id: string, me: string, patch: CoworkPatch): { cowork: Cowork; events: CoworkEvent[]; dropped: CoworkDelivery[] } {
     const r = this.rowFor(id, me);
     const via = checkVia(patch?.via);
     const reopening = patch.ended === false && r.ended_at != null;
@@ -327,8 +327,13 @@ export class CoworkStore {
         this.db.prepare("UPDATE coworks SET options = ? WHERE id = ?").run(JSON.stringify(options), id);
         events.push(this.event(id, me, via, "option", options.aiInitiate ? "打开了「AI 发起 @ 和提问」：AI 的 @ 和提问直接发出" : "关上了「AI 发起 @ 和提问」：AI 的 @ 和提问先存成草稿，主人确认后发出"));
       }
+      const dropped: CoworkDelivery[] = [];
       if (patch.ended === true && r.ended_at == null) {
         this.db.prepare("UPDATE coworks SET ended_at = ? WHERE id = ?").run(at, id);
+        // Ended, nobody may write here: what still waited for an agent would only be refused when it answered.
+        const queued = (this.db.prepare("SELECT id FROM cowork_deliveries WHERE cowork_id = ? AND state = 'queued'").all(id) as Row[]).map((q) => String(q.id));
+        this.db.prepare("UPDATE cowork_deliveries SET state = 'dropped' WHERE cowork_id = ? AND state = 'queued'").run(id);
+        dropped.push(...queued.map((q) => this.delivery(q)));
         events.push(this.event(id, me, via, "ended", "结束了协作"));
       }
       if (reopening) {
@@ -336,7 +341,7 @@ export class CoworkStore {
         events.push(this.event(id, me, via, "reopened", "重新打开了协作"));
       }
       if (events.length) this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(at, id);
-      return { cowork: this.view(id), events };
+      return { cowork: this.view(id), events, dropped };
     });
   }
 
@@ -726,7 +731,7 @@ export class CoworkStore {
    * 定下结论: the 子会话 is done with what was settled, recorded as 已定的事. Its asker or the person asked (or their agents)
    * may.
    */
-  conclude(coworkId: string, threadId: string, me: string, b: { conclusion?: unknown; via?: unknown }): { thread: Thread; message: Message; event: CoworkEvent; cowork: Cowork } {
+  conclude(coworkId: string, threadId: string, me: string, b: { conclusion?: unknown; via?: unknown }): { thread: Thread; message: Message; event: CoworkEvent; cowork: Cowork; deliveries: CoworkDelivery[] } {
     const r = this.rowFor(coworkId, me);
     this.writable(r);
     const via = checkVia(b?.via);
@@ -739,18 +744,43 @@ export class CoworkStore {
       this.db.prepare("UPDATE threads SET cw_conclusion = ?, s_state = 'done', s_waiting = NULL WHERE id = ?").run(conclusion, threadId);
       const message = this.store.insertMessage(threadId, me, via, "event", `定下结论：${conclusion}`, null);
       const event = this.event(coworkId, me, via, "decision", `「${t.title}」：${conclusion}`, { threadId });
-      return { thread: this.store.threadById(threadId), message, event, cowork: this.view(coworkId) };
+      const deliveries = this.actedIn(coworkId, threadId, me, via, message.seq);
+      return { thread: this.store.threadById(threadId), message, event, cowork: this.view(coworkId), deliveries };
     });
   }
 
-  /** A 子会话 marked done with a note (标记完成：…): the note is its conclusion. */
-  afterSessionAction(thread: Thread, actor: string, action: string, note: unknown, via: unknown): CoworkEvent | null {
+  /**
+   * Someone acted in a thread with an event rather than a message of their own (定下结论, 标记完成, 交给本人…, 2026-11-23:
+   * the 真模型场景 found deliveries left at 已送达 after an agent concluded): what was delivered there to the agent that did
+   * it — or, done by a person in person, to their own agents — is answered by that event (已回复). Others' agents keep
+   * theirs. Returns the deliveries that moved.
+   */
+  private actedIn(coworkId: string, threadId: string, me: string, via: Via, seq: number): CoworkDelivery[] {
+    const agent = via.kind === "ai" ? (via.conv ?? null) : null;
+    if (via.kind === "ai" && !agent) return [];
+    const rows = (
+      agent
+        ? this.db.prepare("SELECT id FROM cowork_deliveries WHERE cowork_id = ? AND thread_id = ? AND owner = ? AND agent = ? AND state = 'delivered'").all(coworkId, threadId, me, agent)
+        : this.db.prepare("SELECT id FROM cowork_deliveries WHERE cowork_id = ? AND thread_id = ? AND owner = ? AND state = 'delivered'").all(coworkId, threadId, me)
+    ) as Row[];
+    const at = this.now();
+    for (const r of rows) this.db.prepare("UPDATE cowork_deliveries SET state = 'replied', replied_at = ?, reply_seq = ? WHERE id = ?").run(at, seq, String(r.id));
+    return rows.map((r) => this.delivery(String(r.id)));
+  }
+
+  /**
+   * After an action on a 子会话 (its event `message` written): whoever did it acted there (actedIn); marked done with a
+   * note (标记完成：…), the note is its conclusion.
+   */
+  afterSessionAction(thread: Thread, message: Message, actor: string, action: string, note: unknown, via: unknown): { event: CoworkEvent | null; deliveries: CoworkDelivery[] } {
     const coworkId = thread.request?.coworkId;
+    if (!coworkId) return { event: null, deliveries: [] };
     const n = typeof note === "string" ? note.trim().slice(0, COWORK_LIMITS.conclusion) : "";
-    if (!coworkId || action !== "done" || !n) return null;
     return this.store.tx(() => {
+      const deliveries = this.actedIn(coworkId, thread.id, actor, checkVia(via), message.seq);
+      if (action !== "done" || !n) return { event: null, deliveries };
       this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(n, thread.id);
-      return this.event(coworkId, actor, checkVia(via), "decision", `「${thread.title}」：${n}`, { threadId: thread.id });
+      return { event: this.event(coworkId, actor, checkVia(via), "decision", `「${thread.title}」：${n}`, { threadId: thread.id }), deliveries };
     });
   }
 

@@ -806,6 +806,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
             coworkChanged(id);
             coworkEvents(id, out.events);
           }
+          deliveriesChanged(out.dropped);
           return send(res, 200, { cowork: out.cowork });
         }
         if (method === "GET" && sub === "/goals") return send(res, 200, { goals: cowork.goals(id, me) });
@@ -902,6 +903,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         announce(out.thread, out.message);
         coworkChanged(id);
         coworkEvents(id, [out.event]);
+        deliveriesChanged(out.deliveries);
         return send(res, 200, { thread: out.thread, event: out.event });
       } else if (method === "POST" && sub === "/drafts" && !cm[4]) {
         const out = cowork.decideDraft(id, target, me, (await readJson(req)) as never);
@@ -1136,9 +1138,10 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const out = store.sessionAction(id, me, body.action as SessionAction, { via: body.via as never, note: body.note, tellAi: body.tellAi === true });
         announce(out.thread, out.message);
         if (out.thread.request?.coworkId) {
-          const event = cowork.afterSessionAction(out.thread, me, String(body.action), body.note, body.via);
-          if (event) coworkEvents(out.thread.request.coworkId, [event]);
+          const after = cowork.afterSessionAction(out.thread, out.message, me, String(body.action), body.note, body.via);
+          if (after.event) coworkEvents(out.thread.request.coworkId, [after.event]);
           coworkChanged(out.thread.request.coworkId);
+          deliveriesChanged(after.deliveries);
         }
         return send(res, 200, out);
       }

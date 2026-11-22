@@ -310,6 +310,59 @@ describe("协作：子会话", () => {
     // Asking someone not in it is refused.
     await expect(wang.askCowork(id, { to: "路人甲", title: "t", body: "b" })).rejects.toMatchObject({ status: 400 });
   });
+
+  it("counts 定下结论 and 标记完成 as having answered there: the agent's own (or its owner's agents') 已送达 becomes 已回复; ending drops what still waits", async () => {
+    const { wang, li, id } = await team();
+    await wang.updateCowork(id, { options: { aiInitiate: true } });
+    const { events } = await listen(wang);
+    const state = async (did: string) => (await wang.cowork(id)).deliveries.find((d) => d.id === did)?.state;
+    const states = async (ids: string[]) => Promise.all(ids.map(state));
+    /** What woke an agent of `client` in `tid`, handed to it (已送达): their ids. */
+    const deliveredTo = async (client: RelayClient, prefix: string, tid: string) => {
+      const items = (await client.coworkInbox(prefix)).items.filter((i) => i.thread.id === tid);
+      expect(items.length).toBeGreaterThan(0);
+      return (await client.ackCowork(items.map((i) => i.delivery.id))).map((d) => d.id);
+    };
+
+    // 老李's agent asks; 小王 answers and @-s his own agent there too: both are woken.
+    const sub = await li.askCowork(id, { to: "策划小王", title: "暴击要不要叠加", body: "叠还是不叠？", via: ai(LI_AI) });
+    const tid = sub.thread!.id;
+    await wang.send(tid, { kind: "reply", body: "不叠，文档 AI 你记一下" });
+    await wang.postCowork(id, { threadId: tid, body: "记进文档", agentMentions: [WANG_AI] });
+    const liD = await deliveredTo(li, "studio:d_li", tid);
+    const wangD = await deliveredTo(wang, "studio:d_wang", tid);
+    // The agent concludes instead of writing: its own is answered by that, 小王's agent's is not.
+    const { thread } = await li.concludeCowork(id, tid, "暴击不叠加", ai(LI_AI));
+    const concluded = (await li.messages(tid)).messages.at(-1)!;
+    expect(concluded.body).toBe("定下结论：暴击不叠加");
+    expect(thread.request?.state).toBe("done");
+    // (the reply and 小王's 插话 both woke it)
+    expect((await wang.cowork(id)).deliveries.filter((d) => liD.includes(d.id)).map((d) => [d.state, d.replySeq])).toEqual([["replied", concluded.seq], ["replied", concluded.seq]]);
+    expect(await states(wangD)).toEqual(["delivered"]);
+    await expect.poll(() => of(events, "cowork-delivery").filter((e) => liD.includes(e.delivery.id) && e.delivery.state === "replied").length).toBe(2);
+
+    // 标记完成 by the person in person: their own agents there count as answered (others' do not).
+    const sub2 = await li.askCowork(id, { to: "策划小王", title: "暴击伤害", body: "1.5 倍？", via: ai(LI_AI) });
+    const tid2 = sub2.thread!.id;
+    await wang.send(tid2, { kind: "reply", body: "1.5" });
+    await li.postCowork(id, { threadId: tid2, body: "文档 AI 也看下", agentMentions: [WANG_AI] });
+    const liD2 = await deliveredTo(li, "studio:d_li", tid2);
+    const wangD2 = await deliveredTo(wang, "studio:d_wang", tid2);
+    await li.session(tid2, "done", { note: "暴击 1.5 倍" });
+    expect(await states(liD2)).toEqual(liD2.map(() => "replied"));
+    expect(await states(wangD2)).toEqual(["delivered"]);
+    // …and one 已送达 in another 子会话 stays as it was.
+    expect(await states(wangD)).toEqual(["delivered"]);
+
+    // Ending the cowork: what was still queued for an agent is dropped (nobody may answer there any more), and pushed.
+    const late = await wang.postCowork(id, { body: "老李的 AI，还有一件事", agentMentions: [LI_AI] });
+    const lateD = late.deliveries![0]!;
+    expect(lateD.state).toBe("queued");
+    await wang.updateCowork(id, { ended: true });
+    expect(await state(lateD.id)).toBe("dropped");
+    expect((await li.coworkInbox("studio:d_li")).items).toEqual([]);
+    await expect.poll(() => of(events, "cowork-delivery").some((e) => e.delivery.id === lateD.id && e.delivery.state === "dropped")).toBe(true);
+  });
 });
 
 describe("协作：白板多人同时改", () => {
