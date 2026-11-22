@@ -88,6 +88,9 @@ function text(value: unknown, what: string, max: number, required = true): strin
   return v;
 }
 
+/** A piece of text, trimmed and checked (also cowork.ts). */
+export const checkText = text;
+
 /** A display name: printable, no line breaks, at most 32 characters. */
 export function checkName(value: unknown): string {
   const name = text(value, "名字", LIMITS.name);
@@ -95,7 +98,7 @@ export function checkName(value: unknown): string {
   return name;
 }
 
-function checkVia(value: unknown): Via {
+export function checkVia(value: unknown): Via {
   if (!value || typeof value !== "object") return { kind: "person" };
   const v = value as { kind?: unknown; client?: unknown; conv?: unknown };
   if (v.kind !== "ai") return { kind: "person" };
@@ -201,6 +204,9 @@ export class RelayStore {
     // 维护者 (2026-11-03, the user): set on the admin page; nobody is one until set there.
     if (!mcols.includes("maintainer")) this.db.exec("ALTER TABLE members ADD COLUMN maintainer INTEGER NOT NULL DEFAULT 0;");
     this.db.exec("CREATE TABLE IF NOT EXISTS admin (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
+    // 协作的子会话 (2026-11-23, cowork-protocol.ts): the cowork a request thread is in, the agent that started it, its 结论.
+    const ccols = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
+    if (!ccols.includes("cowork_id")) this.db.exec("ALTER TABLE threads ADD COLUMN cowork_id TEXT; ALTER TABLE threads ADD COLUMN cw_agent TEXT; ALTER TABLE threads ADD COLUMN cw_conclusion TEXT; CREATE INDEX IF NOT EXISTS threads_cowork ON threads(cowork_id);");
   }
 
   /** Stage 2a (2026-10-27): a request is a session — who acts next, who handles the asking side, must it be replied. */
@@ -231,7 +237,8 @@ export class RelayStore {
     this.db.close();
   }
 
-  private tx<T>(run: () => T): T {
+  /** One transaction (also cowork.ts's; never nested). */
+  tx<T>(run: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const out = run();
@@ -363,6 +370,18 @@ export class RelayStore {
         ["transfer_devices", "account"],
         ["transfers", "from_account"],
         ["transfer_targets", "account"],
+        // 协作 (2026-11-23).
+        ["coworks", "created_by"],
+        ["cowork_goals", "by_name"],
+        ["cowork_agents", "owner"],
+        ["cowork_events", "actor"],
+        ["cowork_deliveries", "owner"],
+        ["cowork_deliveries", "from_name"],
+        ["cowork_drafts", "owner"],
+        ["cowork_board_items", "created_by"],
+        ["cowork_board_items", "updated_by"],
+        ["cowork_board_items", "deleted_by"],
+        ["cowork_board_ops", "actor"],
       ];
       for (const [table, column] of columns) if (has(table)) this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
       // A direct chat is found by its two names.
@@ -495,8 +514,17 @@ export class RelayStore {
         takenAt: row.s_taken == null ? null : Number(row.s_taken),
         tellAi: Number(row.s_tell ?? 0) === 1,
       };
+      if (row.cowork_id != null) {
+        thread.request.coworkId = String(row.cowork_id);
+        thread.request.conclusion = row.cw_conclusion == null ? null : String(row.cw_conclusion);
+      }
     }
     return thread;
+  }
+
+  /** A thread whoever is asking (the service's own pushes; cowork.ts). */
+  threadById(id: string): Thread {
+    return this.toThread(this.threadRow(id));
   }
 
   /** The thread, when `name` is in it. */
@@ -534,6 +562,7 @@ export class RelayStore {
   addMembers(threadId: string, actor: string, namesValue: unknown): { thread: Thread; message: Message; added: string[] } {
     const thread = this.thread(threadId, actor);
     if (thread.kind === "request") throw new RelayError("bad_request", "会话是一对一的，不能拉人；要几个人一起讨论，在聊天里 @ 他们");
+    if (thread.kind === "cowork") throw new RelayError("bad_request", "协作拉人走协作的接口（POST /api/cowork/:id/members）");
     if (!Array.isArray(namesValue) || !namesValue.length) throw new RelayError("bad_request", "要拉谁？");
     const added = [...new Set(namesValue.map((n) => checkName(n)))].filter((n) => !thread.members.includes(n));
     for (const n of added) this.requireMember(n);
@@ -628,10 +657,33 @@ export class RelayStore {
     if (extra.verdict) m.verdict = extra.verdict;
     if (extra.notes) m.notes = extra.notes;
     if (extra.mentions) m.mentions = extra.mentions;
+    // 协作 (2026-11-23).
+    if (extra.agentMentions) m.agentMentions = extra.agentMentions;
+    if (extra.replyTo) m.replyTo = extra.replyTo;
+    if (extra.session) m.session = extra.session;
+    if (extra.approvedBy) m.approvedBy = extra.approvedBy;
+    if (extra.edited) m.edited = true;
     return m;
   }
 
-  private insertMessage(threadId: string, author: string, via: Via, kind: MessageKind, body: string, extra: Partial<Message> | null): Message {
+  /** Messages of several threads after a seq, in the service's order (a cowork's 群聊 and its 子会话, cowork.ts). */
+  messagesIn(threadIds: string[], after = 0, limit = 500): Message[] {
+    if (!threadIds.length) return [];
+    const rows = this.db.prepare(`SELECT * FROM messages WHERE thread_id IN (${threadIds.map(() => "?").join(",")}) AND seq > ? ORDER BY seq LIMIT ?`).all(...threadIds, after, Math.max(1, Math.min(limit, 2000))) as Row[];
+    return rows.map((r) => this.toMessage(r));
+  }
+
+  messageBySeq(seq: number): Message | null {
+    const row = this.db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row | undefined;
+    return row ? this.toMessage(row) : null;
+  }
+
+  isMember(name: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM members WHERE name = ?").get(name);
+  }
+
+  /** A message written as it is, inside a transaction of the caller's (also cowork.ts). */
+  insertMessage(threadId: string, author: string, via: Via, kind: MessageKind, body: string, extra: Partial<Message> | null): Message {
     const at = this.now();
     const id = newId("m");
     const res = this.db
@@ -645,8 +697,11 @@ export class RelayStore {
     return this.toMessage(this.db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
   }
 
-  /** A request from `from` to a person: its own thread, opened by the request message. */
-  createRequest(from: string, req: NewRequest): { thread: Thread; message: Message } {
+  /**
+   * A request from `from` to a person: its own thread, opened by the request message. `cowork` (cowork.ts): a 子会话 —
+   * in that cowork, with all its people in the thread, and the agent (mark) that started it.
+   */
+  createRequest(from: string, req: NewRequest, cowork?: { id: string; members: string[]; agent: string | null }): { thread: Thread; message: Message } {
     const to = checkName(req?.to);
     // An AI speaks as its person, so this is the AI asking its own person: not what sessions are for (it would ask
     // them in its own chat). Said plainly, so an agent stops looking for a way round it.
@@ -668,7 +723,8 @@ export class RelayStore {
           "INSERT INTO threads (id, kind, title, created_by, created_at, updated_at, req_from, req_to, req_status, s_state, s_waiting, s_handler, s_needs) VALUES (?, 'request', ?, ?, ?, ?, ?, ?, 'open', 'open', ?, ?, ?)",
         )
         .run(id, title, from, at, at, from, to, to, via.kind === "ai" ? "ai" : "person", needs ? 1 : 0);
-      for (const n of [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
+      for (const n of cowork ? [...new Set([from, to, ...cowork.members])] : [from, to]) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, n);
+      if (cowork) this.db.prepare("UPDATE threads SET cowork_id = ?, cw_agent = ? WHERE id = ?").run(cowork.id, cowork.agent, id);
       const message = this.insertMessage(id, from, via, "request", body, questions.length ? { questions } : null);
       this.db.prepare("UPDATE threads SET req_seq = ?, s_qseq = ?, task_id = ?, s_files = ? WHERE id = ?").run(message.seq, message.seq, taskId, attach.length ? JSON.stringify(attach) : null, id);
       if (taskId) this.addTaskEvent(taskId, from, via, "session", `${via.kind === "ai" ? "的 AI " : ""}发起会话「${title}」→ ${to}`, { threadId: id, to });
@@ -677,7 +733,8 @@ export class RelayStore {
   }
 
   /** A text or a reply in a thread `author` is in. Only the person asked replies to a request. */
-  addMessage(threadId: string, author: string, msg: NewMessage): { thread: Thread; message: Message } {
+  /** `more`: what a 协作 message carries besides (agentMentions, replyTo, …; cowork.ts checks them). */
+  addMessage(threadId: string, author: string, msg: NewMessage, more?: Partial<Message>): { thread: Thread; message: Message } {
     const thread = this.thread(threadId, author);
     const kind = msg?.kind ?? "text";
     const via = checkVia(msg?.via);
@@ -692,7 +749,7 @@ export class RelayStore {
       const questions = msg.questions ? checkQuestions(msg.questions) : [];
       if (questions.length && (!pass || author !== thread.request?.from)) throw new RelayError("bad_request", "只有发起人追问时能带新问题");
       return this.tx(() => {
-        const extra: Partial<Message> = {};
+        const extra: Partial<Message> = { ...more };
         if (questions.length) extra.questions = questions;
         if (mentions.length) extra.mentions = mentions;
         const message = this.insertMessage(threadId, author, via, "text", body, Object.keys(extra).length ? extra : null);
@@ -720,7 +777,7 @@ export class RelayStore {
     const notes = this.notesForReply(author, msg.notes);
     if (!answers.length && !body && !verdict && !notes.length) throw new RelayError("bad_request", "回复是空的");
     return this.tx(() => {
-      const extra: Partial<Message> = {};
+      const extra: Partial<Message> = { ...more };
       if (answers.length) extra.answers = answers;
       if (verdict) extra.verdict = verdict;
       if (notes.length) extra.notes = notes;

@@ -264,6 +264,31 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 | `POST /api/transfers/:id/progress` `{device, got, done}` | 接收方报进度；`done` = 全部存好并核对过 |
 | `POST /api/transfers/:id/cancel` | 发送方取消 |
 
+### 协作（2026-11-23）
+
+人和各自拉进来的 agent 一起推进一件事。方案在 `plans/cowork.md`；类型、上限、/ws 事件和规则写在 `src/cowork-protocol.ts` 开头；服务这边是 `src/cowork.ts`（协作、成员、agent、待送、草稿、事件）和 `src/cowork-board.ts`（白板）。客户端方法在 `RelayClient`（`src/api.ts`）。群聊是 kind `cowork` 的会话（协作的 id 就是它的 id），消息、已读、`/api/wait`、/ws 的 `message` 照旧走；子会话是带 `coworkId` 的会话（request），协作里的人都在里面。这两种会话走 `/api/threads/:id/messages`，效果和 `/api/cowork/:id/messages` 一样；`/api/requests` 带 `coworkId` 就是新开子会话。agent 的调用都用主人的 key，加 `via: { kind: "ai", conv: <会话标记> }`。只有协作里的人能调用，别人一律 403。
+
+| | |
+|---|---|
+| `GET/POST /api/cowork` | 我在的协作（带未读）；发起 `{title, goal, repo, branch, members, options}` |
+| `GET/PATCH /api/cowork/:id` | 全貌（协作、最近的事件、待送、我的 AI 的草稿）；改 `{title, goal, repo, branch, options, ended}`，目标每一版都留着 |
+| `GET /api/cowork/:id/goals`、`/events?after=` | 目标的历史；事件（`decision` 就是已定的事） |
+| `POST /api/cowork/:id/events` `{kind: commit\|note, text, commit, files, via}` | 记事件；commit 带的文件让引用旧提交的卡标成已过时 |
+| `POST /api/cowork/:id/members` `{add}`、`/leave` | 拉人（群聊和所有子会话都加进去）、退出（我的 agent 一起离开） |
+| `POST /api/cowork/:id/agents` `{mark, label}`、`/agents/leave` `{mark}` | 把我的会话拉进来、让它离开 |
+| `POST /api/cowork/agents/status` `{agents: [{mark, state}]}` | Studio 报 agent 的状态（idle / busy / owner / offline），至少 30 秒一次；90 秒没报算不在线 |
+| `GET /api/cowork-inbox?prefix=&wait=` | Studio 取它的 agent（标记以 prefix 开头）排队中的待送，和各 agent 没读的条数；`wait` 毫秒：没有就等到有（最多 10 分钟） |
+| `POST /api/cowork-inbox/ack` `{ids}` | 送进会话了：已送达 |
+| `GET /api/cowork/:id/feed?after=&agent=` | 群聊和子会话的消息；带 `agent` 时记下它读到哪 |
+| `POST /api/cowork/:id/messages` `{threadId?, body, mentions, agentMentions, replyTo, via}` | 发消息；AI @ 人或 AI，而「AI 发起 @ 和提问」关着时，返回 `{draft}` |
+| `POST /api/cowork/:id/sessions` `{to, title, body, questions, via}` | 新开子会话（AI 的同上，可能成草稿）；`/sessions/:tid/conclude` `{conclusion}` 定下结论 |
+| `GET /api/cowork/:id/drafts`、`POST /api/cowork/:id/drafts/:did` `{action: send\|drop, edit}` | 主人看、发出（可以先改）或不发 AI 的草稿 |
+| `GET /api/cowork/:id/board?after=` | 白板：序号之后的操作，或者全部卡片（含删掉的），加上现在的软锁 |
+| `POST /api/cowork/:id/board/ops` `{ops, via}` | 按顺序执行操作：add / set（带 `base` 版本）/ delete / restore / resolve / undo；每条带 `opId`，重发不会做两次；做不了的放在 `rejected` 里按位置说明 |
+| `POST /api/cowork/:id/board/lock` `{card, on}`、`/board/presence`、`GET /board/history?card=` | 写字时占着一张卡（30 秒，续着写就续上）、在场（也可以用 /ws 发 `board-presence`）、一张卡的历史 |
+
+/ws 多推这些：`cowork`、`cowork-left`、`cowork-agent`、`cowork-event`、`cowork-delivery`、`cowork-draft`（只推给主人）、`board`、`board-lock`、`board-presence`。客户端可以经 /ws 发 `{type: "board-presence", coworkId, selected, dragging, open}`，每个连接每秒最多 10 条。
+
 ## 测试
 
 - 单测：`npx vitest run packages/relay packages/relay-app packages/relay-ui scripts`（`scripts` 是平台的发布；`relay-ui` 里是传文件的引擎对着真服务的续传测试）

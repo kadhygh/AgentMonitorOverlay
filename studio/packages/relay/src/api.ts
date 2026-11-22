@@ -1,5 +1,31 @@
 import type { Issue, IssueBuildReport, IssueImage, IssueList, IssueRelease, IssuePatch, NewIssue, NewIssueEntry } from "./issues-protocol.js";
 import type { NewTransfer, RelayDevice, Transfer, TransferFile } from "./transfer-protocol.js";
+import type {
+  AgentReport,
+  BoardLock,
+  BoardOp,
+  BoardOpRecord,
+  BoardOpsResult,
+  BoardPresence,
+  BoardSnapshot,
+  Cowork,
+  CoworkAgent,
+  CoworkAskResult,
+  CoworkDelivery,
+  CoworkDetail,
+  CoworkDraft,
+  CoworkEvent,
+  CoworkGoalVersion,
+  CoworkInbox,
+  CoworkListItem,
+  CoworkPatch,
+  CoworkPost,
+  CoworkPostResult,
+  DraftDecision,
+  NewCowork,
+  NewCoworkEvent,
+  NewCoworkSession,
+} from "./cowork-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
@@ -353,5 +379,125 @@ export class RelayClient {
       throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
     }
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  // ---- 协作 (2026-11-23, cowork-protocol.ts). Every call needs me in the cowork. An agent's call (Studio's cowork_* tools)
+  // passes `via: { kind: "ai", conv: <its mark> }`; the mark must be one of my agents in that cowork.
+
+  /** The coworks I am in, latest first, with what I have not read of their 群聊. */
+  async coworks(): Promise<CoworkListItem[]> {
+    return (await this.call<{ coworks: CoworkListItem[] }>("GET", "/api/cowork")).coworks;
+  }
+  /** 发起协作: title, goal, repository and branch, the people to bring in, options (「AI 发起 @ 和提问」 off by default). */
+  async createCowork(n: NewCowork): Promise<Cowork> {
+    return (await this.call<{ cowork: Cowork }>("POST", "/api/cowork", n)).cowork;
+  }
+  /** The cowork with its latest events (已定的事 = kind "decision"), deliveries (每条消息的去向) and my agents' drafts. */
+  cowork(id: string): Promise<CoworkDetail> {
+    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}`);
+  }
+  /** 改标题、目标（留历史）、仓库分支、选项；`ended: true` 结束，`false` 重新打开. */
+  async updateCowork(id: string, patch: CoworkPatch): Promise<Cowork> {
+    return (await this.call<{ cowork: Cowork }>("PATCH", `/api/cowork/${encodeURIComponent(id)}`, patch)).cowork;
+  }
+  /** Every version of the goal, oldest first. */
+  async coworkGoals(id: string): Promise<CoworkGoalVersion[]> {
+    return (await this.call<{ goals: CoworkGoalVersion[] }>("GET", `/api/cowork/${encodeURIComponent(id)}/goals`)).goals;
+  }
+  async coworkEvents(id: string, after = 0): Promise<CoworkEvent[]> {
+    return (await this.call<{ events: CoworkEvent[] }>("GET", `/api/cowork/${encodeURIComponent(id)}/events?after=${after}`)).events;
+  }
+  /** Records a commit pushed (its files mark board cards citing an older commit of them 已过时) or a note (cowork_note). */
+  addCoworkEvent(id: string, e: NewCoworkEvent): Promise<{ event: CoworkEvent; board: BoardOpsResult | null }> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/events`, e);
+  }
+  /** 拉人 (into the 群聊 and every 子会话; they see what came before). */
+  async addCoworkMembers(id: string, names: string[]): Promise<Cowork> {
+    return (await this.call<{ cowork: Cowork }>("POST", `/api/cowork/${encodeURIComponent(id)}/members`, { add: names })).cowork;
+  }
+  /** 退出 (my agents in it leave too). */
+  async leaveCowork(id: string): Promise<void> {
+    await this.call("POST", `/api/cowork/${encodeURIComponent(id)}/leave`, {});
+  }
+  /** 拉进协作: one of my sessions by its mark (`studio:<设备号>:<会话 id>`), shown as 「<me> 的 AI · <label>」. */
+  joinCoworkAgent(id: string, mark: string, label: string): Promise<{ cowork: Cowork; agent: CoworkAgent }> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/agents`, { mark, label });
+  }
+  async leaveCoworkAgent(id: string, mark: string): Promise<Cowork> {
+    return (await this.call<{ cowork: Cowork }>("POST", `/api/cowork/${encodeURIComponent(id)}/agents/leave`, { mark })).cowork;
+  }
+  /**
+   * Studio: how my agents are (待命 idle / 处理中 busy / 等主人 owner; offline when Studio closes). Send it at least every
+   * AGENT_REPORT_MS and whenever one changes; no report for AGENT_STALE_MS shows them 不在线.
+   */
+  async reportCoworkAgents(agents: AgentReport[]): Promise<Array<{ coworkId: string; agent: CoworkAgent }>> {
+    return (await this.call<{ agents: Array<{ coworkId: string; agent: CoworkAgent }> }>("POST", "/api/cowork/agents/status", { agents })).agents;
+  }
+  /**
+   * Studio: the deliveries queued for my agents whose marks start with `prefix` (this Studio's `studio:<设备号>:`), and
+   * what they have not read. `waitMs`: when nothing is queued, wait (at most COWORK_INBOX_MAX_WAIT) until something is.
+   * Then ackCowork the ones put into their sessions.
+   */
+  coworkInbox(prefix: string, opts: { waitMs?: number; signal?: AbortSignal } = {}): Promise<CoworkInbox> {
+    const q = new URLSearchParams({ prefix });
+    if (opts.waitMs) q.set("wait", String(opts.waitMs));
+    return this.call("GET", `/api/cowork-inbox?${q}`, undefined, opts.signal);
+  }
+  /** Studio put these deliveries into their sessions: 已送达. */
+  async ackCowork(ids: string[]): Promise<CoworkDelivery[]> {
+    return (await this.call<{ deliveries: CoworkDelivery[] }>("POST", "/api/cowork-inbox/ack", { ids })).deliveries;
+  }
+  /**
+   * Messages of the 群聊 and its 子会话 after `after` (an agent's cowork_read). With `agent` (my agent's mark): it has read
+   * them, so the inbox's unread count starts from there.
+   */
+  coworkFeed(id: string, after = 0, agent?: string): Promise<{ messages: Message[]; lastSeq: number }> {
+    const q = new URLSearchParams({ after: String(after) });
+    if (agent) q.set("agent", agent);
+    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}/feed?${q}`);
+  }
+  /**
+   * A message in the 群聊, or (threadId) in one of its 子会话: `agentMentions` @-s agents (each gets a delivery), `replyTo`
+   * quotes what it answers. An agent's message @-ing anyone comes back as `{ draft }` while 「AI 发起 @ 和提问」 is off.
+   * (The thread's own send() does the same for these threads.)
+   */
+  postCowork(id: string, p: CoworkPost & { threadId?: string }): Promise<CoworkPostResult> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/messages`, p);
+  }
+  /** A new 子会话 asked of a person in the cowork (its card goes into the 群聊); an agent's is a draft while the option is off. */
+  askCowork(id: string, n: NewCoworkSession): Promise<CoworkAskResult> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions`, n);
+  }
+  /** 定下结论: the 子会话 is done, its conclusion goes into 已定的事. Its asker or the person asked (or their agents). */
+  concludeCowork(id: string, threadId: string, conclusion: string, via?: Via): Promise<{ thread: Thread; event: CoworkEvent }> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions/${encodeURIComponent(threadId)}/conclude`, { conclusion, via });
+  }
+  /** My agents' drafts waiting for me. */
+  async coworkDrafts(id: string): Promise<CoworkDraft[]> {
+    return (await this.call<{ drafts: CoworkDraft[] }>("GET", `/api/cowork/${encodeURIComponent(id)}/drafts`)).drafts;
+  }
+  /** 发出 / 改一下再发 (`edit`) / 不发 — the owner, in person. */
+  async decideCoworkDraft(id: string, draftId: string, d: DraftDecision): Promise<CoworkDraft> {
+    return (await this.call<{ draft: CoworkDraft }>("POST", `/api/cowork/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draftId)}`, d)).draft;
+  }
+  /** The board: operations after `after`, or every card (after 0, or too far back); with the text locks now. */
+  coworkBoard(id: string, after = 0): Promise<BoardSnapshot> {
+    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}/board?after=${after}`);
+  }
+  /** Operations in order (cowork-protocol.ts BoardOp); each with an opId so a repeat after a break does nothing twice. */
+  coworkBoardOps(id: string, ops: BoardOp[], via?: Via): Promise<BoardOpsResult> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/board/ops`, { ops, via });
+  }
+  /** I start (or go on, every few seconds while typing) writing a card's text, or stop (`on: false`). 409 when someone else is. */
+  async coworkBoardLock(id: string, card: string, on: boolean): Promise<BoardLock | null> {
+    return (await this.call<{ lock: BoardLock | null }>("POST", `/api/cowork/${encodeURIComponent(id)}/board/lock`, { card, on })).lock;
+  }
+  /** What I show on the open board (also as a /ws frame, CoworkClientFrame); `open: false` when I close it. */
+  async coworkBoardPresence(id: string, p: { selected?: string[]; dragging?: { id: string; x: number; y: number } | null; open?: boolean }): Promise<BoardPresence[]> {
+    return (await this.call<{ presence: BoardPresence[] }>("POST", `/api/cowork/${encodeURIComponent(id)}/board/presence`, p)).presence;
+  }
+  /** A card's history, newest first. */
+  async coworkBoardHistory(id: string, card: string): Promise<BoardOpRecord[]> {
+    return (await this.call<{ ops: BoardOpRecord[] }>("GET", `/api/cowork/${encodeURIComponent(id)}/board/history?card=${encodeURIComponent(card)}`)).ops;
   }
 }

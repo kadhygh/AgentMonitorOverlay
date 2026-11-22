@@ -22,6 +22,8 @@ import { checkTodoDevice, TodoStore } from "./todo.js";
 import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js";
 import { checkTransferDevice, cleanDeviceName, TransferStore } from "./transfers.js";
 import { TRANSFER_CHUNK, type Transfer } from "./transfer-protocol.js";
+import { CoworkStore } from "./cowork.js";
+import { COWORK_INBOX_MAX_WAIT, COWORK_VERSION, type BoardOpRecord, type CoworkAgent, type CoworkClientFrame, type CoworkDelivery, type CoworkEvent } from "./cowork-protocol.js";
 
 // The relay service (plans/done/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
@@ -69,6 +71,10 @@ export interface RelayServerOptions {
   transferNow?: () => number;
   transferFreeBytes?: (dir: string) => Promise<number>;
   transferReserveBytes?: number;
+  /** 协作 (cowork.ts, 2026-11-23): how often run-out text locks, presence and agents gone 不在线 are looked for (default
+   *  5 s), and the clock (tests). */
+  coworkSweepMs?: number;
+  coworkNow?: () => number;
 }
 
 export interface RelayServer {
@@ -198,6 +204,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const todo = new TodoStore(store.db);
   // 传文件 (2026-11-23, transfers.ts): sends between devices, in the same database; their content in transfersDir.
   const transfers = new TransferStore({ db: store.db, dir: opts.transfersDir, ...(opts.transferNow ? { now: opts.transferNow } : {}), ...(opts.transferFreeBytes ? { freeBytes: opts.transferFreeBytes } : {}), ...(opts.transferReserveBytes !== undefined ? { reserveBytes: opts.transferReserveBytes } : {}) });
+  // 协作 (2026-11-23, cowork-protocol.ts): coworks, their agents, deliveries, drafts, events and board, in the same database.
+  const cowork = new CoworkStore(store, opts.coworkNow ?? Date.now);
   const isMember = (n: string) => store.members().some((m) => m.name === n);
   const deviceOnline = (account: string, device: string) => [...(sockets.get(account) ?? [])].some((ws) => socketDevice.get(ws) === device);
   /** A send changed: to its people. Pieces come several a second: at most one push a second for those (`soon`). */
@@ -316,6 +324,56 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     taskChanged(thread.request?.taskId);
   };
 
+  // ---- 协作's pushes (cowork-protocol.ts CoworkRelayEvent): to the cowork's people; drafts to their owner only.
+  const coworkChanged = (id: string) => {
+    if (!closing) push(cowork.people(id), { type: "cowork", cowork: cowork.view(id) });
+  };
+  const coworkEvents = (id: string, events: CoworkEvent[]) => {
+    for (const event of events) push(cowork.people(id), { type: "cowork-event", coworkId: id, event });
+  };
+  /** What each agent was last pushed as (state, queue, name): a report that changes nothing is not pushed again. */
+  const agentShown = new Map<string, string>();
+  const pushAgent = (coworkId: string, agent: CoworkAgent | null) => {
+    if (!agent) return;
+    const key = `${coworkId} ${agent.mark}`;
+    const now = `${agent.state}:${agent.queued}:${agent.name}`;
+    if (agentShown.get(key) === now) return;
+    agentShown.set(key, now);
+    push(cowork.people(coworkId), { type: "cowork-agent", coworkId, agent });
+  };
+  /** The owner's Studio waiting on /api/cowork-inbox for its agents (marks starting with prefix). */
+  const inboxWaiters = new Set<{ owner: string; prefix: string; done(): void }>();
+  const deliveriesChanged = (list: CoworkDelivery[]) => {
+    for (const d of list) {
+      push(cowork.people(d.coworkId), { type: "cowork-delivery", coworkId: d.coworkId, delivery: d });
+      pushAgent(d.coworkId, cowork.agent(d.coworkId, d.agent));
+      if (d.state === "queued") for (const w of [...inboxWaiters]) if (w.owner === d.owner && d.agent.startsWith(w.prefix)) w.done();
+    }
+  };
+  const boardPushed = (id: string, ops: BoardOpRecord[]) => {
+    if (ops.length) push(cowork.people(id), { type: "board", coworkId: id, ops });
+  };
+  const lockPushed = (id: string, card: string) => push(cowork.people(id), { type: "board-lock", coworkId: id, card, lock: cowork.board.lockOf(id, card) });
+  const presencePushed = (id: string) => push(cowork.people(id), { type: "board-presence", coworkId: id, presence: cowork.board.presenceOf(id) });
+  /** A message in a cowork's thread went out: to its people, then the agents it woke; a 子会话 moved the cowork's list. */
+  const coworkPosted = (out: { thread: Thread; message: Message; deliveries: CoworkDelivery[] }) => {
+    announce(out.thread, out.message);
+    deliveriesChanged(out.deliveries);
+    if (out.thread.kind === "request" && out.thread.request?.coworkId) coworkChanged(out.thread.request.coworkId);
+  };
+  // Text locks and presence that ran out, agents whose Studio stopped reporting (不在线).
+  const coworkSweep = setInterval(() => {
+    if (closing) return;
+    try {
+      for (const l of cowork.board.sweepLocks()) lockPushed(l.coworkId, l.card);
+      for (const id of cowork.board.sweepPresence()) presencePushed(id);
+      for (const a of cowork.activeAgents()) pushAgent(a.coworkId, a.agent);
+    } catch {
+      // the next sweep tries again
+    }
+  }, opts.coworkSweepMs ?? 5000);
+  coworkSweep.unref?.();
+
   const auth = (req: IncomingMessage, url: URL): string => {
     const key = keyOf(req, url);
     const name = key ? store.memberByKey(key) : null;
@@ -338,7 +396,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     const method = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
     const path = url.pathname;
     if (method === "GET" && path === "/api/health") {
-      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: inviteNeeded(), client: files.manifest()?.version ?? null, shell: files.shell(), devices: DEVICE_CHANNEL_VERSION };
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: inviteNeeded(), client: files.manifest()?.version ?? null, shell: files.shell(), devices: DEVICE_CHANNEL_VERSION, cowork: COWORK_VERSION };
       return send(res, 200, health);
     }
     if (method === "POST" && path === "/api/register") {
@@ -690,6 +748,172 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       }
       throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
     }
+    // 协作 (cowork-protocol.ts, 2026-11-23).
+    if (path === "/api/cowork" || path.startsWith("/api/cowork/") || path === "/api/cowork-inbox" || path === "/api/cowork-inbox/ack") {
+      if (method === "GET" && path === "/api/cowork") return send(res, 200, { coworks: cowork.list(me) });
+      if (method === "POST" && path === "/api/cowork") {
+        const out = cowork.create(me, (await readJson(req)) as never);
+        announce(store.threadById(out.cowork.id), out.message);
+        coworkChanged(out.cowork.id);
+        coworkEvents(out.cowork.id, out.events);
+        return send(res, 200, { cowork: out.cowork });
+      }
+      if (method === "POST" && path === "/api/cowork/agents/status") {
+        const touched = cowork.reportStatus(me, await readJson(req));
+        for (const a of touched) pushAgent(a.coworkId, a.agent);
+        return send(res, 200, { agents: touched });
+      }
+      // The owner's Studio: what its agents have waiting. `wait` (ms): when nothing is, answer once something is queued.
+      if (method === "GET" && path === "/api/cowork-inbox") {
+        const prefix = url.searchParams.get("prefix") ?? "";
+        const wait = Math.max(0, Math.min(Number(url.searchParams.get("wait") ?? 0) || 0, COWORK_INBOX_MAX_WAIT));
+        if (wait > 0 && !cowork.hasQueued(me, prefix)) {
+          await new Promise<void>((resolve) => {
+            const w = {
+              owner: me,
+              prefix,
+              done: () => {
+                clearTimeout(timer);
+                inboxWaiters.delete(w);
+                resolve();
+              },
+            };
+            const timer = setTimeout(w.done, wait);
+            inboxWaiters.add(w);
+            req.on("close", w.done);
+          });
+          if (res.writableEnded || closing) return;
+        }
+        return send(res, 200, cowork.inbox(me, prefix));
+      }
+      if (method === "POST" && path === "/api/cowork-inbox/ack") {
+        const moved = cowork.ack(me, (await readJson(req)).ids);
+        deliveriesChanged(moved);
+        return send(res, 200, { deliveries: moved });
+      }
+      const cm = /^\/api\/cowork\/(t_[0-9a-f]{16})((?:\/[a-z]+)*?)(?:\/(t_[0-9a-f]{16}|dr_[0-9a-f]{16})(\/conclude)?)?$/.exec(path);
+      if (!cm) throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+      const id = cm[1]!;
+      const sub = cm[2] ?? "";
+      const target = cm[3];
+      if (!target) {
+        if (method === "GET" && sub === "") return send(res, 200, cowork.detail(id, me));
+        if (method === "PATCH" && sub === "") {
+          const out = cowork.update(id, me, (await readJson(req)) as never);
+          if (out.events.length) {
+            coworkChanged(id);
+            coworkEvents(id, out.events);
+          }
+          return send(res, 200, { cowork: out.cowork });
+        }
+        if (method === "GET" && sub === "/goals") return send(res, 200, { goals: cowork.goals(id, me) });
+        if (method === "GET" && sub === "/events") return send(res, 200, { events: cowork.events(id, me, Number(url.searchParams.get("after") ?? 0) || 0) });
+        if (method === "GET" && sub === "/feed") return send(res, 200, cowork.feed(id, me, Number(url.searchParams.get("after") ?? 0) || 0, url.searchParams.get("agent")));
+        if (method === "GET" && sub === "/drafts") return send(res, 200, { drafts: cowork.drafts(id, me) });
+        if (method === "GET" && sub === "/board") return send(res, 200, cowork.boardSnapshot(id, me, Number(url.searchParams.get("after") ?? 0) || 0));
+        if (method === "GET" && sub === "/board/history") return send(res, 200, { ops: cowork.boardHistory(id, me, url.searchParams.get("card") ?? "") });
+        const body = method === "POST" ? await readJson(req) : null;
+        if (body && sub === "/events") {
+          const out = cowork.addEvent(id, me, body as never);
+          coworkEvents(id, [out.event, ...(out.board?.events ?? [])]);
+          if (out.board) {
+            boardPushed(id, out.board.result.applied);
+            coworkChanged(id);
+          }
+          return send(res, 200, { event: out.event, board: out.board?.result ?? null });
+        }
+        if (body && sub === "/members") {
+          const out = cowork.addMembers(id, me, body.add);
+          for (const n of out.added) push([n], { type: "thread", thread: store.threadById(id) });
+          announce(store.threadById(id), out.message);
+          coworkChanged(id);
+          coworkEvents(id, out.events);
+          return send(res, 200, { cowork: out.cowork });
+        }
+        if (body && sub === "/leave") {
+          const out = cowork.leave(id, me);
+          push([me], { type: "cowork-left", coworkId: id });
+          push([me], { type: "left", threadId: id });
+          for (const l of cowork.board.releaseAll(me, id)) lockPushed(l.coworkId, l.card);
+          cowork.board.setPresence(id, me, null);
+          presencePushed(id);
+          announce(store.threadById(id), out.message);
+          coworkChanged(id);
+          coworkEvents(id, out.events);
+          deliveriesChanged(out.dropped);
+          return send(res, 200, { ok: true });
+        }
+        if (body && sub === "/agents") {
+          const out = cowork.joinAgent(id, me, body.mark, body.label);
+          if (out.message) announce(store.threadById(id), out.message);
+          coworkChanged(id);
+          coworkEvents(id, out.events);
+          return send(res, 200, { cowork: out.cowork, agent: out.agent });
+        }
+        if (body && sub === "/agents/leave") {
+          const out = cowork.leaveAgent(id, me, body.mark);
+          announce(store.threadById(id), out.message);
+          coworkChanged(id);
+          coworkEvents(id, out.events);
+          deliveriesChanged(out.dropped);
+          return send(res, 200, { cowork: out.cowork });
+        }
+        if (body && sub === "/messages") {
+          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : id;
+          if (threadId !== id && store.thread(threadId, me).request?.coworkId !== id) throw new RelayError("bad_request", "threadId 要是这个协作的群聊或它的子会话");
+          const out = cowork.post(threadId, me, body as never);
+          if (out.draft) push([me], { type: "cowork-draft", coworkId: id, draft: out.draft });
+          else coworkPosted(out);
+          return send(res, 200, out);
+        }
+        if (body && sub === "/sessions") {
+          const out = cowork.ask(id, me, body as never);
+          if (out.draft) push([me], { type: "cowork-draft", coworkId: id, draft: out.draft });
+          else {
+            announce(out.thread, out.message);
+            if (out.card) announce(out.card.thread, out.card.message);
+            coworkChanged(id);
+          }
+          return send(res, 200, out.draft ? { draft: out.draft } : { thread: out.thread, message: out.message });
+        }
+        if (body && sub === "/board/ops") {
+          const before = cowork.board.seq(id);
+          const out = cowork.boardApply(id, me, body);
+          // A repeated operation (its opId seen before) is answered again, not pushed again.
+          const fresh = out.result.applied.filter((r) => r.seq > before);
+          boardPushed(id, fresh);
+          coworkEvents(id, out.events);
+          return send(res, 200, out.result);
+        }
+        if (body && sub === "/board/lock") {
+          const lock = cowork.boardLock(id, me, body);
+          lockPushed(id, String(body.card));
+          return send(res, 200, { lock });
+        }
+        if (body && sub === "/board/presence") {
+          const presence = cowork.boardPresence(id, me, body);
+          presencePushed(id);
+          return send(res, 200, { presence });
+        }
+      } else if (method === "POST" && sub === "/sessions" && cm[4] === "/conclude") {
+        const out = cowork.conclude(id, target, me, await readJson(req));
+        announce(out.thread, out.message);
+        coworkChanged(id);
+        coworkEvents(id, [out.event]);
+        return send(res, 200, { thread: out.thread, event: out.event });
+      } else if (method === "POST" && sub === "/drafts" && !cm[4]) {
+        const out = cowork.decideDraft(id, target, me, (await readJson(req)) as never);
+        push([me], { type: "cowork-draft", coworkId: id, draft: out.draft });
+        if (out.post?.thread) coworkPosted(out.post as { thread: Thread; message: Message; deliveries: CoworkDelivery[] });
+        if (out.ask?.thread) {
+          announce(out.ask.thread, out.ask.message!);
+          if (out.ask.card) announce(out.ask.card.thread, out.ask.card.message);
+          coworkChanged(id);
+        }
+        return send(res, 200, { draft: out.draft });
+      }
+      throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+    }
     if (method === "GET" && path === "/api/threads") return send(res, 200, { threads: store.threadsFor(me) });
     if (method === "POST" && path === "/api/threads/direct") {
       const body = await readJson(req);
@@ -703,6 +927,18 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     }
     if (method === "POST" && path === "/api/requests") {
       const body = await readJson(req);
+      // A 子会话 (协作): the cowork's way, so an agent's waits as a draft when it should.
+      if (typeof body.coworkId === "string" && body.coworkId) {
+        const out = cowork.ask(body.coworkId, me, body as never);
+        if (out.draft) {
+          push([me], { type: "cowork-draft", coworkId: body.coworkId, draft: out.draft });
+          return send(res, 200, { draft: out.draft });
+        }
+        announce(out.thread, out.message);
+        if (out.card) announce(out.card.thread, out.card.message);
+        coworkChanged(body.coworkId);
+        return send(res, 200, { thread: out.thread, message: out.message });
+      }
       const out = store.createRequest(me, body as never);
       announce(out.thread, out.message);
       return send(res, 200, out);
@@ -852,6 +1088,22 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     const m = /^\/api\/threads\/([^/]+)(\/messages|\/read|\/archive|\/session|\/members|\/leave)?$/.exec(path);
     if (m) {
       const id = decodeURIComponent(m[1]!);
+      // A cowork's 群聊 and 子会话 go the cowork's way (its members, agents, deliveries, drafts).
+      const known = store.thread(id, me);
+      const cw = known.kind === "cowork" ? id : (known.request?.coworkId ?? null);
+      if (cw && method === "POST" && m[2] === "/messages") {
+        const out = cowork.post(id, me, (await readJson(req)) as never);
+        if (out.draft) push([me], { type: "cowork-draft", coworkId: cw, draft: out.draft });
+        else coworkPosted(out);
+        return send(res, 200, out);
+      }
+      if (cw === id && method === "POST" && (m[2] === "/members" || m[2] === "/leave")) throw new RelayError("bad_request", "协作拉人、退出走 /api/cowork/:id/members、/api/cowork/:id/leave");
+      if (cw === id && method === "PATCH" && !m[2]) {
+        const out = cowork.update(id, me, { title: (await readJson(req)).title as string });
+        coworkChanged(id);
+        coworkEvents(id, out.events);
+        return send(res, 200, { thread: store.thread(id, me) });
+      }
       if (method === "POST" && m[2] === "/members") {
         const out = store.addMembers(id, me, (await readJson(req)).add);
         // The new people get the thread (with its history) first, then everyone the event.
@@ -881,6 +1133,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const body = await readJson(req);
         const out = store.sessionAction(id, me, body.action as SessionAction, { via: body.via as never, note: body.note, tellAi: body.tellAi === true });
         announce(out.thread, out.message);
+        if (out.thread.request?.coworkId) {
+          const event = cowork.afterSessionAction(out.thread, me, String(body.action), body.note, body.via);
+          if (event) coworkEvents(out.thread.request.coworkId, [event]);
+          coworkChanged(out.thread.request.coworkId);
+        }
         return send(res, 200, out);
       }
       if (method === "GET" && m[2] === "/messages") {
@@ -970,6 +1227,23 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       sockets.set(name, set);
       ws.send(JSON.stringify({ type: "hello", me: name, client: clientVersion } satisfies RelayEvent));
       if (!wasOnline) pushMembers();
+      // 协作's board presence (cowork-protocol.ts CoworkClientFrame): the only thing a client sends here. Bad frames are
+      // ignored; ten a second per connection at most.
+      let framesAt = 0;
+      let frames = 0;
+      ws.on("message", (data) => {
+        const at = Date.now();
+        if (at - framesAt > 1000) [framesAt, frames] = [at, 0];
+        if (++frames > 10 || closing) return;
+        try {
+          const f = JSON.parse(String(data)) as CoworkClientFrame;
+          if (f?.type !== "board-presence" || typeof f.coworkId !== "string") return;
+          cowork.boardPresence(f.coworkId, name, f);
+          presencePushed(f.coworkId);
+        } catch {
+          // not one of ours, or not in that cowork
+        }
+      });
       ws.on("close", () => {
         set.delete(ws);
         lastSeen.set(name, Date.now());
@@ -980,6 +1254,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         if (!set.size) {
           sockets.delete(name);
           pushMembers();
+          // Gone: their text locks and board presence go too (plans/cowork.md: 断线也放开).
+          if (!closing) {
+            for (const l of cowork.board.releaseAll(name)) lockPushed(l.coworkId, l.card);
+            for (const id of cowork.board.dropPresence(name)) presencePushed(id);
+          }
         }
       });
     });
@@ -1011,6 +1290,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       clearInterval(tick);
       clearInterval(pruneTimer);
       clearInterval(transferSweep);
+      clearInterval(coworkSweep);
+      for (const w of [...inboxWaiters]) w.done();
       for (const t of transferTimers.values()) clearTimeout(t);
       for (const w of [...waiters]) w.done([]);
       for (const set of sockets.values()) for (const ws of set) ws.terminate();

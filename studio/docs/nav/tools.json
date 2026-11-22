@@ -101,6 +101,23 @@
       "next": ["studio/plans/done/relay-file-transfer.md", "studio/plans/later/lan-file-transfer.md"]
     },
     {
+      "id": "tool.relayCowork",
+      "label": "中转的协作（cowork：群聊、子会话、agent、白板）",
+      "aliases": ["协作", "cowork", "agentMentions", "子会话", "待送", "deliveries", "cowork-inbox", "草稿", "AI 发起 @ 和提问", "协作白板", "软锁", "另一版"],
+      "category": "tool",
+      "purpose": "中转上的「协作」（2026-11-23，分支 studio/cowork 上分步做）：人和各自拉进来的 agent 推进一件事。群聊是 kind cowork 的会话；agent 用会话标记（Via.conv）认人，只有 @ 它或有人在它发起的子会话里写才排进它的待送（排队中 → 已送达 → 已回复），主人的 Studio 从 /api/cowork-inbox 拿；子会话是带 coworkId 的 request，协作里的人都在；「AI 发起 @ 和提问」默认关，关着时 AI 的 @ 和新子会话先存成只有主人看得到的草稿；白板是一串按条的操作（序号、卡片版本、文字软锁 30 秒、另一版、标记删除、只撤自己的、AI 一次最多 10 张卡）。第 1 步服务端；界面（第 3 步）和 Studio 接入（第 4 步）照 cowork-protocol.ts 和 RelayClient 的注释做。",
+      "anchors": [
+        { "label": "共用的类型、上限、/ws 事件", "path": "studio/packages/relay/src/cowork-protocol.ts", "anchor": "export const COWORK_VERSION" },
+        { "label": "服务：协作、成员、agent、待送、草稿、事件", "path": "studio/packages/relay/src/cowork.ts", "anchor": "export class CoworkStore" },
+        { "label": "服务：白板的操作、软锁、在场", "path": "studio/packages/relay/src/cowork-board.ts", "anchor": "export class CoworkBoard" },
+        { "label": "服务：接口和推送", "path": "studio/packages/relay/src/server.ts", "anchor": "/api/cowork-inbox" },
+        { "label": "客户端方法", "path": "studio/packages/relay/src/api.ts", "anchor": "async coworks()" },
+        { "label": "单测", "path": "studio/packages/relay/src/cowork.test.ts" }
+      ],
+      "related": ["tool.relayService", "tool.relayClient", "studio.teamRelay"],
+      "next": ["studio/plans/cowork.md", "studio/packages/relay/README.md"]
+    },
+    {
       "id": "tool.issues",
       "label": "问题页（AMO 自己的问题）",
       "aliases": ["问题页", "issues", "issue_reply", "IssueStore", "发布打包", "需要确认", "卡住了", "维护者", "审核"],

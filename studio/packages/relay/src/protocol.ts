@@ -2,6 +2,7 @@
 // later the UI share. A small team on one LAN; people talk to each other directly, and an AI session can send a
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
+import type { CoworkRelayEvent } from "./cowork-protocol.js";
 import type { Transfer } from "./transfer-protocol.js";
 
 export const RELAY_APP = "amo-relay";
@@ -23,8 +24,9 @@ export interface Member {
 }
 
 /** direct: the one plain chat per pair; topic: more chats between the same two, each about one thing; group: three or
- * more (a direct chat or topic becomes one when someone is @-ed into it, its history with it). */
-export type ThreadKind = "direct" | "topic" | "group" | "request";
+ * more (a direct chat or topic becomes one when someone is @-ed into it, its history with it); cowork: a 协作's 群聊
+ * (2026-11-23, cowork-protocol.ts). */
+export type ThreadKind = "direct" | "topic" | "group" | "request" | "cowork";
 export type Verdict = "agree" | "change" | "question";
 export const VERDICT_LABEL: Record<Verdict, string> = { agree: "同意", change: "需要改", question: "有疑问" };
 
@@ -69,6 +71,15 @@ export interface Message {
   mentions?: string[];
   /** Notes on files that came with a reply (copied in when it was sent). */
   notes?: ReplyNote[];
+  /** 协作 (cowork-protocol.ts): the agents @-ed (their marks). */
+  agentMentions?: string[];
+  /** 协作: the seq of the message this one answers (an agent's reply quotes it). */
+  replyTo?: number;
+  /** 协作: an event in the 群聊 that stands for this 子会话 (thread id): the client shows the 子会话's card in its place. */
+  session?: string;
+  /** 协作: an agent's draft its owner sent (`edited`: after changing it). */
+  approvedBy?: string;
+  edited?: boolean;
   createdAt: number;
 }
 
@@ -115,6 +126,11 @@ export interface RequestState {
   /** With takenAt: their note goes to the asking AI (it runs once more). Off unless ticked — most sessions an AI sent
    * after finishing a round (a review asked for) need nothing more said back (the user, 2026-11-05). */
   tellAi: boolean;
+  /** 协作的子会话 (2026-11-23, cowork-protocol.ts): the cowork it is in — every member of it is in this thread too. Missing
+   * or null for a session of its own. Studio's teamrelay leaves these to the cowork's deliveries. */
+  coworkId?: string | null;
+  /** 协作的子会话: what was settled (结论). */
+  conclusion?: string | null;
 }
 
 /**
@@ -347,7 +363,9 @@ export type RelayEvent =
   | { type: "tick" }
   /** 传文件 (2026-11-23): a send changed (made, answered, a piece uploaded, saved, cancelled, expired): to its sender and
    * every target account. */
-  | { type: "transfer"; transfer: Transfer };
+  | { type: "transfer"; transfer: Transfer }
+  /** 协作 (2026-11-23): see cowork-protocol.ts. */
+  | CoworkRelayEvent;
 
 export interface Health {
   app: typeof RELAY_APP;
@@ -362,6 +380,8 @@ export interface Health {
   shell?: ShellBuild | null;
   /** The devices channel (devices-protocol.ts, remote sessions): its version; missing on a service from before it. */
   devices?: number;
+  /** 协作's calls (cowork-protocol.ts COWORK_VERSION); missing on a service from before them. */
+  cowork?: number;
 }
 
 export interface ShellBuild {

@@ -134,6 +134,19 @@ B 在子会话卡上点「转到我的会话」：跳到 B 的 Studio，选一�
 - **目标、仓库分支、选项、事件**：协作本身的一张表，目标改动留历史；事件（谁定了什么、推了哪个提交、白板大改动）只记不推醒任何 agent。
 - **给 agent 的 MCP 由 Studio 的 Host 提供**（`cowork_read / post / ask / board / note`，在 `host/src/features/teamrelay/`），中转自己的 MCP（`relay/src/mcp.ts`）这一版不加。
 
+### 第 1 步做成的样子（2026-11-23，服务端）
+
+接口清单在 `packages/relay/README.md`「协作」，类型和规则在 `relay/src/cowork-protocol.ts`，客户端方法在 `RelayClient`（`relay/src/api.ts`），单测 `relay/src/cowork.test.ts`。上面几条都照做了，下面是做的时候按常理定的，和要第 3、4 步留意的：
+
+- **agent 的状态**：Studio 只报 `idle / busy / owner / offline`；「前面还有 N 条」由服务自己数（这个 agent 排队中的待送，`CoworkAgent.queued`），不用 Studio 报。Studio 至少 30 秒报一次，90 秒没报算「不在线」。
+- **Studio 取待送**：`GET /api/cowork-inbox?prefix=studio:<设备号>:&wait=毫秒`（没有就等到有），送进会话后 `POST /api/cowork-inbox/ack` 记「已送达」。agent 在同一个会话（群聊或子会话）里再发言，就把它在那里「已送达」的待送都记成「已回复」；没写 `replyTo` 时，服务替它引用最近送达的那条。没 @ 它的群聊不进待送，只在 inbox 的 `unread` 里数条数（「Cowork 里有 N 条新的」）；agent 用 `GET …/feed?agent=<标记>` 读过就从那里重新数。
+- **草稿**：「AI 发起 @ 和提问」关着时，AI @ 人、@ 别的 AI、新开子会话都算，先存草稿；不带 @ 的发言、在子会话里接着说，直接发。主人发出的消息带 `approvedBy`（改过再发的还带 `edited`），作者仍是 AI。AI 自己（`via.kind = "ai"`）不能决定草稿。
+- **子会话的结论**：`POST …/sessions/:tid/conclude` 定（发起的人、被问的人或他们的 AI），或者在子会话上「标记完成」时写的说明。都记成 `decision` 事件，子会话上带 `conclusion`。
+- **结束的协作**：不能再发消息、改白板、拉 agent，直到有人重新打开。删掉的卡一直留着（没有到期清理）。
+- **白板**：文字的软锁走 HTTP（`…/board/lock`，写的时候每隔几秒续一次）；在场走 /ws 帧或 HTTP。AI 不占锁；AI 碰到有人在写的卡、或者在它读过之后改过字的卡，被拒绝（`locked` / `stale`）；人的同类改动存成「另一版」。AI 一次调用超过 10 张卡，整次拒绝（403）。commit 事件带的文件会把引用旧提交的卡标成已过时（记在那个 agent 名下）。
+- **第 4 步（Studio）要留意**：AI 发起的子会话也是一个 request，`request.from` 是主人、`conv` 是它的标记，所以 Host 现在的 `teamrelay` 扫描（`dueForAi`）也会把回复当「中转回复」送回会话。接协作时要跳过 `request.coworkId` 有值的会话，只走待送，否则会送两次。
+- **第 3 步（界面）要留意**：`/api/threads` 里有协作的群聊（kind `cowork`）和子会话（request 带 `coworkId`，协作里的人都在里面，不只是问和答的两个人）；待处理、聊天的列表要把它们滤掉，放到协作里显示。
+
 ## 分几步做
 
 都在分支 `studio/cowork` 上攒（worktree `G:\PROJECT\AgentMonitorOverlay-cowork`），每一步的会话从它开自己的分支、验证过合回它；全部做完一起合进 master、一起发（避免自动打包把半截的 Studio 发出去，中转服务也只部署一次）。
