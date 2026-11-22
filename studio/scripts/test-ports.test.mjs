@@ -4,6 +4,10 @@
 // once, so the retry fails too: 自动打包 of Studio 0.9.43 and 0.9.72 stopped on platform.test.ts's fixed 47999, twice
 // put down as 「偶发」. A test that needs an address nothing listens on takes testkit's standInPort(real servers…); one
 // that needs a server listens with listenInStudioRange. Each failure below says the file, the line and what to do.
+// Nor may a test's own server listen on port 0 (2026-11-23, the user: 能拦住 listen(0) 的话就补上): the system picks
+// from 1024–15000 on this machine, where fetch refuses a few ports outright (5060, 6000… — 「bad port」), so one run now
+// and then fails: mirror.test.ts's fake mirror did. startRelayServer({ port: 0 }) is not this: the relay takes another
+// port itself then (FETCH_BAD_PORTS in packages/relay/src/server.ts).
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,15 +43,27 @@ export function fixedSparePorts(text) {
   return out;
 }
 
+/** `.listen(0…)`, `.listen()` or `.listen({ port: 0 …})` of a server a test starts itself. */
+export function systemPickedPorts(text) {
+  const out = [];
+  text.split("\n").forEach((line, i) => {
+    const c = code(line);
+    if (c && /\.listen\(\s*(?:0\s*[,)]|\)|\{\s*port:\s*0\s*[,}])/.test(c)) out.push({ line: i + 1 });
+  });
+  return out;
+}
+
+/** The tests' files: unit tests and their support files, e2e, the scripts' tests. */
+const testFiles = () => [
+  ...walk(join(STUDIO, "packages"), (n) => n.endsWith(".test.ts") || n.endsWith(".test-support.ts")),
+  ...walk(join(STUDIO, "e2e"), (n) => n.endsWith(".ts")),
+  ...walk(join(STUDIO, "scripts"), (n) => n.endsWith(".test.mjs")),
+];
+
 describe("测试里的端口", () => {
   it("不写死 47950–47999 里的端口（假服务器随机拿的那一段）", () => {
-    const files = [
-      ...walk(join(STUDIO, "packages"), (n) => n.endsWith(".test.ts") || n.endsWith(".test-support.ts")),
-      ...walk(join(STUDIO, "e2e"), (n) => n.endsWith(".ts")),
-      ...walk(join(STUDIO, "scripts"), (n) => n.endsWith(".test.mjs")),
-    ];
     const problems = [];
-    for (const file of files) {
+    for (const file of testFiles()) {
       const rel = relative(STUDIO, file).replaceAll("\\", "/");
       if (rel === SELF || ALLOWED[rel]) continue;
       for (const hit of fixedSparePorts(readFileSync(file, "utf8")))
@@ -56,9 +72,26 @@ describe("测试里的端口", () => {
     expect(problems, `\n${problems.join("\n")}\n`).toEqual([]);
   });
 
+  it("不让自己起的服务器 listen(0)（系统给的端口可能是 fetch 拒绝的 bad port）", () => {
+    const problems = [];
+    for (const file of testFiles()) {
+      const rel = relative(STUDIO, file).replaceAll("\\", "/");
+      if (rel === SELF) continue;
+      for (const hit of systemPickedPorts(readFileSync(file, "utf8")))
+        problems.push(`${rel}:${hit.line} 让系统挑端口（listen(0)）：这台机器给的是 1024–15000，里面有 fetch 直接拒绝的端口（bad port），偶尔就失败。改用 testkit 的 listenInStudioRange(server)`);
+    }
+    expect(problems, `\n${problems.join("\n")}\n`).toEqual([]);
+  });
+
   it("认得出写死的端口，不把注释、别的号段和更长的数字算进去", () => {
     expect(fixedSparePorts('const url = "http://127.0.0.1:47999/x";')).toEqual([{ line: 1, port: "47999" }]);
     expect(fixedSparePorts("listen(47950); // was 47960")).toEqual([{ line: 1, port: "47950" }]);
     expect(fixedSparePorts("// 47999\n * 47998\nconst a = 47900, b = 47949, c = 1479990, d = 0.47955;")).toEqual([]);
+  });
+
+  it("认得出 listen(0)，不把 startRelayServer({ port: 0 })、注释和别的端口算进去", () => {
+    const bad = ['await new Promise((r) => server.listen(0, "127.0.0.1", r));', "server.listen(0);", "server.listen();", "app.listen({ port: 0, host })", "x.listen( 0 )"];
+    for (const line of bad) expect(systemPickedPorts(line), line).toEqual([{ line: 1 }]);
+    expect(systemPickedPorts('startRelayServer({ store, host: "127.0.0.1", port: 0 });\n// server.listen(0)\nserver.listen(port, host);\nserver.listen(10080);\nlisten({ port: 0 });')).toEqual([]);
   });
 });

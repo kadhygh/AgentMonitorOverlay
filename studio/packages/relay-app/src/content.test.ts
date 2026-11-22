@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ClientManifest } from "@amo-studio/relay";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { ContentStore } from "./content.js";
 
-const BAD_PORTS = new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 let server: Server | null = null;
 let home: string | null = null;
@@ -27,13 +26,9 @@ async function serve(files: Record<string, string>) {
     if (!(path in files)) return void res.writeHead(404).end();
     res.end(files[path]);
   });
-  // fetch refuses a few ports (its "bad ports"); a random one can land on them.
-  for (;;) {
-    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-    const port = (server.address() as AddressInfo).port;
-    if (!BAD_PORTS.has(port)) return { url: `http://127.0.0.1:${port}`, fetched };
-    await new Promise<void>((r) => server!.close(() => r()));
-  }
+  // In 47950–47999 (listenInStudioRange): a port the system picks can be one fetch refuses ("bad port").
+  const port = await listenInStudioRange(server);
+  return { url: `http://127.0.0.1:${port}`, fetched };
 }
 
 const manifest = (version: string, files: Record<string, string>): ClientManifest => ({

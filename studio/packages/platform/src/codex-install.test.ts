@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { codexSources, installCodex, isStandaloneCodex } from "./codex-install.js";
 import type { InstallFrom, InstallRunner } from "./tool-mirror.js";
 
@@ -81,7 +82,7 @@ async function fake(): Promise<Fake> {
     if (m && f.ready.has(m[1]!)) return send(req, res, tgzOf(m[1]!));
     return no();
   });
-  await new Promise<void>((r) => f.server.listen(0, "127.0.0.1", r));
+  await listenInStudioRange(f.server);
   f.url = `http://127.0.0.1:${(f.server.address() as AddressInfo).port}`;
   fakes.push(f);
   return f;

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { removeTempDir, startFakePlatformServer, type FakePlatformServer } from "@amo-studio/testkit";
+import { listenInStudioRange, removeTempDir, startFakePlatformServer, STUDIO_SPARE_PORTS, type FakePlatformServer } from "@amo-studio/testkit";
 import { programLaunch } from "../support/packed.js";
 import { screenshot, studioRoot } from "../support/studio.js";
 
@@ -672,7 +672,7 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
     if (/0\.200\.0-win32-x64$/.test(path)) return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0-win32-x64", dist: { integrity } }));
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ version: "0.200.0" }));
   });
-  await new Promise<void>((ok) => registry.listen(0, "127.0.0.1", ok));
+  await listenInStudioRange(registry);
   const registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}`;
   const { app, page } = await launch([], (r) => {
     const dirs = { bin: join(r, "bin"), home: join(r, "home"), appdata: join(r, "appdata"), local: join(r, "localappdata") };
@@ -1054,7 +1054,16 @@ const server = http.createServer((req, res) => {
     send(404, { error: { code: "not_found", message: "no route" } });
   });
 });
-server.listen(0, "127.0.0.1", () => {
+// A free port of the spare range as listenInStudioRange takes one (this runs as its own process, without testkit).
+const [lo, count] = [${STUDIO_SPARE_PORTS[0]}, ${STUDIO_SPARE_PORTS[1] - STUDIO_SPARE_PORTS[0] + 1}];
+const first = Math.floor(Math.random() * count);
+let tries = 0;
+server.on("error", (e) => {
+  if (e.code !== "EADDRINUSE" || ++tries >= count) throw e;
+  server.listen(lo + ((first + tries) % count), "127.0.0.1");
+});
+server.listen(lo + first, "127.0.0.1");
+server.on("listening", () => {
   const port = server.address().port;
   fs.writeFileSync(path.join(dataDir, "host-token"), "tok");
   fs.writeFileSync(path.join(dataDir, "host.json"), JSON.stringify({ url: "http://127.0.0.1:" + port, port, pid: process.pid }));

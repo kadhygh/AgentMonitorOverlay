@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { resumeDownload } from "@amo-studio/locate/download";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { RelayClient } from "./client.js";
 import { checkMirrorSettings, CLAUDE_CODE_SOURCE, CODEX_SOURCE, DEFAULT_MIRROR_SETTINGS, type MirrorOptions, type MirrorSource, ToolMirror } from "./mirror.js";
 import { startRelayServer } from "./server.js";
@@ -98,7 +99,7 @@ async function fake(versions: Record<string, string[]>, latest: string): Promise
     if (fault.kind === "cut") setTimeout(() => res.socket?.destroy(), 20);
     // stall: nothing more; the client gives up
   });
-  await new Promise<void>((r) => f.server.listen(0, "127.0.0.1", r));
+  await listenInStudioRange(f.server);
   f.base = `http://127.0.0.1:${(f.server.address() as AddressInfo).port}`;
   fakes.push(f);
   return f;

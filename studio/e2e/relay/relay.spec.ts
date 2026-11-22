@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { programLaunch } from "../support/packed.js";
 
 // AMO 中转's desktop client (plans/done/relay.md, relay-tasks.md) against a real service in this process: first start (loader →
@@ -606,7 +607,7 @@ test("2026-11-05: the viewer is a panel with Reviewer's note box; 已接手，�
       res.end("{}");
     });
   });
-  await new Promise<void>((r) => fakeHost.listen(0, "127.0.0.1", () => r()));
+  await listenInStudioRange(fakeHost);
   const hostPort = (fakeHost.address() as { port: number }).port;
   writeFileSync(join(studioData, "host.json"), JSON.stringify({ url: `http://127.0.0.1:${hostPort}`, port: hostPort, pid: 1 }));
   writeFileSync(join(studioData, "host-token"), "tok-e2e");

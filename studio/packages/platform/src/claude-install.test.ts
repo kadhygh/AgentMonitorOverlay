@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { claudeSources, installClaude } from "./claude-install.js";
 import { machinePlatform, type InstallFrom, type InstallRunner } from "./tool-mirror.js";
 
@@ -89,7 +90,7 @@ async function fake(): Promise<Fake> {
     }
     return no();
   });
-  await new Promise<void>((r) => f.server.listen(0, "127.0.0.1", r));
+  await listenInStudioRange(f.server);
   f.url = `http://127.0.0.1:${(f.server.address() as AddressInfo).port}`;
   fakes.push(f);
   return f;

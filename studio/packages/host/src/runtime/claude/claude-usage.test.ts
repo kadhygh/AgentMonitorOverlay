@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { fetchClaudeUsage, type ClaudeUsageExtra } from "./claude-usage.js";
 
 // The shape /api/oauth/usage answered on 2026-11-12 (trimmed): Fable's weekly limit only in `limits[]`.
@@ -22,7 +23,7 @@ afterEach(() => close?.());
 
 async function serve(body: unknown): Promise<string> {
   const server = createServer((_req, res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body)));
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  await listenInStudioRange(server);
   close = () => server.close();
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }

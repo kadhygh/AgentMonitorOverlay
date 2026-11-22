@@ -8,7 +8,7 @@ import WebSocket from "ws";
 import { peerPresence, REMOTE_LOST_MS, type ModelProfile, type RemoteState } from "@amo-studio/protocol";
 import { deviceFile, ensureDevice, readDevice, saveAccount, setDeviceName, type Protector } from "@amo-studio/account";
 import { RelayStore, startRelayServer, type DeviceEvent, type RelayServer } from "@amo-studio/relay";
-import { removeTempDir } from "@amo-studio/testkit";
+import { listenInStudioRange, removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
@@ -346,7 +346,7 @@ describe("why a connection is refused", () => {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
     });
-    await new Promise<void>((r) => old.listen(0, "127.0.0.1", r));
+    await listenInStudioRange(old);
     cleanups.push(() => new Promise<void>((r) => old.close(() => r())));
     const link = new DeviceLink({ server: `http://127.0.0.1:${(old.address() as AddressInfo).port}`, key: "k", device: { id: "d_ffffffffffff", name: "F" } });
     cleanups.push(() => link.stop());

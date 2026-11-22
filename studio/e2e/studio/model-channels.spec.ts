@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import type { ModelChannel, ModelProfile, Session, StateSnapshot, StudioSettings, Task, Workspace } from "@amo-studio/protocol";
+import { listenInStudioRange } from "@amo-studio/testkit";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // 设置 → 模型 → 渠道 (2026-10-15): the person's own third-party Codex and Claude endpoints, run against the mocks; the
@@ -223,7 +224,7 @@ test("a third-party DeepSeek channel run by DSH: its address, its own key and th
     res.end(JSON.stringify(ok ? { object: "list", data: [{ id: "deepseek/deepseek-v4.1-flash" }, { id: "deepseek/deepseek-v4-pro" }, { id: "deepseek/deepseek-ocr" }] } : { error: "no" }));
   });
   server = relay;
-  await new Promise<void>((r) => relay.listen(0, "127.0.0.1", r));
+  await listenInStudioRange(relay);
   const relayUrl = `http://127.0.0.1:${(relay.address() as AddressInfo).port}`;
   studio = await launchStudio({ dsh: true });
   const { page, app } = studio;
