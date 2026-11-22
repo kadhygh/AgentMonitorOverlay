@@ -51,6 +51,7 @@ async function setup() {
   cleanups.push(() => relay.close());
   const planner = relayStore.register("策划小王", "pw-aaaa");
   const coder = relayStore.register("程序老李", "pw-bbbb");
+  const artist = relayStore.register("美术小周", "pw-cccc");
 
   const home = tempDir("home");
   const env = { AMO_HOME: home, COMPUTERNAME: "PLANNER-PC" };
@@ -92,7 +93,8 @@ async function setup() {
   };
   const setStatus = (id: string, status: Session["status"]) => service.publish({ type: "session.upserted", session: store.updateSession(id, { status }) });
   await until(() => service.teamLink.login(), (l) => !!l, "the platform's login");
-  return { service, store, told, events, session, coderClient, plannerClient, tool, setStatus };
+  const artistClient = new RelayClient(relay.url, artist.key);
+  return { service, store, told, events, session, coderClient, plannerClient, artistClient, tool, setStatus };
 }
 
 describe("协作 in Studio", () => {
@@ -261,5 +263,45 @@ describe("协作 in Studio", () => {
     expect(store.getTask(made.taskId)?.title).toBe("协作：射速音效");
     expect(service.teamRelay.cowork.joined().find((j) => j.sessionId === made.sessionId)).toMatchObject({ label: "射速音效" });
     expect(told.find((t) => t.sessionId === made.sessionId)?.text).toContain("要不要随射速变？");
+  }, 30_000);
+  it("cowork_read lists the files of the 群聊 and the 子会话 (team_file_get takes them); cowork_conclude only for the asker or the one asked (2026-11-23)", async () => {
+    const { service, session, coderClient, artistClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速调整", members: ["策划小王", "美术小周"] });
+    const s = session("射速文档");
+    await service.teamRelay.cowork.join(s.id, c.id, "射速文档");
+    const enc = new TextEncoder();
+    const inChat = await coderClient.upload({ threadId: c.id }, "rate.json", enc.encode('{"max":12}'), "application/json");
+    const toPlanner = await coderClient.askCowork(c.id, { to: "策划小王", title: "射速曲线", body: "线性还是指数？" });
+    const inSub = await coderClient.upload({ threadId: toPlanner.thread!.id }, "curve.txt", enc.encode("linear"), "text/plain");
+    const toArtist = await coderClient.askCowork(c.id, { to: "美术小周", title: "枪口火光", body: "要随射速变大吗？" });
+
+    // The files, each with where it is and the threadId + fileId team_file_get takes.
+    const read = await tool(s.id, "cowork_read");
+    expect(read.text).toContain("## 文件（2 个）");
+    expect(read.text).toMatch(new RegExp(`rate\\.json v1 .* 在群聊 · threadId ${c.id} · fileId ${inChat.id}`));
+    expect(read.text).toMatch(new RegExp(`curve\\.txt v1 .* 在子会话「射速曲线」 · threadId ${toPlanner.thread!.id} · fileId ${inSub.id}`));
+    for (const [threadId, fileId] of [[c.id, inChat.id], [toPlanner.thread!.id, inSub.id]] as const) {
+      const got = await tool(s.id, "team_file_get", { threadId, fileId });
+      expect(got.error).toBe(false);
+      expect(got.text).toContain("已取下");
+    }
+
+    // A 子会话 asking someone else: not the planner's to conclude; the 群聊 has none; one asking the planner, once.
+    const notMine = await tool(s.id, "cowork_conclude", { threadId: toArtist.thread!.id, conclusion: "不变" });
+    expect(notMine.error).toBe(true);
+    expect(notMine.text).toContain("是 程序老李 问 美术小周 的，结论只有他们两边");
+    expect((await tool(s.id, "cowork_conclude", { threadId: c.id, conclusion: "x" })).text).toContain("群聊没有结论");
+    const done = await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "先用线性，上限 12。" });
+    expect(done.error).toBe(false);
+    expect(done.text).toContain("子会话「射速曲线」定下结论：先用线性，上限 12。");
+    const after = await coderClient.cowork(c.id);
+    expect(after.cowork.sessions.find((x) => x.id === toPlanner.thread!.id)).toMatchObject({ state: "done", conclusion: "先用线性，上限 12。" });
+    const decision = after.events.find((e) => e.kind === "decision")!;
+    expect(decision.text).toBe("「射速曲线」：先用线性，上限 12。");
+    expect(decision.agent).toBe(service.teamRelay.cowork.joined()[0]!.mark);
+    expect((await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "改成指数" })).text).toContain("已经结束了，结论是：先用线性，上限 12。");
+    expect((await tool(s.id, "cowork_read")).text).toContain("「射速曲线」：先用线性，上限 12。");
+    // The one asked, by hand, may too (the service's rule): 美术小周 settles theirs.
+    await artistClient.concludeCowork(c.id, toArtist.thread!.id, "不变");
   }, 30_000);
 });

@@ -25,7 +25,7 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
       name: "cowork_read",
       title: "读协作",
       description:
-        "The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo). threadId: one 子会话 in full instead. after: read from that #seq.",
+        "The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, the files in its 群聊 and 子会话 (threadId and fileId for team_file_get), your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo). threadId: one 子会话 in full instead (with its files). after: read from that #seq.",
       inputSchema: { coworkId, threadId: z.string().optional(), after: z.number().int().optional() },
       readOnly: true,
       autoApprove: true,
@@ -50,6 +50,16 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
       readOnly: false,
       autoApprove: true,
       run: (args) => run((sid) => c.ask(sid, args)),
+    },
+    {
+      name: "cowork_conclude",
+      title: "给子会话定结论",
+      description:
+        "定下结论 of a 子会话 in the 协作: it closes, and the conclusion goes into the 协作's 已定的事 for everyone. Only its two sides may: the one who asked (a 子会话 you or your person started) and the one asked (a 子会话 asking your person). Conclude once the other side has agreed — write what was settled, in one or two sentences — not to close a question still being talked over.",
+      inputSchema: { coworkId, threadId: z.string().describe("The 子会话 (from cowork_read)."), conclusion: z.string().describe("What was settled.") },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => run((sid) => c.conclude(sid, args)),
     },
     {
       name: "cowork_board",

@@ -236,9 +236,9 @@
     {
       "id": "studio.cowork",
       "label": "协作（cowork）：会话拉进中转上的协作",
-      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板"],
+      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "cowork_conclude", "协作文件", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板"],
       "category": "host",
-      "purpose": "Studio 这一头的协作（2026-11-23，plans/cowork.md 第 4 步；服务在 relay/src/cowork.ts）：会话「更多」→「拉进协作…」以「我 的 AI · 会话名」加入（标记 studio:<设备号>:<会话 id>）；Host 至少 30 秒报一次每个 agent 的状态（在跑 = 处理中；审批、提问、计划待审、草稿、team_ask 待发、人停下、输入框有字 = 等主人；其他 = 待命；归档就退出）；长轮询 /api/cowork-inbox，只在会话「待命」时把被 @ / 子会话回复送进会话收件箱（origin cowork，折叠成一张卡），然后 ack；没 @ 它的消息只在人下一条消息里带一句「协作里有 N 条新的」（core/cowork.ts）；给 agent cowork_read / post / ask / board / note；「转到我的会话」由中转客户端经 POST /api/ui/open（cowork-to-<threadId>）或 POST /api/cowork/handoff 交过来，界面弹窗选会话。teamrelay 的扫描跳过带 coworkId 的子会话。",
+      "purpose": "Studio 这一头的协作（2026-11-23，plans/cowork.md 第 4 步；服务在 relay/src/cowork.ts）：会话「更多」→「拉进协作…」以「我 的 AI · 会话名」加入（标记 studio:<设备号>:<会话 id>）；Host 至少 30 秒报一次每个 agent 的状态（在跑 = 处理中；审批、提问、计划待审、草稿、team_ask 待发、人停下、输入框有字 = 等主人；其他 = 待命；归档就退出）；长轮询 /api/cowork-inbox，只在会话「待命」时把被 @ / 子会话回复送进会话收件箱（origin cowork，折叠成一张卡），然后 ack；没 @ 它的消息只在人下一条消息里带一句「协作里有 N 条新的」（core/cowork.ts）；给 agent cowork_read（带群聊和子会话的文件，取用 team_file_get）/ post / ask / conclude / board / note；「转到我的会话」由中转客户端经 POST /api/ui/open（cowork-to-<threadId>）或 POST /api/cowork/handoff 交过来，界面弹窗选会话。teamrelay 的扫描跳过带 coworkId 的子会话。",
       "steps": [
         "状态怎么算、什么时候送：features/teamrelay/cowork.ts 的 stateOf 和 take（只在 idle 时送）。",
         "送进会话的文字和 cowork_* 的回答：features/teamrelay/cowork-text.ts；折叠卡的摘要去掉给模型看的行：ui/src/chat/originBrief.ts。",

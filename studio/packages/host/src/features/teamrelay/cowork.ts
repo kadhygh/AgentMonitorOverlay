@@ -3,7 +3,7 @@ import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type Ag
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { coworkHint, coworkTold, resetCoworkTold, setCoworkTell } from "../../core/cowork.js";
-import { boardOpsText, boardText, coworkOverview, deliveryFrom, deliveryText, deliveryWhere, joinedLine, postResultText, sessionText } from "./cowork-text.js";
+import { boardOpsText, boardText, concludedText, coworkOverview, type CoworkFiles, deliveryFrom, deliveryText, deliveryWhere, joinedLine, postResultText, sessionText } from "./cowork-text.js";
 import type { TeamRelayFeature } from "./service.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): Studio's end of a 协作 on AMO 中转 (relay/src/cowork-protocol.ts tells
@@ -29,6 +29,8 @@ const VIA_CLIENT = "AMO Studio";
 export const COMPOSER_FRESH_MS = 3 * 60_000;
 /** A handoff not taken is put away after this long. */
 const HANDOFF_KEEP_MS = 3600_000;
+/** cowork_read lists the files of the 群聊 and of the latest this many 子会话. */
+const FILE_SESSIONS = 20;
 /** cowork_read lists at most this many messages (the latest). */
 const READ_MAX = 40;
 
@@ -437,7 +439,31 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     this.setReadAt(coworkId, mark, Math.max(after, feed.lastSeq));
     resetCoworkTold(this.store, sessionId, `unread:${coworkId}`);
     setCoworkTell(this.store, sessionId, `unread:${coworkId}`, null);
-    return coworkOverview({ cowork: detail.cowork, events: detail.events, drafts: detail.drafts, mark, messages: feed.messages.slice(skipped), skipped, after, lastSeq: Math.max(after, feed.lastSeq) });
+    return coworkOverview({ cowork: detail.cowork, events: detail.events, drafts: detail.drafts, mark, messages: feed.messages.slice(skipped), skipped, after, lastSeq: Math.max(after, feed.lastSeq), files: await this.coworkFiles(client, detail.cowork) });
+  }
+
+  /** The files of the 群聊 and of every 子会话 (the latest FILE_SESSIONS of them), for cowork_read. */
+  private async coworkFiles(client: RelayClient, cowork: Cowork): Promise<CoworkFiles> {
+    const threads = [cowork.id, ...[...cowork.sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, FILE_SESSIONS).map((s) => s.id)];
+    return Promise.all(threads.map(async (threadId) => ({ threadId, files: await client.files({ threadId }).catch(() => [] as RelayFile[]) })));
+  }
+
+  /**
+   * cowork_conclude (2026-11-23, 中转迭代讨论): 定下结论 of a 子会话 — as the service lets only its asker or the person asked
+   * (an agent as its owner), said here before the call so the AI is told who may instead of a bare 403.
+   */
+  async conclude(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; conclusion?: unknown }): Promise<string> {
+    const { coworkId, mark } = this.mine(sessionId, input.coworkId);
+    const { client, me } = this.relay();
+    const threadId = text(input.threadId, "threadId");
+    const conclusion = text(input.conclusion, "conclusion");
+    const detail = await this.call(() => client.cowork(coworkId));
+    const s = detail.cowork.sessions.find((x) => x.id === threadId);
+    if (!s) throw new HostError("bad_request", `${threadId} 不是协作「${detail.cowork.title}」的子会话${threadId === coworkId ? "（群聊没有结论：定下的事在子会话里定）" : ""}。子会话在 cowork_read 的「开着的子会话」里。`);
+    if (s.state === "done") throw new HostError("bad_request", `子会话「${s.title}」已经结束了${s.conclusion ? `，结论是：${s.conclusion}` : ""}。要改，在群聊里说，或者开一个新的子会话。`);
+    if (me !== s.from && me !== s.to) throw new HostError("bad_request", `子会话「${s.title}」是 ${s.from} 问 ${s.to} 的，结论只有他们两边（和他们的 AI）能定。你有意见就用 cowork_post 带 threadId ${s.id} 在里面说。`);
+    await this.call(() => client.concludeCowork(coworkId, threadId, conclusion, this.via(mark)));
+    return concludedText(s.title, conclusion);
   }
 
   /** cowork_post: says something in the 群聊 or in a 子会话 (threadId), as the owner's AI. */

@@ -1,4 +1,4 @@
-import { AGENT_STATE_LABEL, messageAsText, sessionStateText, type BoardItem, type BoardLock, type BoardOpsResult, type BoardRejectCode, type Cowork, type CoworkDraft, type CoworkEvent, type CoworkInboxItem, type CoworkPostResult, type CoworkAskResult, type Message, type Thread } from "@amo-studio/relay/light";
+import { AGENT_STATE_LABEL, messageAsText, sessionStateText, type BoardItem, type BoardLock, type BoardOpsResult, type BoardRejectCode, type Cowork, type CoworkDraft, type CoworkEvent, type CoworkInboxItem, type CoworkPostResult, type CoworkAskResult, type Message, type RelayFile, type Thread, sizeText } from "@amo-studio/relay/light";
 
 // 协作 (2026-11-23, plans/cowork.md): what the agent of a session in a 协作 reads — a delivery put into its conversation,
 // and the answers of its cowork_* tools (cowork-mcp.ts). Plain Markdown in Chinese, as team_*'s.
@@ -65,13 +65,13 @@ export function deliveryText(input: { items: CoworkInboxItem[]; cowork: Cowork; 
 export function joinedLine(cowork: Pick<Cowork, "id" | "title" | "goal" | "repo" | "branch">, myName: string, me: string): string {
   const goal = cowork.goal.trim() ? `目标：${cowork.goal.trim().replace(/\s+/g, " ").slice(0, 200)}${cowork.goal.trim().length > 200 ? "…" : ""}` : "";
   const repo = cowork.repo ? `仓库 ${cowork.repo}${cowork.branch ? ` · 分支 ${cowork.branch}` : ""}。` : "";
-  return `【协作】${me} 把这个会话拉进了协作「${cowork.title}」（coworkId ${cowork.id}），你在里面的名字是「${myName}」，可以替 ${me} 在里面回复、提问、写白板、记事件，不用每次再问。${repo}${goal} 有人 @ 你、或回复你发起的子会话时，Studio 会把它送进这个对话；别人聊天不会叫你。工具：cowork_read（看全貌和新消息）、cowork_post（发言）、cowork_ask（开子会话问人）、cowork_board（白板）、cowork_note（记事件：推了提交就记一条带提交号的）。项目里的正式内容照常写进分支的文档。`;
+  return `【协作】${me} 把这个会话拉进了协作「${cowork.title}」（coworkId ${cowork.id}），你在里面的名字是「${myName}」，可以替 ${me} 在里面回复、提问、写白板、记事件，不用每次再问。${repo}${goal} 有人 @ 你、或回复你发起的子会话时，Studio 会把它送进这个对话；别人聊天不会叫你。工具：cowork_read（看全貌、文件和新消息）、cowork_post（发言）、cowork_ask（开子会话问人）、cowork_conclude（给子会话定结论）、cowork_board（白板）、cowork_note（记事件：推了提交就记一条带提交号的）。项目里的正式内容照常写进分支的文档。`;
 }
 
 const STATE_TEXT: Record<"open" | "returned" | "done", string> = { open: "开着", returned: "回到发起人", done: "已定" };
 
 /** cowork_read without a threadId: the 协作 as a whole, then the new messages. */
-export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; messages: Message[]; skipped: number; after: number; lastSeq: number }): string {
+export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; messages: Message[]; skipped: number; after: number; lastSeq: number; files?: CoworkFiles }): string {
   const { cowork: c, mark } = input;
   const me = c.agents.find((a) => a.mark === mark);
   const parts: string[] = [];
@@ -87,12 +87,34 @@ export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; d
   parts.push(`## 已定的事\n${decisions.length ? decisions.join("\n") : "（还没有）"}`);
   const others = input.events.filter((e) => e.kind === "commit" || e.kind === "note").slice(-10);
   if (others.length) parts.push(`## 最近的事件\n${others.map((e) => `- ${time(e.at)} ${e.agent ? (c.agents.find((a) => a.mark === e.agent)?.name ?? e.actor) : e.actor}：${e.kind === "commit" ? `推了 ${e.data?.commit ?? ""} ` : ""}${e.text}${e.data?.files?.length ? `（${e.data.files.join("、")}）` : ""}`).join("\n")}`);
+  const files = input.files ? coworkFilesText(input.files, c) : "";
+  if (files) parts.push(files);
   const mine = input.drafts.filter((d) => d.agent === mark && d.state === "pending");
   if (mine.length) parts.push(`## 你的草稿（等 ${me?.owner ?? "主人"} 确认）\n${mine.map((d) => `- ${d.kind === "ask" ? `子会话「${d.ask?.title}」问 ${d.ask?.to}` : `发言：${oneLine(d.post?.body ?? "")}`}`).join("\n")}`);
   const head = input.after ? `## 新消息（#${input.after} 之后）` : "## 最近的消息";
   const body = input.messages.length ? `${input.skipped ? `（更早的 ${input.skipped} 条没列出，要看用 after 从更早的 # 读）\n\n` : ""}${input.messages.map((m) => coworkMessageText(m, c)).join("\n\n")}` : "（没有新的）";
   parts.push(`${head}\n${body}\n\n（读到 #${input.lastSeq}。下次不带 after 只列这之后的。）`);
   return parts.join("\n\n");
+}
+
+/** The files of a 协作's threads (群聊 first, then each 子会话), as listed for cowork_read. */
+export type CoworkFiles = Array<{ threadId: string; files: RelayFile[] }>;
+
+/**
+ * cowork_read's 文件 (2026-11-23, 中转迭代讨论: 把协作里的文件列出来，包括群聊和子会话里的): each with the threadId and fileId
+ * team_file_get takes (everyone in a 协作 is in its 群聊 and every 子会话, so team_file_get lets them have it).
+ */
+export function coworkFilesText(groups: CoworkFiles, cowork: Pick<Cowork, "id" | "sessions">, max = 40): string {
+  const all = groups.flatMap((g) => g.files.map((f) => ({ g, f })));
+  if (!all.length) return "";
+  const shown = [...all].sort((a, b) => a.f.at - b.f.at).slice(-max);
+  const line = ({ g, f }: { g: { threadId: string }; f: RelayFile }) => `- ${f.name} v${f.version} · ${f.type.split(";")[0]!.trim()} · ${sizeText(f.size)} · ${f.by} ${time(f.at)} 上传 · 在${whereOf(g.threadId, cowork)} · threadId ${g.threadId} · fileId ${f.id}`;
+  return `## 文件（${all.length} 个${all.length > shown.length ? `，列了最近的 ${shown.length} 个` : ""}）\n用 team_file_get（threadId, fileId）存到本机，拿到完整路径后打开看。\n${shown.map(line).join("\n")}`;
+}
+
+/** What cowork_conclude did. */
+export function concludedText(title: string, conclusion: string): string {
+  return `子会话「${title}」定下结论：${conclusion}\n它关上了，结论记进了协作的「已定的事」，协作里的人和 AI 读协作时都看得到。照这个结论接着做；要改结论，在群聊里说，或者开一个新的子会话。`;
 }
 
 /** cowork_read with a threadId: one 子会话 in full. */
