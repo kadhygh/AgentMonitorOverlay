@@ -144,6 +144,72 @@ test("layout A: rail, list, main, 信息栏 — every page at 1280, 1080 and 960
   await expect(page.locator(".list-pane")).toContainText("协作还在做");
   await shot(app, "A07-cowork-1280");
 
+  // The floating windows 协作's 子会话 and 白板 will open in (plans/cowork.md 第 9 条), on the page's samples: several
+  // at once, each a step down and right; a click brings one up; moved by the title bar, sized by the corner, kept per
+  // window; folded into tabs above the group chat's box with what was typed still there; maximized; closed.
+  await page.evaluate(() => localStorage.setItem("amo-relay.floatDemo", "1"));
+  await page.locator(".rail-item", { hasText: "聊天" }).click();
+  await page.locator(".rail-item", { hasText: "协作" }).click();
+  const win = (title: string) => page.locator(".float-win", { hasText: title });
+  const box = async (title: string) => (await win(title).boundingBox())!;
+  const z = (title: string) => win(title).evaluate((e) => Number((e as HTMLElement).style.zIndex));
+  for (const t of ["射速曲线", "枪管过热的颜色", "白板"]) await page.getByRole("button", { name: new RegExp(`打开「.*${t}」`) }).click();
+  await expect(page.locator(".float-win:visible")).toHaveCount(3);
+  const [b1, b2, b3] = [await box("射速曲线"), await box("枪管过热的颜色"), await box("白板")];
+  expect([Math.round(b2.x - b1.x), Math.round(b2.y - b1.y), Math.round(b3.x - b2.x)]).toEqual([28, 28, 28]);
+  expect(await z("白板")).toBeGreaterThan(await z("射速曲线"));
+  // Its strip still showing on the left, under the title bar.
+  await win("射速曲线").click({ position: { x: 12, y: 200 } });
+  expect(await z("射速曲线")).toBeGreaterThan(await z("白板"));
+  // Moved by its title bar; sized by its corner.
+  const head = (await win("射速曲线").locator(".float-title").boundingBox())!;
+  await page.mouse.move(head.x + 10, head.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 110, head.y + 55, { steps: 5 });
+  await page.mouse.move(head.x + 210, head.y + 105, { steps: 5 });
+  await page.mouse.up();
+  const moved = await box("射速曲线");
+  expect([Math.round(moved.x - b1.x), Math.round(moved.y - b1.y)]).toEqual([200, 100]);
+  // (白板 folded first: the bigger window would cover it.)
+  await win("白板").getByRole("button", { name: "收起" }).click();
+  await win("枪管过热的颜色").locator(".float-title").click();
+  const grip = (await win("枪管过热的颜色").locator(".float-grip").boundingBox())!;
+  await page.mouse.move(grip.x + 7, grip.y + 7);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 87, grip.y + 47, { steps: 5 });
+  await page.mouse.up();
+  expect(Math.round((await box("枪管过热的颜色")).width - b2.width)).toBe(80);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("amo-relay.float.demo:s1") ?? "null"))).toMatchObject({ x: Math.round(moved.x - b1.x) + 24 });
+  // Folded into a tab, then back with what was typed.
+  await win("射速曲线").locator("textarea").fill("草稿还在");
+  await win("射速曲线").getByRole("button", { name: "收起" }).click();
+  await expect(win("射速曲线")).toBeHidden();
+  await expect(page.locator(".float-tabs .float-tab")).toHaveText(["子会话：射速曲线进行中", "白板3 张卡"]);
+  await noSideOverflow(page);
+  await shot(app, "A14-floats-tabs-1280");
+  await page.locator(".float-tab", { hasText: "射速曲线" }).click();
+  await expect(win("射速曲线").locator("textarea")).toHaveValue("草稿还在");
+  await shot(app, "A15-floats-1280");
+  await theme(page, "dark");
+  await shot(app, "A16-floats-1280-dark");
+  await theme(page, "light");
+  // Maximized fills the page; 还原 puts it back.
+  await win("射速曲线").getByRole("button", { name: "最大化" }).click();
+  const layer = (await page.locator(".float-layer").boundingBox())!;
+  expect(await box("射速曲线")).toEqual(layer);
+  await win("射速曲线").getByRole("button", { name: "还原" }).click();
+  expect(Math.round((await box("射速曲线")).x)).toBe(Math.round(moved.x));
+  // Closed; opened again where it was and as big.
+  await win("枪管过热的颜色").getByRole("button", { name: "关闭" }).click();
+  await expect(win("枪管过热的颜色")).toHaveCount(0);
+  await page.getByRole("button", { name: /打开「.*枪管过热的颜色」/ }).click();
+  expect(Math.round((await box("枪管过热的颜色")).width)).toBe(Math.round(b2.width) + 80);
+  // A narrower window: they come back inside the page.
+  await size(app, 960, 720);
+  await expect.poll(async () => { const l = (await page.locator(".float-layer").boundingBox())!; const b = await box("射速曲线"); return b.x + b.width <= l.x + l.width + 1 && b.y + b.height <= l.y + l.height + 1; }).toBe(true);
+  await shot(app, "A17-floats-960");
+  await size(app, 1280, 800);
+
   // The default window (1080): the 信息栏 folded, its button counts the files; opened, it sits beside the session.
   await size(app, 1080, 720);
   await page.locator(".rail-item", { hasText: "待处理" }).click();

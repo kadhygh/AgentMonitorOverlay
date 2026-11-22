@@ -5,8 +5,9 @@ import { ChatList, ChatView, SharedGroups } from "./Chats.js";
 import { FileViewer, PickFiles } from "./Files.js";
 import { Check, Dialog, Field, PersonPick, Pick } from "./Dialog.js";
 import { copyText, shell } from "./env.js";
-import { fullUi } from "./features.js";
-import { FilterRow, FrameContext, ICONS, ListPane, ListRow, ListSection, Rail, RailItem } from "./Layout.js";
+import { floatDemo, fullUi } from "./features.js";
+import { FloatDemo } from "./FloatDemo.js";
+import { FilterRow, ICONS, ListPane, ListRow, ListSection, Rail, RailItem } from "./Layout.js";
 import { errorText } from "./Messages.js";
 import { useMinuteTick, useSession, type Session } from "./session.js";
 import { HelpDialog, type HelpSection } from "./Help.js";
@@ -70,8 +71,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [chatQuery, setChatQuery] = useState("");
   const [peopleQuery, setPeopleQuery] = useState("");
   // A thread panel open on the right (协作, step 3): narrow, the list column makes room for it (Layout.tsx).
-  const [threadOpen, setThreadOpen] = useState(false);
-  const frame = useMemo(() => ({ setThreadOpen }), []);
   const availability = transferAvailability({ device, transfersOk });
   // The engine that moves the bytes (transfer.ts): while signed in on a desktop client that has 传文件.
   const [engine, setEngine] = useState<TransferEngine | null>(null);
@@ -456,6 +455,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         onOpenChat={(id) => (setView("chat"), setOpenId(id))}
       />
     );
+  else if (view === "cowork" && floatDemo()) main = <FloatDemo />;
   else
     main = (
       <div className="placeholder">
@@ -498,8 +498,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const listShown = !(view === "tasks" && openTask);
   return (
     <PeopleContext.Provider value={people}>
-    <FrameContext.Provider value={frame}>
-    <div className={`app layout-a ${threadOpen ? "thread-on" : ""}`}>
+    <div className="app layout-a">
       <header className={`topbar ${ownTitleBar ? "own" : ""} ${macLights ? "mac" : ""}`}>
         <div className="brand">
           <img className="brand-mark" src={iconUrl} alt="" />
@@ -580,7 +579,6 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
     </div>
-    </FrameContext.Provider>
     </PeopleContext.Provider>
   );
 }

@@ -1,11 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 // The frame of layout A「IM 三栏」(2026-11-23, plans/cowork.md 第 8 条, prototype studio/out/relay-redesign/a-im.html):
 // the icon rail on the far left (待处理 · 协作 · 聊天 · 传文件 · 成员; 说明 · 设置 · me at its foot) → the view's list →
-// the main area → a panel on the right that folds away (a session's 信息栏; later a 协作's info and its sub-session
-// threads, which share that place). Up to 1100 px wide (the default window is 1080) the panel starts folded, as in the
-// prototype; opened there it sits beside the main area, and under 1024 px over it. A thread panel there hides the list.
-// The parts here know nothing of sessions or chats, so 协作 (step 3) builds on them as they are.
+// the main area → the 信息栏 on the right that folds away (a session's; later a 协作's). Up to 1100 px wide (the default
+// window is 1080, and 960) it starts folded, as in the prototype; opened there it sits beside the main area, and under
+// 1024 px over it. A 协作's 子会话 and 白板 do not take that place: they open as floating windows over the page
+// (Floats.tsx; the user, 2026-11-23, plans/cowork.md 第 9 条). The parts here know nothing of sessions or chats, so 协作
+// (step 3) builds on them as they are.
 
 /** Where the right panel starts folded (the prototype: under 1100 px the 信息栏 is folded until asked for). */
 export const NARROW_QUERY = "(max-width: 1100px)";
@@ -53,19 +54,6 @@ export function useSidePanel(key: string, defaultOpen = true): { open: boolean; 
     [narrow, storeKey],
   );
   return { open: narrow ? narrowOpen : pref, setOpen, narrow };
-}
-
-/**
- * A view tells the frame a thread panel is open on the right (协作's sub-sessions, step 3): narrow, the list column
- * makes room for it, as in the prototype at 960 px.
- */
-export const FrameContext = createContext<{ setThreadOpen: (on: boolean) => void }>({ setThreadOpen: () => undefined });
-export function useThreadPanelOpen(on: boolean): void {
-  const { setThreadOpen } = useContext(FrameContext);
-  useEffect(() => {
-    setThreadOpen(on);
-    return () => setThreadOpen(false);
-  }, [on, setThreadOpen]);
 }
 
 // ---- the icon rail
@@ -207,7 +195,7 @@ export function FilterRow({ label, count, current, hot, onClick }: { label: Reac
   );
 }
 
-// ---- the right panel: 信息栏 now, a thread later
+// ---- the right panel: the 信息栏
 
 export function SidePanel(props: { title: ReactNode; sub?: ReactNode; onClose: () => void; closeLabel?: string; children: ReactNode; label: string; className?: string }) {
   return (

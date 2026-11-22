@@ -67,7 +67,7 @@
     {
       "id": "tool.relayClient",
       "label": "AMO 中转客户端（界面和外壳）",
-      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread", "布局 A", "IM 三栏", "图标栏", "信息栏", "列表栏"],
+      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread", "布局 A", "IM 三栏", "图标栏", "信息栏", "列表栏", "浮动弹窗", "子会话弹窗"],
       "category": "tool",
       "purpose": "中转的桌面客户端：外壳（relay-app，平台装、平台更新）加载从服务器热更新的界面（relay-ui）；和 Studio 互相跳转（中转 → Studio 找数据目录调 Host 的 /api/ui/open，Studio → 中转带 --open-thread 启动）。",
       "anchors": [
@@ -77,6 +77,7 @@
         { "label": "界面入口", "path": "studio/packages/relay-ui/src/main.tsx" },
         { "label": "会话页", "path": "studio/packages/relay-ui/src/SessionView.tsx" },
         { "label": "布局 A 的框架（图标栏、列表栏、右边可收起的信息栏）", "path": "studio/packages/relay-ui/src/Layout.tsx", "anchor": "export function SidePanel" },
+        { "label": "浮动弹窗（协作的子会话和白板用：拖动、改大小、层级、收起成标签）", "path": "studio/packages/relay-ui/src/Floats.tsx", "anchor": "export function FloatWindow" },
         { "label": "各页的列表和主区（待处理、聊天、成员…）", "path": "studio/packages/relay-ui/src/Home.tsx", "anchor": "<Rail" },
         { "label": "改动说明（外壳）", "path": "studio/packages/relay-app/CHANGELOG.md" }
       ],
