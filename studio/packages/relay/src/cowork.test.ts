@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { RelayClient } from "./api.js";
-import { AGENT_STALE_MS, BOARD_LOCK_MS, type BoardOp, type CoworkRelayEvent } from "./cowork-protocol.js";
+import { AGENT_STALE_MS, AGENT_STREAK_MAX, BOARD_LOCK_MS, type BoardOp, type CoworkRelayEvent } from "./cowork-protocol.js";
 import { CoworkStore } from "./cowork.js";
 import type { RelayEvent, Via } from "./protocol.js";
 import { startRelayServer, type RelayServer } from "./server.js";
@@ -205,6 +205,29 @@ describe("协作：agent", () => {
     await li.postCowork(id, { threadId: sub.thread!.id, body: "好，那就不叠", via: ai(LI_AI) });
     expect((await li.coworkInbox(liStudio)).items).toEqual([]);
     expect((await li.cowork(id)).deliveries.map((d) => d.state)).toEqual(["replied", "replied"]);
+  });
+
+  it("stops waking agents after 30 AI messages in a row in one thread, says so once, and starts again when a person speaks there", async () => {
+    const { wang, li, zhou, id } = await team();
+    await wang.addCoworkMembers(id, ["美术小周"]);
+    await wang.updateCowork(id, { options: { aiInitiate: true } });
+    const sub = await li.askCowork(id, { to: "策划小王", title: "暴击要不要叠加", body: "叠还是不叠？", via: ai(LI_AI) });
+    const { events } = await listen(zhou);
+    const queued = (r: { deliveries?: Array<{ state: string }> }) => (r.deliveries ?? []).filter((d) => d.state === "queued").length;
+    // Two agents @-ing each other in the 群聊: each message wakes the other, up to the limit.
+    for (let i = 1; i <= AGENT_STREAK_MAX + 1; i++) {
+      const [who, self, other] = i % 2 ? [wang, WANG_AI, LI_AI] : [li, LI_AI, WANG_AI];
+      const out = await who.postCowork(id, { body: `第 ${i} 条`, agentMentions: [other], via: ai(self) });
+      expect([i, queued(out), out.events?.map((e) => e.kind)]).toEqual([i, i < AGENT_STREAK_MAX ? 1 : 0, i === AGENT_STREAK_MAX ? ["paused"] : []]);
+    }
+    await expect.poll(() => of(events, "cowork-event").filter((e) => e.event.kind === "paused").map((e) => [e.event.text, e.event.data?.threadId])).toEqual([[`AI 之间已经连续往来 ${AGENT_STREAK_MAX} 条，等人看一下：有人在这里说一句话，AI 才会再被叫醒`, id]]);
+    // A 子会话 counts on its own: an agent's message there still wakes the agent that started it.
+    expect(queued(await wang.postCowork(id, { threadId: sub.thread!.id, body: "不叠", via: ai(WANG_AI) }))).toBe(1);
+    // A person's word in the 群聊 starts the count again (an event, like someone joining, does not).
+    await wang.addCoworkMembers(id, ["路人甲"]);
+    expect(queued(await wang.postCowork(id, { body: "又一条", agentMentions: [LI_AI], via: ai(WANG_AI) }))).toBe(0);
+    await zhou.postCowork(id, { body: "我看过了，接着来" });
+    expect(queued(await wang.postCowork(id, { body: "好", agentMentions: [LI_AI], via: ai(WANG_AI) }))).toBe(1);
   });
 });
 

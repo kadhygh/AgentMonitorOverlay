@@ -43,6 +43,12 @@ export const BOARD_OPS_MAX = 200;
 export const BOARD_ITEMS_MAX = 3000;
 /** A presence report older than this is dropped (clients repeat it while the board is open). */
 export const BOARD_PRESENCE_MS = 20_000;
+/**
+ * AI 和 AI 连续往来的上限 (2026-11-23, the user: 30～50 合理, plans/collab-framework.md「轮数上限」): in one thread (the 群聊
+ * and each 子会话 counted apart), once this many messages in a row are agents' with no person's in between, agents' messages
+ * there wake no agent any more and an event of kind "paused" says so; a person's message there starts the count again.
+ */
+export const AGENT_STREAK_MAX = 30;
 /** A long poll on /api/cowork-inbox waits at most this long. */
 export const COWORK_INBOX_MAX_WAIT = 10 * 60_000;
 
@@ -163,8 +169,9 @@ export interface CoworkGoalVersion {
 
 /** created / goal / option / member / agent / ended / reopened: the cowork itself; decision: a 子会话's conclusion (已定的事);
  * commit: an agent pushed (commit, files); note: anything else worth keeping; board: a big board change (new or deleted
- * card, marked 已过时). */
-export type CoworkEventKind = "created" | "goal" | "option" | "member" | "agent" | "ended" | "reopened" | "decision" | "commit" | "note" | "board";
+ * card, marked 已过时); paused: agents went AGENT_STREAK_MAX messages in a row in a thread (data.threadId) and wake no
+ * agent there until a person says something. */
+export type CoworkEventKind = "created" | "goal" | "option" | "member" | "agent" | "ended" | "reopened" | "decision" | "commit" | "note" | "board" | "paused";
 
 export interface CoworkEvent {
   id: number;
@@ -213,7 +220,7 @@ export interface CoworkPost extends NewMessage {
 }
 
 /** A message went out (with the deliveries it made), or an agent's message was kept as a draft for its owner. */
-export type CoworkPostResult = { thread: Thread; message: Message; deliveries: CoworkDelivery[]; draft?: undefined } | { draft: CoworkDraft; thread?: undefined; message?: undefined; deliveries?: undefined };
+export type CoworkPostResult = { thread: Thread; message: Message; deliveries: CoworkDelivery[]; events: CoworkEvent[]; draft?: undefined } | { draft: CoworkDraft; thread?: undefined; message?: undefined; deliveries?: undefined; events?: undefined };
 
 /** A new 子会话: a request to a person in the cowork (every member is in it). From an AI it always needs a reply. */
 export interface NewCoworkSession {

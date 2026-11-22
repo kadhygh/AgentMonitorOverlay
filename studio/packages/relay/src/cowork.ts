@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { CoworkBoard, type BoardActor, type BoardBigChange } from "./cowork-board.js";
 import {
   AGENT_STALE_MS,
+  AGENT_STREAK_MAX,
   COWORK_LIMITS,
   DEFAULT_COWORK_OPTIONS,
   type AgentReport,
@@ -477,19 +478,38 @@ export class CoworkStore {
   /**
    * A message came into a cowork's thread: the agents it wakes get a delivery — those @-ed, and the agent that started
    * the 子会话 it is in (unless it wrote it). Nothing else wakes an agent (plans/cowork.md「唤醒」). An agent's own message
-   * answers what it was delivered in that thread, and the message it replies to (`replyTo`). Returns the deliveries made
-   * or moved on.
+   * answers what it was delivered in that thread, and the message it replies to (`replyTo`). Once agents have written
+   * AGENT_STREAK_MAX messages in a row in this thread with no person's in between, an agent's message wakes nobody and a
+   * "paused" event says so (once); a person's message starts the count again. Returns the deliveries made or moved on,
+   * and that event.
    */
-  private afterMessage(thread: Thread, message: Message): CoworkDelivery[] {
+  private afterMessage(thread: Thread, message: Message): { deliveries: CoworkDelivery[]; events: CoworkEvent[] } {
     const coworkId = this.coworkOf(thread);
-    if (!coworkId || message.kind === "event") return [];
+    if (!coworkId || message.kind === "event") return { deliveries: [], events: [] };
     const authorAgent = message.via.kind === "ai" ? (message.via.conv ?? null) : null;
+    const events: CoworkEvent[] = [];
+    let paused = false;
+    if (message.via.kind === "ai") {
+      const streak = Number(
+        (
+          this.db
+            .prepare(
+              "SELECT COUNT(*) AS n FROM messages WHERE thread_id = ? AND seq <= ? AND kind <> 'event' AND json_extract(via, '$.kind') = 'ai' AND seq > COALESCE((SELECT MAX(seq) FROM messages WHERE thread_id = ? AND seq <= ? AND kind <> 'event' AND COALESCE(json_extract(via, '$.kind'), 'person') <> 'ai'), 0)",
+            )
+            .get(thread.id, message.seq, thread.id, message.seq) as Row
+        ).n,
+      );
+      paused = streak >= AGENT_STREAK_MAX;
+      if (streak === AGENT_STREAK_MAX)
+        events.push(this.event(coworkId, message.author, message.via, "paused", `AI 之间已经连续往来 ${AGENT_STREAK_MAX} 条，等人看一下${thread.kind === "request" ? `（子会话「${thread.title}」）` : ""}：有人在这里说一句话，AI 才会再被叫醒`, { threadId: thread.id }));
+    }
     const wake = new Map<string, DeliveryReason>();
     for (const m of message.agentMentions ?? []) if (m !== authorAgent) wake.set(m, "mention");
     if (thread.request) {
       const starter = (this.db.prepare("SELECT cw_agent FROM threads WHERE id = ?").get(thread.id) as Row | undefined)?.cw_agent;
       if (starter != null && String(starter) !== authorAgent && !wake.has(String(starter))) wake.set(String(starter), "reply");
     }
+    if (paused) wake.clear();
     const changed: string[] = [];
     const at = this.now();
     for (const [mark, reason] of wake) {
@@ -509,7 +529,7 @@ export class CoworkStore {
       }
     }
     if (changed.length || message.agentMentions?.length) this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(at, coworkId);
-    return changed.map((d) => this.delivery(d));
+    return { deliveries: changed.map((d) => this.delivery(d)), events };
   }
 
   /** What my agents (marks starting with `prefix`: this Studio's) have waiting, and how much they have not read. */
@@ -641,8 +661,8 @@ export class CoworkStore {
       if (approved.edited) more.edited = true;
     }
     const out = this.store.addMessage(threadId, me, { ...p, via }, more);
-    const deliveries = this.store.tx(() => this.afterMessage(out.thread, out.message));
-    return { thread: out.thread, message: out.message, deliveries };
+    const { deliveries, events } = this.store.tx(() => this.afterMessage(out.thread, out.message));
+    return { thread: out.thread, message: out.message, deliveries, events };
   }
 
   /** A new 子会话 in the cowork, asked of a person in it; its card goes into the 群聊. From an agent while 「AI 发起 @ 和提问」

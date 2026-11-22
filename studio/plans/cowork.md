@@ -141,6 +141,7 @@ B 在子会话卡上点「转到我的会话」：跳到 B 的 Studio，选一�
 - **agent 的状态**：Studio 只报 `idle / busy / owner / offline`；「前面还有 N 条」由服务自己数（这个 agent 排队中的待送，`CoworkAgent.queued`），不用 Studio 报。Studio 至少 30 秒报一次，90 秒没报算「不在线」。
 - **Studio 取待送**：`GET /api/cowork-inbox?prefix=studio:<设备号>:&wait=毫秒`（没有就等到有），送进会话后 `POST /api/cowork-inbox/ack` 记「已送达」。agent 在同一个会话（群聊或子会话）里再发言，就把它在那里「已送达」的待送都记成「已回复」；没写 `replyTo` 时，服务替它引用最近送达的那条。没 @ 它的群聊不进待送，只在 inbox 的 `unread` 里数条数（「Cowork 里有 N 条新的」）；agent 用 `GET …/feed?agent=<标记>` 读过就从那里重新数。
 - **草稿**：「AI 发起 @ 和提问」关着时，AI @ 人、@ 别的 AI、新开子会话都算，先存草稿；不带 @ 的发言、在子会话里接着说，直接发。主人发出的消息带 `approvedBy`（改过再发的还带 `edited`），作者仍是 AI。AI 自己（`via.kind = "ai"`）不能决定草稿。
+- **AI 之间连续往来的上限**（用户 11-23 补的护栏，和 `plans/collab-framework.md` 的轮数上限是一个意思）：同一个会话里（群聊和每个子会话分开数），AI 的消息连续到 `AGENT_STREAK_MAX`（30 条）、中间没有人说过话，之后 AI 的消息不再给任何 agent 记待送，同时记一条 `paused` 事件「AI 之间已经连续往来 30 条，等人看一下」推给协作里的人（只记一次）。有人在那里说一句话就重新数；拉人这类事件消息不算说话。
 - **子会话的结论**：`POST …/sessions/:tid/conclude` 定（发起的人、被问的人或他们的 AI），或者在子会话上「标记完成」时写的说明。都记成 `decision` 事件，子会话上带 `conclusion`。
 - **结束的协作**：不能再发消息、改白板、拉 agent，直到有人重新打开。删掉的卡一直留着（没有到期清理）。
 - **白板**：文字的软锁走 HTTP（`…/board/lock`，写的时候每隔几秒续一次）；在场走 /ws 帧或 HTTP。AI 不占锁；AI 碰到有人在写的卡、或者在它读过之后改过字的卡，被拒绝（`locked` / `stale`）；人的同类改动存成「另一版」。AI 一次调用超过 10 张卡，整次拒绝（403）。commit 事件带的文件会把引用旧提交的卡标成已过时（记在那个 agent 名下）。

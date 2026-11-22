@@ -356,9 +356,11 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const lockPushed = (id: string, card: string) => push(cowork.people(id), { type: "board-lock", coworkId: id, card, lock: cowork.board.lockOf(id, card) });
   const presencePushed = (id: string) => push(cowork.people(id), { type: "board-presence", coworkId: id, presence: cowork.board.presenceOf(id) });
   /** A message in a cowork's thread went out: to its people, then the agents it woke; a 子会话 moved the cowork's list. */
-  const coworkPosted = (out: { thread: Thread; message: Message; deliveries: CoworkDelivery[] }) => {
+  const coworkPosted = (out: { thread: Thread; message: Message; deliveries: CoworkDelivery[]; events: CoworkEvent[] }) => {
     announce(out.thread, out.message);
     deliveriesChanged(out.deliveries);
+    const coworkId = cowork.coworkOf(out.thread);
+    if (coworkId) coworkEvents(coworkId, out.events);
     if (out.thread.kind === "request" && out.thread.request?.coworkId) coworkChanged(out.thread.request.coworkId);
   };
   // Text locks and presence that ran out, agents whose Studio stopped reporting (不在线).
@@ -904,7 +906,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       } else if (method === "POST" && sub === "/drafts" && !cm[4]) {
         const out = cowork.decideDraft(id, target, me, (await readJson(req)) as never);
         push([me], { type: "cowork-draft", coworkId: id, draft: out.draft });
-        if (out.post?.thread) coworkPosted(out.post as { thread: Thread; message: Message; deliveries: CoworkDelivery[] });
+        if (out.post?.thread) coworkPosted(out.post as { thread: Thread; message: Message; deliveries: CoworkDelivery[]; events: CoworkEvent[] });
         if (out.ask?.thread) {
           announce(out.ask.thread, out.ask.message!);
           if (out.ask.card) announce(out.ask.card.thread, out.ask.card.message);
