@@ -1,11 +1,22 @@
 import { createContext, useContext } from "react";
-import { VERDICT_LABEL, type Member, type Message, type ThreadView } from "./shared.js";
+import { isListed, VERDICT_LABEL, type Member, type Message, type ThreadView } from "./shared.js";
 
 const HUES = [18, 42, 160, 200, 230, 280, 330, 100];
 
 /** Who is who (name → member, with nickname and picture), provided by the signed-in screen. */
 export const PeopleContext = createContext<ReadonlyMap<string, Member>>(new Map());
 export const usePeople = () => useContext(PeopleContext);
+
+/** Whether a name is offered to `me` where people are listed and picked (isListed, 2026-11-23: not 测试 or turned-off
+ *  accounts); me, and a name nobody has any more, are. */
+export function useListed(me: string): (name: string) => boolean {
+  const people = usePeople();
+  const viewer = people.get(me);
+  return (name) => {
+    const m = people.get(name);
+    return !m || name === me || isListed(m, viewer);
+  };
+}
 
 /** The colour of someone's initial: picked from the account name, so it stays when the nickname changes. */
 export function avatarColor(name: string): string {

@@ -21,6 +21,46 @@ export interface Member {
   online: boolean;
   /** ms since epoch; 0 = never seen since the service started. */
   lastSeen: number;
+  /** 账号类型, set on the admin page (2026-11-23). Missing from a service before it: 正式. */
+  kind?: AccountKind;
+  /** Turned off on the admin page: cannot log in; their messages stay. Missing from a service before 2026-11-23. */
+  disabled?: boolean;
+}
+
+/**
+ * 账号类型 (2026-11-23, the user: 服务器后台可以设置账号类型，比如测试账号。然后停用和测试账号不在聊天列表里显示): what the
+ * admin page offers, in its order. `listed`: shown where people are listed and picked (聊天列表, 选人, @, 协作拉人); a kind
+ * that is not is still seen by accounts of the same kind (test accounts pick each other to test with). Add a kind here.
+ */
+export const ACCOUNT_KINDS = {
+  normal: { label: "正式", listed: true },
+  test: { label: "测试", listed: false },
+} as const;
+export type AccountKind = keyof typeof ACCOUNT_KINDS;
+export const DEFAULT_ACCOUNT_KIND: AccountKind = "normal";
+export const isAccountKind = (v: unknown): v is AccountKind => typeof v === "string" && Object.prototype.hasOwnProperty.call(ACCOUNT_KINDS, v);
+
+/**
+ * Whether `m` is shown to `viewer` where people are listed and picked: not when turned off, nor of a kind that is not
+ * listed (unless the viewer is of that kind too). A kind this build does not know (a newer service) is shown. Their
+ * messages in chats and coworks they were in are shown all the same; 成员 keeps them in a folded part at its foot.
+ */
+export function isListed(m: Pick<Member, "kind" | "disabled">, viewer?: Pick<Member, "kind"> | null): boolean {
+  if (m.disabled) return false;
+  const kind = m.kind ?? DEFAULT_ACCOUNT_KIND;
+  return !isAccountKind(kind) || ACCOUNT_KINDS[kind].listed || (viewer?.kind ?? DEFAULT_ACCOUNT_KIND) === kind;
+}
+
+/** The others `me` is shown where people are listed and picked (isListed): `members` is everyone, me among them. */
+export function listedOthers<T extends Pick<Member, "name" | "kind" | "disabled">>(members: T[], me: string): T[] {
+  const viewer = members.find((m) => m.name === me);
+  return members.filter((m) => m.name !== me && isListed(m, viewer));
+}
+
+/** The names `me` is not shown (isListed): left out of who is in a chat, as listed; their messages stay. */
+export function unlistedNames(members: Array<Pick<Member, "name" | "kind" | "disabled">>, me: string): Set<string> {
+  const viewer = members.find((m) => m.name === me);
+  return new Set(members.filter((m) => m.name !== me && !isListed(m, viewer)).map((m) => m.name));
 }
 
 /** direct: the one plain chat per pair; topic: more chats between the same two, each about one thing; group: three or

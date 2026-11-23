@@ -1,6 +1,6 @@
 import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { agentChip, agentRoute, agentWhat, atQuery, deliverySteps, matchTargets, mentionsIn, STATE_WORD, type MentionTarget } from "./coworkText.js";
-import { Avatar, timeText, useDisplayName, usePeople, Who } from "./bits.js";
+import { Avatar, timeText, useDisplayName, useListed, usePeople, Who } from "./bits.js";
 import { Markdown } from "./Markdown.js";
 import { errorText } from "./Messages.js";
 import type { CoworkData, Session } from "./session.js";
@@ -449,6 +449,7 @@ export function DraftCard({ draft }: { draft: CoworkDraft }) {
 export function CoworkComposer(props: { threadId?: string; placeholder: string; onTyping?: (on: boolean) => void; extra?: ReactNode; tools?: ReactNode; disabled?: string | null; onSent?: () => void; draftKey?: string }) {
   const { cowork, session, me, toast } = useCowork();
   const people = usePeople();
+  const listed = useListed(me);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
@@ -460,7 +461,7 @@ export function CoworkComposer(props: { threadId?: string; placeholder: string; 
 
   const targets = useMemo<Array<MentionTarget & { also?: string; agent?: CoworkAgent }>>(
     () => [
-      ...cowork.members.filter((n) => n !== me).map((n) => ({ text: n, kind: "person" as const, id: n, also: people.get(n)?.nick })),
+      ...cowork.members.filter((n) => n !== me && listed(n)).map((n) => ({ text: n, kind: "person" as const, id: n, also: people.get(n)?.nick })),
       ...cowork.agents.map((a) => ({ text: a.name, kind: "agent" as const, id: a.mark, also: a.label, agent: a })),
     ],
     [cowork.members, cowork.agents, me, people],

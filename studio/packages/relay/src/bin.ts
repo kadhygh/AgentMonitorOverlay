@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RelayClient, RelayClientError, clientFromSettings, loadSettings, relayHome, writeSettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
-import { RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
+import { listedOthers, RELAY_DEFAULT_PORT, type NewMessage, type NewRequest, type TaskStatus } from "./protocol.js";
 import { startRelayServer } from "./server.js";
 import { createMirrors } from "./mirror.js";
 import { RelayStore } from "./store.js";
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
     }
     case "people": {
       const { client, me } = await joined();
-      for (const m of await client.members()) if (m.name !== me) out(`${m.name}${m.role ? `（${m.role}）` : ""}${m.online ? " · 在线" : ""}`);
+      for (const m of listedOthers(await client.members(), me)) out(`${m.name}${m.role ? `（${m.role}）` : ""}${m.online ? " · 在线" : ""}`);
       return;
     }
     case "prompt": {

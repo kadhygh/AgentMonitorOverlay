@@ -3,7 +3,7 @@ import { BoardBody } from "./Board.js";
 import { agentOf, CoworkComposer, CoworkContext, CoworkMessages, DraftCard, subState, useCowork, type CoworkCtx } from "./CoworkChat.js";
 import { SubSessionBody } from "./CoworkSession.js";
 import { agentChip, STATE_LEGEND, STATE_MARK, STATE_WORD } from "./coworkText.js";
-import { Avatar, avatarColor, timeText, useDisplayName, usePeople, Who } from "./bits.js";
+import { Avatar, avatarColor, timeText, useDisplayName, useListed, usePeople, Who } from "./bits.js";
 import { Check, Dialog, Field } from "./Dialog.js";
 import { FilesList, FileViewer, PickFiles, useThreadFiles, useUpload } from "./Files.js";
 import { FloatTabs, FloatWindow, useFloats } from "./Floats.js";
@@ -11,7 +11,7 @@ import { ListRow, ListSection, SideBlock, SidePanel, useSidePanel } from "./Layo
 import { Markdown } from "./Markdown.js";
 import { errorText, useMessages } from "./Messages.js";
 import { EMPTY_COWORK_DATA, useSession, type Session } from "./session.js";
-import type { CoworkDraft, CoworkGoalVersion, CoworkListItem, CoworkSession, Message } from "./shared.js";
+import { listedOthers, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type CoworkSession, type Message } from "./shared.js";
 
 // 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作, and
 // one 协作 — its 群聊 in the middle, the 信息栏 on the right (目标 with its versions, 仓库和分支, 成员 with each AI's state,
@@ -537,8 +537,7 @@ export function NewCoworkDialog({ session, onClose, onMade }: { session: Session
       </div>
       <Field label="拉人" hint="他们进来后再把自己的 AI 会话拉进来">
         <div className="cw-pick-people">
-          {st.members
-            .filter((m) => m.name !== me)
+          {listedOthers(st.members, me)
             .map((m) => (
               <label key={m.name} className={`cw-pick ${people.includes(m.name) ? "on" : ""}`}>
                 <input type="checkbox" checked={people.includes(m.name)} onChange={(e) => setPeople((p) => (e.target.checked ? [...p, m.name] : p.filter((x) => x !== m.name)))} />
@@ -560,7 +559,8 @@ function AddPeopleDialog({ onClose }: { onClose: () => void }) {
   const { session, cowork, toast } = useCowork();
   const st = useSession(session);
   const [people, setPeople] = useState<string[]>([]);
-  const rest = st.members.filter((m) => !cowork.members.includes(m.name));
+  // Not 测试 or turned-off accounts (2026-11-23): they stay listed if already in it.
+  const rest = listedOthers(st.members, session.me.name).filter((m) => !cowork.members.includes(m.name));
   const add = async () => {
     try {
       session.putCowork(await session.client.addCoworkMembers(cowork.id, people));
@@ -603,7 +603,8 @@ function AddPeopleDialog({ onClose }: { onClose: () => void }) {
 /** ＋ 子会话: a question for someone in the 协作 (everyone sees it and can write in). */
 function NewSubDialog({ onClose, onMade }: { onClose: () => void; onMade: (id: string, title: string) => void }) {
   const { session, cowork, me, toast } = useCowork();
-  const others = cowork.members.filter((n) => n !== me);
+  const listed = useListed(me);
+  const others = cowork.members.filter((n) => n !== me && listed(n));
   const [to, setTo] = useState(others[0] ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");

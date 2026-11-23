@@ -5,7 +5,9 @@ import { escapeHtml } from "./public.js";
 // sent with each call as x-amo-admin. What it does: the members with who is online, rename an account (everywhere its
 // name is kept), set a new password, turn an account off or on, set or clear the registration passphrase (hashed, so
 // it's never shown — only replaced). 服务器状态 (2026-10-31, monitor.ts): what the relay and the machine use now, and a
-// 24-hour curve (a point every 5 minutes), refreshed every minute while the page is open.
+// 24-hour curve (a point every 5 minutes), refreshed every minute while the page is open. 账号类型 (2026-11-23): each
+// account's kind (正式 / 测试, protocol.ts ACCOUNT_KINDS) is picked here; the list comes in the service's order (正常,
+// then 测试, then turned off: adminOrder) under a heading per part, so neither part nor state rests on colour alone.
 
 export function adminPage(service: string): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(service)} · 管理</title>
@@ -13,7 +15,7 @@ export function adminPage(service: string): string {
 :root{--s1:#2a78d6;--s2:#eb6834;--bg:#efede8;--panel:#fbfaf7;--ink:#22201c;--muted:#8d877c;--line:#2a2723;--soft:#d9d5cc;--accent:#23436f;--on:#fbfaf7;--danger:#a3402c;--ok:#3d7a4f}
 @media (prefers-color-scheme:dark){:root{--s1:#3987e5;--s2:#d95926;--bg:#111316;--panel:#181b1f;--ink:#e6e8eb;--muted:#7c8590;--line:#3a414a;--soft:#2a3038;--accent:#7fb2ff;--on:#0b1626;--danger:#e08a73;--ok:#7cc48f}}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
-main{max-width:980px;margin:32px auto;padding:0 16px}
+main{max-width:1180px;margin:32px auto;padding:0 16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px 24px;margin-bottom:16px}
 h1{font-size:20px;margin:0 0 2px;font-family:"Noto Serif SC","Songti SC",SimSun,serif}.muted{color:var(--muted)}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--soft);vertical-align:middle}
@@ -31,15 +33,16 @@ h2{font-size:16px;margin:0;font-family:"Noto Serif SC","Songti SC",SimSun,serif}
 .legend{display:flex;gap:12px;font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:4px}
 .axis{fill:var(--muted);font-size:10px;font-family:system-ui,sans-serif}.grid{stroke:var(--soft);stroke-width:1}.end{fill:var(--ink);font-size:11px;font-family:system-ui,sans-serif}
 .tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 8px;font-size:12px;white-space:nowrap;z-index:2}.tip b{font-variant-numeric:tabular-nums}.tip i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:4px}
-td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}details{margin-top:12px}summary{cursor:pointer;color:var(--muted)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr.part td{padding:14px 6px 4px;font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line)}tr.gone td{color:var(--muted)}#rows td{white-space:nowrap}#rows td.wrap{white-space:normal;min-width:6em}
+select{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:3px;background:var(--panel);color:var(--ink)}.kind-test{font-weight:600}details{margin-top:12px}summary{cursor:pointer;color:var(--muted)}
 code{background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all}[hidden]{display:none!important}
 </style></head><body><main>
 <div class="card"><div class="row" style="justify-content:space-between"><h1>${escapeHtml(service)} · 管理</h1><button type="button" id="adminpw" hidden>改管理密码</button></div><p class="muted" id="sub">团队服务器的账号管理。只在局域网里用。</p>
 <div class="row" id="reg" hidden><span id="regtext"></span><button type="button" id="setpp"></button><button type="button" id="clearpp" class="danger" hidden>取消口令</button></div>
 <form id="login" class="row" hidden><input id="pw" type="password" placeholder="管理密码" autocomplete="current-password"><button class="primary">进入</button></form>
 <div id="msg"></div></div>
-<div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>问题页</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
-<p class="muted">改登录名：聊天、会话、任务、文件、批注、设备配对里的名字一起改，他已经登录的设备照样能用；之后请他在 AMO 平台的「账号」里退出，用新名字重新登录一次。重设密码和停用会让他所有设备的登录失效。</p></div>
+<div class="card" id="list" hidden><table><thead><tr><th>登录名</th><th>昵称</th><th>负责什么</th><th>类型</th><th>问题页</th><th>状态</th><th>登录中的设备</th><th>最近发言</th><th>注册</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<p class="muted">改登录名：聊天、会话、任务、文件、批注、设备配对里的名字一起改，他已经登录的设备照样能用；之后请他在 AMO 平台的「账号」里退出，用新名字重新登录一次。重设密码和停用会让他所有设备的登录失效。测试账号和停用的账号不出现在别人中转客户端的聊天列表和选人的地方（测试账号之间互相看得到），聊过的记录照常显示。</p></div>
 <div id="mirs" hidden></div>
 <div class="card" id="mon" hidden><div class="row" style="justify-content:space-between"><h2>服务器状态</h2><div class="row"><span class="muted" id="monat"></span><button type="button" id="monrefresh">刷新</button></div></div>
 <div class="stats" id="stats"></div><div class="charts" id="charts"></div>
@@ -68,11 +71,27 @@ function load() {
     $("setpp").textContent = data.invite ? "改邀请口令" : "设邀请口令";
     $("clearpp").hidden = !data.invite;
     var rows = $("rows"); rows.innerHTML = "";
+    var kinds = data.kinds || { normal: { label: "正式" } };
+    var partOf = function (m) { return m.disabled ? "off" : m.kind === "normal" ? "on" : m.kind; };
+    var partName = function (part) { return part === "off" ? "已停用" : part === "on" ? "正常" : (kinds[part] ? kinds[part].label : part) + "账号"; };
+    var count = {}; data.members.forEach(function (m) { count[partOf(m)] = (count[partOf(m)] || 0) + 1; });
+    var lastPart = null;
     data.members.forEach(function (m) {
-      var tr = document.createElement("tr");
+      var part = partOf(m);
+      if (part !== lastPart) { lastPart = part; var hr = document.createElement("tr"); hr.className = "part"; hr.setAttribute("data-part", part); var hd = cell(partName(part) + " · " + count[part]); hd.colSpan = 10; hr.appendChild(hd); rows.appendChild(hr); }
+      var tr = document.createElement("tr"); tr.setAttribute("data-name", m.name); if (m.disabled) tr.className = "gone";
       tr.appendChild(cell(m.name));
       tr.appendChild(cell(m.nick || "—"));
-      tr.appendChild(cell(m.role || "—"));
+      tr.appendChild(cell(m.role || "—", "wrap"));
+      var kt = document.createElement("td"), sel = document.createElement("select");
+      sel.setAttribute("aria-label", "「" + m.name + "」的账号类型"); sel.setAttribute("data-testid", "admin-kind");
+      Object.keys(kinds).forEach(function (k) { var o = document.createElement("option"); o.value = k; o.textContent = kinds[k].label; o.selected = k === m.kind; sel.appendChild(o); });
+      if (m.kind !== "normal") sel.className = "kind-test";
+      sel.onchange = function () {
+        var to = sel.value;
+        call("POST", "/api/admin/kind", { name: m.name, kind: to }).then(function () { say("「" + m.name + "」现在是" + kinds[to].label + "账号" + (to === "normal" ? "，回到别人的聊天列表和选人的地方。" : "：别人的聊天列表和选人的地方不再有他，聊过的记录照常显示。")); load(); }, function (e) { say(e.message, true); load(); });
+      };
+      kt.appendChild(sel); tr.appendChild(kt);
       // 维护者 (2026-11-03, the user): sees everyone's issues on 问题页 and reviews them before 值守 works on them.
       var mt = cell(m.maintainer ? "✓ 维护者" : "—", m.maintainer ? "on" : "muted"); mt.setAttribute("data-testid", "admin-maintainer"); tr.appendChild(mt);
       tr.appendChild(cell(m.disabled ? "! 已停用" : m.online ? "● 在线" : "○ 离线", m.disabled ? "off" : m.online ? "on" : "muted"));

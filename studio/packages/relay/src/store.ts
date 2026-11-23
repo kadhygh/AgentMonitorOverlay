@@ -3,10 +3,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  ACCOUNT_KINDS,
   ARCHIVABLE,
+  DEFAULT_ACCOUNT_KIND,
   DEFAULT_SETTINGS,
+  isAccountKind,
   TASK_STATUSES,
   VERDICT_LABEL,
+  type AccountKind,
   type Answer,
   type FileNote,
   type Message,
@@ -49,6 +53,9 @@ export class RelayError extends Error {
 
 /** The team's files that are not a task's or a session's. */
 const SLOTS = ["flow"];
+/** A kind written by a newer build that this one does not know reads as 正式 (shown everywhere, as before). */
+const kindOf = (v: unknown): AccountKind => (isAccountKind(v) ? v : DEFAULT_ACCOUNT_KIND);
+
 const LIMITS = { password: 128, name: 32, role: 60, title: 200, body: 200_000, questions: 30, question: 2_000, options: 12, option: 200, answer: 20_000 };
 const VERDICTS = new Set<Verdict>(["agree", "change", "question"]);
 
@@ -203,6 +210,8 @@ export class RelayStore {
     if (!mcols.includes("disabled")) this.db.exec("ALTER TABLE members ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;");
     // 维护者 (2026-11-03, the user): set on the admin page; nobody is one until set there.
     if (!mcols.includes("maintainer")) this.db.exec("ALTER TABLE members ADD COLUMN maintainer INTEGER NOT NULL DEFAULT 0;");
+    // 账号类型 (2026-11-23, protocol.ts ACCOUNT_KINDS): set on the admin page; everyone before it is 正式.
+    if (!mcols.includes("kind")) this.db.exec("ALTER TABLE members ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal';");
     this.db.exec("CREATE TABLE IF NOT EXISTS admin (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
     // 协作的子会话 (2026-11-23, cowork-protocol.ts): the cowork a request thread is in, the agent that started it, its 结论.
     const ccols = (this.db.prepare("PRAGMA table_info(threads)").all() as Row[]).map((r) => String(r.name));
@@ -313,12 +322,14 @@ export class RelayStore {
     }
   }
 
-  members(): Array<{ name: string; nick: string; avatar: string | null; role: string }> {
-    return (this.db.prepare("SELECT name, nick, avatar, role FROM members ORDER BY rowid").all() as Row[]).map((r) => ({
+  members(): Array<{ name: string; nick: string; avatar: string | null; role: string; kind: AccountKind; disabled: boolean }> {
+    return (this.db.prepare("SELECT name, nick, avatar, role, kind, disabled FROM members ORDER BY rowid").all() as Row[]).map((r) => ({
       name: String(r.name),
       nick: String(r.nick ?? ""),
       avatar: r.avatar == null ? null : String(r.avatar),
       role: String(r.role),
+      kind: kindOf(r.kind),
+      disabled: !!Number(r.disabled),
     }));
   }
 
@@ -410,6 +421,14 @@ export class RelayStore {
     if (disabled) this.db.prepare("DELETE FROM keys WHERE name = ?").run(name);
   }
 
+  /** 账号类型 (2026-11-23): one of ACCOUNT_KINDS; 测试 accounts are left out where people are listed and picked. */
+  setKind(nameValue: unknown, kind: unknown): void {
+    const name = typeof nameValue === "string" ? nameValue.trim() : "";
+    this.requireMember(name);
+    if (!isAccountKind(kind)) throw new RelayError("bad_request", `账号类型只能是：${Object.entries(ACCOUNT_KINDS).map(([k, v]) => `${k}（${v.label}）`).join("、")}`);
+    this.db.prepare("UPDATE members SET kind = ? WHERE name = ?").run(kind, name);
+  }
+
   /** 维护者 (2026-11-03): sees every issue on 问题页 and reviews what the others report before 值守 works on it. */
   setMaintainer(nameValue: unknown, maintainer: boolean): void {
     const name = typeof nameValue === "string" ? nameValue.trim() : "";
@@ -423,14 +442,14 @@ export class RelayStore {
   }
 
   /** Everyone as the admin page lists them. */
-  adminMembers(): Array<{ name: string; nick: string; role: string; createdAt: number; disabled: boolean; maintainer: boolean; logins: number; lastMessageAt: number | null }> {
+  adminMembers(): Array<{ name: string; nick: string; role: string; kind: AccountKind; createdAt: number; disabled: boolean; maintainer: boolean; logins: number; lastMessageAt: number | null }> {
     return (
       this.db
         .prepare(
-          "SELECT m.name, m.nick, m.role, m.created_at, m.disabled, m.maintainer, (SELECT COUNT(*) FROM keys k WHERE k.name = m.name) AS logins, (SELECT MAX(created_at) FROM messages x WHERE x.author = m.name) AS last FROM members m ORDER BY m.rowid",
+          "SELECT m.name, m.nick, m.role, m.kind, m.created_at, m.disabled, m.maintainer, (SELECT COUNT(*) FROM keys k WHERE k.name = m.name) AS logins, (SELECT MAX(created_at) FROM messages x WHERE x.author = m.name) AS last FROM members m ORDER BY m.rowid",
         )
         .all() as Row[]
-    ).map((r) => ({ name: String(r.name), nick: String(r.nick ?? ""), role: String(r.role), createdAt: Number(r.created_at), disabled: !!Number(r.disabled), maintainer: !!Number(r.maintainer), logins: Number(r.logins), lastMessageAt: r.last == null ? null : Number(r.last) }));
+    ).map((r) => ({ name: String(r.name), nick: String(r.nick ?? ""), role: String(r.role), kind: kindOf(r.kind), createdAt: Number(r.created_at), disabled: !!Number(r.disabled), maintainer: !!Number(r.maintainer), logins: Number(r.logins), lastMessageAt: r.last == null ? null : Number(r.last) }));
   }
 
   /** The admin page's password (hashed like members'); set on the service machine with `amo-relay admin-password`. */

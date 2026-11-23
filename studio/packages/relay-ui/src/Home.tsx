@@ -15,7 +15,7 @@ import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { SettingsDialog, type SettingsPart } from "./Settings.js";
-import { usagePointer, usagePrompt, type Member, type RelayDevice, type TaskView, type ThreadView as Thread } from "./shared.js";
+import { ACCOUNT_KINDS, isAccountKind, listedOthers, unlistedNames, usagePointer, usagePrompt, type Member, type RelayDevice, type TaskView, type ThreadView as Thread } from "./shared.js";
 import { ConnChip, flowIsNew, markFlowSeen, QueueStrip, Shortcuts, StatusStrips } from "./SideFoot.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { writeUsageFile } from "./usageFile.js";
@@ -56,6 +56,9 @@ type Dialogs =
  */
 export const ofCowork = (t: Thread) => !!coworkOf(t);
 
+/** A plain chat or topic whose other side is one `hidden` (unlistedNames): left out of 聊天, its count and its notifications. */
+const hiddenChat = (hidden: Set<string>, me: string) => (t: Thread) => (t.kind === "direct" || t.kind === "topic") && t.members.some((n) => n !== me && hidden.has(n));
+
 export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }: { session: Session; onLogout?: () => void; resumeOpen?: string | null; updatedTo?: string | null }) {
   const st = useSession(session);
   const { threads, members, connection, client, tasks, settings, transfers, device, transfersOk } = st;
@@ -74,6 +77,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [transferFilter, setTransferFilter] = useState<TransferFilter>("pending");
   const [chatQuery, setChatQuery] = useState("");
   const [peopleQuery, setPeopleQuery] = useState("");
+  /** 成员's folded part at its foot: 测试 and turned-off accounts (2026-11-23). */
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   // 协作: the one open, and a 子会话 to open in it (from 待处理, a notification, Studio's 在中转里打开).
   const [coworkId, setCoworkId] = useState<string | null>(null);
   const [coworkFocus, setCoworkFocus] = useState<{ sub?: string; n: number } | null>(null);
@@ -110,11 +115,13 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     const mine = withStatus.filter((x) => x.s.needsMe).map((x) => x.t);
     const waiting = withStatus.filter((x) => !x.s.needsMe && x.t.request!.state !== "done").map((x) => x.t);
     const done = withStatus.filter((x) => x.t.request!.state === "done").map((x) => x.t);
-    const chats = threads.filter((t) => t.kind !== "request" && !ofCowork(t) && !t.archived);
+    // A plain chat or topic with a 测试 or turned-off account is not in the list (2026-11-23), so not in its count either.
+    const unshown = hiddenChat(unlistedNames(members, me), me);
+    const chats = threads.filter((t) => t.kind !== "request" && !ofCowork(t) && !t.archived && !unshown(t));
     const archived = threads.filter((t) => t.kind !== "request" && !ofCowork(t) && t.archived);
     const handed = full ? tasks.filter((t) => t.unseen && !t.archived) : [];
     return { mine, waiting, done, chats, archived, handed };
-  }, [threads, tasks, me, settings, full]);
+  }, [threads, tasks, me, settings, full, members]);
   const openTask = tasks.find((t) => t.id === taskId) ?? null;
   const waitingCowork = coworkWaiting(st, me).count;
   const queueCount = groups.mine.length + groups.handed.length + waitingCowork;
@@ -145,6 +152,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       session.onMessage((m) => {
         if (m.author === me || m.kind === "event" || (document.hasFocus() && session.openThread === m.threadId)) return;
         const t = session.snapshot.threads.find((x) => x.id === m.threadId);
+        if (t && hiddenChat(unlistedNames(session.snapshot.members, me), me)(t)) return;
         if (t && ofCowork(t)) {
           // In a 协作 only what is for me: an @ of me, or a 子会话 that waits on me.
           const c = session.snapshot.coworks.find((x) => x.id === coworkOf(t));
@@ -226,7 +234,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     else if (v === "cowork") {
       setCoworkFocus(null);
       setCoworkId((c) => (c && st.coworks.some((x) => x.id === c) ? c : (st.coworks.find((x) => !x.endedAt) ?? st.coworks[0])?.id ?? null));
-    } else setPerson((p) => p ?? members.find((m) => m.name !== me)?.name ?? null);
+    } else setPerson((p) => p ?? listedOthers(members, me)[0]?.name ?? null);
   };
 
   const chatWith = async (name: string) => {
@@ -291,7 +299,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     setOpenId((which === "mine" ? groups.mine[0] : groups.waiting[0])?.id ?? null);
   };
 
-  const others = members.filter((m) => m.name !== me);
+  // Who is offered where people are listed and picked: not 测试 or turned-off accounts (2026-11-23, isListed).
+  const others = listedOthers(members, me);
+  const hidden = unlistedNames(members, me);
   const show = useDisplayName();
   const queueFoot = (
     <>
@@ -383,8 +393,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             [{ kind: "all" }, "全部任务"],
           ] as Array<[TaskFilter, string]>
         ).map(([f, l]) => row(f, l, live.filter((t) => matches(t, f, me)).length))}
-        <ListSection title="按持有人" count={members.length} />
-        {members.map((m) =>
+        <ListSection title="按持有人" count={members.filter((m) => !hidden.has(m.name)).length} />
+        {members.filter((m) => !hidden.has(m.name)).map((m) =>
           row(
             { kind: "holder", name: m.name },
             <>
@@ -420,8 +430,12 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     );
   } else {
     const q = peopleQuery.trim().toLowerCase();
-    const shown = members.filter((m) => !q || [m.name, m.nick, m.role].some((w) => w.toLowerCase().includes(q)));
+    const found = members.filter((m) => !q || [m.name, m.nick, m.role].some((w) => w.toLowerCase().includes(q)));
+    const shown = found.filter((m) => !hidden.has(m.name));
+    // At the foot, folded: they are not offered anywhere else, but an admin finds them here (the user, 2026-11-23).
+    const set = found.filter((m) => hidden.has(m.name));
     const unknown = connection === "offline";
+    const hiddenWhy = (m: Member) => (m.disabled ? "! 已停用" : `${m.kind && isAccountKind(m.kind) ? ACCOUNT_KINDS[m.kind].label : (m.kind ?? "")}账号`);
     const personRow = (m: Member) => (
       <ListRow
         key={m.name}
@@ -433,7 +447,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             {m.name === me ? "（我）" : ""}
           </>
         }
-        sub={[m.role || "没写负责什么", unknown ? null : m.online ? "在线" : m.lastSeen ? seenText(Date.now() - m.lastSeen) : "不在线"].filter(Boolean).join(" · ")}
+        sub={[hidden.has(m.name) ? hiddenWhy(m) : null, m.role || "没写负责什么", unknown ? null : m.online ? "在线" : m.lastSeen ? seenText(Date.now() - m.lastSeen) : "不在线"].filter(Boolean).join(" · ")}
         dot={m.online && !unknown ? "on" : "off"}
         current={person === m.name}
         onClick={() => setPerson(m.name)}
@@ -452,6 +466,14 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             {shown.filter((m) => m.online).map(personRow)}
             <ListSection title="不在线" count={shown.filter((m) => !m.online).length} />
             {shown.filter((m) => !m.online).map(personRow)}
+          </>
+        )}
+        {set.length > 0 && (
+          <>
+            <button type="button" className="nav-fold" data-testid="people-hidden" aria-expanded={hiddenOpen} onClick={() => setHiddenOpen(!hiddenOpen)} title="这些账号不出现在聊天列表和选人的地方；聊过的记录照常显示。在服务器的管理页里改">
+              {hiddenOpen ? "▾" : "▸"} 已停用 / 测试账号 {set.length}
+            </button>
+            {hiddenOpen && set.map(personRow)}
           </>
         )}
         {!others.length && <div className="list-empty">还没有其他人。把服务器的地址发给同事，让他们注册。</div>}
@@ -612,7 +634,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       {dialog?.kind === "sendFiles" && availability === "ok" && (
         <SendDialog
           session={session}
-          members={members}
+          members={members.filter((m) => !hidden.has(m.name) || m.name === dialog.to)}
           to={dialog.to}
           onClose={() => setDialog(null)}
           onSent={() => {

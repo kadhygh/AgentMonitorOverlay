@@ -1,4 +1,4 @@
-import { VERDICT_LABEL, type FileNote, type Member, type Message, type RelayFile, type Task, type TaskEvent, type Thread } from "./protocol.js";
+import { listedOthers, VERDICT_LABEL, type FileNote, type Member, type Message, type RelayFile, type Task, type TaskEvent, type Thread } from "./protocol.js";
 
 // Text for AIs: the usage prompt the person copies into any agent (「复制用法」, `amo-relay prompt`) and that the MCP
 // gives as its instructions, and a thread as readable Markdown (the MCP's replies, the command line, 「复制回复」).
@@ -8,7 +8,7 @@ export interface UsageContext {
   me: string;
   role?: string;
   /** Everyone on the service, me included; others are listed as people to ask. */
-  members?: Array<Pick<Member, "name" | "role">>;
+  members?: Array<Pick<Member, "name" | "role" | "kind" | "disabled">>;
   /** How to run the command line on this machine, e.g. `node G:\…\bin.js`; leave out when there is none. */
   cli?: string;
   /** The team's flow (TeamSettings.flow): how work moves here. */
@@ -19,7 +19,7 @@ export interface UsageContext {
 }
 
 export function usagePrompt(ctx: UsageContext): string {
-  const others = (ctx.members ?? []).filter((m) => m.name !== ctx.me);
+  const others = listedOthers(ctx.members ?? [], ctx.me);
   const people = others.length ? others.map((m) => `- ${m.name}${m.role ? `（${m.role}）` : ""}`).join("\n") : "- （还没有其他人加入）";
   const cliMode = !!ctx.cli;
   const tasks = !!ctx.tasks;

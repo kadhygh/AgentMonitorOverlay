@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { RelayClient, RelayClientError, clientFromSettings, loadSettings, relayHome, type RelaySettings } from "./client.js";
-import { RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
+import { listedOthers, RELAY_VERSION, TASK_STATUSES, type Message, type TaskStatus, type Thread } from "./protocol.js";
 import { filesAsText, mcpInstructions, newRepliesText, notesAsText, sessionStateText, sizeText, taskAsText, threadAsText } from "./usage.js";
 import { takeInbox } from "./inbox.js";
 import { downloadFile } from "./download.js";
@@ -97,7 +97,8 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     "relay_people",
     { title: "能找的人", description: "团队里的人：名字、负责什么、是否在线。", inputSchema: {}, annotations: annotations(true) },
     tool(async (client, me) => {
-      const members = (await client.members()).filter((m) => m.name !== me);
+      // Not 测试 or turned-off accounts (2026-11-23), as in the client's pickers.
+      const members = listedOthers(await client.members(), me);
       if (!members.length) return "还没有其他人加入。";
       return members.map((m) => `- ${m.name}${m.role ? `（${m.role}）` : ""}${m.online ? " · 在线" : ""}`).join("\n");
     }),

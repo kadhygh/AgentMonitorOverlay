@@ -8,7 +8,7 @@ import { errorText } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
 import { writeUsageFile } from "./usageFile.js";
 import { SessionView } from "./SessionView.js";
-import { ARCHIVABLE, TASK_STATUSES, taskPrompt, type TaskEvent, type TaskSession, type TaskStatus, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
+import { ARCHIVABLE, TASK_STATUSES, taskPrompt, unlistedNames, type TaskEvent, type TaskSession, type TaskStatus, type TaskView, type TeamSettings, type ThreadView } from "./shared.js";
 
 // Team tasks (stage 2b, plans/done/relay-tasks.md), in AMO Studio's shapes: a board of cards in four columns (Studio
 // board.css), a task page with its list on the left — 概要, 记录, the sessions under it (Studio task.css) — and the
@@ -412,7 +412,7 @@ export function TransferDialog({ session, task, thread, onClose, toast }: { sess
       }
     >
       <Field label="交给">
-        <PersonPick people={members.map((m) => m.name)} value={to} onChange={setTo} me={me} label="交给" />
+        <PersonPick people={members.filter((m) => !unlistedNames(members, me).has(m.name)).map((m) => m.name)} value={to} onChange={setTo} me={me} label="交给" />
       </Field>
       <Field label="新状态">
         <StatusPick value={status} onChange={setStatus} />
@@ -475,7 +475,7 @@ export function NewTaskDialog({ session, onClose, onMade }: { session: Session; 
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={6} />
       </Field>
       <Field label="持有人">
-        <PersonPick people={members.map((m) => m.name)} value={holder} onChange={setHolder} me={me} label="持有人" />
+        <PersonPick people={members.filter((m) => !unlistedNames(members, me).has(m.name)).map((m) => m.name)} value={holder} onChange={setHolder} me={me} label="持有人" />
       </Field>
       <Field label="状态">
         <StatusPick value={status} onChange={setStatus} />

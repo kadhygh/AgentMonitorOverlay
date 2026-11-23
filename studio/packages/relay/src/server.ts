@@ -15,7 +15,7 @@ import { adminPage } from "./admin-page.js";
 import { ServerMonitor } from "./monitor.js";
 import { issuesPage } from "./issues-page.js";
 import { IssueStore } from "./issues.js";
-import { MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
+import { ACCOUNT_KINDS, MAX_FILE_BYTES, RELAY_APP, RELAY_VERSION, TICK_MS, type AccountKind, type RelayFile, type Health, type Member, type Message, type RelayEvent, type SessionAction, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 import { checkDeviceId, checkDeviceName, DeviceHub } from "./devices.js";
 import { checkTodoDevice, TodoStore } from "./todo.js";
@@ -145,6 +145,21 @@ function keyOf(req: IncomingMessage, url: URL): string | null {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) return auth.slice(7).trim() || null;
   return url.searchParams.get("key");
+}
+
+/**
+ * The admin page's order (2026-11-23, the user: 服务器的账号管理也要根据状态来排序账号): in use first, then 测试 accounts
+ * (ACCOUNT_KINDS' order after 正式), turned off last; within each, who is online, then the latest seen or spoken (seen
+ * is kept only while the service runs, the last message for good), then as registered.
+ */
+export function adminOrder<T extends { kind: AccountKind; disabled: boolean; online: boolean; lastSeen: number; lastMessageAt: number | null }>(list: T[]): T[] {
+  const kinds = Object.keys(ACCOUNT_KINDS);
+  const group = (m: T) => (m.disabled ? kinds.length : kinds.indexOf(m.kind));
+  const recent = (m: T) => Math.max(m.lastSeen, m.lastMessageAt ?? 0);
+  return list
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => group(a.m) - group(b.m) || Number(b.m.online) - Number(a.m.online) || recent(b.m) - recent(a.m) || a.i - b.i)
+    .map((x) => x.m);
 }
 
 /** Whether an Accept-Encoding takes gzip: `gzip` (or `x-gzip`, or `*` when gzip is not named) with a q above 0. */
@@ -430,7 +445,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       };
       if (method === "GET" && path === "/api/admin/members") {
         const online = new Map(members().map((m) => [m.name, m]));
-        return send(res, 200, { service: serviceName, invite: inviteNeeded(), members: store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 })) });
+        const list = store.adminMembers().map((m) => ({ ...m, online: !!online.get(m.name)?.online, lastSeen: online.get(m.name)?.lastSeen ?? 0 }));
+        return send(res, 200, { service: serviceName, invite: inviteNeeded(), kinds: ACCOUNT_KINDS, members: adminOrder(list) });
       }
       if (method === "GET" && path === "/api/admin/mirror") {
         if (!mirrorList().length) throw new RelayError("not_found", "这个服务没有开工具镜像");
@@ -455,6 +471,12 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       // 维护者 (2026-11-03, the user): sees every issue on 问题页 and reviews the others' reports.
       if (method === "POST" && path === "/api/admin/maintainer") {
         store.setMaintainer(body.name, body.maintainer !== false);
+        return send(res, 200, { ok: true });
+      }
+      // 账号类型 (2026-11-23): 测试 accounts leave the lists and pickers of the others' clients at once.
+      if (method === "POST" && path === "/api/admin/kind") {
+        store.setKind(body.name, body.kind);
+        pushMembers();
         return send(res, 200, { ok: true });
       }
       if (method === "POST" && path === "/api/admin/disable") {

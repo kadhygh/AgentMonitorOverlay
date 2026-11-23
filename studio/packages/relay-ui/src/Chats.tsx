@@ -5,12 +5,13 @@ import { copyText } from "./env.js";
 import { ListRow, ListSection } from "./Layout.js";
 import { MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
-import { threadAsText, type Member, type ThreadView as Thread } from "./shared.js";
+import { listedOthers, threadAsText, unlistedNames, type Member, type ThreadView as Thread } from "./shared.js";
 
 // Chats (2026-10-27; layout A's list, 2026-11-23, plans/cowork.md 第 8 条): on the left the groups, then one row per
 // person — their plain chat — with the topics with them under it; a topic starts from the chat's head (＋ 新话题). A chat
 // @-ing someone who is not in it brings them in, and a direct chat or topic becomes a group with its history (asked
-// first). A person's page in 成员 lists the groups you share.
+// first). A person's page in 成员 lists the groups you share. 测试 and turned-off accounts (2026-11-23, protocol.ts isListed)
+// are left out of the 私聊 list, of who a group shows, of @ and of 拉人; what they wrote stays in the chats they were in.
 
 const isChat = (t: Thread) => t.kind === "direct" || t.kind === "topic" || t.kind === "group";
 
@@ -24,8 +25,10 @@ export function ChatList(props: { session: Session; openId: string | null; query
   const chats = threads.filter((t) => isChat(t));
   const live = chats.filter((t) => !t.archived);
   const archived = chats.filter((t) => t.archived && hit(t.title));
-  const others = members.filter((m) => m.name !== me);
-  const groups = live.filter((t) => t.kind === "group" && hit(t.title, ...t.members.map(show))).sort((a, b) => b.updatedAt - a.updatedAt);
+  const others = listedOthers(members, me);
+  const hidden = unlistedNames(members, me);
+  const shownIn = (t: Thread) => t.members.filter((n) => !hidden.has(n));
+  const groups = live.filter((t) => t.kind === "group" && hit(t.title, ...shownIn(t).map(show))).sort((a, b) => b.updatedAt - a.updatedAt);
   // People with recent chats first.
   const withPerson = (name: string) => live.filter((t) => t.kind !== "group" && t.members.includes(name));
   const lastAt = (name: string) => Math.max(0, ...withPerson(name).map((t) => t.updatedAt));
@@ -48,7 +51,7 @@ export function ChatList(props: { session: Session; openId: string | null; query
           avatar={groupMark}
           title={t.title}
           time={timeText(t.updatedAt)}
-          sub={t.last ? `${show(t.last.author)}：${preview(t.last)}` : `${t.members.length} 人`}
+          sub={t.last ? `${show(t.last.author)}：${preview(t.last)}` : `${shownIn(t).length} 人`}
           badge={t.unread}
           unread={t.unread > 0}
           current={t.id === props.openId}
@@ -132,8 +135,9 @@ export function ChatList(props: { session: Session; openId: string | null; query
 
 /** The groups someone and I are both in (a person's page in 成员). */
 export function SharedGroups({ session, name, onOpen }: { session: Session; name: string; onOpen: (id: string) => void }) {
-  const { threads } = useSession(session);
+  const { threads, members } = useSession(session);
   const show = useDisplayName();
+  const hidden = unlistedNames(members, session.me.name);
   const groups = threads.filter((t) => t.kind === "group" && t.members.includes(name)).sort((a, b) => b.updatedAt - a.updatedAt);
   return (
     <>
@@ -144,7 +148,7 @@ export function SharedGroups({ session, name, onOpen }: { session: Session; name
           <span className="grow">
             <b>{t.title}</b>
             <span className="muted tiny ellipsis">
-              {t.members.length} 人 · {t.members.map(show).join("、")}
+              {t.members.filter((n) => !hidden.has(n)).length} 人 · {t.members.filter((n) => !hidden.has(n)).map(show).join("、")}
             </span>
           </span>
           {t.archived && <span className="chip">已归档</span>}
@@ -205,6 +209,8 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
   const online = members.find((m) => m.name === other)?.online;
   const [dialog, setDialog] = useState<"add" | "rename" | "topic" | null>(null);
   const group = thread.kind === "group";
+  const hidden = unlistedNames(members, me);
+  const shown = thread.members.filter((n) => !hidden.has(n));
 
   const copyAll = async () => {
     if (!messages) return;
@@ -229,12 +235,12 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
             <span className="page-crumb">{group ? "群聊" : thread.kind === "topic" ? <>和 <Who name={other} /> 的话题</> : "私聊"}</span>
             {group ? (
               <span className="faces">
-                {thread.members.map((n) => (
+                {shown.map((n) => (
                   <span key={n} className="face" title={show(n)}>
                     <Avatar name={n} small />
                   </span>
                 ))}
-                <span className="muted tiny">{thread.members.length} 人</span>
+                <span className="muted tiny">{shown.length} 人</span>
               </span>
             ) : (
               <span className={`conn-chip ${online ? "online" : ""}`}>
@@ -275,7 +281,7 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
         </div>
       </header>
       <MessageList messages={messages} error={error} me={me} questions={[]} empty={group ? "群聊里还没有消息。" : thread.kind === "topic" ? `新话题「${thread.title}」，说点什么吧。` : "还没有消息，说点什么吧。"} />
-      <MentionComposer session={session} thread={thread} people={members.filter((m) => m.name !== me)} toast={toast} />
+      <MentionComposer session={session} thread={thread} people={listedOthers(members, me)} toast={toast} />
       {dialog === "add" && <AddPeopleDialog session={session} thread={thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog === "rename" && <RenameDialog session={session} thread={thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog === "topic" && <NewTopicDialog other={other} onClose={() => setDialog(null)} onNewTopic={onNewTopic} />}
@@ -395,7 +401,7 @@ function MentionComposer({ session, thread, people, toast }: { session: Session;
 function AddPeopleDialog({ session, thread, onClose, toast }: { session: Session; thread: Thread; onClose: () => void; toast: (t: string) => void }) {
   const { members } = useSession(session);
   const show = useDisplayName();
-  const outside = members.filter((m) => !thread.members.includes(m.name));
+  const outside = listedOthers(members, session.me.name).filter((m) => !thread.members.includes(m.name));
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const go = async () => {

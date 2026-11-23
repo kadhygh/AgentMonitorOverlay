@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { RELAY_TEXT_MAX, TEAM_SEND_FILES_MAX, type Id, type MessageOrigin, type TeamSend, type TeamThread } from "@amo-studio/protocol";
-import { RelayClient, RelayClientError, downloadFile, dueForAi, filesAsText, newRepliesText, takeSession, threadAsText, type Downloaded, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
+import { RelayClient, RelayClientError, downloadFile, listedOthers, dueForAi, filesAsText, newRepliesText, takeSession, threadAsText, type Downloaded, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -108,7 +108,7 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
     if (body.length > RELAY_TEXT_MAX) throw new HostError("bad_request", `body is limited to ${RELAY_TEXT_MAX} characters`);
     if (to === me) throw new HostError("bad_request", `你用的就是 ${me} 的身份：要问 ${me} 本人，直接在对话里问。`);
     const members = await this.call(() => client.members());
-    if (!members.some((m) => m.name === to)) throw new HostError("bad_request", `团队里没有「${to}」。能找的人：${members.filter((m) => m.name !== me).map((m) => m.name).join("、") || "（还没有别人）"}`);
+    if (!members.some((m) => m.name === to)) throw new HostError("bad_request", `团队里没有「${to}」。能找的人：${listedOthers(members, me).map((m) => m.name).join("、") || "（还没有别人）"}`);
     const files = localFiles(input.files);
     return this.asked(this.saveSend({ id: newId("tsend"), sessionId, kind: "ask", to, title, threadId: null, body, questions: questions(input.questions), files, state: "pending", createdAt: new Date().toISOString(), decidedAt: null }));
   }
@@ -227,7 +227,8 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
 
   async members(): Promise<Array<{ name: string; nick: string; role: string; online: boolean }>> {
     const { client, me } = this.relay();
-    return (await this.call(() => client.members())).filter((m) => m.name !== me).map((m) => ({ name: m.name, nick: m.nick, role: m.role, online: m.online }));
+    // Not 测试 or turned-off accounts (2026-11-23, the 中转 service's 账号类型), as in the 中转 client's pickers.
+    return listedOthers(await this.call(() => client.members()), me).map((m) => ({ name: m.name, nick: m.nick, role: m.role, online: m.online }));
   }
 
   /** A 中转 session the person is in (asked, was asked, or a member of), fresh from the server. */
