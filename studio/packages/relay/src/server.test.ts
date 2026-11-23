@@ -14,7 +14,7 @@ import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
 import { createRelayMcp } from "./mcp.js";
 import { downloadFile, downloadsDir, safeFileName } from "./download.js";
-import { isListed, listedOthers, unlistedNames, type RelayEvent } from "./protocol.js";
+import { chatTitleFor, isListed, listedOthers, unlistedNames, type RelayEvent } from "./protocol.js";
 import { acceptsGzip, adminOrder, FETCH_BAD_PORTS, startRelayServer, type RelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 import { newRepliesText, usagePrompt } from "./usage.js";
@@ -214,6 +214,30 @@ describe("relay service", () => {
     expect(isListed({ kind: "test" })).toBe(false);
     expect(isListed({ kind: "test" }, { kind: "test" })).toBe(true);
     expect(isListed({ kind: "test", disabled: true }, { kind: "test" })).toBe(false);
+  });
+
+  it("a group never renamed (its people's names joined by 、) is shown without the 测试 and turned-off ones — to a test account, without the turned-off ones; all gone, as it is", async () => {
+    const { url, planner } = await service();
+    const anon = new RelayClient(url);
+    await anon.register("测试小赵", "pw-zhao", { passphrase: "芝麻开门" });
+    await anon.register("离职老周", "pw-zhou", { passphrase: "芝麻开门" });
+    store!.setKind("测试小赵", "test");
+    store!.setDisabled("离职老周", true);
+    // The title the service makes when a chat becomes a group.
+    const g = await planner.addMembers((await planner.direct("程序老李")).id, ["测试小赵", "离职老周"]);
+    expect(g.title).toBe("策划小王、程序老李、测试小赵、离职老周");
+    const members = await planner.members();
+    expect(chatTitleFor(g, members, "策划小王")).toBe("策划小王、程序老李");
+    expect(chatTitleFor(g, members, "测试小赵")).toBe("策划小王、程序老李、测试小赵");
+    // Every name would go: the title as it is.
+    expect(chatTitleFor({ kind: "group", title: "测试小赵、离职老周" }, members, "策划小王")).toBe("测试小赵、离职老周");
+    // A title someone wrote, a name that is no account, a topic: as they are.
+    expect(chatTitleFor({ kind: "group", title: "数值、测试小赵" }, members, "策划小王")).toBe("数值、测试小赵");
+    expect(chatTitleFor({ kind: "group", title: "射速改版" }, members, "策划小王")).toBe("射速改版");
+    expect(chatTitleFor({ kind: "topic", title: "程序老李、测试小赵" }, members, "策划小王")).toBe("程序老李、测试小赵");
+    // Renamed by someone: kept.
+    const renamed = await planner.rename(g.id, "射速讨论");
+    expect(chatTitleFor(renamed, members, "策划小王")).toBe("射速讨论");
   });
 
   it("opens a members table from before 账号类型: everyone in it is 正式", () => {

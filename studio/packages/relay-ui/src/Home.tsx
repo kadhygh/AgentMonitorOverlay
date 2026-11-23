@@ -15,7 +15,7 @@ import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
 import { ShellUpdatePage, useShellUpdate } from "./ShellUpdate.js";
 import { SettingsDialog, type SettingsPart } from "./Settings.js";
-import { ACCOUNT_KINDS, isAccountKind, listedOthers, unlistedNames, usagePointer, usagePrompt, type Member, type RelayDevice, type TaskView, type ThreadView as Thread } from "./shared.js";
+import { ACCOUNT_KINDS, chatTitleFor, isAccountKind, listedOthers, unlistedNames, usagePointer, usagePrompt, type Member, type RelayDevice, type TaskView, type ThreadView as Thread } from "./shared.js";
 import { ConnChip, flowIsNew, markFlowSeen, QueueStrip, Shortcuts, StatusStrips } from "./SideFoot.js";
 import { Board, filterLabel, FlowDialog, HandedRow, matches, NewTaskDialog, TaskPage, TransferDialog, type TaskFilter, type TaskPane } from "./Tasks.js";
 import { writeUsageFile } from "./usageFile.js";
@@ -166,9 +166,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             : m.kind === "reply"
               ? `${m.author} 回复了`
               : m.mentions?.includes(me)
-                ? `${m.author} 在「${t?.title || "聊天"}」里 @ 了你`
+                ? `${m.author} 在「${(t && chatTitleFor(t, session.snapshot.members, me)) || "聊天"}」里 @ 了你`
                 : t?.kind === "topic" || t?.kind === "group"
-                  ? `${m.author} · ${t.title}`
+                  ? `${m.author} · ${chatTitleFor(t, session.snapshot.members, me)}`
                   : m.author;
         shell?.notify({ title, body: m.kind === "request" ? (t?.title ?? preview(m)) : preview(m).slice(0, 120), threadId: m.threadId });
       }),

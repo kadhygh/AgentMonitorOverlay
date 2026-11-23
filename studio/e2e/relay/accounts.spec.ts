@@ -89,7 +89,13 @@ test("测试 and turned-off accounts: out of the chat list and the pickers, thei
   await expect(person(page, "策划小王")).toBeVisible();
   await expect(person(page, "测试小赵")).toHaveCount(0);
   await expect(person(page, "离职老周")).toHaveCount(0);
+  // The group's title, made of its people's names when it became one, is without the test account's name.
+  // (Its last message, by the test account, still says who wrote it.)
+  await expect(page.locator(".chat-row.group .list-row-title").first()).toHaveText("策划小王、程序老李");
+  await expect(page.locator(".chat-row.group .list-row-subtext").first()).toHaveText("测试小赵：测试号在群里说的话");
   await page.locator(".chat-row.group").first().click();
+  await expect(page.locator(".page-head .head-title")).toHaveText("策划小王、程序老李");
+  await expect(page.locator(".mention-box textarea")).toHaveAttribute("placeholder", /^发到「策划小王、程序老李」/);
   await expect(page.locator(".page-head .faces .face")).toHaveCount(2);
   await expect(page.locator(".page-head .faces")).toContainText("2 人");
   await expect(page.locator(".view")).toContainText("测试号在群里说的话");

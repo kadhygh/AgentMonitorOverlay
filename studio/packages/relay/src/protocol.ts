@@ -63,6 +63,22 @@ export function unlistedNames(members: Array<Pick<Member, "name" | "kind" | "dis
   return new Set(members.filter((m) => m.name !== me && !isListed(m, viewer)).map((m) => m.name));
 }
 
+/**
+ * A chat's title as `me` sees it (2026-11-23, the user agreed): a group never renamed has the names of its people when it
+ * became one (RelayStore.addMembers: 「策划小王、程序老李、测试小赵」); those `me` is not shown (unlistedNames) are left
+ * out. A title is taken for such a one when it is two or more account names joined by 「、」 (the service keeps no mark of
+ * a rename); when every name would go, it stays as it is. Any other title, and other kinds of chat, as they are.
+ */
+export function chatTitleFor(thread: Pick<Thread, "kind" | "title">, members: Array<Pick<Member, "name" | "kind" | "disabled">>, me: string): string {
+  if (thread.kind !== "group") return thread.title;
+  const parts = thread.title.split("、");
+  const known = new Set(members.map((m) => m.name));
+  if (parts.length < 2 || !parts.every((p) => known.has(p))) return thread.title;
+  const hidden = unlistedNames(members, me);
+  const kept = parts.filter((p) => !hidden.has(p));
+  return kept.length ? kept.join("、") : thread.title;
+}
+
 /** direct: the one plain chat per pair; topic: more chats between the same two, each about one thing; group: three or
  * more (a direct chat or topic becomes one when someone is @-ed into it, its history with it); cowork: a 协作's 群聊
  * (2026-11-23, cowork-protocol.ts). */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Avatar, preview, timeText, useDisplayName, Who } from "./bits.js";
+import { Avatar, preview, timeText, useChatTitle, useDisplayName, Who } from "./bits.js";
 import { Dialog, Field } from "./Dialog.js";
 import { copyText } from "./env.js";
 import { ListRow, ListSection } from "./Layout.js";
@@ -20,15 +20,16 @@ export function ChatList(props: { session: Session; openId: string | null; query
   const { threads, members } = useSession(props.session);
   const show = useDisplayName();
   const me = props.session.me.name;
+  const titleOf = useChatTitle(me);
   const q = props.query.trim().toLowerCase();
   const hit = (...words: string[]) => !q || words.some((w) => w.toLowerCase().includes(q));
   const chats = threads.filter((t) => isChat(t));
   const live = chats.filter((t) => !t.archived);
-  const archived = chats.filter((t) => t.archived && hit(t.title));
+  const archived = chats.filter((t) => t.archived && hit(titleOf(t)));
   const others = listedOthers(members, me);
   const hidden = unlistedNames(members, me);
   const shownIn = (t: Thread) => t.members.filter((n) => !hidden.has(n));
-  const groups = live.filter((t) => t.kind === "group" && hit(t.title, ...shownIn(t).map(show))).sort((a, b) => b.updatedAt - a.updatedAt);
+  const groups = live.filter((t) => t.kind === "group" && hit(titleOf(t), ...shownIn(t).map(show))).sort((a, b) => b.updatedAt - a.updatedAt);
   // People with recent chats first.
   const withPerson = (name: string) => live.filter((t) => t.kind !== "group" && t.members.includes(name));
   const lastAt = (name: string) => Math.max(0, ...withPerson(name).map((t) => t.updatedAt));
@@ -49,7 +50,7 @@ export function ChatList(props: { session: Session; openId: string | null; query
           key={t.id}
           className="chat-row group"
           avatar={groupMark}
-          title={t.title}
+          title={titleOf(t)}
           time={timeText(t.updatedAt)}
           sub={t.last ? `${show(t.last.author)}：${preview(t.last)}` : `${shownIn(t).length} 人`}
           badge={t.unread}
@@ -117,7 +118,7 @@ export function ChatList(props: { session: Session; openId: string | null; query
                 className="chat-row kid archived"
                 title={
                   <>
-                    <span className="tag">{t.kind === "group" ? "群聊" : "话题"}</span> {t.title || "普通聊天"}
+                    <span className="tag">{t.kind === "group" ? "群聊" : "话题"}</span> {titleOf(t) || "普通聊天"}
                   </>
                 }
                 time={timeText(t.updatedAt)}
@@ -138,6 +139,7 @@ export function SharedGroups({ session, name, onOpen }: { session: Session; name
   const { threads, members } = useSession(session);
   const show = useDisplayName();
   const hidden = unlistedNames(members, session.me.name);
+  const titleOf = useChatTitle(session.me.name);
   const groups = threads.filter((t) => t.kind === "group" && t.members.includes(name)).sort((a, b) => b.updatedAt - a.updatedAt);
   return (
     <>
@@ -146,7 +148,7 @@ export function SharedGroups({ session, name, onOpen }: { session: Session; name
         <button key={t.id} type="button" className="box-row group-box" onClick={() => onOpen(t.id)}>
           <span className="avatar sq group">群</span>
           <span className="grow">
-            <b>{t.title}</b>
+            <b>{titleOf(t)}</b>
             <span className="muted tiny ellipsis">
               {t.members.filter((n) => !hidden.has(n)).length} 人 · {t.members.filter((n) => !hidden.has(n)).map(show).join("、")}
             </span>
@@ -211,6 +213,7 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
   const group = thread.kind === "group";
   const hidden = unlistedNames(members, me);
   const shown = thread.members.filter((n) => !hidden.has(n));
+  const title = useChatTitle(me)(thread);
 
   const copyAll = async () => {
     if (!messages) return;
@@ -220,17 +223,17 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
   const leave = async () => {
     try {
       await session.client.leave(thread.id);
-      toast(`已退出「${thread.title}」`);
+      toast(`已退出「${title}」`);
     } catch (err) {
       toast(errorText(err));
     }
   };
 
   return (
-    <section className="view" aria-label={group ? thread.title : other}>
+    <section className="view" aria-label={group ? title : other}>
       <header className="page-head">
         <div className="head-main">
-          <h1 className="head-title">{group || thread.kind === "topic" ? thread.title : <Who name={other} />}</h1>
+          <h1 className="head-title">{group || thread.kind === "topic" ? title : <Who name={other} />}</h1>
           <div className="head-meta">
             <span className="page-crumb">{group ? "群聊" : thread.kind === "topic" ? <>和 <Who name={other} /> 的话题</> : "私聊"}</span>
             {group ? (
@@ -298,6 +301,7 @@ function MentionComposer({ session, thread, people, toast }: { session: Session;
   const [pick, setPick] = useState<{ from: number; query: string } | null>(null);
   const [confirm, setConfirm] = useState<string[] | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const title = useChatTitle(session.me.name)(thread);
   useEffect(() => setText(""), [thread.id]);
 
   const mentioned = useMemo(() => people.filter((p) => text.includes(`@${p.name}`)).map((p) => p.name), [text, people]);
@@ -364,7 +368,7 @@ function MentionComposer({ session, thread, people, toast }: { session: Session;
         value={text}
         onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
         onKeyDown={key}
-        placeholder={thread.kind === "group" ? `发到「${thread.title}」…（@ 某人会提醒他）` : `发给 ${show(thread.members.find((n) => n !== session.me.name) ?? "")}…（@ 别人会把他拉进来，变成群聊）`}
+        placeholder={thread.kind === "group" ? `发到「${title}」…（@ 某人会提醒他）` : `发给 ${show(thread.members.find((n) => n !== session.me.name) ?? "")}…（@ 别人会把他拉进来，变成群聊）`}
         rows={2}
       />
       <div className="acts">
@@ -448,7 +452,7 @@ function AddPeopleDialog({ session, thread, onClose, toast }: { session: Session
 }
 
 function RenameDialog({ session, thread, onClose, toast }: { session: Session; thread: Thread; onClose: () => void; toast: (t: string) => void }) {
-  const [title, setTitle] = useState(thread.title);
+  const [title, setTitle] = useState(useChatTitle(session.me.name)(thread));
   const go = async () => {
     try {
       await session.client.rename(thread.id, title.trim());
