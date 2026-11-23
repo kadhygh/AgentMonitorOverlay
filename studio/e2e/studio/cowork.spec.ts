@@ -1,8 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type ElectronApplication } from "@playwright/test";
 import type { CoworkJoin, Session, Task, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { launchStudio, screenshot, studioRoot, type Studio } from "../support/studio.js";
@@ -14,6 +14,8 @@ import { launchStudio, screenshot, studioRoot, type Studio } from "../support/st
 
 const relay = (await import(pathToFileURL(join(studioRoot, "packages", "relay", "dist", "index.js")).href)) as typeof import("../../packages/relay/src/index.js");
 const account = (await import(pathToFileURL(join(studioRoot, "packages", "account", "dist", "index.js")).href)) as typeof import("../../packages/account/src/index.js");
+
+const lastCopied = (app: ElectronApplication) => app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1));
 
 let root = "";
 let store: InstanceType<typeof relay.RelayStore> | undefined;
@@ -43,10 +45,16 @@ test("协作: 拉进协作, the AI's state, an @ folded into the conversation, c
   await account.saveAccount({ server: server.url, name: "策划小王", key: plannerKey }, { env: { AMO_HOME: home } });
   const c = await coder.createCowork({ title: "射速调整", goal: "把射速上限做成可配，策划能在表里调。", repo: "game", branch: "feat/rate", members: ["策划小王"] });
 
-  studio = await launchStudio({ env: { AMO_HOME: home } });
+  // The 中转 client this computer has open (its running.json): the 协作 line starts it; test mode only records that.
+  const relayHome = join(root, "relay-home");
+  mkdirSync(relayHome, { recursive: true });
+  const relayExe = join(relayHome, "AMO 中转.exe");
+  writeFileSync(relayExe, "");
+  writeFileSync(join(relayHome, "running.json"), JSON.stringify({ pid: 1, exe: relayExe, startedAt: new Date().toISOString() }));
+  studio = await launchStudio({ env: { AMO_HOME: home, AMO_RELAY_HOME: relayHome } });
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const { session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "射速文档", workspaceId: ws.id, firstSession: { profileId: "claude-mock", title: "射速文档", text: "先读一下设计文档。" } });
+  const { task, session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "射速文档", workspaceId: ws.id, firstSession: { profileId: "claude-mock", title: "射速文档", text: "先读一下设计文档。" } });
   await page.getByTestId("task-card").filter({ hasText: "射速文档" }).click();
   const transcript = page.getByTestId("thread");
   await expect(transcript).toContainText("先读一下设计文档。", { timeout: 60_000 });
@@ -68,6 +76,26 @@ test("协作: 拉进协作, the AI's state, an @ folded into the conversation, c
   const mark = (await studio.api<CoworkJoin[]>("GET", "/api/cowork/joined"))[0]!.mark;
   await expect.poll(async () => (await coder.cowork(c.id)).cowork.agents.map((a) => [a.name, a.state]), { timeout: 30_000 }).toEqual([["策划小王 的 AI · 射速文档", "idle"]]);
   await screenshot(app, "cowork", "C2-line", page);
+
+  // 复制会话引用 and 复制编号 (2026-11-23): the lines to paste to an AI, the session's with the mark the 协作 knows it by.
+  await page.getByTestId("session-more").click();
+  await expect(page.getByTestId("session-copy-ref")).toHaveText("复制会话引用");
+  await screenshot(app, "cowork", "C7-session-menu", page);
+  await page.getByTestId("session-copy-ref").click();
+  await expect.poll(() => lastCopied(app)).toBe(`Studio 会话「射速文档」 ${mark}（任务 ${task.id}）`);
+  await expect(page.getByTestId("copied-ref")).toContainText(`已复制会话引用：Studio 会话「射速文档」 ${mark}`);
+  await screenshot(app, "cowork", "C8-copied-session-ref", page);
+  await page.getByTestId("task-copy-ref").click();
+  await expect.poll(() => lastCopied(app)).toBe(`任务「射速文档」 ${task.id}`);
+  await expect(page.getByTestId("copied-ref").last()).toContainText(`已复制任务编号：任务「射速文档」 ${task.id}`);
+
+  // The line opens the 协作 in the 中转 client: the Host starts the open one with --open=cowork:<id>.
+  const opened = page.waitForResponse((r) => r.url().includes("/api/cowork/open-in-relay"));
+  await line.getByTestId("cowork-open").hover();
+  await screenshot(app, "cowork", "C9-line-hover", page);
+  await line.getByTestId("cowork-open").click();
+  expect(await (await opened).json()).toMatchObject({ exe: relayExe, from: "running.json", args: [`--open=cowork:${c.id}`], dryRun: true });
+  await expect(page.getByTestId("cowork-opened")).toContainText("正在 AMO 中转里打开协作「射速调整」");
 
   // Words in the composer: 等主人 (and the 协作 sees it).
   await page.getByLabel("输入消息").fill("我想想");

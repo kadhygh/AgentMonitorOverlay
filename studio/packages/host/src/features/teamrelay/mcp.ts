@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { fail, json, writeAsync, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
-import type { TeamSend } from "@amo-studio/protocol";
+import { refId, type TeamSend } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { sizeText } from "@amo-studio/relay/light";
 import { coworkTools } from "./cowork-mcp.js";
@@ -19,6 +19,9 @@ const questionsSchema = z
  * person waits for the person in Studio itself (team_ask, team_followup; or goes at once when they turned that off),
  * the rest only reads or closes.
  */
+/** A threadId as given, or as the person copied it in the 中转 client (`thread:<id>`, or the whole line; 2026-11-23). */
+const threadOf = (v: unknown) => (typeof v === "string" ? refId(v, "thread") : v);
+
 export function teamRelayTools(ctx: ToolContext): AmoTool[] {
   const { service, caller } = ctx;
   const t = service.teamRelay;
@@ -64,7 +67,7 @@ export function teamRelayTools(ctx: ToolContext): AmoTool[] {
       inputSchema: { threadId: z.string(), body: z.string(), questions: questionsSchema },
       readOnly: false,
       autoApprove: true,
-      run: (args) => writeAsync(caller, async (c) => answer(await t.requestFollowup(c.sessionId, args))),
+      run: (args) => writeAsync(caller, async (c) => answer(await t.requestFollowup(c.sessionId, { ...args, threadId: threadOf(args.threadId) }))),
     },
     {
       name: "team_done",
@@ -73,16 +76,16 @@ export function teamRelayTools(ctx: ToolContext): AmoTool[] {
       inputSchema: { threadId: z.string(), note: z.string().optional() },
       readOnly: false,
       autoApprove: true,
-      run: (args) => writeAsync(caller, async (c) => ({ ...(await t.done(c.sessionId, args)), note: "已标记完成。" })),
+      run: (args) => writeAsync(caller, async (c) => ({ ...(await t.done(c.sessionId, { ...args, threadId: threadOf(args.threadId) })), note: "已标记完成。" })),
     },
     {
       name: "team_session",
       title: "读中转会话",
-      description: "A 中转 session in full: the request, every answer, verdicts, notes, and the files in it (fileId for team_file_get). Replies come into this conversation by themselves; use this to look back.",
+      description: "A 中转 session in full: the request, every answer, verdicts, notes, and the files in it (fileId for team_file_get). Replies come into this conversation by themselves; use this to look back. threadId: also as the person copied it in the 中转 client (`thread:<id>`, or the whole 「中转会话「…」 thread:<id>」 line).",
       inputSchema: { threadId: z.string() },
       readOnly: true,
       autoApprove: true,
-      run: (args) => read(() => t.read(args.threadId)),
+      run: (args) => read(() => t.read(threadOf(args.threadId))),
     },
     {
       // 2026-11-13 (the user: Studio 里的 team_* 那条路也要能拿到附件): the files a reply lists, onto this computer.
@@ -95,7 +98,7 @@ export function teamRelayTools(ctx: ToolContext): AmoTool[] {
       run: async (args) => {
         if (!caller) return fail("这次调用没有 AMO 会话身份。");
         try {
-          const got = await t.fileGet(args);
+          const got = await t.fileGet({ ...args, threadId: threadOf(args.threadId) });
           const f = got.file;
           const type = f.type.split(";")[0]!.trim();
           const head = `${got.reused ? "已经取过这个文件（内容一致，没有重新下载）" : "已取下"}：${f.name} v${f.version} · ${type} · ${sizeText(f.size)} · ${f.by} 上传\n${got.path}`;

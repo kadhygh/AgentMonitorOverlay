@@ -41,6 +41,7 @@ export function SessionHead({
   onError,
   onBindTodo,
   onCowork,
+  onCopyRef,
 }: {
   link: HostLink;
   session: Session;
@@ -72,6 +73,8 @@ export function SessionHead({
   onBindTodo?(): void;
   /** 拉进协作 (2026-11-23, teamrelay/Cowork.tsx): absent where it cannot be (a remote task's copy, an archived session). */
   onCowork?(): void;
+  /** 复制会话引用 (2026-11-23, lib/copyRef.ts): absent for a remote task's copy (the line names this computer's device). */
+  onCopyRef?(): void;
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
@@ -226,6 +229,11 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
           {onCowork && (
             <button type="button" role="menuitem" title="把这个会话拉进 AMO 中转上的一个协作：它以你的 AI 的身份在里面回复、提问、写白板" onClick={pick(onCowork)} data-testid="session-cowork">
               拉进协作…
+            </button>
+          )}
+          {onCopyRef && (
+            <button type="button" role="menuitem" title="复制一行「Studio 会话「名」 studio:设备号:会话id（任务 …）」，贴给 AI 或别人，让对方知道说的是哪个会话" onClick={pick(onCopyRef)} data-testid="session-copy-ref">
+              复制会话引用
             </button>
           )}
         </PopMenu>

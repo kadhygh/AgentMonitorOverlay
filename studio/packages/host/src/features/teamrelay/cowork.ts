@@ -1,10 +1,11 @@
-import { inTurn, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
+import { inTurn, refId, sessionRefText, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
 import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type AgentReport, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type Message, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { coworkHint, coworkTold, resetCoworkTold, setCoworkTell } from "../../core/cowork.js";
 import { beforeText, boardOpsText, boardText, concludedText, COWORK_BRIEF, coworkOverview, type CoworkFiles, deliveryFrom, deliveryText, deliveryWhere, joinedLine, messagesSection, oneMessageText, postResultText, sessionText } from "./cowork-text.js";
 import type { TeamRelayFeature } from "./service.js";
+import { findRelayClient, relayClientLaunch, relayTarget, startRelayClient, type RelayClientFound, type RelayClientLaunch } from "./relay-client.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): Studio's end of a 协作 on AMO 中转 (relay/src/cowork-protocol.ts tells
 // how the service runs it). The person brings a session in (拉进协作); from then on its agent may speak there as their
@@ -394,10 +395,11 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { prefix } = this.relay();
     const mark = `${prefix}${sessionId}`;
     const list = this.joined().filter((j) => j.mark === mark);
-    const asked = typeof coworkIdValue === "string" && coworkIdValue.trim() ? coworkIdValue.trim() : null;
+    // A reference the person copied in the 中转 client (`cowork:<id>`, or the whole line) names it too (2026-11-23, 复制引用).
+    const asked = typeof coworkIdValue === "string" && coworkIdValue.trim() ? refId(coworkIdValue, "cowork") : null;
     if (asked) {
       const j = list.find((x) => x.coworkId === asked);
-      if (!j) throw new HostError("bad_request", `这个会话不在协作 ${asked} 里${list.length ? `。它在：${list.map((x) => `「${x.coworkTitle}」（${x.coworkId}）`).join("、")}` : "：人要先在 Studio 里把会话「拉进协作」"}。`);
+      if (!j) throw new HostError("bad_request", `这个会话不在协作 ${asked} 里：cowork_* 只能读写这个会话被拉进的协作，要用它就请人先在 Studio 里把这个会话「拉进协作」（会话的「更多」菜单）${list.length ? `。它现在在：${list.map((x) => `「${x.coworkTitle}」（${x.coworkId}）`).join("、")}` : ""}。`);
       return { coworkId: j.coworkId, mark, join: j };
     }
     if (!list.length) throw new HostError("bad_request", "这个会话不在任何协作里：人要先在 Studio 里把它「拉进协作」（会话的「更多」菜单）。");
@@ -433,7 +435,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { client } = this.relay();
     const detail = await this.call(() => client.cowork(coworkId));
     const c = detail.cowork;
-    const threadId = typeof input.threadId === "string" && input.threadId.trim() ? input.threadId.trim() : null;
+    const threadId = typeof input.threadId === "string" && input.threadId.trim() ? refId(input.threadId, "thread") : null;
     const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
     const forMe = this.forMe(detail.deliveries, mark);
     const seq = num(input.seq);
@@ -599,7 +601,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
   async conclude(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; conclusion?: unknown }): Promise<string> {
     const { coworkId, mark } = this.mine(sessionId, input.coworkId);
     const { client, me } = this.relay();
-    const threadId = text(input.threadId, "threadId");
+    const threadId = refId(text(input.threadId, "threadId"), "thread");
     const conclusion = text(input.conclusion, "conclusion");
     const detail = await this.call(() => client.cowork(coworkId));
     const s = detail.cowork.sessions.find((x) => x.id === threadId);
@@ -615,7 +617,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { coworkId, mark, join } = this.mine(sessionId, input.coworkId);
     const { client, me } = this.relay();
     const body = text(input.body, "body");
-    const threadId = typeof input.threadId === "string" && input.threadId.trim() ? input.threadId.trim() : undefined;
+    const threadId = typeof input.threadId === "string" && input.threadId.trim() ? refId(input.threadId, "thread") : undefined;
     const out = await this.call(() =>
       client.postCowork(coworkId, {
         kind: "text",
@@ -760,6 +762,33 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const taskId = target.taskId ?? "";
     this.publish({ type: "ui.open", taskId, sessionId: target.id, at: new Date().toISOString() });
     return { taskId, sessionId: target.id };
+  }
+
+  // ---- 复制引用 and 从 Studio 打开中转客户端 (2026-11-23, 中转迭代讨论; protocol/src/refs.ts, relay-client.ts)
+
+  /** Test runs (AMO_STUDIO_TEST=1) only record the client's starts. */
+  readonly relayLaunches: RelayClientLaunch[] = [];
+
+  /** 复制会话引用: `Studio 会话「名」 studio:<设备号>:<会话id>（任务 …）` — the session's mark in a 协作 is the same. */
+  sessionRef(sessionIdValue: unknown): { text: string } {
+    const s = this.store.getSession(text(sessionIdValue, "sessionId"));
+    if (!s) throw new HostError("not_found", "没有这个会话");
+    const device = this.teamLink.device;
+    if (!device) throw new HostError("conflict", "这台电脑还没有设备号（AMO 平台或 Studio 第一次连团队服务器时生成），会话引用要带它");
+    return { text: sessionRefText(this.sessionName(s), device.id, s.id, s.taskId) };
+  }
+
+  /** The 协作 line: the 中转 client opens `cowork:<id>` (or `thread:<id>`); started when it is not open. */
+  openInRelay(targetValue: unknown): { exe: string; from: RelayClientFound["from"]; args: string[]; dryRun: boolean } {
+    const target = relayTarget(targetValue);
+    if (!target) throw new HostError("bad_request", "要打开的应当是 cowork:<id> 或 thread:<id>");
+    const found = findRelayClient(process.env);
+    if (!found) throw new HostError("not_found", "没找到 AMO 中转客户端，在 AMO 平台里装一下");
+    const launch = relayClientLaunch(found, target, process.env);
+    const dryRun = process.env.AMO_STUDIO_TEST === "1";
+    if (dryRun) this.relayLaunches.push(launch);
+    else startRelayClient(launch);
+    return { exe: found.exe, from: found.from, args: launch.args, dryRun };
   }
 }
 

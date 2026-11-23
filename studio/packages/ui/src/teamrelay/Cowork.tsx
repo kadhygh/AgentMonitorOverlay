@@ -4,7 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useLiveResource } from "../host/live.js";
 import { Modal } from "../lib/Modal.js";
 import { defaultProfile, lastWorkspace, pickable, profileLabel, rememberProfile } from "../lib/profiles.js";
-import { OpenInRelay, useRelayAvailable } from "./TeamRelay.js";
+import { showToast } from "../lib/toast.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): the Studio end. A session is brought into a 协作 on AMO 中转 from its
 // 「更多」 menu (拉进协作…); a line under its bar says which 协作 it is in, how its AI stands there (the state this Host
@@ -31,7 +31,6 @@ export function useCoworkJoined(link: HostLink | null): CoworkJoin[] {
 /** Under a session's bar: the 协作 it is in. */
 export function CoworkBar({ link, session, joined, onError }: { link: HostLink; session: Session; joined: readonly CoworkJoin[]; onError(text: string): void }) {
   const mine = joined.filter((j) => j.sessionId === session.id);
-  const relay = useRelayAvailable();
   const [busy, setBusy] = useState(false);
   if (!mine.length) return null;
   const leave = async (j: CoworkJoin) => {
@@ -44,6 +43,16 @@ export function CoworkBar({ link, session, joined, onError }: { link: HostLink; 
       setBusy(false);
     }
   };
+  // The line opens the 协作 in the AMO 中转 client (2026-11-23, 反向跳转): the Host starts it with --open=cowork:<id>. An
+  // older client starts without going there; Studio cannot tell, so the notice does not promise it.
+  const open = async (j: CoworkJoin) => {
+    try {
+      await call(link, "POST /api/cowork/open-in-relay", {}, { target: `cowork:${j.coworkId}` });
+      showToast({ text: `正在 AMO 中转里打开协作「${j.coworkTitle}」。`, testId: "cowork-opened" });
+    } catch (err) {
+      onError(err instanceof HostApiError ? err.message : String(err));
+    }
+  };
   return (
     <div className="cowork-bar" data-testid="cowork-bar">
       {mine.map((j) => {
@@ -51,19 +60,18 @@ export function CoworkBar({ link, session, joined, onError }: { link: HostLink; 
         return (
           <span key={j.coworkId} className="cowork-line" data-testid="cowork-line" data-state={j.state}>
             <span className="cowork-mark">协作</span>
-            <span className="cowork-text" title={`在协作里显示为「${j.name}」`}>
+            <button type="button" className="cowork-text cowork-open" title={`在 AMO 中转里打开这个协作（这个会话在里面显示为「${j.name}」）`} onClick={() => void open(j)} data-testid="cowork-open">
               「{j.coworkTitle}」{j.ended ? "（已结束）" : ""} · 这个会话的 AI：
               <span className={`cowork-state ${j.state}`} title={st.hint} data-testid="cowork-state">
                 {st.mark} {st.label}
               </span>
               {j.queued > 0 && <span className="cowork-dim"> · 排队 {j.queued} 条</span>}
-            </span>
+            </button>
             {j.drafts > 0 && (
               <span className="cowork-drafts" title="「AI 发起 @ 和提问」关着：AI 想 @ 人或开子会话时先存成草稿，在中转里发出或不发" data-testid="cowork-drafts">
                 {j.drafts} 条草稿等你确认
               </span>
             )}
-            {relay && <OpenInRelay threadId={j.coworkId} title="在 AMO 中转里打开这个协作" />}
             <button type="button" className="btn-ghost small dim" disabled={busy} title="让这个会话离开协作：排队给它的消息不再送进来；以后可以再拉进来" onClick={() => void leave(j)} data-testid="cowork-leave">
               退出
             </button>

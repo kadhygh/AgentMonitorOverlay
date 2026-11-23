@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { REMOTE_KINDS, REMOTE_ORDER_SINCE, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_KINDS, REMOTE_ORDER_SINCE, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, taskRefText, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { rememberSession } from "../shell/lastPlace.js";
 import { navHistory } from "../shell/navHistory.js";
@@ -52,6 +52,7 @@ import { useStoredIds } from "../lib/storedIds.js";
 import { ALSO_MINE_KEY, PINNED_KEY } from "../focus/pins.js";
 import { readStored, writeStored } from "../lib/stored.js";
 import { writeSessionDraft } from "./sessionDraft.js";
+import { copySessionRef, copyTaskRef } from "../lib/copyRef.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -396,21 +397,27 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       <div className="page-head task-head">
         <BackButton label={backLabel} onClick={onBack} />
         <div className="task-head-main">
-          <h1 className="task-title" data-testid="task-title">
-            <EditableName
-              value={task.title}
-              placeholder="未命名任务"
-              label="任务名"
-              // A remote task is renamed on its own computer (2026-10-30), not while it is away or the grant is gone.
-              disabled={!!task.archivedAt || (!!copy && (copy.state === "revoked" || !!copy.blocked))}
-              onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
-            />
-            {task.lead && (
-              <span className="lead-badge" title="主控：协调这个专题（或项目）的任务。在 ⋯ 里可以取消" data-testid="task-lead">
-                主控
-              </span>
-            )}
-          </h1>
+          <div className="task-title-row">
+            <h1 className="task-title" data-testid="task-title">
+              <EditableName
+                value={task.title}
+                placeholder="未命名任务"
+                label="任务名"
+                // A remote task is renamed on its own computer (2026-10-30), not while it is away or the grant is gone.
+                disabled={!!task.archivedAt || (!!copy && (copy.state === "revoked" || !!copy.blocked))}
+                onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
+              />
+              {task.lead && (
+                <span className="lead-badge" title="主控：协调这个专题（或项目）的任务。在 ⋯ 里可以取消" data-testid="task-lead">
+                  主控
+                </span>
+              )}
+            </h1>
+            {/* 复制编号 (2026-11-23): beside the name, outside it (the name's text stays the name). */}
+            <button type="button" className="btn-ghost small dim task-copy-ref" title={`复制「${taskRefText(task.title, task.id)}」，贴给 AI 或别人`} onClick={() => void copyTaskRef(task.title, task.id)} data-testid="task-copy-ref">
+              复制编号
+            </button>
+          </div>
           <TaskMeta
             task={task}
             workspace={taskWorkspace}
@@ -736,6 +743,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onError={showError}
               {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: head.id, sessionTitle: head.title }) } : {})}
               {...(!copy && !head.archivedAt && head.kind !== "sub" ? { onCowork: () => setCoworking(head.id) } : {})}
+              {...(!copy ? { onCopyRef: () => void copySessionRef(link, head.id) } : {})}
             />
           )}
           {head && <SessionBanners session={head} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(head.id)} onReclaim={() => void reclaim(head.id)} />}

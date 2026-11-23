@@ -20,13 +20,13 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
       throw err;
     }
   };
-  const coworkId = z.string().optional().describe("The 协作 (coworkId); may be left out when this session is in only one.");
+  const coworkId = z.string().optional().describe("The 协作 (coworkId, or `cowork:<id>` as the person copied it); may be left out when this session is in only one.");
   return [
     {
       name: "cowork_read",
       title: "读协作",
       description:
-        `The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, the files in its 群聊 and 子会话 (threadId and fileId for team_file_get), your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo) — kept short: those that @ you or answer you whole, others cut to ${COWORK_BRIEF.clipChars} characters, about ${COWORK_BRIEF.readChars} characters from the newest back, older ones one line each (#seq · who · where · how it starts). threadId: one 子会话 instead (with its files): its opening question whole, the rest the same way within ${COWORK_BRIEF.sessionChars}. seq: one message whole (a cut or one-line one). before: the messages before that #seq, to page back (with threadId: in that 子会话). after: read from that #seq. A long discussion: read the goal, 已定的事 and the 白板 (cowork_board) first, and open messages only when you need them.`,
+        `The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, the files in its 群聊 and 子会话 (threadId and fileId for team_file_get), your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo) — kept short: those that @ you or answer you whole, others cut to ${COWORK_BRIEF.clipChars} characters, about ${COWORK_BRIEF.readChars} characters from the newest back, older ones one line each (#seq · who · where · how it starts). threadId: one 子会话 instead (with its files): its opening question whole, the rest the same way within ${COWORK_BRIEF.sessionChars}. seq: one message whole (a cut or one-line one). before: the messages before that #seq, to page back (with threadId: in that 子会话). after: read from that #seq. A long discussion: read the goal, 已定的事 and the 白板 (cowork_board) first, and open messages only when you need them. A reference the person pasted from the 中转 client: "cowork:<id>" is coworkId, "thread:<id>" threadId, "#<seq>（协作… cowork:<id>）" seq with that coworkId — only for a 协作 this session was brought into; for another, tell the person to bring this session into it first (拉进协作).`,
       inputSchema: {
         coworkId,
         threadId: z.string().optional(),

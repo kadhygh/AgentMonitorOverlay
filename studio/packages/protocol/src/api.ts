@@ -1015,6 +1015,15 @@ export interface HostRoutes
   "POST /api/cowork/handoff/accept": { req: { threadId: string; sessionId?: Id; newTask?: { workspaceId: Id; profileId: Id } }; res: { taskId: Id; sessionId: Id } };
   /** Puts one away (不转了). */
   "POST /api/cowork/handoff/dismiss": { req: { threadId: string }; res: { ok: true } };
+  /**
+   * 复制会话引用 (2026-11-23, refs.ts): `Studio 会话「名」 studio:<设备号>:<会话id>（任务 …）`, the device being this computer's.
+   */
+  "GET /api/sessions/:id/ref": { req: void; res: { text: string } };
+  /**
+   * The 协作 line (2026-11-23): starts the AMO 中转 client on this computer with `--open=<target>` (cowork:<id> or thread:<id>),
+   * found by its running.json, else AMO 平台's programs.json (`from`); 404 when there is none. Test runs only record it (dryRun).
+   */
+  "POST /api/cowork/open-in-relay": { req: { target: string }; res: { exe: string; from: "running.json" | "programs.json"; args: string[]; dryRun: boolean } };
 }
 
 export type HostRoute = keyof HostRoutes;

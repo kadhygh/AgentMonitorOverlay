@@ -181,6 +181,14 @@ B 在子会话卡上点「转到我的会话」：跳到 B 的 Studio，选一�
 - **服务的小改动**：白板上加了还没写字的卡，事件写「加了一张便签」，不再是「加了「note」」（`cowork.ts` 的 `bigEvents`）。
 - **转到我的会话**：照第 4 步的接法（`relay-ui/src/coworkHandoff.ts`）：调外壳的 `openInStudio("studio:<本机设备号>:cowork-to-<threadId>")`，成了就由 Studio 弹窗接手。按钮一直在：浏览器里、旧外壳拿不到设备号、本机没开 Studio 或 Studio 太旧时，把子会话全文（带协作的目标和分支）复制下来，toast 说为什么没转过去；按钮的提示用 `studioHas` 先问一下本机有没有 Studio。
 
+### 复制引用和从 Studio 打开协作（2026-11-23 用户定：「可以，按你的建议做」「读会话的工具先不加」「反向跳转也一起做」）
+
+两边约定，Studio 这头做在 `protocol/src/refs.ts`、`host/src/features/teamrelay/relay-client.ts`，中转客户端那头由「协作·服务」做。
+
+- **复制出来的文字**（两边照抄）：Studio 的会话「更多」→「复制会话引用」：`Studio 会话「<会话名>」 studio:<设备号>:<会话id>（任务 <taskId>）`（和它在协作里的 mark 一样）；任务页标题旁「复制编号」：`任务「<任务名>」 <taskId>`。中转客户端的：`协作「<标题>」 cowork:<id>`、`子会话「<标题>」 thread:<id>（协作 cowork:<协作id>）`、`#<seq>（协作「<标题>」 cowork:<id>）`、`中转会话「<标题>」 thread:<id>`。复制后 toast 说复制了什么。
+- **AI 拿到引用**：不加读会话的工具。cowork_* 的 coworkId 接受 `cowork:<id>`，cowork_read / cowork_post / cowork_conclude 的 threadId 和 team_session、team_followup、team_done、team_file_get 的 threadId 接受 `thread:<id>`，整行原样传进来也行（`refId` 取出 id，「」里的标题不算）。cowork_* 只能用在会话被拉进的协作，别的协作告诉它请人先拉进协作。`studio:` 引用只能用 session_tree 看最近回复的摘录。
+- **从 Studio 打开协作**：会话下面写它在哪个协作的那一行可点，Host 启动中转客户端 `--open=cowork:<id>`（也认 `thread:<id>`），detached；客户端开着时单实例接住参数，没开着就启动。找客户端：先读中转家目录（`%APPDATA%\AMO Relay`，或 `AMO_RELAY_HOME`）的 `running.json` 的 `exe`（它开着时写的；不用 electron.exe），没有再读 `%APPDATA%\AMO\programs.json` 的 `tools.relay.dir` + `tools.relay.exe`。先读 running.json 是因为从另一个文件夹再起一份会让开着的那份退出（relay-app 的 second-instance）。启动时去掉 Host 自己的和给 agent 的环境变量（ELECTRON_*、AMO_STUDIO_*、模型 CLI 和它们的 key）。找不到：「没找到 AMO 中转客户端，在 AMO 平台里装一下」；老的客户端不认 `--open=`，启动了但不跳过去，Studio 判断不了，由客户端自己提示。协作条上原来走外壳 `--open-thread` 的「在中转里打开」按钮去掉了（这一行代替它）；消息卡片上的那个照旧。
+
 ## 分几步做
 
 都在分支 `studio/cowork` 上攒（worktree `G:\PROJECT\AgentMonitorOverlay-cowork`），每一步的会话从它开自己的分支、验证过合回它；全部做完一起合进 master、一起发（避免自动打包把半截的 Studio 发出去，中转服务也只部署一次）。

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -407,4 +407,57 @@ describe("协作 in Studio", () => {
     expect(inSub).toContain("子会话「射速曲线」里 #");
     expect(inSub).not.toContain("第 19 条。");
   }, 60_000);
+
+  it("复制引用 (2026-11-23): cowork_* and team_session take cowork:<id> / thread:<id> and whole pasted lines; another 协作 says to bring the session in; 复制会话引用 is its mark; the 协作 line starts the 中转 client with --open=", async () => {
+    const { service, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速调整", members: ["策划小王"] });
+    const other = await coderClient.createCowork({ title: "别的事", members: ["策划小王"] });
+    const s = session("射速文档");
+    await service.teamRelay.cowork.join(s.id, c.id);
+    expect((await tool(s.id, "cowork_read", { coworkId: `cowork:${c.id}` })).text).toContain("# 协作「射速调整」");
+    expect((await tool(s.id, "cowork_read", { coworkId: `协作「射速调整」 cowork:${c.id}` })).text).toContain("# 协作「射速调整」");
+    const sub = await coderClient.askCowork(c.id, { to: "策划小王", title: "射速曲线", body: "线性还是指数？" });
+    const line = `子会话「射速曲线」 thread:${sub.thread!.id}（协作 cowork:${c.id}）`;
+    const full = await tool(s.id, "cowork_read", { coworkId: line, threadId: line });
+    expect(full.text).toContain("## 子会话「射速曲线」");
+    expect(full.text).toContain("线性还是指数？");
+    const seq = sub.message!.seq;
+    expect((await tool(s.id, "cowork_read", { coworkId: `#${seq}（协作「射速调整」 cowork:${c.id}）`, seq })).text).toContain(`的 #${seq}`);
+    // A 协作 it was not brought into: told to have the person bring it in.
+    const no = await tool(s.id, "cowork_read", { coworkId: `协作「别的事」 cowork:${other.id}` });
+    expect(no.error).toBe(true);
+    expect(no.text).toContain(`不在协作 ${other.id} 里`);
+    expect(no.text).toContain("拉进协作");
+    // team_session too.
+    const ts = await tool(s.id, "team_session", { threadId: `thread:${sub.thread!.id}` });
+    expect(ts.error).toBe(false);
+    expect(ts.text).toContain("线性还是指数？");
+
+    // 复制会话引用: the same studio:<设备号>:<会话id> the 协作 knows it by.
+    const mark = service.teamRelay.cowork.joined()[0]!.mark;
+    expect(service.teamRelay.cowork.sessionRef(s.id).text).toBe(`Studio 会话「射速文档」 ${mark}（任务 ${s.taskId}）`);
+
+    // The 协作 line: the open client (its running.json) is started with --open=cowork:<id>, recorded in test mode.
+    // (AMO_HOME too: this machine's own programs.json may name an installed client.)
+    const saved = { home: process.env.AMO_RELAY_HOME, amo: process.env.AMO_HOME, test: process.env.AMO_STUDIO_TEST };
+    const relayHome = tempDir("relay-home");
+    process.env.AMO_RELAY_HOME = relayHome;
+    process.env.AMO_HOME = tempDir("amo-home");
+    process.env.AMO_STUDIO_TEST = "1";
+    try {
+      const cowork = service.teamRelay.cowork;
+      expect(() => cowork.openInRelay(`cowork:${c.id}`)).toThrow("没找到 AMO 中转客户端，在 AMO 平台里装一下");
+      const exe = join(relayHome, "AMO 中转.exe");
+      writeFileSync(exe, "");
+      writeFileSync(join(relayHome, "running.json"), JSON.stringify({ pid: 1, exe }));
+      expect(cowork.openInRelay(`cowork:${c.id}`)).toEqual({ exe, from: "running.json", args: [`--open=cowork:${c.id}`], dryRun: true });
+      expect(cowork.relayLaunches.at(-1)!.env).not.toHaveProperty("AMO_STUDIO_TEST");
+      expect(() => cowork.openInRelay(c.id)).toThrow("cowork:<id> 或 thread:<id>");
+    } finally {
+      for (const [k, v] of [["AMO_RELAY_HOME", saved.home], ["AMO_HOME", saved.amo], ["AMO_STUDIO_TEST", saved.test]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  }, 30_000);
 });

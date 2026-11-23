@@ -36,5 +36,8 @@ export function teamRelayRoutes(service: HostService): Route[] {
     route("GET /api/cowork/handoffs", () => cowork.handoffs()),
     route("POST /api/cowork/handoff/accept", ({ body }) => cowork.acceptHandoff((body ?? {}) as never)),
     route("POST /api/cowork/handoff/dismiss", ({ body }) => cowork.dismissHandoff((body as { threadId?: unknown } | null)?.threadId)),
+    // 复制会话引用 and the 协作 line opening the 中转 client (2026-11-23).
+    route("GET /api/sessions/:id/ref", ({ params }) => cowork.sessionRef(params.id)),
+    route("POST /api/cowork/open-in-relay", ({ body }) => cowork.openInRelay((body as { target?: unknown } | null)?.target)),
   ];
 }

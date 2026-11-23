@@ -29,6 +29,9 @@
 .cowork-line { display: flex; align-items: center; gap: 8px; padding: 2px 12px; font-size: var(--fs-sm); color: var(--text-dim); min-width: 0; }
 .cowork-mark { flex: none; padding: 0 6px; border-radius: var(--r-btn); border: 1px solid var(--border); color: var(--text); font-size: 11px; line-height: 18px; }
 .cowork-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The line opens the 协作 in the AMO 中转 client (2026-11-23). */
+.cowork-open { padding: 0 4px; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cowork-open:hover { border-color: var(--border); background: var(--panel); color: var(--text); }
 .cowork-state { color: var(--text); }
 .cowork-state.owner { color: var(--attention); font-weight: 600; }
 .cowork-dim { color: var(--text-dim); font-weight: 400; }
