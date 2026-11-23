@@ -31,6 +31,123 @@ export function coworkMessageText(m: Message, cowork: Pick<Cowork, "id" | "agent
   return messageAsText(m, questions).replace(/^### [^\n]*/, head);
 }
 
+/**
+ * How much of a 协作's talk an agent reads at a time (2026-11-23, 中转迭代讨论, the user: 「可以，按你的建议改」 — 协作里给 AI
+ * 看的内容要精简). An @ came with only the messages @-ing it, but cowork_read gave 40 messages in full and a 子会话 all of
+ * it: a long discussion filled the context. Now the messages for the agent are whole and the rest is cut, and past a
+ * budget of characters (newest first) one line each; cowork_read's seq and before open the rest. No summaries: the goal,
+ * 已定的事 and the 白板 are what a long discussion comes to. Numbers to tune here.
+ */
+export const COWORK_BRIEF = {
+  /** With an @: this many messages before it in the same place, … */
+  contextBefore: 3,
+  /** … they and the message it answers cut to this many characters. */
+  contextChars: 300,
+  /** cowork_read: the new messages, at most this many characters (newest first). */
+  readChars: 6000,
+  /** cowork_read: others' messages cut to this many characters. */
+  clipChars: 500,
+  /** A 子会话 in full: after its opening question (always whole), at most this many characters. */
+  sessionChars: 6000,
+  /** Past the budget, at most this many one-line entries (older ones only counted). */
+  lineMax: 30,
+  /** A one-line entry: how its message starts, at most this many characters. */
+  lineChars: 60,
+};
+
+/** A message cut to `max` characters after its head, saying where the rest is; whole when it is short (or an event). */
+export function clippedMessageText(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions">, max: number, questions?: Message["questions"]): string {
+  const whole = coworkMessageText(m, cowork, questions);
+  const nl = whole.indexOf("\n");
+  if (m.kind === "event" || nl < 0) return whole;
+  const rest = whole.slice(nl + 1);
+  if (rest.length <= max) return whole;
+  return `${whole.slice(0, nl)}\n${rest.slice(0, max).trimEnd()}…\n（截到 ${max} 字，全文看 #${m.seq}：cowork_read 带 seq ${m.seq}）`;
+}
+
+/** A message in one line: #seq, who, where, how it starts. */
+export function messageLine(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions">): string {
+  const flat = m.body.replace(/\s+/g, " ").trim();
+  const end = flat.search(/[。！？!?]/);
+  let start = end >= 0 ? flat.slice(0, end + 1) : flat;
+  if (start.length > COWORK_BRIEF.lineChars) start = `${start.slice(0, COWORK_BRIEF.lineChars)}…`;
+  const what = m.kind === "event" ? `（${flat.slice(0, COWORK_BRIEF.lineChars)}）` : start || (m.answers?.length ? "（回答了提问）" : "（没有文字）");
+  return `- #${m.seq} ${authorOf(m, cowork)} · ${whereOf(m.threadId, cowork)} · ${what}`;
+}
+
+/** How a message is shown: whole, cut (clippedMessageText), or one line. */
+export type ShownAs = "full" | "clip" | "line";
+
+/**
+ * Which messages are shown how, within `budget` characters from the newest back: `whole` ones (for this agent) always
+ * whole; the rest whole or cut while they fit (`clip`: cut to that many first — cowork_read; null: whole when it fits,
+ * else cut to clipChars — a 子会话), and from the first that does not, one line each, at most lineMax of them (`dropped`
+ * counts the older ones past that). Oldest first.
+ */
+export function pickByBudget(messages: Message[], o: { budget: number; whole: (m: Message) => boolean; clip: number | null; size: (m: Message, how: ShownAs) => number }): { shown: Array<{ m: Message; how: ShownAs }>; dropped: number } {
+  const out: Array<{ m: Message; how: ShownAs }> = [];
+  let used = 0;
+  let over = false;
+  let lines = 0;
+  let dropped = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    let how: ShownAs | null = null;
+    if (o.whole(m)) how = "full";
+    else if (!over) {
+      const tries: ShownAs[] = o.clip === null ? ["full", "clip"] : ["clip"];
+      how = tries.find((t) => used + o.size(m, t) <= o.budget) ?? null;
+      if (!how) over = true;
+    }
+    if (how) {
+      used += o.size(m, how);
+      out.push({ m, how });
+    } else if (lines < COWORK_BRIEF.lineMax) {
+      lines++;
+      out.push({ m, how: "line" });
+    } else dropped++;
+  }
+  return { shown: out.reverse(), dropped };
+}
+
+/** Shown messages as text: blocks apart, runs of one-line entries together. */
+function shownText(shown: Array<{ how: ShownAs; text: string }>): string {
+  const parts: string[] = [];
+  let lineRun = false;
+  for (const s of shown) {
+    if (s.how === "line" && lineRun) parts[parts.length - 1] += `\n${s.text}`;
+    else parts.push(s.text);
+    lineRun = s.how === "line";
+  }
+  return parts.join("\n\n");
+}
+
+/** cowork_read's messages (the new ones, or those before a seq): within the budget, the agent's own whole. */
+export function messagesSection(messages: Message[], cowork: Pick<Cowork, "id" | "agents" | "sessions">, forMe: (m: Message) => boolean): { text: string; full: Message[]; dropped: number; oldest: number | null } {
+  const B = COWORK_BRIEF;
+  const render = (m: Message, how: ShownAs) => (how === "full" ? coworkMessageText(m, cowork) : how === "clip" ? clippedMessageText(m, cowork, B.clipChars) : messageLine(m, cowork));
+  const { shown, dropped } = pickByBudget(messages, { budget: B.readChars, whole: forMe, clip: B.clipChars, size: (m, how) => render(m, how).length });
+  const text = shownText(shown.map((s) => ({ how: s.how, text: render(s.m, s.how) })));
+  return { text, full: shown.filter((s) => s.how !== "line").map((s) => s.m), dropped, oldest: backFrom(shown, dropped) };
+}
+
+/**
+ * Where paging back starts: past the oldest one-line entry when some were left out (they are older than it — an older
+ * message of the agent's own may still be shown whole), else the oldest shown.
+ */
+function backFrom(shown: Array<{ m: Message; how: ShownAs }>, dropped: number): number | null {
+  if (dropped) return shown.find((s) => s.how === "line")?.m.seq ?? null;
+  return shown[0]?.m.seq ?? null;
+}
+
+/** Under one-line entries: how to open them. */
+const LINES_HINT = "只列一行的，要看全文用 cowork_read 带 seq（#序号）。";
+
+/** Past what is listed: how to page back (`dropped`: how many of these were left out, when known). */
+function backHint(oldest: number, dropped: number, threadId?: string): string {
+  return `更早的${dropped ? `还有 ${dropped} 条没列` : "还有"}：cowork_read 带 ${threadId ? `threadId ${threadId}、` : ""}before ${oldest} 往前翻。`;
+}
+
 /** What a delivery batch is about, for the row's head: 「程序老李 在群聊里 @ 了你」, 「美术小周 回复了你发起的子会话「X」」. */
 export function deliveryWhere(items: CoworkInboxItem[]): string {
   const kinds = new Set(items.map((i) => `${i.delivery.reason} ${i.thread.id}`));
@@ -47,10 +164,14 @@ export function deliveryFrom(items: CoworkInboxItem[], cowork: Pick<Cowork, "age
 }
 
 /** The message a delivery batch puts into the session. */
-export function deliveryText(input: { items: CoworkInboxItem[]; cowork: Cowork; me: string; myName: string; mark: string; unread: number; lines: string[] }): string {
+export function deliveryText(input: { items: CoworkInboxItem[]; cowork: Cowork; me: string; myName: string; mark: string; unread: number; lines: string[]; context?: Message[] }): string {
   const { items, cowork, me, myName, unread } = input;
   const head = `【协作「${cowork.title}」· ${deliveryFrom(items, cowork)} ${deliveryWhere(items)}】`;
-  const blocks = items.map((i) => coworkMessageText(i.message, cowork));
+  // What it answers and what came just before it in the same place, cut (COWORK_BRIEF), oldest first; then the @s whole.
+  const given = new Set(items.map((i) => i.message.id));
+  const context = (input.context ?? []).filter((m) => !given.has(m.id));
+  const before = context.length ? [`前文（每条截到 ${COWORK_BRIEF.contextChars} 字，全文用 cowork_read 带 seq）：`, ...context.map((m) => clippedMessageText(m, cowork, COWORK_BRIEF.contextChars)), "给你的："] : [];
+  const blocks = [...before, ...items.map((i) => coworkMessageText(i.message, cowork))];
   const last = items[items.length - 1]!;
   const replyTo = items.length === 1 ? `，replyTo ${last.message.seq}` : "（replyTo 写你回的那条的 #）";
   const how = [
@@ -65,13 +186,13 @@ export function deliveryText(input: { items: CoworkInboxItem[]; cowork: Cowork; 
 export function joinedLine(cowork: Pick<Cowork, "id" | "title" | "goal" | "repo" | "branch">, myName: string, me: string): string {
   const goal = cowork.goal.trim() ? `目标：${cowork.goal.trim().replace(/\s+/g, " ").slice(0, 200)}${cowork.goal.trim().length > 200 ? "…" : ""}` : "";
   const repo = cowork.repo ? `仓库 ${cowork.repo}${cowork.branch ? ` · 分支 ${cowork.branch}` : ""}。` : "";
-  return `【协作】${me} 把这个会话拉进了协作「${cowork.title}」（coworkId ${cowork.id}），你在里面的名字是「${myName}」，可以替 ${me} 在里面回复、提问、写白板、记事件，不用每次再问。${repo}${goal} 有人 @ 你、或回复你发起的子会话时，Studio 会把它送进这个对话；别人聊天不会叫你。工具：cowork_read（看全貌、文件和新消息）、cowork_post（发言）、cowork_ask（开子会话问人）、cowork_conclude（给子会话定结论）、cowork_board（白板）、cowork_note（记事件：推了提交就记一条带提交号的）。项目里的正式内容照常写进分支的文档。`;
+  return `【协作】${me} 把这个会话拉进了协作「${cowork.title}」（coworkId ${cowork.id}），你在里面的名字是「${myName}」，可以替 ${me} 在里面回复、提问、写白板、记事件，不用每次再问。${repo}${goal} 有人 @ 你、或回复你发起的子会话时，Studio 会把它送进这个对话；别人聊天不会叫你。工具：cowork_read（看全貌、文件和新消息；讨论长了先看目标、已定的事和白板，需要时才带 seq / before 翻原文）、cowork_post（发言）、cowork_ask（开子会话问人）、cowork_conclude（给子会话定结论）、cowork_board（白板）、cowork_note（记事件：推了提交就记一条带提交号的）。项目里的正式内容照常写进分支的文档。`;
 }
 
 const STATE_TEXT: Record<"open" | "returned" | "done", string> = { open: "开着", returned: "回到发起人", done: "已定" };
 
 /** cowork_read without a threadId: the 协作 as a whole, then the new messages. */
-export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; messages: Message[]; skipped: number; after: number; lastSeq: number; files?: CoworkFiles }): string {
+export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; section: ReturnType<typeof messagesSection>; count: number; after: number; lastSeq: number; files?: CoworkFiles }): string {
   const { cowork: c, mark } = input;
   const me = c.agents.find((a) => a.mark === mark);
   const parts: string[] = [];
@@ -91,10 +212,26 @@ export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; d
   if (files) parts.push(files);
   const mine = input.drafts.filter((d) => d.agent === mark && d.state === "pending");
   if (mine.length) parts.push(`## 你的草稿（等 ${me?.owner ?? "主人"} 确认）\n${mine.map((d) => `- ${d.kind === "ask" ? `子会话「${d.ask?.title}」问 ${d.ask?.to}` : `发言：${oneLine(d.post?.body ?? "")}`}`).join("\n")}`);
-  const head = input.after ? `## 新消息（#${input.after} 之后）` : "## 最近的消息";
-  const body = input.messages.length ? `${input.skipped ? `（更早的 ${input.skipped} 条没列出，要看用 after 从更早的 # 读）\n\n` : ""}${input.messages.map((m) => coworkMessageText(m, c)).join("\n\n")}` : "（没有新的）";
-  parts.push(`${head}\n${body}\n\n（读到 #${input.lastSeq}。下次不带 after 只列这之后的。）`);
+  const B = COWORK_BRIEF;
+  const head = `${input.after ? `## 新消息（#${input.after} 之后，${input.count} 条）` : `## 最近的消息（${input.count} 条）`}\n给你的（@ 你、回你的）是全文；别人的截到 ${B.clipChars} 字，从新往旧约 ${B.readChars} 字，再往前的只列一行。`;
+  const s = input.section;
+  const body = input.count ? s.text : "（没有新的）";
+  const hint = `${s.full.length < input.count ? LINES_HINT : ""}${s.dropped && s.oldest ? backHint(s.oldest, s.dropped) : ""}`;
+  parts.push(`${head}\n\n${body}\n\n（读到 #${input.lastSeq}。下次不带 after 只列这之后的。${hint}讨论长了先看上面的目标、已定的事和白板（cowork_board），需要时才翻原文。）`);
   return parts.join("\n\n");
+}
+
+/** cowork_read with seq: one message in full, where it is. */
+export function oneMessageText(m: Message, cowork: Cowork): string {
+  return `## 协作「${cowork.title}」的 #${m.seq}（在${whereOf(m.threadId, cowork)}${m.threadId === cowork.id ? "" : ` · threadId ${m.threadId}`}）\n\n${coworkMessageText(m, cowork)}${m.replyTo ? `\n\n（它回的是 #${m.replyTo}：要看用 cowork_read 带 seq ${m.replyTo}。）` : ""}`;
+}
+
+/** cowork_read with before: the messages before a seq (of a 子会话 with threadId), within the budget. */
+export function beforeText(section: ReturnType<typeof messagesSection>, cowork: Cowork, before: number, count: number, more: boolean, threadId?: string): string {
+  const where = threadId ? `${whereOf(threadId, cowork)}里 ` : "";
+  if (!count) return `${where}#${before} 之前没有更早的消息了。`;
+  const older = (more || section.dropped) && section.oldest ? backHint(section.oldest, section.dropped, threadId) : "再往前没有了。";
+  return `## ${where}#${before} 之前的消息\n\n${section.text}\n\n（${section.full.length < count ? LINES_HINT : ""}${older}）`;
 }
 
 /** The files of a 协作's threads (群聊 first, then each 子会话), as listed for cowork_read. */
@@ -117,20 +254,32 @@ export function concludedText(title: string, conclusion: string): string {
   return `子会话「${title}」定下结论：${conclusion}\n它关上了，结论记进了协作的「已定的事」，协作里的人和 AI 读协作时都看得到。照这个结论接着做；要改结论，在群聊里说，或者开一个新的子会话。`;
 }
 
-/** cowork_read with a threadId: one 子会话 in full. */
-export function sessionText(thread: Thread, messages: Message[], cowork: Cowork, mark: string): string {
+/**
+ * cowork_read with a threadId: one 子会话 — its opening question always whole, then the rest from the newest back within
+ * COWORK_BRIEF.sessionChars (whole when it fits, else cut), older ones one line each; the agent's own whole. Returns the
+ * messages shown whole or cut (seen, for the queued deliveries).
+ */
+export function sessionText(thread: Thread, messages: Message[], cowork: Cowork, mark: string, forMe: (m: Message) => boolean = () => false): { text: string; seen: Message[] } {
+  const B = COWORK_BRIEF;
   const s = cowork.sessions.find((x) => x.id === thread.id);
   const r = thread.request;
-  const head = `## 子会话「${thread.title}」（协作「${cowork.title}」）\n${r ? `${r.from} → ${r.to} · ${sessionStateText(r)}` : ""}${s?.agent === mark ? " · 你发起的" : ""}${s?.conclusion ? `\n结论：${s.conclusion}` : ""} · threadId ${thread.id}`;
+  const head = `## 子会话「${thread.title}」（协作「${cowork.title}」，${messages.length} 条）\n${r ? `${r.from} → ${r.to} · ${sessionStateText(r)}` : ""}${s?.agent === mark ? " · 你发起的" : ""}${s?.conclusion ? `\n结论：${s.conclusion}` : ""} · threadId ${thread.id}`;
+  // The questions each answer is to (a later round's ask brings new ones).
+  const asked = new Map<string, Message["questions"]>();
   let questions: Message["questions"] = messages.find((m) => m.kind === "request")?.questions ?? [];
-  return [
-    head,
-    ...messages.map((m) => {
-      if (m.questions?.length) questions = m.questions;
-      return coworkMessageText(m, cowork, questions);
-    }),
-    "（在这里说话：cowork_post 带这个 threadId。）",
-  ].join("\n\n");
+  for (const m of messages) {
+    if (m.questions?.length) questions = m.questions;
+    asked.set(m.id, questions);
+  }
+  const opening = messages.find((m) => m.kind === "request") ?? messages[0];
+  const render = (m: Message, how: ShownAs) => (how === "full" ? coworkMessageText(m, cowork, asked.get(m.id)) : how === "clip" ? clippedMessageText(m, cowork, B.clipChars, asked.get(m.id)) : messageLine(m, cowork));
+  const rest = messages.filter((m) => m !== opening);
+  const { shown, dropped } = pickByBudget(rest, { budget: B.sessionChars, whole: forMe, clip: null, size: (m, how) => render(m, how).length });
+  const lines = shown.some((x) => x.how === "line");
+  const oldest = backFrom(shown, dropped);
+  const hint = `${lines ? LINES_HINT : ""}${dropped && oldest ? backHint(oldest, dropped, thread.id) : ""}`;
+  const text = [head, ...(opening ? [render(opening, "full")] : []), ...(shown.length ? [shownText(shown.map((x) => ({ how: x.how, text: render(x.m, x.how) })))] : []), `（${hint}在这里说话：cowork_post 带这个 threadId。）`].join("\n\n");
+  return { text, seen: [...(opening ? [opening] : []), ...shown.filter((x) => x.how !== "line").map((x) => x.m)] };
 }
 
 /** What cowork_post / cowork_ask did: out (and whom it woke) or kept as a draft for the owner. */

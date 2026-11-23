@@ -332,4 +332,79 @@ describe("协作 in Studio", () => {
     // Read again: nothing waiting, nothing said about it.
     expect((await tool(s.id, "cowork_read")).text).not.toContain("算你已经收到");
   }, 30_000);
+
+  it("精简 (2026-11-23): an @ comes with what it answers and the 3 before it in the same place, cut; cowork_read keeps to its budget, seq opens one whole, before pages back past other 协作's messages; a 子会话 keeps to its own", async () => {
+    const { service, told, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速调整", members: ["策划小王"] });
+    const other = await coderClient.createCowork({ title: "别的事", members: [] });
+    const s = session("射速文档");
+    const j = await service.teamRelay.cowork.join(s.id, c.id);
+    await until(async () => (await coderClient.cowork(c.id)).cowork.agents[0]!.state, (st) => st === "idle", "待命 reported");
+    const post = (body: string, o: { agentMentions?: string[]; replyTo?: number; threadId?: string } = {}) => coderClient.postCowork(c.id, { kind: "text", body, ...o });
+    const long = (n: number) => "射速上限".repeat(n / 4);
+
+    const first = (await post("最早的一条。")).message!;
+    // Seqs count every message on the service: another 协作's talk puts a gap of more than one window (200) in between.
+    for (let i = 0; i < 260; i++) await coderClient.postCowork(other.id, { kind: "text", body: `噪音 ${i}` });
+    const early = (await post("太早，不该在前文里。")).message!;
+    const sub = await coderClient.askCowork(c.id, { to: "策划小王", title: "射速曲线", body: `${long(8000)}提问尾巴` });
+    await post("前文一。");
+    const longOne = (await post(`${long(800)}前文尾巴`)).message!;
+    await post("前文三。");
+    await post("就按这个做？", { agentMentions: [j.mark], replyTo: first.seq });
+
+    // The @: whole; before it what it answers and the 3 before it in the 群聊, cut.
+    await until(() => told.length, (n) => n === 1, "the @ in the session");
+    const at = told[0]!.text;
+    expect(at).toContain("前文（每条截到 300 字");
+    for (const t of ["最早的一条。", "前文一。", "前文三。", "就按这个做？"]) expect(at).toContain(t);
+    expect(at).not.toContain("前文尾巴");
+    expect(at).toContain(`全文看 #${longOne.seq}`);
+    expect(at).not.toContain("太早，不该在前文里。");
+    expect(at).not.toContain("噪音");
+    expect(at.indexOf("最早的一条。")).toBeLessThan(at.indexOf("前文一。"));
+    expect(at.indexOf("给你的：")).toBeLessThan(at.indexOf("就按这个做？"));
+
+    // cowork_read: many long messages — the @ whole, others cut, within the budget from the newest back, older ones one line.
+    for (let i = 0; i < 20; i++) await post(`第 ${i} 条。${long(700)}别人的尾巴`);
+    const read = (await tool(s.id, "cowork_read")).text;
+    const news = read.slice(read.indexOf("## 最近的消息"));
+    expect(news).toMatch(/^## 最近的消息（\d+ 条）/);
+    expect(news).toContain("就按这个做？");
+    expect(news).not.toContain("别人的尾巴");
+    expect(news).toContain("截到 500 字");
+    expect(news).toMatch(/\n- #\d+ 程序老李 · 群聊 · 第 \d+ 条。/);
+    expect(news).toContain("只列一行的，要看全文用 cowork_read 带 seq");
+    expect(news.length).toBeLessThan(6000 + 3000);
+    expect(news).toContain("讨论长了先看上面的目标、已定的事和白板");
+
+    // seq: one whole; one not of this 协作 is refused.
+    const whole = (await tool(s.id, "cowork_read", { seq: longOne.seq })).text;
+    expect(whole).toContain("前文尾巴");
+    expect(whole).toContain(`#${longOne.seq}（在群聊）`);
+    const noise = (await coderClient.coworkFeed(other.id)).messages[0]!;
+    expect(await tool(s.id, "cowork_read", { seq: noise.seq })).toMatchObject({ error: true, text: expect.stringContaining(`没有 #${noise.seq}`) });
+
+    // before: back past the other 协作's 260 to the first, and no further.
+    const back = (await tool(s.id, "cowork_read", { before: early.seq })).text;
+    expect(back).toContain(`#${early.seq} 之前的消息`);
+    expect(back).toContain("最早的一条。");
+    expect(back).not.toContain("噪音");
+    expect(back).toContain("再往前没有了。");
+    const start = (await tool(s.id, "cowork_read", { before: first.seq })).text;
+    expect(start).toContain("发起了协作「射速调整」");
+    expect(start).toContain("再往前没有了。");
+    expect((await tool(s.id, "cowork_read", { before: 1 })).text).toContain("#1 之前没有更早的消息了");
+
+    // A 子会话: its question whole however long, the rest within its budget, older ones one line; before pages back in it.
+    for (let i = 0; i < 15; i++) await post(`子会话第 ${i} 句。${long(800)}子会话尾巴`, { threadId: sub.thread!.id });
+    const full = (await tool(s.id, "cowork_read", { threadId: sub.thread!.id })).text;
+    expect(full).toContain("提问尾巴");
+    expect(full).toContain("子会话第 14 句。");
+    expect(full).toMatch(/\n- #\d+ 程序老李 · 子会话「射速曲线」 · 子会话第 0 句。/);
+    const lastSeq = (await coderClient.coworkFeed(c.id)).lastSeq;
+    const inSub = (await tool(s.id, "cowork_read", { threadId: sub.thread!.id, before: lastSeq })).text;
+    expect(inSub).toContain("子会话「射速曲线」里 #");
+    expect(inSub).not.toContain("第 19 条。");
+  }, 60_000);
 });

@@ -1,9 +1,9 @@
 import { inTurn, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
-import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type AgentReport, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type Message, type RelayClient, type RelayFile, type Via } from "@amo-studio/relay/light";
+import { AGENT_REPORT_MS, BOARD_AI_MAX_CARDS, filesAsText, threadAsText, type AgentReport, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type Message, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { coworkHint, coworkTold, resetCoworkTold, setCoworkTell } from "../../core/cowork.js";
-import { boardOpsText, boardText, concludedText, coworkOverview, type CoworkFiles, deliveryFrom, deliveryText, deliveryWhere, joinedLine, postResultText, sessionText } from "./cowork-text.js";
+import { beforeText, boardOpsText, boardText, concludedText, COWORK_BRIEF, coworkOverview, type CoworkFiles, deliveryFrom, deliveryText, deliveryWhere, joinedLine, messagesSection, oneMessageText, postResultText, sessionText } from "./cowork-text.js";
 import type { TeamRelayFeature } from "./service.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): Studio's end of a 协作 on AMO 中转 (relay/src/cowork-protocol.ts tells
@@ -31,8 +31,12 @@ export const COMPOSER_FRESH_MS = 3 * 60_000;
 const HANDOFF_KEEP_MS = 3600_000;
 /** cowork_read lists the files of the 群聊 and of the latest this many 子会话. */
 const FILE_SESSIONS = 20;
-/** cowork_read lists at most this many messages (the latest). */
-const READ_MAX = 40;
+/** The service's pages: GET …/feed gives at most this many messages, a thread's GET …/messages this many (relay server.ts). */
+const FEED_PAGE = 500;
+const THREAD_PAGE = 200;
+/** Reading back (cowork_read before, an @'s 前文): at most this many messages, and this many calls to the service. */
+const BACK_MAX = 80;
+const BACK_CALLS = 12;
 
 export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | "tasks"> {
   constructor(
@@ -339,7 +343,8 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       const unread = box.unread.find((u) => u.coworkId === coworkId && u.agent === mark)?.count ?? 0;
       // What it was to be told with the person's next message (brought in, N 条新的) goes with this instead.
       const hint = coworkHint(this.store, sessionId);
-      const body = deliveryText({ items: fresh, cowork, me, myName: agent?.name ?? `${me} 的 AI`, mark, unread, lines: hint?.lines ?? [] });
+      const context = await this.context(client, coworkId, fresh).catch(() => [] as Message[]);
+      const body = deliveryText({ items: fresh, cowork, me, myName: agent?.name ?? `${me} 的 AI`, mark, unread, lines: hint?.lines ?? [], context });
       const origin: MessageOrigin = { kind: "cowork", from: deliveryFrom(fresh, cowork), threadIds: [...new Set(fresh.map((i) => i.thread.id))], cowork: { id: cowork.id, title: cowork.title, where: deliveryWhere(fresh) } };
       try {
         await this.f.sessions.inbox.put(sessionId, body, origin);
@@ -419,31 +424,153 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     this.store.setKv(READ_KEY, JSON.stringify(all));
   }
 
-  /** cowork_read: the 协作 and what is new since the agent last read; or one 子会话 in full. */
-  async read(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; after?: unknown }): Promise<string> {
+  /**
+   * cowork_read: the 协作 and what is new since the agent last read; or one 子会话 (threadId); or one message in full (seq);
+   * or the messages before a seq (before; with threadId, of that 子会话). Within COWORK_BRIEF's budgets (cowork-text.ts).
+   */
+  async read(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; after?: unknown; seq?: unknown; before?: unknown }): Promise<string> {
     const { coworkId, mark } = this.mine(sessionId, input.coworkId);
     const { client } = this.relay();
     const detail = await this.call(() => client.cowork(coworkId));
+    const c = detail.cowork;
     const threadId = typeof input.threadId === "string" && input.threadId.trim() ? input.threadId.trim() : null;
+    const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
+    const forMe = this.forMe(detail.deliveries, mark);
+    const seq = num(input.seq);
+    if (seq) {
+      const m = await this.messageAt(client, coworkId, seq);
+      if (!m) throw new HostError("bad_request", `协作「${c.title}」里没有 #${seq}（#序号 见 cowork_read 列出的消息）。`);
+      const seen = await this.seenQueued(client, detail.deliveries, mark, [m]);
+      return [oneMessageText(m, c), seen].filter(Boolean).join("\n\n");
+    }
+    if (threadId && threadId !== coworkId && !c.sessions.some((s) => s.id === threadId)) throw new HostError("bad_request", `${threadId} 不是协作「${c.title}」的子会话。开着的子会话在不带 threadId 的 cowork_read 里。`);
+    const before = num(input.before);
+    if (before) {
+      const sub = threadId && threadId !== coworkId ? threadId : null;
+      const back = sub ? await this.threadBefore(client, sub, before) : await this.feedBefore(client, coworkId, before, BACK_MAX, threadId ?? undefined);
+      const section = messagesSection(back.messages, c, forMe(back.messages));
+      const seen = await this.seenQueued(client, detail.deliveries, mark, section.full);
+      return [beforeText(section, c, before, back.messages.length, back.more, threadId ?? undefined), seen].filter(Boolean).join("\n\n");
+    }
     if (threadId && threadId !== coworkId) {
-      if (!detail.cowork.sessions.some((s) => s.id === threadId)) throw new HostError("bad_request", `${threadId} 不是协作「${detail.cowork.title}」的子会话。开着的子会话在不带 threadId 的 cowork_read 里。`);
-      const { thread, messages } = await this.call(() => client.messages(threadId, 0));
+      const { thread, messages } = await this.threadAll(client, threadId);
       const files = await client.files({ threadId }).catch(() => [] as RelayFile[]);
       const list = filesAsText(files, { download: "team_file_get（threadId, fileId）" });
-      const seen = await this.seenQueued(client, detail.deliveries, mark, messages);
-      return [sessionText(thread, messages, detail.cowork, mark), list, seen].filter(Boolean).join("\n\n");
+      const out = sessionText(thread, messages, c, mark, forMe(messages));
+      const seen = await this.seenQueued(client, detail.deliveries, mark, out.seen);
+      return [out.text, list, seen].filter(Boolean).join("\n\n");
     }
     const after = typeof input.after === "number" && input.after >= 0 ? input.after : this.readAt(coworkId, mark);
-    const feed = await this.call(() => client.coworkFeed(coworkId, after, mark));
-    // After 0 the oldest come first: show the latest READ_MAX of what came.
-    const skipped = Math.max(0, feed.messages.length - READ_MAX);
+    const feed = await this.feedAll(client, coworkId, after, mark);
     this.setReadAt(coworkId, mark, Math.max(after, feed.lastSeq));
     resetCoworkTold(this.store, sessionId, `unread:${coworkId}`);
     setCoworkTell(this.store, sessionId, `unread:${coworkId}`, null);
-    const shown = feed.messages.slice(skipped);
-    const overview = coworkOverview({ cowork: detail.cowork, events: detail.events, drafts: detail.drafts, mark, messages: shown, skipped, after, lastSeq: Math.max(after, feed.lastSeq), files: await this.coworkFiles(client, detail.cowork) });
-    const seen = await this.seenQueued(client, detail.deliveries, mark, shown);
+    const section = messagesSection(feed.messages, c, forMe(feed.messages));
+    const overview = coworkOverview({ cowork: c, events: detail.events, drafts: detail.drafts, mark, section, count: feed.messages.length, after, lastSeq: Math.max(after, feed.lastSeq), files: await this.coworkFiles(client, c) });
+    const seen = await this.seenQueued(client, detail.deliveries, mark, section.full);
     return seen ? `${overview}\n\n${seen}` : overview;
+  }
+
+  /**
+   * Which messages are for this agent, so shown whole: those it was sent (an @, a reply in a 子会话 it started), those
+   * @-ing it, and those answering one of its own (among `messages`).
+   */
+  private forMe(deliveries: CoworkDelivery[], mark: string): (messages: Message[]) => (m: Message) => boolean {
+    const sent = new Set(deliveries.filter((d) => d.agent === mark).map((d) => d.messageId));
+    return (messages) => {
+      const mine = new Set(messages.filter((m) => m.via.kind === "ai" && m.via.conv === mark).map((m) => m.seq));
+      return (m) => sent.has(m.id) || !!m.agentMentions?.includes(mark) || (m.replyTo !== undefined && mine.has(m.replyTo));
+    };
+  }
+
+  /** The feed after `after`, past the service's page (a long absence), at most BACK_CALLS pages. */
+  private async feedAll(client: RelayClient, coworkId: string, after: number, mark?: string): Promise<{ messages: Message[]; lastSeq: number }> {
+    const messages: Message[] = [];
+    let cursor = after;
+    for (let i = 0; i < BACK_CALLS; i++) {
+      const page = await this.call(() => client.coworkFeed(coworkId, cursor, mark));
+      messages.push(...page.messages);
+      cursor = Math.max(cursor, page.lastSeq);
+      if (page.messages.length < FEED_PAGE) break;
+    }
+    return { messages, lastSeq: cursor };
+  }
+
+  /** One message of the 协作 by its seq (the feed after seq − 1 starts with it when it is the 协作's). */
+  private async messageAt(client: RelayClient, coworkId: string, seq: number): Promise<Message | null> {
+    const page = await this.call(() => client.coworkFeed(coworkId, seq - 1));
+    return page.messages[0]?.seq === seq ? page.messages[0] : null;
+  }
+
+  /**
+   * The latest `need` messages of the 协作 (of one thread: threadId) before `before`, oldest first. The service's feed only
+   * reads forward, and seqs count every message on the service, so this reads windows back from there, each 4× the last,
+   * at most BACK_CALLS calls. `more`: older ones may be left.
+   */
+  private async feedBefore(client: RelayClient, coworkId: string, before: number, need: number, threadId?: string): Promise<{ messages: Message[]; more: boolean }> {
+    const got: Message[] = [];
+    let hi = before;
+    let span = 200;
+    let calls = 0;
+    while (hi > 0 && got.length < need && calls < BACK_CALLS) {
+      const lo = Math.max(0, hi - span);
+      const chunk: Message[] = [];
+      for (let cursor = lo; calls < BACK_CALLS; ) {
+        calls++;
+        const page = await this.call(() => client.coworkFeed(coworkId, cursor));
+        const under = page.messages.filter((m) => m.seq < hi);
+        chunk.push(...under);
+        if (page.messages.length < FEED_PAGE || under.length < page.messages.length) break;
+        cursor = page.messages[page.messages.length - 1]!.seq;
+      }
+      got.unshift(...chunk.filter((m) => !threadId || m.threadId === threadId));
+      hi = lo;
+      span *= 4;
+    }
+    return { messages: got.slice(-need), more: got.length > need || hi > 0 };
+  }
+
+  /** A 子会话's messages, past the service's page. */
+  private async threadAll(client: RelayClient, threadId: string): Promise<{ thread: Thread; messages: Message[] }> {
+    let out = await this.call(() => client.messages(threadId, 0));
+    const messages = [...out.messages];
+    for (let i = 1; i < BACK_CALLS && out.messages.length >= THREAD_PAGE; i++) {
+      const cursor = messages[messages.length - 1]!.seq;
+      out = await this.call(() => client.messages(threadId, cursor));
+      messages.push(...out.messages);
+    }
+    return { thread: out.thread, messages };
+  }
+
+  /** A 子会话's messages before `before` (the latest BACK_MAX of them). */
+  private async threadBefore(client: RelayClient, threadId: string, before: number): Promise<{ messages: Message[]; more: boolean }> {
+    const all = (await this.threadAll(client, threadId)).messages.filter((m) => m.seq < before);
+    return { messages: all.slice(-BACK_MAX), more: all.length > BACK_MAX };
+  }
+
+  /**
+   * An @'s 前文 (COWORK_BRIEF): the message each one answers, and the contextBefore messages before the first in each place.
+   * Best effort: without it the @s still go in.
+   */
+  private async context(client: RelayClient, coworkId: string, items: CoworkInboxItem[]): Promise<Message[]> {
+    const out = new Map<string, Message>();
+    const given = new Set(items.map((i) => i.message.id));
+    const first = new Map<string, number>();
+    for (const i of items) first.set(i.thread.id, Math.min(first.get(i.thread.id) ?? Infinity, i.message.seq));
+    for (const [threadId, seq] of first) {
+      for (const m of (await this.feedBefore(client, coworkId, seq, COWORK_BRIEF.contextBefore, threadId)).messages) out.set(m.id, m);
+    }
+    const seqs = new Set([...out.values()].map((m) => m.seq));
+    for (const i of items) {
+      const r = i.message.replyTo;
+      if (!r || seqs.has(r) || items.some((x) => x.message.seq === r)) continue;
+      const m = await this.messageAt(client, coworkId, r);
+      if (m) {
+        out.set(m.id, m);
+        seqs.add(r);
+      }
+    }
+    return [...out.values()].filter((m) => !given.has(m.id)).sort((a, b) => a.seq - b.seq);
   }
 
   /**

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fail, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
 import { HostError } from "../../core/shared.js";
 import { BOARD_AI_MAX_CARDS } from "@amo-studio/relay/light";
+import { COWORK_BRIEF } from "./cowork-text.js";
 
 /**
  * 协作's tools (2026-11-23, plans/cowork.md; cowork.ts), for a session the person brought into a 协作 on AMO 中转. None waits
@@ -25,8 +26,14 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
       name: "cowork_read",
       title: "读协作",
       description:
-        "The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, the files in its 群聊 and 子会话 (threadId and fileId for team_file_get), your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo). threadId: one 子会话 in full instead (with its files). after: read from that #seq.",
-      inputSchema: { coworkId, threadId: z.string().optional(), after: z.number().int().optional() },
+        `The 协作 (cowork on AMO 中转) this session was brought into: its goal, repository and branch, people and AIs (with their state and mark), open 子会话, 已定的事 (decisions), recent events, the files in its 群聊 and 子会话 (threadId and fileId for team_file_get), your drafts waiting for your person, then the messages of its 群聊 and 子会话 since you last read (each with #seq, for replyTo) — kept short: those that @ you or answer you whole, others cut to ${COWORK_BRIEF.clipChars} characters, about ${COWORK_BRIEF.readChars} characters from the newest back, older ones one line each (#seq · who · where · how it starts). threadId: one 子会话 instead (with its files): its opening question whole, the rest the same way within ${COWORK_BRIEF.sessionChars}. seq: one message whole (a cut or one-line one). before: the messages before that #seq, to page back (with threadId: in that 子会话). after: read from that #seq. A long discussion: read the goal, 已定的事 and the 白板 (cowork_board) first, and open messages only when you need them.`,
+      inputSchema: {
+        coworkId,
+        threadId: z.string().optional(),
+        after: z.number().int().optional(),
+        seq: z.number().int().optional().describe("One message in full, by its #seq."),
+        before: z.number().int().optional().describe("The messages before this #seq (page back)."),
+      },
       readOnly: true,
       autoApprove: true,
       run: (args) => run((sid) => c.read(sid, args)),
