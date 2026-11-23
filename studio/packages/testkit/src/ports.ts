@@ -20,13 +20,23 @@ export function standInPort(...taken: Array<number | string | URL>): number {
   throw new Error("no port left for a stand-in: every port of the spare range is taken");
 }
 
-/** Listens on a free port of the range (random start, then the next ones) and returns it. */
+/**
+ * The ports this process was handed already (2026-11-23). A test's server closed and the next test's server on the same
+ * port meet the client's pooled keep-alive sockets to the old one: the request fails with ECONNRESET. Found when
+ * mirror.test.ts moved from port 0 to this range, where two of its fake mirrors shared a port now and then (with the
+ * range narrowed to two ports it failed every other run, to one port 3 tests every run). So a port is handed out again
+ * only once the rest of the range has been.
+ */
+const handedOut = new Set<number>();
+
+/** Listens on a free port of the range (random start, then the next ones; one not handed out yet first) and returns it. */
 export async function listenInStudioRange(server: Server, host = "127.0.0.1", range: readonly [number, number] = STUDIO_SPARE_PORTS): Promise<number> {
   const [lo, hi] = range;
   const count = hi - lo + 1;
   const first = Math.floor(Math.random() * count);
-  for (let i = 0; i < count; i++) {
-    const port = lo + ((first + i) % count);
+  const ports = Array.from({ length: count }, (_, i) => lo + ((first + i) % count));
+  // Not handed out yet first, then (all of them were, or are taken) any free one.
+  for (const port of [...ports.filter((p) => !handedOut.has(p)), ...ports.filter((p) => handedOut.has(p))]) {
     try {
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => {
@@ -41,6 +51,8 @@ export async function listenInStudioRange(server: Server, host = "127.0.0.1", ra
         server.once("listening", onListening);
         server.listen(port, host);
       });
+      if (ports.every((p) => p === port || handedOut.has(p))) for (const p of ports) handedOut.delete(p);
+      handedOut.add(port);
       return port;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
