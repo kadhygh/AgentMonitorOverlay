@@ -6,7 +6,7 @@ import type { CoworkRelayEvent } from "./cowork-protocol.js";
 import type { Transfer } from "./transfer-protocol.js";
 
 export const RELAY_APP = "amo-relay";
-export const RELAY_VERSION = "0.7.17";
+export const RELAY_VERSION = "0.7.18";
 export const RELAY_DEFAULT_PORT = 47120;
 
 export interface Member {
