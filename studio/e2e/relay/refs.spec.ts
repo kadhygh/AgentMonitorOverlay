@@ -284,6 +284,28 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   await new Promise<void>((done) => second.on("exit", () => done()));
   expect(Date.now() - started).toBeLessThan(6000);
   await expect(a.locator(".page-head .head-title")).toHaveText("登录页改版");
+  // The same with the older --open-thread <id> (an older Studio's 在中转里打开): Chromium's argv puts the id after its
+  // own switches, so the running one reads the start's own arguments (lock data) — before, it never found the thread.
+  const knock = async (...args: string[]) => {
+    const t = Date.now();
+    const p = spawn(launched.executablePath, [...launched.args, ...args], { env: { ...process.env, AMO_RELAY_HOME: A.home, AMO_HOME: join(A.home, "amo-home"), AMO_STUDIO_HOME: join(A.home, "studio-home"), AMO_RELAY_TEST: "1" }, stdio: "ignore" });
+    await new Promise<void>((done) => p.on("exit", () => done()));
+    return Date.now() - t;
+  };
+  await a.locator(".rail-item", { hasText: "聊天" }).click();
+  expect(await knock("--open-thread", sub.id)).toBeLessThan(6000);
+  await expect(subWin).toBeVisible();
+  await expect(a.locator(".cowork-view .head-title")).toHaveText("加特林射速调整");
+  // 「× 关不上又弹出来」 (2026-11-23): another start of the same program with nothing to open (the platform's 打开中转, a
+  // shortcut) knocks once and goes — it used to try the lock every 500 ms for 8 s, each try bringing the window up again.
+  await A.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
+  expect(await knock("--server", server.url)).toBeLessThan(6000);
+  await new Promise((r) => setTimeout(r, 1500));
+  const log = readFileSync(join(A.home, "window.log"), "utf8");
+  expect(log).toContain("hidden (×)");
+  expect(log.match(/handed on, quits — the running one \(pid \d+\) is this program/g)?.length).toBeGreaterThanOrEqual(3);
+  expect(log).not.toContain("waits for the lock");
+  expect(log).toMatch(/show: second start \[[^\n]*"--server","http:/);
 
   // ---- started with --open=cowork: before signing in: it says so, and opens it once signed in.
   const Z = await start("美术小周", "ZHOU-PC", { args: [`--open=cowork:${hidden.id}`], signIn: false });

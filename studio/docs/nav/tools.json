@@ -69,11 +69,12 @@
     {
       "id": "tool.relayClient",
       "label": "AMO 中转客户端（界面和外壳）",
-      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "已接手", "复制给 AI", "查看器面板", "open-thread", "布局 A", "IM 三栏", "图标栏", "信息栏", "列表栏", "浮动弹窗", "子会话弹窗", "协作页"],
+      "aliases": ["中转客户端", "relay-ui", "relay-app", "热更新", "loader", "window.log", "second-instance", "单实例", "关不上又弹出来", "已接手", "复制给 AI", "查看器面板", "open-thread", "布局 A", "IM 三栏", "图标栏", "信息栏", "列表栏", "浮动弹窗", "子会话弹窗", "协作页"],
       "category": "tool",
       "purpose": "中转的桌面客户端：外壳（relay-app，平台装、平台更新）加载从服务器热更新的界面（relay-ui）；和 Studio 互相跳转（中转 → Studio 找数据目录调 Host 的 /api/ui/open，Studio → 中转带 --open-thread 启动）。",
       "anchors": [
         { "label": "外壳主进程", "path": "studio/packages/relay-app/src/main.ts" },
+        { "label": "再启动一次（单实例：谁留下、谁敲一次就走、重复敲门只拉起一次）和 window.log（窗口每次被拉起的原因）", "path": "studio/packages/relay-app/src/second-start.ts", "anchor": "export function secondStartPlan" },
         { "label": "加载服务器上的界面", "path": "studio/packages/relay-app/src/loader.ts" },
         { "label": "跳到 Studio", "path": "studio/packages/relay-app/src/studio-link.ts", "anchor": "export async function openInStudio" },
         { "label": "界面入口", "path": "studio/packages/relay-ui/src/main.tsx" },
