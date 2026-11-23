@@ -6,6 +6,7 @@ import { ListRow, ListSection } from "./Layout.js";
 import { MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
 import { listedOthers, threadAsText, unlistedNames, type Member, type ThreadView as Thread } from "./shared.js";
+import { messageRef } from "./refs.js";
 
 // Chats (2026-10-27; layout A's list, 2026-11-23, plans/cowork.md 第 8 条): on the left the groups, then one row per
 // person — their plain chat — with the topics with them under it; a topic starts from the chat's head (＋ 新话题). A chat
@@ -283,7 +284,7 @@ export function ChatView({ session, thread, toast, onArchive, onNewTopic }: { se
           </button>
         </div>
       </header>
-      <MessageList messages={messages} error={error} me={me} questions={[]} empty={group ? "群聊里还没有消息。" : thread.kind === "topic" ? `新话题「${thread.title}」，说点什么吧。` : "还没有消息，说点什么吧。"} />
+      <MessageList messages={messages} error={error} me={me} questions={[]} refOf={(m) => ({ text: messageRef(m.seq, { name: group || thread.kind === "topic" ? title : show(other) }), what: `这条消息（#${m.seq}）` })} empty={group ? "群聊里还没有消息。" : thread.kind === "topic" ? `新话题「${thread.title}」，说点什么吧。` : "还没有消息，说点什么吧。"} />
       <MentionComposer session={session} thread={thread} people={listedOthers(members, me)} toast={toast} />
       {dialog === "add" && <AddPeopleDialog session={session} thread={thread} onClose={() => setDialog(null)} toast={toast} />}
       {dialog === "rename" && <RenameDialog session={session} thread={thread} onClose={() => setDialog(null)} toast={toast} />}

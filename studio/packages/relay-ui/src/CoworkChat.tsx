@@ -2,7 +2,9 @@ import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useMem
 import { agentChip, agentRoute, agentWhat, atQuery, deliverySteps, matchTargets, mentionsIn, STATE_WORD, type MentionTarget } from "./coworkText.js";
 import { Avatar, timeText, useDisplayName, useListed, usePeople, Who } from "./bits.js";
 import { Markdown } from "./Markdown.js";
-import { errorText } from "./Messages.js";
+import { errorText, messageMenu } from "./Messages.js";
+import { copyRef, openMenu, openStudio, RefsContext, studioWhere } from "./RefChips.js";
+import { messageRef, subRef } from "./refs.js";
 import type { CoworkData, Session } from "./session.js";
 import type { CoworkAgent, CoworkDraft, CoworkEvent, CoworkListItem, CoworkSession, Message, Question } from "./shared.js";
 
@@ -226,6 +228,10 @@ const CONTINUES_MS = 5 * 60_000;
 
 function CoworkMessage({ m, prev, replied, me, questions }: { m: Message; prev: Message | undefined; replied: Message | undefined; me: string; questions: Question[] }) {
   const { cowork } = useCowork();
+  const refs = useContext(RefsContext);
+  // Right click: 复制引用 (#seq with the 协作), and 在 Studio 里打开 for my AI's; a click on my AI's name the same menu.
+  const menu = () => messageMenu(m, me, refs, (x) => ({ text: messageRef(x.seq, { cowork }), what: `这条消息（#${x.seq}）` }));
+  const mineAi = m.via.kind === "ai" && !!studioWhere(m.via.conv, m.author, me, refs?.device ?? null);
   const show = useDisplayName();
   const ai = m.via.kind === "ai";
   const agent = ai ? agentOf(cowork, m.via.kind === "ai" ? m.via.conv : null) : null;
@@ -235,14 +241,20 @@ function CoworkMessage({ m, prev, replied, me, questions }: { m: Message; prev: 
   const atNames = [...(m.mentions ?? []), ...(m.agentMentions ?? []).map((k) => agentOf(cowork, k)?.name ?? "")].filter(Boolean);
   const repliedWho = replied ? `${show(replied.author)}${replied.via.kind === "ai" ? " 的 AI" : ""}` : null;
   return (
-    <article id={`msg-${m.seq}`} className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""} ${ai ? "by-ai" : ""}`}>
+    <article id={`msg-${m.seq}`} data-seq={m.seq} className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""} ${ai ? "by-ai" : ""}`} onContextMenu={(e) => openMenu(e, menu())}>
       <div className="msg-av">{!continues && (ai ? <span className="avatar ai" title={agent?.name ?? `${m.author} 的 AI`}>AI</span> : <Avatar name={m.author} />)}</div>
       <div className="msg-col">
         <div className="msg-head">
-          <b>
-            <Who name={m.author} />
-            {ai ? " 的 AI" : ""}
-          </b>
+          {mineAi ? (
+            <button type="button" className="msg-name" title="我的 AI：在 Studio 里打开它的会话" onClick={(e) => openMenu(e, menu())}>
+              <Who name={m.author} /> 的 AI
+            </button>
+          ) : (
+            <b>
+              <Who name={m.author} />
+              {ai ? " 的 AI" : ""}
+            </b>
+          )}
           {agent && <span className="tag agent-label">{agent.label}</span>}
           {repliedWho && <span className="cw-reply-to">↳ 回 {repliedWho}</span>}
           {mine && <span className="me-tag">我</span>}
@@ -353,7 +365,7 @@ function DeliveryTrail({ m }: { m: Message }) {
 
 /** A 子会话 folded into a card in the 群聊, where it was started; it moves on in place. A click opens its window. */
 export function SessionCard({ threadId, at, by, via }: { threadId: string; at: number; by: string; via: Message["via"] }) {
-  const { cowork, session, openSub, me } = useCowork();
+  const { cowork, session, openSub, me, toast } = useCowork();
   const show = useDisplayName();
   const s = cowork.sessions.find((x) => x.id === threadId);
   const t = session.snapshot.threads.find((x) => x.id === threadId);
@@ -366,7 +378,7 @@ export function SessionCard({ threadId, at, by, via }: { threadId: string; at: n
   const st = subState(s, show, me);
   const asker = s.agent ? (agentOf(cowork, s.agent)?.name ?? `${show(s.from)} 的 AI`) : show(s.from);
   return (
-    <button type="button" className={`cw-subcard ${st.cls}`} data-session={s.id} onClick={() => openSub(s.id)} title="点开这个子会话（弹窗，可以同时开几个）">
+    <button type="button" className={`cw-subcard ${st.cls}`} data-session={s.id} onClick={() => openSub(s.id)} onContextMenu={(e) => openMenu(e, [{ label: "复制引用", onClick: () => copyRef(subRef(s, cowork.id), `子会话「${s.title}」`, toast) }])} title="点开这个子会话（弹窗，可以同时开几个；右键复制引用）">
       <span className="cw-subcard-top">
         <span className="tag">子会话</span>
         <span className="cw-subcard-title">{s.title}</span>
@@ -450,6 +462,7 @@ export function CoworkComposer(props: { threadId?: string; placeholder: string; 
   const { cowork, session, me, toast } = useCowork();
   const people = usePeople();
   const listed = useListed(me);
+  const device = useContext(RefsContext)?.device ?? null;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
@@ -575,11 +588,19 @@ export function CoworkComposer(props: { threadId?: string; placeholder: string; 
           <div className="cw-route" aria-label="去向">
             <span className="cw-route-k">去向</span>
             <span className="cw-route-v">
-              {routed.map((a) => (
-                <span key={a.mark} className={`st-${a.state}`}>
-                  <b>{STATE_MARK_OF[a.state]}</b> {agentRoute(a)}
-                </span>
-              ))}
+              {routed.map((a) =>
+                // My own AI on this computer: a click goes to its session in Studio (2026-11-23).
+                studioWhere(a.mark, a.owner, me, device) === "here" ? (
+                  <button key={a.mark} type="button" className={`cw-route-ai st-${a.state}`} data-agent={a.mark} title="我的 AI：点一下在 Studio 里打开它的会话" onClick={() => void openStudio(a.mark, toast)}>
+                    <b>{STATE_MARK_OF[a.state]}</b> {agentRoute(a)}
+                    <span className="cw-route-go">在 Studio 里打开 ↗</span>
+                  </button>
+                ) : (
+                  <span key={a.mark} className={`st-${a.state}`} data-agent={a.mark}>
+                    <b>{STATE_MARK_OF[a.state]}</b> {agentRoute(a)}
+                  </span>
+                ),
+              )}
             </span>
             <button type="button" className="x" title="知道了" onClick={() => setRouteOff(routeKey)}>
               ×

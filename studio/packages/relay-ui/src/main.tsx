@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { shell } from "./env.js";
 import { Home } from "./Home.js";
 import { Login, PlatformLogin } from "./Login.js";
+import { startOpenRequests, useOpenRequest } from "./openRequests.js";
 import { Session, type Identity } from "./session.js";
 import { normalizeServer, RelayClient, RelayClientError, type ShellInfo } from "./shared.js";
 import { applyFontSize, applyTheme, readFontSize, readTheme } from "./theme.js";
@@ -15,6 +16,8 @@ import "./styles.css";
 
 applyTheme(readTheme());
 applyFontSize(readFontSize());
+// What AMO Studio or a notification asks to open: heard from the start, also while signing in.
+startOpenRequests();
 
 // The AMO 中转 client's content: the login screen, then the conversations. The login is kept for the window
 // (sessionStorage), so a reload — an update applying itself — comes back signed in, with the same conversation open
@@ -59,6 +62,7 @@ function App() {
   const [problem, setProblem] = useState<string | null>(null);
   const current = useRef(session);
   current.current = session;
+  const asked = useOpenRequest();
   /** A key the service refused: not tried again until the platform has another. */
   const refused = useRef<string | null>(null);
 
@@ -138,11 +142,20 @@ function App() {
 
   if (!session) {
     if (platform === "checking") return <div className="login-page" data-testid="platform-checking" />;
+    // Opened from AMO Studio before signing in (2026-11-23): said here, opened once signed in.
+    const waiting = asked && <div className="open-waiting" role="status">{asked.startsWith("cowork:") ? "AMO Studio 让中转打开一个协作：登录后就打开它" : "有一个会话等着打开：登录后就打开它"}</div>;
     // Installed by the platform: its login only. A zip unpacked by hand keeps its own form when nobody is logged in there.
-    if (platform === "none" && info?.updatedBy === "platform") return <PlatformLogin server={info.server} problem={problem} onRetry={() => ((refused.current = null), void follow())} />;
+    if (platform === "none" && info?.updatedBy === "platform")
+      return (
+        <>
+          {waiting}
+          <PlatformLogin server={info.server} problem={problem} onRetry={() => ((refused.current = null), void follow())} />
+        </>
+      );
     if (platform === "none" && !info) return <div className="login-page" data-testid="platform-checking" />;
     return (
       <>
+        {waiting}
         {(failed ?? problem) && <div className="toast">{failed ?? problem}</div>}
         <Login onSignedIn={(me) => (setFailed(null), remember(me), setSession(new Session(me)))} />
       </>

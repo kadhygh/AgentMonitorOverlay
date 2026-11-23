@@ -156,6 +156,14 @@ export interface RelayShell {
    */
   takeOpenThread?(): Promise<string | null>;
   /**
+   * What the shell was started (or woken) with to open (2026-11-23, relay-app open-arg.ts): `cowork:<id>` or
+   * `thread:<id>` (`--open=…`, or the older `--open-thread`), once — later calls give null. With onOpen, a shell that
+   * has these sends a notification's click there too (`thread:<id>`), so the content listens on onOpen alone.
+   * Optional: added after shell 1 shipped; an older one has only takeOpenThread / onOpenThread.
+   */
+  takeOpen?(): Promise<string | null>;
+  onOpen?(listener: (ref: string) => void): void;
+  /**
    * 在 Studio 里打开 (J1): a session's mark (Via.conv) names a Studio session on this computer that is running now —
    * its device is this one's (device.json) and a Studio Host is up. Optional: added after shell 1 shipped.
    */

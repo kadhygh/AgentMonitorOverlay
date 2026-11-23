@@ -1,8 +1,11 @@
 import { Fragment, memo, type ReactNode } from "react";
 import { shell } from "./env.js";
+import { findRefs } from "./refs.js";
+import { RefChip } from "./RefChips.js";
 
 // Enough Markdown for requests and chat: headings, paragraphs (line breaks kept), lists, quotes, code fences, tables,
 // rules; inline code, bold, italic, links. Built as React elements, never HTML, so a message cannot inject markup.
+// In the plain text, `cowork:` `thread:` `studio:` refs (复制引用, 2026-11-23) become chips (RefChips.tsx).
 
 type Block =
   | { kind: "heading"; level: number; text: string }
@@ -106,11 +109,19 @@ export function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let n = 0;
-  const push = (s: string) => {
+  const words = (s: string) =>
     s.split("\n").forEach((part, i) => {
       if (i) out.push(<br key={`br${n++}`} />);
       if (part) out.push(part);
     });
+  const push = (s: string) => {
+    let at = 0;
+    for (const r of findRefs(s)) {
+      words(s.slice(at, r.index));
+      out.push(<RefChip key={`r${n++}`} refAt={r.ref} raw={r.raw} label={r.label} />);
+      at = r.index + r.length;
+    }
+    words(s.slice(at));
   };
   for (const m of text.matchAll(INLINE)) {
     push(text.slice(last, m.index));

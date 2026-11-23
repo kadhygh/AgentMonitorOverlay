@@ -11,6 +11,8 @@ import { ListRow, ListSection, SideBlock, SidePanel, useSidePanel } from "./Layo
 import { Markdown } from "./Markdown.js";
 import { errorText, useMessages } from "./Messages.js";
 import { EMPTY_COWORK_DATA, useSession, type Session } from "./session.js";
+import { copyRef, openMenu, openStudio, studioWhere } from "./RefChips.js";
+import { coworkRef, subRef } from "./refs.js";
 import { listedOthers, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type CoworkSession, type Message } from "./shared.js";
 
 // 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作, and
@@ -166,7 +168,12 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
         <div className="cw-main">
           <div className="page-head">
             <div className="head-main">
-              <h1 className="head-title">{cowork.title}</h1>
+              <div className="head-title-row">
+                <h1 className="head-title">{cowork.title}</h1>
+                <button type="button" className="small ghost head-copy" onClick={() => copyRef(coworkRef(cowork), `协作「${cowork.title}」`, toast)} title="复制一行引用（标题和 cowork:<id>），贴进聊天或 AI 会话里都认得">
+                  复制引用
+                </button>
+              </div>
               <div className="head-meta">
                 <span className="page-crumb">{ended ? "已结束的协作" : "协作"}</span>
                 {where.length > 0 && (
@@ -381,19 +388,29 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
               </div>
             );
           })}
-          {cowork.agents.map((a) => (
-            <div key={a.mark} className="cw-person agent" data-agent={a.mark}>
-              <span className="avatar ai small">AI</span>
-              <span className="cw-person-text">
-                <b>{show(a.owner)} 的 AI</b>
-                <span className="muted tiny">
-                  {a.label}
-                  {a.owner === me ? " · 我的会话" : ""}
+          {cowork.agents.map((a) => {
+            // 在 Studio 里打开 (2026-11-23): my own AIs only; one on another computer says so instead.
+            const where = studioWhere(a.mark, a.owner, me, session.snapshot.device?.id ?? null);
+            return (
+              <div key={a.mark} className="cw-person agent" data-agent={a.mark}>
+                <span className="avatar ai small">AI</span>
+                <span className="cw-person-text">
+                  <b>{show(a.owner)} 的 AI</b>
+                  <span className="muted tiny">
+                    {a.label}
+                    {a.owner === me ? " · 我的会话" : ""}
+                  </span>
+                  {where === "here" && (
+                    <button type="button" className="link tiny cw-to-studio" onClick={() => void openStudio(a.mark, toast)} title="去这台电脑的 Studio 里看这个会话">
+                      在 Studio 里打开
+                    </button>
+                  )}
+                  {where === "elsewhere" && <span className="muted tiny cw-elsewhere">在另一台电脑上</span>}
                 </span>
-              </span>
-              <span className={`cw-chip st-${a.state}`}>{agentChip(a)}</span>
-            </div>
-          ))}
+                <span className={`cw-chip st-${a.state}`}>{agentChip(a)}</span>
+              </div>
+            );
+          })}
           {!cowork.agents.length && <div className="muted tiny">还没有 AI。在自己的 Studio 会话上点「拉进协作」，那个会话就能在这里回复、写白板。</div>}
         </div>
         <dl className="cw-legend" aria-label="AI 状态的意思">
@@ -412,7 +429,7 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
         {cowork.sessions.map((s) => {
           const x = subState(s, show, me);
           return (
-            <button key={s.id} type="button" className="cw-subrow" data-session={s.id} onClick={() => openSub(s.id)}>
+            <button key={s.id} type="button" className="cw-subrow" data-session={s.id} onClick={() => openSub(s.id)} onContextMenu={(e) => openMenu(e, [{ label: "复制引用", onClick: () => copyRef(subRef(s, cowork.id), `子会话「${s.title}」`, toast) }])}>
               <span className="cw-subrow-title">{s.title}</span>
               <span className={`cw-state ${x.cls}`}>{x.word}</span>
             </button>

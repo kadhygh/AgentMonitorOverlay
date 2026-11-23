@@ -130,6 +130,24 @@
       "next": ["studio/plans/cowork.md", "studio/packages/relay/README.md"]
     },
     {
+      "id": "tool.relayRefs",
+      "label": "中转的复制引用和跳转（cowork:/thread:/studio: 引用、在 Studio 里打开、--open=cowork:）",
+      "aliases": ["复制引用", "引用", "ref chip", "引用小块", "在 Studio 里打开", "--open", "--open=cowork", "--open-thread", "takeOpen", "onOpen", "running.json", "右键菜单"],
+      "category": "tool",
+      "purpose": "2026-11-23 用户定：协作、子会话、一条消息、中转会话都能「复制引用」（文字和 Studio 那边统一：协作「标题」 cowork:<id> 等，refs.ts），消息里认出 cowork:/thread:/studio: 显示成可点的小块（只在显示时认，存储不变，Markdown.tsx → RefChips.tsx）；「在 Studio 里打开」只给自己的、这台电脑上的 AI（成员列表、AI 名字的菜单、输入框上方的去向），经外壳的 studioHas / openInStudio。反向：外壳认 --open=cowork:<id> / --open=thread:<id>（还有老的 --open-thread），单实例转给内容（relay:open + take-open），内容在登录、列表加载完后打开，看不到就提示（openRequests.ts、Home.tsx）；外壳的 running.json 写 exe、version、open: [\"cowork\",\"thread\"] 给 Studio 找它。",
+      "anchors": [
+        { "label": "引用的文字和识别", "path": "studio/packages/relay-ui/src/refs.ts", "anchor": "export function findRefs" },
+        { "label": "引用小块、右键菜单、在 Studio 里打开", "path": "studio/packages/relay-ui/src/RefChips.tsx", "anchor": "export function RefChip" },
+        { "label": "小块各指什么、打开（Home 给）", "path": "studio/packages/relay-ui/src/Home.tsx", "anchor": "const refs: RefsCtx" },
+        { "label": "外壳让打开的（登录前也听）", "path": "studio/packages/relay-ui/src/openRequests.ts", "anchor": "export function startOpenRequests" },
+        { "label": "外壳：参数解析", "path": "studio/packages/relay-app/src/open-arg.ts", "anchor": "export function parseOpenArg" },
+        { "label": "外壳：转给内容、running.json", "path": "studio/packages/relay-app/src/main.ts", "anchor": "function sendOpen" },
+        { "label": "e2e：复制、点小块、在 Studio 里打开（假 Studio）、--open", "path": "studio/e2e/relay/refs.spec.ts" }
+      ],
+      "related": ["tool.relayCowork", "tool.relayClient", "studio.cowork"],
+      "next": ["studio/packages/relay-app/src/open-arg.ts", "studio/packages/relay/src/shell-api.ts"]
+    },
+    {
       "id": "tool.issues",
       "label": "问题页（AMO 自己的问题）",
       "aliases": ["问题页", "issues", "issue_reply", "IssueStore", "发布打包", "需要确认", "卡住了", "维护者", "审核"],

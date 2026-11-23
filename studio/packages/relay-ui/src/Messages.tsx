@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Avatar, timeText, Who } from "./bits.js";
 import { Markdown } from "./Markdown.js";
+import { copyRef, openMenu, openStudio, RefsContext, studioWhere, type MenuItem } from "./RefChips.js";
 import type { Session } from "./session.js";
 import { RelayClientError, VERDICT_LABEL, type Message, type Question } from "./shared.js";
 
@@ -45,7 +46,10 @@ export function useMessages(session: Session, threadId: string): { messages: Mes
   return { messages, error };
 }
 
-export function MessageList({ messages, error, me, questions, empty, after }: { messages: Message[] | null; error: string | null; me: string; questions: Question[]; empty: string; after?: ReactNode }) {
+/** `refOf`: 复制引用 of a message (right click) — its words and what the toast calls it. */
+export type MessageRefOf = (m: Message) => { text: string; what: string };
+
+export function MessageList({ messages, error, me, questions, empty, after, refOf }: { messages: Message[] | null; error: string | null; me: string; questions: Question[]; empty: string; after?: ReactNode; refOf?: MessageRefOf }) {
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scroller.current;
@@ -60,7 +64,7 @@ export function MessageList({ messages, error, me, questions, empty, after }: { 
       {messages?.reduce<{ round: Question[]; out: ReactNode[] }>(
         (acc, m, i) => {
           if (m.questions?.length && m.kind !== "reply") acc.round = m.questions;
-          acc.out.push(<MessageItem key={m.seq} m={m} prev={messages[i - 1]} me={me} questions={acc.round} />);
+          acc.out.push(<MessageItem key={m.seq} m={m} prev={messages[i - 1]} me={me} questions={acc.round} refOf={refOf} />);
           return acc;
         },
         { round: questions, out: [] },
@@ -76,7 +80,21 @@ const boldMentions = (body: string, names: string[]) => names.reduce((s, n) => s
 /** A plain message right after one by the same person, within a few minutes: no header again. */
 const CONTINUES_MS = 5 * 60_000;
 
-function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | undefined; me: string; questions: Question[] }) {
+/** A message's right-click menu: 复制引用, and 在 Studio 里打开 for my AI's (one on this computer). */
+export function messageMenu(m: Message, me: string, refs: { device: string | null; toast: (t: string) => void } | null, refOf?: MessageRefOf): MenuItem[] {
+  if (!refs) return [];
+  const conv = m.via.kind === "ai" ? m.via.conv : null;
+  const where = studioWhere(conv, m.author, me, refs.device);
+  const r = refOf?.(m);
+  return [
+    r ? { label: "复制引用", hint: "贴进聊天或 AI 会话：人看到在哪，AI 认得 #编号 和会话", onClick: () => copyRef(r.text, r.what, refs.toast) } : null,
+    where === "here" ? { label: "在 Studio 里打开", hint: "去这台电脑的 Studio 里，写这条的那个会话", onClick: () => void openStudio(conv!, refs.toast) } : null,
+    where === "elsewhere" ? { label: "在另一台电脑上", disabled: true, hint: "写这条的 Studio 会话不在这台电脑上", onClick: () => undefined } : null,
+  ];
+}
+
+function MessageItem({ m, prev, me, questions, refOf }: { m: Message; prev: Message | undefined; me: string; questions: Question[]; refOf?: MessageRefOf }) {
+  const refs = useContext(RefsContext);
   if (m.kind === "event") {
     return (
       <div className="event" title={new Date(m.createdAt).toLocaleString()}>
@@ -92,7 +110,7 @@ function MessageItem({ m, prev, me, questions }: { m: Message; prev: Message | u
   // Layout A (2026-11-23): everyone on the left, a picture and a name line first — an AI's words with the AI's mark,
   // mine with 「我」 and a tinted body.
   return (
-    <article className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""}`}>
+    <article className={`msg ${mine ? "mine" : "theirs"} kind-${m.kind} ${continues ? "continues" : ""}`} data-seq={m.seq} onContextMenu={(e) => openMenu(e, messageMenu(m, me, refs, refOf))}>
       <div className="msg-av">{!continues && (ai ? <span className="avatar ai" title={`${m.author} 的 AI`}>AI</span> : <Avatar name={m.author} />)}</div>
       <div className="msg-col">
       <div className="msg-head">

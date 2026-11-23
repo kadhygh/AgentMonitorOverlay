@@ -24,6 +24,9 @@ import { saveResume, useUpdates } from "./update.js";
 import { TransferEngine } from "./transfer.js";
 import { pendingHere, SendDialog, transferAvailability, TransferMain, TransferNav, type TransferAvailability, type TransferFilter } from "./Transfers.js";
 import { transferBytesText, transferTitle } from "./shared.js";
+import { takeOpenRequest, useOpenRequest } from "./openRequests.js";
+import { copyRef, MenuHost, openMenu, RefsContext, type RefsCtx } from "./RefChips.js";
+import { parseOpen, requestRef } from "./refs.js";
 
 // After login, in layout A「IM 三栏」(2026-11-23, plans/cowork.md 第 8 条; the prototype studio/out/relay-redesign/a-im.html,
 // the frame's parts in Layout.tsx): the title bar (the service and how it is connected, the window's buttons); the
@@ -100,9 +103,9 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
 
   const checkHealth = useCallback(() => session.client.health(), [session]);
   const shellUpdate = useShellUpdate(checkHealth);
-  const toast = useCallback((text: string) => {
+  const toast = useCallback((text: string, ms = 2400) => {
     setToastText(text);
-    setTimeout(() => setToastText((t) => (t === text ? null : t)), 2400);
+    setTimeout(() => setToastText((t) => (t === text ? null : t)), ms);
   }, []);
   // Back from 「立即更新」: say it took.
   useEffect(() => {
@@ -204,12 +207,57 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     setView(t && t.kind !== "request" ? "chat" : "queue");
     setOpenId(id);
   };
-  const openThreadRef = useRef(openThread);
-  openThreadRef.current = openThread;
+  // What the shell asks to open (openRequests.ts: a notification, Studio's 在中转里打开 and 打开协作 — 2026-11-23,
+  // --open=cowork:<id>): once the lists are in, so what is not in them is one I cannot see — said, not dropped.
+  const asked = useOpenRequest();
   useEffect(() => {
-    shell?.onOpenThread((id) => (openThreadRef.current(id), void shell?.takeOpenThread?.()));
-    void shell?.takeOpenThread?.().then((id) => id && openThreadRef.current(id));
-  }, []);
+    if (!asked || !st.loaded) return;
+    const ref = parseOpen(takeOpenRequest() ?? "");
+    if (!ref) return;
+    if (ref.kind === "cowork") {
+      if (st.coworks.some((c) => c.id === ref.id)) return showCowork(ref.id);
+      return toast(st.coworksOk ? "打不开这个协作：你不在里面，或者它已经不在了。请发起人把你拉进去" : "打不开这个协作：中转服务还是旧版，没有协作", 6000);
+    }
+    if (ref.id.startsWith("transfer:") || threads.some((t) => t.id === ref.id)) return openThread(ref.id);
+    const sub = st.coworks.find((c) => c.sessions.some((s) => s.id === ref.id));
+    if (sub) return showCowork(sub.id, ref.id);
+    toast("打不开这个会话：你看不到它，或者它已经不在了", 6000);
+  }, [asked, st.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 复制引用's chips in messages (RefChips.tsx): what each names, and opening it.
+  const subOf = (id: string) => {
+    for (const c of st.coworks) {
+      const s = c.sessions.find((x) => x.id === id);
+      if (s) return { c, s };
+    }
+    return null;
+  };
+  const refs: RefsCtx = {
+    device: device?.id ?? null,
+    toast,
+    describe(ref) {
+      const t = ref.kind === "thread" ? threads.find((x) => x.id === ref.id) : undefined;
+      const cid = ref.kind === "cowork" ? ref.id : t?.kind === "cowork" ? t.id : null;
+      if (cid) {
+        const c = st.coworks.find((x) => x.id === cid);
+        return c ? { text: `协作「${c.title}」`, hint: "打开这个协作", can: true } : { text: "看不到的协作", hint: "你不在这个协作里，或者它已经不在了", can: false };
+      }
+      const sub = subOf(ref.id);
+      if (sub || (t && ofCowork(t))) {
+        const c = sub?.c ?? st.coworks.find((x) => x.id === coworkOf(t!));
+        return { text: `子会话「${sub?.s.title ?? t!.title}」`, hint: c ? `打开协作「${c.title}」里的这个子会话` : "打开这个子会话", can: !!c };
+      }
+      if (t?.kind === "request") return { text: `中转会话「${t.title}」`, hint: "打开这个中转会话", can: true };
+      if (t) return { text: `聊天「${chatTitleFor(t, members, me)}」`, hint: "打开这个聊天", can: true };
+      return { text: "看不到的会话", hint: "你不在这个会话里，或者它已经不在了", can: false };
+    },
+    open(ref) {
+      if (ref.kind === "cowork") return showCowork(ref.id);
+      const sub = subOf(ref.id);
+      if (sub) return showCowork(sub.c.id, ref.id);
+      openThread(ref.id);
+    },
+  };
 
   /** A 协作, and one of its 子会话 opened over it. */
   function showCowork(id: string, sub?: string) {
@@ -335,14 +383,14 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           <HandedRow key={t.id} task={t} current={false} onOpen={(id) => showTask(id)} />
         ))}
         {groups.mine.map((t) => (
-          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />
+          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} toast={toast} />
         ))}
         {!queueCount && <div className="list-empty">手上没有要处理的。</div>}
         <CoworkWaitingRows session={session} onOpen={showCowork} />
         {pendingFiles.length > 0 && <FilterRow label="等你接收的文件" count={pendingFiles.length} hot current={false} onClick={() => switchView("transfers")} />}
         <ListSection title="等对方 / AI 处理中" count={groups.waiting.length} />
         {groups.waiting.map((t) => (
-          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />
+          <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} toast={toast} />
         ))}
         {!groups.waiting.length && <div className="list-empty">没有。</div>}
         {groups.done.length > 0 && (
@@ -350,7 +398,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
             <button type="button" className="nav-fold" onClick={() => setDoneOpen(!doneOpen)}>
               {doneOpen ? "▾" : "▸"} 已完成 {groups.done.length}
             </button>
-            {doneOpen && groups.done.map((t) => <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} />)}
+            {doneOpen && groups.done.map((t) => <SessionRow key={t.id} thread={t} me={me} current={t.id === openId} onOpen={setOpenId} limits={settings} toast={toast} />)}
           </>
         )}
       </ListPane>
@@ -559,6 +607,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const listShown = !(view === "tasks" && openTask);
   return (
     <PeopleContext.Provider value={people}>
+    <RefsContext.Provider value={refs}>
     <div className="app layout-a">
       <header className={`topbar ${ownTitleBar ? "own" : ""} ${macLights ? "mac" : ""}`}>
         <div className="brand">
@@ -650,17 +699,25 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       {dialog?.kind === "help" && <HelpDialog section={dialog.section} onClose={() => setDialog(null)} />}
       {dialog?.kind === "file" && <FileViewer session={session} fileId={dialog.id} scripts={dialog.scripts} onClose={() => setDialog(null)} toast={toast} />}
       {toastText && <div className="toast">{toastText}</div>}
+      <MenuHost />
     </div>
+    </RefsContext.Provider>
     </PeopleContext.Provider>
   );
 }
 
-function SessionRow({ thread, me, current, onOpen, limits }: { thread: Thread; me: string; current: boolean; onOpen: (id: string) => void; limits?: { aiLateMinutes: number; aiStuckMinutes: number } }) {
+function SessionRow({ thread, me, current, onOpen, limits, toast }: { thread: Thread; me: string; current: boolean; onOpen: (id: string) => void; limits?: { aiLateMinutes: number; aiStuckMinutes: number }; toast?: (t: string) => void }) {
   const r = thread.request!;
   const s = sessionStatus(thread, me, Date.now(), limits);
   const at = r.state === "returned" ? (r.returnedAt ?? thread.updatedAt) : thread.updatedAt;
   return (
-    <button type="button" className={`srow ${thread.unread ? "unread" : ""}`} aria-current={current ? "true" : undefined} onClick={() => onOpen(thread.id)}>
+    <button
+      type="button"
+      className={`srow ${thread.unread ? "unread" : ""}`}
+      aria-current={current ? "true" : undefined}
+      onClick={() => onOpen(thread.id)}
+      onContextMenu={toast && ((e) => openMenu(e, [{ label: "复制引用", hint: "贴进聊天或 AI 会话：人看到标题，AI 认得 thread:<id>", onClick: () => copyRef(requestRef(thread), `中转会话「${thread.title}」`, toast) }]))}
+    >
       <div className="srow-top">
         <span className={`dot ${s.dot}`} />
         <span className="srow-title">{thread.title}</span>

@@ -3,6 +3,8 @@ import { canHandToStudio, toMySession } from "./coworkHandoff.js";
 import { agentOf, CoworkComposer, CoworkMessages, DraftCard, subState, useCowork } from "./CoworkChat.js";
 import { useDisplayName } from "./bits.js";
 import { Dialog } from "./Dialog.js";
+import { copyRef } from "./RefChips.js";
+import { subRef } from "./refs.js";
 import { errorText, useMessages } from "./Messages.js";
 import type { Answer, CoworkSession, Question } from "./shared.js";
 
@@ -59,6 +61,9 @@ export function SubSessionBody({ sub }: { sub: CoworkSession }) {
           </button>
           <button type="button" className="small" onClick={() => openBoard(sub.id)}>
             在白板上看
+          </button>
+          <button type="button" className="small ghost" onClick={() => copyRef(subRef(sub, cowork.id), `子会话「${sub.title}」`, toast)} title="复制一行引用（标题、thread:<id> 和它的协作），贴进聊天或 AI 会话里都认得">
+            复制引用
           </button>
           {mayConclude && (
             <button type="button" className="small" onClick={() => setConcluding(true)}>

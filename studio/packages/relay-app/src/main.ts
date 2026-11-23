@@ -27,6 +27,7 @@ import { Attention, writeAttention } from "./attention.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
+import { openText, parseOpenArg, type OpenRef } from "./open-arg.js";
 import { openInStudio, studioHas } from "./studio-link.js";
 import { wireTransfer } from "./transfer-ipc.js";
 
@@ -114,16 +115,16 @@ const argServer = () => {
   return i >= 0 ? (process.argv[i + 1] ?? null) : null;
 };
 /**
- * 在中转里打开 from AMO Studio (2026-11-05, plans/done/relay-round-2026-11-05.md J2): `--open-thread <id>`, at start or from
- * a second start (single instance). Kept until the content takes it (it may still be loading or signing in), and sent
- * at once to a content already there.
+ * What to open, from AMO Studio (open-arg.ts): `--open=cowork:<id>` / `--open=thread:<id>` (2026-11-23), or the older
+ * `--open-thread <id>` (2026-11-05, J2), at start or from a second start (single instance). Kept until the content takes
+ * it (it may still be loading or signing in), and sent at once to a content already there.
  */
-const argThread = (argv: readonly string[]) => {
-  const i = argv.indexOf("--open-thread");
-  const id = i >= 0 ? argv[i + 1] : undefined;
-  return id && /^[A-Za-z0-9_-]{1,80}$/.test(id) ? id : null;
-};
-let pendingThread: string | null = argThread(process.argv);
+let pendingOpen: OpenRef | null = parseOpenArg(process.argv);
+/** To the content: `relay:open` (`<kind>:<id>`) for one that has onOpen, and a thread on the older channel as well. */
+function sendOpen(ref: OpenRef): void {
+  win?.webContents.send("relay:open", openText(ref));
+  if (ref.kind === "thread") win?.webContents.send("relay:open-thread", ref.id);
+}
 
 // ---- the window and its pages
 
@@ -424,14 +425,23 @@ function wire(): void {
     const note = new Notification({ title: n.title, body: n.body, icon: ICON || undefined, silent: false });
     note.on("click", () => {
       showWindow();
+      // (a 传文件 one's id is `transfer:<id>`: the content's openThread knows it)
+      win?.webContents.send("relay:open", `thread:${n.threadId}`);
       win?.webContents.send("relay:open-thread", n.threadId);
     });
     note.show();
   });
+  // A content from before --open=cowork: takes only a thread (and a 协作 waits for one that takes it).
   ipcMain.handle("relay:take-open-thread", () => {
-    const id = pendingThread;
-    pendingThread = null;
+    if (pendingOpen?.kind !== "thread") return null;
+    const id = pendingOpen.id;
+    pendingOpen = null;
     return id;
+  });
+  ipcMain.handle("relay:take-open", () => {
+    const ref = pendingOpen;
+    pendingOpen = null;
+    return ref ? openText(ref) : null;
   });
   // 在 Studio 里打开 (J1, studio-link.ts): the content asks yes/no and go; the Host's token stays here.
   ipcMain.handle("relay:studio-has", (_e, conv: unknown) => studioHas(conv));
@@ -715,14 +725,16 @@ const me = { exe: process.execPath };
 
 /**
  * running.json in its home (2026-11-04, the user: 关闭 on AMO 平台's card was slow): this client's pid and exe, so the
- * platform knows it runs — and when it has quit — without asking Windows for every process. Only the running one
+ * platform knows it runs (and AMO Studio where to send --open) — and when it has quit — without asking Windows for every process. Only the running one
  * writes it; it goes when it quits (a file left by a crash names a pid that no longer lives).
  */
 const runningFile = join(home, "running.json");
 function writeRunning(): void {
   try {
     mkdirSync(home, { recursive: true });
-    writeFileSync(runningFile, JSON.stringify({ pid: process.pid, exe: process.execPath, startedAt: new Date().toISOString() }, null, 2));
+    // version and open (2026-11-23): AMO Studio starts `exe` with --open=<kind>:<id> to show a 协作 here, once it has
+    // seen this shell takes it (an older one has no `open`: Studio says 更新中转客户端).
+    writeFileSync(runningFile, JSON.stringify({ pid: process.pid, exe: process.execPath, startedAt: new Date().toISOString(), version: app.getVersion(), open: ["cowork", "thread"] }, null, 2));
   } catch {
     // the platform then asks Windows, as before
   }
@@ -747,10 +759,10 @@ function start(): void {
       app.quit();
     } else {
       showWindow();
-      const thread = argThread(argv);
-      if (thread) {
-        pendingThread = thread;
-        win?.webContents.send("relay:open-thread", thread);
+      const ref = parseOpenArg(argv);
+      if (ref) {
+        pendingOpen = ref;
+        sendOpen(ref);
       }
     }
   });

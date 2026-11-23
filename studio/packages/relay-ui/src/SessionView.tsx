@@ -8,6 +8,8 @@ import { Composer, MessageList, errorText, useMessages } from "./Messages.js";
 import { useSession, type Session } from "./session.js";
 import { carriedNotes, fileNotesText, filesAsText, newRepliesText, notePlaces, sinceLastWord, threadAsText, VERDICT_LABEL, type Answer, type FileNote, type NotePlaces, type Question, type RelayFile, type SessionAction, type ThreadView, type Verdict } from "./shared.js";
 import { writeUsageFile } from "./usageFile.js";
+import { copyRef } from "./RefChips.js";
+import { messageRef, requestRef } from "./refs.js";
 
 // A session (stage 2a): someone — often their AI — asks a person to handle one thing. It is always in someone's hands:
 // the person asked answers it one question at a time and returns it (回复并返回); back with the asker, their AI takes it
@@ -241,6 +243,9 @@ export function SessionView(props: {
               <button type="button" className="small" onClick={() => void copyAll()} title="复制整个会话（含逐条回答和附件上的批注），贴给 AI">
                 复制给 AI
               </button>
+              <button type="button" className="small ghost" onClick={() => copyRef(requestRef(thread), `中转会话「${thread.title}」`, toast)} title="复制一行引用（标题和 thread:<id>），贴进聊天或 AI 会话里都认得">
+                复制引用
+              </button>
               {inStudio && (
                 <button type="button" className="small" onClick={() => void openStudio()} title="这个会话是这台电脑上的 AMO Studio 发的：去 Studio 里发起它的那个对话">
                   在 Studio 里打开
@@ -258,7 +263,7 @@ export function SessionView(props: {
       <AiBand thread={thread} me={me} limits={settings} onPickup={() => void copyPickup()} onCopy={() => void copyAll()} onCopyNew={sinceMine ? () => void copyNew() : undefined} onAct={(a, t) => void act(a, t)} />
       {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
       {taking && <TakeDialog session={session} thread={thread} onClose={() => setTaking(false)} toast={toast} />}
-      <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" />
+      <MessageList messages={messages} error={error} me={me} questions={questions} empty="还没有消息" refOf={(m) => ({ text: messageRef(m.seq, { name: requestRef(thread) }), what: `这条消息（#${m.seq}）` })} />
       {dock}
       </div>
       {side.open && (

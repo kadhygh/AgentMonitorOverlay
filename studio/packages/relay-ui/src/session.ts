@@ -48,6 +48,8 @@ interface State {
   coworkData: Record<string, CoworkData>;
   /** Messages in a 协作 (its 群聊 or a 子会话) that @ me and I have not read: 待处理's 「@我」. */
   mentions: Message[];
+  /** The lists (threads, 协作) have come from the service at least once: what is not in them now, I cannot see. */
+  loaded: boolean;
 }
 
 export interface CoworkData {
@@ -64,7 +66,7 @@ const upsert = <T extends { id: string | number }>(list: T[], x: T) => (list.som
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false, coworks: [], coworksOk: true, coworkData: {}, mentions: [] };
+  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false, coworks: [], coworksOk: true, coworkData: {}, mentions: [], loaded: false };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
   private noteListeners = new Set<(fileId: string) => void>();
@@ -249,6 +251,7 @@ export class Session {
       const added = [...touched].filter((id) => !listed.has(id)).flatMap((id) => (now.has(id) ? [now.get(id)!] : []));
       this.set({ threads: [...added, ...merged], members, tasks, settings });
       await this.reloadCoworks(this.state.threads);
+      if (!this.state.loaded) this.set({ loaded: true });
       if (this.state.device) await this.reloadTransfers();
     } finally {
       this.touched.delete(touched);
