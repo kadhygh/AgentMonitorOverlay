@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openText, parseOpenArg, parseOpenValue } from "./open-arg.js";
+import { openText, parseOpenArg, parseOpenValue, runningTakesOpen } from "./open-arg.js";
 
 // What the client is asked to open from its arguments (2026-11-23): --open=cowork:<id> / thread:<id>, and the older
 // --open-thread <id>.
@@ -46,5 +46,18 @@ describe("parseOpenArg", () => {
 
   it("gives the content <kind>:<id>", () => {
     expect(openText({ kind: "cowork", id: "t_1" })).toBe("cowork:t_1");
+  });
+});
+
+describe("runningTakesOpen", () => {
+  const alive = (pid: number) => pid === 4242;
+  it("a running client that says open takes it: the second start is done", () => {
+    expect(runningTakesOpen({ pid: 4242, exe: "C:/AMO/中转/AMO 中转.exe", open: ["cowork", "thread"] }, alive)).toBe(true);
+  });
+  it("one from before open, a file left by a crash, or none: wait for the lock as before", () => {
+    expect(runningTakesOpen({ pid: 4242, exe: "C:/AMO/中转/AMO 中转.exe" }, alive)).toBe(false);
+    expect(runningTakesOpen({ pid: 77, open: ["cowork", "thread"] }, alive)).toBe(false);
+    expect(runningTakesOpen(null, alive)).toBe(false);
+    expect(runningTakesOpen({ pid: "4242", open: ["cowork"] }, alive)).toBe(false);
   });
 });

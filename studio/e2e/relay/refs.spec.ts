@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -267,6 +268,22 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   // running.json: where Studio finds the client and that it takes --open.
   const running = JSON.parse(readFileSync(join(A.home, "running.json"), "utf8")) as Record<string, unknown>;
   expect(running).toMatchObject({ pid: expect.any(Number), exe: expect.any(String), version: expect.any(String), open: ["cowork", "thread"] });
+
+  // Another copy (Studio found it in programs.json; the one open was unpacked by hand) started to open something: the
+  // one open opens it and stays — without --open, another copy still takes over (the platform's update).
+  await a.locator(".rail-item", { hasText: "聊天" }).click();
+  await A.app.evaluate(({ app }, args) => app.emit("second-instance", {}, ["D:/elsewhere/AMO 中转.exe", ...args], "", { exe: "D:/elsewhere/AMO 中转.exe" }), [`--open=cowork:${cw.id}`]);
+  await expect(a.locator(".cowork-view .head-title")).toHaveText("加特林射速调整");
+  expect(await A.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  // A real second start, as Studio makes it (only --open=…): it hands it to the one open and is gone at once, not after
+  // waiting for the lock.
+  await a.locator(".rail-item", { hasText: "聊天" }).click();
+  const launched = programLaunch("relay-app", join(studio, "packages", "relay-app", "dist", "main.js"));
+  const started = Date.now();
+  const second = spawn(launched.executablePath, [...launched.args, `--open=thread:${req.id}`], { env: { ...process.env, AMO_RELAY_HOME: A.home, AMO_HOME: join(A.home, "amo-home"), AMO_STUDIO_HOME: join(A.home, "studio-home"), AMO_RELAY_TEST: "1" }, stdio: "ignore" });
+  await new Promise<void>((done) => second.on("exit", () => done()));
+  expect(Date.now() - started).toBeLessThan(6000);
+  await expect(a.locator(".page-head .head-title")).toHaveText("登录页改版");
 
   // ---- started with --open=cowork: before signing in: it says so, and opens it once signed in.
   const Z = await start("美术小周", "ZHOU-PC", { args: [`--open=cowork:${hidden.id}`], signIn: false });

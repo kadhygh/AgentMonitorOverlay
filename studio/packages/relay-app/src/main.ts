@@ -27,7 +27,7 @@ import { Attention, writeAttention } from "./attention.js";
 import { newShellText, readBuildMode, stableExe } from "./build-mode.js";
 import { ContentStore, fetchManifest, type InstalledContent } from "./content.js";
 import { LOADER_HTML, type LoaderState } from "./loader.js";
-import { openText, parseOpenArg, type OpenRef } from "./open-arg.js";
+import { openText, parseOpenArg, runningTakesOpen, type OpenRef } from "./open-arg.js";
 import { openInStudio, studioHas } from "./studio-link.js";
 import { wireTransfer } from "./transfer-ipc.js";
 
@@ -739,6 +739,21 @@ function writeRunning(): void {
     // the platform then asks Windows, as before
   }
 }
+function readRunning(): unknown {
+  try {
+    return JSON.parse(readFileSync(runningFile, "utf8")) as unknown;
+  } catch {
+    return null;
+  }
+}
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 function removeRunning(): void {
   try {
     if ((JSON.parse(readFileSync(runningFile, "utf8")) as { pid?: unknown }).pid === process.pid) rmSync(runningFile, { force: true });
@@ -752,14 +767,16 @@ function start(): void {
   app.on("will-quit", removeRunning);
   app.on("second-instance", (_e, argv, _cwd, data) => {
     const other = (data as { exe?: string } | undefined)?.exe;
-    // 退出中转 from AMO 平台's tray or card (2026-10-29), whichever copy asks.
-    if (argv.includes("--amo-quit") || (other && other.toLowerCase() !== process.execPath.toLowerCase())) {
+    const ref = parseOpenArg(argv);
+    // 退出中转 from AMO 平台's tray or card (2026-10-29), whichever copy asks; another copy started takes over — but not
+    // one started to open something (2026-11-23: AMO Studio may find another copy in programs.json than the one open, a
+    // zip unpacked by hand): this one opens it and stays, and that one goes (runningTakesOpen).
+    if (argv.includes("--amo-quit") || (other && other.toLowerCase() !== process.execPath.toLowerCase() && !ref)) {
       quitting = true;
       tray?.destroy();
       app.quit();
     } else {
       showWindow();
-      const ref = parseOpenArg(argv);
       if (ref) {
         pendingOpen = ref;
         sendOpen(ref);
@@ -786,7 +803,10 @@ if (process.argv.includes("--amo-quit")) {
   app.requestSingleInstanceLock(me);
   app.quit();
 } else if (app.requestSingleInstanceLock(me)) start();
-else {
+else if (parseOpenArg(process.argv) && runningTakesOpen(readRunning(), pidAlive)) {
+  // What to open went to the running client with the call above, and it takes it: nothing left to do here.
+  app.quit();
+} else {
   // Another copy runs; it quits if it is a different one. Wait for the lock a few seconds, else leave it to it.
   let tries = 0;
   const retry = setInterval(() => {

@@ -44,3 +44,14 @@ export function parseOpenArg(argv: readonly string[]): OpenRef | null {
 }
 
 export const openText = (ref: OpenRef) => `${ref.kind}:${ref.id}`;
+
+/**
+ * A second start with something to open, when a client runs already: does the running one take it (its running.json
+ * says `open` and its pid lives)? Then the second start has handed it on and is done — it neither waits for the lock
+ * (each try would hand it on again) nor takes over. A client from before `open` quits when another copy starts
+ * (2026-10-29), so then the second start waits for the lock and opens it itself, as before.
+ */
+export function runningTakesOpen(running: unknown, alive: (pid: number) => boolean): boolean {
+  const r = running as { pid?: unknown; open?: unknown } | null;
+  return !!r && typeof r.pid === "number" && Array.isArray(r.open) && r.open.includes("cowork") && alive(r.pid);
+}
