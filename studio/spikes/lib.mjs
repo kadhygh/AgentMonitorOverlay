@@ -73,8 +73,9 @@ export function deepseekProviderArgs(id = "amo-deepseek") {
   ];
 }
 
-export function countTurn(note, provider = "deepseek") {
-  const r = reserveModelTurn(provider, note);
+// path: another checkout's budget.json (a script run from a worktree counts into the main one: AMO_BUDGET_PATH).
+export function countTurn(note, provider = "deepseek", path = process.env.AMO_BUDGET_PATH || undefined) {
+  const r = reserveModelTurn(provider, note, path);
   console.log(`[budget] ${provider} ${r.used}/${r.limit}${r.low ? " LOW" : ""} (${note})`);
 }
 
