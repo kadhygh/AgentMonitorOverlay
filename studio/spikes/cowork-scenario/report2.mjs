@@ -28,7 +28,7 @@ for (const dir of dirs) {
   const workers = sessions.filter((s) => s.role === "worker");
   const pl = lead("planner");
   const cl = lead("coder");
-  const name = (s) => (s.role === "lead" ? (s.who === "planner" ? "策划主控" : "程序主控") : s.role === "worker" ? `程序执行（${s.matter ?? "?"}）` : `${s.who} ${s.role}`);
+  const name = (s) => (s.role === "lead" ? (s.who === "planner" ? "策划主控" : "程序主控") : s.role === "worker" ? `${s.who === "planner" ? "策划" : "程序"}执行（${s.matter ?? "?"}）` : `${s.who} ${s.role}`);
   lines.push(`## 主控 ${r.lead} × 执行 ${r.worker}`, "");
   for (const n of r.notes ?? []) lines.push(`- 注意：${n}`);
   lines.push(`- 运行：${r.run}，${r.minutes} 分钟，计数 ${r.turnsCounted} 轮，巡检 ${r.patrolSec} s；停下的原因：${r.stopped}`);
@@ -70,6 +70,9 @@ for (const dir of dirs) {
   const dec120 = r.events.find((e) => e.kind === "decision" && /120/.test(e.text ?? ""));
   const answer120 = r.actions.find((a) => a.who === "策划" && /answered/.test(a.what) && /120/.test(a.what));
   lines.push(`  - 已定的事改成 120：${dec120 ? `${sec(dec120.at)}${answer120 ? `；策划回答在 ${sec(answer120.at)}（${ok(!dec120.at || dec120.at >= answer120.at)} 先问人再定）` : "；! 策划没回答就定了"}` : "没有"}`);
+  // Code moved to 120 before 策划 said yes (the 11-25 gpt run: the coder's 主控 told its 执行 「人员已确认新口径」 when only 程序 had asked).
+  const early120 = (r.messages ?? []).find((m) => m.commits && /120/.test(m.body) && (!answer120 || m.at < answer120.at));
+  lines.push(`  - 代码先于确认改成 120：${early120 ? `! 有：#${early120.seq} ${sec(early120.at)} ${early120.who}贴了改成 120 的提交（策划回答在 ${answer120 ? sec(answer120.at) : "—"}）` : `${ok(true)} 没有`}`);
   const mergeAnswer = r.actions.find((a) => a.who === "程序" && /answered/.test(a.what) && /合/.test(a.what));
   const masterCommit = r.commits.find((c) => !/^\S+ seed /.test(c));
   lines.push(`- 合 master：${askMerge.length ? `${ok(true)} 开了等人确认（事项 ${askMerge.map((m) => m.no).join("、")}）` : "! 没开"}；程序回答 ${mergeAnswer ? sec(mergeAnswer.at) : "—"}；master 上有改动：${(r.checked ?? []).find((c) => c.no === "master")?.passed ? "是（测试过）" : "见提交"}`);
