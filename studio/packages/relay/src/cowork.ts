@@ -879,6 +879,7 @@ export class CoworkStore {
       more.approvedBy = me;
       if (approved.edited) more.edited = true;
     }
+    const stateBefore = threadId === coworkId ? null : (this.store.threadById(threadId).request?.state ?? null);
     const out = this.store.addMessage(threadId, me, { ...p, mentions, via }, more);
     const party = partyOf(me, via);
     const after = this.store.tx(() => {
@@ -894,7 +895,10 @@ export class CoworkStore {
         this.matters.setMessage(supersedes.seq, { supersededBy: out.message.seq });
         superseded = { seq: supersedes.seq, supersededBy: out.message.seq, seenByAgents: seenByAgents(this.matters.receipts(supersedes.seq)) };
       }
-      this.syncFromSession(threadId, party);
+      // Only when this message moved the 子会话 (a reply or a follow-up handing it over): a 事项 opened to oneself keeps its
+      // 子会话 open when cowork_matter closes it, so a word said there afterwards (the 提出方 of a 交给对方 事项 answering
+      // 「事项 N 关了」, 2026-11-25 run) must not open it again.
+      if (stateBefore !== null && out.thread.request?.state !== stateBefore) this.syncFromSession(threadId, party);
       return { ...res, superseded };
     });
     const message = this.store.messageBySeq(out.message.seq)!;

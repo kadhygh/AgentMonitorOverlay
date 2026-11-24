@@ -649,6 +649,9 @@ describe("事项归做的那一方、闸门、执行的收件", () => {
     expect(await items(wang, agentParty(WANG_AI))).toEqual(["closed"]);
     expect(await items(wang, personParty("策划小王"))).toEqual(["closed"]);
     expect(await items(li, agentParty(LI_AI))).toEqual([]);
+    // A word from the one who asked after it closed leaves it closed (the 2026-11-25 run: 小王's AI answering 「关了」 reopened it).
+    await wang.postCowork(id, { threadId: m.id, body: "核过了，谢谢", agentMentions: [LI_AI], via: ai(WANG_AI) });
+    expect((await li.cowork(id)).cowork.matters!.find((x) => x.id === m.id)).toMatchObject({ status: "closed" });
     // A 子会话 asked of a person may still go to a session of theirs (转到我的会话): it is theirs to answer.
     const asked = await wang.askCowork(id, { to: "程序老李", title: "回落多久", body: "回落多久？" });
     await li.joinCoworkAgent(id, "studio:d_li00000000000000000000000:s-other", "回答", { role: "worker", matter: asked.thread!.id });
