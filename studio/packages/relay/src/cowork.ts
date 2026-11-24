@@ -1,11 +1,38 @@
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { CoworkBoard, type BoardActor, type BoardBigChange } from "./cowork-board.js";
+import { CoworkMatters, cleanBindings, cleanBlocker, cleanConclusion, cleanGate, cleanKind, cleanParties, cleanStatus, cleanTitle, partyOf, type CoworkTouched } from "./cowork-matters.js";
 import {
+  AGENT_ROLE_LABEL,
   AGENT_STALE_MS,
   AGENT_STREAK_MAX,
   COWORK_LIMITS,
   DEFAULT_COWORK_OPTIONS,
+  MATTER_LIMITS,
+  MATTER_STATUS_LABEL,
+  SETTLED_GROUP_TITLE,
+  SETTLED_SIDE,
+  agentParty,
+  canRewrite,
+  isParty,
+  leadTakenText,
+  matterSettled,
+  parseParty,
+  personParty,
+  roleAllows,
+  seenByAgents,
+  type AgentRole,
+  type BoardOp,
+  type BoardOpRecord,
+  type CollabAction,
+  type CoworkMarkResult,
+  type Matter,
+  type MatterStatus,
+  type NewCoworkMatter,
+  type CoworkMatterPatch,
+  type Party,
+  type PendingList,
+  type SupersedeResult,
   type AgentReport,
   type AgentState,
   type BoardOpsResult,
@@ -44,7 +71,9 @@ type Row = Record<string, unknown>;
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(8).toString("hex")}`;
 const AGENT_STATES = new Set(["idle", "busy", "owner", "offline"]);
-const BOARD_KIND_WORD: Record<string, string> = { note: "便签", session: "子会话卡", ref: "引用卡", group: "分组", link: "连线" };
+const BOARD_KIND_WORD: Record<string, string> = { note: "便签", session: "子会话卡", ref: "引用卡", group: "分组", link: "连线", matter: "事项卡" };
+/** Where the service puts the groups of a side and of 「已定 / 已验」, and the 事项卡 in them (board units). */
+const LANE = { x: 40, y: 40, w: 520, h: 360, gap: 40, settledY: 460, settledW: 1080, cardW: 240, cardH: 130, pad: 16, head: 48, stepX: 252, stepY: 146 };
 
 function cleanMark(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) throw new RelayError("bad_request", "要带 AI 会话的标记（via.conv）");
@@ -73,6 +102,8 @@ function names(value: unknown, what: string): string[] {
 
 export class CoworkStore {
   readonly board: CoworkBoard;
+  /** 事项、回执、待我处理 (2026-11-24, cowork-matters.ts). */
+  readonly matters: CoworkMatters;
   private readonly db: DatabaseSync;
 
   constructor(
@@ -114,6 +145,24 @@ export class CoworkStore {
       CREATE INDEX IF NOT EXISTS cowork_drafts_owner ON cowork_drafts(cowork_id, owner, state);
     `);
     this.board = new CoworkBoard(this.db, now);
+    // 主控 / 执行 (2026-11-24, protocol/matters.ts): an agent's role and, for an 执行, its 事项. Agents from before: the first
+    // of each side still in is its 主控, the others 执行 without a 事项 (they read the goal and 已定的事 only).
+    const acols = (this.db.prepare("PRAGMA table_info(cowork_agents)").all() as Row[]).map((r) => String(r.name));
+    if (!acols.includes("role")) {
+      this.db.exec("ALTER TABLE cowork_agents ADD COLUMN role TEXT; ALTER TABLE cowork_agents ADD COLUMN matter TEXT;");
+      this.db.exec(
+        "UPDATE cowork_agents SET role = CASE WHEN rowid = (SELECT a2.rowid FROM cowork_agents a2 WHERE a2.cowork_id = cowork_agents.cowork_id AND a2.owner = cowork_agents.owner AND a2.left_at IS NULL ORDER BY a2.joined_at, a2.rowid LIMIT 1) THEN 'lead' ELSE 'worker' END WHERE left_at IS NULL",
+      );
+    }
+    this.matters = new CoworkMatters(store, this.db, now);
+    store.messageHook = (m) => this.decorate(m);
+  }
+
+  /** A message read anywhere: its 事项 and its receipts. */
+  private decorate(m: Message): void {
+    const receipts = this.matters.receipts(m.seq);
+    if (receipts.length) m.receipts = receipts;
+    if (this.matters.isMatter(m.threadId)) m.matter = m.threadId;
   }
 
   // ---- reading
@@ -162,7 +211,18 @@ export class CoworkStore {
     const state: AgentState = fresh && AGENT_STATES.has(said) ? (said as AgentState) : "offline";
     const queued = Number((this.db.prepare("SELECT COUNT(*) AS n FROM cowork_deliveries WHERE cowork_id = ? AND agent = ? AND state = 'queued'").get(String(r.cowork_id), String(r.mark)) as Row).n);
     const owner = String(r.owner);
-    return { mark: String(r.mark), owner, label: String(r.label), name: `${nicks.get(owner) ?? owner} 的 AI · ${String(r.label)}`, state, queued, lastSeen: reported, joinedAt: Number(r.joined_at) };
+    return {
+      mark: String(r.mark),
+      owner,
+      label: String(r.label),
+      name: `${nicks.get(owner) ?? owner} 的 AI · ${String(r.label)}`,
+      state,
+      queued,
+      lastSeen: reported,
+      joinedAt: Number(r.joined_at),
+      role: r.role === "worker" ? "worker" : "lead",
+      matter: r.role === "worker" && r.matter != null ? String(r.matter) : null,
+    };
   }
 
   /** An agent in the cowork now; null when it is not (never was, or left). */
@@ -202,6 +262,7 @@ export class CoworkStore {
       members: thread.members,
       agents,
       sessions: this.sessionIds(id).map((s) => this.sessionOf(this.store.threadById(s))),
+      matters: this.matters.list(id),
       lastSeq: thread.lastSeq,
       boardSeq: this.board.seq(id),
     };
@@ -247,12 +308,18 @@ export class CoworkStore {
    */
   feed(id: string, me: string, after: number, agentMark?: string | null): { messages: Message[]; lastSeq: number } {
     this.rowFor(id, me);
-    const threads = [id, ...this.sessionIds(id)];
+    let threads = [id, ...this.sessionIds(id)];
+    if (agentMark) {
+      this.requireAgent(id, me, agentMark);
+      // An 执行 reads its own 事项 only (the goal and 已定的事 come with the cowork and its events).
+      const role = this.roleOf(id, agentMark);
+      if (role.role === "worker") threads = role.matter ? [role.matter] : [];
+    }
     const messages = this.store.messagesIn(threads, after, 500);
     const lastSeq = messages.length ? messages[messages.length - 1]!.seq : after;
     if (agentMark) {
-      this.requireAgent(id, me, agentMark);
       this.db.prepare("UPDATE cowork_agents SET read_seq = MAX(read_seq, ?) WHERE cowork_id = ? AND mark = ?").run(lastSeq, id, agentMark);
+      this.store.tx(() => this.matters.seenSeqs(agentParty(agentMark), messages.map((m) => m.seq)));
     }
     return { messages, lastSeq };
   }
@@ -300,6 +367,7 @@ export class CoworkStore {
   update(id: string, me: string, patch: CoworkPatch): { cowork: Cowork; events: CoworkEvent[]; dropped: CoworkDelivery[] } {
     const r = this.rowFor(id, me);
     const via = checkVia(patch?.via);
+    this.allow(id, via.kind === "ai" ? this.actor(id, me, via).agent : null, "matter-edit");
     const reopening = patch.ended === false && r.ended_at != null;
     if (!reopening) this.writable(r);
     const title = patch.title === undefined ? undefined : cleanText(patch.title, "标题", COWORK_LIMITS.title);
@@ -307,7 +375,8 @@ export class CoworkStore {
     const repo = patch.repo === undefined ? undefined : cleanText(patch.repo, "仓库", COWORK_LIMITS.repo, false);
     const branch = patch.branch === undefined ? undefined : cleanText(patch.branch, "分支", COWORK_LIMITS.branch, false);
     const was = this.view(id);
-    const options = patch.options === undefined ? undefined : cleanOptions(patch.options, was.options);
+    // 「AI 发起 @ 和提问」 went (2026-11-24, 闸门 in its place): an old client's option is checked and left as it is.
+    if (patch.options !== undefined) cleanOptions(patch.options, was.options);
     return this.store.tx(() => {
       const events: CoworkEvent[] = [];
       const at = this.now();
@@ -323,10 +392,6 @@ export class CoworkStore {
       if ((repo !== undefined && repo !== was.repo) || (branch !== undefined && branch !== was.branch)) {
         this.db.prepare("UPDATE coworks SET repo = ?, branch = ? WHERE id = ?").run(repo ?? was.repo, branch ?? was.branch, id);
         events.push(this.event(id, me, via, "goal", `仓库和分支改为 ${[repo ?? was.repo, branch ?? was.branch].filter(Boolean).join(" · ") || "（空）"}`));
-      }
-      if (options && options.aiInitiate !== was.options.aiInitiate) {
-        this.db.prepare("UPDATE coworks SET options = ? WHERE id = ?").run(JSON.stringify(options), id);
-        events.push(this.event(id, me, via, "option", options.aiInitiate ? "打开了「AI 发起 @ 和提问」：AI 的 @ 和提问直接发出" : "关上了「AI 发起 @ 和提问」：AI 的 @ 和提问先存成草稿，主人确认后发出"));
       }
       const dropped: CoworkDelivery[] = [];
       if (patch.ended === true && r.ended_at == null) {
@@ -396,26 +461,94 @@ export class CoworkStore {
     return { name: me, agent: mark };
   }
 
-  /** 拉进协作: one of my sessions, by its mark, shown as 「<me> 的 AI · <label>」. Again (or again after leaving): its label
-   * is updated. */
-  joinAgent(id: string, me: string, markValue: unknown, labelValue: unknown): { cowork: Cowork; agent: CoworkAgent; message: Message | null; events: CoworkEvent[] } {
+  /** An agent's role in a cowork (one from before roles: 主控). */
+  private roleOf(coworkId: string, mark: string): { role: AgentRole; matter: string | null } {
+    const r = this.db.prepare("SELECT role, matter FROM cowork_agents WHERE cowork_id = ? AND mark = ?").get(coworkId, mark) as Row | undefined;
+    return r?.role === "worker" ? { role: "worker", matter: r.matter == null ? null : String(r.matter) } : { role: "lead", matter: null };
+  }
+
+  /** What an 执行 may not do (roleAllows) is refused with why; people and 主控 pass. */
+  private allow(coworkId: string, agent: string | null, action: CollabAction, matter?: string | null): void {
+    if (!agent) return;
+    const r = this.roleOf(coworkId, agent);
+    if (r.role === "lead" || roleAllows(r.role, action, { own: r.matter, matter: matter ?? null })) return;
+    const own = r.matter ? this.matters.get(r.matter) : null;
+    const where = own ? `事项 ${own.no}「${own.title}」` : "还没绑定事项";
+    const what: Partial<Record<CollabAction, string>> = { "chat-post": "在群聊里发言", "matter-post": "在别的事项里发言", "mention-person": "@ 人", conclude: "定结论", "matter-edit": "改事项和协作", "matter-open": "开事项或发起子会话", "board-write": "改白板", "read-all": "读群聊和别的事项" };
+    throw new RelayError("forbidden", `你是执行（${where}），不能${what[action] ?? "做这件事"}：执行只在自己的事项里贴事实，状态和结论由主控来改；要说什么，在事项里告诉主控`);
+  }
+
+  private cleanRole(v: unknown): AgentRole {
+    if (v !== "lead" && v !== "worker") throw new RelayError("bad_request", "role 要是 lead（主控）或 worker（执行）");
+    return v;
+  }
+
+  /** One 主控 per side (refused saying who holds it); an 执行 names a 事项 of this cowork. */
+  private checkRole(coworkId: string, me: string, mark: string, role: AgentRole, matter: string | null): void {
+    if (role === "lead") {
+      const holder = this.db.prepare("SELECT * FROM cowork_agents WHERE cowork_id = ? AND owner = ? AND role = 'lead' AND left_at IS NULL AND mark <> ?").get(coworkId, me, mark) as Row | undefined;
+      if (holder) throw new RelayError("conflict", leadTakenText(this.nicks().get(me) ?? me, this.agentOf(holder).name));
+      return;
+    }
+    if (!matter) throw new RelayError("bad_request", "执行要绑定一件事项（matter：事项的 id）");
+    this.matters.require(coworkId, matter);
+  }
+
+  private roleWord(role: AgentRole, matter: string | null): string {
+    const m = matter ? this.matters.get(matter) : null;
+    return role === "worker" && m ? `${AGENT_ROLE_LABEL.worker} · 事项 ${m.no}` : AGENT_ROLE_LABEL[role];
+  }
+
+  /**
+   * 拉进协作: one of my sessions, by its mark, shown as 「<me> 的 AI · <label>」, as its side's 主控 (one per side) or an
+   * 执行 of one 事项. Again (or again after leaving): its label, and its role when given, are updated. No role: it keeps
+   * the one it has; a new one is 主控 (refused when the side has one).
+   */
+  joinAgent(id: string, me: string, markValue: unknown, labelValue: unknown, roleValue?: unknown, matterValue?: unknown): { cowork: Cowork; agent: CoworkAgent; message: Message | null; events: CoworkEvent[] } {
     const r = this.rowFor(id, me);
     this.writable(r);
     const mark = cleanMark(markValue);
     const label = cleanText(labelValue, "会话名", COWORK_LIMITS.label, false) || "会话";
     const had = this.db.prepare("SELECT * FROM cowork_agents WHERE cowork_id = ? AND mark = ?").get(id, mark) as Row | undefined;
     if (had && String(had.owner) !== me) throw new RelayError("conflict", "这个 AI 会话是别人拉进来的");
+    const active = !!had && had.left_at == null;
+    const wasRole: AgentRole | null = active ? (had!.role === "worker" ? "worker" : "lead") : null;
+    const role: AgentRole = roleValue === undefined || roleValue === null ? (wasRole ?? "lead") : this.cleanRole(roleValue);
+    const matter = role === "worker" ? (typeof matterValue === "string" && matterValue ? matterValue : active && had!.matter != null ? String(had!.matter) : null) : null;
+    this.checkRole(id, me, mark, role, matter);
     return this.store.tx(() => {
       const at = this.now();
-      const active = had && had.left_at == null;
-      if (!had) this.db.prepare("INSERT INTO cowork_agents (cowork_id, mark, owner, label, joined_at) VALUES (?, ?, ?, ?, ?)").run(id, mark, me, label, at);
-      else this.db.prepare("UPDATE cowork_agents SET label = ?, left_at = NULL, joined_at = CASE WHEN left_at IS NULL THEN joined_at ELSE ? END WHERE cowork_id = ? AND mark = ?").run(label, at, id, mark);
+      if (!had) this.db.prepare("INSERT INTO cowork_agents (cowork_id, mark, owner, label, joined_at, role, matter) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, mark, me, label, at, role, matter);
+      else this.db.prepare("UPDATE cowork_agents SET label = ?, role = ?, matter = ?, left_at = NULL, joined_at = CASE WHEN left_at IS NULL THEN joined_at ELSE ? END WHERE cowork_id = ? AND mark = ?").run(label, role, matter, at, id, mark);
+      if (matter) this.bindWorker(matter, mark, personParty(me));
       const agent = this.agent(id, mark)!;
-      if (active) return { cowork: this.view(id), agent, message: null, events: [] };
-      const message = this.store.insertMessage(id, me, { kind: "person" }, "event", `把 ${agent.name} 拉了进来`, null);
-      const events = [this.event(id, me, { kind: "person" }, "agent", `拉进了 ${agent.name}`, { mark })];
+      const changed = active && (wasRole !== role || (had!.matter == null ? null : String(had!.matter)) !== matter);
+      if (active && !changed) return { cowork: this.view(id), agent, message: null, events: [] };
+      const word = this.roleWord(role, matter);
+      const text = active ? `把 ${agent.name} 改成了${word}` : `把 ${agent.name} 拉了进来（${word}）`;
+      const message = this.store.insertMessage(id, me, { kind: "person" }, "event", text, null);
+      const events = [this.event(id, me, { kind: "person" }, "agent", active ? `${agent.name} 改成了${word}` : `拉进了 ${agent.name}（${word}）`, { mark })];
+      this.matters.touch(id);
       return { cowork: this.view(id), agent, message, events };
     });
+  }
+
+  /** An 执行's session is bound to its 事项. */
+  private bindWorker(matterId: string, mark: string, by: Party): void {
+    const m = this.matters.get(matterId);
+    if (!m || m.bindings.sessions.includes(mark)) return;
+    this.matters.write(matterId, by, { bindings: { ...m.bindings, sessions: [...m.bindings.sessions, mark] } });
+  }
+
+  /** 改角色 (POST …/agents/role): the owner, in person or through the side's 主控. */
+  setRole(id: string, me: string, b: { mark?: unknown; role?: unknown; matter?: unknown; via?: unknown }): ReturnType<CoworkStore["joinAgent"]> {
+    this.rowFor(id, me);
+    const via = checkVia(b?.via);
+    const by = this.actor(id, me, via).agent;
+    if (by && this.roleOf(id, by).role !== "lead") throw new RelayError("forbidden", "执行不能改角色：请主控或主人来改");
+    const mark = cleanMark(b?.mark);
+    const row = this.requireAgent(id, me, mark);
+    return this.joinAgent(id, me, mark, String(row.label), b.role ?? null, b.matter);
   }
 
   /** My agent leaves; what was still queued for it is dropped. */
@@ -582,6 +715,8 @@ export class CoworkStore {
       const res = this.db.prepare("UPDATE cowork_deliveries SET state = 'delivered', delivered_at = ? WHERE id = ? AND owner = ? AND state = 'queued'").run(at, id, me);
       if (Number(res.changes)) out.push(this.delivery(id));
     }
+    // What the owner's Studio put into its sessions is 送到 for those agents (2026-11-24, receipts).
+    if (out.length) this.store.tx(() => out.forEach((d) => this.matters.delivered(agentParty(d.agent), [d.seq])));
     return out;
   }
 
@@ -640,6 +775,8 @@ export class CoworkStore {
     this.writable(r);
     const via = checkVia(p?.via);
     const agent = this.actor(coworkId, me, via).agent;
+    const inMatter = this.matters.isMatter(threadId);
+    this.allow(coworkId, agent, inMatter ? "matter-post" : "chat-post", inMatter ? threadId : null);
     const agentMentions = this.cleanAgentMentions(coworkId, p.agentMentions, agent);
     let replyTo: number | undefined;
     if (p.replyTo !== undefined && p.replyTo !== null) {
@@ -650,11 +787,17 @@ export class CoworkStore {
     const mentions = Array.isArray(p.mentions) ? p.mentions.map(String).filter((n) => n !== me) : [];
     const outside = mentions.filter((n) => !thread.members.includes(n));
     if (outside.length) throw new RelayError("bad_request", `${outside.join("、")} 不在这个协作里，先把他们拉进来`);
-    const options = this.view(coworkId).options;
-    if (agent && !approved && !options.aiInitiate && (mentions.length || agentMentions.length)) {
-      const draft = this.draft(coworkId, me, agent, "post", threadId, { ...p, via, agentMentions, ...(replyTo ? { replyTo } : {}) });
-      return { draft };
+    if (mentions.length) this.allow(coworkId, agent, "mention-person");
+    // 被 #x 取代 (2026-11-24): my earlier message this one replaces.
+    let supersedes: Message | null = null;
+    if (p.supersedes !== undefined && p.supersedes !== null) {
+      const old = typeof p.supersedes === "number" ? this.store.messageBySeq(p.supersedes) : null;
+      if (!old || !this.inCowork(coworkId, old.threadId) || old.kind === "event") throw new RelayError("bad_request", "supersedes 要是这个协作里的一条消息（seq）");
+      if (!this.mine(old, me, via)) throw new RelayError("forbidden", "只能取代自己发的消息");
+      if (old.withdrawnAt || old.supersededBy) throw new RelayError("conflict", `#${old.seq} 已经撤回或被取代了`);
+      supersedes = old;
     }
+    // No drafts any more (2026-11-24): 「AI 发起 @ 和提问」 went; a 主控 opens a 「等人确认」 事项 before a 闸门 instead.
     // An agent answering without saying what: the latest thing it was given in this thread.
     if (agent && replyTo === undefined) {
       const last = this.db.prepare("SELECT seq FROM cowork_deliveries WHERE cowork_id = ? AND agent = ? AND thread_id = ? AND state = 'delivered' ORDER BY seq DESC LIMIT 1").get(coworkId, agent, threadId) as Row | undefined;
@@ -668,8 +811,52 @@ export class CoworkStore {
       if (approved.edited) more.edited = true;
     }
     const out = this.store.addMessage(threadId, me, { ...p, via }, more);
-    const { deliveries, events } = this.store.tx(() => this.afterMessage(out.thread, out.message));
-    return { thread: out.thread, message: out.message, deliveries, events };
+    const party = partyOf(me, via);
+    const after = this.store.tx(() => {
+      const res = this.afterMessage(out.thread, out.message);
+      this.matters.receive(coworkId, out.message, this.people(coworkId));
+      // 处理了 with the reply (the user 11-24: AI 随回复标): what it answers, what it names, or (true) all to it here.
+      if (replyTo) this.matters.advance(replyTo, party, "handled");
+      if (Array.isArray(p.handled)) for (const s of p.handled.slice(0, 200)) if (typeof s === "number") this.matters.advance(s, party, "handled");
+      if (p.handled === true) this.matters.handledInThread(threadId, party, out.message.seq - 1);
+      let superseded: SupersedeResult | undefined;
+      if (supersedes) {
+        this.matters.setMessage(supersedes.seq, { supersededBy: out.message.seq });
+        superseded = { seq: supersedes.seq, supersededBy: out.message.seq, seenByAgents: seenByAgents(this.matters.receipts(supersedes.seq)) };
+      }
+      this.syncFromSession(threadId, party);
+      return { ...res, superseded };
+    });
+    const message = this.store.messageBySeq(out.message.seq)!;
+    return { thread: this.store.threadById(threadId), message, deliveries: after.deliveries, events: after.events, ...(after.superseded ? { superseded: after.superseded } : {}) };
+  }
+
+  private inCowork(coworkId: string, threadId: string): boolean {
+    return threadId === coworkId || this.isSessionOf(coworkId, threadId);
+  }
+
+  /** My message: written by me, and through my agent only when that agent wrote it. */
+  private mine(m: Message, me: string, via: Via): boolean {
+    return m.author === me && (via.kind !== "ai" || (m.via.kind === "ai" && m.via.conv === via.conv));
+  }
+
+  /**
+   * A 子会话 asked of a person moved (a reply, a hand-back, 标记完成, reopened): its 事项 follows — 等人确认 while it is with
+   * the person asked, 在做 once it came back, 关闭 when done. 事项 opened on their own (nobody asked) are moved by hand.
+   */
+  private syncFromSession(threadId: string, by: Party): void {
+    const m = this.matters.get(threadId);
+    if (!m) return;
+    const r = this.store.threadById(threadId).request;
+    if (!r || r.from === r.to) return;
+    let status: MatterStatus;
+    let waitingOn: Party[];
+    if (r.state === "done") [status, waitingOn] = ["closed", []];
+    else if (r.state === "open" && r.waitingOn === r.to) [status, waitingOn] = ["confirm", [personParty(r.to)]];
+    else [status, waitingOn] = [m.status === "closed" || m.status === "confirm" ? "doing" : m.status, []];
+    const conclusion = r.conclusion ?? null;
+    if (status === m.status && JSON.stringify(waitingOn) === JSON.stringify(m.waitingOn) && (conclusion === null || conclusion === m.conclusion)) return;
+    this.matters.write(threadId, by, { status, waitingOn, ...(conclusion !== null ? { conclusion } : {}) });
   }
 
   /** A new 子会话 in the cowork, asked of a person in it; its card goes into the 群聊. From an agent while 「AI 发起 @ 和提问」
@@ -679,17 +866,17 @@ export class CoworkStore {
     this.writable(r);
     const via = checkVia(n?.via);
     const agent = this.actor(coworkId, me, via).agent;
+    this.allow(coworkId, agent, "matter-open");
     const to = checkName(n.to);
     const people = this.people(coworkId);
     if (!people.includes(to)) throw new RelayError("bad_request", `${to} 不在这个协作里，先把他拉进来`);
-    if (agent && !approved && !this.view(coworkId).options.aiInitiate) {
-      // Checked now as it would be when sent, so the owner is not handed a draft that cannot go.
-      cleanText(n.title, "标题", COWORK_LIMITS.title);
-      cleanText(n.body, "正文", 200_000);
-      return { draft: this.draft(coworkId, me, agent, "ask", null, { ...n, to, via }) };
-    }
+    // A 子会话 is a 事项 (2026-11-24): asked of a person, it waits on them — 等人确认 (an agent's is a 闸门's). No drafts.
     const out = this.store.createRequest(me, { to, title: n.title, body: n.body, questions: n.questions, files: n.files, via, needsReply: true }, { id: coworkId, members: people, agent });
+    const owner = partyOf(me, via);
     const card = this.store.tx(() => {
+      const at = this.now();
+      this.matters.insert({ id: out.thread.id, coworkId, kind: agent ? "confirm" : "work", owner, side: me, status: "confirm", waitingOn: [personParty(to)], gate: null, blocker: null, dependsOn: [], conclusion: null, history: [{ at, by: owner, from: null, to: "confirm" }], at }, true);
+      this.matters.receive(coworkId, out.message, people);
       const extra: Partial<Message> = { session: out.thread.id };
       if (approved) {
         extra.approvedBy = me;
@@ -699,7 +886,284 @@ export class CoworkStore {
       this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(this.now(), coworkId);
       return { thread: this.store.threadById(coworkId), message };
     });
-    return { thread: out.thread, message: out.message, card };
+    return { thread: this.store.threadById(out.thread.id), message: this.store.messageBySeq(out.message.seq)!, card };
+  }
+
+  /**
+   * 开事项 (POST …/matters, 2026-11-24): a 主控 or a person opens one — its thread (every person in the cowork is in it;
+   * nobody is asked), its first message, its card in the 群聊. An 执行 may not.
+   */
+  openMatter(coworkId: string, me: string, n: NewCoworkMatter): { matter: Matter; thread: Thread; message: Message; card: { thread: Thread; message: Message } } {
+    const r = this.rowFor(coworkId, me);
+    this.writable(r);
+    const via = checkVia(n?.via);
+    const agent = this.actor(coworkId, me, via).agent;
+    this.allow(coworkId, agent, "matter-open");
+    const title = cleanTitle(n?.title);
+    const body = cleanText(n.body, "正文", 200_000);
+    const people = this.people(coworkId);
+    const side = n.side === undefined || n.side === null ? me : checkName(n.side);
+    if (!people.includes(side)) throw new RelayError("bad_request", `负责方 ${side} 不在这个协作里`);
+    const kind = n.kind === undefined ? "work" : cleanKind(n.kind);
+    const gate = cleanGate(n.gate);
+    const status = n.status === undefined ? (kind === "confirm" ? "confirm" : "todo") : cleanStatus(n.status);
+    const waitingOn = this.checkWaiting(coworkId, n.waitingOn);
+    const dependsOn = this.checkDepends(coworkId, n.dependsOn, null);
+    const blocker = cleanBlocker(n.blocker);
+    const owner = partyOf(me, via);
+    return this.store.tx(() => {
+      const id = `t_${randomBytes(8).toString("hex")}`;
+      const at = this.now();
+      this.db
+        .prepare("INSERT INTO threads (id, kind, title, created_by, created_at, updated_at, req_from, req_to, req_status, s_state, s_waiting, s_handler, s_needs, cowork_id, cw_agent) VALUES (?, 'request', ?, ?, ?, ?, ?, ?, 'open', 'open', NULL, ?, 0, ?, ?)")
+        .run(id, title, me, at, at, me, me, agent ? "ai" : "person", coworkId, agent);
+      for (const p of people) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, p);
+      const message = this.store.insertMessage(id, me, via, "request", body, null);
+      this.db.prepare("UPDATE threads SET req_seq = ?, s_qseq = NULL WHERE id = ?").run(message.seq, id);
+      this.matters.insert({ id, coworkId, kind, owner, side, status, waitingOn, gate, blocker, dependsOn, conclusion: null, history: [{ at, by: owner, from: null, to: status }], at }, true);
+      this.matters.receive(coworkId, message, people);
+      const matter = this.matters.get(id)!;
+      const cardMessage = this.store.insertMessage(coworkId, me, via, "event", `开了事项 ${matter.no}「${title}」（${MATTER_STATUS_LABEL[status]}）`, { session: id });
+      this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(at, coworkId);
+      return { matter, thread: this.store.threadById(id), message: this.store.messageBySeq(message.seq)!, card: { thread: this.store.threadById(coworkId), message: cardMessage } };
+    });
+  }
+
+  /** 在等谁: people in the cowork or agents in it now. */
+  private checkWaiting(coworkId: string, v: unknown): Party[] {
+    const list = cleanParties(v, "在等谁", MATTER_LIMITS.waitingOn);
+    const people = this.people(coworkId);
+    for (const p of list) {
+      const w = parseParty(p)!;
+      if (w.kind === "person" ? !people.includes(w.name) : !this.agent(coworkId, w.mark)) throw new RelayError("bad_request", `在等的 ${p} 不在这个协作里`);
+    }
+    return list;
+  }
+
+  /** 依赖: other 事项 of this cowork. */
+  private checkDepends(coworkId: string, v: unknown, self: string | null): string[] {
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v) || v.length > MATTER_LIMITS.dependsOn) throw new RelayError("bad_request", `依赖要是事项 id 的列表（最多 ${MATTER_LIMITS.dependsOn} 个）`);
+    const out = [...new Set(v.map(String))];
+    for (const d of out) {
+      if (d === self) throw new RelayError("bad_request", "事项不能依赖自己");
+      this.matters.require(coworkId, d);
+    }
+    return out;
+  }
+
+  /**
+   * 改事项 (PATCH …/matters/:id): a 主控 or a person (an 执行 may not: the user 11-24, 状态由主控改). `base`: the version it
+   * was read at; an older one is refused so two 主控 do not overwrite each other unseen. A new status is written into the
+   * 事项's thread too; a conclusion goes into 已定的事; closed, everything in it is 处理了. A 子会话 asked of a person
+   * closes (标记完成) or opens again with it.
+   */
+  patchMatter(coworkId: string, matterId: string, me: string, b: CoworkMatterPatch): { matter: Matter; message: Message | null; events: CoworkEvent[] } {
+    const r = this.rowFor(coworkId, me);
+    this.writable(r);
+    const via = checkVia(b?.via);
+    const agent = this.actor(coworkId, me, via).agent;
+    this.allow(coworkId, agent, "matter-edit");
+    const m = this.matters.require(coworkId, matterId);
+    if (typeof b.base === "number" && b.base !== m.version) throw new RelayError("conflict", `事项 ${m.no} 在你读过之后改过了（你读的是第 ${b.base} 版，现在是第 ${m.version} 版）：先重新读再改`);
+    const title = b.title === undefined ? undefined : cleanTitle(b.title);
+    const status = b.status === undefined ? undefined : cleanStatus(b.status);
+    const note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : undefined;
+    const side = b.side === undefined ? undefined : checkName(b.side);
+    if (side !== undefined && !this.people(coworkId).includes(side)) throw new RelayError("bad_request", `负责方 ${side} 不在这个协作里`);
+    const waitingOn = b.waitingOn === undefined ? undefined : this.checkWaiting(coworkId, b.waitingOn);
+    const blocker = b.blocker === undefined ? undefined : cleanBlocker(b.blocker);
+    const dependsOn = b.dependsOn === undefined ? undefined : this.checkDepends(coworkId, b.dependsOn, matterId);
+    const gate = b.gate === undefined ? undefined : cleanGate(b.gate);
+    const conclusion = b.conclusion === undefined ? undefined : cleanConclusion(b.conclusion);
+    const add = cleanBindings(b.bind);
+    const drop = cleanBindings(b.unbind);
+    const bindings = { ...m.bindings };
+    for (const k of ["sessions", "tasks", "commits"] as const) bindings[k] = [...new Set([...bindings[k], ...(add[k] ?? [])])].filter((x) => !(drop[k] ?? []).includes(x));
+    const by = partyOf(me, via);
+    return this.store.tx(() => {
+      if (title !== undefined && title !== m.title) this.db.prepare("UPDATE threads SET title = ? WHERE id = ?").run(title, matterId);
+      const out = this.matters.write(matterId, by, { status, note, side, waitingOn, blocker, dependsOn, gate, conclusion, bindings });
+      if (title !== undefined && title !== m.title && out.matter.version === m.version) this.matters.bump(matterId, by);
+      const events: CoworkEvent[] = [];
+      let message: Message | null = null;
+      const t = this.store.threadById(matterId).request!;
+      if (status !== undefined && status !== m.status) {
+        message = this.store.insertMessage(matterId, me, via, "event", `事项 ${m.no}：${MATTER_STATUS_LABEL[m.status]} → ${MATTER_STATUS_LABEL[status]}${note ? `（${note}）` : ""}`, null);
+        // A 子会话 asked of a person goes with it: closed is 标记完成, opened again is back with the one asked.
+        if (t.from !== t.to) {
+          if (status === "closed" && t.state !== "done") this.db.prepare("UPDATE threads SET s_state = 'done', s_waiting = NULL WHERE id = ?").run(matterId);
+          else if (status !== "closed" && t.state === "done") this.db.prepare("UPDATE threads SET s_state = ?, s_waiting = ? WHERE id = ?").run(status === "confirm" ? "open" : "returned", status === "confirm" ? t.to : t.from, matterId);
+        }
+      }
+      if (conclusion !== undefined && conclusion !== m.conclusion) {
+        this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(conclusion, matterId);
+        if (conclusion) events.push(this.event(coworkId, me, via, "decision", `「${title ?? m.title}」：${conclusion}`, { threadId: matterId }));
+      }
+      this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(this.now(), coworkId);
+      return { matter: this.matters.get(matterId)!, message, events };
+    });
+  }
+
+  /** 看过 / 处理了 (POST …/marks): mine, or my agent's (`via`). */
+  marks(coworkId: string, me: string, b: { mark?: unknown; seqs?: unknown; matter?: unknown; upTo?: unknown; via?: unknown }): CoworkMarkResult {
+    this.rowFor(coworkId, me);
+    const via = checkVia(b?.via);
+    this.actor(coworkId, me, via);
+    if (b.mark !== "seen" && b.mark !== "handled") throw new RelayError("bad_request", "mark 要是 seen（看过）或 handled（处理了）");
+    const seqs = b.seqs === undefined || b.seqs === null ? null : Array.isArray(b.seqs) ? b.seqs.filter((x): x is number => typeof x === "number" && Number.isInteger(x)) : null;
+    if (b.seqs !== undefined && b.seqs !== null && !Array.isArray(b.seqs)) throw new RelayError("bad_request", "seqs 要是消息编号的列表");
+    const matter = typeof b.matter === "string" && b.matter ? b.matter : null;
+    const upTo = typeof b.upTo === "number" ? b.upTo : null;
+    return { changed: this.store.tx(() => this.matters.mark(coworkId, partyOf(me, via), b.mark as "seen" | "handled", seqs, matter, upTo)) };
+  }
+
+  /**
+   * 撤回 (`withdraw`) or 原地改 my message (2026-11-24): only while no recipient has seen it (canRewrite); after that a new
+   * message with `supersedes` replaces it. A withdrawn message keeps its place without its text; what it still had queued
+   * for agents is dropped.
+   */
+  rewrite(coworkId: string, seqValue: unknown, me: string, b: { body?: unknown; via?: unknown }, withdraw: boolean): { message: Message; dropped: CoworkDelivery[] } {
+    const r = this.rowFor(coworkId, me);
+    this.writable(r);
+    const via = checkVia(b?.via);
+    this.actor(coworkId, me, via);
+    const seq = Number(seqValue);
+    const m = Number.isInteger(seq) ? this.store.messageBySeq(seq) : null;
+    if (!m || !this.inCowork(coworkId, m.threadId)) throw new RelayError("not_found", `这个协作里没有这条消息：#${String(seqValue)}`);
+    if (m.kind === "event") throw new RelayError("bad_request", "事件不能撤回或改");
+    if (!this.mine(m, me, via)) throw new RelayError("forbidden", "只能撤回或改自己发的消息");
+    if (m.withdrawnAt) throw new RelayError("conflict", `#${seq} 已经撤回了`);
+    if (!canRewrite(this.matters.receipts(seq))) throw new RelayError("conflict", `#${seq} 已经有人看过了，不能再撤回或原地改：发一条新的消息取代它（supersedes: ${seq}）`);
+    const body = withdraw ? "" : cleanText(b.body, "内容", 200_000);
+    if (!withdraw && m.kind !== "text") throw new RelayError("bad_request", "只有文字消息能原地改");
+    return this.store.tx(() => {
+      const at = this.now();
+      this.matters.setMessage(seq, withdraw ? { withdrawnAt: at } : { editedAt: at }, body);
+      const dropped: CoworkDelivery[] = [];
+      if (withdraw) {
+        const ids = (this.db.prepare("SELECT id FROM cowork_deliveries WHERE cowork_id = ? AND seq = ? AND state = 'queued'").all(coworkId, seq) as Row[]).map((x) => String(x.id));
+        this.db.prepare("UPDATE cowork_deliveries SET state = 'dropped' WHERE cowork_id = ? AND seq = ? AND state = 'queued'").run(coworkId, seq);
+        dropped.push(...ids.map((d) => this.delivery(d)));
+      }
+      this.matters.touch(coworkId);
+      return { message: this.store.messageBySeq(seq)!, dropped };
+    });
+  }
+
+  /** A person read a cowork's thread up to `readSeq` (their client opened it): 看过. */
+  readBy(thread: Thread, me: string, readSeq: number): void {
+    if (!this.coworkOf(thread)) return;
+    this.store.tx(() => this.matters.seenInThread(thread.id, personParty(me), readSeq));
+  }
+
+  /**
+   * 待我处理 (GET /api/cowork/pending): mine (default) or my agent's (`agent:<mark>`), in one cowork or all I (it) am in.
+   * What an agent's list holds counts as 送到 for it: its owner's Studio has it now.
+   */
+  pending(me: string, q: { coworkId?: string | null; party?: string | null }): Array<PendingList & { coworkId: string }> {
+    const party: Party = q.party ? (isParty(q.party) ? q.party : (() => { throw new RelayError("bad_request", "party 要是 person:<账号> 或 agent:<会话标记>"); })()) : personParty(me);
+    const who = parseParty(party)!;
+    let ids: string[];
+    if (who.kind === "person") {
+      if (who.name !== me) throw new RelayError("forbidden", "只能看自己和自己的 AI 的待我处理");
+      ids = q.coworkId ? [String(this.rowFor(q.coworkId, me).id)] : (this.db.prepare("SELECT c.id FROM coworks c JOIN thread_members tm ON tm.thread_id = c.id AND tm.name = ?").all(me) as Row[]).map((r) => String(r.id));
+    } else {
+      const rows = this.db.prepare("SELECT cowork_id, owner FROM cowork_agents WHERE mark = ? AND left_at IS NULL").all(who.mark) as Row[];
+      if (rows.some((r) => String(r.owner) !== me)) throw new RelayError("forbidden", "只能看自己和自己的 AI 的待我处理");
+      ids = rows.map((r) => String(r.cowork_id));
+      if (q.coworkId) {
+        if (!ids.includes(q.coworkId)) throw new RelayError("forbidden", "这个 AI 会话没有拉进这个协作（或已经离开了）：先让它的主人把它拉进来");
+        ids = [q.coworkId];
+      }
+    }
+    return this.store.tx(() => {
+      const lists = ids.map((id) => this.matters.pending(id, party));
+      if (who.kind === "agent") this.matters.delivered(party, lists.flatMap((l) => l.items.map((i) => i.seq).filter((s): s is number => s !== null)));
+      return lists;
+    });
+  }
+
+  /**
+   * What the last call changed, for the service to push (server.ts): the 事项 (each new one gets its card on the board,
+   * a settled one's card moves to 「已定 / 已验」 unless a person moved it), receipts, rewritten messages, and the 待我处理
+   * that changed — one entry per participant whose version went up.
+   */
+  drain(): { touched: CoworkTouched; board: Array<{ coworkId: string; ops: BoardOpRecord[] }>; pending: Array<{ coworkId: string; party: Party; version: number; owner: string }> } {
+    const touched = this.matters.drain();
+    const board: Array<{ coworkId: string; ops: BoardOpRecord[] }> = [];
+    for (const id of touched.matters) {
+      const m = this.matters.get(id);
+      if (!m) continue;
+      try {
+        const ops = this.placeMatter(m, touched.by.get(id) ?? m.owner, touched.created.has(id));
+        if (ops.length) board.push({ coworkId: m.scopeId, ops });
+      } catch {
+        // the board is full or the card went: the 事项 itself is what counts
+      }
+    }
+    this.matters.drain();
+    const pending: Array<{ coworkId: string; party: Party; version: number; owner: string }> = [];
+    for (const c of touched.coworks) {
+      if (!this.db.prepare("SELECT 1 FROM coworks WHERE id = ?").get(c)) continue;
+      this.store.tx(() => {
+        for (const party of this.matters.parties(c, this.people(c))) {
+          const before = this.matters.pendingVersion(c, party);
+          const list = this.matters.pending(c, party);
+          const owner = this.matters.ownerOf(c, party);
+          if (list.version !== before && owner) pending.push({ coworkId: c, party, version: list.version, owner });
+        }
+      });
+    }
+    return { touched, board, pending };
+  }
+
+  /** A participant as the board's actor. */
+  private boardActor(coworkId: string, p: Party): BoardActor {
+    const w = parseParty(p);
+    if (w?.kind === "agent") return { name: this.matters.ownerOf(coworkId, p) ?? "AMO", agent: w.mark };
+    return { name: w?.kind === "person" ? w.name : "AMO", agent: null };
+  }
+
+  /**
+   * The 事项's card on the board (2026-11-24): a new 事项 gets one in its side's group; a settled one (matterSettled) moves
+   * to 「已定 / 已验」, back when reopened — unless a person moved the card. Groups are made when first needed.
+   */
+  private placeMatter(m: Matter, by: Party, isNew: boolean): BoardOpRecord[] {
+    const coworkId = m.scopeId;
+    const cards = this.board.matterCards(coworkId, m.id);
+    if (!cards.length && !isNew) return [];
+    const settled = matterSettled(m);
+    const sideKey = settled ? SETTLED_SIDE : m.side;
+    const actor = this.boardActor(coworkId, by);
+    const opts = { checkSession: (t: string) => this.isSessionOf(coworkId, t), checkMatter: (x: string) => !!this.matters.get(x) && this.matters.get(x)!.scopeId === coworkId, system: true };
+    const records: BoardOpRecord[] = [];
+    const run = (ops: BoardOp[]) => records.push(...this.board.apply(coworkId, actor, ops, opts).result.applied);
+    let group = this.board.sideGroup(coworkId, sideKey);
+    const moving = cards.filter((c) => c.placedBy !== "person" && c.group !== group?.id);
+    if (cards.length && !moving.length) return [];
+    if (!group) {
+      const lanes = this.board.items(coworkId).filter((it) => it.kind === "group" && !it.deleted && it.side && it.side !== SETTLED_SIDE).length;
+      const text = settled ? SETTLED_GROUP_TITLE : `${this.nicks().get(m.side) ?? m.side} 这一方`;
+      const at = settled ? { x: LANE.x, y: LANE.settledY, w: LANE.settledW, h: LANE.h } : { x: LANE.x + lanes * (LANE.w + LANE.gap), y: LANE.y, w: LANE.w, h: LANE.h };
+      run([{ op: "add", item: { kind: "group", text, ...at, side: sideKey } as never }]);
+      group = this.board.sideGroup(coworkId, sideKey);
+      if (!group) return records;
+    }
+    const slot = () => {
+      const n = this.board.inGroup(coworkId, group!.id).filter((it) => it.kind === "matter").length;
+      const cols = Math.max(1, Math.floor((group!.w - LANE.pad) / LANE.stepX));
+      const pos = { x: group!.x + LANE.pad + (n % cols) * LANE.stepX, y: group!.y + LANE.head + Math.floor(n / cols) * LANE.stepY };
+      const need = pos.y + LANE.cardH + LANE.pad - group!.y;
+      if (need > group!.h) {
+        run([{ op: "set", id: group!.id, fields: { h: need } }]);
+        group = this.board.sideGroup(coworkId, sideKey)!;
+      }
+      return pos;
+    };
+    if (!cards.length) run([{ op: "add", item: { kind: "matter", matter: m.id, ...slot(), w: LANE.cardW, h: LANE.cardH, group: group.id } }]);
+    for (const c of moving) run([{ op: "set", id: c.id, fields: { ...slot(), group: group.id } }]);
+    return records;
   }
 
   /** 发出 / 改一下再发 / 不发: only the owner, in person. */
@@ -736,15 +1200,19 @@ export class CoworkStore {
     const r = this.rowFor(coworkId, me);
     this.writable(r);
     const via = checkVia(b?.via);
-    this.actor(coworkId, me, via);
+    const agent = this.actor(coworkId, me, via).agent;
+    this.allow(coworkId, agent, "conclude");
     const t = this.store.thread(threadId, me);
     if (t.request?.coworkId !== coworkId) throw new RelayError("bad_request", "这不是这个协作里的子会话");
-    if (me !== t.request.from && me !== t.request.to) throw new RelayError("forbidden", `结论由发起的 ${t.request.from} 或被问的 ${t.request.to} 来定`);
+    const matter = this.matters.get(threadId);
+    // The asker, the one asked, or (2026-11-24) the 事项's 负责方.
+    if (me !== t.request.from && me !== t.request.to && me !== matter?.side) throw new RelayError("forbidden", `结论由发起的 ${t.request.from} 或被问的 ${t.request.to}${matter && matter.side !== t.request.from ? ` 或负责的 ${matter.side}` : ""} 来定`);
     const conclusion = cleanText(b.conclusion, "结论", COWORK_LIMITS.conclusion);
     return this.store.tx(() => {
       this.db.prepare("UPDATE threads SET cw_conclusion = ?, s_state = 'done', s_waiting = NULL WHERE id = ?").run(conclusion, threadId);
       const message = this.store.insertMessage(threadId, me, via, "event", `定下结论：${conclusion}`, null);
       const event = this.event(coworkId, me, via, "decision", `「${t.title}」：${conclusion}`, { threadId });
+      if (matter) this.matters.write(threadId, partyOf(me, via), { status: "closed", conclusion, waitingOn: [], note: "定下结论" });
       const deliveries = this.actedIn(coworkId, threadId, me, via, message.seq);
       return { thread: this.store.threadById(threadId), message, event, cowork: this.view(coworkId), deliveries };
     });
@@ -779,8 +1247,12 @@ export class CoworkStore {
     const n = typeof note === "string" ? note.trim().slice(0, COWORK_LIMITS.conclusion) : "";
     return this.store.tx(() => {
       const deliveries = this.actedIn(coworkId, thread.id, actor, checkVia(via), message.seq);
-      if (action !== "done" || !n) return { event: null, deliveries };
+      if (action !== "done" || !n) {
+        this.syncFromSession(thread.id, partyOf(actor, checkVia(via)));
+        return { event: null, deliveries };
+      }
       this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(n, thread.id);
+      this.syncFromSession(thread.id, partyOf(actor, checkVia(via)));
       return { event: this.event(coworkId, actor, checkVia(via), "decision", `「${thread.title}」：${n}`, { threadId: thread.id }), deliveries };
     });
   }
@@ -826,13 +1298,21 @@ export class CoworkStore {
     this.writable(r);
     const via = checkVia(b?.via);
     const actor = this.actor(id, me, via);
-    const out = this.board.apply(id, actor, b.ops, { checkSession: (t) => this.isSessionOf(id, t) });
+    this.allow(id, actor.agent, "board-write");
+    const out = this.board.apply(id, actor, b.ops, { checkSession: (t) => this.isSessionOf(id, t), checkMatter: (m) => this.matters.get(m)?.scopeId === id });
     return { result: out.result, events: out.big.length ? this.store.tx(() => this.bigEvents(id, actor, via, out.big)) : [] };
   }
 
-  boardSnapshot(id: string, me: string, after: unknown) {
+  /** The board; read for an 执行 (`agent`), only its 事项's card (the user 11-24). */
+  boardSnapshot(id: string, me: string, after: unknown, agent?: string | null) {
     this.rowFor(id, me);
-    return this.board.snapshot(id, after);
+    const snap = this.board.snapshot(id, after);
+    if (!agent) return snap;
+    this.requireAgent(id, me, agent);
+    const role = this.roleOf(id, agent);
+    if (role.role === "lead") return snap;
+    const own = (it: { kind: string; matter?: string | null }) => it.kind === "matter" && !!role.matter && it.matter === role.matter;
+    return { seq: snap.seq, full: true, items: this.board.items(id).filter(own), locks: [] };
   }
 
   boardHistory(id: string, me: string, card: string) {

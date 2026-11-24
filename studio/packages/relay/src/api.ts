@@ -25,6 +25,16 @@ import type {
   NewCowork,
   NewCoworkEvent,
   NewCoworkSession,
+  AgentRole,
+  CoworkMarkRequest,
+  CoworkMarkResult,
+  CoworkMatterPatch,
+  CoworkMatterResult,
+  CoworkMessageRewrite,
+  CoworkPending,
+  CoworkPendingQuery,
+  Matter,
+  NewCoworkMatter,
 } from "./cowork-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
 
@@ -419,9 +429,16 @@ export class RelayClient {
   async leaveCowork(id: string): Promise<void> {
     await this.call("POST", `/api/cowork/${encodeURIComponent(id)}/leave`, {});
   }
-  /** 拉进协作: one of my sessions by its mark (`studio:<设备号>:<会话 id>`), shown as 「<me> 的 AI · <label>」. */
-  joinCoworkAgent(id: string, mark: string, label: string): Promise<{ cowork: Cowork; agent: CoworkAgent }> {
-    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/agents`, { mark, label });
+  /**
+   * 拉进协作: one of my sessions by its mark (`studio:<设备号>:<会话 id>`), shown as 「<me> 的 AI · <label>」 — as my side's
+   * 主控 (the default; one per side, a second is refused saying who holds it) or an 执行 of one 事项 (`matter`).
+   */
+  joinCoworkAgent(id: string, mark: string, label: string, role?: { role: AgentRole; matter?: string }): Promise<{ cowork: Cowork; agent: CoworkAgent }> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/agents`, { mark, label, ...(role ?? {}) });
+  }
+  /** 改角色: my agent becomes 主控 or an 执行 of a 事项 (in person, or through my side's 主控 with `via`). */
+  setCoworkAgentRole(id: string, mark: string, role: AgentRole, matter?: string | null, via?: Via): Promise<{ cowork: Cowork; agent: CoworkAgent }> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/agents/role`, { mark, role, matter, via });
   }
   async leaveCoworkAgent(id: string, mark: string): Promise<Cowork> {
     return (await this.call<{ cowork: Cowork }>("POST", `/api/cowork/${encodeURIComponent(id)}/agents/leave`, { mark })).cowork;
@@ -480,9 +497,45 @@ export class RelayClient {
   async decideCoworkDraft(id: string, draftId: string, d: DraftDecision): Promise<CoworkDraft> {
     return (await this.call<{ draft: CoworkDraft }>("POST", `/api/cowork/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draftId)}`, d)).draft;
   }
-  /** The board: operations after `after`, or every card (after 0, or too far back); with the text locks now. */
-  coworkBoard(id: string, after = 0): Promise<BoardSnapshot> {
-    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}/board?after=${after}`);
+  /** The board: operations after `after`, or every card (after 0, or too far back); with the text locks now. Read for my
+   * agent (`agent`, its mark): an 执行 gets its 事项's card only. */
+  coworkBoard(id: string, after = 0, agent?: string): Promise<BoardSnapshot> {
+    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}/board?after=${after}${agent ? `&agent=${encodeURIComponent(agent)}` : ""}`);
+  }
+
+  // ---- 事项、回执、待我处理 (2026-11-24, cowork-protocol.ts「事项」)
+
+  /** 开事项 (a 主控 or a person): its thread, first message and card in the 群聊; a card on the board in its side's group. */
+  openMatter(id: string, n: NewCoworkMatter): Promise<CoworkMatterResult> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/matters`, n);
+  }
+  /** 改事项 (a 主控 or a person): `base` is the version read; an older one is refused (409). */
+  async patchMatter(id: string, matterId: string, patch: CoworkMatterPatch): Promise<Matter> {
+    return (await this.call<{ matter: Matter }>("PATCH", `/api/cowork/${encodeURIComponent(id)}/matters/${encodeURIComponent(matterId)}`, patch)).matter;
+  }
+  /** 看过 / 处理了: by seq, or a 事项's messages up to `upTo`. */
+  markCowork(id: string, m: CoworkMarkRequest): Promise<CoworkMarkResult> {
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/marks`, m);
+  }
+  /** 原地改 my message while nobody has seen it (409 after: post a new one with `supersedes`). */
+  async rewriteCoworkMessage(id: string, seq: number, r: CoworkMessageRewrite): Promise<Message> {
+    return (await this.call<{ message: Message }>("PATCH", `/api/cowork/${encodeURIComponent(id)}/messages/${seq}`, r)).message;
+  }
+  /** 撤回 my message while nobody has seen it. */
+  async withdrawCoworkMessage(id: string, seq: number, via?: Via): Promise<Message> {
+    return (await this.call<{ message: Message }>("POST", `/api/cowork/${encodeURIComponent(id)}/messages/${seq}/withdraw`, { via })).message;
+  }
+  /**
+   * 待我处理: mine, or my agent's (`party: agent:<mark>`), in one cowork or all. `since` (the `version` I have) with `waitMs`:
+   * wait until it changes. What an agent's list holds counts as 送到 for it.
+   */
+  coworkPending(q: CoworkPendingQuery = {}, opts: { signal?: AbortSignal } = {}): Promise<CoworkPending> {
+    const p = new URLSearchParams();
+    if (q.coworkId) p.set("coworkId", q.coworkId);
+    if (q.party) p.set("party", q.party);
+    if (q.since !== undefined) p.set("since", String(q.since));
+    if (q.wait) p.set("wait", String(q.wait));
+    return this.call("GET", `/api/cowork/pending?${p}`, undefined, opts.signal);
   }
   /** Operations in order (cowork-protocol.ts BoardOp); each with an opId so a repeat after a break does nothing twice. */
   coworkBoardOps(id: string, ops: BoardOp[], via?: Via): Promise<BoardOpsResult> {

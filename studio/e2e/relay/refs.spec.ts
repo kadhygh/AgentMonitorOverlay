@@ -112,7 +112,9 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   const liOld = "studio:d_oldpc0123:s-2";
   const wangAi = "studio:d_wangpc012:s-1";
   await li.joinCoworkAgent(cw.id, liAi, "FireTimer");
-  await li.joinCoworkAgent(cw.id, liOld, "旧电脑上的会话");
+  // One 主控 per side (2026-11-24): the other session is the 执行 of a 事项.
+  const oldMatter = (await li.openMatter(cw.id, { title: "旧电脑上的改动", body: "旧电脑上那份射速表" })).matter;
+  await li.joinCoworkAgent(cw.id, liOld, "旧电脑上的会话", { role: "worker", matter: oldMatter.id });
   await wang.joinCoworkAgent(cw.id, wangAi, "射速曲线");
   await li.reportCoworkAgents([{ mark: liAi, state: "idle" }, { mark: liOld, state: "idle" }]);
   await wang.reportCoworkAgents([{ mark: wangAi, state: "idle" }]);

@@ -140,7 +140,11 @@
         { "label": "共用的字段和规则", "path": "studio/packages/protocol/src/matters.ts", "anchor": "export function messageRecipients" },
         { "label": "待我处理怎么算", "path": "studio/packages/protocol/src/matters.ts", "anchor": "export function pendingFor" },
         { "label": "中转的接口和推送（事项一节）", "path": "studio/packages/relay/src/cowork-protocol.ts", "anchor": "export const COWORK_MATTERS_VERSION" },
-        { "label": "单测", "path": "studio/packages/protocol/src/matters.test.ts" }
+        { "label": "中转服务：事项表、回执、待我处理（旧子会话的迁移）", "path": "studio/packages/relay/src/cowork-matters.ts", "anchor": "export class CoworkMatters" },
+        { "label": "中转服务：事项卡放进哪一方的分组、定了挪到「已定 / 已验」", "path": "studio/packages/relay/src/cowork.ts", "anchor": "private placeMatter(" },
+        { "label": "中转服务：每个请求之后推送事项、回执、待我处理", "path": "studio/packages/relay/src/server.ts", "anchor": "const coworkFlush" },
+        { "label": "单测", "path": "studio/packages/protocol/src/matters.test.ts" },
+        { "label": "中转服务的单测", "path": "studio/packages/relay/src/cowork-matters.test.ts" }
       ],
       "related": ["tool.relayCowork", "studio.teamRelay"],
       "next": ["studio/plans/collab-framework.md"]

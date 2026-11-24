@@ -682,8 +682,16 @@ export class RelayStore {
     if (extra.session) m.session = extra.session;
     if (extra.approvedBy) m.approvedBy = extra.approvedBy;
     if (extra.edited) m.edited = true;
+    // 协作的事项 (2026-11-24, cowork-matters.ts): 撤回 / 原地改 / 被取代; the 事项 and the receipts come from the hook.
+    if (extra.withdrawnAt) m.withdrawnAt = extra.withdrawnAt;
+    if (extra.editedAt) m.editedAt = extra.editedAt;
+    if (extra.supersededBy) m.supersededBy = extra.supersededBy;
+    this.messageHook?.(m);
     return m;
   }
+
+  /** Adds what another record keeps of a message (cowork.ts: its 事项 and receipts) whenever one is read. */
+  messageHook: ((m: Message) => void) | null = null;
 
   /** Messages of several threads after a seq, in the service's order (a cowork's 群聊 and its 子会话, cowork.ts). */
   messagesIn(threadIds: string[], after = 0, limit = 500): Message[] {

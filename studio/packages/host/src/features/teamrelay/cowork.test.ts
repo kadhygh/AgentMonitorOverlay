@@ -16,7 +16,7 @@ import { coworkHint } from "../../core/cowork.js";
 // 协作 (2026-11-23, plans/cowork.md 第 4 步), against a relay service on this machine (never the team server): the planner's
 // session is brought into a cowork the coder started; its state is reported; an @ and a reply in a 子会话 it started go into
 // it only once it is free, once, folded as the cowork's; the teamrelay scan leaves 子会话 alone; cowork_* speak as the
-// planner's AI (drafts while 「AI 发起 @ 和提问」 is off); 转到我的会话 hands a 子会话 to a session here.
+// planner's AI (at once: no drafts since 2026-11-24); 转到我的会话 hands a 子会话 to a session here.
 
 const fake: Protector = {
   protect: async (t) => Buffer.from(`enc:${t}`).toString("base64"),
@@ -176,28 +176,19 @@ describe("协作 in Studio", () => {
     expect((await tool(s.id, "cowork_read")).text).toContain("不在任何协作里");
   }, 30_000);
 
-  it("cowork_ask is a draft while 「AI 发起 @ 和提问」 is off; on, a reply in it goes in once — not again as a 中转回复", async () => {
-    const { service, told, session, coderClient, plannerClient, tool } = await setup();
+  // No drafts since 2026-11-24 (the 中转 service's 事项: gates replace 「AI 发起 @ 和提问」): an AI's ask goes out at once.
+  it("cowork_ask opens a 子会话 at once; a reply in it goes in once — not again as a 中转回复", async () => {
+    const { service, told, session, coderClient, tool } = await setup();
     const c = await coderClient.createCowork({ title: "背包", members: ["策划小王"] });
     const s = session("背包文档");
     const j = await service.teamRelay.cowork.join(s.id, c.id, "背包");
 
-    const draft = await tool(s.id, "cowork_ask", { to: "程序老李", title: "上限存哪", body: "客户端常量还是配置表？" });
-    expect(draft.text).toContain("存成了草稿");
-    expect((await coderClient.cowork(c.id)).cowork.sessions).toEqual([]);
-    // A draft waiting for the person: 等主人.
-    await until(async () => (await coderClient.cowork(c.id)).cowork.agents[0]!.state, (st) => st === "owner", "等主人 for a draft");
-
-    await coderClient.updateCowork(c.id, { options: { aiInitiate: true } });
     const asked = await tool(s.id, "cowork_ask", { to: "程序老李", title: "图标尺寸", body: "64×64 行吗？", questions: [{ text: "行不行", options: ["行", "不行"] }] });
     expect(asked.text).toContain("子会话「图标尺寸」已开");
     const sub = (await coderClient.cowork(c.id)).cowork.sessions.find((x) => x.title === "图标尺寸")!;
     expect(sub.agent).toBe(j.mark);
 
-    // The planner drops the draft (in 中转): 待命 again; the coder answers the 子会话: in once, as the cowork's.
-    const [d] = await plannerClient.coworkDrafts(c.id);
-    await plannerClient.decideCoworkDraft(c.id, d!.id, { action: "drop" });
-    await until(async () => (await coderClient.cowork(c.id)).cowork.agents[0]!.state, (st) => st === "idle", "待命 after the draft");
+    // The coder answers the 子会话: in once, as the cowork's.
     await coderClient.send(sub.id, { kind: "reply", answers: [{ questionId: "q1", choice: "行" }], body: "按 64 出。" });
     await until(() => told.length, (n) => n === 1, "the reply in the session");
     expect(told[0]!.text).toMatch(/^【协作「背包」· 程序老李 回复了你发起的子会话「图标尺寸」】/);

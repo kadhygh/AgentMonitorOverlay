@@ -266,28 +266,31 @@ Studio 的 Host 用平台登录的 key、以「账号 + 设备编号」（`%APPD
 
 ### 协作（2026-11-23）
 
-人和各自拉进来的 agent 一起推进一件事。方案在 `plans/cowork.md`；类型、上限、/ws 事件和规则写在 `src/cowork-protocol.ts` 开头；服务这边是 `src/cowork.ts`（协作、成员、agent、待送、草稿、事件）和 `src/cowork-board.ts`（白板）。客户端方法在 `RelayClient`（`src/api.ts`）。群聊是 kind `cowork` 的会话（协作的 id 就是它的 id），消息、已读、`/api/wait`、/ws 的 `message` 照旧走；子会话是带 `coworkId` 的会话（request），协作里的人都在里面。这两种会话走 `/api/threads/:id/messages`，效果和 `/api/cowork/:id/messages` 一样；`/api/requests` 带 `coworkId` 就是新开子会话。agent 的调用都用主人的 key，加 `via: { kind: "ai", conv: <会话标记> }`。只有协作里的人能调用，别人一律 403。
+人和各自拉进来的 agent 一起推进一件事。方案在 `plans/cowork.md`；类型、上限、/ws 事件和规则写在 `src/cowork-protocol.ts` 开头；服务这边是 `src/cowork.ts`（协作、成员、agent 和角色、待送、事件）、`src/cowork-matters.ts`（事项、回执、待我处理，2026-11-24）和 `src/cowork-board.ts`（白板）。事项、回执、角色的类型和规则在 `@amo-studio/protocol/matters`（`packages/protocol/src/matters.ts`），Host 本机的事项表也用它。客户端方法在 `RelayClient`（`src/api.ts`）。群聊是 kind `cowork` 的会话（协作的 id 就是它的 id），消息、已读、`/api/wait`、/ws 的 `message` 照旧走；子会话是带 `coworkId` 的会话（request），协作里的人都在里面。这两种会话走 `/api/threads/:id/messages`，效果和 `/api/cowork/:id/messages` 一样；`/api/requests` 带 `coworkId` 就是新开子会话。agent 的调用都用主人的 key，加 `via: { kind: "ai", conv: <会话标记> }`。只有协作里的人能调用，别人一律 403。
 
 | | |
 |---|---|
 | `GET/POST /api/cowork` | 我在的协作（带未读）；发起 `{title, goal, repo, branch, members, options}` |
-| `GET/PATCH /api/cowork/:id` | 全貌（协作、最近的事件、待送、我的 AI 的草稿）；改 `{title, goal, repo, branch, options, ended}`，目标每一版都留着 |
+| `GET/PATCH /api/cowork/:id` | 全貌（协作、最近的事件、待送、事项 `matters`）；改 `{title, goal, repo, branch, ended}`，目标每一版都留着（`options` 收下不管：「AI 发起 @ 和提问」没有了） |
 | `GET /api/cowork/:id/goals`、`/events?after=` | 目标的历史；事件（`decision` 就是已定的事） |
 | `POST /api/cowork/:id/events` `{kind: commit\|note, text, commit, files, via}` | 记事件；commit 带的文件让引用旧提交的卡标成已过时 |
 | `POST /api/cowork/:id/members` `{add}`、`/leave` | 拉人（群聊和所有子会话都加进去）、退出（我的 agent 一起离开） |
-| `POST /api/cowork/:id/agents` `{mark, label}`、`/agents/leave` `{mark}` | 把我的会话拉进来、让它离开 |
+| `POST /api/cowork/:id/agents` `{mark, label, role?, matter?}`、`/agents/role` `{mark, role, matter?, via?}`、`/agents/leave` `{mark}` | 把我的会话拉进来（主控 `lead`，每一方一个，第二个 409 并说是谁；执行 `worker` 要绑一件事项）、改角色、让它离开。执行只能读目标、已定的事、自己的事项和它的卡，只能在自己的事项里说话（不能 @ 人、定结论、改字段，别的一律 403） |
 | `POST /api/cowork/agents/status` `{agents: [{mark, state}]}` | Studio 报 agent 的状态（idle / busy / owner / offline），至少 30 秒一次；90 秒没报算不在线 |
 | `GET /api/cowork-inbox?prefix=&wait=` | Studio 取它的 agent（标记以 prefix 开头）排队中的待送，和各 agent 没读的条数；`wait` 毫秒：没有就等到有（最多 10 分钟） |
 | `POST /api/cowork-inbox/ack` `{ids}` | 送进会话了：已送达 |
-| `GET /api/cowork/:id/feed?after=&agent=` | 群聊和子会话的消息；带 `agent` 时记下它读到哪 |
-| `POST /api/cowork/:id/messages` `{threadId?, body, mentions, agentMentions, replyTo, via}` | 发消息；AI @ 人或 AI，而「AI 发起 @ 和提问」关着时，返回 `{draft}` |
-| `POST /api/cowork/:id/sessions` `{to, title, body, questions, via}` | 新开子会话（AI 的同上，可能成草稿）；`/sessions/:tid/conclude` `{conclusion}` 定下结论 |
-| `GET /api/cowork/:id/drafts`、`POST /api/cowork/:id/drafts/:did` `{action: send\|drop, edit}` | 主人看、发出（可以先改）或不发 AI 的草稿 |
+| `GET /api/cowork/:id/feed?after=&agent=` | 群聊和子会话的消息；带 `agent` 时记下它读到哪，读到的算它「看过」 |
+| `POST /api/cowork/:id/messages` `{threadId?, body, mentions, agentMentions, replyTo, handled?, supersedes?, via}` | 发消息，马上发出（没有草稿了，2026-11-24）。每个收件人一份回执（排队 → 送到 → 看过 → 处理了）；`replyTo` 和 `handled`（true 或 seq 列表）把回的那条记成处理了；`supersedes` 一条别人看过的：标「被 #x 取代」，返回 `superseded.seenByAgents`（看过旧的 AI） |
+| `PATCH /api/cowork/:id/messages/:seq` `{body, via}`、`POST …/messages/:seq/withdraw` `{via}` | 原地改、撤回：只有作者（或作者的 AI），只在还没人看过时；看过了 409，用 `supersedes` |
+| `POST /api/cowork/:id/marks` `{mark: seen\|handled, seqs?, matter?, upTo?, via}` | 标看过、处理了 |
+| `POST /api/cowork/:id/sessions` `{to, title, body, questions, via}` | 新开子会话（也是一件事项：等人确认，等被问的人）；`/sessions/:tid/conclude` `{conclusion}` 定下结论（事项关闭） |
+| `POST /api/cowork/:id/matters` `{title, body, kind?, waitingOn?, dependsOn?, gate?, via}`、`PATCH /api/cowork/:id/matters/:mid` `{base?, title, status, waitingOn, bind, blocker, dependsOn, gate, conclusion, note, via}` | 主控或人开事项（每个协作里编号，白板上自动放进这一方的分组）；按字段改，带 `base`（读到的 version）过期就 409。状态变了记历史、在事项里留一条；定了（已验、关闭）卡挪到「已定 / 已验」，人拖过的不动；关闭时里面的消息全算处理了 |
+| `GET /api/cowork/pending?coworkId=&party=&since=&wait=` | 待我处理（我的或我的 AI 的 `party`）：@ 我的、等我的事项、事项里给我的，处理了或关了就没了；带 `version`，`since` 等于它时最多等 `wait` 毫秒。AI 的列表读到就算送到 |
 | `GET /api/cowork/:id/board?after=` | 白板：序号之后的操作，或者全部卡片（含删掉的），加上现在的软锁 |
 | `POST /api/cowork/:id/board/ops` `{ops, via}` | 按顺序执行操作：add / set（带 `base` 版本）/ delete / restore / resolve / undo；每条带 `opId`，重发不会做两次；做不了的放在 `rejected` 里按位置说明 |
 | `POST /api/cowork/:id/board/lock` `{card, on}`、`/board/presence`、`GET /board/history?card=` | 写字时占着一张卡（30 秒，续着写就续上）、在场（也可以用 /ws 发 `board-presence`）、一张卡的历史 |
 
-/ws 多推这些：`cowork`、`cowork-left`、`cowork-agent`、`cowork-event`、`cowork-delivery`、`cowork-draft`（只推给主人）、`board`、`board-lock`、`board-presence`。客户端可以经 /ws 发 `{type: "board-presence", coworkId, selected, dragging, open}`，每个连接每秒最多 10 条。
+/ws 多推这些：`cowork`、`cowork-left`、`cowork-agent`、`cowork-event`、`cowork-delivery`、`board`、`board-lock`、`board-presence`，以及 2026-11-24 起的 `matter`、`receipts`、`message-changed`（改了、撤回、被取代）、`pending`（只推给本人：他和他的 AI 的待我处理版本变了）。客户端可以经 /ws 发 `{type: "board-presence", coworkId, selected, dragging, open}`，每个连接每秒最多 10 条。
 
 ## 测试
 

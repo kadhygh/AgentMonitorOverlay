@@ -117,14 +117,17 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     return (s.title?.trim() || (s.taskId ? this.store.getTask(s.taskId)?.title : "") || "会话").slice(0, 60);
   }
 
-  /** 拉进协作: the session joins the 协作 as its owner's AI; told so with the next message it gets. */
-  async join(sessionIdValue: unknown, coworkIdValue: unknown, labelValue?: unknown): Promise<CoworkJoin> {
+  /**
+   * 拉进协作: the session joins the 协作 as its owner's AI; told so with the next message it gets. `as`: an 执行 bound to
+   * one 事项 (2026-11-24: one 主控 per side, so a 子会话 handed to another session makes it that 事项's 执行).
+   */
+  async join(sessionIdValue: unknown, coworkIdValue: unknown, labelValue?: unknown, as?: { role: "worker"; matter: string }): Promise<CoworkJoin> {
     const s = this.joinable(text(sessionIdValue, "sessionId"));
     const coworkId = text(coworkIdValue, "coworkId");
     const label = (typeof labelValue === "string" && labelValue.trim() ? labelValue.trim() : this.sessionName(s)).slice(0, 60);
     const { client, me, prefix } = this.relay();
     const mark = `${prefix}${s.id}`;
-    const out = await this.call(() => client.joinCoworkAgent(coworkId, mark, label));
+    const out = await this.call(() => client.joinCoworkAgent(coworkId, mark, label, as));
     setCoworkTell(this.store, s.id, `joined:${coworkId}`, joinedLine(out.cowork, out.agent.name, me));
     await this.refresh().catch(() => undefined);
     this.scheduleReport();
@@ -746,7 +749,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       target = made.session;
     } else target = this.joinable(text(input.sessionId, "sessionId"));
     const already = this.joined().find((j) => j.sessionId === target.id && j.coworkId === h.coworkId);
-    const join = already ?? (await this.join(target.id, h.coworkId, input.newTask ? h.title : undefined));
+    const join = already ?? (await this.join(target.id, h.coworkId, input.newTask ? h.title : undefined, { role: "worker", matter: threadId }));
     const hint = coworkHint(this.store, target.id);
     const list = filesAsText(files, { download: "team_file_get（threadId, fileId）" });
     const body = [

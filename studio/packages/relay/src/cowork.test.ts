@@ -66,7 +66,7 @@ async function team() {
 describe("协作：成员和权限", () => {
   it("is made with its people; only they see it or change anything in it", async () => {
     const { wang, li, out } = await service();
-    expect((await wang.health()).cowork).toBe(1);
+    expect((await wang.health()).cowork).toBe(2);
     const cw = await wang.createCowork({ title: "射速改版", goal: "射速 10 → 12", repo: "game", branch: "feat/rate", members: ["程序老李"] });
     expect(cw).toMatchObject({ title: "射速改版", goal: "射速 10 → 12", repo: "game", branch: "feat/rate", members: ["策划小王", "程序老李"], options: { aiInitiate: false }, endedAt: null });
     expect((await li.coworks()).map((c) => c.id)).toEqual([cw.id]);
@@ -233,50 +233,19 @@ describe("协作：agent", () => {
   });
 });
 
-describe("协作：AI 的草稿", () => {
-  it("keeps an agent's @ and its new 子会话 for its owner while 「AI 发起 @ 和提问」 is off; only the owner sees and decides", async () => {
+describe("协作：没有草稿了", () => {
+  it("sends an agent's @ and its new 子会话 at once (2026-11-24: 闸门 instead of 「AI 发起 @ 和提问」), whatever an old client sets", async () => {
     const { wang, li, id } = await team();
-    const wangEvents = await listen(wang);
-    const liEvents = await listen(li);
-    // A plain message from an agent goes out; one that @-s someone waits.
-    expect((await wang.postCowork(id, { body: "我先读一下文档", via: ai(WANG_AI) })).message).toBeTruthy();
-    const kept = await wang.postCowork(id, { body: "老李，射速上限你定？", mentions: ["程序老李"], agentMentions: [LI_AI], via: ai(WANG_AI) });
-    expect(kept.draft).toMatchObject({ kind: "post", agent: WANG_AI, owner: "策划小王", state: "pending" });
-    const askKept = await wang.askCowork(id, { to: "程序老李", title: "射速上限", body: "12 行吗？", via: ai(WANG_AI) });
-    expect(askKept.draft).toMatchObject({ kind: "ask", state: "pending" });
-    expect((await li.coworkInbox("studio:")).items).toEqual([]);
-    expect((await wang.cowork(id)).drafts.map((d) => d.kind)).toEqual(["post", "ask"]);
-    expect((await li.cowork(id)).drafts).toEqual([]);
-    expect(await li.coworkDrafts(id)).toEqual([]);
-    await expect.poll(() => of(wangEvents.events, "cowork-draft").length).toBe(2);
-    expect(of(liEvents.events, "cowork-draft")).toEqual([]);
-
-    await expect(li.decideCoworkDraft(id, kept.draft!.id, { action: "send" })).rejects.toMatchObject({ status: 403 });
-    // The agent itself cannot send its own draft.
-    const byAi = await fetch(`${server!.url}/api/cowork/${id}/drafts/${kept.draft!.id}`, { method: "POST", headers: { authorization: `Bearer ${wang.key}`, "content-type": "application/json" }, body: JSON.stringify({ action: "send", via: ai(WANG_AI) }) });
-    expect(byAi.status).toBe(403);
-
-    // 改一下再发: it goes as the agent's, approved and edited, and wakes 老李's agent.
-    const sent = await wang.decideCoworkDraft(id, kept.draft!.id, { action: "send", edit: { body: "老李，射速上限 12 你看行吗？" } });
-    expect(sent).toMatchObject({ state: "sent" });
-    const msg = (await li.messages(id)).messages.find((m) => m.seq === sent.result!.seq)!;
-    expect(msg).toMatchObject({ body: "老李，射速上限 12 你看行吗？", approvedBy: "策划小王", edited: true, agentMentions: [LI_AI], mentions: ["程序老李"], via: { kind: "ai", conv: WANG_AI } });
-    expect((await li.coworkInbox("studio:d_li")).items.map((i) => i.message.seq)).toEqual([msg.seq]);
-    await expect(wang.decideCoworkDraft(id, kept.draft!.id, { action: "drop" })).rejects.toMatchObject({ status: 409 });
-
-    // 发出 the 子会话: every member is in it.
-    const askSent = await wang.decideCoworkDraft(id, askKept.draft!.id, { action: "send" });
-    const sub = (await li.cowork(id)).cowork.sessions.find((s) => s.id === askSent.result!.threadId)!;
-    expect(sub).toMatchObject({ title: "射速上限", from: "策划小王", to: "程序老李", agent: WANG_AI, state: "open" });
-
-    // 不发.
-    const third = await wang.postCowork(id, { body: "@程序老李 还在吗", mentions: ["程序老李"], via: ai(WANG_AI) });
-    expect((await wang.decideCoworkDraft(id, third.draft!.id, { action: "drop" })).state).toBe("dropped");
+    await wang.updateCowork(id, { options: { aiInitiate: false } });
+    const sent = await wang.postCowork(id, { body: "老李，射速上限你定？", mentions: ["程序老李"], agentMentions: [LI_AI], via: ai(WANG_AI) });
+    expect(sent.draft).toBeUndefined();
+    expect(sent.message).toMatchObject({ body: "老李，射速上限你定？", agentMentions: [LI_AI], via: { kind: "ai", conv: WANG_AI } });
+    expect((await li.coworkInbox("studio:d_li")).items.map((i) => i.message.seq)).toEqual([sent.message!.seq]);
+    const asked = await wang.askCowork(id, { to: "程序老李", title: "射速上限", body: "12 行吗？", via: ai(WANG_AI) });
+    expect(asked.draft).toBeUndefined();
+    expect((await li.cowork(id)).cowork.sessions.find((x) => x.id === asked.thread!.id)).toMatchObject({ from: "策划小王", to: "程序老李", agent: WANG_AI, state: "open" });
     expect((await wang.cowork(id)).drafts).toEqual([]);
-
-    // Turned on: an agent's @ goes out at once.
-    await wang.updateCowork(id, { options: { aiInitiate: true } });
-    expect((await wang.postCowork(id, { body: "@程序老李 再确认一下", mentions: ["程序老李"], via: ai(WANG_AI) })).message).toBeTruthy();
+    expect((await wang.cowork(id)).events.filter((e) => e.kind === "option")).toEqual([]);
   });
 });
 

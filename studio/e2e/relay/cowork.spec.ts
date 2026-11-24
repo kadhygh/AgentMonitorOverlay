@@ -11,8 +11,8 @@ import { programLaunch } from "../support/packed.js";
 // clients against a real service in this process — 程序老李 and 策划小王 — and their AIs played by RelayClient the way
 // their Studios will (拉进协作, state reports, the inbox, ack, replies). 老李 starts a 协作 and @-s 小王's AI: the @ list
 // shows its state and what an @ does, the line over the box says where it goes, the message's trail goes 排队中 → 已送达 →
-// 已回复 and the reply quotes it. Typing keeps the list still with 「有 N 条新消息」. 老李's own AI writes a draft only he
-// sees (待处理 too), he edits and sends it. A 子会话 opens as a window (several at once, folded into tabs), is answered and
+// 已回复 and the reply quotes it. Typing keeps the list still with 「有 N 条新消息」. 老李's own AI's @ goes out at once (no
+// drafts since 2026-11-24). A 子会话 opens as a window (several at once, folded into tabs), is answered and
 // concluded into 已定的事. Both open the 白板: who is looking, the soft lock 「在写」, selections, a move seen by the other,
 // an AI's card marked 「AI 刚改」, a conflict picked, a delete brought back, undo only of one's own. Then the AIs' run of 30
 // messages paused. Light, dark and 960 px. Needs `npm run relay:release` first (release/relay/client).
@@ -91,7 +91,7 @@ async function drag(page: Page, l: Locator, dx: number, dy: number): Promise<voi
   await page.mouse.up();
 }
 
-test("协作: @ another's AI from queue to reply, a draft, 子会话 windows, the 白板 changed by two at once", async () => {
+test("协作: @ another's AI from queue to reply, an AI's @ at once, 子会话 windows, the 白板 changed by two at once", async () => {
   test.setTimeout(300_000);
   store.register("程序老李", "pw-1234", "程序 · 战斗");
   store.register("策划小王", "pw-1234", "策划");
@@ -219,20 +219,9 @@ test("协作: @ another's AI from queue to reply, a draft, 子会话 windows, th
   await wangStudio.postCowork(cw.id, { kind: "text", body: "@程序老李 过热的颜色读哪个字段？", mentions: ["程序老李"] });
   await expect(A.locator(".list-body .cw-wait.at")).toContainText("过热的颜色读哪个字段");
   await expect(A.locator(".rail-item", { hasText: "协作" }).locator(".badge")).toHaveText("1");
-  // ---- 老李's AI @-s 小王 with 「AI 发起 @ 和提问」 off: a draft only 老李 sees.
-  const d = await liStudio.postCowork(cw.id, { kind: "text", body: "@策划小王 FireTimer 起转段推上去了，曲线那边能接上吗？", mentions: ["策划小王"], via: viaLi });
-  expect(d.draft?.state).toBe("pending");
-  await expect(A.locator(".list-body .cw-wait.draft")).toContainText("草稿：@策划小王 FireTimer 起转段");
-  await expect(A.locator(".rail-item", { hasText: "待处理" }).locator(".badge")).toHaveText("2");
-  await A.locator(".list-body .cw-wait.draft").click();
-  const draft = A.locator(".cowork-view .cw-draft");
-  await expect(draft).toContainText("FireTimer 起转段推上去了");
-  await expect(B.locator(".cw-draft")).toHaveCount(0);
-  await shot(li.app, "C07-draft");
-  await draft.getByRole("button", { name: "改一下再发" }).click();
-  await draft.getByRole("textbox", { name: "改草稿" }).fill("@策划小王 FireTimer 起转段推上去了（3f2a91c），曲线那边按 0.8 秒接就行。");
-  await draft.getByRole("button", { name: "改好了，发出" }).click();
-  await expect(A.locator(".cowork-view .cw-draft")).toHaveCount(0);
+  // ---- 老李's AI @-s 小王: out at once (no drafts since 2026-11-24 — the 事项's gates replace 「AI 发起 @ 和提问」).
+  const d = await liStudio.postCowork(cw.id, { kind: "text", body: "@策划小王 FireTimer 起转段推上去了（3f2a91c），曲线那边按 0.8 秒接就行。", mentions: ["策划小王"], via: viaLi });
+  expect(d.draft).toBeUndefined();
   await expect(B.locator(".msg.by-ai", { hasText: "曲线那边按 0.8 秒接就行" })).toBeVisible();
 
   // ---- 子会话: one asked of 老李 (from 小王), one 老李 asks; windows over the page.
@@ -256,7 +245,9 @@ test("协作: @ another's AI from queue to reply, a draft, 子会话 windows, th
   await expect(win(B, "子会话：枪管从第几秒开始变红？")).toBeVisible();
   // Folded into a tab above the box, then out again.
   await second.getByRole("button", { name: "收起" }).click();
-  await expect(A.locator(".cw-dock .float-tab")).toHaveText(["子会话：枪管从第几秒开始变红？开着"]);
+  // 开着 when the window opened before the 子会话 came in; 等策划小王 when it came first (the service pushes the 协作 once a
+  // 事项 is opened, 2026-11-24).
+  await expect(A.locator(".cw-dock .float-tab")).toHaveText([/^子会话：枪管从第几秒开始变红？(开着|等策划小王)$/]);
   await noSideOverflow(A);
   await shot(li.app, "C08-sub-window");
   // Moved by its title bar, sized by its corner, maximized over the page and back.

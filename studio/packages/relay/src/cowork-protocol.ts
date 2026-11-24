@@ -31,7 +31,7 @@ import type { Message, NewMessage, Question, Thread, Via } from "./protocol.js";
 export * from "@amo-studio/protocol/matters";
 
 /** /api/health's `cowork`: this set of calls' version (missing on a service from before it). */
-export const COWORK_VERSION = 1;
+export const COWORK_VERSION = 2;
 /** A service whose `cowork` is at least this has 事项, receipts, roles and 待我处理 (the section 「事项」 below). */
 export const COWORK_MATTERS_VERSION = 2;
 
@@ -231,6 +231,9 @@ export interface CoworkPost extends NewMessage {
   replyTo?: number;
   /** My earlier message (seq) this one replaces: it is marked 被 #x 取代 (COWORK_MATTERS_VERSION). */
   supersedes?: number;
+  /** 处理了 with this message (the user 11-24: AI 随回复标), besides what `replyTo` names (that one always is): these seqs,
+   * or true for everything to me in this thread so far. */
+  handled?: true | number[];
 }
 
 /** A message went out (with the deliveries it made), or an agent's message was kept as a draft for its owner. */
@@ -497,7 +500,8 @@ export interface BoardPresence {
 
 // ---- 事项 (2026-11-24, COWORK_MATTERS_VERSION; plans/collab-framework.md「11-24」; the shared part is protocol/matters.ts)
 //
-// What changes on a service with 事项 (step 2; until then these calls answer 404 and the fields are missing):
+// What changes on a service with 事项 (served since step 2, cowork-matters.ts; health.cowork ≥ 2 — an older service answers
+// these calls 404 and leaves the fields out):
 // - Every 子会话 is a 事项 (`Cowork.matters`, its id = the thread's id); old ones are migrated (statusFromSession). A 主控 or a
 //   person opens one with POST …/matters (NewMatter): a request thread, numbered 「事项 N」. cowork_ask stays for the
 //   agents (换底不换样): a 子会话 asked of a person = a 事项 「等人确认」 waiting on them.
@@ -581,6 +585,8 @@ export interface CoworkPendingQuery {
 }
 export interface CoworkPending {
   lists: Array<PendingList & { coworkId: string }>;
+  /** The lists' versions added up: what `since` compares with. */
+  version: number;
 }
 
 // ---- /ws (added to protocol.ts RelayEvent)

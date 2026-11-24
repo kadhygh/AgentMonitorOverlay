@@ -23,7 +23,7 @@ import { DEVICE_CHANNEL_VERSION, MAX_DEVICE_FRAME } from "./devices-protocol.js"
 import { checkTransferDevice, cleanDeviceName, TransferStore } from "./transfers.js";
 import { TRANSFER_CHUNK, type Transfer } from "./transfer-protocol.js";
 import { CoworkStore } from "./cowork.js";
-import { COWORK_INBOX_MAX_WAIT, COWORK_VERSION, type BoardOpRecord, type CoworkAgent, type CoworkClientFrame, type CoworkDelivery, type CoworkEvent } from "./cowork-protocol.js";
+import { COWORK_INBOX_MAX_WAIT, COWORK_VERSION, type BoardOpRecord, type CoworkAgent, type CoworkClientFrame, type CoworkDelivery, type CoworkEvent, type Receipt } from "./cowork-protocol.js";
 
 // The relay service (plans/done/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
 // with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
@@ -378,6 +378,51 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
     if (coworkId) coworkEvents(coworkId, out.events);
     if (out.thread.kind === "request" && out.thread.request?.coworkId) coworkChanged(out.thread.request.coworkId);
   };
+  /** Long polls on /api/cowork/pending: a participant's list changed (or the wait ran out). */
+  const pendingWaiters = new Set<{ party: string; owner: string; done(): void }>();
+  /**
+   * 事项、回执、待我处理 (2026-11-24, cowork-matters.ts): after every request, what it changed is read again and pushed —
+   * the 事项 (and the cowork with them), the cards the service placed for them, receipts, messages withdrawn, rewritten
+   * or superseded, and each 待我处理 whose version went up (to its person: theirs and their agents').
+   */
+  const coworkFlush = () => {
+    if (closing) return;
+    let out: ReturnType<CoworkStore["drain"]>;
+    try {
+      out = cowork.drain();
+    } catch {
+      return;
+    }
+    const changedCoworks = new Set<string>();
+    for (const id of out.touched.matters) {
+      const m = cowork.matters.get(id);
+      if (!m) continue;
+      push(cowork.people(m.scopeId), { type: "matter", coworkId: m.scopeId, matter: m });
+      changedCoworks.add(m.scopeId);
+    }
+    for (const b of out.board) boardPushed(b.coworkId, b.ops);
+    const receipts = new Map<string, Array<{ threadId: string; seq: number; receipt: Receipt }>>();
+    for (const seq of out.touched.receipts) {
+      const msg = store.messageBySeq(seq);
+      const c = msg ? cowork.coworkOf(store.threadById(msg.threadId)) : null;
+      if (!msg || !c) continue;
+      const list = receipts.get(c) ?? [];
+      for (const r of msg.receipts ?? []) list.push({ threadId: msg.threadId, seq, receipt: r });
+      receipts.set(c, list);
+    }
+    for (const [c, changed] of receipts) if (changed.length) push(cowork.people(c), { type: "receipts", coworkId: c, changed });
+    for (const seq of out.touched.messages) {
+      const msg = store.messageBySeq(seq);
+      const c = msg ? cowork.coworkOf(store.threadById(msg.threadId)) : null;
+      if (msg && c) push(store.threadMembers(msg.threadId), { type: "message-changed", coworkId: c, message: msg });
+    }
+    for (const c of changedCoworks) coworkChanged(c);
+    for (const p of out.pending) {
+      push([p.owner], { type: "pending", coworkId: p.coworkId, party: p.party, version: p.version });
+      for (const w of [...pendingWaiters]) if (w.party === p.party && w.owner === p.owner) w.done();
+    }
+  };
+
   // Text locks and presence that ran out, agents whose Studio stopped reporting (不在线).
   const coworkSweep = setInterval(() => {
     if (closing) return;
@@ -815,7 +860,34 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         deliveriesChanged(moved);
         return send(res, 200, { deliveries: moved });
       }
-      const cm = /^\/api\/cowork\/(t_[0-9a-f]{16})((?:\/[a-z]+)*?)(?:\/(t_[0-9a-f]{16}|dr_[0-9a-f]{16})(\/conclude)?)?$/.exec(path);
+      // 待我处理 (2026-11-24): mine or my agent's; `since` (the version I have): wait up to `wait` ms for another.
+      if (method === "GET" && path === "/api/cowork/pending") {
+        const q = { coworkId: url.searchParams.get("coworkId"), party: url.searchParams.get("party") };
+        const total = (lists: Array<{ version: number }>) => lists.reduce((n, l) => n + l.version, 0);
+        let lists = cowork.pending(me, q);
+        const since = url.searchParams.get("since");
+        const wait = Math.max(0, Math.min(Number(url.searchParams.get("wait") ?? 0) || 0, COWORK_INBOX_MAX_WAIT));
+        if (since !== null && wait > 0 && total(lists) === Number(since)) {
+          await new Promise<void>((resolve) => {
+            const w = {
+              party: q.party || `person:${me}`,
+              owner: me,
+              done: () => {
+                clearTimeout(timer);
+                pendingWaiters.delete(w);
+                resolve();
+              },
+            };
+            const timer = setTimeout(w.done, wait);
+            pendingWaiters.add(w);
+            req.on("close", w.done);
+          });
+          if (res.writableEnded || closing) return;
+          lists = cowork.pending(me, q);
+        }
+        return send(res, 200, { lists, version: total(lists) });
+      }
+      const cm = /^\/api\/cowork\/(t_[0-9a-f]{16})((?:\/[a-z]+)*?)(?:\/(t_[0-9a-f]{16}|dr_[0-9a-f]{16}|\d{1,15})(\/conclude|\/withdraw)?)?$/.exec(path);
       if (!cm) throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
       const id = cm[1]!;
       const sub = cm[2] ?? "";
@@ -835,7 +907,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         if (method === "GET" && sub === "/events") return send(res, 200, { events: cowork.events(id, me, Number(url.searchParams.get("after") ?? 0) || 0) });
         if (method === "GET" && sub === "/feed") return send(res, 200, cowork.feed(id, me, Number(url.searchParams.get("after") ?? 0) || 0, url.searchParams.get("agent")));
         if (method === "GET" && sub === "/drafts") return send(res, 200, { drafts: cowork.drafts(id, me) });
-        if (method === "GET" && sub === "/board") return send(res, 200, cowork.boardSnapshot(id, me, Number(url.searchParams.get("after") ?? 0) || 0));
+        if (method === "GET" && sub === "/board") return send(res, 200, cowork.boardSnapshot(id, me, Number(url.searchParams.get("after") ?? 0) || 0, url.searchParams.get("agent")));
         if (method === "GET" && sub === "/board/history") return send(res, 200, { ops: cowork.boardHistory(id, me, url.searchParams.get("card") ?? "") });
         const body = method === "POST" ? await readJson(req) : null;
         if (body && sub === "/events") {
@@ -868,13 +940,21 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
           deliveriesChanged(out.dropped);
           return send(res, 200, { ok: true });
         }
-        if (body && sub === "/agents") {
-          const out = cowork.joinAgent(id, me, body.mark, body.label);
+        if (body && (sub === "/agents" || sub === "/agents/role")) {
+          const out = sub === "/agents" ? cowork.joinAgent(id, me, body.mark, body.label, body.role, body.matter) : cowork.setRole(id, me, body);
           if (out.message) announce(store.threadById(id), out.message);
           coworkChanged(id);
           coworkEvents(id, out.events);
           return send(res, 200, { cowork: out.cowork, agent: out.agent });
         }
+        // 事项 (2026-11-24): opened by a 主控 or a person.
+        if (body && sub === "/matters") {
+          const out = cowork.openMatter(id, me, body as never);
+          announce(out.thread, out.message);
+          announce(out.card.thread, out.card.message);
+          return send(res, 200, { matter: out.matter, thread: out.thread, message: out.message });
+        }
+        if (body && sub === "/marks") return send(res, 200, cowork.marks(id, me, body));
         if (body && sub === "/agents/leave") {
           const out = cowork.leaveAgent(id, me, body.mark);
           announce(store.threadById(id), out.message);
@@ -920,6 +1000,15 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
           presencePushed(id);
           return send(res, 200, { presence });
         }
+      } else if (method === "PATCH" && sub === "/matters" && !cm[4]) {
+        const out = cowork.patchMatter(id, target, me, (await readJson(req)) as never);
+        if (out.message) announce(store.threadById(target), out.message);
+        coworkEvents(id, out.events);
+        return send(res, 200, { matter: out.matter });
+      } else if (sub === "/messages" && /^\d+$/.test(target) && ((method === "PATCH" && !cm[4]) || (method === "POST" && cm[4] === "/withdraw"))) {
+        const out = cowork.rewrite(id, Number(target), me, await readJson(req), cm[4] === "/withdraw");
+        deliveriesChanged(out.dropped);
+        return send(res, 200, { message: out.message });
       } else if (method === "POST" && sub === "/sessions" && cm[4] === "/conclude") {
         const out = cowork.conclude(id, target, me, await readJson(req));
         announce(out.thread, out.message);
@@ -1182,6 +1271,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       if (method === "POST" && m[2] === "/read") {
         const body = await readJson(req);
         const readSeq = store.markRead(id, me, typeof body.seq === "number" ? body.seq : undefined);
+        if (cw) cowork.readBy(known, me, readSeq);
         push([me], { type: "read", threadId: id, readSeq });
         return send(res, 200, { readSeq });
       }
@@ -1199,11 +1289,13 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
       return;
     }
     const url = new URL(req.url ?? "/", "http://relay");
-    route(req, res, url).catch((err: unknown) => {
-      if (res.headersSent) return;
-      if (err instanceof RelayError) send(res, STATUS[err.code], { error: err.code, message: err.message });
-      else send(res, 500, { error: "internal", message: err instanceof Error ? err.message : String(err) });
-    });
+    route(req, res, url)
+      .catch((err: unknown) => {
+        if (res.headersSent) return;
+        if (err instanceof RelayError) send(res, STATUS[err.code], { error: err.code, message: err.message });
+        else send(res, 500, { error: "internal", message: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(coworkFlush);
   });
 
   const wss = new WebSocketServer({ noServer: true });
