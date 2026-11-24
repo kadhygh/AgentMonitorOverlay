@@ -250,7 +250,7 @@ export class CoworkMatters {
       const at = Number(r.created_at);
       const open: MatterEvent = { kind: "open", at, by: owner, status: "doing", note: "从子会话转成事项" };
       this.insert({ id: String(r.id), coworkId, kind: r.cw_agent != null ? "confirm" : "work", owner, side: String(r.req_from), gate: null, blocker: null, dependsOn: [], at }, open);
-      if (status === "closed") this.apply(String(r.id), { kind: "conclude", at, by: owner, conclusion, note: "从子会话转成事项" });
+      if (status === "closed") this.apply(String(r.id), { kind: "conclude", at, by: owner, conclusion, note: "从子会话转成事项" }, { migrating: true });
     }
     for (const r of this.db.prepare("SELECT * FROM cowork_matters WHERE derived IS NULL").all() as Row[]) {
       const at = Number(r.updated_at);
@@ -327,6 +327,7 @@ export class CoworkMatters {
       waitingWhy: s.waitingWhy,
       lastEventAt: s.lastEventAt,
       limited: s.limited,
+      ...(s.decided !== undefined ? { decided: s.decided } : {}),
       place: json<{ x: number; y: number } | null>(r.place, null),
       placeVersion: Number(r.place_version ?? 0),
       createdAt: Number(r.created_at),
@@ -375,13 +376,13 @@ export class CoworkMatters {
    * Something happened in it: kept, and folded into its state (applyMatterEvent). Its version goes up when its status or
    * who it waits on changed; closed by this, everything in it is 处理了. Returns the 事项 now and what moved.
    */
-  apply(id: string, e: MatterEvent): { matter: Matter; closed: boolean; changed: boolean; before: MatterStatus } {
+  apply(id: string, e: MatterEvent, opts: { migrating?: boolean } = {}): { matter: Matter; closed: boolean; changed: boolean; before: MatterStatus } {
     const r = this.row(id);
     if (!r) throw new RelayError("not_found", `没有这件事项：${id}`);
     const prev = this.state(r);
     const s = applyMatterEvent(prev, e);
     this.db.prepare("INSERT INTO cowork_matter_events (matter_id, at, event) VALUES (?, ?, ?)").run(id, e.at, JSON.stringify(e));
-    const changed = s.status !== prev.status || JSON.stringify(s.waitingOn) !== JSON.stringify(prev.waitingOn) || s.conclusion !== prev.conclusion || s.limited !== prev.limited;
+    const changed = s.status !== prev.status || JSON.stringify(s.waitingOn) !== JSON.stringify(prev.waitingOn) || s.conclusion !== prev.conclusion || s.limited !== prev.limited || s.decided !== prev.decided;
     this.db
       .prepare(`UPDATE cowork_matters SET derived = ?, status = ?, waiting = ?, history = ?, conclusion = ?, updated_at = ?${changed ? ", version = version + 1" : ""} WHERE id = ?`)
       .run(JSON.stringify(s), s.status, JSON.stringify(s.waitingOn), JSON.stringify(s.history), s.conclusion, e.at, id);
@@ -394,8 +395,50 @@ export class CoworkMatters {
       if (commits.length !== b.commits.length) this.db.prepare("UPDATE cowork_matters SET bindings = ? WHERE id = ?").run(JSON.stringify({ ...b, commits }), id);
     }
     const closed = s.status === "closed" && prev.status !== "closed";
-    if (closed) this.closeReceipts(id, e.at);
+    if (closed && opts.migrating) this.closeReceipts(id, e.at, null);
+    else if (closed) this.closedBy(String(r.cowork_id), id, e);
     return { matter: this.get(id)!, closed, changed, before: prev.status };
+  }
+
+  /**
+   * A 事项 closed (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」: closing marked everything in it 处理了, so the other
+   * side's AI never heard of what it had not read — 12 of 14 acceptance runs, once nobody started the merge): the closing
+   * side's messages in it are 处理了; the other sides' unseen ones stay as they are, and their 主控 and people each get a
+   * 「事项 N 关了：结论 …」 line (MatterMessageFields `closed`, pendingFor "closed") until they have seen it.
+   */
+  private closedBy(coworkId: string, id: string, e: MatterEvent): void {
+    const mine = this.ownerOf(coworkId, e.by);
+    this.closeReceipts(id, e.at, mine === null ? null : (p) => this.ownerOf(coworkId, p) === mine);
+    const m = this.get(id)!;
+    const sides = new Set<string>([m.side]);
+    for (const r of this.db.prepare("SELECT DISTINCT party FROM cowork_receipts WHERE thread_id = ?").all(id) as Row[]) {
+      const s = this.ownerOf(coworkId, String(r.party) as Party);
+      if (s) sides.add(s);
+    }
+    for (const r of this.db.prepare("SELECT author, via FROM messages WHERE thread_id = ? AND kind <> 'event'").all(id) as Row[]) {
+      const s = this.ownerOf(coworkId, partyOf(String(r.author), json<Via>(r.via, { kind: "person" })));
+      if (s) sides.add(s);
+    }
+    const people = new Set(this.store.threadMembers(coworkId));
+    const leads = this.leads(coworkId);
+    const to: Party[] = [];
+    for (const s of sides) {
+      if (s === mine) continue;
+      if (leads[s]) to.push(agentParty(leads[s]!));
+      if (people.has(s)) to.push(personParty(s));
+    }
+    if (!to.length) return;
+    const who = parseParty(e.by);
+    const author = mine ?? (who?.kind === "person" ? who.name : m.side);
+    const via: Via = who?.kind === "agent" ? { kind: "ai", conv: who.mark } : { kind: "person" };
+    const body = `事项 ${m.no}「${m.title}」关了：${m.conclusion ? m.conclusion : "（没写结论）"}`;
+    const message = this.store.insertMessage(id, author, via, "event", body, { closed: true });
+    for (const p of to) {
+      const person = p.startsWith("person:");
+      this.db.prepare("INSERT OR IGNORE INTO cowork_receipts (seq, party, cowork_id, thread_id, state, queued_at, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(message.seq, p, coworkId, id, person ? "delivered" : "queued", e.at, person ? e.at : null);
+    }
+    this.touchedNow.receipts.add(message.seq);
+    this.touchedNow.coworks.add(coworkId);
   }
 
   /** Writes the plain fields given (not its status: that comes from events). */
@@ -486,7 +529,9 @@ export class CoworkMatters {
     const matter = this.get(message.threadId);
     const posters = matter ? this.posters(message.threadId, message.seq) : [];
     const mentions: Party[] = [...(message.mentions ?? []).map(personParty), ...(message.agentMentions ?? []).map(agentParty)];
-    const to = messageRecipients({ author, people, leads: this.leads(coworkId), matter, posters, mentions });
+    // Those it 知会s read it too (in a 事项, people are not otherwise its recipients).
+    const noticed = (message.notice ?? []).map(personParty);
+    const to = messageRecipients({ author, people, leads: this.leads(coworkId), matter, posters, mentions: [...mentions, ...noticed] });
     const at = this.now();
     for (const p of to) {
       const person = p.startsWith("person:");
@@ -553,17 +598,21 @@ export class CoworkMatters {
     const out: Array<{ threadId: string; seq: number; receipt: Receipt }> = [];
     for (const r of rows) {
       const seq = Number(r.seq);
-      const noticed = mark === "seen" && who?.kind === "person" && !!this.store.messageBySeq(seq)?.notice?.includes(who.name);
+      const msg = mark === "seen" && who?.kind === "person" ? this.store.messageBySeq(seq) : null;
+      // A 知会 or a 「事项 N 关了」 line asks only that it is seen.
+      const noticed = !!msg && who?.kind === "person" && (!!msg.notice?.includes(who.name) || !!msg.closed);
       const moved = this.advance(seq, party, noticed ? "handled" : mark);
       if (moved) out.push({ threadId: String(r.thread_id), seq, receipt: moved });
     }
     return out;
   }
 
-  /** A 事项 closed: every message in it counts as 处理了 for everyone. */
-  private closeReceipts(threadId: string, at: number): void {
+  /** A 事项 closed: its messages count as 处理了 (byClose) for those `whose` takes — the closing side; null: everyone (a
+   * 子会话 closed before 事项, migrated). */
+  private closeReceipts(threadId: string, at: number, whose: ((p: Party) => boolean) | null): void {
     const rows = this.db.prepare("SELECT * FROM cowork_receipts WHERE thread_id = ? AND state <> 'handled'").all(threadId) as Row[];
     for (const r of rows) {
+      if (whose && !whose(String(r.party) as Party)) continue;
       const next = advanceReceipt(this.receiptOf(r), "handled", at, true);
       this.writeReceipt(Number(r.seq), next);
     }
@@ -610,6 +659,8 @@ export class CoworkMatters {
         if (replied) pm.replyToAuthor = authorParty(replied);
       }
       if (extra.notice) pm.notice = extra.notice;
+      if (extra.basis) pm.basis = extra.basis;
+      if (extra.closed) pm.closed = true;
       if (extra.withdrawnAt !== undefined) pm.withdrawnAt = extra.withdrawnAt;
       if (extra.supersededBy !== undefined) pm.supersededBy = extra.supersededBy;
       return pm;

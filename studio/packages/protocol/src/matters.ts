@@ -181,8 +181,11 @@ export interface Matter {
   dependsOn: string[];
   /** A 闸门 事项's kind of gate. */
   gate: GateKind | null;
-  /** 结论: what was settled (in a 协作 it also goes into 已定的事). */
+  /** 结论: what was settled (in a 协作 it goes into 已定的事 only when matterDecided). */
   conclusion: string | null;
+  /** Closed saying its conclusion is a 口径 (close with `decided: true`, 2026-11-25): it goes into 已定的事 (matterDecided).
+   * Missing (older services, the Host's own 事项): not said. */
+  decided?: boolean;
   history: MatterChange[];
   /** Why it waits on whom it waits on (MatterState.waitingWhy); null when it waits on nobody. */
   waitingWhy: MatterWaitingWhy | null;
@@ -200,6 +203,21 @@ export interface Matter {
   updatedAt: number;
   /** Goes up when its status, who it waits on or a field changes (not with every message): a patch's `base` reads it. */
   version: number;
+}
+
+/**
+ * 已定的事只放口径 (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」): a 「等人确认」 事项's conclusion, or one closed with
+ * `decided: true`, goes into 已定的事; a piece of work's stays in the 事项 (the closed 事项 list shows it).
+ */
+export const matterDecided = (m: Pick<Matter, "kind" | "decided">): boolean => m.kind === "confirm" || m.decided === true;
+/**
+ * Whether a 「decision」 event of a 协作 still counts as one of its 已定的事 (client and Host count them the same way, so
+ * 「已定的事第 N 条」 means the same to both): not when its 事项 was closed later saying it was not a 口径 (`decided: false`).
+ * Events of 子会话 and 事项 from before `decided` stay.
+ */
+export function decisionStands(threadId: string | null | undefined, matters: readonly Pick<Matter, "id" | "decided">[] | undefined): boolean {
+  if (!threadId || !matters) return true;
+  return matters.find((m) => m.id === threadId)?.decided !== false;
 }
 
 /** A 事项 counts as settled — the board draws its card in 「已定 / 已验」 — once it has a conclusion, is verified or closed. */
@@ -238,8 +256,10 @@ export interface NewMatter {
  * Change a 事项 (主控 or person). Only what is given changes. `status` / `waitingOn` are a hand change (a "manual" event,
  * 手改 in the history; later events go on moving it); `conclusion` closes it (a "conclude" event). `base`: the version it
  * was read at — a change based on an older one is refused (`stale`) so two 主控 do not overwrite each other unseen. `bind`
- * / `unbind` add or take out bindings. Closing marks all of its messages 处理了 for everyone. `place`: a person dragged its
- * card (null: back to where the client lays it out); agents may not.
+ * / `unbind` add or take out bindings. Closing marks the closing side's messages in it 处理了 and tells the other sides
+ * (2026-11-25: a 「事项 N 关了」 line in their 主控's and people's 待我处理 until seen; their unseen messages stay unseen).
+ * `place`: a person dragged its card (null: back to where the client lays it out); agents may not. An AI changes only its
+ * own side's 事项 (status, 在等谁, 卡在哪, 结论, closing: 403 otherwise — it says so in the 事项 instead).
  */
 export interface MatterPatch {
   base?: number;
@@ -256,6 +276,9 @@ export interface MatterPatch {
   dependsOn?: string[];
   gate?: GateKind | null;
   conclusion?: string | null;
+  /** With the conclusion that closes it: the conclusion is a 口径 and goes into 已定的事 (matterDecided; a 「等人确认」
+   * 事项's always does). Missing or false: it stays in the 事项. */
+  decided?: boolean;
   bind?: Partial<MatterBindings>;
   unbind?: Partial<MatterBindings>;
 }
@@ -307,6 +330,8 @@ export interface MatterEvent {
   status?: MatterStatus;
   /** conclude: what was settled. */
   conclusion?: string | null;
+  /** conclude: whether the conclusion is a 口径 that goes into 已定的事 (MatterPatch.decided; missing: from before). */
+  decided?: boolean;
   note?: string;
 }
 
@@ -339,6 +364,8 @@ export interface MatterState {
   limited: boolean;
   commits: string[];
   conclusion: string | null;
+  /** The last conclusion's `decided` (Matter.decided). */
+  decided?: boolean;
 }
 
 /** 「久没动静」: 在做 with no event for this long — it goes into its 主控's 待我处理 (the user 11-25: 先定 2 小时). */
@@ -410,13 +437,20 @@ export function applyMatterEvent(s: MatterState | null, e: MatterEvent): MatterS
       if (prev.status !== "closed" && prev.status !== "confirm") status = "pushed";
       break;
     case "verify":
-      if (prev.status !== "closed" && prev.status !== "confirm") status = e.passed ? "review" : "doing";
+      if (prev.status !== "closed" && prev.status !== "confirm") {
+        status = e.passed ? "review" : "doing";
+        // 待核对 is its 主控's to check (2026-11-25, 「核对只由负责代码的一方做」: pendingFor's "review"), not whoever was
+        // still owed an answer — the passing result answers what was asked about the work (the gpt run: the other side's
+        // 主控, @-ed before, got the 待核对 and checked it too).
+        if (e.passed) next.asks = next.asks.filter((a) => a.status === "confirm");
+      }
       break;
     case "conclude":
       status = "closed";
       next.asks = [];
       next.limited = false;
       if (e.conclusion !== undefined) next.conclusion = e.conclusion;
+      if (e.decided !== undefined) next.decided = e.decided;
       break;
     case "manual":
       // A status given is the status; only 在等谁 given: the status follows from it as usual.
@@ -536,8 +570,12 @@ export interface MatterMessageFields {
   supersededBy?: number;
   /** An answer's 来源 (2026-11-25: AIs answer each other directly): confirmed with a person, or the AI's own judgement. */
   basis?: MessageBasis;
-  /** 知会 · 要某人看过: people (accounts) who should look at it; it is in their 待我处理 until they mark it 看过了. */
+  /** 知会 · 要某人看过: people (accounts) who should look at it; it is in their 待我处理 until they mark it 看过了. An AI's
+   * answer with an `inferred` basis is a 知会 to the person it speaks for (the service adds them, 2026-11-25). */
   notice?: string[];
+  /** The 「事项 N 关了：结论 …」 line the service writes when a 事项 closes (2026-11-25): its recipients are the other sides'
+   * 主控 and people, in whose 待我处理 it stays (kind "closed") until they have seen it. */
+  closed?: boolean;
   /** Commits it reports pushed (a "push" event of its 事项). */
   commits?: string[];
   /** A verification it reports (a "verify" event of its 事项): passed or not, and how it was checked. */
@@ -661,10 +699,15 @@ export function messageRecipients(input: RecipientInput): Party[] {
 /**
  * mention: a message @-s me; reply: a message answers mine; waiting: a 事项 waits on me; message: a 事项's message to me;
  * notice: a 知会 asks me to look (people); quiet: a 事项 my side's 主控 carries has had no event for MATTER_QUIET_MS while
- * 在做 (its 主控 only). Each until I mark it 处理了 (a 知会: 看过了), the 事项 closes or (quiet) something happens in it.
- * The 群聊's messages without @ are only unread, never 待我处理. While a 事项 is `limited` its AIs get nothing from it.
+ * 在做 (its 主控 only); review: a 事项 my side carries is 待核对 (its 主控 only, 2026-11-25: 「核对只由负责代码的一方做」),
+ * until it is checked; closed: a 事项 another side took part in was closed (the 「事项 N 关了」 line, MatterMessageFields
+ * `closed`: its other sides' 主控 and people), until I have seen it. Each until I mark it 处理了 (a 知会: 看过了), the 事项
+ * closes or (quiet) something happens in it. The 群聊's messages without @ are only unread, never 待我处理. While a 事项
+ * is `limited` its AIs get nothing from it.
  */
-export type PendingKind = "mention" | "reply" | "waiting" | "message" | "notice" | "quiet";
+export type PendingKind = "mention" | "reply" | "waiting" | "message" | "notice" | "quiet" | "review" | "closed";
+/** A kind as a word for lists (the client's 要你看, the Host's wake line). */
+export const PENDING_KIND_WORD: Record<PendingKind, string> = { mention: "@ 你", reply: "回你", waiting: "等你", message: "给你", notice: "知会", quiet: "久没动静", review: "待核对", closed: "关了" };
 
 /**
  * Why it is mine (the Host writes the wake-up line from it, plans/collab-agent-spec.md 第 2 节: 「谁、何时、为什么变成等我」):
@@ -748,6 +791,10 @@ export function pendingFor(party: Party, scope: MatterScope, scopeId: string, ma
       const since = w?.at ?? [...m.history].reverse().find((h) => h.to === m.status)?.at ?? m.updatedAt;
       const reason = w?.reason ?? "manual";
       items.push({ kind: "waiting", scope, scopeId, ...of(m), seq: null, seqs: w?.seq != null ? [w.seq] : [], since, why: { by: w?.by ?? null, at: since, reason, text: WAIT_TEXT[reason](w?.seq ?? null) }, text: `事项 ${m.no} · ${oneLine(m.title)}` });
+    } else if (m.status === "review" && m.lead && party === agentParty(m.lead)) {
+      const h = [...m.history].reverse().find((x) => x.to === "review");
+      const since = h?.at ?? m.updatedAt;
+      items.push({ kind: "review", scope, scopeId, ...of(m), seq: null, seqs: h?.seq != null ? [h.seq] : [], since, why: { by: h?.by ?? null, at: since, reason: "review", text: "贴了通过的验证，等你核对：对了标已验，不对写卡在哪" }, text: `事项 ${m.no} · ${oneLine(m.title)}` });
     }
     if (opts.now !== undefined && m.lead && party === agentParty(m.lead) && matterQuiet(m, opts.now)) {
       items.push({ kind: "quiet", scope, scopeId, ...of(m), seq: null, seqs: [], since: m.lastEventAt, why: { by: null, at: m.lastEventAt, reason: "quiet", text: `在做，超过 ${MATTER_QUIET_MS / 3_600_000} 小时没有动静` }, text: `事项 ${m.no} · ${oneLine(m.title)}` });
@@ -758,6 +805,12 @@ export function pendingFor(party: Party, scope: MatterScope, scopeId: string, ma
     const r = msg.receipts?.find((x) => x.party === party);
     if (!r || r.state === "handled") continue;
     const matter = msg.matter ? byId.get(msg.matter) : undefined;
+    // 「事项 N 关了」: until seen, while it is still closed (opened again, it is no news any more).
+    if (msg.closed) {
+      if (!matter || matter.status !== "closed" || r.state === "seen") continue;
+      items.push({ kind: "closed", scope, scopeId, ...of(matter), seq: msg.seq, seqs: [msg.seq], since: msg.createdAt, why: { by: msg.author, at: msg.createdAt, reason: "closed", text: `关了事项 ${matter.no}` }, text: `#${msg.seq} ${oneLine(msg.body)}`, body: msg.body });
+      continue;
+    }
     if (msg.matter && (!matter || matter.status === "closed" || (agent && matter.limited))) continue;
     const mentioned = !!msg.mentions?.includes(party);
     const replied = !!msg.replyToAuthor && msg.replyToAuthor === party;
@@ -766,7 +819,9 @@ export function pendingFor(party: Party, scope: MatterScope, scopeId: string, ma
     if (!mentioned && !replied && !noticed && !msg.matter) continue;
     const kind: PendingKind = mentioned ? "mention" : replied ? "reply" : noticed ? "notice" : "message";
     const where = matter ? `事项 ${matter.no}` : "群聊";
-    const text = { mention: `在${where} @ 了你`, reply: `在${where}回复了你${msg.replyTo ? `的 #${msg.replyTo}` : ""}`, notice: "知会：要你看过", message: `${where}里给你的消息` }[kind as "mention" | "reply" | "notice" | "message"];
+    // An AI's answer that is its own judgement, 知会'd to the person it speaks for (2026-11-25).
+    const judged = noticed && msg.basis?.kind === "inferred";
+    const text = { mention: `在${where} @ 了你`, reply: `在${where}回复了你${msg.replyTo ? `的 #${msg.replyTo}` : ""}`, notice: judged ? `! 我的判断：在${where}替你答的，你没确认过，要你看过` : "知会：要你看过", message: `${where}里给你的消息` }[kind as "mention" | "reply" | "notice" | "message"];
     const item: PendingItem = { kind, scope, scopeId, ...of(matter), seq: msg.seq, seqs: [msg.seq, ...(msg.replyTo ? [msg.replyTo] : [])], since: msg.createdAt, why: { by: msg.author, at: msg.createdAt, reason: kind, text }, text: `#${msg.seq} ${oneLine(msg.body)}` };
     if (kind !== "message") item.body = msg.body;
     items.push(item);
@@ -883,6 +938,8 @@ export function resolveAgentRef(ref: string, agents: readonly AgentRefInfo[]): s
 export type MatterLockKind = "place" | "edit";
 /** The fields `edit` guards. */
 export const MATTER_EDIT_FIELDS = ["status", "waitingOn", "blocker", "conclusion"] as const;
+/** An AI changing another side's 事项 (2026-11-25, 「主控不能改对方的事项」): refused with this. */
+export const otherSideText = (no: number, side: string): string => `事项 ${no} 这件归 ${side} 那方，在事项里 @ 它（${side} 的主控）：状态、在等谁、卡在哪、结论和关闭由那方来改`;
 /** The lock's key in the board's locks (BoardLock.card): 「place:<事项 id>」, 「edit:<事项 id>」. */
 export const matterLockKey = (kind: MatterLockKind, matterId: string): string => `${kind}:${matterId}`;
 export function parseMatterLockKey(key: string): { kind: MatterLockKind; matter: string } | null {

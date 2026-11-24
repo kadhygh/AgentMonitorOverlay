@@ -497,7 +497,7 @@ export class RelayClient {
     return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions`, n);
   }
   /** 定下结论: the 子会话 is done, its conclusion goes into 已定的事. Its asker or the person asked (or their agents). */
-  concludeCowork(id: string, threadId: string, conclusion: string, via?: Via): Promise<{ thread: Thread; event: CoworkEvent }> {
+  concludeCowork(id: string, threadId: string, conclusion: string, via?: Via): Promise<{ thread: Thread; event: CoworkEvent | null }> {
     return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions/${matterInPath(threadId)}/conclude`, { conclusion, via });
   }
   /** My agents' drafts waiting for me. */

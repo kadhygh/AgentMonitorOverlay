@@ -114,7 +114,7 @@ describe("事项", () => {
     expect((await li.matterEvents(id, m.id, LI_W)).events.length).toBe(9);
   });
 
-  it("changes field by field; a conclusion closes it into 已定的事; a person drags its card (an AI may not); refs and wrong ones", async () => {
+  it("changes field by field; a conclusion said to be a 口径 closes it into 已定的事; a person drags its card (an AI may not); refs and wrong ones", async () => {
     const { wang, li, id } = await team();
     const a = (await li.openMatter(id, { title: "穿透判定", body: "改碰撞层", via: ai(LI_AI) })).matter;
     const b = (await li.openMatter(id, { title: "命中特效", body: "穿透时特效", via: ai(LI_AI) })).matter;
@@ -126,8 +126,8 @@ describe("事项", () => {
     expect(placed).toMatchObject({ place: { x: 2000, y: 1500 }, version: b.version });
     await expect(li.patchMatter(id, b.id, { place: { x: 1, y: 1 }, via: ai(LI_AI) })).rejects.toMatchObject({ status: 403 });
     expect((await wang.patchMatter(id, b.id, { place: null })).place).toBeNull();
-    const closed = await li.patchMatter(id, "事项 2", { conclusion: "穿透时只播一次特效", via: ai(LI_AI) });
-    expect(closed).toMatchObject({ status: "closed", conclusion: "穿透时只播一次特效" });
+    const closed = await li.patchMatter(id, "事项 2", { conclusion: "穿透时只播一次特效", decided: true, via: ai(LI_AI) });
+    expect(closed).toMatchObject({ status: "closed", conclusion: "穿透时只播一次特效", decided: true });
     expect((await wang.coworkEvents(id)).filter((e) => e.kind === "decision").map((e) => e.text)).toEqual(["「命中特效」：穿透时只播一次特效"]);
     // Waiting on someone not in it, a dependency on itself, a 事项 that is not there: refused.
     await expect(li.patchMatter(id, a.id, { waitingOn: [personParty("美术小周")] })).rejects.toMatchObject({ status: 400 });
@@ -248,10 +248,27 @@ describe("回执和待我处理", () => {
     expect(after.items.map((i) => i.seq)).toEqual([(await li.messages(m.id)).messages[0]!.seq]);
     expect(after.version).toBeGreaterThan(wangList.version);
     await expect.poll(() => of(wangEvents, "pending").filter((e) => e.party === agentParty(WANG_AI)).at(-1)?.version).toBe(after.version);
-    // Closing the 事项: everything in it is 处理了, by closing.
+    // Closing the 事项 (2026-11-25): the closing side's are 处理了, by closing; the other side's unseen ones stay as they
+    // are, and its 主控 and person get 「事项 1 关了」 instead, until they have seen it.
+    const opening = (await li.messages(m.id)).messages[0]!.seq;
     await li.patchMatter(id, m.id, { status: "closed", via: ai(LI_AI) });
+    const msgs = (await li.messages(m.id)).messages;
+    expect(msgs.find((x) => x.seq === fact.message!.seq)!.receipts!.find((r) => r.party === agentParty(LI_AI))).toMatchObject({ state: "handled", byClose: true });
+    expect(msgs.find((x) => x.seq === opening)!.receipts!.find((r) => r.party === agentParty(WANG_AI))).toMatchObject({ state: "delivered" });
+    const line = msgs.find((x) => x.closed)!;
+    expect(line).toMatchObject({ kind: "event", closed: true, body: "事项 1「穿透判定」关了：（没写结论）" });
+    expect(line.receipts!.map((r) => r.party).sort()).toEqual([agentParty(WANG_AI), personParty("策划小王")].sort());
+    const wangClosed = (await wang.coworkPending({ coworkId: id, party: agentParty(WANG_AI) })).lists[0]!.items;
+    expect(wangClosed.map((i) => [i.kind, i.matter, i.seq])).toEqual([["closed", m.id, line.seq]]);
+    expect((await wang.coworkPending({ coworkId: id })).lists[0]!.items.map((i) => i.kind)).toEqual(["closed"]);
+    expect((await li.coworkPending({ coworkId: id, party: agentParty(LI_AI) })).lists[0]!.items).toEqual([]);
+    // Seen (the agent reads; the person marks it 看过了): gone.
+    await li.coworkFeed(id, 0, LI_AI);
+    await wang.markCowork(id, { mark: "seen", seqs: [line.seq], via: ai(WANG_AI) });
     expect((await wang.coworkPending({ coworkId: id, party: agentParty(WANG_AI) })).lists[0]!.items).toEqual([]);
-    expect((await li.messages(m.id)).messages.find((x) => x.seq === fact.message!.seq)!.receipts!.find((r) => r.party === agentParty(LI_AI))).toMatchObject({ state: "handled", byClose: true });
+    await wang.markCowork(id, { mark: "seen", seqs: [line.seq] });
+    expect((await wang.coworkPending({ coworkId: id })).lists[0]!.items).toEqual([]);
+    expect((await wang.messages(m.id)).messages.find((x) => x.closed)!.receipts!.find((r) => r.party === personParty("策划小王"))).toMatchObject({ state: "handled" });
   });
 
   it("counts an @ in the 群聊 until handled, a reply to it handles it, and a long poll answers when the list changes", async () => {
@@ -365,6 +382,78 @@ describe("AI 之间、知会、久没动静", () => {
     const m = (await li.openMatter(id, { title: "穿透判定", body: "x", via: ai(LI_AI) })).matter;
     await li.joinCoworkAgent(id, LI_W, "写代码", { role: "worker", matter: m.id });
     await expect(li.postCowork(id, { threadId: m.id, body: "x", notice: ["策划小王"], via: ai(LI_W) })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+// What was settled after the v6 acceptance (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」).
+describe("v6 之后定的", () => {
+  it("an AI's inferred answer is a 知会 to the person it speaks for, with 「! 我的判断」, until they have seen it", async () => {
+    const { wang, li, id } = await team();
+    const m = (await li.openMatter(id, { title: "冰冻挡不挡", body: "冰冻的敌人挡不挡苦无？", waitingOn: [agentParty(WANG_AI)], via: ai(LI_AI) })).matter;
+    const q = (await li.messages(m.id)).messages[0]!;
+    const a = await wang.postCowork(id, { threadId: m.id, body: "我看挡：冰冻算实体", replyTo: q.seq, basis: { kind: "inferred", person: "策划小王" }, via: ai(WANG_AI) });
+    expect(a.message).toMatchObject({ basis: { kind: "inferred", person: "策划小王" }, notice: ["策划小王"] });
+    expect(a.message!.receipts!.map((r) => r.party)).toContain(personParty("策划小王"));
+    const list = (await wang.coworkPending({ coworkId: id })).lists[0]!.items;
+    expect(list.map((i) => [i.kind, i.seq])).toEqual([["notice", a.message!.seq]]);
+    expect(list[0]!.why.text).toMatch(/^! 我的判断/);
+    // A confirmed answer is not; 看过了 takes it away.
+    const c = await wang.postCowork(id, { threadId: m.id, body: "带盾的挡", basis: { kind: "confirmed", person: "策划小王", at: Date.now() }, via: ai(WANG_AI) });
+    expect(c.message!.notice).toBeUndefined();
+    await wang.markCowork(id, { mark: "seen", seqs: [a.message!.seq] });
+    expect((await wang.coworkPending({ coworkId: id })).lists[0]!.items).toEqual([]);
+  });
+
+  it("only a 「等人确认」's conclusion or one closed with decided goes into 已定的事; work's stays in its 事项", async () => {
+    const { wang, li, id } = await team();
+    const decisions = async () => (await wang.coworkEvents(id)).filter((e) => e.kind === "decision").map((e) => e.text);
+    const work = (await li.openMatter(id, { title: "穿透判定", body: "x", via: ai(LI_AI) })).matter;
+    expect(await li.patchMatter(id, work.id, { conclusion: "做完了，合进 master", via: ai(LI_AI) })).toMatchObject({ status: "closed", decided: false });
+    const gate = (await li.openMatter(id, { title: "等程序老李确认：合 master", body: "合吗", kind: "confirm", waitingOn: [personParty("程序老李")], via: ai(LI_AI) })).matter;
+    await li.patchMatter(id, gate.id, { conclusion: "老李确认合", via: ai(LI_AI) });
+    const rule = (await li.openMatter(id, { title: "穿透上限", body: "x", via: ai(LI_AI) })).matter;
+    await li.patchMatter(id, rule.id, { conclusion: "穿透 2 个", decided: true, via: ai(LI_AI) });
+    expect(await decisions()).toEqual(["「等程序老李确认：合 master」：老李确认合", "「穿透上限」：穿透 2 个"]);
+    // cowork_conclude (the old name of close) by an AI goes by the kind.
+    const more = (await li.openMatter(id, { title: "命中特效", body: "x", via: ai(LI_AI) })).matter;
+    const out = await li.concludeCowork(id, more.id, "特效只播一次", ai(LI_AI));
+    expect(out.event).toBeNull();
+    expect(await decisions()).toHaveLength(2);
+  });
+
+  it("an AI may not change the other side's 事项 (403 saying whose it is); it may still say something there, and people may", async () => {
+    const { wang, li, id } = await team();
+    const m = (await wang.openMatter(id, { title: "实现射速上限", body: "程序这边做", waitingOn: [agentParty(LI_AI)], via: ai(WANG_AI) })).matter;
+    expect(m.side).toBe("策划小王");
+    for (const patch of [{ status: "verified" as const }, { waitingOn: [] }, { blocker: "等表" }, { conclusion: "做完了" }, { status: "closed" as const }]) {
+      await expect(li.patchMatter(id, m.id, { ...patch, via: ai(LI_AI) })).rejects.toMatchObject({ status: 403, message: expect.stringContaining("这件归 策划小王 那方，在事项里 @ 它") });
+    }
+    await expect(li.concludeCowork(id, m.id, "做完了", ai(LI_AI))).rejects.toMatchObject({ status: 403 });
+    await li.postCowork(id, { threadId: m.id, body: "做完了，提交 abc1234", agentMentions: [WANG_AI], via: ai(LI_AI) });
+    // Its own side's AI and the other side's person may.
+    expect((await li.patchMatter(id, m.id, { blocker: "等表" })).blocker).toBe("等表");
+    expect((await wang.patchMatter(id, m.id, { conclusion: "做完了", via: ai(WANG_AI) })).status).toBe("closed");
+  });
+
+  it("待核对 is in its 主控's 待我处理 only: a passing verification answers what was still asked there", async () => {
+    const { wang, li, id } = await team();
+    // 小王's 主控 opens the work for 老李's side; 老李's 执行 does it and posts the passing result.
+    const m = (await wang.openMatter(id, { title: "实现射速上限", body: "程序这边做", waitingOn: [agentParty(LI_AI)], via: ai(WANG_AI) })).matter;
+    await li.joinCoworkAgent(id, LI_W, "写代码", { role: "worker", matter: m.id });
+    await li.postCowork(id, { threadId: m.id, body: "字符串算填错吗？", agentMentions: [WANG_AI], via: ai(LI_AI) });
+    await wang.postCowork(id, { threadId: m.id, body: "算", agentMentions: [LI_AI], basis: { kind: "confirmed", person: "策划小王", at: Date.now() }, via: ai(WANG_AI) });
+    const v = await li.postCowork(id, { threadId: m.id, body: "推了，测试 12/12 过", commits: ["abc1234"], verify: { passed: true, how: "npm test" }, via: ai(LI_W) });
+    const now = (await li.matterEvents(id, m.id)).matter;
+    expect(now).toMatchObject({ status: "review", waitingOn: [] });
+    const kinds = async (c: RelayClient, mark: string) => (await c.coworkPending({ coworkId: id, party: agentParty(mark) })).lists[0]!.items.filter((i) => i.matter === m.id).map((i) => i.kind);
+    expect(await kinds(wang, WANG_AI)).toContain("review");
+    expect(await kinds(li, LI_AI)).not.toContain("review");
+    expect(await kinds(li, LI_AI)).not.toContain("waiting");
+    const item = (await wang.coworkPending({ coworkId: id, party: agentParty(WANG_AI) })).lists[0]!.items.find((i) => i.kind === "review")!;
+    expect(item).toMatchObject({ matterStatus: "review", seqs: [v.message!.seq] });
+    // Checked: gone.
+    await wang.patchMatter(id, m.id, { status: "verified", note: "核对过", via: ai(WANG_AI) });
+    expect(await kinds(wang, WANG_AI)).not.toContain("review");
   });
 
   it("久没动静: 在做 with no event for MATTER_QUIET_MS goes into its 主控's 待我处理, and the sweep finds it", () => {

@@ -302,8 +302,11 @@ describe("协作：子会话", () => {
     const wangD = await deliveredTo(wang, "studio:d_wang", tid);
     // The agent concludes instead of writing: its own is answered by that, 小王's agent's is not.
     const { thread } = await li.concludeCowork(id, tid, "暴击不叠加", ai(LI_AI));
-    const concluded = (await li.messages(tid)).messages.at(-1)!;
+    const after = (await li.messages(tid)).messages;
+    const concluded = after.at(-2)!;
     expect(concluded.body).toBe("定下结论：暴击不叠加");
+    // Then the 「事项 1 关了」 line for 小王's side (2026-11-25).
+    expect(after.at(-1)).toMatchObject({ closed: true, body: "事项 1「暴击要不要叠加」关了：暴击不叠加" });
     expect(thread.request?.state).toBe("done");
     // (the reply and 小王's 插话 both woke it)
     expect((await wang.cowork(id)).deliveries.filter((d) => liD.includes(d.id)).map((d) => [d.state, d.replySeq])).toEqual([["replied", concluded.seq], ["replied", concluded.seq]]);

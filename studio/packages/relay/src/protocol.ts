@@ -149,6 +149,8 @@ export interface Message {
   notice?: string[];
   commits?: string[];
   verify?: { passed: boolean; how?: string };
+  /** The 「事项 N 关了」 line (MatterMessageFields `closed`). */
+  closed?: boolean;
   createdAt: number;
 }
 

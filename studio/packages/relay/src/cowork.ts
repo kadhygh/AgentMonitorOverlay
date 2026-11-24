@@ -17,6 +17,7 @@ import {
   leadTakenText,
   matterLockKey,
   matterLockText,
+  otherSideText,
   parseCollabRef,
   parseParty,
   personParty,
@@ -840,6 +841,9 @@ export class CoworkStore {
     const notice = [...new Set((p.notice ?? []).map((n) => this.personRef(coworkId, n)))].filter((n) => n !== me);
     if (notice.length) this.allow(coworkId, agent, "mention-person");
     const basis = this.cleanBasis(coworkId, p.basis);
+    // 推断的回答要让人看到 (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」): an AI's answer that is its own judgement is
+    // a 知会 to the person it speaks for — in their 要你看 with 「! 我的判断」 until they have seen it.
+    if (agent && basis?.kind === "inferred" && !notice.includes(basis.person)) notice.push(basis.person);
     const commits = p.commits === undefined || p.commits === null ? [] : cleanCommits(p.commits);
     const verify = this.cleanVerify(p.verify);
     // 被 #x 取代 (2026-11-24): my earlier message this one replaces.
@@ -1031,9 +1035,12 @@ export class CoworkStore {
     const onlyPlace = b.place !== undefined && Object.keys(b).every((k) => k === "place" || k === "placeBase" || k === "via" || k === "base");
     if (b.place !== undefined && agent) throw new RelayError("forbidden", "事项卡的位置只由人拖：AI 不用摆它（客户端按负责方和状态排）");
     if (!onlyPlace) this.allow(coworkId, agent, "matter-edit");
+    // 主控不能改对方的事项 (2026-11-25): its judgement fields and closing are its side's; saying something, @ and answering
+    // in it are for everyone.
+    const nick = (n: string) => this.nicks().get(n) ?? n;
+    if (agent && m.side !== me && (MATTER_EDIT_FIELDS.some((k) => b[k] !== undefined) || b.decided !== undefined)) throw new RelayError("forbidden", otherSideText(m.no, nick(m.side)));
     // Locks (2026-11-25, the user: 「a 在拖拽卡 b 就不拖拽」): someone else dragging its card, or with its judgement fields
     // open, wins; an AI does not change those fields while anyone has them open. The 409 carries the 事项 as it is now.
-    const nick = (n: string) => this.nicks().get(n) ?? n;
     const placeLock = this.board.lockOf(coworkId, matterLockKey("place", matterId));
     if (b.place !== undefined && placeLock && placeLock.by !== me) throw new RelayError("conflict", `${matterLockText("place", nick(placeLock.by))}这张事项卡`, { lock: placeLock, matter: m });
     if (b.place !== undefined && typeof b.placeBase === "number" && b.placeBase !== m.placeVersion) throw new RelayError("conflict", `事项 ${m.no} 的卡在你拖之前被挪过了：回到现在的位置`, { matter: m });
@@ -1079,9 +1086,11 @@ export class CoworkStore {
         if (out.matter.status !== was) message = this.store.insertMessage(matterId, me, via, "event", `事项 ${m.no}：${MATTER_STATUS_LABEL[was]} → ${MATTER_STATUS_LABEL[out.matter.status]}（${status !== undefined ? "手改" : "改了在等谁"}${note ? `：${note}` : ""}）`, null);
       }
       if (concluding) {
-        this.matters.apply(matterId, { kind: "conclude", at, by, conclusion, ...(note ? { note } : {}) });
+        // 已定的事只放口径 (2026-11-25): a 「等人确认」 事项's conclusion, or one said to be a 口径; work's stays in the 事项.
+        const decided = m.kind === "confirm" || b.decided === true;
         this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(conclusion, matterId);
-        events.push(this.event(coworkId, me, via, "decision", `「${title ?? m.title}」：${conclusion}`, { threadId: matterId }));
+        this.matters.apply(matterId, { kind: "conclude", at, by, conclusion, decided, ...(note ? { note } : {}) });
+        if (decided) events.push(this.event(coworkId, me, via, "decision", `「${title ?? m.title}」：${conclusion}`, { threadId: matterId }));
       }
       // A 子会话 asked of a person goes with it: closed is 标记完成, opened again is back with the one asked.
       const now = this.matters.get(matterId)!;
@@ -1353,7 +1362,7 @@ export class CoworkStore {
    * 定下结论: the 子会话 is done with what was settled, recorded as 已定的事. Its asker or the person asked (or their agents)
    * may.
    */
-  conclude(coworkId: string, threadRef: string, me: string, b: { conclusion?: unknown; via?: unknown }): { thread: Thread; message: Message; event: CoworkEvent; cowork: Cowork; deliveries: CoworkDelivery[] } {
+  conclude(coworkId: string, threadRef: string, me: string, b: { conclusion?: unknown; decided?: unknown; via?: unknown }): { thread: Thread; message: Message; event: CoworkEvent | null; cowork: Cowork; deliveries: CoworkDelivery[] } {
     const r = this.rowFor(coworkId, me);
     const threadId = this.threadRef(coworkId, me, threadRef);
     this.writable(r);
@@ -1363,14 +1372,19 @@ export class CoworkStore {
     const t = this.store.thread(threadId, me);
     if (t.request?.coworkId !== coworkId) throw new RelayError("bad_request", "这不是这个协作里的子会话");
     const matter = this.matters.get(threadId);
+    if (agent && matter && matter.side !== me) throw new RelayError("forbidden", otherSideText(matter.no, this.nicks().get(matter.side) ?? matter.side));
     // The asker, the one asked, or (2026-11-24) the 事项's 负责方.
     if (me !== t.request.from && me !== t.request.to && me !== matter?.side) throw new RelayError("forbidden", `结论由发起的 ${t.request.from} 或被问的 ${t.request.to}${matter && matter.side !== t.request.from ? ` 或负责的 ${matter.side}` : ""} 来定`);
     const conclusion = cleanText(b.conclusion, "结论", COWORK_LIMITS.conclusion);
     return this.store.tx(() => {
       this.db.prepare("UPDATE threads SET cw_conclusion = ?, s_state = 'done', s_waiting = NULL WHERE id = ?").run(conclusion, threadId);
       const message = this.store.insertMessage(threadId, me, via, "event", `定下结论：${conclusion}`, null);
-      const event = this.event(coworkId, me, via, "decision", `「${t.title}」：${conclusion}`, { threadId });
-      if (matter) this.matters.apply(threadId, { kind: "conclude", at: this.now(), by: partyOf(me, via), conclusion, note: "定下结论" });
+      // 已定的事只放口径 (2026-11-25): an AI's 定下结论 (cowork_conclude, the old name of close) goes by the 事项's kind — a
+      // 「等人确认」's is one of 已定的事, a piece of work's stays in it — unless it says `decided`; a person's (older clients'
+      // 定下结论, written after asking someone) and a 子会话 from before 事项 are, as before.
+      const decided = !matter || matter.kind === "confirm" || b.decided === true || (!agent && b.decided !== false);
+      const event = decided ? this.event(coworkId, me, via, "decision", `「${t.title}」：${conclusion}`, { threadId }) : null;
+      if (matter) this.matters.apply(threadId, { kind: "conclude", at: this.now(), by: partyOf(me, via), conclusion, decided, note: "定下结论" });
       const deliveries = this.actedIn(coworkId, threadId, me, via, message.seq);
       return { thread: this.store.threadById(threadId), message, event, cowork: this.view(coworkId), deliveries };
     });
@@ -1411,6 +1425,9 @@ export class CoworkStore {
       }
       this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(n, thread.id);
       this.syncFromSession(thread.id, partyOf(actor, checkVia(via)));
+      // As 定下结论 (conclude): an AI's on a piece of work stays in the 事项 (已定的事只放口径); a person's is one of 已定的事.
+      const matter = this.matters.get(thread.id);
+      if (matter && matter.kind !== "confirm" && checkVia(via).kind === "ai") return { event: null, deliveries };
       return { event: this.event(coworkId, actor, checkVia(via), "decision", `「${thread.title}」：${n}`, { threadId: thread.id }), deliveries };
     });
   }

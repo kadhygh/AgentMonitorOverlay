@@ -691,6 +691,7 @@ export class RelayStore {
     // 2026-11-25: 来源, 知会, 推送, 验证.
     if (extra.basis) m.basis = extra.basis;
     if (extra.notice) m.notice = extra.notice;
+    if (extra.closed) m.closed = true;
     if (extra.commits) m.commits = extra.commits;
     if (extra.verify) m.verify = extra.verify;
     this.messageHook?.(m);

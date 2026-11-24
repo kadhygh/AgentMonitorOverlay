@@ -1030,7 +1030,7 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
         const out = cowork.conclude(id, target, me, await readJson(req));
         announce(out.thread, out.message);
         coworkChanged(id);
-        coworkEvents(id, [out.event]);
+        coworkEvents(id, out.event ? [out.event] : []);
         deliveriesChanged(out.deliveries);
         return send(res, 200, { thread: out.thread, event: out.event });
       } else if (method === "POST" && sub === "/drafts" && !cm[4]) {
