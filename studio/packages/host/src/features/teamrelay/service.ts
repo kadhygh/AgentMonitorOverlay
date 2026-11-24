@@ -6,6 +6,7 @@ import { newId } from "../../store/store.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { TeamCowork } from "./cowork.js";
+import { CoworkPendingSource } from "./cowork-pending.js";
 
 // 会话里用中转 (2026-10-30, plans/done/relay-in-sessions.md): a session asks someone on the team to confirm something through
 // AMO 中转, as the person (the platform's login), marked as their AI's. Every send waits for the person first — in auto
@@ -28,7 +29,7 @@ const FILE_ID = /^[\w-]{1,64}$/;
 
 type Questions = TeamSend["questions"];
 
-export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachments" | "tasks"> {
+export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachments" | "tasks" | "pending"> {
   /** 协作 (2026-11-23, cowork.ts): this computer's sessions in coworks, their state, what comes for them, cowork_*. */
   readonly cowork: TeamCowork = new TeamCowork(this.host, this);
   private running = false;
@@ -314,13 +315,21 @@ export class TeamRelayFeature extends Feature<"config" | "sessions" | "attachmen
     this.running = true;
     void this.loop();
     this.cowork.start();
+    // 待我处理's 协作 part (2026-11-24): a source of features/pending, whose patrol reads it every 2 minutes.
+    this.coworkPending ??= new CoworkPendingSource(this.cowork, this.f.pending);
+    this.f.pending.register(this.coworkPending);
+    this.coworkPending.start();
   }
 
   stop(): void {
     this.running = false;
     this.abort?.abort();
     this.cowork.stop();
+    this.coworkPending?.stop();
   }
+
+  /** 待我处理 from the 协作 (cowork-pending.ts); made on start (features/pending comes after this one on the Host). */
+  coworkPending: CoworkPendingSource | null = null;
 
   private async loop(): Promise<void> {
     while (this.running) {

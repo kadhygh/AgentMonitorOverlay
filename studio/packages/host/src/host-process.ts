@@ -391,6 +391,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     if (options.remote) service.remote.start(options.remote);
     // 值守 (2026-10-31): its clock runs in every Host; without items it does nothing.
     service.duty.start();
+    // 待我处理's patrol (2026-11-24): every 2 minutes; without sources it does nothing.
+    service.pending.start();
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 
@@ -429,6 +431,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         stopped = true;
         clearInterval(pruning);
         service.duty.stop();
+        service.pending.stop();
         service.teamRelay.stop();
         service.remote.stop();
         service.teamLink.stop();

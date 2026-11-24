@@ -110,7 +110,7 @@ describe("协作 in Studio", () => {
     expect(service.teamRelay.cowork.joined()).toHaveLength(1);
     expect(events.some((e) => e.type === "cowork.joined.changed")).toBe(true);
     // Told it is in it, with the person's next message.
-    expect(coworkHint(service.store, s.id)?.lines.join("\n")).toContain("拉进了协作「射速调整」");
+    expect(coworkHint(service.store, s.id)?.lines.join("\n")).toContain("【协作「射速调整」· 你的角色：主控】");
 
     const agentOf = async () => (await coderClient.cowork(c.id)).cowork.agents.find((a) => a.mark === j.mark)!;
     await until(agentOf, (a) => a.state === "idle", "待命 reported");
@@ -134,10 +134,11 @@ describe("协作 in Studio", () => {
     service.teamRelay.cowork.composerSaid(s.id, false);
     await until(() => told.length, (n) => n === 1, "the @ in the session");
     expect(told[0]!.sessionId).toBe(s.id);
-    expect(told[0]!.text).toMatch(/^【协作「射速调整」· 程序老李 在群聊里 @ 了你】/);
+    expect(told[0]!.text).toContain("【协作 · 待你处理】「射速调整」");
+    expect(told[0]!.text).toContain("为什么现在叫你：程序老李 @ 了你");
     expect(told[0]!.text).toContain("上限放配置表行吗？");
-    expect(told[0]!.text).toContain("拉进了协作「射速调整」");
-    expect(told[0]!.text).toContain(`cowork_post（threadId ${c.id}`);
+    expect(told[0]!.text).toContain("你的角色：主控");
+    expect(told[0]!.text).toMatch(/（在 群聊；回：cowork_post replyTo \d+）/);
     expect(told[0]!.origin).toMatchObject({ kind: "cowork", from: "程序老李", threadIds: [c.id], cowork: { id: c.id, title: "射速调整", where: "在群聊里 @ 了你" } });
     expect(coworkHint(service.store, s.id)).toBeNull();
     await until(async () => (await coderClient.cowork(c.id)).deliveries.map((d) => d.state), (st) => st.join() === "delivered", "已送达");
@@ -158,7 +159,7 @@ describe("协作 in Studio", () => {
 
     // Other chat wakes nobody; it is counted, and said with the person's next message.
     await coderClient.postCowork(c.id, { kind: "text", body: "我先去改代码。" });
-    await until(() => coworkHint(service.store, s.id)?.lines.join("") ?? "", (t) => t.includes("1 条新消息"), "「N 条新的」");
+    await until(() => coworkHint(service.store, s.id)?.lines.join("") ?? "", (t) => t.includes("1 条群聊新消息"), "「N 条新的」");
     expect(told).toHaveLength(1);
 
     // cowork_read: the goal, the people and AIs, the new messages; reading clears the count.
@@ -166,7 +167,8 @@ describe("协作 in Studio", () => {
     expect(read.text).toContain("把射速上限做成可配。");
     expect(read.text).toContain("策划小王 的 AI · 射速文档");
     expect(read.text).toContain("我先去改代码。");
-    expect(read.text).toContain("「AI 发起 @ 和提问」关着");
+    expect(read.text).toContain("角色：主控");
+    expect(read.text).not.toContain("AI 发起 @ 和提问");
     expect(coworkHint(service.store, s.id)).toBeNull();
 
     // 退出: gone from the cowork and from the list.
@@ -191,7 +193,8 @@ describe("协作 in Studio", () => {
     // The coder answers the 子会话: in once, as the cowork's.
     await coderClient.send(sub.id, { kind: "reply", answers: [{ questionId: "q1", choice: "行" }], body: "按 64 出。" });
     await until(() => told.length, (n) => n === 1, "the reply in the session");
-    expect(told[0]!.text).toMatch(/^【协作「背包」· 程序老李 回复了你发起的子会话「图标尺寸」】/);
+    expect(told[0]!.text).toContain("为什么现在叫你：程序老李 回复了你");
+    expect(told[0]!.text).toMatch(/在 事项 1；回：cowork_post threadId「事项 1」 replyTo \d+/);
     expect(told[0]!.text).toContain("按 64 出。");
     expect(told[0]!.text).not.toContain("【中转回复】");
     await service.teamRelay.scan();
@@ -270,7 +273,7 @@ describe("协作 in Studio", () => {
     const read = await tool(s.id, "cowork_read");
     expect(read.text).toContain("## 文件（2 个）");
     expect(read.text).toMatch(new RegExp(`rate\\.json v1 .* 在群聊 · threadId ${c.id} · fileId ${inChat.id}`));
-    expect(read.text).toMatch(new RegExp(`curve\\.txt v1 .* 在子会话「射速曲线」 · threadId ${toPlanner.thread!.id} · fileId ${inSub.id}`));
+    expect(read.text).toMatch(new RegExp(`curve\\.txt v1 .* 在事项 1「射速曲线」 · threadId ${toPlanner.thread!.id} · fileId ${inSub.id}`));
     for (const [threadId, fileId] of [[c.id, inChat.id], [toPlanner.thread!.id, inSub.id]] as const) {
       const got = await tool(s.id, "team_file_get", { threadId, fileId });
       expect(got.error).toBe(false);
@@ -280,18 +283,17 @@ describe("协作 in Studio", () => {
     // A 子会话 asking someone else: not the planner's to conclude; the 群聊 has none; one asking the planner, once.
     const notMine = await tool(s.id, "cowork_conclude", { threadId: toArtist.thread!.id, conclusion: "不变" });
     expect(notMine.error).toBe(true);
-    expect(notMine.text).toContain("是 程序老李 问 美术小周 的，结论只有他们两边");
+    expect(notMine.text).toContain("结论只有他们两边");
     expect((await tool(s.id, "cowork_conclude", { threadId: c.id, conclusion: "x" })).text).toContain("群聊没有结论");
     const done = await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "先用线性，上限 12。" });
     expect(done.error).toBe(false);
-    expect(done.text).toContain("子会话「射速曲线」定下结论：先用线性，上限 12。");
+    expect(done.text).toContain("「射速曲线」关掉了，结论「先用线性，上限 12。」记进了已定的事");
     const after = await coderClient.cowork(c.id);
-    expect(after.cowork.sessions.find((x) => x.id === toPlanner.thread!.id)).toMatchObject({ state: "done", conclusion: "先用线性，上限 12。" });
+    expect(after.cowork.matters!.find((x) => x.id === toPlanner.thread!.id)).toMatchObject({ status: "closed", conclusion: "先用线性，上限 12。" });
     const decision = after.events.find((e) => e.kind === "decision")!;
-    expect(decision.text).toBe("「射速曲线」：先用线性，上限 12。");
-    expect(decision.agent).toBe(service.teamRelay.cowork.joined()[0]!.mark);
-    expect((await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "改成指数" })).text).toContain("已经结束了，结论是：先用线性，上限 12。");
-    expect((await tool(s.id, "cowork_read")).text).toContain("「射速曲线」：先用线性，上限 12。");
+    expect(decision.text).toContain("先用线性，上限 12。");
+    expect((await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "改成指数" })).text).toContain("已经关了，结论是：先用线性，上限 12。");
+    expect((await tool(s.id, "cowork_read")).text).toContain("先用线性，上限 12。");
     // The one asked, by hand, may too (the service's rule): 美术小周 settles theirs.
     await artistClient.concludeCowork(c.id, toArtist.thread!.id, "不变");
   }, 30_000);
@@ -392,10 +394,10 @@ describe("协作 in Studio", () => {
     const full = (await tool(s.id, "cowork_read", { threadId: sub.thread!.id })).text;
     expect(full).toContain("提问尾巴");
     expect(full).toContain("子会话第 14 句。");
-    expect(full).toMatch(/\n- #\d+ 程序老李 · 子会话「射速曲线」 · 子会话第 0 句。/);
+    expect(full).toMatch(/\n- #\d+ 程序老李 · 事项 1「射速曲线」 · 子会话第 0 句。/);
     const lastSeq = (await coderClient.coworkFeed(c.id)).lastSeq;
     const inSub = (await tool(s.id, "cowork_read", { threadId: sub.thread!.id, before: lastSeq })).text;
-    expect(inSub).toContain("子会话「射速曲线」里 #");
+    expect(inSub).toContain("事项 1「射速曲线」里 #");
     expect(inSub).not.toContain("第 19 条。");
   }, 60_000);
 

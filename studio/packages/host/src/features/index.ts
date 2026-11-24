@@ -60,6 +60,7 @@ import { tracksTools } from "./tracks/mcp.js";
 import { reviewProgressRoutes } from "./reviewprogress/routes.js";
 import { whiteboardRoutes } from "./whiteboard/routes.js";
 import { whiteboardTools } from "./whiteboard/mcp.js";
+import { pendingRoutes } from "./pending/routes.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -113,4 +114,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "tracks", routes: tracksRoutes, tools: tracksTools },
   { name: "reviewprogress", routes: reviewProgressRoutes },
   { name: "whiteboard", routes: whiteboardRoutes, tools: whiteboardTools },
+  { name: "pending", routes: pendingRoutes },
 ];

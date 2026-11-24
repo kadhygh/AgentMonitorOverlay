@@ -89,6 +89,16 @@
   - 人要看的分两种：事项里叫人来看（卡上粗描边 +「等你确认」（闸门）或「叫你来看」（看结果），画面外有箭头，左上「要你看（N）」面板点了平移过去开抽屉：变化 / 例子 / 不确认会怎样 / 来源，「确认 / 有问题，回一句」）；群聊里的知会（不是事项、板上没有卡）**列在同一个「要你看」面板里**，点了打开群聊那条，带「看过了」（放法 A；不钉气泡）。
   - **板是算出来的，主控不画**（用户 11-25：「白板按说能够根据会话和事项算出来吧，不用主控亲自改出来是吧」）：事项卡、状态、在等谁、分组（按负责方，已定 / 已验自动挪）、依赖连线都由事项和事件算出，不存成白板上的卡；只存人拖动过的位置。主控只补判断（核对后标已验、卡在哪、结论）。便签、自由连线、引用卡照旧是人或 AI 想放才放，不是必须的。
 
+### Studio 里「待我处理」的接口（11-25 定，两个会话分工用）
+
+用户 11-24：「「待我处理」在 Host 里做成一个汇总……接口你先定（比如 features/pending，providers 各自提供一组）」。分工：「协作·Studio 接入」做汇总模块、巡检、Focus 那一行和协作那一组的数据；「交流·本机留言和主控」做本机那一组的数据和整个页面（替换留言页）。
+
+- 字段在 `protocol/src/pending.ts`：一份快照 `PendingSnapshot` = 若干组 `PendingGroup`（`source` 来源：`cowork` / `local`；`for`：人自己的，或某个会话的（主控的待处理，巡检按它叫醒）；`items`：`PendingEntry`，带 `key`、`kind`（mention / waiting / message，同 `matters.ts`）、一行字、事项、`#seq`、点了去哪 `open`）；`mine` 是人自己那几组的条数（Focus 用）。
+- Host 模块 `features/pending`：来源调 `service.pending.register(source)` 登记，内容变了调 `service.pending.changed()`。来源实现 `PendingSource`：`groups()`（同步，读自己缓存的）、`refresh()`（巡检时重读）、`problem()`、`mark(group, keys, "seen" | "handled")`、`wake(sessionId, group, items, why)`（把这几条按自己的格式送进会话；会话在忙时返回 false，等它这一轮完了再送）。来源自己的投递（如协作的 @ 马上送进去）送过的，调 `service.pending.told(sessionId, groupId, keys)`，巡检就不再为它们叫醒。
+- 巡检：每 `PATROL_MS`（2 分钟）让各来源 `refresh()`，再对每个「会话的组」只拿它没被告诉过的几条去 `wake`；会话在一轮里时记下，这一轮结束再叫（原型补的第 2 条）。「让主控现在看一遍」带整组。
+- 接口：`GET /api/pending`（快照），`POST /api/pending/mark`（`{ group, keys, mark }`，回新快照），`POST /api/pending/patrol`（`{ sessionIds? }`，回 woke / later / empty）；事件 `pending.changed` 带整份快照。界面的页面和留言页的替换由另一个会话做，Focus 那一行用 `mine`。
+- 中转客户端接 Studio 的两个入口，都走客户端已有的「在 Studio 里打开」（`POST /api/ui/open`，`sessionId` 填下面的标记，前面照旧是 `studio:<设备号>:`）：`cowork-to-<事项 id>` 把一件事项交给这台电脑的一个会话当执行（11-23 的「转到我的会话」）；`cowork-lead-<协作 id>` 在这台电脑开这一方的主控（11-24 新加）：Studio 弹窗问用哪个会话（默认新开任务「协作：标题」），它以主控加进协作，收到角色说明、目标、已定的事和开着的事项；这一方已经有主控时，弹窗里点「开主控」会说已经是谁。
+
 ---
 
 它是 `plans/later/agent-collab-direction.md` 里「共同的底子」那一节往下谈的结果：那边写的是三个大方向，这里写它们共用的概念。脉络（`plans/tracks.md`）的台账、v7 的楼（`out/tracks/proto-v7.html`）都读这一份数据。

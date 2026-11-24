@@ -37,7 +37,8 @@ const GRAPH: Record<string, string[]> = {
   taskplans: ["canvas", "collab", "sessions", "tasks"],
   tasks: ["canvas", "config", "mcp", "remote", "sessions"],
   // 协作 (2026-11-23): 转到我的会话 may start a new task's session.
-  teamrelay: ["attachments", "config", "sessions", "tasks"],
+  // 待我处理 (2026-11-24): its 协作 part is a source of features/pending.
+  teamrelay: ["attachments", "config", "pending", "sessions", "tasks"],
   topics: ["tasks"],
   reviewprogress: ["config"],
   tracks: ["remote", "teamrelay"],

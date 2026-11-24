@@ -67,12 +67,17 @@ test("协作: 拉进协作, the AI's state, an @ folded into the conversation, c
   await expect(dialog.getByTestId("cowork-choice")).toContainText("把射速上限做成可配");
   await expect(dialog.getByTestId("cowork-label")).toHaveValue("射速文档");
   await expect(dialog).toContainText("别人看到的是「策划小王 的 AI · 射速文档」");
+  // 主控 or 执行 (2026-11-24): this side has no 主控 yet and no 事项 is open, so 主控.
+  await expect(dialog.getByTestId("cowork-role-lead")).toBeChecked();
+  await expect(dialog.getByTestId("cowork-role-worker")).toBeDisabled();
+  await expect(dialog.getByTestId("cowork-roles")).toContainText("协作里还没有开着的事项");
   await screenshot(app, "cowork", "C1-join-dialog", page);
   await dialog.getByTestId("cowork-join").click();
   await expect(dialog).toHaveCount(0);
   const line = page.getByTestId("cowork-line");
   await expect(line).toContainText("「射速调整」");
   await expect(line.getByTestId("cowork-state")).toHaveText("✓ 待命", { timeout: 30_000 });
+  await expect(line.getByTestId("cowork-role")).toHaveText("主控");
   const mark = (await studio.api<CoworkJoin[]>("GET", "/api/cowork/joined"))[0]!.mark;
   await expect.poll(async () => (await coder.cowork(c.id)).cowork.agents.map((a) => [a.name, a.state]), { timeout: 30_000 }).toEqual([["策划小王 的 AI · 射速文档", "idle"]]);
   await screenshot(app, "cowork", "C2-line", page);
@@ -142,8 +147,54 @@ test("协作: 拉进协作, the AI's state, an @ folded into the conversation, c
   await handed.scrollIntoViewIfNeeded();
   await screenshot(app, "cowork", "C6-handed", page);
 
+  // 待我处理 (2026-11-24): the 事项「射速曲线」 waits on the planner — a row in Focus, counted in 需要你.
+  const toggle = page.getByRole("button", { name: /^Focus/ });
+  const focusOpened = app.waitForEvent("window");
+  await toggle.click();
+  const focus = await focusOpened;
+  const pendingRow = focus.getByTestId("focus-pending");
+  await expect(pendingRow).toContainText("待我处理", { timeout: 60_000 });
+  await expect(pendingRow).toContainText("射速调整");
+  await expect(focus.getByTestId("focus-needs")).toContainText("需要你");
+  await screenshot(app, "cowork", "C10-focus-pending", focus, "focus");
+  await toggle.click();
+
+  // 现在看一遍: the 主控's patrol, now.
+  await line.getByTestId("cowork-patrol").click();
+  await expect(page.getByTestId("cowork-patrolled")).toBeVisible();
+
+  // 改角色: 主控, or 执行 of the open 事项.
+  await line.getByTestId("cowork-role-change").click();
+  const roleDialog = page.getByTestId("cowork-role-dialog");
+  await expect(roleDialog.getByTestId("cowork-role-lead")).toBeChecked();
+  await roleDialog.getByTestId("cowork-role-worker").check();
+  await expect(roleDialog.getByTestId("cowork-role-matter")).toContainText("事项 1「射速曲线」");
+  await screenshot(app, "cowork", "C11-role-dialog", page);
+  await roleDialog.getByRole("button", { name: "取消" }).click();
+  await expect(roleDialog).toHaveCount(0);
+
   // 退出.
   await line.getByTestId("cowork-leave").click();
   await expect(page.getByTestId("cowork-bar")).toHaveCount(0);
   await expect.poll(async () => (await coder.cowork(c.id)).cowork.agents).toEqual([]);
+
+  // 在我的 Studio 里开这一方的主控 (2026-11-24): the 中转 client asks through POST /api/ui/open; a session here takes it
+  // and is given the 协作 (goal, 已定的事, 事项).
+  await studio.api("POST", "/api/ui/open", { sessionId: `cowork-lead-${c.id}` });
+  const leadAsk = page.getByTestId("cowork-handoff-dialog");
+  await expect(leadAsk).toContainText("在 Studio 里开「射速调整」这一方的主控", { timeout: 30_000 });
+  await expect(leadAsk.getByTestId("handoff-new")).toBeChecked();
+  await screenshot(app, "cowork", "C12-lead-ask", page);
+  await leadAsk.getByTestId("handoff-existing").check();
+  await leadAsk.getByTestId("handoff-accept").click();
+  await expect(leadAsk).toHaveCount(0);
+  const leadMsg = transcript.getByTestId("msg-origin").filter({ hasText: "让你当这一方的主控" });
+  await expect(leadMsg).toBeVisible({ timeout: 60_000 });
+  await expect(line.getByTestId("cowork-role")).toHaveText("主控", { timeout: 30_000 });
+  await leadMsg.getByTestId("msg-origin-toggle").click();
+  await expect(leadMsg.getByTestId("msg-origin-body")).toContainText("把射速上限做成可配");
+  await leadMsg.scrollIntoViewIfNeeded();
+  await screenshot(app, "cowork", "C13-lead-landed", page);
+  await line.getByTestId("cowork-leave").click();
+  await expect(page.getByTestId("cowork-bar")).toHaveCount(0);
 });

@@ -54,12 +54,14 @@ export function resetCoworkTold(store: Store, sessionId: Id, key: string): void 
 
 /** The lines for the session's next message; `told()` once they went with it. */
 export function coworkHint(store: Store, sessionId: Id): { lines: string[]; told: () => void } | null {
-  const pending = read(store).pending[sessionId];
-  if (!pending || !Object.keys(pending).length) return null;
+  const pending = read(store).pending[sessionId] ?? {};
+  const compacted = compactedSince(store, sessionId);
+  if (!Object.keys(pending).length && !compacted) return null;
   const entries = Object.entries(pending);
   return {
-    lines: entries.map(([, v]) => v.line),
+    lines: [...(compacted ? [COMPACTED_LINE] : []), ...entries.map(([, v]) => v.line)],
     told: () => {
+      if (compacted) store.setKv(`${COMPACTED_KEY}${sessionId}`, String(compacted));
       const t = read(store);
       const told = { ...(t.told[sessionId] ?? {}) };
       for (const [k, v] of entries) told[k] = v.n;
@@ -71,4 +73,51 @@ export function coworkHint(store: Store, sessionId: Id): { lines: string[]; told
       write(store, t);
     },
   };
+}
+
+// ---- the role in each 协作 (2026-11-24, plans/collab-agent-spec.md §1: 「amo_whoami 也给这一段」)
+
+const CARDS_KEY = "teamrelay.cowork.cards";
+
+/** What amo_whoami says of the session in a 协作: its role, its card and its 待我处理 count (teamrelay writes it on each refresh). */
+export interface CoworkCard {
+  coworkId: string;
+  title: string;
+  role: string;
+  card: string;
+  pending: number;
+}
+
+export function writeCoworkCards(store: Store, cards: Record<Id, CoworkCard[]>): void {
+  const value = JSON.stringify(cards);
+  if (store.getKv(CARDS_KEY)?.value !== value) store.setKv(CARDS_KEY, value);
+}
+
+export function coworkCards(store: Store, sessionId: Id): CoworkCard[] {
+  try {
+    return (JSON.parse(store.getKv(CARDS_KEY)?.value ?? "{}") as Record<Id, CoworkCard[]>)[sessionId] ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// ---- after a compaction (2026-11-24, plans/collab-agent-spec.md §6)
+
+/** Said before the next message once the session was compacted, while it is in a 协作. */
+export const COMPACTED_LINE = "【协作】你的上下文刚被压缩。先用 cowork_read（不带参数）看你的角色、开着的事项、已定的事和待你处理，再继续。";
+const COMPACTED_KEY = "teamrelay.cowork.compacted:";
+
+/** The newest compaction's seq when the session is in a 协作 and was not told since; else 0. */
+function compactedSince(store: Store, sessionId: Id): number {
+  if (!coworkCards(store, sessionId).length) return 0;
+  const [compaction] = store.findItems(sessionId, "compaction", {}, { newest: true, limit: 1 });
+  if (!compaction) return 0;
+  const told = Number(store.getKv(`${COMPACTED_KEY}${sessionId}`)?.value ?? 0);
+  return compaction.seq > told ? compaction.seq : 0;
+}
+
+/** Joining a 协作: a compaction from before is not news to it. */
+export function compactionKnown(store: Store, sessionId: Id): void {
+  const [compaction] = store.findItems(sessionId, "compaction", {}, { newest: true, limit: 1 });
+  if (compaction) store.setKv(`${COMPACTED_KEY}${sessionId}`, String(compaction.seq));
 }

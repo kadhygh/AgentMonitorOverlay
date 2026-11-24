@@ -236,7 +236,7 @@
     {
       "id": "studio.cowork",
       "label": "协作（cowork）：会话拉进中转上的协作",
-      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "cowork_conclude", "协作文件", "协作真模型场景", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板", "协作精简", "COWORK_BRIEF", "前文", "往前翻", "复制引用", "复制会话引用", "复制编号", "cowork:", "thread:", "refId", "打开中转客户端", "--open="],
+      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "cowork_conclude", "协作文件", "协作真模型场景", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板", "协作精简", "COWORK_BRIEF", "前文", "往前翻", "复制引用", "复制会话引用", "复制编号", "cowork:", "thread:", "refId", "打开中转客户端", "--open=", "事项", "matter", "主控", "执行", "未分角色", "角色说明", "cowork_matter", "cowork_mark", "cowork_retract", "改角色", "现在看一遍", "开这一方的主控", "cowork-lead-", "叫醒消息", "wakeText"],
       "category": "host",
       "purpose": "Studio 这一头的协作（2026-11-23，plans/cowork.md 第 4 步；服务在 relay/src/cowork.ts）：会话「更多」→「拉进协作…」以「我 的 AI · 会话名」加入（标记 studio:<设备号>:<会话 id>）；Host 至少 30 秒报一次每个 agent 的状态（在跑 = 处理中；审批、提问、计划待审、草稿、team_ask 待发、人停下、输入框有字 = 等主人；其他 = 待命；归档就退出）；长轮询 /api/cowork-inbox，只在会话「待命」时把被 @ / 子会话回复送进会话收件箱（origin cowork，折叠成一张卡），然后 ack；没 @ 它的消息只在人下一条消息里带一句「协作里有 N 条新的」（core/cowork.ts）；给 agent cowork_read（带群聊和子会话的文件，取用 team_file_get）/ post / ask / conclude / board / note；「转到我的会话」由中转客户端经 POST /api/ui/open（cowork-to-<threadId>）或 POST /api/cowork/handoff 交过来，界面弹窗选会话。teamrelay 的扫描跳过带 coworkId 的子会话。",
       "steps": [
@@ -244,7 +244,10 @@
         "送进会话的文字和 cowork_* 的回答：features/teamrelay/cowork-text.ts；折叠卡的摘要去掉给模型看的行：ui/src/chat/originBrief.ts。",
         "给 AI 看多少（2026-11-23 精简）：cowork-text.ts 的 COWORK_BRIEF（@ 的前文条数和截断、cowork_read 和子会话的字数预算、一行摘要）；往前翻、按序号取在 cowork.ts 的 feedBefore / messageAt（服务的 feed 只能往后读）。",
         "输入框有字：ui/src/task/Thread.tsx 报 POST /api/sessions/:id/composer（只对在协作里的会话），Host 3 分钟没再听到就当空了（COMPOSER_FRESH_MS）。",
-        "界面：ui/src/teamrelay/Cowork.tsx（协作条、拉进协作弹窗、转到我的会话弹窗，后者挂在 App.tsx）。"
+        "界面：ui/src/teamrelay/Cowork.tsx（协作条、拉进协作弹窗、转到我的会话弹窗，后者挂在 App.tsx）。",
+        "事项和角色（2026-11-24，plans/collab-agent-spec.md；服务有事项 = health cowork ≥ 2，否则走旧的子会话）：角色说明在 cowork-matters-text.ts（leadCard / workerCard，cardFor 拼），叫醒消息是同一文件的 wakeText；AI 写的「事项 3」「#7」「老李的主控」在 cowork-refs.ts 解析；cowork_matter / cowork_mark / cowork_retract 在 cowork.ts 的 matter / mark / retract；主控从事项开执行是 sessions/mcp.ts 的 session_start 带 matter（cowork.ts 的 workerPlan）。",
+        "巡检和待处理：cowork-pending.ts 把人和每个主控的待处理交给 features/pending（studio.pending），叫醒走 cowork.ts 的 wakeFor。",
+        "中转的「在我的 Studio 里开这一方的主控」：POST /api/ui/open 的 cowork-lead-<协作 id>（routes.ts），cowork.ts 的 leadAsk 记一条 lead: 的交接，acceptLead 让会话以主控加入并送去 cowork_read 的全貌；界面复用转到我的会话的弹窗。"
       ],
       "anchors": [
         { "label": "TeamCowork", "path": "studio/packages/host/src/features/teamrelay/cowork.ts", "anchor": "export class TeamCowork" },
@@ -258,10 +261,36 @@
         { "label": "界面：复制引用", "path": "studio/packages/ui/src/lib/copyRef.ts", "anchor": "export async function copySessionRef" },
         { "label": "转到我的会话（Host）", "path": "studio/packages/host/src/features/teamrelay/cowork.ts", "anchor": "async acceptHandoff" },
         { "label": "人下一条消息带的话", "path": "studio/packages/host/src/core/cowork.ts", "anchor": "export function coworkHint" },
-        { "label": "界面", "path": "studio/packages/ui/src/teamrelay/Cowork.tsx", "anchor": "export function CoworkBar" }
+        { "label": "界面", "path": "studio/packages/ui/src/teamrelay/Cowork.tsx", "anchor": "export function CoworkBar" },
+        { "label": "角色说明", "path": "studio/packages/host/src/features/teamrelay/cowork.ts", "anchor": "cardFor(c: Cowork, mark: string" },
+        { "label": "叫醒消息", "path": "studio/packages/host/src/features/teamrelay/cowork-matters-text.ts", "anchor": "export function wakeText" },
+        { "label": "AI 写的指代", "path": "studio/packages/host/src/features/teamrelay/cowork-refs.ts", "anchor": "export function matterRef" },
+        { "label": "开主控", "path": "studio/packages/host/src/features/teamrelay/cowork.ts", "anchor": "async leadAsk(" },
+        { "label": "界面：选角色", "path": "studio/packages/ui/src/teamrelay/Cowork.tsx", "anchor": "function RolePicker" }
       ],
-      "related": ["studio.teamRelay", "tool.relayService", "studio.collabFramework", "studio.sessions"],
-      "next": ["studio/plans/cowork.md", "studio/packages/relay/src/cowork-protocol.ts", "studio/spikes/cowork-scenario/README.md"]
+      "related": ["studio.teamRelay", "tool.relayService", "studio.collabFramework", "studio.sessions", "studio.pending"],
+      "next": ["studio/plans/collab-agent-spec.md", "studio/plans/cowork.md", "studio/packages/relay/src/cowork-protocol.ts", "studio/spikes/cowork-scenario/README.md"]
+    },
+    {
+      "id": "studio.pending",
+      "label": "待我处理：Host 的汇总和巡检",
+      "aliases": ["pending", "待我处理", "待处理", "巡检", "patrol", "PATROL_MS", "PendingFeature", "PendingSource", "pending.changed", "让主控现在看一遍", "Focus 待我处理"],
+      "category": "host",
+      "purpose": "待我处理（2026-11-24，plans/collab-framework.md「Studio 里「待我处理」的接口」）：Host 的 features/pending 把各来源（协作 cowork、本机 local）的组合成一份快照 PendingSnapshot（protocol/src/pending.ts）：人自己的组（Focus 那一行、待我处理页）和每个会话的组（主控的待处理）。每 PATROL_MS（2 分钟）巡检：各来源 refresh，再只把会话没被告诉过的几条交给来源的 wake 送进去；会话在一轮里就等它这一轮完。GET /api/pending、POST /api/pending/mark、POST /api/pending/patrol（「现在看一遍」），事件 pending.changed。",
+      "steps": [
+        "汇总和巡检：host/src/features/pending/service.ts（register / changed / told / patrolOnce）；路由在同目录 routes.ts。",
+        "协作这一来源：host/src/features/teamrelay/cowork-pending.ts（人的列表长轮询，主控的随巡检读）；本机那一组和待我处理页是「交流·本机留言和主控」的。",
+        "界面：ui/src/pending/pending.ts（usePending、mineItems、openPendingEntry），Focus 那一行在 ui/src/focus/FocusApp.tsx（focus-pending），协作条上的「待处理 N」「现在看一遍」在 ui/src/teamrelay/Cowork.tsx。"
+      ],
+      "anchors": [
+        { "label": "PendingFeature", "path": "studio/packages/host/src/features/pending/service.ts", "anchor": "export class PendingFeature" },
+        { "label": "来源的接口", "path": "studio/packages/host/src/features/pending/service.ts", "anchor": "export interface PendingSource" },
+        { "label": "协作这一来源", "path": "studio/packages/host/src/features/teamrelay/cowork-pending.ts", "anchor": "export class CoworkPendingSource" },
+        { "label": "快照的字段", "path": "studio/packages/protocol/src/pending.ts", "anchor": "export interface PendingSnapshot" },
+        { "label": "界面", "path": "studio/packages/ui/src/pending/pending.ts", "anchor": "export function usePending" }
+      ],
+      "related": ["studio.cowork", "studio.collabFramework", "ui.focus"],
+      "next": ["studio/plans/collab-framework.md", "studio/plans/collab-agent-spec.md"]
     },
     {
       "id": "studio.collabFramework",

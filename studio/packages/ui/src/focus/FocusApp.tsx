@@ -9,6 +9,7 @@ import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayCard, useRelays } from "../relays/Relays.js";
 import { TeamSendCard, useTeamSends } from "../teamrelay/TeamRelay.js";
+import { mineItems, openPendingEntry, PENDING_KIND_LABEL, usePending } from "../pending/pending.js";
 import { useWaitingQuestionList } from "../canvas/useCallouts.js";
 import { useSettings } from "../settings/useSettings.js";
 import {
@@ -98,6 +99,9 @@ export function FocusApp() {
   const relays = useRelays(host.kind === "ready" ? host.link : NO_LINK).filter((r) => r.state === "pending");
   // 会话里用中转 (2026-10-30): a session wants to ask someone on the team; it waits for the person.
   const teamSends = useTeamSends(host.kind === "ready" ? host.link : null).filter((s) => s.state === "pending");
+  // 待我处理 (2026-11-24, plans/collab-framework.md「Studio 里「待我处理」的接口」): the person's own items (协作 @ 你, 在等你,
+  // 发给你) as one row; each item counts, and a new one opens Focus like any other thing that needs the person.
+  const mineList = mineItems(usePending(host.kind === "ready" ? host.link : null));
   // 画布审阅 (2026-10-27): topics whose canvas has questions waiting for the person, oldest question first.
   const questionsByTopic = useWaitingQuestionList(host.kind === "ready" ? host.link : null);
   // 远程 (2026-10-29): someone asks to pair with this computer — answered here, like an approval.
@@ -191,7 +195,7 @@ export function FocusApp() {
   // title folded it). Opening it here no longer counts as seeing it.
   const list = [...waiting, ...finished];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...teamSends.map((s) => s.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id)]);
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...teamSends.map((s) => s.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id), ...mineList.map((i) => `pending:${i.group}:${i.key}`)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -222,7 +226,7 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
-  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length - toReview.length;
+  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length + mineList.length - toReview.length;
   // Folded, Focus opens by itself for something new that needs the person — not for finished work to look at (the tile
   // shows that) — and folds again once nothing does; with the pointer on it, when the pointer leaves.
   const needKeys = keys.filter((k) => !reviewKeys.has(k));
@@ -325,7 +329,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length + teamSends.length + canvasAsks.length + pairAsks.length + taskAsks.length + mineList.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running" && mine(s)).length;
   // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
   // show under 进行中 either (10-22).
@@ -364,6 +368,7 @@ export function FocusApp() {
     if (s) goToDeal(s.id, s.taskId);
     else if (d) goToDeal(d.sessionId, d.taskId);
     else if (pairAsks.length || taskAsks.length) void window.amo?.openInWorkbench?.({ settings: "remote" });
+    else if (mineList.length) void openPendingEntry(link, mineList[0]!);
     else void window.amo?.openInWorkbench?.({ taskId: "" });
   };
   caught.current = () => (demo ? setDemo(null) : openFirst());
@@ -567,6 +572,22 @@ export function FocusApp() {
                   <span className="focus-row-text">
                     <span className="focus-title">{proposals.length} 条调度提案</span>
                     <span className="focus-sub">在工作台处理</span>
+                  </span>
+                </button>
+              </div>
+            )}
+            {mineList.length > 0 && (
+              // 待我处理: the newest item opens where it is (the 中转 client for a 协作's); the rest wait on the 待我处理 page.
+              <div className="focus-entry" data-tone="att" data-testid="focus-pending">
+                <button type="button" className="focus-row" onClick={() => void openPendingEntry(link, mineList[0]!)} title="打开最新的那一条（协作的在 AMO 中转里打开）">
+                  <StatusWord tone="att" word="待处理" />
+                  <span className="focus-row-text">
+                    <span className="focus-title">
+                      待我处理 {mineList.length} 条 · {mineList[0]!.groupTitle}
+                    </span>
+                    <span className="focus-sub">
+                      {[mineList[0]!.from, PENDING_KIND_LABEL[mineList[0]!.kind], mineList[0]!.matter ? `事项 ${mineList[0]!.matter.no}` : ""].filter(Boolean).join(" · ")}：{mineList[0]!.text}
+                    </span>
                   </span>
                 </button>
               </div>

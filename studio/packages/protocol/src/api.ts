@@ -1037,7 +1037,14 @@ export interface HostRoutes
   /** The 协作 the person (`me`, their team account) is in, from the team server: what 拉进协作 offers. */
   "GET /api/cowork/coworks": { req: void; res: { me: string; coworks: import("./entities.js").CoworkChoice[] } };
   /** 拉进协作: the session joins it as 「<我> 的 AI · <label>」 (label: 会话名 by default). */
-  "POST /api/cowork/join": { req: { sessionId: Id; coworkId: string; label?: string }; res: import("./entities.js").CoworkJoin };
+  "POST /api/cowork/join": { req: { sessionId: Id; coworkId: string; label?: string; role?: "lead" | "worker"; matter?: string }; res: import("./entities.js").CoworkJoin };
+  /**
+   * 拉进协作's choices for one 协作 (2026-11-24): who is this side's 主控 now (null: none, the session may be it) and the 事项
+   * an 执行 may be bound to (open ones, newest first); `matters` false on a service from before 事项 (no roles there).
+   */
+  "GET /api/cowork/:id/roles": { req: void; res: import("./entities.js").CoworkRoleChoices };
+  /** 改角色 of a session already in a 协作 (the person, from the session's 协作 line or 拉进协作). */
+  "POST /api/cowork/role": { req: { sessionId: Id; coworkId: string; role: "lead" | "worker"; matter?: string }; res: import("./entities.js").CoworkJoin };
   /** 退出协作: the session leaves it; what was queued for it there is dropped. */
   "POST /api/cowork/leave": { req: { sessionId: Id; coworkId: string }; res: { ok: true } };
   /**
@@ -1069,6 +1076,15 @@ export interface HostRoutes
    * found by its running.json, else AMO 平台's programs.json (`from`); 404 when there is none. Test runs only record it (dryRun).
    */
   "POST /api/cowork/open-in-relay": { req: { target: string }; res: { exe: string; from: "running.json" | "programs.json"; args: string[]; dryRun: boolean } };
+  /**
+   * 待我处理 (2026-11-24, pending.ts): every source's groups — the person's own and each 主控 session's — as the Host last read
+   * them (协作: about every 2 minutes and on a change pushed by 中转). `pending.changed` carries the same when it changes.
+   */
+  "GET /api/pending": { req: void; res: import("./pending.js").PendingSnapshot };
+  /** 看过 / 处理了 for items of a group; answers the snapshot after it. */
+  "POST /api/pending/mark": { req: import("./pending.js").PendingMarkRequest; res: import("./pending.js").PendingSnapshot };
+  /** 让主控现在看一遍: wake those sessions with their whole list now (or once their turn ends). */
+  "POST /api/pending/patrol": { req: import("./pending.js").PendingPatrolRequest; res: import("./pending.js").PendingPatrolResult };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -1097,6 +1113,8 @@ export type HostEvent = { seq: number } & (
   | { type: "cowork.joined.changed"; joined: import("./entities.js").CoworkJoin[] }
   /** 转到我的会话: the handoffs waiting, all of them; `added` is the one that just came (the workbench comes forward for it). */
   | { type: "cowork.handoffs.changed"; handoffs: import("./entities.js").CoworkHandoff[]; added?: string }
+  /** 待我处理 changed (any source): the whole snapshot. */
+  | { type: "pending.changed"; snapshot: import("./pending.js").PendingSnapshot }
   /** A session became a 脉络会话 or stopped being one, or its AI wrote a round's title or a point (track_note). */
   | { type: "tracks.changed"; sessionId: Id; on: boolean }
   /** A session's 白板 changed: turned on or off, its AI wrote it, the person pinned a note, their notes went to the AI. */

@@ -3,6 +3,8 @@ import { route, type Route } from "../../http/route.js";
 
 /** 转到我的会话 through a 中转 client that only knows POST /api/ui/open (2026-11-23): `cowork-to-<threadId>`. */
 const HANDOFF_BRIDGE = "cowork-to-";
+/** 在我的 Studio 里开这一方的主控 the same way (2026-11-24): `cowork-lead-<coworkId>`. */
+const LEAD_BRIDGE = "cowork-lead-";
 
 /** The HTTP routes of this feature (see protocol/src/api.ts for each route's request and response). */
 export function teamRelayRoutes(service: HostService): Route[] {
@@ -18,15 +20,22 @@ export function teamRelayRoutes(service: HostService): Route[] {
         await cowork.handoff(sessionId.slice(HANDOFF_BRIDGE.length));
         return { taskId: "", sessionId: "" };
       }
+      if (typeof sessionId === "string" && sessionId.startsWith(LEAD_BRIDGE)) {
+        await cowork.leadAsk(sessionId.slice(LEAD_BRIDGE.length));
+        return { taskId: "", sessionId: "" };
+      }
       return service.teamRelay.openInUi(sessionId);
     }),
     // 协作 (2026-11-23, cowork.ts).
     route("GET /api/cowork/joined", () => cowork.joined()),
     route("GET /api/cowork/coworks", () => cowork.coworks()),
     route("POST /api/cowork/join", ({ body }) => {
-      const b = (body ?? {}) as { sessionId?: unknown; coworkId?: unknown; label?: unknown };
-      return cowork.join(b.sessionId, b.coworkId, b.label);
+      const b = (body ?? {}) as { sessionId?: unknown; coworkId?: unknown; label?: unknown; role?: unknown; matter?: unknown };
+      return cowork.join(b.sessionId, b.coworkId, b.label, b.role === undefined ? undefined : { role: b.role, matter: b.matter });
     }),
+    // 主控 and 执行 (2026-11-24): 拉进协作's choice, and changing a joined session's role.
+    route("GET /api/cowork/:id/roles", ({ params }) => cowork.roles(params.id)),
+    route("POST /api/cowork/role", ({ body }) => cowork.setRole((body ?? {}) as never)),
     route("POST /api/cowork/leave", ({ body }) => {
       const b = (body ?? {}) as { sessionId?: unknown; coworkId?: unknown };
       return cowork.leave(b.sessionId, b.coworkId);

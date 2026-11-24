@@ -16,14 +16,16 @@ export function authorOf(m: Message, cowork: Pick<Cowork, "agents">): string {
   return cowork.agents.find((a) => a.mark === conv)?.name ?? `${m.author} 的 AI`;
 }
 
-/** Where a thread is in the 协作: 群聊, or 子会话「X」. */
-export function whereOf(threadId: string, cowork: Pick<Cowork, "id" | "sessions">, title?: string): string {
+/** Where a thread is in the 协作: 群聊, 事项 N「X」 (a service with 事项), or 子会话「X」. */
+export function whereOf(threadId: string, cowork: Pick<Cowork, "id" | "sessions" | "matters">, title?: string): string {
   if (threadId === cowork.id) return "群聊";
+  const m = cowork.matters?.find((x) => x.id === threadId);
+  if (m) return `事项 ${m.no}「${m.title}」`;
   return `子会话「${title ?? cowork.sessions.find((s) => s.id === threadId)?.title ?? threadId}」`;
 }
 
 /** One message, headed by who wrote it (an agent by its name), when, where and its seq (for replyTo). */
-export function coworkMessageText(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions">, questions?: Message["questions"]): string {
+export function coworkMessageText(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions" | "matters">, questions?: Message["questions"]): string {
   const extra = [m.replyTo ? `回 #${m.replyTo}` : "", m.agentMentions?.length ? `@ ${m.agentMentions.map((mark) => cowork.agents.find((a) => a.mark === mark)?.name ?? mark).join("、")}` : "", m.mentions?.length ? `@ ${m.mentions.join("、")}` : "", m.approvedBy ? `${m.approvedBy} 确认后发出${m.edited ? "（改过）" : ""}` : ""].filter(Boolean);
   const head = `### ${authorOf(m, cowork)} · ${whereOf(m.threadId, cowork)} · ${time(m.createdAt)} · #${m.seq}${extra.length ? ` · ${extra.join(" · ")}` : ""}`;
   if (m.kind === "event") return `> （${authorOf(m, cowork)} ${m.body} · ${whereOf(m.threadId, cowork)} · ${time(m.createdAt)} · #${m.seq}）`;
@@ -56,7 +58,7 @@ export const COWORK_BRIEF = {
 };
 
 /** A message cut to `max` characters after its head, saying where the rest is; whole when it is short (or an event). */
-export function clippedMessageText(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions">, max: number, questions?: Message["questions"]): string {
+export function clippedMessageText(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions" | "matters">, max: number, questions?: Message["questions"]): string {
   const whole = coworkMessageText(m, cowork, questions);
   const nl = whole.indexOf("\n");
   if (m.kind === "event" || nl < 0) return whole;
@@ -66,7 +68,7 @@ export function clippedMessageText(m: Message, cowork: Pick<Cowork, "id" | "agen
 }
 
 /** A message in one line: #seq, who, where, how it starts. */
-export function messageLine(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions">): string {
+export function messageLine(m: Message, cowork: Pick<Cowork, "id" | "agents" | "sessions" | "matters">): string {
   const flat = m.body.replace(/\s+/g, " ").trim();
   const end = flat.search(/[。！？!?]/);
   let start = end >= 0 ? flat.slice(0, end + 1) : flat;
@@ -123,7 +125,7 @@ function shownText(shown: Array<{ how: ShownAs; text: string }>): string {
 }
 
 /** cowork_read's messages (the new ones, or those before a seq): within the budget, the agent's own whole. */
-export function messagesSection(messages: Message[], cowork: Pick<Cowork, "id" | "agents" | "sessions">, forMe: (m: Message) => boolean): { text: string; full: Message[]; dropped: number; oldest: number | null } {
+export function messagesSection(messages: Message[], cowork: Pick<Cowork, "id" | "agents" | "sessions" | "matters">, forMe: (m: Message) => boolean): { text: string; full: Message[]; dropped: number; oldest: number | null } {
   const B = COWORK_BRIEF;
   const render = (m: Message, how: ShownAs) => (how === "full" ? coworkMessageText(m, cowork) : how === "clip" ? clippedMessageText(m, cowork, B.clipChars) : messageLine(m, cowork));
   const { shown, dropped } = pickByBudget(messages, { budget: B.readChars, whole: forMe, clip: B.clipChars, size: (m, how) => render(m, how).length });
@@ -191,17 +193,30 @@ export function joinedLine(cowork: Pick<Cowork, "id" | "title" | "goal" | "repo"
 
 const STATE_TEXT: Record<"open" | "returned" | "done", string> = { open: "开着", returned: "回到发起人", done: "已定" };
 
+/** What a service with 事项 shows instead of the old parts (2026-11-24, plans/collab-agent-spec.md §3): the role, the
+ * members with theirs, and the sections 开着的事项 and 待你处理 (cowork-matters-text.ts). */
+export interface CoworkOverviewV2 {
+  role: string;
+  members: string;
+  sections: string[];
+}
+
 /** cowork_read without a threadId: the 协作 as a whole, then the new messages. */
-export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; section: ReturnType<typeof messagesSection>; count: number; after: number; lastSeq: number; files?: CoworkFiles }): string {
-  const { cowork: c, mark } = input;
+export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; drafts: CoworkDraft[]; mark: string; section: ReturnType<typeof messagesSection>; count: number; after: number; lastSeq: number; files?: CoworkFiles; v2?: CoworkOverviewV2 }): string {
+  const { cowork: c, mark, v2 } = input;
   const me = c.agents.find((a) => a.mark === mark);
   const parts: string[] = [];
-  parts.push(`# 协作「${c.title}」\ncoworkId ${c.id}${c.repo ? ` · 仓库 ${c.repo}` : ""}${c.branch ? ` · 分支 ${c.branch}` : ""}${c.endedAt ? " · **已结束**（不能再发言、改白板，等人重新打开）" : ""}\n你是「${me?.name ?? mark}」。「AI 发起 @ 和提问」${c.options.aiInitiate ? "开着：你 @ 人、开子会话直接发出" : "关着：你 @ 人或别的 AI、开子会话，会先存成草稿，等你的主人确认后才发出"}。`);
+  const who = v2 ? `你是「${me?.name ?? mark}」，角色：${v2.role}。` : `你是「${me?.name ?? mark}」。「AI 发起 @ 和提问」${c.options.aiInitiate ? "开着：你 @ 人、开子会话直接发出" : "关着：你 @ 人或别的 AI、开子会话，会先存成草稿，等你的主人确认后才发出"}。`;
+  parts.push(`# 协作「${c.title}」\ncoworkId ${c.id}${c.repo ? ` · 仓库 ${c.repo}` : ""}${c.branch ? ` · 分支 ${c.branch}` : ""}${c.endedAt ? " · **已结束**（不能再发言、改白板，等人重新打开）" : ""}\n${who}`);
   parts.push(`## 目标\n${c.goal.trim() || "（还没写）"}`);
-  const agents = c.agents.map((a) => `- ${a.name}（${AGENT_STATE_LABEL[a.state]}${a.queued ? `，排队 ${a.queued} 条` : ""}）· mark ${a.mark}${a.mark === mark ? " ← 你" : ""}`);
-  parts.push(`## 成员\n人：${c.members.join("、")}\n${agents.length ? `AI（@ 它们用 agentMentions 写 mark）：\n${agents.join("\n")}` : "AI：没有"}`);
-  const open = c.sessions.filter((s) => s.state !== "done");
-  parts.push(`## 开着的子会话\n${open.length ? open.map((s) => `- 「${s.title}」 ${s.from} → ${s.to} · ${STATE_TEXT[s.state]}${s.waitingOn ? ` · 等 ${s.waitingOn}` : ""}${s.agent === mark ? " · 你发起的" : ""} · threadId ${s.id}`).join("\n") : "（没有）"}`);
+  if (v2) {
+    parts.push(v2.members, ...v2.sections);
+  } else {
+    const agents = c.agents.map((a) => `- ${a.name}（${AGENT_STATE_LABEL[a.state]}${a.queued ? `，排队 ${a.queued} 条` : ""}）· mark ${a.mark}${a.mark === mark ? " ← 你" : ""}`);
+    parts.push(`## 成员\n人：${c.members.join("、")}\n${agents.length ? `AI（@ 它们用 agentMentions 写 mark）：\n${agents.join("\n")}` : "AI：没有"}`);
+    const open = c.sessions.filter((s) => s.state !== "done");
+    parts.push(`## 开着的子会话\n${open.length ? open.map((s) => `- 「${s.title}」 ${s.from} → ${s.to} · ${STATE_TEXT[s.state]}${s.waitingOn ? ` · 等 ${s.waitingOn}` : ""}${s.agent === mark ? " · 你发起的" : ""} · threadId ${s.id}`).join("\n") : "（没有）"}`);
+  }
   const decided = input.events.filter((e) => e.kind === "decision");
   const done = c.sessions.filter((s) => s.state === "done" && s.conclusion);
   const decisions = decided.length ? decided.map((e) => `- ${time(e.at)} ${e.actor}：${e.text}`) : done.map((s) => `- 「${s.title}」：${s.conclusion}`);
@@ -210,7 +225,7 @@ export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; d
   if (others.length) parts.push(`## 最近的事件\n${others.map((e) => `- ${time(e.at)} ${e.agent ? (c.agents.find((a) => a.mark === e.agent)?.name ?? e.actor) : e.actor}：${e.kind === "commit" ? `推了 ${e.data?.commit ?? ""} ` : ""}${e.text}${e.data?.files?.length ? `（${e.data.files.join("、")}）` : ""}`).join("\n")}`);
   const files = input.files ? coworkFilesText(input.files, c) : "";
   if (files) parts.push(files);
-  const mine = input.drafts.filter((d) => d.agent === mark && d.state === "pending");
+  const mine = v2 ? [] : input.drafts.filter((d) => d.agent === mark && d.state === "pending");
   if (mine.length) parts.push(`## 你的草稿（等 ${me?.owner ?? "主人"} 确认）\n${mine.map((d) => `- ${d.kind === "ask" ? `子会话「${d.ask?.title}」问 ${d.ask?.to}` : `发言：${oneLine(d.post?.body ?? "")}`}`).join("\n")}`);
   const B = COWORK_BRIEF;
   const head = `${input.after ? `## 新消息（#${input.after} 之后，${input.count} 条）` : `## 最近的消息（${input.count} 条）`}\n给你的（@ 你、回你的）是全文；别人的截到 ${B.clipChars} 字，从新往旧约 ${B.readChars} 字，再往前的只列一行。`;

@@ -75,6 +75,8 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "teamrelay.cowork.handoffs", scope: "global", owner: "features/teamrelay/cowork.ts", what: "协作：中转客户端交过来、还没接手的子会话（转到我的会话）" },
   { key: "teamrelay.cowork.read", scope: "global", owner: "features/teamrelay/cowork.ts", what: "协作：每个 agent 的 cowork_read 读到哪（序号）" },
   { key: "teamrelay.cowork.tell", scope: "global", owner: "core/cowork.ts", what: "协作：人下一条消息要带给会话的话（被拉进协作、协作里有 N 条新的）" },
+  { key: "teamrelay.cowork.cards", scope: "global", owner: "core/cowork.ts", what: "协作：每个会话在各协作里的角色和角色卡（amo_whoami 读）" },
+  { key: "pending.told", scope: "global", owner: "features/pending/service.ts", what: "待我处理：每个主控会话已经被告诉过的几条（巡检只叫醒新的）" },
   // 远程
   { key: "remote.enabled", scope: "global", owner: "features/remote/service.ts", what: "远程为哪个账号打开（默认关闭）" },
   { key: "remote.pairs", scope: "global", owner: "features/remote/service.ts", what: "配对的设备" },
@@ -91,6 +93,7 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "remote.images", scope: "global", owner: "features/remote/copy-images.ts", what: "远程会话里的图片 → 本机的附件" },
   // Per session, task, project: deleted with it (Store.purge)
   { key: "role-stamp:", scope: "session", owner: "core/role.ts", what: "会话上次看到的角色卡" },
+  { key: "teamrelay.cowork.compacted:", scope: "session", owner: "core/cowork.ts", what: "协作：压缩后提醒重读协作，已提醒到哪次压缩" },
   { key: "annotation-seq:", scope: "session", owner: "features/review/service.ts", what: "批注编号" },
   { key: "report-turn:", scope: "session", owner: "features/sessions/service.ts", what: "已汇报过的那一轮" },
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },

@@ -37,6 +37,12 @@
 .cowork-dim { color: var(--text-dim); font-weight: 400; }
 .cowork-drafts { flex: none; color: var(--attention); }
 .cowork-line .btn-ghost { flex: none; }
+/* 角色和待处理 (2026-11-24, plans/collab-agent-spec.md §1): 主控 / 执行 · 事项 N / 未分角色, and its 待处理. */
+.cowork-role { flex: none; padding: 0 6px; border-radius: var(--r-btn); background: var(--panel); color: var(--text); font-size: 11px; line-height: 18px; }
+.cowork-role.unset { color: var(--text-dim); border: 1px dashed var(--border); background: transparent; }
+.cowork-pending { flex: none; color: var(--attention); font-weight: 600; }
+.cowork-line .btn-ghost.dim { color: var(--text-dim); }
+.cowork-roles { display: flex; flex-direction: column; gap: 6px; }
 .cowork-dialog { width: min(560px, 92vw); display: flex; flex-direction: column; gap: 10px; }
 .cowork-choices { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }
 .cowork-choice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--r-l); border: 1px solid var(--border); cursor: pointer; }

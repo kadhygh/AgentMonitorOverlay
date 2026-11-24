@@ -658,6 +658,28 @@ export interface CoworkJoin {
   /** The 协作 was ended (结束). */
   ended: boolean;
   joinedAt: number;
+  /**
+   * Its role there (2026-11-24, protocol/matters.ts): 主控 of its side, or 执行 of one 事项 (`matter`). null: 未分角色 — joined
+   * before roles (or on a service from before them), it works as before until the person picks one.
+   */
+  role?: "lead" | "worker" | null;
+  /** An 执行's 事项: its id, 「事项 N」 and title. */
+  matter?: { id: string; no: number; title: string } | null;
+  /** Items in its 待我处理 (a 主控's), as the patrol last read them. */
+  pending?: number;
+  /** The service has 事项 and roles (/api/health `cowork` ≥ 2): the new tools and the patrol; else the old way. */
+  matters?: boolean;
+}
+
+/** 拉进协作's role choice for one 协作 (GET /api/cowork/:id/roles). */
+export interface CoworkRoleChoices {
+  coworkId: string;
+  /** The service has roles (health `cowork` ≥ 2); false: the session joins as before, no choice. */
+  matters: boolean;
+  /** My side's 主控 now: its name and (when it is one of this computer's) session. null: none yet. */
+  lead: { name: string; mark: string; sessionId: Id | null } | null;
+  /** 事项 an 执行 may take, not closed, newest first. */
+  openMatters: Array<{ id: string; no: number; title: string; status: string; side: string }>;
 }
 
 /** A 协作 the person is in, to bring a session into (拉进协作). */
@@ -679,6 +701,7 @@ export interface CoworkChoice {
  * which session takes it (or a new one). Kept until taken or put away, or for an hour.
  */
 export interface CoworkHandoff {
+  /** The 子会话 (事项); for `lead`, `lead:<coworkId>`. */
   threadId: string;
   coworkId: string;
   coworkTitle: string;
@@ -687,6 +710,11 @@ export interface CoworkHandoff {
   from: string;
   to: string;
   at: Timestamp;
+  /**
+   * 在我的 Studio 里开这一方的主控 (2026-11-24, the 中转 client's `cowork-lead-<coworkId>`): no 子会话 — the session (or a
+   * new task's) joins as this side's 主控 and is given the 协作's goal, 已定的事 and 事项.
+   */
+  lead?: true;
 }
 export const TOPIC_DOC_BODY_MAX = 50_000;
 

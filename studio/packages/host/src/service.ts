@@ -40,6 +40,7 @@ import { DutyFeature } from "./features/duty/service.js";
 import { TracksFeature } from "./features/tracks/service.js";
 import { ReviewProgressFeature } from "./features/reviewprogress/service.js";
 import { WhiteboardFeature } from "./features/whiteboard/service.js";
+import { PendingFeature } from "./features/pending/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
@@ -110,6 +111,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly reviewProgress: ReviewProgressFeature = new ReviewProgressFeature(this);
   /** 白板 (2026-11-16): a session's working board, written by its AI, annotated by the person. */
   readonly whiteboard: WhiteboardFeature = new WhiteboardFeature(this);
+  /** 待我处理 (2026-11-24): 协作's and this computer's own, gathered; the patrol that wakes 主控 for what is new. */
+  readonly pending: PendingFeature = new PendingFeature(this);
   /** The runtimes of this computer, plus "remote" for copies of tasks paired devices granted it (远程 step 2). */
   readonly runtime: SessionRuntimeApi;
 

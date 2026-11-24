@@ -1,6 +1,7 @@
 import { isCommon, type Id, type Task } from "@amo-studio/protocol";
 import type { FeatureHost } from "../../core/feature.js";
 import { ROLE_DUTY, ROLE_NAME, roleFacts, subjectFacts, type RoleFacts, type RoleSubject } from "../../core/role.js";
+import { coworkCards } from "../../core/cowork.js";
 
 // Who a session is in AMO (stage 16, from the stage 15 design): its role card. Claude sessions get it in their MCP
 // server's instructions (each Claude session has its own in-process server); Codex threads get it as developer
@@ -75,9 +76,14 @@ function cardOf(service: CardHost, f: RoleFacts): string {
       else lines.push(`  - ${p.label} 的所有型号（model: "${p.label}" 是它的默认型号，"${p.label}/型号" 指定型号；某个型号另有说明时以那条为准）：${tail}`);
     }
   }
+  // 协作 (2026-11-24, plans/collab-agent-spec.md §1): its role in each 协作 it is in, and that role's card.
+  for (const c of f.sessionId ? coworkCards(service.store, f.sessionId) : []) {
+    lines.push(`- 协作「${c.title}」（cowork:${c.coworkId}）里的角色：${c.role}${c.pending ? ` · 待你处理 ${c.pending} 条（cowork_read 看）` : ""}`);
+    lines.push("", c.card, "");
+  }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;
   if (marks) lines.push(`- 这个项目有 ${marks} 个书签里的文件（人标出的重要文件，list_file_marks 读）`);
   lines.push("", "完整用法：amo_guide。身份随看板变化，需要时再调 amo_whoami。");
   return lines.join("\n");
 }
-
+
