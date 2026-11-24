@@ -443,6 +443,10 @@ export class AgyRuntime extends RuntimeBase implements SessionRuntimeApi {
       if (method !== "session/update") return;
       const p = params as { sessionId?: string; update?: AcpUpdate };
       if (p.sessionId !== live.acpId || !p.update) return;
+      // Released (idle, archived, the Host closing): what agy still had on its stdout is read after the process exited,
+      // and the Host closes the store right after closeAll — writing it threw from this listener (2026-11-24, an
+      // unhandled "database is not open" when a test ended between agy's reply and its usage_update).
+      if (this.closing || this.live.get(session.id) !== live) return;
       // agy replays a session's history on load: only what comes during a turn of Studio's is shown (Studio keeps the rest).
       if (!live.inflight) return;
       if (p.update.sessionUpdate === "current_mode_update" && p.update.currentModeId) live.applied.mode = p.update.currentModeId;
