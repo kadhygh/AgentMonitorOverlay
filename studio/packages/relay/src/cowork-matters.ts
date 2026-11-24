@@ -201,6 +201,8 @@ export class CoworkMatters {
     const cols = (db.prepare("PRAGMA table_info(cowork_matters)").all() as Row[]).map((r) => String(r.name));
     if (!cols.includes("derived")) db.exec("ALTER TABLE cowork_matters ADD COLUMN derived TEXT; ALTER TABLE cowork_matters ADD COLUMN place TEXT;");
     if (!cols.includes("place_version")) db.exec("ALTER TABLE cowork_matters ADD COLUMN place_version INTEGER NOT NULL DEFAULT 0;");
+    // 2026-11-25 「事项归做的那一方」: the side that handed it to the other (a 「交给对方」 事项).
+    if (!cols.includes("from_side")) db.exec("ALTER TABLE cowork_matters ADD COLUMN from_side TEXT;");
     this.migrate();
   }
 
@@ -274,11 +276,11 @@ export class CoworkMatters {
   }
 
   /** A new 事项's row (the thread is made by the caller), from its "open" event. */
-  insert(m: { id: string; coworkId: string; kind: MatterKind; owner: Party; side: string; gate: GateKind | null; blocker: string | null; dependsOn: string[]; at: number; bindings?: MatterBindings }, open: MatterEvent): void {
+  insert(m: { id: string; coworkId: string; kind: MatterKind; owner: Party; side: string; from?: string | null; gate: GateKind | null; blocker: string | null; dependsOn: string[]; at: number; bindings?: MatterBindings }, open: MatterEvent): void {
     const s = applyMatterEvent(null, open);
     this.db
-      .prepare("INSERT INTO cowork_matters (id, cowork_id, no, kind, owner, side, status, waiting, bindings, blocker, depends, gate, conclusion, history, created_at, updated_at, version, derived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
-      .run(m.id, m.coworkId, this.nextNo(m.coworkId), m.kind, m.owner, m.side, s.status, JSON.stringify(s.waitingOn), JSON.stringify(m.bindings ?? EMPTY_BINDINGS), m.blocker, JSON.stringify(m.dependsOn), m.gate, s.conclusion, JSON.stringify(s.history), m.at, m.at, JSON.stringify(s));
+      .prepare("INSERT INTO cowork_matters (id, cowork_id, no, kind, owner, side, from_side, status, waiting, bindings, blocker, depends, gate, conclusion, history, created_at, updated_at, version, derived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
+      .run(m.id, m.coworkId, this.nextNo(m.coworkId), m.kind, m.owner, m.side, m.from && m.from !== m.side ? m.from : null, s.status, JSON.stringify(s.waitingOn), JSON.stringify(m.bindings ?? EMPTY_BINDINGS), m.blocker, JSON.stringify(m.dependsOn), m.gate, s.conclusion, JSON.stringify(s.history), m.at, m.at, JSON.stringify(s));
     this.db.prepare("INSERT INTO cowork_matter_events (matter_id, at, event) VALUES (?, ?, ?)").run(m.id, open.at, JSON.stringify(open));
     this.touchedNow.matters.add(m.id);
     this.touchedNow.coworks.add(m.coworkId);
@@ -316,6 +318,7 @@ export class CoworkMatters {
       owner: String(r.owner) as Party,
       side,
       lead: l[side] ?? null,
+      ...(r.from_side != null ? { from: String(r.from_side) } : {}),
       status: s.status,
       waitingOn: s.waitingOn,
       bindings: { ...EMPTY_BINDINGS, ...json<Partial<MatterBindings>>(r.bindings, {}) },
@@ -410,7 +413,8 @@ export class CoworkMatters {
     const mine = this.ownerOf(coworkId, e.by);
     this.closeReceipts(id, e.at, mine === null ? null : (p) => this.ownerOf(coworkId, p) === mine);
     const m = this.get(id)!;
-    const sides = new Set<string>([m.side]);
+    // The 提出方 of a 「交给对方」 事项 is told too (2026-11-25), whether or not it wrote in it.
+    const sides = new Set<string>([m.side, ...(m.from ? [m.from] : [])]);
     for (const r of this.db.prepare("SELECT DISTINCT party FROM cowork_receipts WHERE thread_id = ?").all(id) as Row[]) {
       const s = this.ownerOf(coworkId, String(r.party) as Party);
       if (s) sides.add(s);
@@ -531,7 +535,8 @@ export class CoworkMatters {
     const mentions: Party[] = [...(message.mentions ?? []).map(personParty), ...(message.agentMentions ?? []).map(agentParty)];
     // Those it 知会s read it too (in a 事项, people are not otherwise its recipients).
     const noticed = (message.notice ?? []).map(personParty);
-    const to = messageRecipients({ author, people, leads: this.leads(coworkId), matter, posters, mentions: [...mentions, ...noticed] });
+    const replied = message.replyTo ? this.store.messageBySeq(message.replyTo) : null;
+    const to = messageRecipients({ author, people, leads: this.leads(coworkId), matter, posters, mentions: [...mentions, ...noticed], replyToAuthor: replied ? authorParty(replied) : null, workerSides: matter ? this.workerSides(coworkId, matter.bindings.sessions) : {} });
     const at = this.now();
     for (const p of to) {
       const person = p.startsWith("person:");
@@ -543,12 +548,21 @@ export class CoworkMatters {
     this.seenInThread(message.threadId, author, message.seq - 1);
     if (matter && message.kind !== "request") {
       const r = this.row(matter.id)!;
-      const replied = message.replyTo ? this.store.messageBySeq(message.replyTo) : null;
       this.apply(matter.id, matterMessageEvent(this.state(r), { by: author, seq: message.seq, at, mentions, replyToAuthor: replied ? authorParty(replied) : null }));
       if (message.commits?.length) this.apply(matter.id, { kind: "push", at, by: author, seq: message.seq, commits: message.commits });
       if (message.verify) this.apply(matter.id, { kind: "verify", at, by: author, seq: message.seq, passed: message.verify.passed, ...(message.verify.how ? { note: message.verify.how } : {}) });
     }
     return this.receipts(message.seq);
+  }
+
+  /** The 执行 bound to a 事项, by mark → their owner's account (whose 主控 hands them work). */
+  private workerSides(coworkId: string, marks: readonly string[]): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const mark of marks) {
+      const r = this.db.prepare("SELECT owner FROM cowork_agents WHERE cowork_id = ? AND mark = ?").get(coworkId, mark) as Row | undefined;
+      if (r) out[mark] = String(r.owner);
+    }
+    return out;
   }
 
   /** Those who wrote in this thread before (as participants). */

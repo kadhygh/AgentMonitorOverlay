@@ -114,7 +114,8 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     await expect(service.teamRelay.cowork.join(other.id, c.id)).rejects.toThrow(/已经有主控/);
 
     // 拉进协作's choice: who leads my side, and the 事项 an 执行 may take.
-    const m = (await coderClient.openMatter(c.id, { title: "穿透判定", body: "改碰撞层" })).matter;
+    // 老李 hands it to 小王's side (交给对方): an 执行 works on its own side's 事项 only (2026-11-25).
+    const m = (await coderClient.openMatter(c.id, { title: "穿透判定", body: "改碰撞层", side: "策划小王" })).matter;
     const roles = await service.teamRelay.cowork.roles(c.id);
     expect(roles).toMatchObject({ matters: true, lead: { sessionId: lead.id }, openMatters: [{ id: m.id, no: 1, title: "穿透判定" }] });
 
@@ -139,15 +140,16 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect((await tool(other.id, "cowork_matter", { action: "update", matter: "事项 1", status: "已推送" })).text).toContain("你是执行会话");
 
     // 改角色: the 执行 becomes nothing new here — the 主控 changes the 事项 instead (by 「事项 N」 and the status's label)…
-    // but only its own side's (2026-11-25): 事项 1 is 程序老李's, so it is refused saying so.
-    const upd = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 1", status: "已推送", note: "执行贴了提交" });
+    // but only its own side's (2026-11-25): 事项 2 is 程序老李's, so it is refused saying so.
+    await coderClient.openMatter(c.id, { title: "碰撞层", body: "程序这边的" });
+    const upd = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 2", status: "已推送", note: "执行贴了提交" });
     expect(upd.error).toBe(true);
     expect(upd.text).toContain("这件归 程序老李 那方，在事项里 @ 它");
     expect((await tool(lead.id, "cowork_matter", { action: "open", title: "穿透文档", body: "写穿透规则" })).error).toBe(false);
-    const upd2 = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 2", status: "已推送", note: "执行贴了提交" });
+    const upd2 = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 3", status: "已推送", note: "执行贴了提交" });
     expect(upd2).toMatchObject({ error: false });
     expect(upd2.text).toContain("→ 已推送");
-    expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 2)!.status).toBe("pushed");
+    expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 3)!.status).toBe("pushed");
   }, 30_000);
 
   it("the role card goes the role update's way (joined, role changed, after a compaction with the whole card); cowork_board lists the 事项卡; cowork-patrol-<id> wakes this side's 主控 (2026-11-25)", async () => {
@@ -165,7 +167,7 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     joined.told();
     expect(service.sessions.roleUpdate(lead.id).lines).toEqual([]);
     // Its role changed: the new card.
-    const m = (await coderClient.openMatter(c.id, { title: "穿透判定", body: "改碰撞层" })).matter;
+    const m = (await coderClient.openMatter(c.id, { title: "穿透判定", body: "改碰撞层", side: "策划小王", waitingOn: [] })).matter;
     await service.teamRelay.cowork.setRole({ sessionId: lead.id, coworkId: c.id, role: "worker", matter: "事项 1" });
     const changed = service.sessions.roleUpdate(lead.id);
     expect(changed.lines.join("\n")).toContain("角色改成了「执行（事项 1）」（之前是「主控」）");
@@ -187,7 +189,7 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     const board = await tool(lead.id, "cowork_board");
     expect(board.text).toContain("事项卡（由事项算出");
     expect(board.text).toContain(`[事项] ${m.id} · 事项 1「穿透判定」· 在做`);
-    expect(board.text).toContain("组「程序老李 这一方」");
+    expect(board.text).toContain("组「策划小王 这一方」");
 
     // 让我这一方的主控现在看一遍, as the 中转 client asks it.
     const route = teamRelayRoutes(service).find((r) => r.method === "POST" && r.path === "/api/ui/open")!;
@@ -286,9 +288,9 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
     const lead = session("射速口径");
     await service.teamRelay.cowork.join(lead.id, c.id);
-    const asked = await tool(lead.id, "cowork_ask", { to: "策划小王", title: "等策划小王确认：上限从 60 改成 120", body: "程序那边提议把 maxRate 上限从 60 改成 120。", questions: [{ text: "改不改？", options: ["改", "不改"] }] });
+    const asked = await tool(lead.id, "cowork_ask", { to: "策划小王", gate: "rules", title: "等策划小王确认：上限从 60 改成 120", body: "程序那边提议把 maxRate 上限从 60 改成 120。", questions: [{ text: "改不改？", options: ["改", "不改"] }] });
     expect(asked.error).toBe(false);
-    expect(asked.text).toContain("开了事项 1「等策划小王确认：上限从 60 改成 120」（等人确认，在等 策划小王");
+    expect(asked.text).toContain("开了事项 1「等策划小王确认：上限从 60 改成 120」（等人确认，改已定的玩法口径，在等 策划小王");
     const m = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 1)!;
     expect(m).toMatchObject({ status: "confirm", side: "策划小王", waitingOn: ["person:策划小王"], kind: "confirm" });
     const me = service.teamRelay.cowork.relayLogin().client;
@@ -300,7 +302,7 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     await me.postCowork(c.id, { kind: "text", threadId: m.id, body: "改。", replyTo: first.seq });
     await until(async () => (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 1)!.status, (s) => s === "doing", "在做 after the answer");
     // Someone else is still asked the old way (a 子会话 is a 等人确认 事项 there too).
-    const other = await tool(lead.id, "cowork_ask", { to: "程序老李", title: "等程序老李确认：合进 master", body: "要合吗？" });
+    const other = await tool(lead.id, "cowork_ask", { to: "程序老李", gate: "master", title: "等程序老李确认：合进 master", body: "要合吗？" });
     expect(other.error).toBe(false);
     expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 2)).toMatchObject({ status: "confirm", waitingOn: ["person:程序老李"] });
   }, 30_000);
@@ -391,11 +393,38 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect((await tool(lead.id, "cowork_post", { threadId: `事项 ${q.no}`, body: "我看挡", basis: "inferred" })).error).toBe(false);
     const answer = (await coderClient.coworkFeed(c.id)).messages.find((x) => x.body === "我看挡")!;
     expect(answer.notice).toEqual(["策划小王"]);
-    const ask = await tool(lead.id, "cowork_ask", { to: "策划小王", title: "等策划小王确认：合 master", body: "feature/fire-rate 合进 master" });
+    const ask = await tool(lead.id, "cowork_ask", { to: "策划小王", gate: "合 master", title: "等策划小王确认：合 master", body: "feature/fire-rate 合进 master" });
     expect(ask.error).toBe(false);
     const gate = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.title === "等策划小王确认：合 master")!;
     const body = (await coderClient.messages(gate.id)).messages[0]!.body;
     expect(body).toContain("还没看过的 AI 推断回答");
     expect(body).toContain(`#${answer.seq}（事项 ${q.no}） 我看挡`);
+    // Its gate is kept (「合 master」 read as master): closed, its conclusion stays in the 事项.
+    expect(gate.gate).toBe("master");
+    const merged = await tool(lead.id, "cowork_matter", { action: "close", matter: `事项 ${gate.no}`, conclusion: "合了 abc1234" });
+    expect(merged.text).toContain("留在事项里");
+  }, 30_000);
+
+  it("事项归做的那一方 (2026-11-25 evening): cowork_matter open on the other side hands it over; session_start may not staff another side's 事项", async () => {
+    const { service, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
+    const lead = session("射速文档");
+    await service.teamRelay.cowork.join(lead.id, c.id);
+    await coderClient.joinCoworkAgent(c.id, "studio:d_li00000000000000000000000:s-lead", "战斗代码", { role: "lead" });
+    const handed = await tool(lead.id, "cowork_matter", { action: "open", title: "上限读配置", body: "程序这边做", side: "程序老李" });
+    expect(handed.error).toBe(false);
+    expect(handed.text).toContain("交给 程序老李 那方");
+    const m = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.title === "上限读配置")!;
+    expect(m).toMatchObject({ side: "程序老李", from: "策划小王", waitingOn: [agentParty("studio:d_li00000000000000000000000:s-lead")] });
+    // Not ours to staff, nor to close.
+    await expect(service.teamRelay.cowork.workerPlan(lead.id, `事项 ${m.no}`)).rejects.toThrow(/执行由那方的主控开/);
+    const close = await tool(lead.id, "cowork_matter", { action: "close", matter: `事项 ${m.no}`, conclusion: "做完了" });
+    expect(close.error).toBe(true);
+    expect(close.text).toContain("这件归 程序老李 那方");
+    // Our own side's: staffed as before.
+    await tool(lead.id, "cowork_matter", { action: "open", title: "写文档", body: "把口径写进文档" });
+    expect((await service.teamRelay.cowork.workerPlan(lead.id, "事项 2")).matter.no).toBe(2);
+    // The cards say so.
+    expect(roleCard(service, lead.id)).toContain("**交给对方**的事项");
   }, 30_000);
 });

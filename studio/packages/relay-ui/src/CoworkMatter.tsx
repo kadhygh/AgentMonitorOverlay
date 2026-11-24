@@ -7,7 +7,7 @@ import { basisOf, confirmParts, inferredCount, LOOK_WORD, MATTER_CLS, matterChip
 import { copyRef } from "./RefChips.js";
 import { matterRef } from "./refs.js";
 import { errorText, useMessages } from "./Messages.js";
-import { GATE_LABEL, MATTER_STATUS_LABEL, matterLockKey, matterLockText, personParty, RelayClientError, type BoardLock, type Answer, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type Party, type Question } from "./shared.js";
+import { GATE_LABEL, gateDecides, MATTER_STATUS_LABEL, matterLockKey, matterLockText, personParty, RelayClientError, type BoardLock, type Answer, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type Party, type Question } from "./shared.js";
 
 // A 事项 opened (2026-11-25, plans/collab-framework.md「11-24」, prototype studio/out/cowork-flow/board.html's drawer): over the
 // 群聊 as a window, on the board as a drawer. What it is and where it stands — 事项 N, its state, 负责方, whom it waits on
@@ -143,7 +143,7 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
           </ol>
         </Fold>
       </div>
-      {dialog === "close" && <CloseDialog matter={m} onClose={endClose} onDone={(conclusion, decided) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), ...(conclusion && decided ? { decided: true } : {}), note: "关闭" }, conclusion && (decided || m.kind === "confirm") ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && endClose())} />}
+      {dialog === "close" && <CloseDialog matter={m} onClose={endClose} onDone={(conclusion, decided) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), ...(conclusion && decided ? { decided: true } : {}), note: "关闭" }, conclusion && (decided || gateDecides(m)) ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && endClose())} />}
     </div>
   );
 }
@@ -410,7 +410,10 @@ function MatterInfo({ matter: m, onPatch, onOpen, all, lock }: { matter: Matter;
       </div>
       <div className="cw-info-row">
         <dt>负责</dt>
-        <dd>{sideText(m, cowork.agents, show)}</dd>
+        <dd>
+          {sideText(m, cowork.agents, show)}
+          {m.from ? <span className="muted">（{show(m.from)} 提出，交给这一方做）</span> : null}
+        </dd>
       </div>
       <div className="cw-info-row">
         <dt>开的人</dt>
@@ -473,11 +476,12 @@ function MatterInfo({ matter: m, onPatch, onOpen, all, lock }: { matter: Matter;
 
 function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: () => void; onDone: (conclusion: string, decided: boolean) => void }) {
   const [text, setText] = useState(m.conclusion ?? "");
-  // 已定的事只放口径 (2026-11-25): a 「等人确认」's conclusion always goes in; another only when it is a 口径.
-  const gate = m.kind === "confirm";
-  // Ticked to begin with when the 事项 asked someone to confirm (a person's 「请人确认」 is a work 事项 waiting on them):
-  // what they answered is usually the 口径, and the old cowork_conclude counted it so too; untick a finished piece of work.
-  const [decided, setDecided] = useState(() => m.history.some((h) => h.to === "confirm"));
+  // 已定的事只放口径 (2026-11-25): a 「等人确认」 on the 口径 gate always goes in (gateDecides); another only when said to be one.
+  const gate = gateDecides(m);
+  // Ticked to begin with when a person was asked to confirm something that is not another gate (a person's 「请人确认」 is a
+  // work 事项 waiting on them): what they answered is usually the 口径, and the old cowork_conclude counted it so too. Not for
+  // 合 master, 对外发布… (their conclusion stays in the 事项); untick a finished piece of work.
+  const [decided, setDecided] = useState(() => m.kind !== "confirm" && m.history.some((h) => h.to === "confirm"));
   return (
     <Dialog
       title={`关闭${matterLabel(m)}`}
@@ -494,7 +498,7 @@ function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: 
         </>
       }
     >
-      <p className="muted tiny">关了以后你这一方在里面的消息算处理了，另一方的主控和人会收到「{matterLabel(m)} 关了」和结论。{gate ? "这是等人确认的事项，写了结论就记进协作的「已定的事」。" : "结论留在事项里；是口径（规则、数值、边界）的，勾上下面一项，记进「已定的事」。"}也可以不写结论。</p>
+      <p className="muted tiny">关了以后你这一方在里面的消息算处理了，另一方的主控和人会收到「{matterLabel(m)} 关了」和结论。{gate ? "这是确认口径的事项，写了结论就记进协作的「已定的事」。" : `结论留在事项里${m.gate ? `（${GATE_LABEL[m.gate]}这道闸门的结论不进「已定的事」）` : ""}；是口径（规则、数值、边界）的，勾上下面一项，记进「已定的事」。`}也可以不写结论。</p>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder="定了什么，比如：回落 1.2 秒线性，回落期间不能开火" aria-label="结论" autoFocus />
       {!gate && (
         <label className="tiny">

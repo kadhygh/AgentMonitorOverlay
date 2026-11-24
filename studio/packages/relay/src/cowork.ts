@@ -13,11 +13,13 @@ import {
   MATTER_STATUS_LABEL,
   agentParty,
   canRewrite,
+  gateDecides,
   isParty,
   leadTakenText,
   matterLockKey,
   matterLockText,
   otherSideText,
+  otherSideWorkerText,
   parseCollabRef,
   parseParty,
   personParty,
@@ -496,7 +498,12 @@ export class CoworkStore {
       return;
     }
     if (!matter) throw new RelayError("bad_request", "执行要绑定一件事项（matter：事项的 id）");
-    this.matters.require(coworkId, matter);
+    const m = this.matters.require(coworkId, matter);
+    // 事项归做的那一方 (2026-11-25): an 执行 works on its side's 事项 — the other side's is staffed by its own 主控. A 子会话 a
+    // person was asked (转到我的会话: the person hands it to a session of theirs to answer) is theirs to take.
+    const t = this.db.prepare("SELECT req_from, req_to FROM threads WHERE id = ?").get(matter) as Row | undefined;
+    const askedMe = !!t && t.req_to === me && t.req_from !== me;
+    if (m.side !== me && !askedMe) throw new RelayError("forbidden", otherSideWorkerText(m.no, this.nicks().get(m.side) ?? m.side));
   }
 
   private roleWord(role: AgentRole, matter: string | null): string {
@@ -947,7 +954,7 @@ export class CoworkStore {
     const owner = partyOf(me, via);
     const card = this.store.tx(() => {
       const at = this.now();
-      this.matters.insert({ id: out.thread.id, coworkId, kind: agent ? "confirm" : "work", owner, side: me, gate: null, blocker: null, dependsOn: [], at }, { kind: "open", at, by: owner, status: "confirm", to: [personParty(to)], seq: out.message.seq });
+      this.matters.insert({ id: out.thread.id, coworkId, kind: agent ? "confirm" : "work", owner, side: me, gate: cleanGate(n.gate), blocker: null, dependsOn: [], at }, { kind: "open", at, by: owner, status: "confirm", to: [personParty(to)], seq: out.message.seq });
       this.matters.receive(coworkId, out.message, people);
       const extra: Partial<Message> = { session: out.thread.id };
       if (approved) {
@@ -979,11 +986,15 @@ export class CoworkStore {
     const kind = n.kind === undefined ? "work" : cleanKind(n.kind);
     const gate = cleanGate(n.gate);
     const status = n.status === undefined ? (kind === "confirm" ? "confirm" : "todo") : cleanStatus(n.status);
-    const waitingOn = this.checkWaiting(coworkId, n.waitingOn);
+    // 交给对方 (2026-11-25, 「事项归做的那一方」): opened on another side, it is that side's — it waits on that side's 主控
+    // (or its person while it has none) and remembers who handed it over. Not a 「等人确认」: that one asks one's own person.
+    const handing = side !== me;
+    if (handing && kind === "confirm") throw new RelayError("bad_request", "等人确认的事项开在自己这一方（问自己的人）；要对方做事，开一件交给对方的事项");
+    const otherLead = handing ? this.matters.leads(coworkId)[side] : undefined;
+    const waitingOn = n.waitingOn === undefined && handing ? [otherLead ? agentParty(otherLead) : personParty(side)] : this.checkWaiting(coworkId, n.waitingOn);
     const dependsOn = this.checkDepends(coworkId, n.dependsOn, null);
     const blocker = cleanBlocker(n.blocker);
     const owner = partyOf(me, via);
-    if (agent && side !== me) throw new RelayError("forbidden", "AI 只能给自己这一方开事项：要对方做，开在自己这一方、在等谁写对方主控");
     return this.store.tx(() => {
       const id = `t_${randomBytes(8).toString("hex")}`;
       const at = this.now();
@@ -993,10 +1004,10 @@ export class CoworkStore {
       for (const p of people) this.db.prepare("INSERT INTO thread_members (thread_id, name) VALUES (?, ?)").run(id, p);
       const message = this.store.insertMessage(id, me, via, "request", body, null);
       this.db.prepare("UPDATE threads SET req_seq = ?, s_qseq = NULL WHERE id = ?").run(message.seq, id);
-      this.matters.insert({ id, coworkId, kind, owner, side, gate, blocker, dependsOn, at }, { kind: "open", at, by: owner, status, to: waitingOn, seq: message.seq });
+      this.matters.insert({ id, coworkId, kind, owner, side, from: handing ? me : null, gate, blocker, dependsOn, at }, { kind: "open", at, by: owner, status, to: waitingOn, seq: message.seq });
       this.matters.receive(coworkId, message, people);
       const matter = this.matters.get(id)!;
-      const cardMessage = this.store.insertMessage(coworkId, me, via, "event", `开了事项 ${matter.no}「${title}」（${MATTER_STATUS_LABEL[matter.status]}）`, { session: id });
+      const cardMessage = this.store.insertMessage(coworkId, me, via, "event", `开了事项 ${matter.no}「${title}」（${handing ? `交给 ${this.nicks().get(side) ?? side} 那方，` : ""}${MATTER_STATUS_LABEL[matter.status]}）`, { session: id });
       this.db.prepare("UPDATE coworks SET updated_at = ? WHERE id = ?").run(at, coworkId);
       return { matter, thread: this.store.threadById(id), message: this.store.messageBySeq(message.seq)!, card: { thread: this.store.threadById(coworkId), message: cardMessage } };
     });
@@ -1038,7 +1049,7 @@ export class CoworkStore {
     // 主控不能改对方的事项 (2026-11-25): its judgement fields and closing are its side's; saying something, @ and answering
     // in it are for everyone.
     const nick = (n: string) => this.nicks().get(n) ?? n;
-    if (agent && m.side !== me && (MATTER_EDIT_FIELDS.some((k) => b[k] !== undefined) || b.decided !== undefined)) throw new RelayError("forbidden", otherSideText(m.no, nick(m.side)));
+    if (agent && m.side !== me && (MATTER_EDIT_FIELDS.some((k) => b[k] !== undefined) || b.decided !== undefined || b.side !== undefined)) throw new RelayError("forbidden", otherSideText(m.no, nick(m.side)));
     // Locks (2026-11-25, the user: 「a 在拖拽卡 b 就不拖拽」): someone else dragging its card, or with its judgement fields
     // open, wins; an AI does not change those fields while anyone has them open. The 409 carries the 事项 as it is now.
     const placeLock = this.board.lockOf(coworkId, matterLockKey("place", matterId));
@@ -1086,8 +1097,9 @@ export class CoworkStore {
         if (out.matter.status !== was) message = this.store.insertMessage(matterId, me, via, "event", `事项 ${m.no}：${MATTER_STATUS_LABEL[was]} → ${MATTER_STATUS_LABEL[out.matter.status]}（${status !== undefined ? "手改" : "改了在等谁"}${note ? `：${note}` : ""}）`, null);
       }
       if (concluding) {
-        // 已定的事只放口径 (2026-11-25): a 「等人确认」 事项's conclusion, or one said to be a 口径; work's stays in the 事项.
-        const decided = m.kind === "confirm" || b.decided === true;
+        // 已定的事只放口径 (2026-11-25): a 「等人确认」 on the 口径 gate, or one said to be a 口径; work's and the other gates'
+        // (合 master, 对外发布…) stay in the 事项.
+        const decided = b.decided === true || gateDecides(m);
         this.db.prepare("UPDATE threads SET cw_conclusion = ? WHERE id = ?").run(conclusion, matterId);
         this.matters.apply(matterId, { kind: "conclude", at, by, conclusion, decided, ...(note ? { note } : {}) });
         if (decided) events.push(this.event(coworkId, me, via, "decision", `「${title ?? m.title}」：${conclusion}`, { threadId: matterId }));
@@ -1382,7 +1394,7 @@ export class CoworkStore {
       // 已定的事只放口径 (2026-11-25): an AI's 定下结论 (cowork_conclude, the old name of close) goes by the 事项's kind — a
       // 「等人确认」's is one of 已定的事, a piece of work's stays in it — unless it says `decided`; a person's (older clients'
       // 定下结论, written after asking someone) and a 子会话 from before 事项 are, as before.
-      const decided = !matter || matter.kind === "confirm" || b.decided === true || (!agent && b.decided !== false);
+      const decided = !matter || b.decided === true || gateDecides(matter) || (!agent && b.decided !== false);
       const event = decided ? this.event(coworkId, me, via, "decision", `「${t.title}」：${conclusion}`, { threadId }) : null;
       if (matter) this.matters.apply(threadId, { kind: "conclude", at: this.now(), by: partyOf(me, via), conclusion, decided, note: "定下结论" });
       const deliveries = this.actedIn(coworkId, threadId, me, via, message.seq);
@@ -1427,7 +1439,7 @@ export class CoworkStore {
       this.syncFromSession(thread.id, partyOf(actor, checkVia(via)));
       // As 定下结论 (conclude): an AI's on a piece of work stays in the 事项 (已定的事只放口径); a person's is one of 已定的事.
       const matter = this.matters.get(thread.id);
-      if (matter && matter.kind !== "confirm" && checkVia(via).kind === "ai") return { event: null, deliveries };
+      if (matter && !gateDecides(matter) && checkVia(via).kind === "ai") return { event: null, deliveries };
       return { event: this.event(coworkId, actor, checkVia(via), "decision", `「${thread.title}」：${n}`, { threadId: thread.id }), deliveries };
     });
   }

@@ -1,5 +1,5 @@
 import { refId } from "@amo-studio/protocol";
-import { agentParty, MATTER_STATUSES, MATTER_STATUS_LABEL, personParty, resolveAgentRef, type Cowork, type CoworkAgent, type Matter, type MatterStatus, type Party } from "@amo-studio/relay/light";
+import { agentParty, GATE_LABEL, MATTER_STATUSES, MATTER_STATUS_LABEL, personParty, resolveAgentRef, type Cowork, type GateKind, type CoworkAgent, type Matter, type MatterStatus, type Party } from "@amo-studio/relay/light";
 
 // 指代 (2026-11-24, plans/collab-agent-spec.md §3「所有工具认「事项 3」「#7」、显示名（「老李的主控」）、人从中转复制来的整行引用，
 // 不要求先查 mark」): what the cowork_* tools take for a 事项, a message, an AI or a person, and what they resolve it to.
@@ -105,4 +105,13 @@ export function statusRef(value: unknown): MatterStatus | null {
   if ((MATTER_STATUSES as readonly string[]).includes(v)) return v as MatterStatus;
   const found = MATTER_STATUSES.find((s) => MATTER_STATUS_LABEL[s] === v);
   return found ?? null;
+}
+
+/** A 闸门 by its id or a word of it (「口径」「判红」「合 master」「别人的东西」「对外发布」, 2026-11-25: cowork_ask's gate); null if none. */
+export function gateRef(value: unknown): GateKind | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().replace(/\s+/g, "").toLowerCase();
+  if ((Object.keys(GATE_LABEL) as string[]).includes(v)) return v as GateKind;
+  const words: Array<[GateKind, RegExp]> = [["rules", /口径/], ["red", /判红/], ["master", /master|合并|合进/], ["others", /别人/], ["release", /发布/]];
+  return words.find(([, re]) => re.test(v))?.[0] ?? null;
 }

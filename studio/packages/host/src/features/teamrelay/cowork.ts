@@ -1,5 +1,5 @@
 import { inTurn, refId, sessionRefText, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type CoworkRoleChoices, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
-import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, basisText, personParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, matterDecided, otherSideText, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type MessageBasis, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
+import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, basisText, personParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, matterDecided, otherSideText, otherSideWorkerText, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type MessageBasis, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { noteCoworkKnown } from "../../core/role.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
@@ -8,7 +8,7 @@ import { authorOf, beforeText, boardOpsText, boardText, concludedText, COWORK_BR
 import type { TeamRelayFeature } from "./service.js";
 import { findRelayClient, relayClientLaunch, relayTarget, startRelayClient, type RelayClientFound, type RelayClientLaunch } from "./relay-client.js";
 import { leadCard, matterCardsText, mattersSection, membersSection, partyName, pendingSection, roleLabel, unassignedCard, wakeText, workerCard, type WakeItem, type WakeWhy } from "./cowork-matters-text.js";
-import { agentRef, matterRef, partyRef, personRef, seqRef, seqsRef, statusRef, threadRef } from "./cowork-refs.js";
+import { agentRef, gateRef, matterRef, partyRef, personRef, seqRef, seqsRef, statusRef, threadRef } from "./cowork-refs.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): Studio's end of a 协作 on AMO 中转 (relay/src/cowork-protocol.ts tells
 // how the service runs it). The person brings a session in (拉进协作); from then on its agent may speak there as their
@@ -229,6 +229,9 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const m = matterRef(c, matterValue);
     if (!m) throw new HostError("bad_request", `协作「${c.title}」里没有「${String(matterValue)}」。开着的事项：${(c.matters ?? []).filter((x) => x.status !== "closed").map((x) => `事项 ${x.no}「${x.title}」`).join("、") || "（没有：先用 cowork_matter open 开一件）"}`);
     if (m.status === "closed") throw new HostError("bad_request", `事项 ${m.no}「${m.title}」已经关了。`);
+    // 事项归做的那一方 (2026-11-25; the service refuses it too): the other side's 事项 is staffed by its own 主控.
+    const { me: account } = this.relay();
+    if (m.side !== account) throw new HostError("bad_request", `${otherSideWorkerText(m.no, m.side)}。`);
     const card = `【协作「${c.title}」· 你的角色：执行（事项 ${m.no}）】\n\n${workerCard(c, me?.name ?? "主控", m)}`;
     return { coworkId, matter: m, card };
   }
@@ -1061,6 +1064,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
         }),
       );
       const m = out.matter;
+      if (m.from) return `开了事项 ${m.no}「${m.title}」，交给 ${m.side} 那方（threadId ${m.id}，${MATTER_STATUS_LABEL[m.status]}${m.waitingOn.length ? `，在等 ${m.waitingOn.map((p) => partyName(p, c)).join("、")}` : ""}）：它归那方，由那方的主控派执行、核对、标已验和关闭；你在里面说话用 cowork_post 带 threadId「事项 ${m.no}」，关了你会收到「事项 ${m.no} 关了」。`;
       return `开了事项 ${m.no}「${m.title}」（threadId ${m.id}，负责方 ${m.side}，${MATTER_STATUS_LABEL[m.status]}${m.waitingOn.length ? `，在等 ${m.waitingOn.map((p) => partyName(p, c)).join("、")}` : ""}）。在里面说话用 cowork_post 带 threadId「事项 ${m.no}」；派执行会话做它用 session_start 带 matter「事项 ${m.no}」。`;
     }
     const m = matterRef(c, input.matter ?? input.threadId);
@@ -1158,10 +1162,12 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
   }
 
   /** cowork_ask: a new 子会话, asking a person in the 协作. */
-  async ask(sessionId: Id, input: { coworkId?: unknown; to?: unknown; title?: unknown; body?: unknown; questions?: unknown }): Promise<string> {
+  async ask(sessionId: Id, input: { coworkId?: unknown; to?: unknown; gate?: unknown; title?: unknown; body?: unknown; questions?: unknown }): Promise<string> {
     const { coworkId, mark, join } = this.mine(sessionId, input.coworkId);
     const { client, me } = this.relay();
     const to = text(input.to, "to");
+    // Which gate (2026-11-25): only the 口径 gate's conclusion goes into 已定的事.
+    const gate = gateRef(input.gate);
     const questions = Array.isArray(input.questions) ? (input.questions as Array<{ text?: unknown; options?: unknown }>).filter((q) => typeof q?.text === "string" && q.text.trim()).map((q) => ({ text: String(q.text).trim(), ...(Array.isArray(q.options) ? { options: q.options.filter((o): o is string => typeof o === "string" && !!o.trim()) } : {}) })) : [];
     if (to === me) {
       // A 闸门 asks the AI's own person (plans/collab-agent-spec.md §5: 「cowork_ask 给你的人」). The service's 子会话 are
@@ -1178,11 +1184,11 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
         .then((r) => (r.lists[0]?.items ?? []).filter((i) => i.kind === "notice" && i.why.text.startsWith("!")), () => []);
       const unseen = judged.length ? [`还没看过的 AI 推断回答（替 ${me} 答的，${me} 没确认过；确认这件也就认了它们，不认的说哪条）：`, ...judged.slice(0, 20).map((i) => `- #${i.seq}${i.matterNo ? `（事项 ${i.matterNo}）` : ""} ${(i.body ?? i.text).replace(/\s+/g, " ").slice(0, 160)}`)] : [];
       const body = [text(input.body, "body"), ...questions.map((q, i) => `${i + 1}. ${q.text}${q.options?.length ? `（${q.options.join(" / ")}）` : ""}`), ...(unseen.length ? ["", ...unseen] : [])].join("\n");
-      const out = await this.call(() => client.openMatter(coworkId, { title: text(input.title, "title").slice(0, 200), body, kind: "confirm", waitingOn: [personParty(me)], via: this.via(mark) }));
+      const out = await this.call(() => client.openMatter(coworkId, { title: text(input.title, "title").slice(0, 200), body, kind: "confirm", ...(gate ? { gate } : {}), waitingOn: [personParty(me)], via: this.via(mark) }));
       const m = out.matter;
-      return `开了事项 ${m.no}「${m.title}」（等人确认，在等 ${me}；threadId ${m.id}）。${me} 在要你看里会看到它；回复后你会被叫醒。现在结束这一轮，不要在等的方向上接着做。`;
+      return `开了事项 ${m.no}「${m.title}」（等人确认${gate ? `，${GATE_LABEL[gate]}` : ""}，在等 ${me}；threadId ${m.id}）。${gate && gate !== "rules" ? "这道闸门的结论关的时候留在事项里，不进已定的事。" : ""}${me} 在要你看里会看到它；回复后你会被叫醒。现在结束这一轮，不要在等的方向上接着做。`;
     }
-    const out = await this.call(() => client.askCowork(coworkId, { to, title: text(input.title, "title").slice(0, 200), body: text(input.body, "body"), ...(questions.length ? { questions } : {}), via: this.via(mark) }));
+    const out = await this.call(() => client.askCowork(coworkId, { to, title: text(input.title, "title").slice(0, 200), body: text(input.body, "body"), ...(questions.length ? { questions } : {}), ...(gate ? { gate } : {}), via: this.via(mark) }));
     if (out.draft) this.draftMade(join);
     return postResultText(out, me, "ask");
   }

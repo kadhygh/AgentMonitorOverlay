@@ -3,8 +3,11 @@ import {
   advanceReceipt,
   agentParty,
   canRewrite,
+  gateDecides,
   leadTakenText,
+  matterDecided,
   matterSettled,
+  messageForWorker,
   messageRecipients,
   parseParty,
   pendingDiff,
@@ -15,6 +18,7 @@ import {
   roleAllows,
   seenByAgents,
   statusFromSession,
+  type GateKind,
   type Matter,
   type PendingMessage,
   type Receipt,
@@ -137,7 +141,35 @@ describe("messageRecipients", () => {
     expect(messageRecipients({ author: agentParty(L_WORKER), people, leads, matter: m }).sort()).toEqual([agentParty(L_LEAD)]);
     // waiting on the other side brings in its 主控 (not the person while it is not 等人确认)
     const waiting = matter({ status: "waiting", waitingOn: [WANG], bindings: { sessions: [L_WORKER], tasks: [], commits: [] } });
-    expect(messageRecipients({ author: agentParty(L_LEAD), people, leads, matter: waiting }).sort()).toEqual([agentParty(W_LEAD), agentParty(L_WORKER)].sort());
+    const workerSides = { [L_WORKER]: "程序老李" };
+    expect(messageRecipients({ author: agentParty(L_LEAD), people, leads, matter: waiting, workerSides }).sort()).toEqual([agentParty(W_LEAD), agentParty(L_WORKER)].sort());
+  });
+  it("an 执行 gets what is for it: an @, a reply to it, its own 主控's word to nobody else — not the 主控's back and forth (2026-11-25)", () => {
+    const m = matter({ status: "doing", bindings: { sessions: [L_WORKER], tasks: [], commits: [] } });
+    const workerSides = { [L_WORKER]: "程序老李" };
+    const to = (input: Partial<Parameters<typeof messageRecipients>[0]>) => messageRecipients({ author: agentParty(W_LEAD), people, leads, matter: m, workerSides, ...input }).includes(agentParty(L_WORKER));
+    // The other side's 主控 @-ing ours, or ours answering it: not for the 执行.
+    expect(to({ mentions: [agentParty(L_LEAD)] })).toBe(false);
+    expect(to({ author: agentParty(L_LEAD), mentions: [agentParty(W_LEAD)] })).toBe(false);
+    expect(to({ author: agentParty(L_LEAD), replyToAuthor: agentParty(W_LEAD) })).toBe(false);
+    expect(to({})).toBe(false);
+    // @ it, a reply to it, its own 主控 saying something to nobody in particular: for it.
+    expect(to({ mentions: [agentParty(L_WORKER)] })).toBe(true);
+    expect(to({ replyToAuthor: agentParty(L_WORKER) })).toBe(true);
+    expect(to({ author: agentParty(L_LEAD) })).toBe(true);
+    expect(messageForWorker({ author: agentParty(L_LEAD), people, leads }, L_WORKER)).toBe(false);
+  });
+  it("已定的事: a 「等人确认」 on the 口径 gate (or with none, from before gates), or closed saying so (2026-11-25)", () => {
+    const confirm = (gate: GateKind | null, decided?: boolean) => ({ kind: "confirm" as const, gate, ...(decided !== undefined ? { decided } : {}) });
+    expect(gateDecides(confirm("rules"))).toBe(true);
+    expect(gateDecides(confirm(null))).toBe(true);
+    for (const g of ["red", "master", "others", "release"] as const) expect(gateDecides(confirm(g))).toBe(false);
+    expect(gateDecides({ kind: "work", gate: null })).toBe(false);
+    // What the service stored when it closed wins.
+    expect(matterDecided(confirm("master", true))).toBe(true);
+    expect(matterDecided(confirm("rules", false))).toBe(false);
+    expect(matterDecided(confirm("master"))).toBe(false);
+    expect(matterDecided({ kind: "work", gate: null, decided: true })).toBe(true);
   });
   it("「等人确认」 includes the person it waits on", () => {
     const gate = matter({ status: "confirm", waitingOn: [WANG], gate: "rules", side: "策划小王", lead: W_LEAD, owner: agentParty(W_LEAD) });

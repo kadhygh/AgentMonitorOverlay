@@ -171,6 +171,12 @@ export interface Matter {
   side: string;
   /** That side's 主控 (its mark), null while the side has none in. */
   lead: string | null;
+  /**
+   * 提出方 (2026-11-25, 「事项归做的那一方」): the side that asked another side to do it — a 「交给对方」 事项 opened on the
+   * other side (its 负责方 checks, verifies and closes it; the 提出方 says things, @-s and answers in it, and is told when it
+   * closes). Missing: opened on its own side.
+   */
+  from?: string;
   status: MatterStatus;
   /** 在等谁: people or agents (empty when nobody is waited for). */
   waitingOn: Party[];
@@ -206,10 +212,14 @@ export interface Matter {
 }
 
 /**
- * 已定的事只放口径 (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」): a 「等人确认」 事项's conclusion, or one closed with
- * `decided: true`, goes into 已定的事; a piece of work's stays in the 事项 (the closed 事项 list shows it).
+ * 已定的事只放口径 (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」): a 「等人确认」 事项 on the 口径 gate (`gate:
+ * "rules"`, cowork_ask's gate), or one closed with `decided: true`, goes into 已定的事; the other gates' (判红, 合 master, 别人
+ * 的东西, 对外发布) and a piece of work's stay in the 事项 (the closed 事项 list shows them). A 「等人确认」 with no gate (from
+ * before cowork_ask had one) counts as a 口径, as it did.
  */
-export const matterDecided = (m: Pick<Matter, "kind" | "decided">): boolean => m.kind === "confirm" || m.decided === true;
+export const gateDecides = (m: Pick<Matter, "kind" | "gate">): boolean => m.kind === "confirm" && (m.gate === "rules" || m.gate === null || m.gate === undefined);
+/** Whether a 事项's conclusion goes into 已定的事: closed saying so (`decided`, what the service stored), or by its gate. */
+export const matterDecided = (m: Pick<Matter, "kind" | "gate" | "decided">): boolean => (m.decided !== undefined ? m.decided : gateDecides(m));
 /**
  * Whether a 「decision」 event of a 协作 still counts as one of its 已定的事 (client and Host count them the same way, so
  * 「已定的事第 N 条」 means the same to both): not when its 事项 was closed later saying it was not a 口径 (`decided: false`).
@@ -242,7 +252,8 @@ export interface NewMatter {
   kind?: MatterKind;
   /** The first message (Markdown): what it is, what is wanted. */
   body: string;
-  /** Default: the opener's side (an agent's owner). */
+  /** Default: the opener's side (an agent's owner). Another side's: a 「交给对方」 事项 (2026-11-25) — it waits on that side's
+   * 主控 unless `waitingOn` says otherwise, and `from` is the opener's side. */
   side?: string;
   /** Default "todo"; a 闸门 is "confirm". */
   status?: MatterStatus;
@@ -640,13 +651,31 @@ export interface RecipientInput {
   posters?: readonly Party[];
   /** Whom the message @-s (people and agents). */
   mentions?: readonly Party[];
+  /** The author of the message it replies to, if any. */
+  replyToAuthor?: Party | null;
+  /** An 执行's side (its mark → its owner's account), for its own 主控's messages to it. */
+  workerSides?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Whether a message in its 事项 is for one of the 执行 bound to it (2026-11-25, 「执行的待我处理」): it @-s the 执行, replies
+ * to it, or its own 主控 wrote it to nobody in particular (no @, no reply — what it hands the 执行). The two 主控's back and
+ * forth in the 事项 is not: the 执行 can read it there, but is not its recipient — not in its 待我处理, not woken for it.
+ */
+export function messageForWorker(input: RecipientInput, mark: string): boolean {
+  const me = agentParty(mark);
+  if ((input.mentions ?? []).includes(me) || input.replyToAuthor === me) return true;
+  const side = input.workerSides?.[mark];
+  const lead = side === undefined ? undefined : input.leads[side];
+  return !!lead && input.author === agentParty(lead) && !(input.mentions ?? []).length && !input.replyToAuthor;
 }
 
 /**
  * Who a message goes to (the user 11-24, after the prototype), the author never included:
  * - 群聊: the people in the 协作 and every 主控.
  * - A 事项: the 主控 concerned — its 负责方's, its owner when a 主控, the 主控 of each side it waits on (a person waited on
- *   brings in their side's 主控) and of each side that wrote in it — and its 执行会话. People are not recipients of a
+ *   brings in their side's 主控) and of each side that wrote in it — and its 执行会话 when it is for them (messageForWorker:
+ *   @ it, a reply to it, or its own 主控's word to nobody else; 2026-11-25). People are not recipients of a
  *   事项's messages, except while it is 「等人确认」: then the people it waits on are.
  * - Anyone @-ed (person or agent in the 协作) is a recipient as well.
  */
@@ -687,7 +716,7 @@ export function messageRecipients(input: RecipientInput): Party[] {
       if (who?.kind === "agent" && Object.values(input.leads).includes(who.mark)) out.add(p);
       else addLeadOf(sideOf(p));
     }
-    for (const s of m.bindings.sessions) out.add(agentParty(s));
+    for (const s of m.bindings.sessions) if (messageForWorker(input, s)) out.add(agentParty(s));
   }
   for (const p of input.mentions ?? []) out.add(p);
   out.delete(input.author);
@@ -940,6 +969,8 @@ export type MatterLockKind = "place" | "edit";
 export const MATTER_EDIT_FIELDS = ["status", "waitingOn", "blocker", "conclusion"] as const;
 /** An AI changing another side's 事项 (2026-11-25, 「主控不能改对方的事项」): refused with this. */
 export const otherSideText = (no: number, side: string): string => `事项 ${no} 这件归 ${side} 那方，在事项里 @ 它（${side} 的主控）：状态、在等谁、卡在哪、结论和关闭由那方来改`;
+/** An 执行 on another side's 事项 (2026-11-25, 「事项归做的那一方」): refused with this. */
+export const otherSideWorkerText = (no: number, side: string): string => `事项 ${no} 归 ${side} 那方：执行由那方的主控开。你这边有话在事项里说、@ 它的主控；要你这一方做的，开一件自己这一方的事项再派执行`;
 /** The lock's key in the board's locks (BoardLock.card): 「place:<事项 id>」, 「edit:<事项 id>」. */
 export const matterLockKey = (kind: MatterLockKind, matterId: string): string => `${kind}:${matterId}`;
 export function parseMatterLockKey(key: string): { kind: MatterLockKind; matter: string } | null {

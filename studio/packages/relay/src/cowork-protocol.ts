@@ -24,7 +24,7 @@
 // Every call needs the caller to be a member of the cowork (403 otherwise); an agent's call is its owner's key plus its
 // mark in `via.conv`, and the mark must be one of that owner's agents in this cowork.
 
-import type { AgentRole, MarkRequest, Matter, MatterEvent, MatterPatch, MessageBasis, MessageRewrite, NewMatter, PendingList, Receipt, SupersedeResult } from "@amo-studio/protocol/matters";
+import type { AgentRole, GateKind, MarkRequest, Matter, MatterEvent, MatterPatch, MessageBasis, MessageRewrite, NewMatter, PendingList, Receipt, SupersedeResult } from "@amo-studio/protocol/matters";
 import type { Message, NewMessage, Question, Thread, Via } from "./protocol.js";
 
 // 事项、回执、角色、待我处理 (2026-11-24): the shared fields and rules, the same as the Host's local 事项 table.
@@ -263,6 +263,8 @@ export interface NewCoworkSession {
   questions?: Array<{ id?: string; text: string; options?: string[] }>;
   /** Files it takes along (ids of the asker's files). */
   files?: string[];
+  /** The gate an AI asks for (2026-11-25): only the 口径 gate's (rules) conclusion goes into 已定的事. */
+  gate?: GateKind;
   via?: Via;
 }
 
