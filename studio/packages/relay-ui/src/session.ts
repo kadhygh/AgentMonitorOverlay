@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { shell } from "./env.js";
-import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type BoardLock, type BoardOpRecord, type BoardPresence, type CoworkClientFrame, type CoworkDelivery, type CoworkDraft, type CoworkEvent, type CoworkListItem, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
+import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type BoardLock, type BoardOpRecord, type BoardPresence, type CoworkClientFrame, type CoworkDelivery, type CoworkDraft, type CoworkEvent, type CoworkListItem, type Matter, type PendingList, type Receipt, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
 
 // One login: the client with its key, the thread list, the people, the team's tasks and settings, kept current by /ws (reconnecting, and
 // reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
@@ -44,8 +44,12 @@ interface State {
   coworks: CoworkListItem[];
   /** false: the service is from before 协作 (404). */
   coworksOk: boolean;
-  /** Per cowork: its events (已定的事 among them), the deliveries (每条消息的去向) and my agents' drafts. */
+  /** Per cowork: its events (已定的事 among them) and the deliveries (每条消息的去向). */
   coworkData: Record<string, CoworkData>;
+  /** 待我处理 per cowork (2026-11-25, GET /api/cowork/pending, kept by the /ws `pending` push): the 「要你看」 lists. */
+  pending: Record<string, PendingList>;
+  /** false: the service is from before 事项 (no /api/cowork/pending): 待处理 falls back to @-s and 子会话. */
+  pendingOk: boolean;
   /** Messages in a 协作 (its 群聊 or a 子会话) that @ me and I have not read: 待处理's 「@我」. */
   mentions: Message[];
   /** The lists (threads, 协作) have come from the service at least once: what is not in them now, I cannot see. */
@@ -55,20 +59,31 @@ interface State {
 export interface CoworkData {
   events: CoworkEvent[];
   deliveries: CoworkDelivery[];
-  drafts: CoworkDraft[];
+  /** My AIs' drafts kept from before 2026-11-24 (no new ones are made): mine to send or drop once. */
+  drafts?: CoworkDraft[];
 }
+/** A change to a message already loaded: withdrawn, rewritten, superseded (the whole message) or a receipt that moved. */
+export type MessagePatch = { threadId: string; seq: number; message?: Message; receipt?: Receipt };
 export type BoardPush = { type: "board"; ops: BoardOpRecord[] } | { type: "board-lock"; card: string; lock: BoardLock | null } | { type: "board-presence"; presence: BoardPresence[] };
 
 /** A 协作's 群聊 (kind cowork) or one of its 子会话 (a request with coworkId): they belong on the 协作 page. */
 export const coworkOf = (t: { kind: string; id: string; request?: { coworkId?: string | null } }): string | null => (t.kind === "cowork" ? t.id : (t.request?.coworkId ?? null));
-export const EMPTY_COWORK_DATA: CoworkData = { events: [], deliveries: [], drafts: [] };
+export const EMPTY_COWORK_DATA: CoworkData = { events: [], deliveries: [] };
+/** A message as a patch leaves it. */
+export function patchMessage(m: Message, p: MessagePatch): Message {
+  if (p.message) return p.message;
+  if (!p.receipt) return m;
+  const list = m.receipts ?? [];
+  return { ...m, receipts: list.some((r) => r.party === p.receipt!.party) ? list.map((r) => (r.party === p.receipt!.party ? p.receipt! : r)) : [...list, p.receipt] };
+}
 const upsert = <T extends { id: string | number }>(list: T[], x: T) => (list.some((y) => y.id === x.id) ? list.map((y) => (y.id === x.id ? x : y)) : [...list, x]);
 
 export class Session {
   readonly client: RelayClient;
-  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false, coworks: [], coworksOk: true, coworkData: {}, mentions: [], loaded: false };
+  private state: State = { threads: [], members: [], tasks: [], settings: DEFAULT_SETTINGS, connection: "connecting", offlineSince: null, retryAt: null, client: null, device: null, transfers: [], transfersOk: true, transfersLoaded: false, coworks: [], coworksOk: true, coworkData: {}, pending: {}, pendingOk: true, mentions: [], loaded: false };
   private listeners = new Set<() => void>();
   private messageListeners = new Set<(m: Message) => void>();
+  private patchListeners = new Set<(p: MessagePatch) => void>();
   private noteListeners = new Set<(fileId: string) => void>();
   private transferListeners = new Set<(t: Transfer) => void>();
   private boardListeners = new Set<(coworkId: string, p: BoardPush) => void>();
@@ -138,15 +153,41 @@ export class Session {
     this.set({ coworks: [item, ...this.state.coworks.filter((x) => x.id !== c.id)].sort((a, b) => b.updatedAt - a.updatedAt) });
   }
 
-  /** A cowork's events, deliveries and my drafts, loaded (again) from the service. */
+  /** A cowork's events and deliveries, loaded (again) from the service. */
   async loadCowork(id: string): Promise<void> {
     const d = await this.client.cowork(id);
     this.putCowork(d.cowork);
-    this.set({ coworkData: { ...this.state.coworkData, [id]: { events: d.events, deliveries: d.deliveries, drafts: d.drafts } } });
+    this.set({ coworkData: { ...this.state.coworkData, [id]: { events: d.events, deliveries: d.deliveries, drafts: d.drafts ?? [] } } });
   }
 
-  putDraft(d: CoworkDraft): void {
-    this.patchData(d.coworkId, (x) => ({ ...x, drafts: upsert(x.drafts, d) }));
+  /** A 事项 as the service has it now (pushed, or the answer to a change of mine): into its cowork's list. */
+  putMatter(coworkId: string, m: Matter): void {
+    const c = this.state.coworks.find((x) => x.id === coworkId);
+    if (!c) return;
+    const old = c.matters?.find((x) => x.id === m.id);
+    if (old && old.version > m.version) return;
+    this.putCowork({ ...c, matters: [...(c.matters ?? []).filter((x) => x.id !== m.id), m].sort((a, b) => a.no - b.no) });
+  }
+
+  /** 待我处理: mine in one cowork (or all of them), from the service. */
+  async loadPending(coworkId?: string): Promise<void> {
+    const me = `person:${this.me.name}`;
+    try {
+      const r = await this.client.coworkPending(coworkId ? { coworkId } : {});
+      const mine = Object.fromEntries(r.lists.filter((l) => l.party === me).map((l) => [l.coworkId, { party: l.party, items: l.items, version: l.version } as PendingList]));
+      this.set({ pending: coworkId ? { ...this.state.pending, [coworkId]: mine[coworkId] ?? { party: me as PendingList["party"], items: [], version: 0 } } : mine, pendingOk: true });
+    } catch (err) {
+      if (err instanceof RelayClientError && err.status === 404) this.set({ pendingOk: false });
+    }
+  }
+
+  /** A message changed (withdrawn, rewritten, superseded, a receipt): the open lists put it in place. */
+  onMessagePatch(listener: (p: MessagePatch) => void): () => void {
+    this.patchListeners.add(listener);
+    return () => this.patchListeners.delete(listener);
+  }
+  patchMessage(p: MessagePatch): void {
+    for (const l of this.patchListeners) l(p);
   }
 
   putDelivery(d: CoworkDelivery): void {
@@ -170,14 +211,15 @@ export class Session {
       return;
     }
     this.set({ coworks: list, coworksOk: true });
-    // Events, deliveries and drafts of the open ones (a small team: a few), and what @-ed me while I was away.
+    void this.loadPending();
+    // Events and deliveries of the open ones (a small team: a few), and what @-ed me while I was away.
     const data: Record<string, CoworkData> = {};
     await Promise.all(
       list
         .filter((c) => !c.endedAt)
         .map((c) =>
           this.client.cowork(c.id).then(
-            (d) => void (data[c.id] = { events: d.events, deliveries: d.deliveries, drafts: d.drafts }),
+            (d) => void (data[c.id] = { events: d.events, deliveries: d.deliveries, drafts: d.drafts ?? [] }),
             () => undefined,
           ),
         ),
@@ -312,7 +354,13 @@ export class Session {
       if (c) this.putCowork({ ...c, agents: c.agents.some((a) => a.mark === e.agent.mark) ? c.agents.map((a) => (a.mark === e.agent.mark ? e.agent : a)) : [...c.agents, e.agent] });
     } else if (e.type === "cowork-event") this.putEvent(e.event);
     else if (e.type === "cowork-delivery") this.putDelivery(e.delivery);
-    else if (e.type === "cowork-draft") this.putDraft(e.draft);
+    // (drafts went with 「AI 发起 @ 和提问」 on 2026-11-24: a push from an older service is dropped)
+    else if (e.type === "matter") this.putMatter(e.coworkId, e.matter);
+    else if (e.type === "receipts") for (const c of e.changed) this.patchMessage({ threadId: c.threadId, seq: c.seq, receipt: c.receipt });
+    else if (e.type === "message-changed") this.patchMessage({ threadId: e.message.threadId, seq: e.message.seq, message: e.message });
+    else if (e.type === "pending") {
+      if (e.party === `person:${this.me.name}` && this.state.pending[e.coworkId]?.version !== e.version) void this.loadPending(e.coworkId);
+    }
     else if (e.type === "board") for (const l of this.boardListeners) l(e.coworkId, { type: "board", ops: e.ops });
     else if (e.type === "board-lock") for (const l of this.boardListeners) l(e.coworkId, { type: "board-lock", card: e.card, lock: e.lock });
     else if (e.type === "board-presence") for (const l of this.boardListeners) l(e.coworkId, { type: "board-presence", presence: e.presence });
