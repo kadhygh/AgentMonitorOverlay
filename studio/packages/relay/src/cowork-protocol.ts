@@ -24,10 +24,16 @@
 // Every call needs the caller to be a member of the cowork (403 otherwise); an agent's call is its owner's key plus its
 // mark in `via.conv`, and the mark must be one of that owner's agents in this cowork.
 
+import type { AgentRole, MarkRequest, Matter, MatterPatch, MessageRewrite, NewMatter, PendingList, Receipt, SupersedeResult } from "@amo-studio/protocol/matters";
 import type { Message, NewMessage, Question, Thread, Via } from "./protocol.js";
+
+// 事项、回执、角色、待我处理 (2026-11-24): the shared fields and rules, the same as the Host's local 事项 table.
+export * from "@amo-studio/protocol/matters";
 
 /** /api/health's `cowork`: this set of calls' version (missing on a service from before it). */
 export const COWORK_VERSION = 1;
+/** A service whose `cowork` is at least this has 事项, receipts, roles and 待我处理 (the section 「事项」 below). */
+export const COWORK_MATTERS_VERSION = 2;
 
 /** The owner's Studio reports its agents' state at least this often (and whenever it changes). */
 export const AGENT_REPORT_MS = 30_000;
@@ -85,6 +91,10 @@ export interface CoworkAgent {
   /** When its owner's Studio last reported it (ms); 0 = never. The client's 「上次在线 10:42」. */
   lastSeen: number;
   joinedAt: number;
+  /** 主控 or 执行 (COWORK_MATTERS_VERSION; missing on an older service: treat as lead). Its side is `owner`. */
+  role?: AgentRole;
+  /** An 执行's 事项 (id); null for a 主控. */
+  matter?: string | null;
 }
 
 /** A 子会话 as the cowork lists it (its messages are the thread's). */
@@ -125,6 +135,8 @@ export interface Cowork {
   /** The agents in it now (ones that left are not listed). */
   agents: CoworkAgent[];
   sessions: CoworkSession[];
+  /** Its 事项 (COWORK_MATTERS_VERSION), by number: each 子会话's (same id) and those opened with POST …/matters. */
+  matters?: Matter[];
   /** The 群聊's last message seq. */
   lastSeq: number;
   /** The board's last operation seq. */
@@ -217,10 +229,12 @@ export interface CoworkDetail {
 export interface CoworkPost extends NewMessage {
   agentMentions?: string[];
   replyTo?: number;
+  /** My earlier message (seq) this one replaces: it is marked 被 #x 取代 (COWORK_MATTERS_VERSION). */
+  supersedes?: number;
 }
 
 /** A message went out (with the deliveries it made), or an agent's message was kept as a draft for its owner. */
-export type CoworkPostResult = { thread: Thread; message: Message; deliveries: CoworkDelivery[]; events: CoworkEvent[]; draft?: undefined } | { draft: CoworkDraft; thread?: undefined; message?: undefined; deliveries?: undefined; events?: undefined };
+export type CoworkPostResult = { thread: Thread; message: Message; deliveries: CoworkDelivery[]; events: CoworkEvent[]; superseded?: SupersedeResult; draft?: undefined } | { draft: CoworkDraft; thread?: undefined; message?: undefined; deliveries?: undefined; events?: undefined };
 
 /** A new 子会话: a request to a person in the cowork (every member is in it). From an AI it always needs a reply. */
 export interface NewCoworkSession {
@@ -315,8 +329,8 @@ export interface DraftDecision {
 // ---- the board (白板)
 
 /** note 便签; session: a 子会话's card; ref: a file, commit, document version or link; group: a frame cards sit in; link: a
- * line from one card to another. */
-export type BoardItemKind = "note" | "session" | "ref" | "group" | "link";
+ * line from one card to another; matter: a 事项's card (COWORK_MATTERS_VERSION), drawn from the 事项 itself. */
+export type BoardItemKind = "note" | "session" | "ref" | "group" | "link" | "matter";
 
 export interface BoardRef {
   kind: "file" | "commit" | "doc" | "url";
@@ -360,6 +374,13 @@ export interface BoardItem {
   group: string | null;
   /** A session card's 子会话 (thread id). */
   session: string | null;
+  /** A matter card's 事项 (id): its title, status, waiting on… are read from the 事项, never stored on the card. */
+  matter?: string | null;
+  /** A group card standing for a side (its account), or SETTLED_SIDE for 「已定 / 已验」: 事项 cards are placed by it. */
+  side?: string | null;
+  /** Who last put the card where it is: "auto" (the service placed it by its 事项) or "person" (dragged: no more moving
+   * it by itself). */
+  placedBy?: "auto" | "person";
   ref: BoardRef | null;
   from: string | null;
   to: string | null;
@@ -389,6 +410,8 @@ export interface BoardNewItem extends BoardFields {
   id?: string;
   kind: BoardItemKind;
   session?: string;
+  /** A matter card's 事项. */
+  matter?: string;
 }
 
 /**
@@ -472,6 +495,94 @@ export interface BoardPresence {
   at: number;
 }
 
+// ---- 事项 (2026-11-24, COWORK_MATTERS_VERSION; plans/collab-framework.md「11-24」; the shared part is protocol/matters.ts)
+//
+// What changes on a service with 事项 (step 2; until then these calls answer 404 and the fields are missing):
+// - Every 子会话 is a 事项 (`Cowork.matters`, its id = the thread's id); old ones are migrated (statusFromSession). A 主控 or a
+//   person opens one with POST …/matters (NewMatter): a request thread, numbered 「事项 N」. cowork_ask stays for the
+//   agents (换底不换样): a 子会话 asked of a person = a 事项 「等人确认」 waiting on them.
+// - Messages carry MatterMessageFields (protocol.ts Message): `matter`, `receipts` (one per recipient, messageRecipients),
+//   `withdrawnAt`, `editedAt`, `supersededBy`. 看过 is recorded by itself when a client opens the thread (its read cursor
+//   passing the message) and when an agent reads it (coworkFeed with `agent`, cowork_read); 处理了 by POST …/marks.
+//   Closing a 事项 marks all of its messages 处理了 (`byClose`).
+// - Roles: an agent comes in as 主控 (`lead`, one per side: a second is refused with 409 and leadTakenText) or 执行
+//   (`worker`, with its 事项). An 执行 reads the goal, 已定的事, its 事项 and that 事项's card only, and posts only in its 事项;
+//   the service refuses (403) the rest (roleAllows).
+// - 「AI 发起 @ 和提问」 and drafts go: an old cowork's `options.aiInitiate` and its pending drafts are ignored. In their
+//   place, 闸门 (GATE_RULES_TEXT): a 主控 opens a 「等人确认」 事项.
+// - 待我处理: GET /api/cowork/pending (PendingList per participant, with a version that goes up when it changes; a long
+//   poll with `since`), and a /ws push `pending` to the person's own devices.
+// - The board: one group card per side (`side`), one 「已定 / 已验」 group (`side: SETTLED_SIDE`), and a card per 事项 (kind
+//   "matter", reading the 事项 itself: no text or state of its own). A new 事项's card goes into its side's group; once it is
+//   settled (matterSettled) it moves to 「已定 / 已验」 — unless a person moved it (`placedBy: "person"`).
+
+/** The board group of settled 事项 (BoardItem.side). */
+export const SETTLED_SIDE = "*settled";
+
+/** Bring an agent in with its role (POST /api/cowork/:id/agents): an 执行 names its 事项. Default role: lead. */
+export interface CoworkAgentJoin {
+  mark: string;
+  label: string;
+  role?: AgentRole;
+  /** An 执行's 事项 (id), required for role "worker". */
+  matter?: string;
+}
+
+/** Change an agent's role (POST /api/cowork/:id/agents/role): its owner, in person or through its 主控. */
+export interface CoworkAgentRolePatch {
+  mark: string;
+  role: AgentRole;
+  matter?: string | null;
+  via?: Via;
+}
+
+/** POST /api/cowork/:id/matters. */
+export interface NewCoworkMatter extends NewMatter {
+  via?: Via;
+}
+/** POST /api/cowork/:id/matters → the 事项, its thread and its first message. */
+export interface CoworkMatterResult {
+  matter: Matter;
+  thread: Thread;
+  message: Message;
+}
+
+/** PATCH /api/cowork/:id/matters/:matterId (MatterPatch): 409 `stale` with the 事项 as it is now when `base` is older. */
+export interface CoworkMatterPatch extends MatterPatch {
+  via?: Via;
+}
+
+/** POST /api/cowork/:id/marks (看过 / 处理了 for me, or for my agent with `via`): the receipts that moved. */
+export interface CoworkMarkRequest extends MarkRequest {
+  via?: Via;
+}
+export interface CoworkMarkResult {
+  changed: Array<{ threadId: string; seq: number; receipt: Receipt }>;
+}
+
+/**
+ * PATCH /api/cowork/:id/messages/:seq ({ body }: 原地改) and POST …/messages/:seq/withdraw (撤回): only its author (or the
+ * author's agent through `via`), only while no recipient has seen it (canRewrite; 409 `seen` otherwise — post a new
+ * message with `supersedes` then). A post with `supersedes: <seq>` marks that one 被 #x 取代 and answers `superseded`:
+ * the agents that had seen it, which the Host tells again.
+ */
+export interface CoworkMessageRewrite extends MessageRewrite {
+  via?: Via;
+}
+export type CoworkSupersedeResult = SupersedeResult;
+
+/** GET /api/cowork/pending?coworkId=&party=&since=&wait=: my list (person) or my agent's (party `agent:<mark>`, mine). */
+export interface CoworkPendingQuery {
+  coworkId?: string;
+  party?: string;
+  /** Answer at once when the version differs from this; otherwise wait up to `wait` ms for a change. */
+  since?: number;
+  wait?: number;
+}
+export interface CoworkPending {
+  lists: Array<PendingList & { coworkId: string }>;
+}
+
 // ---- /ws (added to protocol.ts RelayEvent)
 
 export type CoworkRelayEvent =
@@ -489,7 +600,15 @@ export type CoworkRelayEvent =
   | { type: "board"; coworkId: string; ops: BoardOpRecord[] }
   /** A text lock was taken, renewed or let go (`lock` null). */
   | { type: "board-lock"; coworkId: string; card: string; lock: BoardLock | null }
-  | { type: "board-presence"; coworkId: string; presence: BoardPresence[] };
+  | { type: "board-presence"; coworkId: string; presence: BoardPresence[] }
+  /** A 事项 was opened or changed (COWORK_MATTERS_VERSION): to the cowork's people. */
+  | { type: "matter"; coworkId: string; matter: Matter }
+  /** Receipts moved (送到 / 看过 / 处理了): to the cowork's people (each client shows only those of its own messages). */
+  | { type: "receipts"; coworkId: string; changed: CoworkMarkResult["changed"] }
+  /** A message was withdrawn, rewritten or superseded: to everyone who sees its thread. */
+  | { type: "message-changed"; coworkId: string; message: Message }
+  /** A participant's 待我处理 changed: to the person's devices (theirs and their agents'). */
+  | { type: "pending"; coworkId: string; party: string; version: number };
 
 /** What a client may send over /ws (besides nothing): its board presence, as often as it likes (the service passes on at
  * most a few a second). Same as POST …/board/presence. */

@@ -24,6 +24,7 @@
   "dependencies": {
     "@amo-studio/account": "0.0.0",
     "@amo-studio/locate": "0.0.0",
+    "@amo-studio/protocol": "0.0.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "ws": "8.21.3",
     "zod": "4.6.6"

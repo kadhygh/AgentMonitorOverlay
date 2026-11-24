@@ -127,8 +127,23 @@
         { "label": "客户端方法", "path": "studio/packages/relay/src/api.ts", "anchor": "async coworks()" },
         { "label": "单测", "path": "studio/packages/relay/src/cowork.test.ts" }
       ],
-      "related": ["tool.relayService", "tool.relayClient", "studio.teamRelay"],
+      "related": ["tool.relayService", "tool.relayClient", "studio.teamRelay", "tool.matters"],
       "next": ["studio/plans/cowork.md", "studio/packages/relay/README.md"]
+    },
+    {
+      "id": "tool.matters",
+      "label": "事项、消息回执、主控 / 执行、待我处理（交流架构的共同底子）",
+      "aliases": ["事项", "matter", "Matter", "回执", "receipts", "看过", "处理了", "待我处理", "pending", "主控", "执行", "lead", "worker", "闸门", "gate", "撤回", "被取代", "supersede", "巡检"],
+      "category": "tool",
+      "purpose": "2026-11-24 用户定（plans/collab-framework.md「11-24」）：所有交流落在事项上，每条消息对每个收件人记 排队 → 送到 → 看过 → 处理了；看过自动记，处理了要标，事项关掉时都算处理了。中转服务器上的协作和 Host 本机的事项表用同一套字段和规则：protocol/src/matters.ts（不依赖别的模块，中转服务用子路径 @amo-studio/protocol/matters 打进单文件）放事项字段、状态、闸门、回执、谁收到（messageRecipients）、执行能做什么（roleAllows）、待我处理（pendingFor、pendingKey、pendingDiff）。中转这边的接口和推送格式写在 cowork-protocol.ts 的「事项」一节（COWORK_MATTERS_VERSION）。",
+      "anchors": [
+        { "label": "共用的字段和规则", "path": "studio/packages/protocol/src/matters.ts", "anchor": "export function messageRecipients" },
+        { "label": "待我处理怎么算", "path": "studio/packages/protocol/src/matters.ts", "anchor": "export function pendingFor" },
+        { "label": "中转的接口和推送（事项一节）", "path": "studio/packages/relay/src/cowork-protocol.ts", "anchor": "export const COWORK_MATTERS_VERSION" },
+        { "label": "单测", "path": "studio/packages/protocol/src/matters.test.ts" }
+      ],
+      "related": ["tool.relayCowork", "studio.teamRelay"],
+      "next": ["studio/plans/collab-framework.md"]
     },
     {
       "id": "tool.relayRefs",

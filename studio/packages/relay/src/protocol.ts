@@ -2,6 +2,7 @@
 // later the UI share. A small team on one LAN; people talk to each other directly, and an AI session can send a
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
+import type { Receipt } from "@amo-studio/protocol/matters";
 import type { CoworkRelayEvent } from "./cowork-protocol.js";
 import type { Transfer } from "./transfer-protocol.js";
 
@@ -136,6 +137,13 @@ export interface Message {
   /** 协作: an agent's draft its owner sent (`edited`: after changing it). */
   approvedBy?: string;
   edited?: boolean;
+  /** 协作的事项 (2026-11-24, protocol/matters.ts MatterMessageFields): the 事项 it is in, one receipt per recipient,
+   * 撤回 / 原地改 / 被 #x 取代. Missing on a service from before them and outside 协作. */
+  matter?: string | null;
+  receipts?: Receipt[];
+  withdrawnAt?: number;
+  editedAt?: number;
+  supersededBy?: number;
   createdAt: number;
 }
 

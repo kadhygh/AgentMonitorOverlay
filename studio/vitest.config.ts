@@ -6,6 +6,8 @@ const src = (name: string) => fileURLToPath(new URL(`./packages/${name}/src/inde
 export default defineConfig({
   resolve: {
     alias: {
+      // Before the package itself: an alias matches as a prefix.
+      "@amo-studio/protocol/matters": fileURLToPath(new URL("./packages/protocol/src/matters.ts", import.meta.url)),
       "@amo-studio/protocol": src("protocol"),
       "@amo-studio/testkit": src("testkit"),
       "@amo-studio/account": src("account"),

@@ -37,7 +37,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const KINDS: ReadonlySet<BoardItemKind> = new Set(["note", "session", "ref", "group", "link"]);
 const REF_KINDS = new Set(["file", "commit", "doc", "url"]);
 const COLOR_RE = /^[A-Za-z0-9#-]{1,24}$/;
-const SIZE: Record<BoardItemKind, [number, number]> = { note: [220, 140], session: [260, 120], ref: [240, 90], group: [480, 320], link: [0, 0] };
+const SIZE: Record<BoardItemKind, [number, number]> = { note: [220, 140], session: [260, 120], ref: [240, 90], group: [480, 320], link: [0, 0], matter: [260, 130] };
 /** The fields an operation changes and an undo puts back. */
 const FIELDS = ["x", "y", "w", "h", "color", "text", "group", "stale", "ref", "from", "to", "deleted", "alt"] as const;
 type Field = (typeof FIELDS)[number];

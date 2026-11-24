@@ -6,6 +6,7 @@
     "declarationMap": false,
     "noEmit": true,
     "paths": {
+      "@amo-studio/protocol/matters": ["./packages/protocol/src/matters.ts"],
       "@amo-studio/protocol": ["./packages/protocol/src/index.ts"],
       "@amo-studio/testkit": ["./packages/testkit/src/index.ts"],
       "@amo-studio/account": ["./packages/account/src/index.ts"],
