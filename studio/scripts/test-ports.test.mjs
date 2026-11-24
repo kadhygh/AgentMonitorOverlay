@@ -39,6 +39,10 @@ export function fixedSparePorts(text) {
   text.split("\n").forEach((line, i) => {
     const c = code(line);
     for (const m of c?.matchAll(/(?<![\d.])479[5-9]\d(?!\d)/g) ?? []) out.push({ line: i + 1, port: m[0] });
+    // The same port written as an offset from the range's ends (2026-11-25: ports.test.ts's 「STUDIO_SPARE_PORTS[0] + 20」
+    // was 47970, both of its two ports were held by another worker's server, and 自动打包 of Studio 0.9.82 stopped on it).
+    // Not the range's width (「hi - lo + 1」).
+    for (const m of c?.matchAll(/(?<![-+]\s*)STUDIO_SPARE_PORTS\[[01]\]\s*[-+]\s*\d+/g) ?? []) out.push({ line: i + 1, port: m[0] });
   });
   return out;
 }
@@ -87,6 +91,11 @@ describe("测试里的端口", () => {
     expect(fixedSparePorts('const url = "http://127.0.0.1:47999/x";')).toEqual([{ line: 1, port: "47999" }]);
     expect(fixedSparePorts("listen(47950); // was 47960")).toEqual([{ line: 1, port: "47950" }]);
     expect(fixedSparePorts("// 47999\n * 47998\nconst a = 47900, b = 47949, c = 1479990, d = 0.47955;")).toEqual([]);
+    expect(fixedSparePorts("const range = [STUDIO_SPARE_PORTS[0] + 20, STUDIO_SPARE_PORTS[1]-1];")).toEqual([
+      { line: 1, port: "STUDIO_SPARE_PORTS[0] + 20" },
+      { line: 1, port: "STUDIO_SPARE_PORTS[1]-1" },
+    ]);
+    expect(fixedSparePorts("const count = STUDIO_SPARE_PORTS[1] - STUDIO_SPARE_PORTS[0] + 1;")).toEqual([]);
   });
 
   it("认得出 listen(0)，不把 startRelayServer({ port: 0 })、注释和别的端口算进去", () => {

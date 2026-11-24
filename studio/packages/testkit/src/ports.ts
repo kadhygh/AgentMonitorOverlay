@@ -29,14 +29,24 @@ export function standInPort(...taken: Array<number | string | URL>): number {
  */
 const handedOut = new Set<number>();
 
+/** The order to try `ports` in: not handed out yet first, then (all of them were, or are taken) any free one. */
+export function portsInTurn(ports: readonly number[], handed: ReadonlySet<number>): number[] {
+  return [...ports.filter((p) => !handed.has(p)), ...ports.filter((p) => handed.has(p))];
+}
+
+/** Notes `port` of `ports` as handed out; once every one of them was, a new round starts with only `port` in it. */
+export function noteHandedOut(handed: Set<number>, ports: readonly number[], port: number): void {
+  if (ports.every((p) => p === port || handed.has(p))) for (const p of ports) handed.delete(p);
+  handed.add(port);
+}
+
 /** Listens on a free port of the range (random start, then the next ones; one not handed out yet first) and returns it. */
 export async function listenInStudioRange(server: Server, host = "127.0.0.1", range: readonly [number, number] = STUDIO_SPARE_PORTS): Promise<number> {
   const [lo, hi] = range;
   const count = hi - lo + 1;
   const first = Math.floor(Math.random() * count);
   const ports = Array.from({ length: count }, (_, i) => lo + ((first + i) % count));
-  // Not handed out yet first, then (all of them were, or are taken) any free one.
-  for (const port of [...ports.filter((p) => !handedOut.has(p)), ...ports.filter((p) => handedOut.has(p))]) {
+  for (const port of portsInTurn(ports, handedOut)) {
     try {
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => {
@@ -51,8 +61,7 @@ export async function listenInStudioRange(server: Server, host = "127.0.0.1", ra
         server.once("listening", onListening);
         server.listen(port, host);
       });
-      if (ports.every((p) => p === port || handedOut.has(p))) for (const p of ports) handedOut.delete(p);
-      handedOut.add(port);
+      noteHandedOut(handedOut, ports, port);
       return port;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;

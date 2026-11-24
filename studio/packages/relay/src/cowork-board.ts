@@ -34,10 +34,10 @@ import {
 type Row = Record<string, unknown>;
 
 const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
-const KINDS: ReadonlySet<BoardItemKind> = new Set(["note", "session", "ref", "group", "link", "matter"]);
+const KINDS: ReadonlySet<BoardItemKind> = new Set(["note", "session", "ref", "group", "link"]);
 const REF_KINDS = new Set(["file", "commit", "doc", "url"]);
 const COLOR_RE = /^[A-Za-z0-9#-]{1,24}$/;
-const SIZE: Record<BoardItemKind, [number, number]> = { note: [220, 140], session: [260, 120], ref: [240, 90], group: [480, 320], link: [0, 0], matter: [260, 130] };
+const SIZE: Record<BoardItemKind, [number, number]> = { note: [220, 140], session: [260, 120], ref: [240, 90], group: [480, 320], link: [0, 0] };
 /** The fields an operation changes and an undo puts back. */
 const FIELDS = ["x", "y", "w", "h", "color", "text", "group", "stale", "ref", "from", "to", "deleted", "alt"] as const;
 type Field = (typeof FIELDS)[number];
@@ -156,21 +156,7 @@ function itemOf(r: Row): BoardItem {
     deleted: r.deleted_at != null,
     deletedBy: r.deleted_by == null ? null : String(r.deleted_by),
     deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
-    // 事项卡 and the groups standing for a side (2026-11-24, cowork-protocol.ts「事项」).
-    matter: r.matter == null ? null : String(r.matter),
-    side: r.side == null ? null : String(r.side),
-    ...(String(r.kind) === "matter" ? { placedBy: r.placed_by === "auto" ? ("auto" as const) : ("person" as const) } : {}),
   };
-}
-
-export interface BoardApplyOptions {
-  /** Whether a thread is a 子会话 of this cowork (a session card names one). */
-  checkSession: (threadId: string) => boolean;
-  /** Whether an id is a 事项 of this cowork (a 事项卡 names one). */
-  checkMatter?: (matterId: string) => boolean;
-  /** The service itself places 事项卡 and side groups (no AI card limit; `side` on a group; placedBy auto). */
-  system?: boolean;
-  noLimit?: boolean;
 }
 
 /** What a big change was (an event of the cowork's): a new card, a deleted one, one marked 已过时. */
@@ -207,9 +193,6 @@ export class CoworkBoard {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS cowork_board_ops_id ON cowork_board_ops(cowork_id, op_id) WHERE op_id IS NOT NULL;
     `);
-    // 事项卡 (2026-11-24): the 事项 a card draws, the side a group stands for, who put a 事项卡 where it is.
-    const cols = (db.prepare("PRAGMA table_info(cowork_board_items)").all() as Row[]).map((r) => String(r.name));
-    if (!cols.includes("matter")) db.exec("ALTER TABLE cowork_board_items ADD COLUMN matter TEXT; ALTER TABLE cowork_board_items ADD COLUMN side TEXT; ALTER TABLE cowork_board_items ADD COLUMN placed_by TEXT;");
   }
 
   seq(coworkId: string): number {
@@ -224,12 +207,11 @@ export class CoworkBoard {
   private write(coworkId: string, it: BoardItem): void {
     this.db
       .prepare(
-        `INSERT INTO cowork_board_items (cowork_id, id, kind, x, y, w, h, color, text, grp, session, ref, src, dst, stale, version, text_version, alt, created_by, created_at, updated_by, updated_agent, updated_at, deleted_by, deleted_at, matter, side, placed_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO cowork_board_items (cowork_id, id, kind, x, y, w, h, color, text, grp, session, ref, src, dst, stale, version, text_version, alt, created_by, created_at, updated_by, updated_agent, updated_at, deleted_by, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (cowork_id, id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h, color = excluded.color, text = excluded.text,
            grp = excluded.grp, ref = excluded.ref, src = excluded.src, dst = excluded.dst, stale = excluded.stale, version = excluded.version, text_version = excluded.text_version,
-           alt = excluded.alt, updated_by = excluded.updated_by, updated_agent = excluded.updated_agent, updated_at = excluded.updated_at, deleted_by = excluded.deleted_by, deleted_at = excluded.deleted_at,
-           placed_by = excluded.placed_by`,
+           alt = excluded.alt, updated_by = excluded.updated_by, updated_agent = excluded.updated_agent, updated_at = excluded.updated_at, deleted_by = excluded.deleted_by, deleted_at = excluded.deleted_at`,
       )
       .run(
         coworkId,
@@ -257,9 +239,6 @@ export class CoworkBoard {
         it.updatedAt,
         it.deletedBy,
         it.deletedAt,
-        it.matter ?? null,
-        it.side ?? null,
-        it.placedBy ?? null,
       );
   }
 
@@ -304,17 +283,25 @@ export class CoworkBoard {
     if (typeof card !== "string" || !ID_RE.test(card)) throw new RelayError("bad_request", "卡片编号不对");
     const it = this.item(coworkId, card);
     if (!it) throw new RelayError("not_found", "没有这张卡");
-    const held = this.lockOf(coworkId, card);
+    if (on && it.deleted) throw new RelayError("conflict", "这张卡已经删了");
+    return this.hold(coworkId, name, card, on, (by) => `${by} 正在写这张卡`);
+  }
+
+  /**
+   * Take, renew or let go of a lock by key (a card's id, or a 事项's 「place:<id>」 / 「edit:<id>」, 2026-11-25): the same
+   * map, time-out, sweep and release on disconnect. Held by someone else: 409 saying who (with the lock).
+   */
+  hold(coworkId: string, name: string, key: string, on: boolean, busy: (by: string) => string): BoardLock | null {
+    const held = this.lockOf(coworkId, key);
     if (!on) {
-      if (held?.by === name) this.locks.get(coworkId)?.delete(card);
-      return this.lockOf(coworkId, card);
+      if (held?.by === name) this.locks.get(coworkId)?.delete(key);
+      return this.lockOf(coworkId, key);
     }
-    if (it.deleted) throw new RelayError("conflict", "这张卡已经删了");
-    if (held && held.by !== name) throw new RelayError("conflict", `${held.by} 正在写这张卡`);
+    if (held && held.by !== name) throw new RelayError("conflict", busy(held.by), { lock: held });
     const m = this.locks.get(coworkId) ?? new Map();
-    m.set(card, { by: name, until: this.now() + BOARD_LOCK_MS });
+    m.set(key, { by: name, until: this.now() + BOARD_LOCK_MS });
     this.locks.set(coworkId, m);
-    return this.lockOf(coworkId, card);
+    return this.lockOf(coworkId, key);
   }
 
   /** Locks that ran out (each let go once): the service pushes them. */
@@ -417,10 +404,10 @@ export class CoworkBoard {
    * session card names one). An agent's call touching more than BOARD_AI_MAX_CARDS cards is refused whole; otherwise an
    * operation that cannot apply is reported by its place and the rest still apply.
    */
-  apply(coworkId: string, actor: BoardActor, opsValue: unknown, opts: BoardApplyOptions): { result: BoardOpsResult; big: BoardBigChange[] } {
+  apply(coworkId: string, actor: BoardActor, opsValue: unknown, opts: { checkSession: (threadId: string) => boolean; noLimit?: boolean }): { result: BoardOpsResult; big: BoardBigChange[] } {
     if (!Array.isArray(opsValue)) throw new RelayError("bad_request", "ops 要是一个列表");
     if (opsValue.length > BOARD_OPS_MAX) throw new RelayError("bad_request", `一次最多 ${BOARD_OPS_MAX} 条操作`);
-    if (actor.agent && !opts.noLimit && !opts.system) {
+    if (actor.agent && !opts.noLimit) {
       const touched = new Set<string>();
       opsValue.forEach((raw: unknown, i) => {
         const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -451,7 +438,7 @@ export class CoworkBoard {
               return;
             }
           }
-          const out = this.applyOne(coworkId, actor, o, opts);
+          const out = this.applyOne(coworkId, actor, o, opts.checkSession);
           if (!out) return;
           seq += 1;
           const at = this.now();
@@ -492,13 +479,15 @@ export class CoworkBoard {
     coworkId: string,
     actor: BoardActor,
     o: BoardOp & Record<string, unknown>,
-    opts: BoardApplyOptions,
+    checkSession: (threadId: string) => boolean,
   ): { items: string[]; changes: BoardChange[]; undoOf?: number; conflict?: boolean; big?: Array<BoardBigChange["kind"]> } | null {
     const at = this.now();
+    // A 事项's id: its card is drawn by the clients, not kept here (2026-11-25); only people drag it, through the 事项.
+    const notCard = (id: string) => (checkSession(id) ? "事项卡不是白板上存的卡：位置只由人拖（拖事项卡），状态和字段改事项本身" : null);
     const live = (id: unknown, what = "这张卡"): BoardItem => {
       if (typeof id !== "string" || !ID_RE.test(id)) throw new Reject("bad", "卡片编号不对");
       const it = this.item(coworkId, id);
-      if (!it) throw new Reject("missing", `没有${what}：${id}`);
+      if (!it) throw new Reject("missing", notCard(id) ?? `没有${what}：${id}`);
       if (it.deleted) throw new Reject("deleted", `${what}已经删了（可以在「最近删除」里找回）`);
       return it;
     };
@@ -527,7 +516,7 @@ export class CoworkBoard {
         const raw = (o.item && typeof o.item === "object" ? o.item : null) as (Record<string, unknown> & { kind?: unknown }) | null;
         if (!raw) throw new Reject("bad", "add 要带 item");
         const kind = raw.kind as BoardItemKind;
-        if (!KINDS.has(kind)) throw new Reject("bad", "卡片的种类要是 note、session、ref、group、link 或 matter");
+        if (!KINDS.has(kind)) throw new Reject("bad", "卡片的种类要是 note、session、ref、group 或 link");
         const id = raw.id === undefined ? `b_${randomBytes(6).toString("hex")}` : idOrNull(raw.id, "卡片编号");
         if (!id) throw new Reject("bad", "卡片编号不对");
         if (this.item(coworkId, id)) throw new Reject("exists", `已经有这张卡了：${id}`);
@@ -537,16 +526,9 @@ export class CoworkBoard {
         checkLinks(kind, f, null);
         let session: string | null = null;
         if (kind === "session") {
-          if (typeof raw.session !== "string" || !opts.checkSession(raw.session)) throw new Reject("bad", "子会话卡要指向这个协作里的一个子会话");
+          if (typeof raw.session !== "string" || !checkSession(raw.session)) throw new Reject("bad", "子会话卡要指向这个协作里的一个子会话");
           session = raw.session;
         }
-        let matter: string | null = null;
-        if (kind === "matter") {
-          if (typeof raw.matter !== "string" || !opts.checkMatter?.(raw.matter)) throw new Reject("bad", "事项卡要指向这个协作里的一件事项");
-          matter = raw.matter;
-        }
-        // Only the service makes a group stand for a side (one per side, and 「已定 / 已验」).
-        const side = opts.system && kind === "group" && typeof raw.side === "string" ? raw.side.slice(0, 80) : null;
         if (kind === "link" && (!f.from || !f.to)) throw new Reject("bad", "连线要有起点和终点");
         if (kind === "ref" && !f.ref) throw new Reject("bad", "引用卡要带 ref");
         const [w, h] = SIZE[kind];
@@ -576,9 +558,6 @@ export class CoworkBoard {
           deleted: false,
           deletedBy: null,
           deletedAt: null,
-          matter,
-          side,
-          ...(kind === "matter" ? { placedBy: opts.system ? ("auto" as const) : ("person" as const) } : {}),
         };
         this.write(coworkId, it);
         return { items: [id], changes: [{ id, before: { deleted: true }, after: { deleted: false } }], big: ["add"] };
@@ -614,8 +593,6 @@ export class CoworkBoard {
           (it as unknown as Record<string, unknown>)[k] = f[k];
         }
         if (!Object.keys(after).length) return null;
-        // A 事项卡 a person moved stays where they put it: the service no longer moves it when its 事项 is settled.
-        if (it.kind === "matter" && (after.x !== undefined || after.y !== undefined || after.group !== undefined)) it.placedBy = opts.system ? "auto" : actor.agent ? (it.placedBy ?? "person") : "person";
         stamp(it);
         if (after.text !== undefined) it.textVersion = it.version;
         this.write(coworkId, it);
@@ -624,7 +601,7 @@ export class CoworkBoard {
       case "delete": {
         if (typeof o.id !== "string" || !ID_RE.test(o.id)) throw new Reject("bad", "卡片编号不对");
         const it = this.item(coworkId, o.id);
-        if (!it) throw new Reject("missing", `没有这张卡：${o.id}`);
+        if (!it) throw new Reject("missing", notCard(String(o.id)) ?? `没有这张卡：${o.id}`);
         if (it.deleted) return null;
         const lock = lockedFor(it.id);
         if (lock) throw new Reject("locked", `${lock.by} 正在写这张卡，等他写完再删`, lock.by);
@@ -636,7 +613,7 @@ export class CoworkBoard {
       case "restore": {
         if (typeof o.id !== "string" || !ID_RE.test(o.id)) throw new Reject("bad", "卡片编号不对");
         const it = this.item(coworkId, o.id);
-        if (!it) throw new Reject("missing", `没有这张卡：${o.id}`);
+        if (!it) throw new Reject("missing", notCard(String(o.id)) ?? `没有这张卡：${o.id}`);
         if (!it.deleted) return null;
         Object.assign(it, { deleted: false, deletedBy: null, deletedAt: null });
         stamp(it);
@@ -715,21 +692,5 @@ export class CoworkBoard {
     const hit = this.items(coworkId).filter((it) => it.kind === "ref" && !it.deleted && !it.stale && it.ref?.path && paths.has(it.ref.path) && it.ref.commit && !c.startsWith(it.ref.commit) && !it.ref.commit.startsWith(c));
     if (!hit.length) return null;
     return this.apply(coworkId, actor, hit.map((it) => ({ op: "set", id: it.id, fields: { stale: true } })), { checkSession, noLimit: true });
-  }
-
-  /** The group standing for a side (or SETTLED_SIDE), not deleted. */
-  sideGroup(coworkId: string, side: string): BoardItem | null {
-    const r = this.db.prepare("SELECT * FROM cowork_board_items WHERE cowork_id = ? AND kind = 'group' AND side = ? AND deleted_at IS NULL ORDER BY created_at, rowid LIMIT 1").get(coworkId, side) as Row | undefined;
-    return r ? itemOf(r) : null;
-  }
-
-  /** A 事项's cards (not deleted). */
-  matterCards(coworkId: string, matter: string): BoardItem[] {
-    return (this.db.prepare("SELECT * FROM cowork_board_items WHERE cowork_id = ? AND kind = 'matter' AND matter = ? AND deleted_at IS NULL ORDER BY created_at, rowid").all(coworkId, matter) as Row[]).map(itemOf);
-  }
-
-  /** Cards inside a group (not deleted). */
-  inGroup(coworkId: string, group: string): BoardItem[] {
-    return (this.db.prepare("SELECT * FROM cowork_board_items WHERE cowork_id = ? AND grp = ? AND deleted_at IS NULL ORDER BY created_at, rowid").all(coworkId, group) as Row[]).map(itemOf);
   }
 }

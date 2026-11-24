@@ -46,6 +46,8 @@ export class RelayError extends Error {
   constructor(
     readonly code: "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict",
     message: string,
+    /** Sent along in the error's body (2026-11-25: a 409 on a 事项 gives the lock and the 事项 as it is now). */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -686,6 +688,11 @@ export class RelayStore {
     if (extra.withdrawnAt) m.withdrawnAt = extra.withdrawnAt;
     if (extra.editedAt) m.editedAt = extra.editedAt;
     if (extra.supersededBy) m.supersededBy = extra.supersededBy;
+    // 2026-11-25: 来源, 知会, 推送, 验证.
+    if (extra.basis) m.basis = extra.basis;
+    if (extra.notice) m.notice = extra.notice;
+    if (extra.commits) m.commits = extra.commits;
+    if (extra.verify) m.verify = extra.verify;
     this.messageHook?.(m);
     return m;
   }

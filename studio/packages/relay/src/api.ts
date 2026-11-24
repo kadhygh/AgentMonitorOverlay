@@ -3,6 +3,7 @@ import type { NewTransfer, RelayDevice, Transfer, TransferFile } from "./transfe
 import type {
   AgentReport,
   BoardLock,
+  MatterLockKind,
   BoardOp,
   BoardOpRecord,
   BoardOpsResult,
@@ -28,6 +29,7 @@ import type {
   AgentRole,
   CoworkMarkRequest,
   CoworkMarkResult,
+  CoworkMatterEvents,
   CoworkMatterPatch,
   CoworkMatterResult,
   CoworkMessageRewrite,
@@ -37,6 +39,13 @@ import type {
   NewCoworkMatter,
 } from "./cowork-protocol.js";
 import type { FileNote, Health, Member, Message, NewMessage, NewRequest, NewTask, RelayFile, SessionAction, Task, TaskEvent, TaskStatus, TaskView, TeamSettings, Thread, ThreadView, Via } from "./protocol.js";
+import { parseCollabRef } from "@amo-studio/protocol/matters";
+
+/** A 事项 in a path: its id, or its number for 「事项 3」 (the service takes either, 2026-11-25). */
+function matterInPath(ref: string): string {
+  const r = parseCollabRef(ref);
+  return encodeURIComponent(r?.kind === "matter" ? String(r.no) : r?.kind === "thread" ? r.id : ref.trim());
+}
 
 // The relay's HTTP API as a class, with fetch only: the Node side (MCP, command line, desktop shell) and the client's
 // pages in a browser use the same one.
@@ -46,6 +55,8 @@ export class RelayClientError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** The rest of the error's body: a 409 on a 事项 carries `matter` (as it is now) and `lock` (who holds it). */
+    readonly data: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -78,7 +89,7 @@ export class RelayClient {
       throw new RelayClientError(0, "unreachable", `连不上中转服务 ${this.server}：${err instanceof Error ? err.message : String(err)}`);
     }
     const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    if (!res.ok) throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`);
+    if (!res.ok) throw new RelayClientError(res.status, data.error ?? "error", data.message ?? `HTTP ${res.status}`, data);
     return data as T;
   }
 
@@ -487,7 +498,7 @@ export class RelayClient {
   }
   /** 定下结论: the 子会话 is done, its conclusion goes into 已定的事. Its asker or the person asked (or their agents). */
   concludeCowork(id: string, threadId: string, conclusion: string, via?: Via): Promise<{ thread: Thread; event: CoworkEvent }> {
-    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions/${encodeURIComponent(threadId)}/conclude`, { conclusion, via });
+    return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/sessions/${matterInPath(threadId)}/conclude`, { conclusion, via });
   }
   /** My agents' drafts waiting for me. */
   async coworkDrafts(id: string): Promise<CoworkDraft[]> {
@@ -505,13 +516,24 @@ export class RelayClient {
 
   // ---- 事项、回执、待我处理 (2026-11-24, cowork-protocol.ts「事项」)
 
-  /** 开事项 (a 主控 or a person): its thread, first message and card in the 群聊; a card on the board in its side's group. */
+  /** 开事项 (a 主控 or a person): its thread, first message and card in the 群聊 (its 事项卡 on the board is drawn by the client). */
   openMatter(id: string, n: NewCoworkMatter): Promise<CoworkMatterResult> {
     return this.call("POST", `/api/cowork/${encodeURIComponent(id)}/matters`, n);
   }
-  /** 改事项 (a 主控 or a person): `base` is the version read; an older one is refused (409). */
-  async patchMatter(id: string, matterId: string, patch: CoworkMatterPatch): Promise<Matter> {
-    return (await this.call<{ matter: Matter }>("PATCH", `/api/cowork/${encodeURIComponent(id)}/matters/${encodeURIComponent(matterId)}`, patch)).matter;
+  /** 改事项 (a 主控 or a person): `base` is the version read; an older one is refused (409). `matter`: its id or 「事项 3」. */
+  async patchMatter(id: string, matter: string, patch: CoworkMatterPatch): Promise<Matter> {
+    return (await this.call<{ matter: Matter }>("PATCH", `/api/cowork/${encodeURIComponent(id)}/matters/${matterInPath(matter)}`, patch)).matter;
+  }
+  /**
+   * Take (on, renewed by calling again while held), or let go of, a 事项's lock: `place` while I drag its card, `edit` while
+   * its judgement fields are open. Someone else's: 409 with `data.lock` and `data.matter`. People only.
+   */
+  async lockMatter(id: string, matter: string, what: MatterLockKind, on: boolean): Promise<BoardLock | null> {
+    return (await this.call<{ lock: BoardLock | null }>("POST", `/api/cowork/${encodeURIComponent(id)}/matters/${matterInPath(matter)}/lock`, { what, on })).lock;
+  }
+  /** What happened in a 事项 (deriveMatter adds the events up to its state); `agent`: read for that agent of mine. */
+  matterEvents(id: string, matter: string, agent?: string): Promise<CoworkMatterEvents> {
+    return this.call("GET", `/api/cowork/${encodeURIComponent(id)}/matters/${matterInPath(matter)}/events${agent ? `?agent=${encodeURIComponent(agent)}` : ""}`);
   }
   /** 看过 / 处理了: by seq, or a 事项's messages up to `upTo`. */
   markCowork(id: string, m: CoworkMarkRequest): Promise<CoworkMarkResult> {
