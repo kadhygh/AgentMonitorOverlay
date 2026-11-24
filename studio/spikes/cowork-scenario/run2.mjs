@@ -304,7 +304,8 @@ try {
   // 1. The 协作, its 已定的事 1 (a 事项 the person opens and settles), both 主控 brought in as 主控.
   const c = await people.策划.createCowork({ title: TITLE, goal: GOAL, repo: "fire-rate", branch: "master", members: ["程序"] });
   const d1 = await people.策划.openMatter(c.id, { title: "射速口径", body: DECISION_1, side: "策划" });
-  await people.策划.patchMatter(c.id, d1.matter.id, { conclusion: DECISION_1 });
+  // decided: a conclusion goes into 已定的事 only as a 口径 (spec 「v6 之后定的」 3, 2026-11-25).
+  await people.策划.patchMatter(c.id, d1.matter.id, { conclusion: DECISION_1, decided: true });
   log(`cowork ${c.id}; 已定的事 1 from 事项 ${d1.matter.no}`);
   for (const [sid, host, label] of [[plannerLead, hosts.planner, "策划主控"], [coderLead, hosts.coder, "程序主控"]]) {
     // The Host reads the account a moment after it starts: retry while it says it is not signed in yet.

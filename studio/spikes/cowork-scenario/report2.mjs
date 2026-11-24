@@ -73,6 +73,10 @@ for (const dir of dirs) {
   // Code moved to 120 before 策划 said yes (the 11-25 gpt run: the coder's 主控 told its 执行 「人员已确认新口径」 when only 程序 had asked).
   const early120 = (r.messages ?? []).find((m) => m.commits && /120/.test(m.body) && (!answer120 || m.at < answer120.at));
   lines.push(`  - 代码先于确认改成 120：${early120 ? `! 有：#${early120.seq} ${sec(early120.at)} ${early120.who}贴了改成 120 的提交（策划回答在 ${answer120 ? sec(answer120.at) : "—"}）` : `${ok(true)} 没有`}`);
+  // 已定的事只放口径 (「v6 之后定的」 3): a merge gate or a finished piece of work does not go in.
+  const decisions = r.events.filter((e) => e.kind === "decision");
+  const notRule = decisions.filter((e) => /master|合并|合进|已推送|已验/.test(e.text ?? ""));
+  lines.push(`- 已定的事 ${decisions.length} 条：${notRule.length ? `! 有不是口径的：${notRule.map((e) => one(e.text ?? "", 60)).join("；")}` : `${ok(true)} 都是口径`}`);
   const mergeAnswer = r.actions.find((a) => a.who === "程序" && /answered/.test(a.what) && /合/.test(a.what));
   const masterCommit = r.commits.find((c) => !/^\S+ seed /.test(c));
   lines.push(`- 合 master：${askMerge.length ? `${ok(true)} 开了等人确认（事项 ${askMerge.map((m) => m.no).join("、")}）` : "! 没开"}；程序回答 ${mergeAnswer ? sec(mergeAnswer.at) : "—"}；master 上有改动：${(r.checked ?? []).find((c) => c.no === "master")?.passed ? "是（测试过）" : "见提交"}`);
