@@ -519,9 +519,11 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
       // session opened this way (ClaudeAsks) — said up front so the result is not written twice.
       ...(!forPerson && options?.permission === PERMISSIONS.claude["read-only"] ? ["（你是以只读方式开的，用的是 Claude 的计划模式。这里没有人审批计划：做完直接把结果写成最后的回复，不要调用 ExitPlanMode。）"] : []),
     ].join("\n");
+    // The title goes in at the start (2026-11-25): renamed only afterwards, a runtime naming an untitled session after
+    // its first message as it sends it (Codex) could do so after the rename — the 11-25 run's 执行 kept 「【由本任务的会话…」.
     let started: Session;
     try {
-      started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
+      started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(title ? { title } : {}), ...(options ? { options } : {}) });
     } catch (err) {
       if (matter && !existing) matters.close(matter.id, sessionParty(from.id), "会话没开起来");
       throw err;

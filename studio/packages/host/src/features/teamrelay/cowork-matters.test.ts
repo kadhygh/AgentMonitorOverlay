@@ -262,6 +262,20 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(read.text).toContain("角色：主控");
   }, 30_000);
 
+  it("session_start with matter and no title names the 执行 after its 事项, in Studio and in the 协作 (2026-11-25 real-model run)", async () => {
+    const { service, session, coderClient, tool, store } = await setup();
+    const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
+    const lead = session("射速主控");
+    await service.teamRelay.cowork.join(lead.id, c.id);
+    await tool(lead.id, "cowork_matter", { action: "open", title: "读配置表", body: "从 config/rate.json 读上限" });
+    const out = await tool(lead.id, "session_start", { text: "按事项 1 做：从 config/rate.json 读 maxRate。", matter: "事项 1" });
+    expect(out.error).toBe(false);
+    const id = JSON.parse(out.text).sessionId as string;
+    await until(() => store.getSession(id)?.title, (t) => t === "事项 1「读配置表」", "the 执行's name");
+    const agent = await until(async () => (await coderClient.cowork(c.id)).cowork.agents.find((a) => a.mark.endsWith(id)), (a) => !!a, "the 执行 in the 协作");
+    expect(agent!.name).toContain("事项 1「读配置表」");
+  }, 30_000);
+
   it("cowork_ask to the AI's own person (a 闸门, spec §5) opens a 等人确认 事项 waiting on them; their answer puts it back to 在做 (2026-11-25 real-model run)", async () => {
     const { service, session, coderClient, tool } = await setup();
     const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
