@@ -143,7 +143,7 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
           </ol>
         </Fold>
       </div>
-      {dialog === "close" && <CloseDialog matter={m} onClose={endClose} onDone={(conclusion) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), note: "关闭" }, conclusion ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && endClose())} />}
+      {dialog === "close" && <CloseDialog matter={m} onClose={endClose} onDone={(conclusion, decided) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), ...(conclusion && decided ? { decided: true } : {}), note: "关闭" }, conclusion && (decided || m.kind === "confirm") ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && endClose())} />}
     </div>
   );
 }
@@ -471,8 +471,11 @@ function MatterInfo({ matter: m, onPatch, onOpen, all, lock }: { matter: Matter;
   );
 }
 
-function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: () => void; onDone: (conclusion: string) => void }) {
+function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: () => void; onDone: (conclusion: string, decided: boolean) => void }) {
   const [text, setText] = useState(m.conclusion ?? "");
+  // 已定的事只放口径 (2026-11-25): a 「等人确认」's conclusion always goes in; another only when it is a 口径.
+  const gate = m.kind === "confirm";
+  const [decided, setDecided] = useState(false);
   return (
     <Dialog
       title={`关闭${matterLabel(m)}`}
@@ -483,14 +486,19 @@ function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: 
           <button type="button" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="primary" onClick={() => onDone(text.trim())}>
+          <button type="button" className="primary" onClick={() => onDone(text.trim(), gate || decided)}>
             关闭
           </button>
         </>
       }
     >
-      <p className="muted tiny">关了以后里面的消息都算处理了。写了结论就记进协作的「已定的事」，所有人和 AI 都看得到；也可以不写。</p>
+      <p className="muted tiny">关了以后你这一方在里面的消息算处理了，另一方的主控和人会收到「{matterLabel(m)} 关了」和结论。{gate ? "这是等人确认的事项，写了结论就记进协作的「已定的事」。" : "结论留在事项里；是口径（规则、数值、边界）的，勾上下面一项，记进「已定的事」。"}也可以不写结论。</p>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder="定了什么，比如：回落 1.2 秒线性，回落期间不能开火" aria-label="结论" autoFocus />
+      {!gate && (
+        <label className="tiny">
+          <input type="checkbox" checked={decided} onChange={(e) => setDecided(e.target.checked)} disabled={!text.trim()} /> 结论是口径，记进「已定的事」
+        </label>
+      )}
     </Dialog>
   );
 }

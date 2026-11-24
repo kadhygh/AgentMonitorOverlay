@@ -64,6 +64,24 @@ describe("事项 as the 中转 client reads them", () => {
     ]);
   });
 
+  it("gives 「事项 N 关了」 and an AI's own judgement a row each, opening the 事项 (2026-11-25, 「v6 之后定的」)", () => {
+    const ms = [matter(3, { status: "closed" }), matter(7)];
+    const judged = { by: "agent:m1" as const, at: 61, reason: "notice" as const, text: "! 我的判断：在事项 7替你答的，你没确认过，要你看过" };
+    const rows = lookItems(
+      [
+        item({ kind: "closed", matter: "t_3", matterNo: 3, seq: 30, since: 60, text: "#30 事项 3「事 3」关了：图标 128" }),
+        item({ kind: "notice", matter: "t_7", matterNo: 7, seq: 31, since: 61, text: "#31 默认 10", why: judged }),
+        item({ kind: "message", matter: "t_7", seq: 32, since: 62 }),
+      ],
+      ms,
+    );
+    expect(rows.map((r) => (r.kind === "matter" ? ["事项", r.matter.no, r.seqs] : [r.where, r.word, r.seq, r.mark, r.matter, r.text]))).toEqual([
+      ["事项", 7, [32]],
+      ["事项 7", "! 我的判断", 31, "seen", "t_7", "默认 10"],
+      ["事项 3", "关了", 30, "seen", "t_3", "事项 3「事 3」关了：图标 128"],
+    ]);
+  });
+
   it("tells what waits on others, and lists the open ones with 等人确认 first", () => {
     expect(waitsOnOthers(matter(1, { waitingOn: ["agent:x"] }), "小王")).toBe(true);
     expect(waitsOnOthers(matter(1, { waitingOn: ["person:小王"] }), "小王")).toBe(false);

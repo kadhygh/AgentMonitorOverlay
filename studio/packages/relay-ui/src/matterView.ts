@@ -97,11 +97,15 @@ export type LookItem =
   /**
    * 群聊里的知会: a 群聊 message to me not dealt with yet — an @ or a reply (「看过了」 marks it 处理了) or one marked 知会
    * (「看过了」 marks it 看过, which is all a 知会 asks, the service 2026-11-25). `text`: the whole message when the service sends it.
+   * Also, one row each (2026-11-25, 「v6 之后定的」): an AI's answer in a 事项 that was its own judgement (「! 我的判断」), and
+   * 「事项 N 关了」 when the other side closed one I took part in — `matter` and `where` say which.
    */
-  | { kind: "notice"; seq: number; since: number; text: string; mark: "seen" | "handled"; why: string | null; word: string };
+  | { kind: "notice"; seq: number; since: number; text: string; mark: "seen" | "handled"; why: string | null; word: string; where: string; matter?: string };
 
 /** What a 群聊 row of 「要你看」 is, in a word. */
-export const NOTICE_WORD: Partial<Record<PendingItem["kind"], string>> = { notice: "知会", mention: "@ 你", reply: "回你", message: "给你" };
+export const NOTICE_WORD: Partial<Record<PendingItem["kind"], string>> = { notice: "知会", mention: "@ 你", reply: "回你", message: "给你", closed: "关了" };
+/** The word for an AI's answer that was its own judgement, 知会'd to me (pendingFor's why starts with 「!」). */
+export const JUDGED_WORD = "! 我的判断";
 
 /** My 待我处理 as the 「要你看」 list: one row per 事项 (its own and its messages' items together), then the 群聊's 知会. */
 export function lookItems(items: readonly PendingItem[], matters: readonly Matter[]): LookItem[] {
@@ -111,7 +115,13 @@ export function lookItems(items: readonly PendingItem[], matters: readonly Matte
   for (const i of items) {
     const why = i.why?.text ?? null;
     if (!i.matter) {
-      if (i.seq !== null) notices.push({ kind: "notice", seq: i.seq, since: i.since, text: i.body ?? i.text.replace(/^#\d+\s*/, ""), mark: i.kind === "notice" ? "seen" : "handled", why, word: NOTICE_WORD[i.kind] ?? "叫你" });
+      if (i.seq !== null) notices.push({ kind: "notice", seq: i.seq, since: i.since, text: i.body ?? i.text.replace(/^#\d+\s*/, ""), mark: i.kind === "notice" ? "seen" : "handled", why, word: NOTICE_WORD[i.kind] ?? "叫你", where: "群聊" });
+      continue;
+    }
+    // 「事项 N 关了」 and a 知会 in a 事项 (an AI's answer of its own judgement): a row each, 看过了 is all they ask.
+    if ((i.kind === "closed" || i.kind === "notice") && i.seq !== null) {
+      const judged = i.kind === "notice" && !!why?.startsWith("!");
+      notices.push({ kind: "notice", seq: i.seq, since: i.since, text: i.body ?? i.text.replace(/^#\d+\s*/, ""), mark: "seen", why, word: judged ? JUDGED_WORD : (NOTICE_WORD[i.kind] ?? "叫你"), where: i.matterNo ? `事项 ${i.matterNo}` : "事项", matter: i.matter });
       continue;
     }
     const m = byId.get(i.matter);

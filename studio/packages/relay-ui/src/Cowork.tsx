@@ -15,7 +15,7 @@ import { errorText, useMessages } from "./Messages.js";
 import { EMPTY_COWORK_DATA, useSession, type Session } from "./session.js";
 import { copyRef, openMenu, openStudio, studioWhere, type MenuItem } from "./RefChips.js";
 import { coworkRef } from "./refs.js";
-import { AGENT_ROLE_LABEL, listedOthers, personParty, type CoworkAgent, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type Matter, type Message } from "./shared.js";
+import { AGENT_ROLE_LABEL, decisionStands, listedOthers, personParty, type CoworkAgent, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type Matter, type Message } from "./shared.js";
 
 // 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page; 2026-11-25 the communication plan, plans/collab-framework.md
 // 「11-24」 and the board prototype studio/out/cowork-flow/board.html): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作,
@@ -69,7 +69,7 @@ export function CoworkList({ session, openId, query, onOpen }: { session: Sessio
     const { unread, atMe } = unreadOf(session, c);
     const g = st.threads.find((t) => t.id === c.id);
     const last = g?.last;
-    const decided = (st.coworkData[c.id]?.events ?? []).filter((e) => e.kind === "decision").length;
+    const decided = (st.coworkData[c.id]?.events ?? []).filter((e) => e.kind === "decision" && decisionStands(e.data?.threadId, mattersOf(c))).length;
     const open = mattersOf(c).filter((m) => m.status !== "closed").length;
     const mine = lookItems(st.pending[c.id]?.items ?? [], mattersOf(c)).length;
     const sub = atMe ? (
@@ -200,7 +200,7 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
   const ctx: CoworkCtx = { session, cowork, data, me, matters, looks, toHandle, openMatter, openBoard, replacing, setReplacing, toast };
   const ended = !!cowork.endedAt;
   const leftover = ended ? [] : (data.drafts ?? []).filter((d) => d.state === "pending" && d.owner === me);
-  const decisions = data.events.filter((e) => e.kind === "decision");
+  const decisions = data.events.filter((e) => e.kind === "decision" && decisionStands(e.data?.threadId, matters));
   const openCount = matters.filter((m) => m.status !== "closed").length;
   const where = [cowork.repo, cowork.branch].filter(Boolean);
 
@@ -367,9 +367,11 @@ export function LookPanel({ className, onClose, onNotice, onMatter }: { classNam
           </button>
         ) : (
           <div key={`n${l.seq}`} className="cw-lookrow notice" data-seq={l.seq}>
-            <button type="button" className="cw-lookrow-main" onClick={() => onNotice(l.seq)}>
+            <button type="button" className="cw-lookrow-main" onClick={() => (l.matter ? (onMatter ?? openMatter)(l.matter) : onNotice(l.seq))}>
               <span className="cw-lookrow-top">
-                <span className="cw-look notice">群聊 · {l.word}</span>
+                <span className="cw-look notice">
+                  {l.where} · {l.word}
+                </span>
                 <span className="muted tiny">
                   #{l.seq} · {timeText(l.since)}
                 </span>
@@ -517,7 +519,7 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
       .map((m): MenuItem => ({ label: `设成执行：${matterLabel(m)}「${m.title.slice(0, 18)}」`, hint: "只进这一件事项：在里面贴技术事实，不在群聊说话、不改事项", onClick: () => void setRole(a, "worker", m.id) })),
   ];
   const myLead = cowork.agents.find((a) => a.owner === me && a.role === "lead");
-  const decisions = data.events.filter((e) => e.kind === "decision");
+  const decisions = data.events.filter((e) => e.kind === "decision" && decisionStands(e.data?.threadId, matters));
   const openMatters = matters.filter((m) => m.status !== "closed");
   const closed = matters.filter((m) => m.status === "closed");
   return (
