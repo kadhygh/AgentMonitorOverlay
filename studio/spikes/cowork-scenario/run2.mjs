@@ -540,7 +540,7 @@ try {
     timeline,
     turnLog,
     perSession,
-    matters: (cw.matters ?? []).map((m) => ({ no: m.no, title: m.title, side: m.side, kind: m.kind, gate: m.gate, status: m.status, waitingOn: m.waitingOn, blocker: m.blocker, conclusion: m.conclusion, bindings: m.bindings, history: m.history.map((h) => ({ at: h.at - t0, from: h.from, to: h.to, by: h.by, note: h.note, event: h.event, seq: h.seq ?? null, manual: h.manual === true })), limited: m.limited })),
+    matters: (cw.matters ?? []).map((m) => ({ no: m.no, title: m.title, side: m.side, from: m.from ?? null, kind: m.kind, gate: m.gate, decided: m.decided ?? null, status: m.status, waitingOn: m.waitingOn, blocker: m.blocker, conclusion: m.conclusion, bindings: m.bindings, history: m.history.map((h) => ({ at: h.at - t0, from: h.from, to: h.to, by: h.by, note: h.note, event: h.event, seq: h.seq ?? null, manual: h.manual === true })), limited: m.limited })),
     matterEvents,
     decisions: detail.events.filter((e) => e.kind === "decision").map((e) => e.text),
     events: detail.events.map((e) => ({ at: e.createdAt ? e.createdAt - t0 : null, kind: e.kind, actor: e.actor, agent: e.agent, text: e.text })),
