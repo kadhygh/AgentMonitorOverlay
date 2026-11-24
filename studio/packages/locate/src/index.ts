@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
 // @amo-studio/locate: where AMO looks for the programs it runs on — Claude Code, the DeepSeek Harness desktop app, Codex,
-// git. File checks, nothing started (but for the registry lookup of the DSH app, dshRegisteredDirs). Moved out of the Host (2026-10-28) so AMO 平台's 环境 page looks in exactly the
+// the Antigravity CLI, git. File checks, nothing started (but for the registry lookup of the DSH app, dshRegisteredDirs). Moved out of the Host (2026-10-28) so AMO 平台's 环境 page looks in exactly the
 // places Studio does without pulling in the Host and its SDKs; the Host imports these and behaves as before. Starting the
 // programs (for `--version`) stays with each side: the Host asks synchronously, the platform asynchronously with a timeout.
 
@@ -158,6 +158,34 @@ export function dshDesktopIn(dir: string): { exe: string; cli: string } | null {
 /** The person's own `codex`, the first on PATH, as their terminal finds it (not the copy the Codex desktop app bundles). */
 export function codexOnPath(env: Env = process.env): string | null {
   return firstOnPath(["codex.exe", "codex.cmd"], env);
+}
+
+// ---- Antigravity CLI (agy, Gemini; plans/agy.md) -----------------------------------------------------------------
+
+/** Where Google's own installer (install.ps1) puts agy, and so where AMO 平台 installs it too (2026-11-24). */
+export function agyInstallDir(env: Env = process.env): string | null {
+  return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "agy", "bin") : null;
+}
+
+/**
+ * The agy.exe files that exist, in the order to try them (2026-11-24): AMO_STUDIO_AGY, `agy` on PATH, where Google's
+ * installer and AMO 平台 put it (%LOCALAPPDATA%\agy\bin), and where winget installs it (its own package folder; the
+ * `agy` alias it adds is a link in WinGet\Links, on PATH only in shells started after the install).
+ */
+export function agyCandidates(env: Env = process.env): string[] {
+  const found: string[] = [];
+  const add = (p: string | null | undefined) => {
+    if (p && existsSync(p) && !found.some((f) => f.toLowerCase() === p.toLowerCase())) found.push(p);
+  };
+  add(env.AMO_STUDIO_AGY?.trim());
+  add(firstOnPath(["agy.exe"], env));
+  const dir = agyInstallDir(env);
+  if (dir) add(join(dir, "agy.exe"));
+  if (env.LOCALAPPDATA) {
+    add(join(env.LOCALAPPDATA, "Microsoft", "WinGet", "Links", "agy.exe"));
+    add(join(env.LOCALAPPDATA, "Microsoft", "WinGet", "Packages", "Google.AntigravityCLI_Microsoft.Winget.Source_8wekyb3d8bbwe", "agy.exe"));
+  }
+  return found;
 }
 
 /** `git` as Studio runs it (execFile, no shell): git.exe on PATH. */

@@ -164,6 +164,8 @@ export interface ChannelRegistryOptions {
   dshAccountFile?: string;
   /** Why a profile cannot start sessions now (DSH with no clone set up, Claude with no Claude Code), or undefined. */
   unavailable?: (profile: ModelProfile) => string | undefined;
+  /** Built-in profiles left out for now (Gemini while its 测试功能 is off, 2026-11-24); asked again on refresh(). */
+  omit?: (profile: ModelProfile) => boolean;
 }
 
 export class ChannelRegistry {
@@ -405,7 +407,8 @@ export class ChannelRegistry {
     for (const k of Object.keys(claudeProviders)) if (/^ch-/.test(k)) delete claudeProviders[k];
     const dshProviders = this.dshProviders;
     for (const k of Object.keys(dshProviders)) if (/^ch-/.test(k)) delete dshProviders[k];
-    const next: ModelProfile[] = builtins.map((p) => ({ ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}) }));
+    const omit = this.options.omit;
+    const next: ModelProfile[] = builtins.filter((p) => !omit?.(p)).map((p) => ({ ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}) }));
     for (const c of channels) {
       const credentialId = c.keyFrom ?? keyId(c.id);
       const flags = { custom: true, ...(hidden.has(c.id) ? { hidden: true } : {}), ...(c.balance ? { balance: true } : {}) };

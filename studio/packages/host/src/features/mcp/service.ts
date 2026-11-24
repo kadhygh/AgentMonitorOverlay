@@ -407,7 +407,7 @@ export class McpFeature extends Feature {
     if (!refresh) return;
     const ids = this.store
       .listSessions()
-      .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.runtime === "claude" || s.runtime === "dsh") && (!scope.workspaceId || s.workspaceId === scope.workspaceId))
+      .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.runtime === "claude" || s.runtime === "dsh" || s.runtime === "agy") && (!scope.workspaceId || s.workspaceId === scope.workspaceId))
       .map((s) => s.id);
     // Not at once: the change may come from an agent's tool call (mcp_server_save), whose own MCP set must not change
     // under the call.

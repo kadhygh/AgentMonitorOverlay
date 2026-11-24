@@ -369,7 +369,13 @@ export class ConfigFeature extends Feature<"claudeAccounts" | "scratchpad"> {
       const known = EXPERIMENTAL_FEATURES.map((f) => f.id);
       const ids = input.experimentalFeatures;
       if (!Array.isArray(ids) || ids.some((id) => !known.includes(id as ExperimentalFeature))) throw new HostError("bad_request", `experimentalFeatures must list some of: ${known.join(", ")}`);
+      const before = this.experimentalFeatures().includes("agy");
       this.store.setKv(EXPERIMENTAL_FEATURES_KEY, JSON.stringify(known.filter((id) => ids.includes(id))));
+      // Gemini (Antigravity) shows in the pickers only while its 测试功能 is on (host-process.ts, channels omit).
+      if (before !== this.experimentalFeatures().includes("agy")) {
+        this.options.channels?.refresh();
+        this.publish({ type: "profiles.updated", profiles: this.host.allProfiles() });
+      }
     }
     if (input.presets !== undefined) {
       if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);

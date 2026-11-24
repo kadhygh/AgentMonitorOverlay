@@ -88,7 +88,7 @@ export function SessionHead({
   // A copy's (2026-11-12) is made on the computer it runs on; its subagents and delegated sessions follow their parent there.
   const canFork = !session.archivedAt && !(remote && session.kind === "sub") && !(forkRuntime === "claude" && session.kind === "sub");
   // DSH sessions (stage 17) have no terminal of their own to hand to, and no fork.
-  const terminal = !session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub");
+  const terminal = !session.archivedAt && !remote && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && session.runtime !== "agy" && !(session.runtime === "claude" && session.kind === "sub");
   const pick = (f: () => void) => () => {
     setSessionMenu(null);
     f();
@@ -172,8 +172,8 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
               <button
                 type="button"
                 role="menuitem"
-                title={forkOff ?? (forkRuntime === "dsh" ? "DeepSeek 会话不能分支：DSH 不支持" : "从最新一轮分出一个新会话，原会话不受影响；也可以点每轮回复下面的分支图标")}
-                disabled={busy || !session.runtimeRef || forkRuntime === "dsh" || !!forkOff}
+                title={forkOff ?? (forkRuntime === "dsh" ? "DeepSeek 会话不能分支：DSH 不支持" : forkRuntime === "agy" ? "Gemini 会话不能分支：Antigravity 不支持" : "从最新一轮分出一个新会话，原会话不受影响；也可以点每轮回复下面的分支图标")}
+                disabled={busy || !session.runtimeRef || forkRuntime === "dsh" || forkRuntime === "agy" || !!forkOff}
                 onClick={pick(onFork)}
                 data-testid="session-fork"
               >

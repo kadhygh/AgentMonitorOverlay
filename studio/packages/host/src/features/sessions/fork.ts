@@ -49,6 +49,8 @@ export function forkTurns(items: readonly SessionItem[], runtime: SessionRuntime
     const why =
       runtime === "dsh"
         ? "DeepSeek 会话不能分支：DSH 不支持"
+        : runtime === "agy"
+          ? "Gemini 会话不能分支：Antigravity 不支持"
         : turn.state === "running"
           ? "这一轮还在跑，等它结束再分支"
           : runtime === "claude" && !turn.forkPoint && !latest

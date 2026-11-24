@@ -15,8 +15,12 @@ import { recordRole, roleCard } from "../features/guide/role.js";
 
 /** `connecting`: the request is the client's `initialize`, the one that reads the instructions. */
 export function createAmoMcpServer(service: HostService, caller: McpCaller | null = null, connecting = false): McpServer {
-  const dsh = caller ? service.store.getSession(caller.sessionId)?.runtime === "dsh" : false;
-  const server = new McpServer({ name: AMO_MCP_NAME, version: "0.5.0" }, { instructions: dsh && caller ? dshInstructions(service, caller.sessionId, connecting) : amoInstructions(service) });
+  const runtime = caller ? service.store.getSession(caller.sessionId)?.runtime : undefined;
+  const dsh = runtime === "dsh";
+  // Gemini on agy (2026-11-24) gets the role card the same way; agy asks before an MCP tool runs, so the writes the
+  // person approves first stay (its runtime lets the other AMO tools through without a card).
+  const acp = dsh || runtime === "agy";
+  const server = new McpServer({ name: AMO_MCP_NAME, version: "0.5.0" }, { instructions: acp && caller ? dshInstructions(service, caller.sessionId, connecting) : amoInstructions(service) });
   const prompted = new Set<string>(PROMPTED_WRITE_TOOLS);
   for (const t of amoToolsFor(service, caller)) {
     if (dsh && prompted.has(t.name)) continue;

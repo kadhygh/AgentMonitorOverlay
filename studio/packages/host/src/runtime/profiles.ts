@@ -43,7 +43,13 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   // DeepSeek account of the desktop app or with this key (2026-11-03, dsh/install.ts DSH_AUTH_KEY). Sessions of the
   // retired `codex-deepseek-flash` (DeepSeek on Codex, removed 2026-11-03) stay readable but cannot go on.
   { id: "dsh-deepseek", label: "DeepSeek", runtime: "dsh", provider: "deepseek-official", model: null, credentialId: "deepseek-v4" },
+  // Gemini on Google's Antigravity CLI (2026-11-24, plans/agy.md), on the person's own Google sign-in in agy; shown as
+  // 「Antigravity · Gemini」. Only while 设置 → 测试功能 →「Gemini（Antigravity）」 is on (AGY_PROFILE_ID, channels.ts).
+  { id: "agy-gemini", label: "Gemini", runtime: "agy", provider: "google", model: null },
 ];
+
+/** The built-in Gemini profile, left out of the profiles while its 测试功能 is off. */
+export const AGY_PROFILE_ID = "agy-gemini";
 
 /** Built-in profiles whose site tells the balance (设置 → 模型, 左下角额度). */
 export const BUILTIN_BALANCES: Record<string, { baseUrl: string; config: BalanceConfig }> = {

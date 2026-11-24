@@ -8,7 +8,7 @@ import { DSH_DEFAULT_PERMISSION, DSH_PERMISSIONS, dshPermissionMode } from "../c
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, STOP_GRACE_MS, type SendMode, type SendOptions, type SessionRuntimeApi } from "../runtime.js";
 import { withDelivery } from "../items.js";
-import { AcpConnection, AcpError } from "./acp.js";
+import { AcpConnection, AcpError } from "../acp.js";
 import { allTurnStats, dshLogText, dshTurnStats, type DshTurnStats } from "./session-log.js";
 import {
   ACP_VERSION,

@@ -8,6 +8,8 @@ import type { TerminalLauncher } from "./terminal/launcher.js";
 import type { ChannelRegistry } from "./runtime/channels.js";
 import type { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
 import { DshFeature } from "./features/dsh/service.js";
+import type { AgyRuntime } from "./runtime/agy/agy-runtime.js";
+import { AgyFeature } from "./features/agy/service.js";
 import { ProjectsFeature } from "./features/projects/service.js";
 import { ConfigFeature } from "./features/config/service.js";
 import { ClaudeAccountsFeature } from "./features/claudeaccounts/service.js";
@@ -90,6 +92,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly stats: StatsFeature = new StatsFeature(this);
   readonly channels: ChannelsFeature = new ChannelsFeature(this);
   readonly dsh: DshFeature = new DshFeature(this);
+  readonly agy: AgyFeature = new AgyFeature(this);
   readonly maintenance: MaintenanceFeature = new MaintenanceFeature(this);
   /**
    * The AMO platform's login and this computer's device (2026-11-05, plans/host-structure.md 8a): 远程, 会话里用中转 and
@@ -131,6 +134,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       channels?: ChannelRegistry;
       /** DeepSeek on a DSH clone (stage 17): 设置 → 模型 →「检查」 runs through it. */
       dsh?: DshRuntime;
+      /** Gemini on Antigravity (2026-11-24): 设置 → 模型 →「检查」「登录 Google 账号」 run through it. */
+      agy?: AgyRuntime;
       /** Restarts a Codex profile's app-server so it picks up a channel's new address or key; false while it is busy. */
       restartProfileServer?: (profileId: Id) => Promise<boolean>;
     } = {},

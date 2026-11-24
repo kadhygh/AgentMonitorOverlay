@@ -16,6 +16,7 @@ kbd {
 }
 .mark.small { width: 18px; height: 18px; font-size: 10px; }
 .mark-ds { background: #3f5f8f; }
+.mark-gem { background: #5b5fc7; }
 .mark-gpt { background: #3b6b58; }
 .mark-cl { background: #9a5b3c; }
 .mark-glm { background: #5b5470; }

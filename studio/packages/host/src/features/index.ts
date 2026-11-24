@@ -46,6 +46,7 @@ import { cliRoutes } from "./cli/routes.js";
 import { dataRoutes } from "./datamgmt/routes.js";
 import { channelsRoutes } from "./channels/routes.js";
 import { dshRoutes } from "./dsh/routes.js";
+import { agyRoutes } from "./agy/routes.js";
 import { maintenanceRoutes } from "./maintenance/routes.js";
 import { statsRoutes } from "./stats/routes.js";
 import { remoteRoutes } from "./remote/routes.js";
@@ -78,6 +79,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "claudeaccounts", routes: claudeAccountsRoutes },
   { name: "channels", routes: channelsRoutes },
   { name: "dsh", routes: dshRoutes },
+  { name: "agy", routes: agyRoutes },
   { name: "tasks", routes: tasksRoutes, tools: tasksTools },
   { name: "topics", routes: topicsRoutes, tools: topicsTools },
   { name: "sessions", routes: sessionsRoutes, tools: sessionsTools },

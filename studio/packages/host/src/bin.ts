@@ -15,7 +15,8 @@ import { HOST_START_FAILED, type HostStartFailedMessage } from "@amo-studio/prot
 // Test-only: AMO_STUDIO_TEST_PROVIDER_URL (+ AMO_STUDIO_TEST_CATALOG, AMO_STUDIO_TEST_CODEX_HOME) replaces every model
 // profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home;
 // AMO_STUDIO_TEST_CLAUDE_URL adds a Claude profile routed to the mock Anthropic API; AMO_STUDIO_TEST_DSH_AGENT (a
-// script) adds a DSH profile whose sessions run that scripted ACP agent instead of a DSH clone.
+// script) adds a DSH profile whose sessions run that scripted ACP agent instead of a DSH clone; AMO_STUDIO_TEST_AGY_AGENT
+// (testkit's fake-agy-agent.js) adds the Gemini profile (still behind its 测试功能) running that one instead of agy.
 
 const studioRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
@@ -30,8 +31,9 @@ function testModelOptions(): Partial<StartHostOptions> {
   if (!url) return {};
   const claudeUrl = process.env.AMO_STUDIO_TEST_CLAUDE_URL;
   const dshAgent = process.env.AMO_STUDIO_TEST_DSH_AGENT;
+  const agyAgent = process.env.AMO_STUDIO_TEST_AGY_AGENT;
   // Under Electron the Host's own executable is Electron: the agent runs on the system's Node, as DSH would.
-  const node = dshAgent ? resolveNode() : null;
+  const node = dshAgent || agyAgent ? resolveNode() : null;
   return {
     profiles: [
       { id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" },
@@ -43,8 +45,10 @@ function testModelOptions(): Partial<StartHostOptions> {
           ]
         : []),
       ...(dshAgent ? [{ id: "dsh-mock", label: "Mock DSH", runtime: "dsh" as const, provider: "deepseek-official", model: null, credentialId: "mock" }] : []),
+      ...(agyAgent ? [{ id: "agy-gemini", label: "Gemini", runtime: "agy" as const, provider: "google", model: null }] : []),
     ],
     ...(dshAgent && node ? { dshAgent: { command: node, args: [dshAgent] } } : {}),
+    ...(agyAgent && node ? { agyAgent: { command: node, args: [agyAgent] }, agyEnv: { ...process.env, FAKE_AGY_HOME: join(dataDir, "fake-agy") } } : {}),
     // Claude 多账号: added accounts' dirs in the test's data folder, never the person's ~/.claude-accounts.
     claudeAccountsDir: join(dataDir, "claude-accounts"),
     // MCP 设置: the "person's" MCP servers from a file of the test's own, never the real ~/.claude.json.

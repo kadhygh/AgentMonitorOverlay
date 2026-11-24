@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type ElectronApplication, type Page } from "@playwright/test";
 import { programLaunch } from "./packed.js";
-import { fakeAcpAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
+import { fakeAcpAgent, fakeAgyAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
 
 // Launch helper for Studio end-to-end tests: temp data dir, hidden window, attached Host on an ephemeral port, and by
 // default the mock model as the only model (no budget, no real Codex home).
@@ -45,6 +45,8 @@ export async function launchStudio(
     taskSidebar?: boolean;
     /** Adds the 「Mock DSH」 model, whose sessions run the scripted ACP agent (stage 17). */
     dsh?: boolean;
+    /** Adds the Gemini (Antigravity) channel, whose sessions run the scripted stand-in for agy (2026-11-24); it shows once its 测试功能 is on. */
+    agy?: boolean;
     /** Focus starts folded to its tile, as for people (2026-11-10); the specs that work in its panel start it open. */
     focusCollapsed?: boolean;
   } = {},
@@ -68,6 +70,7 @@ export async function launchStudio(
         AMO_STUDIO_TEST_CODEX_HOME: codexHome,
         ...(claudeMock ? { AMO_STUDIO_TEST_CLAUDE_URL: claudeMock.baseUrl } : {}),
         ...(options.dsh ? { AMO_STUDIO_TEST_DSH_AGENT: fakeAcpAgent().args[0]! } : {}),
+        ...(options.agy ? { AMO_STUDIO_TEST_AGY_AGENT: fakeAgyAgent().args[0]! } : {}),
       }
     : {};
   const app = await _electron.launch({

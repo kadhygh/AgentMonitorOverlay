@@ -83,11 +83,12 @@ export interface Topic {
 /**
  * `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/done/stage-17-dsh.md). `remote`
  * (远程, step 2, 2026-10-29): this computer's copy of a session that runs on a paired device; what is sent to it goes
- * there through the team server (features/remote/).
+ * there through the team server (features/remote/). `agy` (2026-11-24, plans/agy.md): Gemini through Google's
+ * Antigravity CLI over ACP (`agy acp`), on the person's own Google sign-in in agy.
  */
-export type SessionRuntime = "codex" | "claude" | "dsh" | "remote";
-/** How the runtime is named next to a profile ("Codex · DeepSeek", "DSH · DeepSeek"). */
-export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH", remote: "远程" };
+export type SessionRuntime = "codex" | "claude" | "dsh" | "agy" | "remote";
+/** How the runtime is named next to a profile ("Codex · DeepSeek", "DSH · DeepSeek", "Antigravity · Gemini"). */
+export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH", agy: "Antigravity", remote: "远程" };
 export type SessionKind = "main" | "fork" | "sub";
 
 /**

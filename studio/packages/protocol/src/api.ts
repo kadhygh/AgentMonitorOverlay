@@ -246,7 +246,7 @@ export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; h
  * 设置 → 测试功能 (2026-11-01, the user: 设置里加个测试功能页，这个功能加个开关): features still being tried out. The
  * opposite of OPTIONAL_FEATURES: off until the person turns one on, and the settings list the ones turned on.
  */
-export type ExperimentalFeature = "panorama" | "tracks" | "typing-hold" | "whiteboard" | "review-progress";
+export type ExperimentalFeature = "panorama" | "tracks" | "typing-hold" | "whiteboard" | "review-progress" | "agy";
 
 /**
  * `dev` (2026-11-09, the user: 给测试功能全景加一个开发中的标记): still being built, shown as 「开发中」 beside its name —
@@ -314,6 +314,14 @@ export const EXPERIMENTAL_FEATURES: readonly {
     id: "review-progress",
     label: "审阅进度",
     hint: "对话里每一条 AI 回复的右边多一条竖线，用来标你读到哪了。在竖线上某一段的高度左键点一下：这条回复从头读到这一段（下面画一道线，写「读到这里」）；再点别处位置跟着走，在同一处再点一次是取消。右键点一下：这一段标一个「!」，表示有问题；再右键一次取消。什么都不会自动标，滚过去不算读过。对话右上角的「复盘」：打开后没读到的段落带底色，顶上写还有几条回复没读完、几处有问题，可以跳到下一处没读的，或者在某一条回复末尾点「到这里为止都读过」一次标完。你发下一条消息时，新标的「!」和最后一条回复读到哪（只读了一部分时）会随消息告诉 AI。进度记在这台电脑的 Studio 里，换会话、重启都在；脉络的会话弹窗里也一样。现在只做了对话，文档、查看包、Git 改动还不记。",
+    stage: "dev",
+  },
+  // Gemini (2026-11-24, plans/agy.md; the user: 增加一个完整的 gemini 渠道…先按照相关内容先接好，回头再测试登录验证): built in
+  // stages behind this switch, merged as each is done.
+  {
+    id: "agy",
+    label: "Gemini（Antigravity）",
+    hint: "模型里多一个「Antigravity · Gemini」：用 Google 的 Antigravity CLI（agy）跑会话，登录用你在 agy 里登录的 Google 账号（设置 → 模型 → Antigravity 里看状态、登录）。agy 要先装好：AMO 平台的环境页，或者 winget install Google.AntigravityCLI。还在接入，真模型还没完整测过；免费账号的额度按周给、很紧。",
     stage: "dev",
   },
 ];
@@ -625,6 +633,35 @@ export interface DshCheck {
 }
 
 /**
+ * 设置 → 模型 → Antigravity (2026-11-24, plans/agy.md): the agy Gemini sessions run on. Read without starting it but for
+ * `--version` (a passive check); `check` is the last 「检查」 and `login` the sign-in going on or last tried.
+ */
+export interface AgyStatus {
+  /** The agy.exe sessions use and its version; null when none is found (`unavailable` says why). */
+  exe: { path: string; version: string | null } | null;
+  unavailable: string | null;
+  /** How agy says it last signed in over ACP (its own cache file), or null: never through ACP on this computer. */
+  signIn: { method: string } | null;
+  check: AgyCheck | null;
+  /** 「登录 Google 账号」: running (a browser window waits for the person), or how the last one went. */
+  login: { state: "running" | "done" | "failed"; at: Timestamp; message: string } | null;
+  /** The models besides Gemini that agy offers and the person turned on (设置; off by default, 2026-11-24). */
+  extraModels: string[];
+  /** Every model agy offered at the last 「检查」 or session, for 设置 to list. */
+  offered: Array<{ id: string; label: string }>;
+}
+
+export interface AgyCheck {
+  ok: boolean;
+  at: Timestamp;
+  /** What failed, or e.g. "可用 · ACP 1 · 4 个型号". */
+  message: string;
+  version: string | null;
+  /** agy said it needs a sign-in (no session could be opened). */
+  needsLogin?: boolean;
+}
+
+/**
  * 设置 → 统计 (2026-10-27): tokens per local day and model, counted again from every turn's usage each time it is asked
  * for. A model is a profile (a channel: Claude, GPT, GLM, a third-party one); subagents and delegated sessions count
  * under the model they ran on. `input` here is what was not read from the cache (the runtimes' input minus cachedInput).
@@ -734,6 +771,14 @@ export interface HostRoutes
   "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone"; desktopPath?: string | null; auth?: "account" | "key" }; res: DshStatus };
   /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
   "POST /api/dsh/check": { req: void; res: DshStatus };
+  /** The agy Gemini sessions use (plans/agy.md). */
+  "GET /api/agy": { req: void; res: AgyStatus };
+  /** Which models besides Gemini the pickers offer (ids from `offered`). */
+  "PUT /api/agy": { req: { extraModels?: string[] }; res: AgyStatus };
+  /** Starts agy over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
+  "POST /api/agy/check": { req: void; res: AgyStatus };
+  /** 「登录 Google 账号」: agy's own sign-in (a browser window); answers at once with `login.state` running, GET follows it. */
+  "POST /api/agy/login": { req: void; res: AgyStatus };
   /**
    * A DSH session's folder-access notice (NoticeAction): gives the person inherited full control of the session's
    * folder (the old permissions saved first), so DSH's write sandbox can be set up there. Answers at once; the notice

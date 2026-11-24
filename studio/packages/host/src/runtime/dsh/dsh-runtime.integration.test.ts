@@ -8,7 +8,7 @@ import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { StaticCredentialReader } from "../credentials.js";
 import type { FolderAccess } from "./folder-access.js";
-import { AcpError } from "./acp.js";
+import { AcpError } from "../acp.js";
 import { failingMcpOf } from "./dsh-runtime.js";
 
 // DSH sessions (stage 17) through a whole Host, with the scripted ACP agent standing in for `dsh --profile acp`.

@@ -7,6 +7,7 @@ import { ChannelNavItem, ChannelPage, SCHEME, useChannels } from "./ChannelsSect
 import { ChannelDialog } from "./ChannelDialog.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
 import { DshSection } from "./DshSection.js";
+import { AgySection } from "./AgySection.js";
 import { ClaudeCodeSection } from "./ClaudeCodeSection.js";
 import { ClaudeAccountsSection } from "./ClaudeAccountsSection.js";
 import { useProfiles } from "../lib/balance.js";
@@ -62,6 +63,8 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
       </>
     ) : profile && !profile.custom && profile.runtime === "dsh" ? (
       <DshSection link={link} credentialId={profile.credentialId} />
+    ) : profile?.runtime === "agy" ? (
+      <AgySection link={link} />
     ) : undefined;
 
   const select = (v: View) => {

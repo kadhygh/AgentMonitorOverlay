@@ -11,6 +11,7 @@ export function profileMark(p: ModelProfile | undefined): { text: string; tone: 
   if (key.includes("mock")) return { text: "M", tone: "mock" };
   if (key.includes("deepseek")) return { text: "DS", tone: "ds" };
   if (key.includes("glm")) return { text: "Z", tone: "glm" };
+  if (p?.runtime === "agy" || key.includes("gemini")) return { text: "Ge", tone: "gem" };
   if (p?.runtime === "claude") return { text: "C", tone: "cl" };
   return { text: "G", tone: "gpt" };
 }

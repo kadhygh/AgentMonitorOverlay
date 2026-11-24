@@ -11,6 +11,8 @@ import { CLAUDE_CODE_MISSING, findClaudeCode } from "./runtime/claude/executable
 import { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
 import type { FolderAccess } from "./runtime/dsh/folder-access.js";
 import { dshUnavailable } from "./runtime/dsh/install.js";
+import { AgyRuntime } from "./runtime/agy/agy-runtime.js";
+import { agyUnavailable } from "./runtime/agy/install.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
 import { personClaudeConfig } from "./features/mcp/local.js";
@@ -22,7 +24,9 @@ import { recordRole, roleCard, roleCardFor } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
-import { BUILTIN_BALANCES, BUILTIN_PROFILES, CODEX_PROVIDERS, type CodexProviderDef } from "./runtime/profiles.js";
+import { AGY_PROFILE_ID, BUILTIN_BALANCES, BUILTIN_PROFILES, CODEX_PROVIDERS, type CodexProviderDef } from "./runtime/profiles.js";
+import { experimentalEnabled, type ExperimentalFeature } from "@amo-studio/protocol";
+import { EXPERIMENTAL_FEATURES_KEY } from "./core/shared.js";
 import { ChannelRegistry } from "./runtime/channels.js";
 import { HostService } from "./service.js";
 import type { RemoteOptions } from "./features/remote/service.js";
@@ -76,6 +80,10 @@ export interface StartHostOptions {
   /** Tests: how long 停止 waits on a runtime before Studio stops waiting (default STOP_GRACE_MS; Codex and DSH). */
   stopGraceMs?: number;
   dshAutoStallMs?: number;
+  /** Tests: the ACP agent Gemini (agy) sessions run (a fake one) instead of the agy found on this computer. */
+  agyAgent?: { command: string; args: readonly string[] };
+  /** Variables agy processes start from (default: process.env). */
+  agyEnv?: NodeJS.ProcessEnv;
   /**
    * 远程 (2026-10-29): connect to the team server as this computer's device with the AMO platform's login. Studio's
    * Host (bin.ts) turns it on; the Reviewer and tests that start a Host leave it off, so they never reach a server.
@@ -124,6 +132,7 @@ export const hostPaths = (dataDir: string) => ({
   codex: join(dataDir, "codex"),
   claudeHome: join(dataDir, "claude-home"),
   dsh: join(dataDir, "dsh"),
+  agy: join(dataDir, "agy"),
 });
 
 export function readHostInfo(dataDir: string): HostInfo | null {
@@ -181,6 +190,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   let manager: CodexServerManager | undefined;
   let claude: ClaudeRuntime | undefined;
   let dsh: DshRuntime | undefined;
+  let agy: AgyRuntime | undefined;
   try {
     // An earlier Host's 「asked to stop」 mark: this one has not been asked.
     rmSync(paths.exit, { force: true });
@@ -214,7 +224,15 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       // DSH sessions need a built clone (设置 → 模型), Claude sessions a Claude Code (the portable build ships none); until
       // then the profile stays out of the pickers.
       unavailable: (p) =>
-        p.runtime === "dsh" && !options.dshAgent ? (dshUnavailable(liveKv) ?? undefined) : p.runtime === "claude" && !findClaudeCode() ? CLAUDE_CODE_MISSING : undefined,
+        p.runtime === "dsh" && !options.dshAgent
+          ? (dshUnavailable(liveKv) ?? undefined)
+          : p.runtime === "claude" && !findClaudeCode()
+            ? CLAUDE_CODE_MISSING
+            : p.runtime === "agy" && !options.agyAgent
+              ? (agyUnavailable(options.agyEnv) ?? undefined)
+              : undefined,
+      // Gemini (2026-11-24, plans/agy.md) only while its 测试功能 is on; 设置 turning it on or off refreshes the list.
+      omit: (p) => p.id === AGY_PROFILE_ID && !experimentalEnabled(readExperimental(liveKv), "agy"),
     });
     const profiles = channels.profiles;
     manager = options.servers
@@ -307,7 +325,18 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
       ...(options.dshAutoStallMs !== undefined ? { autoStallMs: options.dshAutoStallMs } : {}),
     });
-    const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
+    agy = new AgyRuntime({
+      store,
+      profiles,
+      dir: paths.agy,
+      mcp: () => mcp,
+      mcpServers: { launch: (target, native): McpLaunch => service.mcp.launch(target, native) },
+      identities,
+      ...(options.agyAgent ? { agent: options.agyAgent } : {}),
+      ...(options.agyEnv ? { env: options.agyEnv } : {}),
+      ...(options.stopGraceMs !== undefined ? { stopGraceMs: options.stopGraceMs } : {}),
+    });
+    const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh, agy });
     const liveStore = store;
     const service = new HostService(store, runtime, profiles, {
       launcher: options.launcher ?? new WindowsTerminalLauncher(),
@@ -318,6 +347,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       claudeAccounts,
       channels,
       dsh,
+      agy,
       // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.
       restartProfileServer: async (profileId) => {
         if (!manager?.handle(profileId)) return true;
@@ -370,6 +400,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const finalManager = manager;
     const finalClaude = claude;
     const finalDsh = dsh;
+    const finalAgy = agy;
     // 2026-10-27: DSH turns that ended without their tokens and speed get them from DSH's logs, once the Host settled.
     setTimeout(() => {
       if (stopped) return;
@@ -404,6 +435,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         await finalHttp.close();
         await finalClaude.closeAll();
         await finalDsh.closeAll();
+        await finalAgy.closeAll();
         const s = finalManager ?? options.servers;
         if (keepServers) s?.detachAll?.();
         else await s?.stopAll?.();
@@ -416,9 +448,20 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   } catch (err) {
     await http?.close();
     await dsh?.closeAll();
+    await agy?.closeAll();
     await manager?.stopAll();
     store?.close();
     release();
     throw err;
+  }
+}
+
+/** 设置 → 测试功能 as the Host keeps it, read before the config feature exists (the profile list is built first). */
+function readExperimental(kv: { getKv(key: string): { value: string } | undefined }): ExperimentalFeature[] {
+  try {
+    const v = JSON.parse(kv.getKv(EXPERIMENTAL_FEATURES_KEY)?.value ?? "[]") as unknown;
+    return Array.isArray(v) ? (v as ExperimentalFeature[]) : [];
+  } catch {
+    return [];
   }
 }

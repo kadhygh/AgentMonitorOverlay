@@ -2,11 +2,12 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child
 import { EventEmitter } from "node:events";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
-import { lowerAgentPriority } from "../priority.js";
+import { lowerAgentPriority } from "./priority.js";
 
-// One ACP agent process (a DSH `--profile acp`): newline-delimited JSON-RPC 2.0 over stdio. Stdout carries only
-// protocol frames; stderr goes to a log file. Requests from the agent (permission prompts) go to `onRequest`, whose
-// result (or error) is the response; notifications (session/update) are emitted.
+// One ACP agent process (a DSH `--profile acp`, an `agy acp`): newline-delimited JSON-RPC 2.0 over stdio. Stdout
+// carries only protocol frames; stderr goes to a log file. Requests from the agent (permission prompts) go to
+// `onRequest`, whose result (or error) is the response; notifications (session/update) are emitted. Shared by the DSH
+// and agy runtimes since 2026-11-24 (it was runtime/dsh/acp.ts).
 
 export interface AcpSpawn {
   command: string;
@@ -15,6 +16,8 @@ export interface AcpSpawn {
   env: NodeJS.ProcessEnv;
   /** Where the process's stderr goes (appended). */
   logFile?: string;
+  /** The agent's name in errors the person reads (default "DSH"). */
+  label?: string;
 }
 
 export class AcpError extends Error {
@@ -50,12 +53,14 @@ export class AcpConnection extends EventEmitter<AcpEvents> {
   /** The end of stderr, for the error when the process exits. */
   private stderrTail = "";
   readonly exited: Promise<number | null>;
+  private readonly label: string;
 
   constructor(
     spec: AcpSpawn,
     private readonly onRequest: (method: string, params: unknown) => Promise<unknown>,
   ) {
     super();
+    this.label = spec.label ?? "DSH";
     this.child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     lowerAgentPriority(this.child.pid);
     if (spec.logFile) {
@@ -77,7 +82,7 @@ export class AcpConnection extends EventEmitter<AcpEvents> {
         if (this.exitCode !== undefined) return;
         this.exitCode = code;
         const last = this.stderrTail.trim().split(/\r?\n/).slice(-8).join(" | ").slice(-800);
-        const err = new AcpError(`DSH 进程已退出（${code ?? "被终止"}）${last ? `：${last}` : ""}`, -32000);
+        const err = new AcpError(`${this.label} 进程已退出（${code ?? "被终止"}）${last ? `：${last}` : ""}`, -32000);
         for (const p of this.pending.values()) {
           if (p.timer) clearTimeout(p.timer);
           p.reject(err);
@@ -104,12 +109,12 @@ export class AcpConnection extends EventEmitter<AcpEvents> {
 
   /** A request; `timeoutMs` 0 waits as long as it takes (a prompt runs until its turn ends). */
   request<T = unknown>(method: string, params: unknown, timeoutMs = 120_000): Promise<T> {
-    if (!this.alive) return Promise.reject(new AcpError("DSH 进程已退出", -32000));
+    if (!this.alive) return Promise.reject(new AcpError(`${this.label} 进程已退出`, -32000));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs > 0 ? setTimeout(() => {
         this.pending.delete(id);
-        reject(new AcpError(`DSH 没有回应 ${method}（${Math.round(timeoutMs / 1000)} 秒）`, -32001));
+        reject(new AcpError(`${this.label} 没有回应 ${method}（${Math.round(timeoutMs / 1000)} 秒）`, -32001));
       }, timeoutMs) : null;
       this.pending.set(id, { method, resolve: resolve as (v: unknown) => void, reject, timer });
       this.write({ jsonrpc: "2.0", id, method, params });

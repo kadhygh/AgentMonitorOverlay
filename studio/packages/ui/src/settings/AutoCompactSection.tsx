@@ -30,6 +30,15 @@ export function AutoCompactSection({ link, settings, profile }: { link: HostLink
         </span>
       </section>
     );
+  if (profile.runtime === "agy")
+    return (
+      <section className="settings-section" aria-label="自动压缩点">
+        <span className="settings-heading">自动压缩点</span>
+        <span className="settings-hint" data-testid="auto-compact-agy">
+          Antigravity 自己管理上下文（窗口 1M），Studio 不能改，也不能手动压缩。
+        </span>
+      </section>
+    );
 
   async function save(value: AutoCompactChoice | null) {
     setBusy(true);

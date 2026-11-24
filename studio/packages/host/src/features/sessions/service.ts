@@ -246,6 +246,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     // 远程分支 (2026-11-12): a copy's branch is made where the task runs; its copy comes back here (RemoteCopies.fork).
     if (s.runtime === "remote") return this.f.remote.forkCopy(s.id, (body && typeof body === "object" ? body : {}) as ForkRequest);
     if (s.runtime === "dsh") throw new HostError("bad_request", "DeepSeek 会话不能分支：DSH 不支持");
+    if (s.runtime === "agy") throw new HostError("bad_request", "Gemini 会话不能分支：Antigravity 不支持");
     const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const profileId = typeof b.profileId === "string" && b.profileId ? b.profileId : undefined;
     if (profileId && this.requireProfile(profileId).runtime !== s.runtime) throw new HostError("bad_request", "分支只能用同一个渠道的模型");
@@ -747,12 +748,14 @@ const PERMISSIONS: Record<PeerRuntime, Record<PermissionLevel, string>> = {
   // 帮我审批 and than Codex's and DSH's write, which run commands in their folder without asking.
   claude: { "read-only": "plan", write: "auto", full: "bypassPermissions" },
   dsh: { "read-only": "read-only", write: "workspace-write", full: "full-access" },
+  agy: { "read-only": "plan", write: "accept-edits", full: "full-access" },
 };
 /** Each runtime's permission options, narrowest first (for 「不比开它的会话宽」 on the same CLI). */
 const PERMISSION_ORDER: Record<PeerRuntime, string[]> = {
   codex: ["read-only", "ask", "workspace-write", "auto-review", "on-request", "full-auto"],
   claude: ["plan", "default", "acceptEdits", "auto", "bypassPermissions"],
   dsh: ["read-only", "workspace-write", "full-access"],
+  agy: ["plan", "accept-edits", "full-access"],
 };
 
 function isPeerRuntime(runtime: string): runtime is PeerRuntime {

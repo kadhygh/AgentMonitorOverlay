@@ -39,6 +39,7 @@ export type FeatureName =
   | "stats"
   | "channels"
   | "dsh"
+  | "agy"
   | "maintenance"
   | "remote"
   | "teamRelay"

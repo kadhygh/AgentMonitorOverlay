@@ -130,3 +130,24 @@ export const DSH_DEFAULT_PERMISSION = "workspace-write";
 export function dshPermissionMode(id: string | undefined): "read-only" | "workspace-write" | "danger-full-access" {
   return id === "read-only" ? "read-only" : id === "full-access" ? "danger-full-access" : "workspace-write";
 }
+
+// ---- Antigravity CLI (agy, plans/agy.md) ---------------------------------------------------------------------------
+
+/**
+ * The user, 2026-11-24: 只读 = agy's `plan` mode, 可写 = `accept-edits`, 完全 = `--dangerously-skip-permissions` (a flag of
+ * the process). agy's own `auto` (edits and safe commands without asking) needs the OS terminal sandbox, which Windows
+ * has only from 11 24H2 with the 2026-08 update: not offered until then. agy runs commands without a sandbox here, so
+ * 可写 asks for each command.
+ */
+export const AGY_PERMISSIONS: PermissionOption[] = [
+  { id: "accept-edits", label: "可写", description: "改文件不问，运行命令先问你（agy：accept-edits）" },
+  { id: "plan", label: "只读", description: "只读和计划，不改文件（agy：plan）" },
+  { id: "full-access", label: "完全访问", description: "改文件、运行命令都不再询问（agy：--dangerously-skip-permissions）" },
+];
+
+export const AGY_DEFAULT_PERMISSION = "accept-edits";
+
+/** agy's mode for a Studio permission; `skip`: the process runs with --dangerously-skip-permissions. */
+export function agyPermissionMode(id: string | undefined): { mode: "plan" | "accept-edits" | "default"; skip: boolean } {
+  return id === "plan" ? { mode: "plan", skip: false } : id === "full-access" ? { mode: "default", skip: true } : { mode: "accept-edits", skip: false };
+}

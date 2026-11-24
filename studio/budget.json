@@ -20,6 +20,10 @@
     "dsh-dxx-ds": {
       "limit": 1000,
       "used": 1
+    },
+    "gemini": {
+      "limit": 30,
+      "used": 1
     }
   },
   "log": [
@@ -582,6 +586,11 @@
       "at": "2026-11-22T19:25:39.307Z",
       "provider": "deepseek",
       "note": "cowork scenario 2026-11-22T19-22-28-gpt6.2sol-dxx-ds: coder turn from a delivery"
+    },
+    {
+      "at": "2026-11-24T13:03:56.603Z",
+      "provider": "gemini",
+      "note": "A-01 agy acp: first tiny prompt"
     }
   ]
 }

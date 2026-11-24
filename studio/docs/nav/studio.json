@@ -653,13 +653,31 @@
         { "label": "DshRuntime", "path": "studio/packages/host/src/runtime/dsh/dsh-runtime.ts", "anchor": "export class DshRuntime" },
         { "label": "重试策略（--patch）", "path": "studio/packages/host/src/runtime/dsh/install.ts", "anchor": "DSH_RETRY_CODES" },
         { "label": "子 agent 回合怎么结束的", "path": "studio/packages/host/src/runtime/dsh/subagents.ts", "anchor": "export function turnEndOf" },
-        { "label": "ACP 连接", "path": "studio/packages/host/src/runtime/dsh/acp.ts", "anchor": "export class AcpConnection" },
+        { "label": "ACP 连接", "path": "studio/packages/host/src/runtime/acp.ts", "anchor": "export class AcpConnection" },
         { "label": "子 agent", "path": "studio/packages/host/src/runtime/dsh/subagents.ts", "anchor": "export class DshSubagents" },
         { "label": "会话日志", "path": "studio/packages/host/src/runtime/dsh/session-log.ts" },
         { "label": "设置 → DSH", "path": "studio/packages/host/src/features/dsh/service.ts", "anchor": "export class DshFeature" }
       ],
       "related": ["runtime.common", "studio.channels"],
       "next": ["studio/plans/done/stage-17-dsh.md"]
+    },
+    {
+      "id": "runtime.agy",
+      "label": "agy runtime（Antigravity · Gemini，ACP）",
+      "aliases": ["agy", "Antigravity", "Gemini", "AgyRuntime", "Google", "antigravity-cli"],
+      "category": "runtime",
+      "purpose": "Gemini 会话（2026-11-24，测试功能「Gemini（Antigravity）」开着才有）：一个会话一个 `agy acp` 进程，用本机 agy 登录的 Google 账号；权限映射到 agy 的 mode（只读 plan / 可写 accept-edits / 完全访问 --dangerously-skip-permissions）；Gemini 以外的型号要在设置里勾上才出现；不能分支、不能在终端打开；agy 自己的更新关掉（AGY_CLI_DISABLE_AUTO_UPDATE），Host 环境里的 GEMINI_* / GOOGLE_* 不传给它。测试用 testkit 的 fake-agy-agent。",
+      "anchors": [
+        { "label": "AgyRuntime", "path": "studio/packages/host/src/runtime/agy/agy-runtime.ts", "anchor": "export class AgyRuntime" },
+        { "label": "找 agy、环境、KV", "path": "studio/packages/host/src/runtime/agy/install.ts", "anchor": "export function resolveAgy" },
+        { "label": "ACP 事件 → 会话条目", "path": "studio/packages/host/src/runtime/agy/transcript.ts", "anchor": "export class AgyTranscript" },
+        { "label": "权限映射", "path": "studio/packages/host/src/runtime/choices.ts", "anchor": "export function agyPermissionMode" },
+        { "label": "测试功能开关隐藏渠道", "path": "studio/packages/host/src/host-process.ts", "anchor": "AGY_PROFILE_ID" },
+        { "label": "设置 → Antigravity", "path": "studio/packages/ui/src/settings/AgySection.tsx", "anchor": "export function AgySection" },
+        { "label": "假 agy", "path": "studio/packages/testkit/src/fake-agy-agent.ts" }
+      ],
+      "related": ["runtime.dsh", "runtime.common", "studio.channels"],
+      "next": ["studio/plans/agy.md"]
     },
     {
       "id": "app.shell",

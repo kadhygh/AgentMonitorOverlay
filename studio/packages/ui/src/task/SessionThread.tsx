@@ -48,7 +48,7 @@ export function forkOffOf(task: Task, copy: CopyStatus | null): string | undefin
 /** Whether the session can be branched from here (远程分支 2026-11-12: a copy's on the computer it runs on, as its runtime there allows). */
 export function canFork(task: Task, copy: CopyStatus | null, session: Session | null): boolean {
   const runtime = sessionRuntime(task, session);
-  return !!session && !session.archivedAt && runtime !== "dsh" && !(runtime === "claude" && session.kind === "sub") && !!session.runtimeRef && (copy ? session.kind !== "sub" && copy.state !== "revoked" : session.runtime !== "remote");
+  return !!session && !session.archivedAt && runtime !== "dsh" && runtime !== "agy" && !(runtime === "claude" && session.kind === "sub") && !!session.runtimeRef && (copy ? session.kind !== "sub" && copy.state !== "revoked" : session.runtime !== "remote");
 }
 
 interface SessionThreadProps {

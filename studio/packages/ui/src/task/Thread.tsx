@@ -417,12 +417,12 @@ export function Thread({ link, presets, session, firstMessage, profile, profiles
   useMarkSessionSeen(session);
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn; DSH only
   // after the turn (stage 17: one prompt at a time).
-  const queues = session?.runtime === "claude" || session?.runtime === "dsh";
+  const queues = session?.runtime === "claude" || session?.runtime === "dsh" || session?.runtime === "agy";
   const placeholder = remoteSub
     ? "子 agent 不能单独接收消息，请在父会话里继续。"
     : blocked
       ? `${blocked}${readOnly ? "" : "（可以先写好）"}`
-      : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, planWindow: !!openPlan, generating, queues, waitsForTurn: session?.runtime === "dsh" });
+      : composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, planWindow: !!openPlan, generating, queues, waitsForTurn: session?.runtime === "dsh" || session?.runtime === "agy" });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // 立即发送 (2026-11-02): Claude and Codex (a remote copy's computer says what it can); DSH waits for the turn's end.
@@ -872,7 +872,7 @@ ${d}` : back));
                 className="composer-hint"
                 {...(blocked ? { "data-testid": "remote-blocked" } : {})}
                 {...(sending && sending === session?.id && !blocked && !attachHold ? { title: `Host 还没回应这条消息；${SEND_GIVE_UP_MS / 1000} 秒内还没有，文字会放回输入框` } : halting && !blocked && !attachHold ? { title: "模型手上的命令或回复收住可能要几秒，这一轮结束前会一直显示" } : {})}
-              >{blocked || attachHold || (sending && sending === session?.id ? "正在发送…" : "") || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
+              >{blocked || attachHold || (sending && sending === session?.id ? "正在发送…" : "") || (halting === "stop" ? "正在停止…" : halting === "now" ? "正在打断，停下后马上发出…" : "") || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" || session?.runtime === "agy" ? "本轮结束后发出 · Ctrl+Enter 立即发送" : `${sendsNow ? "" : "生成中："}${queues ? "工具调用后或本轮结束后读到" : "发送会插入到当前回合"}${sendsNow ? " · Ctrl+Enter 立即发送" : ""}`) : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && !blocked && (
                 <button
@@ -899,7 +899,7 @@ ${d}` : back));
             </div>
           </div>
           )}
-          <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh" && !isRemote} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
+          <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh" && session?.runtime !== "agy" && !isRemote} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
       </div>

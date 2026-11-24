@@ -65,6 +65,7 @@ export const PERMISSION_OF: Record<Exclude<ModelProfile["runtime"], "remote">, R
   codex: { "read-only": "read-only", write: "workspace-write", full: "full-auto" },
   claude: { "read-only": "plan", write: "acceptEdits", full: "bypassPermissions" },
   dsh: { "read-only": "read-only", write: "workspace-write", full: "full-access" },
+  agy: { "read-only": "plan", write: "accept-edits", full: "full-access" },
 };
 
 /**

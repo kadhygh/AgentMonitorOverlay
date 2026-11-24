@@ -48,7 +48,9 @@ export function ContextHint({
   const cacheGone = session.runtime === "claude" && idle > CACHE_GONE_MS;
   // DSH compacts by itself at 80% of the model's window (stage 17) and has no command for it; the setting is the CLIs'.
   const dsh = session.runtime === "dsh";
-  const auto = dsh ? (context.window ? Math.round(context.window * 0.8) : null) : settings ? autoCompactFor(settings, session.profileId) : null;
+  // agy (2026-11-24) manages its own context too, with no command for it and no known point.
+  const agy = session.runtime === "agy";
+  const auto = agy ? null : dsh ? (context.window ? Math.round(context.window * 0.8) : null) : settings ? autoCompactFor(settings, session.profileId) : null;
   const dismiss = () => {
     writeStored(dismissKey(session.id), String(context.used));
     setDismissed(context.used);
@@ -65,7 +67,7 @@ export function ContextHint({
         {auto && context.used < auto ? ` · 到 ${formatTokens(auto)} 自动压缩` : ""}
         {" · 换阶段可开新会话"}
       </span>
-      {!dsh && (
+      {!dsh && !agy && (
         <button type="button" className="btn-ghost small" disabled={busy} onClick={onCompact} data-testid="context-hint-compact">
           现在压缩
         </button>
