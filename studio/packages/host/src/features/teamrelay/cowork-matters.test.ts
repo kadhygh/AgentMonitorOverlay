@@ -172,7 +172,7 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     // After a compaction: to read the 协作 again, and the whole card it has now (its AMO role and its 协作 role).
     store.appendItem({ id: `i-${lead.id}-compact`, sessionId: lead.id, createdAt: new Date().toISOString(), type: "compaction", state: "completed" } as never);
     const after = service.sessions.roleUpdate(lead.id);
-    expect(after.lines.join("\n")).toContain("你的上下文刚被压缩。先用 cowork_read");
+    expect(after.lines.join("\n")).toContain("你的上下文刚被压缩，之前的对话不在了。先用 cowork_read");
     expect(after.lines.join("\n")).toContain("协作「穿透」（cowork:");
     expect(after.lines.join("\n")).toContain("里的角色：主控");
     after.told();

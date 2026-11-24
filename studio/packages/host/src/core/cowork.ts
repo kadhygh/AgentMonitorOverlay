@@ -106,7 +106,7 @@ export function coworkCards(store: Store, sessionId: Id): CoworkCard[] {
  * card (sessions/service.ts roleUpdate, 2026-11-25: the card in its instructions is the one it started with, and what
  * changed since was only in messages the compaction dropped).
  */
-export const COMPACTED_LINE = "你的上下文刚被压缩。先用 cowork_read（不带参数）看你的角色、开着的事项、已定的事和待你处理，再继续；不要凭记忆接着做。你现在的角色卡：";
+export const COMPACTED_LINE = "你的上下文刚被压缩，之前的对话不在了。先用 cowork_read 按三层接上：不带参数看待你处理和概况，要动的事项带 threadId 看细节；然后在回复开头用一两句写现在到哪了、该你做什么，再接着做。不要凭记忆接着做；已经做过的（开过的事项、派过的执行、问过的人）看事项细节，不要再做一遍。你现在的角色卡：";
 const COMPACTED_KEY = "teamrelay.cowork.compacted:";
 
 /** The newest compaction not told yet while the session is in a 协作; `told()` once the message saying so went out. */

@@ -761,7 +761,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const items = await this.agentPending(client, c.id, mark).catch(() => [] as PendingItem[]);
     const wake: WakeItem[] = items.map((item) => ({ item, matter: item.matter ? (c.matters?.find((m) => m.id === item.matter) ?? null) : null }));
     const role = roleLabel(a?.role ?? null, c.matters?.find((m) => m.id === a?.matter));
-    const duty = a?.role === "worker" ? "（只在你的事项里贴技术事实；状态、结论、群聊、@ 人是主控的事）" : a?.role === "lead" ? "（理流程、派活、和人沟通、改你负责的事项的状态）" : "（未分角色：权限照旧，人可以在 Studio 里给你选主控或执行）";
+    const duty = a?.role === "worker" ? "（只在你的事项里贴技术事实；状态、结论、群聊、@ 人是主控的事）" : a?.role === "lead" ? "（理流程、派活、和人沟通、补判断：待核对的核对后标已验、卡在哪、结论）" : "（未分角色：权限照旧，人可以在 Studio 里给你选主控或执行）";
     return { role: `${role}${duty}`, members: membersSection(c, mark, (x) => `${AGENT_STATE_LABEL[x.state]}${x.queued ? `，排队 ${x.queued} 条` : ""}`), sections: [mattersSection(c, mark, own), pendingSection(wake, c, mark)] };
   }
 
