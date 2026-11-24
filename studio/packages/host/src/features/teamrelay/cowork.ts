@@ -26,6 +26,15 @@ import { agentRef, matterRef, partyRef, personRef, seqRef, seqsRef, statusRef, t
 
 const JOINED_KEY = "teamrelay.cowork.joined";
 const HANDOFFS_KEY = "teamrelay.cowork.handoffs";
+/**
+ * What the new tools answer while the team server's 中转 is still the old one (health cowork < 2, no 事项): nothing was
+ * done, and what to do instead (2026-11-25, 中转迭代讨论: 明白话，不报错).
+ */
+export const OLD_SERVICE = {
+  matter: "没有做任何改动：对方（团队服务器上）的 AMO 中转服务还是旧版，没有事项。照旧的做法：要问人用 cowork_ask 开子会话，商量定了用 cowork_conclude 定结论，进度在群聊里用 cowork_post 说。中转更新后再用 cowork_matter。",
+  mark: "没有标：对方（团队服务器上）的 AMO 中转服务还是旧版，没有「处理了」的标记，也不需要标。回复照常用 cowork_post（带 replyTo）。",
+  retract: "没有撤回：对方（团队服务器上）的 AMO 中转服务还是旧版，发出去的消息不能撤回或改写。要更正就用 cowork_post 再发一条说明。",
+} as const;
 /** A handoff that asks for this side's 主控 (2026-11-24): `lead:<coworkId>` in place of a 子会话. */
 const LEAD_ASK = "lead:";
 /** Per agent (`<coworkId> <mark>`), the last seq cowork_read showed it. */
@@ -1007,7 +1016,8 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { coworkId, mark } = this.mine(sessionId, input.coworkId);
     const { client } = this.relay();
     const { cowork: c } = await this.call(() => client.cowork(coworkId));
-    if (!c.matters) throw new HostError("conflict", "团队服务器上的 AMO 中转还是旧版本，没有事项：用 cowork_ask 开子会话、cowork_conclude 定结论。");
+    // An old service (health cowork < 2): said plainly, not as an error — the AI goes on the old way (2026-11-25).
+    if (!c.matters) return OLD_SERVICE.matter;
     const a = c.agents.find((x) => x.mark === mark);
     if (a?.role === "worker") throw new HostError("bad_request", "你是执行会话：不开事项、不改事项的状态和字段、不定结论（这些是主控的事）。要改什么，写进这一轮最后的回复，交回给主控。");
     const action = input.action === "open" || input.action === "close" ? input.action : "update";
@@ -1110,7 +1120,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { coworkId, mark } = this.mine(sessionId, input.coworkId);
     const { client } = this.relay();
     const { cowork: c } = await this.call(() => client.cowork(coworkId));
-    if (!c.matters) throw new HostError("conflict", "团队服务器上的 AMO 中转还是旧版本，没有「处理了」的标记：不用标。");
+    if (!c.matters) return OLD_SERVICE.mark;
     const which = input.mark === "seen" ? "seen" : "handled";
     const seqs = seqsRef(input.seqs);
     const matter = input.matter !== undefined ? matterRef(c, input.matter) : null;
@@ -1130,7 +1140,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { coworkId, mark } = this.mine(sessionId, input.coworkId);
     const { client } = this.relay();
     const { cowork: c } = await this.call(() => client.cowork(coworkId));
-    if (!c.matters) throw new HostError("conflict", "团队服务器上的 AMO 中转还是旧版本，消息不能撤回或改写：发一条新的说明。");
+    if (!c.matters) return OLD_SERVICE.retract;
     const seq = seqRef(input.seq);
     if (!seq) throw new HostError("bad_request", "seq 写要撤回或改写的那条（「#7」）");
     const body = typeof input.body === "string" && input.body.trim() ? input.body.trim() : null;
