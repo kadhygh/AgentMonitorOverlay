@@ -14,6 +14,9 @@ type CallUsage = { input_tokens?: number; output_tokens?: number; cache_read_inp
 // for Codex; it cannot take messages itself. An agent can be resumed with SendMessage, even by a later process.
 
 export class ClaudeSubagents {
+  /** end()'s second read of a transcript, waiting: cleared on shutdown (the store closes after). */
+  private readonly later = new Set<ReturnType<typeof setTimeout>>();
+
   constructor(
     private readonly core: ClaudeCore,
     private readonly turns: ClaudeTurns,
@@ -121,7 +124,25 @@ export class ClaudeSubagents {
     const session = this.core.store.getSession(child);
     if (!session) return;
     this.fillFromLog(session);
-    setTimeout(() => this.fillFromLog(session), 2000).unref?.();
+    // 2026-11-25: this ran after the store closed (a test or the Host ending within the 2 s): 「database is not open」
+    // thrown from a timer, an unhandled error that fails the full unit run and so 自动打包. Cleared on shutdown; a
+    // failure here is only logged (as CodexEvents.handlerFailed, af94714c).
+    const t = setTimeout(() => {
+      this.later.delete(t);
+      try {
+        this.fillFromLog(session);
+      } catch (err) {
+        this.core.log(`could not read the transcript of subagent ${child} again: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 2000);
+    t.unref?.();
+    this.later.add(t);
+  }
+
+  /** The Host shuts down: the second reads still waiting are dropped. */
+  shutdown(): void {
+    for (const t of this.later) clearTimeout(t);
+    this.later.clear();
   }
 
   /**

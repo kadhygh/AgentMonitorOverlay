@@ -729,6 +729,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   async closeAll(): Promise<void> {
     this.wake.shutdown();
     this.accounts.shutdown();
+    this.subagents.shutdown();
     if (this.accountTick) clearInterval(this.accountTick);
     this.accountTick = null;
     await Promise.all([...this.live.keys()].map((id) => this.close(id)));
