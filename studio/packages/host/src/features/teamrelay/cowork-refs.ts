@@ -1,5 +1,5 @@
 import { refId } from "@amo-studio/protocol";
-import { agentParty, MATTER_STATUSES, MATTER_STATUS_LABEL, personParty, type Cowork, type CoworkAgent, type Matter, type MatterStatus, type Party } from "@amo-studio/relay/light";
+import { agentParty, MATTER_STATUSES, MATTER_STATUS_LABEL, personParty, resolveAgentRef, type Cowork, type CoworkAgent, type Matter, type MatterStatus, type Party } from "@amo-studio/relay/light";
 
 // 指代 (2026-11-24, plans/collab-agent-spec.md §3「所有工具认「事项 3」「#7」、显示名（「老李的主控」）、人从中转复制来的整行引用，
 // 不要求先查 mark」): what the cowork_* tools take for a 事项, a message, an AI or a person, and what they resolve it to.
@@ -55,6 +55,11 @@ export function agentRef(c: Pick<Cowork, "agents">, value: string): CoworkAgent 
   if (!v) return null;
   const exact = c.agents.find((a) => a.mark === v);
   if (exact) return exact;
+  // The service's own reading first (protocol/matters.ts, 2026-11-25): 「X的主控」 falls back to X's 未分角色 AIs, 「事项 N 的执行」,
+  // 「X 的 AI」, copied lines; what it does not settle, the looser matching below.
+  const marks = resolveAgentRef(v, c.agents.map((a) => ({ mark: a.mark, name: a.name, label: a.label, owner: a.owner, role: a.role ?? "unassigned", matterNo: a.matterNo ?? null })));
+  if (marks.length === 1) return c.agents.find((a) => a.mark === marks[0]) ?? null;
+  if (marks.length > 1) return null;
   const lead = /^(.+?)\s*(?:这一方)?\s*的\s*主控$/.exec(v);
   if (lead) {
     const side = norm(lead[1]!);

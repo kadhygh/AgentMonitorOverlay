@@ -1,5 +1,6 @@
 import type { Id, Session, Task, Topic } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
+import { coworkCards } from "./cowork.js";
 
 // Who a session is in AMO — 主控, 执行, a topic's own session or a branch — and what it was last told of it: the judgment
 // several features make (relays, task plans, the inbox's role updates), here since 2026-11-06 (plans/host-structure.md
@@ -71,22 +72,43 @@ interface RoleStamp {
   topic: { id: Id; title: string } | null;
   refs: Array<{ id: Id; title: string }>;
   description: string;
+  /**
+   * Its role in each 协作 (2026-11-25, 中转迭代讨论: 「role-stamp 把协作角色也算进去」): 「主控」「执行（事项 3）」「未分角色」.
+   * Absent in stamps from before: counted as in none, so a session already in one hears its card once.
+   */
+  cowork?: Array<{ id: string; title: string; role: string }>;
 }
 
 const stampKey = (sessionId: Id) => `role-stamp:${sessionId}`;
 
-function stampOf(f: RoleFacts): RoleStamp {
+function stampOf(host: RoleHost, f: RoleFacts): RoleStamp {
   return {
     role: f.role,
     topic: f.topic ? { id: f.topic.id, title: f.topic.title } : null,
     refs: f.refTopics.map((t) => ({ id: t.id, title: t.title })),
     description: f.task?.description ?? "",
+    cowork: f.sessionId ? coworkCards(host.store, f.sessionId).map((c) => ({ id: c.coworkId, title: c.title, role: c.role })) : [],
   };
 }
 
 /** Notes that the session now knows its card (it was just given it: instructions, or an update). */
 export function recordRole(host: RoleHost, sessionId: Id): void {
-  host.store.setKv(stampKey(sessionId), JSON.stringify(stampOf(roleFacts(host, sessionId))));
+  host.store.setKv(stampKey(sessionId), JSON.stringify(stampOf(host, roleFacts(host, sessionId))));
+}
+
+/**
+ * The session was given its 协作 cards some other way (session_start with matter: in its first message), so its next
+ * message does not tell them again. Without a stamp yet it is told with its instructions (which carry them).
+ */
+export function noteCoworkKnown(host: RoleHost, sessionId: Id): void {
+  const raw = host.store.getKv(stampKey(sessionId))?.value;
+  if (!raw) return;
+  try {
+    const stamp = JSON.parse(raw) as RoleStamp;
+    host.store.setKv(stampKey(sessionId), JSON.stringify({ ...stamp, cowork: stampOf(host, roleFacts(host, sessionId)).cowork }));
+  } catch {
+    // A stamp it cannot read is replaced when the session is next told.
+  }
 }
 
 /**
@@ -98,7 +120,7 @@ export function noteOwnDescription(host: RoleHost, sessionId: Id): void {
   if (!raw) return;
   try {
     const stamp = JSON.parse(raw) as RoleStamp;
-    host.store.setKv(stampKey(sessionId), JSON.stringify({ ...stamp, description: stampOf(roleFacts(host, sessionId)).description }));
+    host.store.setKv(stampKey(sessionId), JSON.stringify({ ...stamp, description: stampOf(host, roleFacts(host, sessionId)).description }));
   } catch {
     // A stamp it cannot read is replaced when the session is next told.
   }
@@ -106,25 +128,26 @@ export function noteOwnDescription(host: RoleHost, sessionId: Id): void {
 
 /**
  * What changed since the session was last told, one line each; `told()` once the message carrying them went out. A
- * session never told (one from before 2026-10-17, or a fork) is only noted: its card is what amo_whoami says.
+ * session never told (one from before 2026-10-17, or a fork) is only noted: its card is what amo_whoami says — except its
+ * 协作 roles, which it hears (拉进协作 is told this way, 2026-11-25).
  */
 export function roleUpdate(host: RoleHost, sessionId: Id): { lines: string[]; told: () => void } {
   const raw = host.store.getKv(stampKey(sessionId))?.value;
-  const now = stampOf(roleFacts(host, sessionId));
+  const now = stampOf(host, roleFacts(host, sessionId));
   let before: RoleStamp | null = null;
   try {
     before = raw ? (JSON.parse(raw) as RoleStamp) : null;
   } catch {
     before = null;
   }
-  const lines = before ? changes(before, now) : [];
+  const lines = before ? changes(host, sessionId, before, now) : coworkChanges(host, sessionId, [], now.cowork ?? []);
   const told = () => {
     if (!before || lines.length) host.store.setKv(stampKey(sessionId), JSON.stringify(now));
   };
   return { lines, told };
 }
 
-function changes(before: RoleStamp, now: RoleStamp): string[] {
+function changes(host: RoleHost, sessionId: Id, before: RoleStamp, now: RoleStamp): string[] {
   const lines: string[] = [];
   if (before.role !== now.role) lines.push(`你现在是「${ROLE_NAME[now.role]}」（之前是「${ROLE_NAME[before.role]}」）。${ROLE_DUTY[now.role]}`);
   if (now.topic && before.topic?.id !== now.topic.id) lines.push(`任务现在在专题「${now.topic.title}」（${now.topic.id}）里：那里的主控、其他任务和专题文档见 amo_whoami。`);
@@ -134,5 +157,20 @@ function changes(before: RoleStamp, now: RoleStamp): string[] {
   }
   for (const t of before.refs.filter((b) => !now.refs.some((r) => r.id === b.id) && b.id !== now.topic?.id)) lines.push(`任务不再在专题「${t.title}」的画布上。`);
   if (before.description !== now.description) lines.push(now.description ? `任务说明改成了：${oneLine(now.description, 600)}` : "任务说明删掉了。");
+  lines.push(...coworkChanges(host, sessionId, before.cowork ?? [], now.cowork ?? []));
+  return lines;
+}
+
+/** 协作 joined, left or whose role changed: with the whole card of the role it has now (plans/collab-agent-spec.md §1). */
+function coworkChanges(host: RoleHost, sessionId: Id, before: NonNullable<RoleStamp["cowork"]>, now: NonNullable<RoleStamp["cowork"]>): string[] {
+  const lines: string[] = [];
+  const cards = coworkCards(host.store, sessionId);
+  for (const c of now) {
+    const was = before.find((b) => b.id === c.id);
+    if (was && was.role === c.role) continue;
+    const card = cards.find((x) => x.coworkId === c.id)?.card ?? "";
+    lines.push(`${was ? `你在协作「${c.title}」（cowork:${c.id}）里的角色改成了「${c.role}」（之前是「${was.role}」）` : `你被拉进了协作「${c.title}」（cowork:${c.id}），角色是「${c.role}」`}。照下面的角色说明做：\n\n${card}`);
+  }
+  for (const b of before.filter((x) => !now.some((c) => c.id === x.id))) lines.push(`你已经不在协作「${b.title}」（cowork:${b.id}）里了：别再用 cowork_* 往那里写。`);
   return lines;
 }

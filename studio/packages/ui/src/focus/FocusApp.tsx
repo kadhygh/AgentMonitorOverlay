@@ -586,7 +586,7 @@ export function FocusApp() {
                       待我处理 {mineList.length} 条 · {mineList[0]!.groupTitle}
                     </span>
                     <span className="focus-sub">
-                      {[mineList[0]!.from, PENDING_KIND_LABEL[mineList[0]!.kind], mineList[0]!.matter ? `事项 ${mineList[0]!.matter.no}` : ""].filter(Boolean).join(" · ")}：{mineList[0]!.text}
+                      {[mineList[0]!.from, PENDING_KIND_LABEL[mineList[0]!.kind]].filter(Boolean).join(" · ")}：{mineList[0]!.text}
                     </span>
                   </span>
                 </button>

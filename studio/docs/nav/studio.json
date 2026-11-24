@@ -236,7 +236,7 @@
     {
       "id": "studio.cowork",
       "label": "协作（cowork）：会话拉进中转上的协作",
-      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "cowork_conclude", "协作文件", "协作真模型场景", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板", "协作精简", "COWORK_BRIEF", "前文", "往前翻", "复制引用", "复制会话引用", "复制编号", "cowork:", "thread:", "refId", "打开中转客户端", "--open=", "事项", "matter", "主控", "执行", "未分角色", "角色说明", "cowork_matter", "cowork_mark", "cowork_retract", "改角色", "现在看一遍", "开这一方的主控", "cowork-lead-", "叫醒消息", "wakeText"],
+      "aliases": ["cowork", "协作", "拉进协作", "TeamCowork", "cowork_read", "cowork_post", "cowork_ask", "cowork_board", "cowork_note", "cowork_conclude", "协作文件", "协作真模型场景", "转到我的会话", "cowork-inbox", "等主人", "agent 状态", "协作白板", "协作精简", "COWORK_BRIEF", "前文", "往前翻", "复制引用", "复制会话引用", "复制编号", "cowork:", "thread:", "refId", "打开中转客户端", "--open=", "事项", "matter", "主控", "执行", "未分角色", "角色说明", "cowork_matter", "cowork_mark", "cowork_retract", "改角色", "现在看一遍", "开这一方的主控", "cowork-lead-", "cowork-patrol-", "叫醒消息", "wakeText", "事项卡", "角色卡注入", "role-stamp", "basis", "知会"],
       "category": "host",
       "purpose": "Studio 这一头的协作（2026-11-23，plans/cowork.md 第 4 步；服务在 relay/src/cowork.ts）：会话「更多」→「拉进协作…」以「我 的 AI · 会话名」加入（标记 studio:<设备号>:<会话 id>）；Host 至少 30 秒报一次每个 agent 的状态（在跑 = 处理中；审批、提问、计划待审、草稿、team_ask 待发、人停下、输入框有字 = 等主人；其他 = 待命；归档就退出）；长轮询 /api/cowork-inbox，只在会话「待命」时把被 @ / 子会话回复送进会话收件箱（origin cowork，折叠成一张卡），然后 ack；没 @ 它的消息只在人下一条消息里带一句「协作里有 N 条新的」（core/cowork.ts）；给 agent cowork_read（带群聊和子会话的文件，取用 team_file_get）/ post / ask / conclude / board / note；「转到我的会话」由中转客户端经 POST /api/ui/open（cowork-to-<threadId>）或 POST /api/cowork/handoff 交过来，界面弹窗选会话。teamrelay 的扫描跳过带 coworkId 的子会话。",
       "steps": [

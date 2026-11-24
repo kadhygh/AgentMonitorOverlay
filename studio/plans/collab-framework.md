@@ -97,7 +97,7 @@
 - Host 模块 `features/pending`：来源调 `service.pending.register(source)` 登记，内容变了调 `service.pending.changed()`。来源实现 `PendingSource`：`groups()`（同步，读自己缓存的）、`refresh()`（巡检时重读）、`problem()`、`mark(group, keys, "seen" | "handled")`、`wake(sessionId, group, items, why)`（把这几条按自己的格式送进会话；会话在忙时返回 false，等它这一轮完了再送）。来源自己的投递（如协作的 @ 马上送进去）送过的，调 `service.pending.told(sessionId, groupId, keys)`，巡检就不再为它们叫醒。
 - 巡检：每 `PATROL_MS`（2 分钟）让各来源 `refresh()`，再对每个「会话的组」只拿它没被告诉过的几条去 `wake`；会话在一轮里时记下，这一轮结束再叫（原型补的第 2 条）。「让主控现在看一遍」带整组。
 - 接口：`GET /api/pending`（快照），`POST /api/pending/mark`（`{ group, keys, mark }`，回新快照），`POST /api/pending/patrol`（`{ sessionIds? }`，回 woke / later / empty）；事件 `pending.changed` 带整份快照。界面的页面和留言页的替换由另一个会话做，Focus 那一行用 `mine`。
-- 中转客户端接 Studio 的两个入口，都走客户端已有的「在 Studio 里打开」（`POST /api/ui/open`，`sessionId` 填下面的标记，前面照旧是 `studio:<设备号>:`）：`cowork-to-<事项 id>` 把一件事项交给这台电脑的一个会话当执行（11-23 的「转到我的会话」）；`cowork-lead-<协作 id>` 在这台电脑开这一方的主控（11-24 新加）：Studio 弹窗问用哪个会话（默认新开任务「协作：标题」），它以主控加进协作，收到角色说明、目标、已定的事和开着的事项；这一方已经有主控时，弹窗里点「开主控」会说已经是谁。
+- 中转客户端接 Studio 的两个入口，都走客户端已有的「在 Studio 里打开」（`POST /api/ui/open`，`sessionId` 填下面的标记，前面照旧是 `studio:<设备号>:`）：`cowork-to-<事项 id>` 把一件事项交给这台电脑的一个会话当执行（11-23 的「转到我的会话」）；`cowork-lead-<协作 id>` 在这台电脑开这一方的主控（11-24 新加）：Studio 弹窗问用哪个会话（默认新开任务「协作：标题」），它以主控加进协作，收到角色说明、目标、已定的事和开着的事项；这一方已经有主控时，弹窗里点「开主控」会说已经是谁。`cowork-patrol-<协作 id>`（11-25，中转界面 v2 定的）让这台电脑上这一方的主控（还没有主控时是它未分角色的会话）马上看一遍待处理，工作台跳到它；这台电脑上没有就回 404「没有这个协作里你这一方的主控会话」。
 
 ---
 

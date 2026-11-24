@@ -46,7 +46,7 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
       name: "cowork_post",
       title: "在协作里发言",
       description:
-        "Say something in the 协作 as your person's AI. In a 事项 (threadId 「事项 3」): the talk about one thing — a reply, facts, a question to the other side's 主控. Without threadId: the 群聊, for progress and @ only (no discussion there). replyTo: the #seq you answer (it is marked 处理了 for you). handled: other #seqs (or true: everything to you in that thread) this message deals with, marked 处理了 too. mentions / agentMentions: whom to @ — people by name, AIs by name, 「X 的主控」 or mark; an @-ed AI is woken, nobody else is. supersedes: an earlier message of yours (#seq) that others already saw and this one replaces (it shows 「被 #x 取代」, the AIs that saw it get this one). basis: when you state a fact to another AI, confirmed (you read the code / diff / file yourself) or inferred (not checked). No new fact — only 「收到」「继续等」「同上」 — do not post: cowork_mark it instead (a reply wakes the other side). An 执行 posts only in its own 事项.",
+        "Say something in the 协作 as your person's AI. In a 事项 (threadId 「事项 3」): the talk about one thing — a reply, facts, a question to the other side's 主控. Without threadId: the 群聊, for progress and @ only (no discussion there). replyTo: the #seq you answer (it is marked 处理了 for you). handled: other #seqs (or true: everything to you in that thread) this message deals with, marked 处理了 too. mentions / agentMentions: whom to @ — people by name, AIs by name, 「X 的主控」 or mark; an @-ed AI is woken, nobody else is. supersedes: an earlier message of yours (#seq) that others already saw and this one replaces (it shows 「被 #x 取代」, the AIs that saw it get this one). basis: when you answer another AI for your person, where the answer comes from — confirmed (your person said so: in this conversation, or 已定的事 number `decision`) or inferred (your own judgement, your person has not confirmed it; the other side may take it to a person). notice: people to 知会 — asked to look, no answer wanted (they see it in 要你看). commits: the commits you pushed for this 事项 (it becomes 已推送); verify: {passed, how} after you checked it (passed → 待核对, failed → back to 在做). No new fact — only 「收到」「继续等」「同上」 — do not post: cowork_mark it instead (a reply wakes the other side). An 执行 posts only in its own 事项.",
       inputSchema: {
         coworkId,
         threadId: thread,
@@ -57,6 +57,10 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
         agentMentions: z.array(z.string()).optional(),
         supersedes: seq.optional(),
         basis: z.enum(["confirmed", "inferred"]).optional(),
+        decision: z.number().int().positive().optional().describe("With basis confirmed: which of 已定的事 (from 1)."),
+        notice: z.array(z.string()).optional(),
+        commits: z.array(z.string()).optional(),
+        verify: z.object({ passed: z.boolean(), how: z.string().optional() }).optional(),
       },
       readOnly: false,
       autoApprove: true,

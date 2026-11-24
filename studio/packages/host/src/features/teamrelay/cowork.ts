@@ -1,12 +1,13 @@
 import { inTurn, refId, sessionRefText, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type CoworkRoleChoices, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
-import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
+import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, basisText, personParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type MessageBasis, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
+import { noteCoworkKnown } from "../../core/role.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
 import { compactionKnown, coworkHint, coworkTold, resetCoworkTold, setCoworkTell, writeCoworkCards, type CoworkCard } from "../../core/cowork.js";
 import { authorOf, beforeText, boardOpsText, boardText, concludedText, COWORK_BRIEF, coworkOverview, type CoworkFiles, type CoworkOverviewV2, deliveryFrom, deliveryText, deliveryWhere, joinedLine, messagesSection, oneMessageText, postResultText, sessionText } from "./cowork-text.js";
 import type { TeamRelayFeature } from "./service.js";
 import { findRelayClient, relayClientLaunch, relayTarget, startRelayClient, type RelayClientFound, type RelayClientLaunch } from "./relay-client.js";
-import { leadCard, mattersSection, membersSection, partyName, pendingSection, roleLabel, unassignedCard, wakeText, workerCard, type WakeItem, type WakeWhy } from "./cowork-matters-text.js";
+import { leadCard, matterCardsText, mattersSection, membersSection, partyName, pendingSection, roleLabel, unassignedCard, wakeText, workerCard, type WakeItem, type WakeWhy } from "./cowork-matters-text.js";
 import { agentRef, matterRef, partyRef, personRef, seqRef, seqsRef, statusRef, threadRef } from "./cowork-refs.js";
 
 // 协作 (cowork, 2026-11-23, plans/cowork.md 第 4 步): Studio's end of a 协作 on AMO 中转 (relay/src/cowork-protocol.ts tells
@@ -169,9 +170,10 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const matters = await this.hasMatters();
     const role = matters ? await this.roleWanted(client, coworkId, as) : undefined;
     const out = await this.call(() => client.joinCoworkAgent(coworkId, mark, label, role));
-    if (tell) setCoworkTell(this.store, s.id, `joined:${coworkId}`, this.cardFor(out.cowork, out.agent.mark, me, matters));
     compactionKnown(this.store, s.id);
+    // Its card is told with its next message by the role update (core/role.ts, 2026-11-25), from the cards refresh writes.
     await this.refresh().catch(() => undefined);
+    if (!tell) noteCoworkKnown({ store: this.store }, s.id);
     this.scheduleReport();
     const found = this.joined().find((j) => j.sessionId === s.id && j.coworkId === coworkId);
     return found ?? this.joinOf(out.cowork, out.agent.mark, prefix, 0);
@@ -231,7 +233,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const mark = `${prefix}${sessionId}`;
     const role = await this.roleWanted(client, coworkId, { role: input.role, matter: input.matter });
     const out = await this.call(() => client.setCoworkAgentRole(coworkId, mark, role.role, role.matter ?? null));
-    setCoworkTell(this.store, sessionId, `joined:${coworkId}`, this.cardFor(out.cowork, mark, me, true));
+    // The new card goes with its next message (the role update compares its 协作 roles, core/role.ts).
     await this.refresh().catch(() => undefined);
     const found = this.joined().find((j) => j.sessionId === sessionId && j.coworkId === coworkId);
     return found ?? this.joinOf(out.cowork, mark, prefix, 0);
@@ -265,6 +267,8 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     setCoworkTell(this.store, sessionId, `joined:${coworkId}`, null);
     setCoworkTell(this.store, sessionId, `unread:${coworkId}`, null);
     this.saveJoined(this.joined().filter((j) => !(j.sessionId === sessionId && j.coworkId === coworkId)));
+    // Its cards again (its next message says it is out of that 协作).
+    await this.refresh().catch(() => undefined);
     return { ok: true };
   }
 
@@ -286,7 +290,8 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       ended: c.endedAt !== null,
       joinedAt: a.joinedAt,
       matters,
-      role: matters ? (a.role ?? null) : null,
+      // 未分角色 (the service's unassigned, or before roles) is null here: the UI offers 选角色.
+      role: matters && (a.role === "lead" || a.role === "worker") ? a.role : null,
       matter: m ? { id: m.id, no: m.no, title: m.title } : null,
       pending: this.pendingCounts.get(`${c.id} ${mark}`) ?? 0,
     };
@@ -581,7 +586,21 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
   private deliveryItems(cowork: Cowork, items: CoworkInboxItem[]): WakeItem[] {
     return items.map((i) => {
       const matter = cowork.matters?.find((m) => m.id === (i.message.matter ?? i.thread.id)) ?? null;
-      const item: PendingItem = { kind: i.delivery.reason === "mention" ? "mention" : "message", scope: "cowork", scopeId: cowork.id, matter: matter?.id ?? null, seq: i.message.seq, since: i.message.createdAt, text: `#${i.message.seq} ${i.message.body.replace(/\s+/g, " ").slice(0, 80)}` };
+      const kind = i.delivery.reason === "mention" ? "mention" : i.delivery.reason === "reply" ? "reply" : "message";
+      const item: PendingItem = {
+        kind,
+        scope: "cowork",
+        scopeId: cowork.id,
+        matter: matter?.id ?? null,
+        matterNo: matter?.no ?? null,
+        matterTitle: matter?.title ?? null,
+        matterStatus: matter?.status ?? null,
+        seq: i.message.seq,
+        seqs: [i.message.seq],
+        since: i.message.createdAt,
+        why: { by: i.message.via.kind === "ai" && i.message.via.conv ? agentParty(i.message.via.conv) : personParty(i.message.author), at: i.message.createdAt, reason: kind, text: kind === "mention" ? "@ 了你" : kind === "reply" ? "回了你" : "发给你" },
+        text: `#${i.message.seq} ${i.message.body.replace(/\s+/g, " ").slice(0, 80)}`,
+      };
       return { item, message: i.message, matter, repliesToMe: i.delivery.reason === "reply" };
     });
   }
@@ -910,14 +929,24 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
    * with 事项: `handled` marks what it answers 处理了 (replyTo always is), `supersedes` replaces an earlier message of its own
    * (the AIs that had seen that one are @-ed so they hear of it), `basis` says whether a fact it gives was checked.
    */
-  async post(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; body?: unknown; mentions?: unknown; agentMentions?: unknown; replyTo?: unknown; handled?: unknown; supersedes?: unknown; basis?: unknown }): Promise<string> {
+  async post(sessionId: Id, input: { coworkId?: unknown; threadId?: unknown; body?: unknown; mentions?: unknown; agentMentions?: unknown; replyTo?: unknown; handled?: unknown; supersedes?: unknown; basis?: unknown; decision?: unknown; notice?: unknown; commits?: unknown; verify?: unknown }): Promise<string> {
     const { coworkId, mark, join } = this.mine(sessionId, input.coworkId);
     const { client, me } = this.relay();
     const { cowork: c } = await this.call(() => client.cowork(coworkId));
     const matters = c.matters !== undefined;
-    // 依据 (2026-11-25, collab-framework.md: AIs answer each other with a basis): said at the top so the other side knows.
-    const basis = input.basis === "confirmed" ? "〔已核对〕" : input.basis === "inferred" ? "〔推断，未核对〕" : "";
-    const body = `${basis}${basis ? " " : ""}${text(input.body, "body")}`;
+    // 回答的来源 (2026-11-25, protocol/matters.ts MessageBasis): confirmed with my person (which of 已定的事, when given) or my
+    // own judgement; the service keeps it on the message and the client marks it. An old service: said at the top instead.
+    const decision = typeof input.decision === "number" && Number.isInteger(input.decision) && input.decision > 0 ? input.decision : undefined;
+    // Confirmed needs when or which: the 已定的事 named, else the person's last message in this session (what they said here).
+    const saidAt = input.basis === "confirmed" && !decision ? this.personSaidAt(sessionId) : null;
+    if (input.basis === "confirmed" && !decision && !saidAt) throw new HostError("bad_request", `basis confirmed 要说明是哪次确认的：写 decision（已定的事第几条），或者是 ${me} 在这个会话里说的——这个会话里还没有 ${me} 的话。没确认过就写 basis inferred。`);
+    const basis: MessageBasis | undefined = input.basis === "confirmed" ? { kind: "confirmed", person: me, ...(decision ? { decision } : { at: saidAt! }) } : input.basis === "inferred" ? { kind: "inferred", person: me } : undefined;
+    const said0 = text(input.body, "body");
+    const body = basis && !matters ? `〔${basisText(basis)}〕 ${said0}` : said0;
+    // 知会 (people asked to look, no answer wanted), commits pushed (→ 已推送), a verification (→ 待核对, or back to 在做).
+    const notice = names(input.notice).map((n) => personRef(c, n) ?? (() => { throw new HostError("bad_request", `知会 notice 写协作里的人（${c.members.join("、")}），「${n}」不在里面。`); })());
+    const commits = names(input.commits);
+    const verify = input.verify && typeof input.verify === "object" && typeof (input.verify as { passed?: unknown }).passed === "boolean" ? { passed: (input.verify as { passed: boolean }).passed, ...(typeof (input.verify as { how?: unknown }).how === "string" && (input.verify as { how: string }).how.trim() ? { how: (input.verify as { how: string }).how.trim() } : {}) } : undefined;
     const { threadId, matter } = this.threadOf(c, input.threadId);
     const mentioned = this.mentionsOf(c, input.mentions, input.agentMentions);
     const replyTo = seqRef(input.replyTo);
@@ -940,6 +969,10 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
         ...(replyTo ? { replyTo } : {}),
         ...(supersedes ? { supersedes } : {}),
         ...(handled === true || (Array.isArray(handled) && handled.length) ? { handled } : {}),
+        ...(matters && basis ? { basis } : {}),
+        ...(matters && notice.length ? { notice } : {}),
+        ...(matters && commits.length ? { commits } : {}),
+        ...(matters && verify ? { verify } : {}),
         via: this.via(mark),
       }),
     );
@@ -950,10 +983,19 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const extra = [
       `（在${where}）`,
       replyTo ? `#${replyTo} 标成了处理了。` : "",
+      notice.length ? `知会了 ${notice.join("、")}。` : "",
+      commits.length && matter ? `事项 ${matter.no} 记下了提交 ${commits.join("、")}。` : "",
+      verify && matter ? `事项 ${matter.no} 记下了验证${verify.passed ? "通过（待核对）" : "没通过（回到在做）"}。` : "",
       out.superseded ? `#${out.superseded.seq} 标成了「被 #${out.superseded.supersededBy} 取代」${out.superseded.seenByAgents.length ? `，看过它的 AI 收到了新的这条` : ""}。` : "",
       !matter && threadId === coworkId && !mentioned.agentMentions.length && !mentioned.mentions.length ? "群聊只发进度和 @：具体问题进事项（cowork_matter open，或带 threadId 写在已有的事项里）。" : "",
     ].filter(Boolean);
     return `${said}${extra.join("")}`;
+  }
+
+  /** When the person last wrote in the session themselves (not a message from an agent or Studio), or null. */
+  private personSaidAt(sessionId: Id): number | null {
+    const mine = this.store.findItems(sessionId, "user", {}, { newest: true, limit: 50 }).find((i) => i.type === "user" && !i.origin);
+    return mine ? Date.parse(mine.createdAt) : null;
   }
 
   /**
@@ -1130,7 +1172,9 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       const [snap, detail] = await Promise.all([this.call(() => client.coworkBoard(coworkId, 0)), this.call(() => client.cowork(coworkId))]);
       const items: BoardItem[] = snap.items ?? [];
       this.boardSeen.set(seenKey, new Map(items.map((it) => [it.id, it.textVersion])));
-      return boardText(items, snap.locks, snap.seq, detail.cowork);
+      const me = detail.cowork.agents.find((a) => a.mark === mark);
+      const cards = matterCardsText(detail.cowork, snap.locks, mark, me?.role === "worker" ? (me.matter ?? null) : null);
+      return [boardText(items, snap.locks, snap.seq, detail.cowork), cards].filter(Boolean).join("\n\n");
     }
     if (!Array.isArray(input.ops)) throw new HostError("bad_request", "ops 要是一个列表");
     const ops = input.ops as BoardOp[];
@@ -1208,6 +1252,23 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const h: CoworkHandoff = { threadId, coworkId, coworkTitle: cowork.title, title: cowork.title, from: me, to: me, at: new Date().toISOString(), lead: true };
     this.saveHandoffs([...this.handoffs().filter((x) => x.threadId !== threadId), h], threadId);
     return h;
+  }
+
+  /**
+   * 让我这一方的主控现在看一遍 (2026-11-25, the 中转 client's `cowork-patrol-<coworkId>`): this side's 主控 here (or, before
+   * roles, its 未分角色 sessions) get their 待处理 now — after their turn when one runs. Answers at once (the client waits
+   * 3 s); the workbench goes to the 主控.
+   */
+  patrolSide(coworkIdValue: unknown): { taskId: Id; sessionId: Id } {
+    const coworkId = refId(text(coworkIdValue, "coworkId"), "cowork");
+    const mine = this.joined().filter((j) => j.coworkId === coworkId && !j.ended && j.role !== "worker");
+    const leads = mine.some((j) => j.role === "lead") ? mine.filter((j) => j.role === "lead") : mine;
+    if (!leads.length) throw new HostError("not_found", "这台电脑上没有这个协作里你这一方的主控会话：先在中转里点「在我的 Studio 里开这一方的主控」");
+    void this.f.pending.patrol(leads.map((j) => j.sessionId)).catch((err: unknown) => this.log(`cowork: patrol of ${coworkId}: ${err instanceof Error ? err.message : String(err)}`));
+    const lead = this.store.getSession(leads[0]!.sessionId);
+    const taskId = lead?.taskId ?? "";
+    this.publish({ type: "ui.open", taskId, sessionId: leads[0]!.sessionId, at: new Date().toISOString() });
+    return { taskId, sessionId: leads[0]!.sessionId };
   }
 
   dismissHandoff(threadIdValue: unknown): { ok: true } {

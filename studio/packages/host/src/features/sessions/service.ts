@@ -5,6 +5,8 @@ import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { roleUpdate } from "../../core/role.js";
+import { COMPACTED_LINE, coworkCompaction } from "../../core/cowork.js";
+import { roleCard } from "../guide/role.js";
 import { tracksHint } from "../../core/tracks.js";
 import { whiteboardHint, readWhiteboard } from "../../core/whiteboard.js";
 import { readReviewProgress, reviewProgressHint } from "../../core/reviewprogress.js";
@@ -196,7 +198,17 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     // A copy of a remote session (远程 step 2): its own computer tells it what changed there.
     if (!s || s.kind === "sub" || s.archivedAt || isRemoteCopy(s)) return none;
     try {
-      return roleUpdate(this.host, sessionId);
+      const role = roleUpdate(this.host, sessionId);
+      // After a compaction, in a 协作 (plans/collab-agent-spec.md §6): the whole card it has now, and to read the 协作 again.
+      const compacted = coworkCompaction(this.store, sessionId);
+      if (!compacted) return role;
+      return {
+        lines: [...role.lines, `${COMPACTED_LINE}\n\n${roleCard(this.host, sessionId)}`],
+        told: () => {
+          role.told();
+          compacted.told();
+        },
+      };
     } catch {
       return none;
     }

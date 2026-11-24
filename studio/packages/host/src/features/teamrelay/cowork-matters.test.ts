@@ -11,8 +11,8 @@ import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { amoToolsFor } from "../../mcp/tools.js";
-import { coworkHint } from "../../core/cowork.js";
-import { roleCard } from "../guide/role.js";
+import { recordRole, roleCard } from "../guide/role.js";
+import { teamRelayRoutes } from "./routes.js";
 
 // 协作里 AI 怎么参与 (2026-11-24, plans/collab-agent-spec.md), against a relay service on this machine with 事项 (health
 // cowork 2): roles and their cards, the tools' 指代 (「事项 1」, #seq, names), cowork_matter / cowork_mark / cowork_retract,
@@ -101,7 +101,7 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     const lead = session("穿透文档");
     const j = await service.teamRelay.cowork.join(lead.id, c.id);
     expect(j).toMatchObject({ role: "lead", matters: true, matter: null });
-    const card = coworkHint(service.store, lead.id)!.lines.join("\n");
+    const card = service.sessions.roleUpdate(lead.id).lines.join("\n");
     expect(card).toContain("你的角色：主控");
     expect(card).toContain("「策划小王」这一方在协作「穿透」里的**主控**");
     expect(card).toContain("转述之前要核对");
@@ -121,17 +121,21 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     // An 执行 of 事项 1 (by 「事项 1」): its card; it reads only its 事项 and may not post in the 群聊.
     const w = await service.teamRelay.cowork.join(other.id, c.id, "写判定", { role: "worker", matter: "事项 1" });
     expect(w).toMatchObject({ role: "worker", matter: { id: m.id, no: 1 } });
-    expect(coworkHint(service.store, other.id)!.lines.join("\n")).toContain("只负责协作「穿透」");
+    expect(service.sessions.roleUpdate(other.id).lines.join("\n")).toContain("只负责协作「穿透」");
     const read = await tool(other.id, "cowork_read");
     expect(read.text).toContain("角色：执行（事项 1）");
     expect(read.text).toContain("事项 1「穿透判定」");
     const chat = await tool(other.id, "cowork_post", { body: "我在群聊说一句" });
     expect(chat.error).toBe(true);
+    // basis confirmed needs when: none of the person's words here yet, so refused; then with what the person said.
+    expect((await tool(other.id, "cowork_post", { threadId: "事项 1", body: "已推 abc123。", basis: "confirmed" })).text).toContain("还没有 策划小王 的话");
+    service.store.appendItem({ id: `i-${other.id}-said`, sessionId: other.id, createdAt: new Date().toISOString(), type: "user", text: "就按 3 个敌人做" } as never);
     const inMatter = await tool(other.id, "cowork_post", { threadId: "事项 1", body: "已推 abc123，改了 Bullet.cs。", basis: "confirmed" });
     expect(inMatter).toMatchObject({ error: false });
     expect(inMatter.text).toContain("在事项 1");
     const posted = (await coderClient.coworkFeed(c.id)).messages.find((x) => x.body.includes("abc123"))!;
-    expect(posted).toMatchObject({ threadId: m.id, body: "〔已核对〕 已推 abc123，改了 Bullet.cs。" });
+    expect(posted).toMatchObject({ threadId: m.id, body: "已推 abc123，改了 Bullet.cs。", basis: { kind: "confirmed", person: "策划小王" } });
+    expect(typeof (posted.basis as { at?: number } | undefined)?.at).toBe("number");
     expect((await tool(other.id, "cowork_matter", { action: "update", matter: "事项 1", status: "已推送" })).text).toContain("你是执行会话");
 
     // 改角色: the 执行 becomes nothing new here — the 主控 changes the 事项 instead (by 「事项 1」 and the status's label).
@@ -139,6 +143,57 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(upd).toMatchObject({ error: false });
     expect(upd.text).toContain("→ 已推送");
     expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.id === m.id)!.status).toBe("pushed");
+  }, 30_000);
+
+  it("the role card goes the role update's way (joined, role changed, after a compaction with the whole card); cowork_board lists the 事项卡; cowork-patrol-<id> wakes this side's 主控 (2026-11-25)", async () => {
+    const { service, store, told, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "穿透", goal: "子弹能穿透 3 个敌人。", members: ["策划小王"] });
+    const lead = session("穿透文档");
+    recordRole(service, lead.id);
+    expect(service.sessions.roleUpdate(lead.id).lines).toEqual([]);
+    await service.teamRelay.cowork.join(lead.id, c.id);
+    // Joined: one line with the whole card, told once.
+    const joined = service.sessions.roleUpdate(lead.id);
+    expect(joined.lines).toHaveLength(1);
+    expect(joined.lines[0]).toContain("你被拉进了协作「穿透」");
+    expect(joined.lines[0]).toContain("这一方在协作「穿透」里的**主控**");
+    joined.told();
+    expect(service.sessions.roleUpdate(lead.id).lines).toEqual([]);
+    // Its role changed: the new card.
+    const m = (await coderClient.openMatter(c.id, { title: "穿透判定", body: "改碰撞层" })).matter;
+    await service.teamRelay.cowork.setRole({ sessionId: lead.id, coworkId: c.id, role: "worker", matter: "事项 1" });
+    const changed = service.sessions.roleUpdate(lead.id);
+    expect(changed.lines.join("\n")).toContain("角色改成了「执行（事项 1）」（之前是「主控」）");
+    expect(changed.lines.join("\n")).toContain("只负责协作「穿透」");
+    changed.told();
+    await service.teamRelay.cowork.setRole({ sessionId: lead.id, coworkId: c.id, role: "lead" });
+    service.sessions.roleUpdate(lead.id).told();
+
+    // After a compaction: to read the 协作 again, and the whole card it has now (its AMO role and its 协作 role).
+    store.appendItem({ id: `i-${lead.id}-compact`, sessionId: lead.id, createdAt: new Date().toISOString(), type: "compaction", state: "completed" } as never);
+    const after = service.sessions.roleUpdate(lead.id);
+    expect(after.lines.join("\n")).toContain("你的上下文刚被压缩。先用 cowork_read");
+    expect(after.lines.join("\n")).toContain("协作「穿透」（cowork:");
+    expect(after.lines.join("\n")).toContain("里的角色：主控");
+    after.told();
+    expect(service.sessions.roleUpdate(lead.id).lines).toEqual([]);
+
+    // cowork_board: the 事项卡 drawn from the 事项, read-only.
+    const board = await tool(lead.id, "cowork_board");
+    expect(board.text).toContain("事项卡（由事项算出");
+    expect(board.text).toContain(`[事项] ${m.id} · 事项 1「穿透判定」· 在做`);
+    expect(board.text).toContain("组「程序老李 这一方」");
+
+    // 让我这一方的主控现在看一遍, as the 中转 client asks it.
+    const route = teamRelayRoutes(service).find((r) => r.method === "POST" && r.path === "/api/ui/open")!;
+    const asked: unknown[] = [];
+    const patrol = service.pending.patrol.bind(service.pending);
+    service.pending.patrol = async (ids?: unknown) => (asked.push(ids), patrol(ids));
+    const out = await route.handle({ params: {}, body: { sessionId: `cowork-patrol-${c.id}` } } as never);
+    expect(out).toMatchObject({ sessionId: lead.id, taskId: lead.taskId });
+    expect(asked).toEqual([[lead.id]]);
+    void told;
+    await expect((async () => route.handle({ params: {}, body: { sessionId: "cowork-patrol-t_nope" } } as never))()).rejects.toThrow(/没有这个协作里你这一方的主控会话/);
   }, 30_000);
 
   it("在我的 Studio 里开这一方的主控 (the 中转 client's cowork-lead-<id>): asks which session, a new task joins as 主控 and is given the 协作", async () => {
@@ -154,7 +209,8 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(service.teamRelay.cowork.handoffs()).toEqual([]);
     const first = told.find((t) => t.sessionId === made.sessionId)!;
     expect(first.text).toMatch(/^【协作「穿透」· 策划小王 让你当这一方的主控】/);
-    expect(first.text).toContain("你的角色：主控");
+    // Its card goes with that message as the role update (the inbox adds it; put is stood in for here).
+    expect(service.sessions.roleUpdate(made.sessionId).lines.join("\n")).toContain("你的角色：主控");
     expect(first.text).toContain("子弹能穿透 3 个敌人。");
     expect(first.text).toContain("事项 1「穿透判定」");
     expect(first.origin).toMatchObject({ kind: "cowork", from: "策划小王", cowork: { id: c.id } });

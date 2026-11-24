@@ -109,8 +109,9 @@ describe("协作 in Studio", () => {
     expect(j).toMatchObject({ coworkId: c.id, coworkTitle: "射速调整", sessionId: s.id, label: "射速文档", name: "策划小王 的 AI · 射速文档" });
     expect(service.teamRelay.cowork.joined()).toHaveLength(1);
     expect(events.some((e) => e.type === "cowork.joined.changed")).toBe(true);
-    // Told it is in it, with the person's next message.
-    expect(coworkHint(service.store, s.id)?.lines.join("\n")).toContain("【协作「射速调整」· 你的角色：主控】");
+    // Told it is in it, with its next message (the role update, core/role.ts — 2026-11-25), its card whole.
+    expect(service.sessions.roleUpdate(s.id).lines.join("\n")).toContain("你被拉进了协作「射速调整」");
+    expect(service.sessions.roleUpdate(s.id).lines.join("\n")).toContain("【协作「射速调整」· 你的角色：主控】");
 
     const agentOf = async () => (await coderClient.cowork(c.id)).cowork.agents.find((a) => a.mark === j.mark)!;
     await until(agentOf, (a) => a.state === "idle", "待命 reported");
@@ -137,7 +138,6 @@ describe("协作 in Studio", () => {
     expect(told[0]!.text).toContain("【协作 · 待你处理】「射速调整」");
     expect(told[0]!.text).toContain("为什么现在叫你：程序老李 @ 了你");
     expect(told[0]!.text).toContain("上限放配置表行吗？");
-    expect(told[0]!.text).toContain("你的角色：主控");
     expect(told[0]!.text).toMatch(/（在 群聊；回：cowork_post replyTo \d+）/);
     expect(told[0]!.origin).toMatchObject({ kind: "cowork", from: "程序老李", threadIds: [c.id], cowork: { id: c.id, title: "射速调整", where: "在群聊里 @ 了你" } });
     expect(coworkHint(service.store, s.id)).toBeNull();

@@ -33,7 +33,7 @@ const GRAPH: Record<string, string[]> = {
   remote: ["attachments", "channels", "chatfiles", "gitreview", "mcp", "openin", "prompttemplates", "sessions", "tasks", "viewpacks"],
   review: ["sessions"],
   scratchpad: ["attachments"],
-  sessions: ["attachments", "collab", "config", "mcp", "remote", "review", "tasks"],
+  sessions: ["attachments", "collab", "config", "guide", "mcp", "remote", "review", "tasks"],
   taskplans: ["canvas", "collab", "sessions", "tasks"],
   tasks: ["canvas", "config", "mcp", "remote", "sessions"],
   // 协作 (2026-11-23): 转到我的会话 may start a new task's session.

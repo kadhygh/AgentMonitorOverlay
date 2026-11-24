@@ -33,4 +33,4 @@ export async function openPendingEntry(link: HostLink, entry: PendingEntry): Pro
   else await window.amo?.openInWorkbench?.({ show: true });
 }
 
-export const PENDING_KIND_LABEL: Record<PendingEntry["kind"], string> = { mention: "@ 你", waiting: "在等你", message: "发给你" };
+export const PENDING_KIND_LABEL: Record<PendingEntry["kind"], string> = { mention: "@ 你", reply: "回你", waiting: "在等你", message: "发给你", notice: "知会你", quiet: "久没动静" };

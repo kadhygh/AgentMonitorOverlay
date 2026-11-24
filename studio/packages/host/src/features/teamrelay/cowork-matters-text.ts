@@ -1,4 +1,4 @@
-import { AGENT_ROLE_LABEL, MATTER_STATUS_LABEL, parseParty, type Cowork, type CoworkAgent, type Matter, type Message, type PendingItem } from "@amo-studio/relay/light";
+import { AGENT_ROLE_LABEL, MATTER_STATUS_LABEL, matterGroup, matterLockText, parseMatterLockKey, parseParty, SETTLED_GROUP, SETTLED_GROUP_TITLE, type BoardLock, type AgentRole, type Cowork, type CoworkAgent, type Matter, type Message, type PendingItem } from "@amo-studio/relay/light";
 import { authorOf, COWORK_BRIEF, coworkMessageText, clippedMessageText, whereOf } from "./cowork-text.js";
 
 // 协作里 AI 怎么参与 (2026-11-24, plans/collab-agent-spec.md): the texts the spec fixes — the role cards (§1), the wake message
@@ -15,12 +15,13 @@ const oneLine = (text: string, max = 80) => {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 };
 
-export type CoworkRole = "lead" | "worker" | null;
+/** null: from before roles (an old service, or not known yet) — shown as 未分角色 like the service's `unassigned`. */
+export type CoworkRole = AgentRole | null;
 
 /** 「主控」「执行（事项 3）」「未分角色」. */
 export function roleLabel(role: CoworkRole, matter?: Pick<Matter, "no"> | null): string {
   if (role === "worker") return `执行${matter ? `（事项 ${matter.no}）` : ""}`;
-  return role ? AGENT_ROLE_LABEL[role] : "未分角色";
+  return AGENT_ROLE_LABEL[role ?? "unassigned"];
 }
 
 /** A party as shown: a person by name, an agent by its name in the 协作. */
@@ -124,20 +125,22 @@ export function wakeText(input: { cowork: Pick<Cowork, "id" | "title" | "agents"
   const lines: string[] = [];
   for (const w of input.items) {
     const i = w.item;
-    if (i.kind === "waiting" && w.matter) {
-      lines.push(`- ${matterLine(w.matter, c, mark, null)}`);
+    // Who, when and why it became mine, as the service says it (PendingItem.why; the Host puts the name in front).
+    const why = i.why ? `　${i.why.by ? `${partyName(i.why.by, c)} ` : ""}${hhmm(i.why.at)} ${i.why.text}` : "";
+    if ((i.kind === "waiting" || i.kind === "quiet") && w.matter) {
+      lines.push(`- ${matterLine(w.matter, c, mark, i.seqs?.at(-1) ?? null)}${i.kind === "quiet" ? "　久没动静：看一眼还在不在做，卡住了就改状态或问执行" : ""}`);
       continue;
     }
     const m = w.message;
     if (!m) {
-      lines.push(`- ${i.text}`);
+      lines.push(`- ${i.text}${why}${i.body ? `：\n${indent(i.body)}` : ""}`);
       continue;
     }
     const where = m.threadId === c.id ? "群聊" : w.matter ? `事项 ${w.matter.no}` : whereOf(m.threadId, c);
-    if (i.kind === "mention" || w.repliesToMe) {
+    if (i.kind === "mention" || i.kind === "reply" || i.kind === "notice" || w.repliesToMe) {
       // How to answer, since the other side cannot see this conversation (the 2026-11-23 deliveries said so too).
       const how = `回：cowork_post${m.threadId === c.id ? "" : ` threadId「${w.matter ? `事项 ${w.matter.no}` : m.threadId}」`} replyTo ${m.seq}`;
-      lines.push(`- #${m.seq} ${authorOf(m, c)} ${i.kind === "mention" ? "@ 你" : "回你"}（在 ${where}；${how}）：\n${indent(coworkMessageText(m, c))}`);
+      lines.push(`- #${m.seq} ${authorOf(m, c)} ${i.kind === "mention" ? "@ 你" : i.kind === "notice" ? "知会你" : "回你"}（在 ${where}；${how}）：\n${indent(coworkMessageText(m, c))}`);
     } else {
       lines.push(`- #${m.seq} ${authorOf(m, c)}（在 ${where}）：${oneLine(m.body, 160)}${w.matter ? `　要看事项里的来回用 cowork_read 带 threadId「事项 ${w.matter.no}」` : ""}`);
     }
@@ -174,6 +177,28 @@ export function mattersSection(cowork: Pick<Cowork, "agents" | "matters">, mark:
 export function pendingSection(items: WakeItem[], cowork: Pick<Cowork, "agents">, mark: string): string {
   if (!items.length) return "## 待你处理\n（没有）";
   return `## 待你处理（${items.length}）\n${items.map((w) => (w.item.kind === "waiting" && w.matter ? `- ${matterLine(w.matter, cowork, mark, null)}` : `- ${w.item.kind === "mention" ? "@ 你 · " : ""}${w.item.text}${w.matter ? `（事项 ${w.matter.no}）` : ""}`)).join("\n")}\n处理完不用回的用 cowork_mark 标处理了；回复（cowork_post 带 replyTo）会自动标。`;
+}
+
+/**
+ * cowork_board's 事项卡 (2026-11-25, 中转迭代讨论: the board the AI reads is the one people see): not stored on the board —
+ * drawn from each 事项 — so listed from them: 编号, title, status, whom it waits on, its group, where a person dragged it
+ * (or laid out by itself), and whether someone is dragging or editing it. Read-only to AIs. An 执行 sees its own only.
+ */
+export function matterCardsText(cowork: Pick<Cowork, "agents" | "matters">, locks: readonly BoardLock[], mark: string, own: string | null): string {
+  const list = (cowork.matters ?? []).filter((m) => !own || m.id === own).sort((a, b) => a.no - b.no);
+  if (!list.length) return "";
+  const held = new Map<string, string[]>();
+  for (const l of locks) {
+    const k = parseMatterLockKey(l.card);
+    if (k) held.set(k.matter, [...(held.get(k.matter) ?? []), matterLockText(k.kind, l.by)]);
+  }
+  const lines = list.map((m) => {
+    const waiting = m.waitingOn.map((p) => (p === `agent:${mark}` ? "你" : partyName(p, cowork)));
+    const group = matterGroup(m) === SETTLED_GROUP ? SETTLED_GROUP_TITLE : `${m.side} 这一方`;
+    const where = m.place ? `位置 (${Math.round(m.place.x)},${Math.round(m.place.y)})，人拖过` : "自动排";
+    return `- [事项] ${m.id} · 事项 ${m.no}「${m.title}」· ${MATTER_STATUS_LABEL[m.status]}${waiting.length ? ` · 在等 ${waiting.join("、")}` : ""} · 组「${group}」· ${where}${held.get(m.id)?.length ? ` · ${held.get(m.id)!.join("、")}` : ""}`;
+  });
+  return `事项卡（由事项算出：状态、在等谁跟着事项走；位置只有人能拖，你只能读，要改状态用 cowork_matter；连线的 from / to 可以写事项的 id）：\n${lines.join("\n")}`;
 }
 
 /** The 成员 section with roles. */

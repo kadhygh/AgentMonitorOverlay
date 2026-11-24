@@ -5,6 +5,8 @@ import { route, type Route } from "../../http/route.js";
 const HANDOFF_BRIDGE = "cowork-to-";
 /** 在我的 Studio 里开这一方的主控 the same way (2026-11-24): `cowork-lead-<coworkId>`. */
 const LEAD_BRIDGE = "cowork-lead-";
+/** 让我这一方的主控现在看一遍 (2026-11-25, 中转界面 v2): `cowork-patrol-<coworkId>`. */
+const PATROL_BRIDGE = "cowork-patrol-";
 
 /** The HTTP routes of this feature (see protocol/src/api.ts for each route's request and response). */
 export function teamRelayRoutes(service: HostService): Route[] {
@@ -20,6 +22,7 @@ export function teamRelayRoutes(service: HostService): Route[] {
         await cowork.handoff(sessionId.slice(HANDOFF_BRIDGE.length));
         return { taskId: "", sessionId: "" };
       }
+      if (typeof sessionId === "string" && sessionId.startsWith(PATROL_BRIDGE)) return cowork.patrolSide(sessionId.slice(PATROL_BRIDGE.length));
       if (typeof sessionId === "string" && sessionId.startsWith(LEAD_BRIDGE)) {
         await cowork.leadAsk(sessionId.slice(LEAD_BRIDGE.length));
         return { taskId: "", sessionId: "" };

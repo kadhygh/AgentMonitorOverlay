@@ -55,13 +55,11 @@ export function resetCoworkTold(store: Store, sessionId: Id, key: string): void 
 /** The lines for the session's next message; `told()` once they went with it. */
 export function coworkHint(store: Store, sessionId: Id): { lines: string[]; told: () => void } | null {
   const pending = read(store).pending[sessionId] ?? {};
-  const compacted = compactedSince(store, sessionId);
-  if (!Object.keys(pending).length && !compacted) return null;
+  if (!Object.keys(pending).length) return null;
   const entries = Object.entries(pending);
   return {
-    lines: [...(compacted ? [COMPACTED_LINE] : []), ...entries.map(([, v]) => v.line)],
+    lines: entries.map(([, v]) => v.line),
     told: () => {
-      if (compacted) store.setKv(`${COMPACTED_KEY}${sessionId}`, String(compacted));
       const t = read(store);
       const told = { ...(t.told[sessionId] ?? {}) };
       for (const [k, v] of entries) told[k] = v.n;
@@ -103,17 +101,22 @@ export function coworkCards(store: Store, sessionId: Id): CoworkCard[] {
 
 // ---- after a compaction (2026-11-24, plans/collab-agent-spec.md §6)
 
-/** Said before the next message once the session was compacted, while it is in a 协作. */
-export const COMPACTED_LINE = "【协作】你的上下文刚被压缩。先用 cowork_read（不带参数）看你的角色、开着的事项、已定的事和待你处理，再继续。";
+/**
+ * Said with the next message once the session was compacted, while it is in a 协作 — followed by its whole current role
+ * card (sessions/service.ts roleUpdate, 2026-11-25: the card in its instructions is the one it started with, and what
+ * changed since was only in messages the compaction dropped).
+ */
+export const COMPACTED_LINE = "你的上下文刚被压缩。先用 cowork_read（不带参数）看你的角色、开着的事项、已定的事和待你处理，再继续；不要凭记忆接着做。你现在的角色卡：";
 const COMPACTED_KEY = "teamrelay.cowork.compacted:";
 
-/** The newest compaction's seq when the session is in a 协作 and was not told since; else 0. */
-function compactedSince(store: Store, sessionId: Id): number {
-  if (!coworkCards(store, sessionId).length) return 0;
+/** The newest compaction not told yet while the session is in a 协作; `told()` once the message saying so went out. */
+export function coworkCompaction(store: Store, sessionId: Id): { told: () => void } | null {
+  if (!coworkCards(store, sessionId).length) return null;
   const [compaction] = store.findItems(sessionId, "compaction", {}, { newest: true, limit: 1 });
-  if (!compaction) return 0;
+  if (!compaction) return null;
   const told = Number(store.getKv(`${COMPACTED_KEY}${sessionId}`)?.value ?? 0);
-  return compaction.seq > told ? compaction.seq : 0;
+  if (compaction.seq <= told) return null;
+  return { told: () => store.setKv(`${COMPACTED_KEY}${sessionId}`, String(compaction.seq)) };
 }
 
 /** Joining a 协作: a compaction from before is not news to it. */
