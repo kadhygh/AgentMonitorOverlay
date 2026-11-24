@@ -99,6 +99,20 @@
 - 接口：`GET /api/pending`（快照），`POST /api/pending/mark`（`{ group, keys, mark }`，回新快照），`POST /api/pending/patrol`（`{ sessionIds? }`，回 woke / later / empty）；事件 `pending.changed` 带整份快照。界面的页面和留言页的替换由另一个会话做，Focus 那一行用 `mine`。
 - 中转客户端接 Studio 的两个入口，都走客户端已有的「在 Studio 里打开」（`POST /api/ui/open`，`sessionId` 填下面的标记，前面照旧是 `studio:<设备号>:`）：`cowork-to-<事项 id>` 把一件事项交给这台电脑的一个会话当执行（11-23 的「转到我的会话」）；`cowork-lead-<协作 id>` 在这台电脑开这一方的主控（11-24 新加）：Studio 弹窗问用哪个会话（默认新开任务「协作：标题」），它以主控加进协作，收到角色说明、目标、已定的事和开着的事项；这一方已经有主控时，弹窗里点「开主控」会说已经是谁。`cowork-patrol-<协作 id>`（11-25，中转界面 v2 定的）让这台电脑上这一方的主控（还没有主控时是它未分角色的会话）马上看一遍待处理，工作台跳到它；这台电脑上没有就回 404「没有这个协作里你这一方的主控会话」。
 
+### 中转客户端到 Studio 的链接（11-25，两头照这个接）
+
+中转客户端不直接连 Studio，照第 4 步「转到我的会话」的路走：界面调外壳的 `shell.openInStudio(conv)`，`conv` 写 `studio:<本机设备号>:<要 Studio 做的事>`；外壳找本机的 Studio，带 host-token POST `/api/ui/open {sessionId: "<要 Studio 做的事>"}`（去掉 `studio:<设备号>:`）。返回 `null` 是成了，返回字符串是没成的原因（界面 toast；旧 Studio 说「没有这个会话」时界面换成「更新 Studio 后再试」）。按钮能不能点先问 `shell.studioHas(conv)`。外壳不用改。三种：
+
+| `sessionId` | 按钮（中转客户端） | Studio 做什么 |
+|---|---|---|
+| `cowork-to-<事项的 threadId>` | 事项里的「转到我的会话」 | 已有：弹窗选一个会话（或新开任务）接手，全文送进去，那个会话拉进协作（同一方已有主控时当这件事项的执行） |
+| `cowork-lead-<coworkId>` | 成员里的「在我的 Studio 里开这一方的主控」（我这一方还没有主控时才有） | 新：新开一个任务（在协作的仓库对应的项目里，找不到就问人），第一条消息带协作的目标、已定的事、开着的事项和板的摘要；它的主会话以主控拉进这个协作 |
+| `cowork-patrol-<coworkId>` | 我的主控那一行的「让主控现在看一遍」 | 新：不等 2 分钟的巡检，马上替这一方的主控算一遍待它处理的，有就叫醒它 |
+
+新的两种 Studio 还没接时，外壳拿到的是「没有这个会话」，界面提示更新 Studio。
+
+中转客户端读的、服务器还没有的字段（11-25 界面先按可选读，没有就不显示）：消息的 `basis`（`"confirmed" | "inferred"` 或 `{kind, text}`，AI 回答的依据，「我的判断」）、`notice`（`true` 或要看过的人，群聊知会；现在 @ 我的群聊消息就算知会）；板上人拖过的位置现在借服务器的事项卡（`kind: "matter"`、`placedBy: "person"`）存，服务器改成只存位置后界面跟着改。
+
 ---
 
 它是 `plans/later/agent-collab-direction.md` 里「共同的底子」那一节往下谈的结果：那边写的是三个大方向，这里写它们共用的概念。脉络（`plans/tracks.md`）的台账、v7 的楼（`out/tracks/proto-v7.html`）都读这一份数据。

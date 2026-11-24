@@ -104,9 +104,9 @@ test("layout A: rail, list, main, 信息栏 — every page at 1280, 1080 and 960
   // 待处理: the AI's session, its 信息栏 open on a wide window.
   await page.locator(".list-body .srow", { hasText: "加特林射速曲线怎么配" }).click();
   await expect(page.locator(".info-panel .fs-open")).toContainText("加特林射速.md");
-  // The 协作's 子会话 to me comes only as a row of 「协作里等我」 (it opens on the 协作 page), not as a session of 待处理.
+  // The 协作's 事项 asked of me comes only as a row of 「协作里要你看」 (it opens on the 协作 page), not as a session of 待处理.
   await expect(page.locator(".rail-item", { hasText: "待处理" }).locator(".badge")).toHaveText("3");
-  await expect(page.locator(".list-body .cw-wait.sub")).toContainText("协作里的子会话");
+  await expect(page.locator(".list-body .cw-wait.confirm")).toContainText("协作里的子会话");
   await expect(page.locator(".list-body .srow", { hasText: "协作里的子会话" })).toHaveCount(0);
   await noSideOverflow(page);
   await shot(app, "A01-queue-1280");

@@ -181,17 +181,17 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   await expect.poll(() => opened).toEqual(["s-9", "s-9", "s-9"]);
   await box.fill("");
 
-  // ---- a 子会话: its card's right click, and its window's button.
-  const subWant = `子会话「过热从第几秒开始」 thread:${sub.id}（协作 cowork:${cw.id}）`;
+  // ---- a 事项 (was 子会话, 2026-11-25): its card's right click, and its window's button.
+  const subWant = `事项 2「过热从第几秒开始」 thread:${sub.id}（协作 cowork:${cw.id}）`;
   await a.locator(`.cw-subcard[data-session="${sub.id}"]`).click({ button: "right" });
   await menuItem(a, "复制引用").click();
   expect(await copiedText(A.app)).toBe(subWant);
   await a.locator(`.cw-subcard[data-session="${sub.id}"]`).click();
-  const subWin = a.locator('.float-win[aria-label^="子会话：过热从第几秒开始"]');
+  const subWin = a.locator('.float-win[aria-label^="事项 2：过热从第几秒开始"]');
   await expect(subWin).toBeVisible();
   await subWin.getByRole("button", { name: "复制引用" }).click();
   expect(await copiedText(A.app)).toBe(subWant);
-  await expect(a.locator(".toast")).toContainText("已复制子会话「过热从第几秒开始」的引用");
+  await expect(a.locator(".toast")).toContainText("已复制事项 2「过热从第几秒开始」的引用");
 
   // ---- a 中转会话: its row's right click, its page's button.
   const reqWant = `中转会话「登录页改版」 thread:${req.id}`;
@@ -220,7 +220,7 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   const said = a.locator(".msg", { hasText: "里的结论" });
   await expect(said.locator(`button.ref-chip[data-ref="cowork:${cw.id}"]`)).toHaveCount(2);
   await expect(said.locator(`button.ref-chip[data-ref="cowork:${cw.id}"]`).first()).toHaveText("协作「加特林射速调整」");
-  await expect(said.locator(`button.ref-chip[data-ref="thread:${sub.id}"]`)).toHaveText("子会话「过热从第几秒开始」");
+  await expect(said.locator(`button.ref-chip[data-ref="thread:${sub.id}"]`)).toHaveText("事项 2「过热从第几秒开始」");
   await expect(said.locator(`button.ref-chip[data-ref="thread:${req.id}"]`)).toHaveText("中转会话「登录页改版」");
   await expect(said.locator(`.ref-chip.off[data-ref="cowork:${hidden.id}"]`)).toHaveText("看不到的协作");
   await expect(said.locator(`.ref-chip.off[data-ref="cowork:${hidden.id}"]`)).toHaveAttribute("title", "你不在这个协作里，或者它已经不在了");

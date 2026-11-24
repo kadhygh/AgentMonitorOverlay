@@ -1,39 +1,50 @@
 import { useEffect, useMemo, useState } from "react";
 import { BoardBody } from "./Board.js";
-import { agentOf, CoworkComposer, CoworkContext, CoworkMessages, DraftCard, subState, useCowork, type CoworkCtx } from "./CoworkChat.js";
-import { SubSessionBody } from "./CoworkSession.js";
+import { agentOf, CoworkComposer, CoworkContext, CoworkMessages, markMine, matterWhy, useCowork, type CoworkCtx } from "./CoworkChat.js";
+import { MatterBody, NewMatterDialog } from "./CoworkMatter.js";
+import { askStudio, leadMark, patrolMark, studioHere } from "./coworkHandoff.js";
 import { agentChip, STATE_LEGEND, STATE_MARK, STATE_WORD } from "./coworkText.js";
-import { Avatar, avatarColor, timeText, useDisplayName, useListed, usePeople, Who } from "./bits.js";
-import { Check, Dialog, Field } from "./Dialog.js";
+import { Avatar, avatarColor, timeText, useDisplayName, usePeople, Who } from "./bits.js";
+import { Dialog, Field } from "./Dialog.js";
 import { FilesList, FileViewer, PickFiles, useThreadFiles, useUpload } from "./Files.js";
 import { FloatTabs, FloatWindow, useFloats } from "./Floats.js";
 import { ListRow, ListSection, SideBlock, SidePanel, useSidePanel } from "./Layout.js";
 import { Markdown } from "./Markdown.js";
+import { lookItems, LOOK_WORD, MATTER_CLS, matterChip, matterLabel, mattersOf, openLine, partyText, pendingSeqs, type LookItem } from "./matterView.js";
 import { errorText, useMessages } from "./Messages.js";
 import { EMPTY_COWORK_DATA, useSession, type Session } from "./session.js";
-import { copyRef, openMenu, openStudio, studioWhere } from "./RefChips.js";
-import { coworkRef, subRef } from "./refs.js";
-import { listedOthers, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type CoworkSession, type Message } from "./shared.js";
+import { copyRef, openMenu, openStudio, studioWhere, type MenuItem } from "./RefChips.js";
+import { coworkRef } from "./refs.js";
+import { AGENT_ROLE_LABEL, listedOthers, personParty, type CoworkAgent, type CoworkGoalVersion, type CoworkListItem, type Matter, type Message } from "./shared.js";
 
-// 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作, and
-// one 协作 — its 群聊 in the middle, the 信息栏 on the right (目标 with its versions, 仓库和分支, 成员 with each AI's state,
-// 子会话, 已定的事, 文件, 「AI 发起 @ 和提问」, 拉人, 结束 / 重新打开), its 子会话 and 白板 as floating windows over the page
-// (Floats.tsx, 第 9 条). 待处理 sums up what waits on me in all of them (coworkWaiting).
+// 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page; 2026-11-25 the communication plan, plans/collab-framework.md
+// 「11-24」 and the board prototype studio/out/cowork-flow/board.html): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作,
+// and one 协作 — its 群聊 (over it a line of the open 事项 and whom they wait on) or its 板 (the 事项 computed into frames by
+// side), 「要你看 N」 (what is mine to look at: 事项 waiting on me — 等你确认 / 叫你来看 — and the 群聊's 知会), the 信息栏 on
+// the right (目标 with its versions, 仓库和分支, 成员 with each AI's role and state, 事项, 已定的事, 文件, 结束 / 重新打开). A 事项
+// opens as a window over the 群聊 (several at once, Floats.tsx) or as a drawer on the board. 待处理 sums up what is mine in
+// all of them (coworkWaiting).
 
-/** What waits on me across my coworks: @-s not read, 子会话 waiting on my answer, my AIs' drafts. */
-export function coworkWaiting(s: { coworks: CoworkListItem[]; coworkData: Record<string, { drafts: CoworkDraft[] }>; mentions: Message[] }, me: string) {
-  const subs = s.coworks.filter((c) => !c.endedAt).flatMap((c) => c.sessions.filter((x) => x.state !== "done" && x.waitingOn === me && x.to === me).map((x) => ({ cowork: c, sub: x })));
-  const drafts = s.coworks.flatMap((c) => (s.coworkData[c.id]?.drafts ?? []).filter((d) => d.state === "pending" && d.owner === me).map((d) => ({ cowork: c, draft: d })));
-  const mentions = s.mentions.flatMap((m) => {
-    const c = s.coworks.find((x) => x.id === m.threadId || x.sessions.some((y) => y.id === m.threadId));
-    return c ? [{ cowork: c, message: m }] : [];
-  });
-  return { subs, drafts, mentions, count: subs.length + drafts.length + mentions.length };
+/** What is mine to look at across my coworks (待我处理; on a service from before 事项: @-s not read and 子会话 waiting on me). */
+export function coworkWaiting(s: { coworks: CoworkListItem[]; pending: Session["snapshot"]["pending"]; pendingOk: boolean; mentions: Message[] }, me: string) {
+  const open = s.coworks.filter((c) => !c.endedAt);
+  if (s.pendingOk) {
+    const rows = open.flatMap((c) => lookItems(s.pending[c.id]?.items ?? [], mattersOf(c)).map((item) => ({ cowork: c, item })));
+    return { rows, count: rows.length };
+  }
+  const rows: Array<{ cowork: CoworkListItem; item: LookItem }> = [
+    ...open.flatMap((c) => mattersOf(c).filter((m) => m.status === "confirm" && m.waitingOn.includes(personParty(me))).map((m) => ({ cowork: c, item: { kind: "matter", look: "confirm", matter: m, since: m.updatedAt, seqs: [] } as LookItem }))),
+    ...s.mentions.flatMap((m) => {
+      const c = s.coworks.find((x) => x.id === m.threadId);
+      return c ? [{ cowork: c, item: { kind: "notice", seq: m.seq, since: m.createdAt, text: m.body.replace(/\s+/g, " ").slice(0, 80) } as LookItem }] : [];
+    }),
+  ];
+  return { rows, count: rows.length };
 }
 
-/** A cowork's unread (its 群聊 and its 子会话) and whether something there @-s me. */
+/** A cowork's unread (its 群聊 and its 事项) and whether something there @-s me. */
 function unreadOf(session: Session, c: CoworkListItem) {
-  const ids = new Set([c.id, ...c.sessions.map((s) => s.id)]);
+  const ids = new Set([c.id, ...c.sessions.map((s) => s.id), ...(c.matters ?? []).map((m) => m.id)]);
   const st = session.snapshot;
   const unread = st.threads.filter((t) => ids.has(t.id)).reduce((n, t) => n + t.unread, 0);
   const atMe = st.mentions.find((m) => ids.has(m.threadId)) ?? null;
@@ -59,17 +70,22 @@ export function CoworkList({ session, openId, query, onOpen }: { session: Sessio
     const g = st.threads.find((t) => t.id === c.id);
     const last = g?.last;
     const decided = (st.coworkData[c.id]?.events ?? []).filter((e) => e.kind === "decision").length;
-    const open = c.sessions.filter((s) => s.state !== "done").length;
+    const open = mattersOf(c).filter((m) => m.status !== "closed").length;
+    const mine = lookItems(st.pending[c.id]?.items ?? [], mattersOf(c)).length;
     const sub = atMe ? (
       <>
         <span className="at-me">[@我]</span> {show(atMe.author)}：{atMe.body.replace(/\s+/g, " ").slice(0, 40)}
+      </>
+    ) : mine && !c.endedAt ? (
+      <>
+        <span className="at-me">[要你看 {mine}]</span> {last && last.kind !== "event" ? `${show(last.author)}：${last.body.replace(/\s+/g, " ").slice(0, 30)}` : ""}
       </>
     ) : c.endedAt ? (
       `已结束${decided ? ` · 已定 ${decided} 件` : ""}`
     ) : last && last.kind !== "event" ? (
       `${agentOf(c, last.via.kind === "ai" ? last.via.conv : null)?.name ?? show(last.author)}：${last.body.replace(/\s+/g, " ").slice(0, 40)}`
     ) : (
-      [decided ? `已定 ${decided} 件` : "", open ? `${open} 个子会话开着` : "", !decided && !open ? `${c.members.length} 人 · ${c.agents.length} 个 AI` : ""].filter(Boolean).join(" · ")
+      [decided ? `已定 ${decided} 件` : "", open ? `${open} 件事项开着` : "", !decided && !open ? `${c.members.length} 人 · ${c.agents.length} 个 AI` : ""].filter(Boolean).join(" · ")
     );
     return (
       <ListRow
@@ -103,8 +119,21 @@ export function CoworkList({ session, openId, query, onOpen }: { session: Sessio
   );
 }
 
-/** One 协作: the 群聊, the 信息栏, its 子会话 and 白板 as windows. `focus` opens a 子会话 (from 待处理, a notification). */
-export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { session: Session; cowork: CoworkListItem; toast: (t: string) => void; focus: { sub?: string; n: number } | null; onOpenFile?: (id: string) => void }) {
+/** 群聊 or 板 (the user 2026-11-24: the board is the 协作's infinite canvas, the 事项 computed onto it). Kept per computer. */
+const VIEW_KEY = "amo-relay-cowork-view";
+const savedView = (): "chat" | "board" => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "board" ? "board" : "chat";
+  } catch {
+    return "chat";
+  }
+};
+
+/**
+ * One 协作. `focus` opens a 事项 (from 待处理, a notification, a reference): on the board as its drawer, over the 群聊 as a
+ * window; `focus.seq` a 群聊 message (a 知会).
+ */
+export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { session: Session; cowork: CoworkListItem; toast: (t: string) => void; focus: { sub?: string; seq?: number; n: number } | null; onOpenFile?: (id: string) => void }) {
   const st = useSession(session);
   const show = useDisplayName();
   const floats = useFloats();
@@ -113,58 +142,101 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
   const side = useSidePanel("cowork");
   const { messages, error } = useMessages(session, cowork.id);
   const [typing, setTyping] = useState(false);
-  const [boardFocus, setBoardFocus] = useState<{ session: string; n: number } | null>(null);
-  const [dialog, setDialog] = useState<null | "sub" | "people" | "goals">(null);
+  const [view, setViewState] = useState<"chat" | "board">(savedView);
+  const [boardMatter, setBoardMatter] = useState<{ id: string; n: number } | null>(null);
+  const [boardChat, setBoardChat] = useState<{ seq?: number; n: number } | null>(null);
+  const [lookOpen, setLookOpen] = useState(false);
+  const [dialog, setDialog] = useState<null | "matter" | "people" | "goals">(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState<{ seq: number; threadId: string } | null>(null);
   const files = useThreadFiles(session, cowork.id, cowork.updatedAt);
   const { upload, busy: uploading } = useUpload(session, { threadId: cowork.id }, toast);
+  const matters = useMemo(() => mattersOf(cowork), [cowork]);
+  const pending = st.pending[cowork.id]?.items ?? [];
+  const looks = useMemo(() => lookItems(pending, matters), [pending, matters]);
+  const toHandle = useMemo(() => pendingSeqs(pending), [pending]);
+  const setView = (v: "chat" | "board") => {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // private mode: not kept
+    }
+  };
 
-  // Events and drafts: loaded when first opened (the list loads the open ones; an ended one on demand).
+  // Events: loaded when first opened (the list loads the open ones; an ended one on demand); my 待我处理 here.
   useEffect(() => {
     if (!st.coworkData[cowork.id]) void session.loadCowork(cowork.id).catch(() => undefined);
+    if (!st.pending[cowork.id]) void session.loadPending(cowork.id);
   }, [cowork.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const subTitle = (s: CoworkSession) => {
-    const x = subState(s, show, me);
-    return { title: `子会话：${s.title}`, status: x.word.replace(/^[✓!◐○] /, "") };
+  const winTitle = (m: Matter) => ({ title: `${matterLabel(m)}：${m.title}`, status: matterChip(m.status).replace(/^[✓!◐○] /, "") });
+  // (One just opened may not be in the list yet: its window opens with its title and fills in once it comes.)
+  const openMatter = (id: string, title?: string) => {
+    if (view === "board") return setBoardMatter((f) => ({ id, n: (f?.n ?? 0) + 1 }));
+    const m = matters.find((x) => x.id === id);
+    if (m || title) floats.open({ id: `matter:${id}`, ...(m ? winTitle(m) : { title: `事项：${title}`, status: "开着" }), size: { w: 540, h: 600 } });
   };
-  // (One just asked may not be in the list yet: its window opens with its title and fills in once it comes.)
-  const openSub = (id: string, title?: string) => {
-    const s = cowork.sessions.find((x) => x.id === id);
-    if (s || title) floats.open({ id: `sub:${id}`, ...(s ? subTitle(s) : { title: `子会话：${title}`, status: "开着" }), size: { w: 520, h: 560 } });
+  const openBoard = (matter?: string) => {
+    setView("board");
+    if (matter) setBoardMatter((f) => ({ id: matter, n: (f?.n ?? 0) + 1 }));
   };
-  const openBoard = (sub?: string) => {
-    floats.open({ id: `board:${cowork.id}`, title: `白板 · ${cowork.title}`, size: { w: 860, h: 560 } });
-    if (sub) setBoardFocus((f) => ({ session: sub, n: (f?.n ?? 0) + 1 }));
+  const openNotice = (seq: number) => {
+    setLookOpen(false);
+    if (view === "board") return setBoardChat((f) => ({ seq, n: (f?.n ?? 0) + 1 }));
+    document.getElementById(`msg-${seq}`)?.scrollIntoView({ block: "center" });
   };
-  // A 子会话's window title follows its state.
+  // A 事项's window title follows its state.
   useEffect(() => {
-    for (const s of cowork.sessions) if (floats.isOpen(`sub:${s.id}`)) floats.setInfo(`sub:${s.id}`, subTitle(s));
-  }, [cowork.sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+    for (const m of matters) if (floats.isOpen(`matter:${m.id}`)) floats.setInfo(`matter:${m.id}`, winTitle(m));
+  }, [matters]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (focus?.sub) openSub(focus.sub);
+    if (focus?.sub) openMatter(focus.sub);
+    else if (focus?.seq) openNotice(focus.seq);
   }, [focus?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ctx: CoworkCtx = { session, cowork, data, me, openSub, openBoard, toast };
+  const ctx: CoworkCtx = { session, cowork, data, me, matters, looks, toHandle, openMatter, openBoard, replacing, setReplacing, toast };
   const ended = !!cowork.endedAt;
   const decisions = data.events.filter((e) => e.kind === "decision");
-  const openSubs = cowork.sessions.filter((s) => s.state !== "done").length;
-  const drafts = data.drafts.filter((d) => d.state === "pending" && (d.kind === "ask" || d.threadId === cowork.id || !d.threadId));
+  const openCount = matters.filter((m) => m.status !== "closed").length;
   const where = [cowork.repo, cowork.branch].filter(Boolean);
 
   const pasteToBoard = async (text: string) => {
     try {
-      await session.client.coworkBoardOps(cowork.id, [{ op: "add", opId: `o${Date.now().toString(36)}`, item: { kind: "note", text, x: 40 + Math.round(Math.random() * 80), y: 40 + Math.round(Math.random() * 80), w: 220, h: 120 } }]);
-      openBoard();
-      toast("贴到了白板上");
+      await session.client.coworkBoardOps(cowork.id, [{ op: "add", opId: `o${Date.now().toString(36)}`, item: { kind: "note", text, x: 40 + Math.round(Math.random() * 80), y: -200 - Math.round(Math.random() * 80), w: 220, h: 120 } }]);
+      toast("贴到了板上");
     } catch (err) {
       toast(errorText(err));
     }
   };
 
+  const chat = (
+    <>
+      <OpenStrip />
+      <CoworkMessages threadId={cowork.id} messages={messages} error={error} typing={typing} withEvents empty="群里还没有消息。群聊只发进度和 @；具体的事开成事项。" />
+      <div className="cw-dock">
+        <FloatTabs />
+        <CoworkComposer
+          placeholder={`发到「${cowork.title}」… 只发进度和 @；具体的事点「＋ 事项」`}
+          onTyping={setTyping}
+          disabled={ended ? "协作已结束：重新打开后才能说话（信息栏最下面）。" : null}
+          tools={
+            <>
+              <PickFiles small label={uploading ? "上传中…" : "附加文件"} disabled={uploading} onFiles={(fl) => void upload(fl)} />
+              <button type="button" className="small ghost" onClick={() => setDialog("matter")} disabled={ended}>
+                开事项
+              </button>
+              <PasteToBoard onPaste={pasteToBoard} />
+            </>
+          }
+        />
+      </div>
+    </>
+  );
+
   return (
     <CoworkContext.Provider value={ctx}>
-      <div className="view cowork-view">
+      <div className={`view cowork-view ${view === "board" ? "on-board" : ""}`}>
         <div className="cw-main">
           <div className="page-head">
             <div className="head-main">
@@ -185,63 +257,128 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
                   {cowork.members.length} 人 + {cowork.agents.length} 个 AI
                 </span>
                 <span>
-                  {cowork.sessions.length} 个子会话{openSubs ? `（${openSubs} 开着）` : ""}
+                  事项 {matters.length} 件{openCount ? `，开着 ${openCount}` : ""}
                 </span>
                 <span>已定 {decisions.length} 件</span>
               </div>
             </div>
             <div className="head-actions">
-              <button type="button" className="primary" onClick={() => openBoard()}>
-                打开白板
+              <div className="seg" role="tablist" aria-label="群聊还是板">
+                <button type="button" role="tab" aria-selected={view === "chat"} className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
+                  群聊
+                </button>
+                <button type="button" role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => setView("board")}>
+                  板
+                </button>
+              </div>
+              <button type="button" className={`cw-look-btn ${looks.length ? "primary" : ""}`} aria-expanded={lookOpen} onClick={() => setLookOpen(!lookOpen)} title="等你确认、叫你来看的事项，和群聊里给你的知会">
+                要你看 {looks.length}
               </button>
               {!ended && (
-                <button type="button" onClick={() => setDialog("sub")}>
-                  ＋ 子会话
+                <button type="button" onClick={() => setDialog("matter")}>
+                  ＋ 事项
                 </button>
               )}
-              <button type="button" className="side-toggle" onClick={() => side.setOpen(!side.open)}>
-                {side.open ? "收起信息栏" : "信息栏"}
-              </button>
+              {view === "chat" && (
+                <button type="button" className="side-toggle" onClick={() => side.setOpen(!side.open)}>
+                  {side.open ? "收起信息栏" : "信息栏"}
+                </button>
+              )}
             </div>
           </div>
-          <CoworkMessages threadId={cowork.id} messages={messages} error={error} typing={typing} withEvents empty="群里还没有消息。说点什么，或者 @ 某人、某个 AI。" after={drafts.map((d) => <DraftCard key={d.id} draft={d} />)} />
-          <div className="cw-dock">
-            <FloatTabs />
-            <CoworkComposer
-              placeholder={`发到「${cowork.title}」… 用 @ 叫人或叫某个 AI；只有被 @ 的 AI 会被唤醒`}
-              onTyping={setTyping}
-              disabled={ended ? "协作已结束：重新打开后才能说话（信息栏最下面）。" : null}
-              tools={
-                <>
-                  <PickFiles small label={uploading ? "上传中…" : "附加文件"} disabled={uploading} onFiles={(fl) => void upload(fl)} />
-                  <button type="button" className="small ghost" onClick={() => setDialog("sub")}>
-                    发起子会话
-                  </button>
-                  <PasteToBoard onPaste={pasteToBoard} />
-                </>
-              }
-            />
-          </div>
+          {lookOpen && view === "chat" && <LookPanel className="cw-look-drop" onClose={() => setLookOpen(false)} onNotice={openNotice} />}
+          {view === "chat" ? chat : <BoardBody focus={boardMatter} chatFocus={boardChat} lookOpen={lookOpen} setLookOpen={setLookOpen} chat={chat} onNotice={openNotice} />}
         </div>
-        {side.open && (
+        {side.open && view === "chat" && (
           <SidePanel label="信息栏" title="协作信息" className="info-panel cw-info" onClose={() => side.setOpen(false)}>
-            <InfoPanel files={files} onFiles={(fl) => void upload(fl)} uploading={uploading} onOpenFile={(id) => (onOpenFile ? onOpenFile(id) : setViewing(id))} onPeople={() => setDialog("people")} onGoals={() => setDialog("goals")} />
+            <InfoPanel files={files} onFiles={(fl) => void upload(fl)} uploading={uploading} onOpenFile={(id) => (onOpenFile ? onOpenFile(id) : setViewing(id))} onPeople={() => setDialog("people")} onGoals={() => setDialog("goals")} onMatter={() => setDialog("matter")} />
           </SidePanel>
         )}
       </div>
-      {cowork.sessions.map((s) => (
-        <FloatWindow key={s.id} id={`sub:${s.id}`} className="cw-subwin">
-          <SubSessionBody sub={s} />
+      {matters.map((m) => (
+        <FloatWindow key={m.id} id={`matter:${m.id}`} className="cw-subwin">
+          <MatterBody matter={m} onBoard={() => (floats.close(`matter:${m.id}`), openBoard(m.id))} />
         </FloatWindow>
       ))}
-      <FloatWindow id={`board:${cowork.id}`} className="cw-boardwin">
-        <BoardBody focus={boardFocus} />
-      </FloatWindow>
-      {dialog === "sub" && <NewSubDialog onClose={() => setDialog(null)} onMade={(id, title) => (setDialog(null), openSub(id, title))} />}
+      {dialog === "matter" && <NewMatterDialog onClose={() => setDialog(null)} onMade={(id) => (setDialog(null), openMatter(id, "新事项"))} />}
       {dialog === "people" && <AddPeopleDialog onClose={() => setDialog(null)} />}
       {dialog === "goals" && <GoalsDialog onClose={() => setDialog(null)} />}
       {viewing && <FileViewer session={session} fileId={viewing} onClose={() => setViewing(null)} toast={toast} />}
     </CoworkContext.Provider>
+  );
+}
+
+/** Over the 群聊: the 事项 still open and whom they wait on (the user 2026-11-24: 群聊顶部列开着的事和等谁确认). */
+function OpenStrip() {
+  const { matters, cowork, me, openMatter, looks } = useCowork();
+  const show = useDisplayName();
+  const list = openLine(matters);
+  if (!list.length) return null;
+  const mine = new Set(looks.flatMap((l) => (l.kind === "matter" ? [l.matter.id] : [])));
+  const MAX = 4;
+  return (
+    <div className="cw-openline" aria-label="开着的事">
+      <span className="cw-openline-k">开着的事 {list.length}</span>
+      {list.slice(0, MAX).map((m) => (
+        <button key={m.id} type="button" className={`cw-openchip st-${MATTER_CLS[m.status]} ${mine.has(m.id) ? "mine" : ""}`} onClick={() => openMatter(m.id)} title={`${matterLabel(m)}「${m.title}」 · ${matterWhy(m, cowork.agents, show, me)}`}>
+          <b>{matterLabel(m)}</b> {m.waitingOn.length ? `等${m.waitingOn.map((p) => (p === personParty(me) ? "你" : partyText(p, cowork.agents, show))).join("、")}${m.status === "confirm" ? "确认" : ""}` : matterChip(m.status)}
+        </button>
+      ))}
+      {list.length > MAX && <span className="muted tiny">还有 {list.length - MAX} 件</span>}
+    </div>
+  );
+}
+
+/**
+ * 要你看 (2026-11-25, 放法 A): 等你确认 / 叫你来看 的事项, then the 群聊's 知会 (「看过了」 right there). A 事项 opens (on the
+ * board: panned to and its drawer); a 知会 shows its message.
+ */
+export function LookPanel({ className, onClose, onNotice, onMatter }: { className?: string; onClose: () => void; onNotice: (seq: number) => void; onMatter?: (id: string) => void }) {
+  const ctx = useCowork();
+  const { looks, openMatter, cowork } = ctx;
+  const show = useDisplayName();
+  return (
+    <div className={`cw-lookpanel ${className ?? ""}`} role="region" aria-label="要你看">
+      <div className="cw-lookpanel-head">
+        <b>要你看</b>
+        <span className={`badge ${looks.length ? "" : "quiet"}`}>{looks.length}</span>
+        <span className="grow" />
+        <button type="button" className="link tiny" onClick={onClose}>
+          收起
+        </button>
+      </div>
+      {!looks.length && <div className="muted tiny cw-lookpanel-empty">没有等你的。有事项等你确认、或叫你来看结果时会列在这里。</div>}
+      {looks.map((l) =>
+        l.kind === "matter" ? (
+          <button key={l.matter.id} type="button" className={`cw-lookrow ${l.look}`} data-matter={l.matter.id} onClick={() => (onMatter ?? openMatter)(l.matter.id)}>
+            <span className="cw-lookrow-top">
+              <span className={`cw-look ${l.look}`}>{LOOK_WORD[l.look]}</span>
+              <span className="muted tiny">
+                {partyText(l.matter.owner, cowork.agents, show)} · {timeText(l.since)}
+              </span>
+            </span>
+            <b>
+              {matterLabel(l.matter)} · {l.matter.title}
+            </b>
+          </button>
+        ) : (
+          <div key={`n${l.seq}`} className="cw-lookrow notice" data-seq={l.seq}>
+            <button type="button" className="cw-lookrow-main" onClick={() => onNotice(l.seq)}>
+              <span className="cw-lookrow-top">
+                <span className="cw-look notice">群聊知会</span>
+                <span className="muted tiny">
+                  #{l.seq} · {timeText(l.since)}
+                </span>
+              </span>
+              <b>{l.text}</b>
+            </button>
+            <button type="button" className="small" onClick={() => void markMine(ctx, "handled", [l.seq], "记下了：看过了")}>
+              看过了
+            </button>
+          </div>
+        ),
+      )}
+    </div>
   );
 }
 
@@ -252,11 +389,11 @@ function PasteToBoard({ onPaste }: { onPaste: (text: string) => Promise<void> })
   return (
     <>
       <button type="button" className="small ghost" onClick={() => setOpen(true)}>
-        贴到白板
+        贴到板上
       </button>
       {open && (
         <Dialog
-          title="贴到白板"
+          title="贴到板上"
           onClose={() => setOpen(false)}
           foot={
             <>
@@ -269,20 +406,37 @@ function PasteToBoard({ onPaste }: { onPaste: (text: string) => Promise<void> })
             </>
           }
         >
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder="写在便签上的字（白板上所有人和 AI 都看得到）" aria-label="便签的字" autoFocus />
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} placeholder="写在便签上的字（板上所有人和 AI 都看得到）" aria-label="便签的字" autoFocus />
         </Dialog>
       )}
     </>
   );
 }
 
-function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (fl: FileList) => void; uploading: boolean; onOpenFile: (id: string) => void; onPeople: () => void; onGoals: () => void }) {
-  const { session, cowork, data, me, toast, openSub } = useCowork();
+/** An AI's role in words: 主控 / 执行 · 事项 N / 未分角色 (one brought in before roles, the user 2026-11-25). */
+export function roleText(a: Pick<CoworkAgent, "role" | "matter">, matters: Matter[]): string {
+  if (!a.role) return "未分角色";
+  if (a.role === "worker") {
+    const m = matters.find((x) => x.id === a.matter);
+    return `执行 · ${m ? matterLabel(m) : "事项"}`;
+  }
+  return AGENT_ROLE_LABEL[a.role];
+}
+
+function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (fl: FileList) => void; uploading: boolean; onOpenFile: (id: string) => void; onPeople: () => void; onGoals: () => void; onMatter: () => void }) {
+  const { session, cowork, data, me, toast, openMatter, matters } = useCowork();
   const show = useDisplayName();
   const people = usePeople();
   const ended = !!cowork.endedAt;
   const [goalEdit, setGoalEdit] = useState<string | null>(null);
   const [whereEdit, setWhereEdit] = useState<{ repo: string; branch: string } | null>(null);
+  const [studioWhy, setStudioWhy] = useState<string | null | undefined>(undefined);
+  const device = session.snapshot.device?.id ?? null;
+  useEffect(() => {
+    let alive = true;
+    void studioHere(device).then((w) => alive && setStudioWhy(w));
+    return () => void (alive = false);
+  }, [device]);
   const goals = data.events.filter((e) => e.kind === "goal");
   const lastGoal = goals.at(-1);
   const patch = async (p: Parameters<Session["client"]["updateCowork"]>[1], done: string) => {
@@ -295,7 +449,27 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
       return false;
     }
   };
+  const setRole = async (a: CoworkAgent, role: "lead" | "worker", matter?: string) => {
+    try {
+      const r = await session.client.setCoworkAgentRole(cowork.id, a.mark, role, matter ?? null);
+      session.putCowork(r.cowork);
+      toast(`${a.label} 现在是${role === "lead" ? "这一方的主控" : `执行（${matterLabel(matters.find((m) => m.id === matter) ?? { no: 0 })}）`}`);
+    } catch (err) {
+      toast(errorText(err));
+    }
+  };
+  const roleMenu = (a: CoworkAgent): MenuItem[] => [
+    a.role !== "lead" ? { label: "设成主控", hint: "理这一方的流程、派活、和你沟通、改事项状态；一方只有一个", onClick: () => void setRole(a, "lead") } : null,
+    null,
+    ...matters
+      .filter((m) => m.status !== "closed" && !(a.role === "worker" && a.matter === m.id))
+      .slice(0, 10)
+      .map((m): MenuItem => ({ label: `设成执行：${matterLabel(m)}「${m.title.slice(0, 18)}」`, hint: "只进这一件事项：在里面贴技术事实，不在群聊说话、不改事项", onClick: () => void setRole(a, "worker", m.id) })),
+  ];
+  const myLead = cowork.agents.find((a) => a.owner === me && a.role === "lead");
   const decisions = data.events.filter((e) => e.kind === "decision");
+  const openMatters = matters.filter((m) => m.status !== "closed");
+  const closed = matters.filter((m) => m.status === "closed");
   return (
     <>
       <SideBlock
@@ -390,28 +564,50 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
           })}
           {cowork.agents.map((a) => {
             // 在 Studio 里打开 (2026-11-23): my own AIs only; one on another computer says so instead.
-            const where = studioWhere(a.mark, a.owner, me, session.snapshot.device?.id ?? null);
+            const where = studioWhere(a.mark, a.owner, me, device);
+            const role = roleText(a, matters);
             return (
               <div key={a.mark} className="cw-person agent" data-agent={a.mark}>
                 <span className="avatar ai small">AI</span>
                 <span className="cw-person-text">
                   <b>{show(a.owner)} 的 AI</b>
                   <span className="muted tiny">
+                    <span className={`cw-role ${a.role ?? "none"}`}>{role}</span>
                     {a.label}
                     {a.owner === me ? " · 我的会话" : ""}
                   </span>
-                  {where === "here" && (
-                    <button type="button" className="link tiny cw-to-studio" onClick={() => void openStudio(a.mark, toast)} title="去这台电脑的 Studio 里看这个会话">
-                      在 Studio 里打开
-                    </button>
-                  )}
-                  {where === "elsewhere" && <span className="muted tiny cw-elsewhere">在另一台电脑上</span>}
+                  <span className="cw-person-acts">
+                    {a.owner === me && !ended && (
+                      <button type="button" className="link tiny" onClick={(e) => openMenu(e, roleMenu(a))} title="主控理这一方的流程；执行只进一件事项">
+                        改角色
+                      </button>
+                    )}
+                    {where === "here" && (
+                      <button type="button" className="link tiny cw-to-studio" onClick={() => void openStudio(a.mark, toast)} title="去这台电脑的 Studio 里看这个会话">
+                        在 Studio 里打开
+                      </button>
+                    )}
+                    {where === "here" && a.role === "lead" && device && !ended && (
+                      <button type="button" className="link tiny" onClick={() => void askStudio(patrolMark(device, cowork.id), "让主控现在看一遍了：它会把待它处理的过一遍", toast)} title="不等下一次巡检（每 2 分钟），现在就替它算一遍待它处理的，有就叫醒它">
+                        让主控现在看一遍
+                      </button>
+                    )}
+                    {where === "elsewhere" && <span className="muted tiny cw-elsewhere">在另一台电脑上</span>}
+                  </span>
                 </span>
                 <span className={`cw-chip st-${a.state}`}>{agentChip(a)}</span>
               </div>
             );
           })}
-          {!cowork.agents.length && <div className="muted tiny">还没有 AI。在自己的 Studio 会话上点「拉进协作」，那个会话就能在这里回复、写白板。</div>}
+          {!cowork.agents.length && <div className="muted tiny">还没有 AI。在自己的 Studio 会话上点「拉进协作」，或者用下面的按钮在 Studio 里开这一方的主控。</div>}
+          {!myLead && !ended && (
+            <div className="cw-lead-open">
+              <button type="button" className="small primary" disabled={studioWhy !== null || !device} onClick={() => device && void askStudio(leadMark(device, cowork.id), "已交给 Studio：它会新开一个任务，带着目标、已定的事和板，拉进来当你这一方的主控", toast)} title={studioWhy ?? "在这台电脑的 Studio 里新开一个任务，带着目标、已定的事和板，它的会话进来当你这一方的主控"}>
+                在我的 Studio 里开这一方的主控
+              </button>
+              {studioWhy && <span className="muted tiny">{studioWhy}</span>}
+            </div>
+          )}
         </div>
         <dl className="cw-legend" aria-label="AI 状态的意思">
           {STATE_LEGEND.map(([s, what]) => (
@@ -424,20 +620,28 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
           ))}
         </dl>
       </SideBlock>
-      <SideBlock title="子会话" count={cowork.sessions.length}>
-        {!cowork.sessions.length && <span className="muted tiny">还没有。要和某人确认一件事时，点「＋ 子会话」。</span>}
-        {cowork.sessions.map((s) => {
-          const x = subState(s, show, me);
-          return (
-            <button key={s.id} type="button" className="cw-subrow" data-session={s.id} onClick={() => openSub(s.id)} onContextMenu={(e) => openMenu(e, [{ label: "复制引用", onClick: () => copyRef(subRef(s, cowork.id), `子会话「${s.title}」`, toast) }])}>
-              <span className="cw-subrow-title">{s.title}</span>
-              <span className={`cw-state ${x.cls}`}>{x.word}</span>
+      <SideBlock
+        title="事项"
+        count={matters.length}
+        action={
+          !ended && (
+            <button type="button" className="link tiny" onClick={props.onMatter}>
+              ＋ 开事项
             </button>
-          );
-        })}
+          )
+        }
+      >
+        {!matters.length && <span className="muted tiny">还没有。具体的事开成事项：板上按负责方排好，人只在等你确认、叫你来看时才要动手。</span>}
+        {[...openMatters, ...closed].map((m) => (
+          <button key={m.id} type="button" className={`cw-subrow ${m.status === "closed" ? "closed" : ""}`} data-matter={m.id} onClick={() => openMatter(m.id)}>
+            <span className="cw-subrow-no">{matterLabel(m)}</span>
+            <span className="cw-subrow-title">{m.title}</span>
+            <span className={`cw-state ${MATTER_CLS[m.status]}`}>{matterChip(m.status)}</span>
+          </button>
+        ))}
       </SideBlock>
       <SideBlock title="已定的事" count={decisions.length}>
-        {!decisions.length && <span className="muted tiny">子会话定下的结论记在这里。</span>}
+        {!decisions.length && <span className="muted tiny">事项的结论记在这里。</span>}
         <ul className="cw-decisions">
           {decisions.map((e) => (
             <li key={e.id}>
@@ -447,8 +651,11 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
                 {e.data?.threadId && (
                   <>
                     {" · "}
-                    <button type="button" className="link tiny" onClick={() => openSub(e.data!.threadId!)}>
-                      子会话
+                    <button type="button" className="link tiny" onClick={() => openMatter(e.data!.threadId!)}>
+                      {(() => {
+                        const m = matters.find((x) => x.id === e.data!.threadId);
+                        return m ? matterLabel(m) : "事项";
+                      })()}
                     </button>
                   </>
                 )}
@@ -460,19 +667,13 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
       <SideBlock title="文件" count={props.files.length}>
         <FilesList session={session} files={props.files} onOpen={props.onOpenFile} onFiles={ended ? undefined : props.onFiles} uploading={props.uploading} />
       </SideBlock>
-      <SideBlock title="选项">
-        <Check checked={cowork.options.aiInitiate} onChange={(v) => void patch({ options: { aiInitiate: v } }, v ? "AI 现在可以直接 @ 人、发起子会话" : "AI 的 @ 和提问先存草稿，主人确认后才发出")}>
-          AI 发起 @ 和提问
-        </Check>
-        <div className="muted tiny">{cowork.options.aiInitiate ? "开着：AI @ 人、发起子会话直接发出。" : "关着（默认）：AI @ 人、发起子会话先存成草稿，只有它的主人看得到，确认了才发出。"}</div>
-      </SideBlock>
       <div className="cw-end">
         {ended ? (
           <button type="button" className="small" onClick={() => void patch({ ended: false }, "协作重新打开了")}>
             重新打开协作
           </button>
         ) : (
-          <button type="button" className="small" onClick={() => confirm("结束这个协作？结束后不能再发消息、改白板、拉 AI，有人重新打开后才行。") && void patch({ ended: true }, "协作结束了")}>
+          <button type="button" className="small" onClick={() => confirm("结束这个协作？结束后不能再发消息、改板、拉 AI，有人重新打开后才行。") && void patch({ ended: true }, "协作结束了")}>
             结束协作
           </button>
         )}
@@ -494,8 +695,7 @@ function InfoPanel(props: { files: ReturnType<typeof useThreadFiles>; onFiles: (
   );
 }
 
-
-/** 发起协作: title, goal, repository and branch, people; 「AI 发起 @ 和提问」 off unless ticked. */
+/** 发起协作: title, goal, repository and branch, people. */
 export function NewCoworkDialog({ session, onClose, onMade }: { session: Session; onClose: () => void; onMade: (id: string) => void }) {
   const st = useSession(session);
   const me = session.me.name;
@@ -504,14 +704,13 @@ export function NewCoworkDialog({ session, onClose, onMade }: { session: Session
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
   const [people, setPeople] = useState<string[]>([]);
-  const [ai, setAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const make = async () => {
     setBusy(true);
     setError(null);
     try {
-      const c = await session.client.createCowork({ title: title.trim(), goal: goal.trim(), repo: repo.trim(), branch: branch.trim(), members: people, options: { aiInitiate: ai } });
+      const c = await session.client.createCowork({ title: title.trim(), goal: goal.trim(), repo: repo.trim(), branch: branch.trim(), members: people });
       session.putCowork(c);
       void session.loadCowork(c.id).catch(() => undefined);
       onMade(c.id);
@@ -552,22 +751,19 @@ export function NewCoworkDialog({ session, onClose, onMade }: { session: Session
           <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="feature/gatling-rate" />
         </Field>
       </div>
-      <Field label="拉人" hint="他们进来后再把自己的 AI 会话拉进来">
+      <Field label="拉人" hint="他们进来后再把自己这一方的主控拉进来">
         <div className="cw-pick-people">
-          {listedOthers(st.members, me)
-            .map((m) => (
-              <label key={m.name} className={`cw-pick ${people.includes(m.name) ? "on" : ""}`}>
-                <input type="checkbox" checked={people.includes(m.name)} onChange={(e) => setPeople((p) => (e.target.checked ? [...p, m.name] : p.filter((x) => x !== m.name)))} />
-                <Avatar name={m.name} small />
-                <Who name={m.name} />
-                {m.role && <span className="muted tiny">{m.role}</span>}
-              </label>
-            ))}
+          {listedOthers(st.members, me).map((m) => (
+            <label key={m.name} className={`cw-pick ${people.includes(m.name) ? "on" : ""}`}>
+              <input type="checkbox" checked={people.includes(m.name)} onChange={(e) => setPeople((p) => (e.target.checked ? [...p, m.name] : p.filter((x) => x !== m.name)))} />
+              <Avatar name={m.name} small />
+              <Who name={m.name} />
+              {m.role && <span className="muted tiny">{m.role}</span>}
+            </label>
+          ))}
         </div>
       </Field>
-      <Check checked={ai} onChange={setAi}>
-        AI 发起 @ 和提问（默认关：AI 要 @ 人、发起子会话时先存草稿，主人确认后才发出）
-      </Check>
+      <p className="muted tiny">AI 碰到闸门（判红的改动、改已定的口径、合进 master、动别人的东西、对外发布）会开一件「等人确认」的事项来问你，其他时候直接做。闸门由 AI 自己判断，Studio 拦不住。</p>
     </Dialog>
   );
 }
@@ -590,7 +786,7 @@ function AddPeopleDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog
       title="拉人进协作"
-      sub="群聊和所有子会话他们都能看到，包括之前的"
+      sub="群聊和所有事项他们都能看到，包括之前的"
       onClose={onClose}
       foot={
         <>
@@ -613,79 +809,6 @@ function AddPeopleDialog({ onClose }: { onClose: () => void }) {
           </label>
         ))}
       </div>
-    </Dialog>
-  );
-}
-
-/** ＋ 子会话: a question for someone in the 协作 (everyone sees it and can write in). */
-function NewSubDialog({ onClose, onMade }: { onClose: () => void; onMade: (id: string, title: string) => void }) {
-  const { session, cowork, me, toast } = useCowork();
-  const listed = useListed(me);
-  const others = cowork.members.filter((n) => n !== me && listed(n));
-  const [to, setTo] = useState(others[0] ?? "");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [qs, setQs] = useState<Array<{ text: string; options: string }>>([]);
-  const [busy, setBusy] = useState(false);
-  const make = async () => {
-    setBusy(true);
-    try {
-      const questions = qs.filter((q) => q.text.trim()).map((q) => ({ text: q.text.trim(), options: q.options.trim() ? q.options.split(/[,，、/]/).map((o) => o.trim()).filter(Boolean) : undefined }));
-      const r = await session.client.askCowork(cowork.id, { to, title: title.trim(), body: body.trim(), questions: questions.length ? questions : undefined });
-      if (r.thread) {
-        toast(`子会话发给了 ${to}`);
-        onMade(r.thread.id, r.thread.title);
-      } else onClose();
-    } catch (err) {
-      toast(errorText(err));
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      title="发起子会话"
-      sub="一件要确认的事：在群里折叠成一张卡，协作里的人都能看、能插话"
-      onClose={onClose}
-      wide
-      foot={
-        <>
-          <button type="button" onClick={onClose}>
-            取消
-          </button>
-          <button type="button" className="primary" disabled={busy || !to || !title.trim()} onClick={() => void make()}>
-            发起
-          </button>
-        </>
-      }
-    >
-      <Field label="问谁">
-        <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="问谁">
-          {others.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="标题">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="比如：过热后射速怎么回落？" autoFocus />
-      </Field>
-      <Field label="说明">
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} placeholder="背景、列出的几种做法（支持 Markdown）" />
-      </Field>
-      <Field label="要逐条回答的问题（可以没有）">
-        <div className="cw-qs">
-          {qs.map((q, i) => (
-            <div key={i} className="cw-q">
-              <input value={q.text} onChange={(e) => setQs((l) => l.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder={`问题 ${i + 1}`} aria-label={`问题 ${i + 1}`} />
-              <input value={q.options} onChange={(e) => setQs((l) => l.map((x, j) => (j === i ? { ...x, options: e.target.value } : x)))} placeholder="选项，用逗号隔开（可以空着）" aria-label={`问题 ${i + 1} 的选项`} />
-            </div>
-          ))}
-          <button type="button" className="small" onClick={() => setQs((l) => [...l, { text: "", options: "" }])}>
-            ＋ 加一个问题
-          </button>
-        </div>
-      </Field>
     </Dialog>
   );
 }
@@ -715,48 +838,30 @@ function GoalsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** 待处理's cards for what waits on me in the 协作 (2026-11-23, prototype A's 待处理): @我的, 等我回的子会话, 等我确认的 AI 草稿. */
-export function CoworkWaitingRows({ session, onOpen }: { session: Session; onOpen: (coworkId: string, sub?: string) => void }) {
+/** 待处理's rows for what is mine in the 协作 (2026-11-25): 等你确认 / 叫你来看 的事项 and the 群聊's 知会, per 协作. */
+export function CoworkWaitingRows({ session, onOpen }: { session: Session; onOpen: (coworkId: string, focus?: { sub?: string; seq?: number }) => void }) {
   const st = useSession(session);
   const show = useDisplayName();
   const w = coworkWaiting(st, session.me.name);
   if (!w.count) return null;
   return (
     <>
-      <ListSection title="协作里等我" count={w.count} />
-      {w.drafts.map(({ cowork, draft }) => (
-        <ListRow
-          key={draft.id}
-          className="cw-wait draft"
-          avatar={<span className="avatar ai small">AI</span>}
-          title={draft.kind === "ask" ? `草稿：子会话「${draft.ask?.title ?? ""}」` : `草稿：${(draft.post?.body ?? "").replace(/\s+/g, " ").slice(0, 30)}`}
-          time={timeText(draft.createdAt)}
-          sub={`等我确认的 AI 草稿 · ${cowork.title} · ${agentOf(cowork, draft.agent)?.name ?? "我的 AI"}`}
-          onClick={() => onOpen(cowork.id, draft.threadId && draft.threadId !== cowork.id ? draft.threadId : undefined)}
-        />
-      ))}
-      {w.mentions.map(({ cowork, message }) => (
-        <ListRow
-          key={message.id}
-          className="cw-wait at"
-          avatar={<Avatar name={message.author} small />}
-          title={`@我 · ${show(message.author)}${message.via.kind === "ai" ? " 的 AI" : ""}`}
-          time={timeText(message.createdAt)}
-          sub={`${cowork.title}：${message.body.replace(/\s+/g, " ").slice(0, 40)}`}
-          onClick={() => onOpen(cowork.id, message.threadId !== cowork.id ? message.threadId : undefined)}
-        />
-      ))}
-      {w.subs.map(({ cowork, sub }) => (
-        <ListRow
-          key={sub.id}
-          className="cw-wait sub"
-          avatar={<span className="avatar sq small">子</span>}
-          title={sub.title}
-          time={timeText(sub.updatedAt)}
-          sub={`等我回的子会话 · ${cowork.title} · ${sub.agent ? (agentOf(cowork, sub.agent)?.name ?? "AI") : show(sub.from)} 问`}
-          onClick={() => onOpen(cowork.id, sub.id)}
-        />
-      ))}
+      <ListSection title="协作里要你看" count={w.count} />
+      {w.rows.map(({ cowork, item }) =>
+        item.kind === "matter" ? (
+          <ListRow
+            key={`${cowork.id}:${item.matter.id}`}
+            className={`cw-wait ${item.look}`}
+            avatar={<span className="avatar sq small">事</span>}
+            title={`${LOOK_WORD[item.look]} · ${matterLabel(item.matter)} ${item.matter.title}`}
+            time={timeText(item.since)}
+            sub={`${cowork.title} · ${partyText(item.matter.owner, cowork.agents, show)} 开的`}
+            onClick={() => onOpen(cowork.id, { sub: item.matter.id })}
+          />
+        ) : (
+          <ListRow key={`${cowork.id}:n${item.seq}`} className="cw-wait at" avatar={<span className="avatar sq small">@</span>} title={`知会 · ${item.text.slice(0, 30)}`} time={timeText(item.since)} sub={`${cowork.title} 的群聊 · #${item.seq}`} onClick={() => onOpen(cowork.id, { seq: item.seq })} />
+        ),
+      )}
     </>
   );
 }

@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState, type KeyboardEvent, type React
 import { Avatar, timeText, Who } from "./bits.js";
 import { Markdown } from "./Markdown.js";
 import { copyRef, openMenu, openStudio, RefsContext, studioWhere, type MenuItem } from "./RefChips.js";
-import type { Session } from "./session.js";
+import { patchMessage, type Session } from "./session.js";
 import { RelayClientError, VERDICT_LABEL, type Message, type Question } from "./shared.js";
 
 // The parts of a conversation both sessions and chats use: the message list (mine on the right, theirs on the left
@@ -10,8 +10,12 @@ import { RelayClientError, VERDICT_LABEL, type Message, type Question } from "./
 
 export const errorText = (err: unknown) => (err instanceof RelayClientError || err instanceof Error ? err.message : String(err));
 
-/** A message, loaded and kept current; `null` while loading. */
-export function useMessages(session: Session, threadId: string): { messages: Message[] | null; error: string | null } {
+/**
+ * A thread's messages, loaded and kept current (new ones, and — in a 协作 — withdrawn, rewritten, superseded ones and
+ * their receipts); `null` while loading. `read` false: loaded without counting as read (a 事项 folded shut: 「看过」 is
+ * recorded only once it is opened, the user 2026-11-24).
+ */
+export function useMessages(session: Session, threadId: string, read = true): { messages: Message[] | null; error: string | null } {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -26,23 +30,29 @@ export function useMessages(session: Session, threadId: string): { messages: Mes
       if (m.threadId !== threadId) return;
       setMessages((list) => (list && !list.some((x) => x.seq === m.seq) ? [...list, m] : list));
     });
+    const offPatch = session.onMessagePatch((p) => {
+      if (p.threadId !== threadId) return;
+      setMessages((list) => (list?.some((x) => x.seq === p.seq) ? list.map((x) => (x.seq === p.seq ? patchMessage(x, p) : x)) : list));
+    });
     return () => {
       alive = false;
       off();
+      offPatch();
     };
   }, [session, threadId]);
 
   // Read while it is on screen and the window has focus.
   useEffect(() => {
+    if (!read) return;
     session.openThread = threadId;
-    const read = () => document.hasFocus() && session.markRead(threadId);
-    read();
-    window.addEventListener("focus", read);
+    const look = () => document.hasFocus() && session.markRead(threadId);
+    look();
+    window.addEventListener("focus", look);
     return () => {
-      window.removeEventListener("focus", read);
+      window.removeEventListener("focus", look);
       if (session.openThread === threadId) session.openThread = null;
     };
-  }, [session, threadId, messages?.length]);
+  }, [session, threadId, messages?.length, read]);
   return { messages, error };
 }
 

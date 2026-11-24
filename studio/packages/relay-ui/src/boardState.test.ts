@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyRecords, emptyBoard, fitView, fromSnapshot, groupAt, lockedBy, moveOps, nextUndo, setLock, zoomAt } from "./boardState.js";
+import { applyRecords, emptyBoard, fitView, freeSpot, fromSnapshot, groupAt, lockedBy, moveOps, nextUndo, setLock, zoomAt } from "./boardState.js";
 import type { BoardItem, BoardOpRecord } from "./shared.js";
 
 const card = (id: string, f: Partial<BoardItem> = {}): BoardItem => ({ id, kind: "note", x: 0, y: 0, w: 200, h: 100, color: null, text: "", group: null, session: null, ref: null, from: null, to: null, stale: false, version: 1, textVersion: 1, alt: null, createdBy: "小王", createdAt: 1, updatedBy: "小王", updatedAgent: null, updatedAt: 1, deleted: false, deletedBy: null, deletedAt: null, ...f });
@@ -52,5 +52,18 @@ describe("协作's board as this client holds it", () => {
     expect(zoomAt({ x: 0, y: 0, k: 2 }, 2, { x: 0, y: 0 }).k).toBe(2);
     const m = applyRecords(emptyBoard(), [rec(1, [card("a", { x: 0, y: 0, w: 400, h: 200 })])], "x");
     expect(fitView(m, { w: 1000, h: 600 })).toEqual({ k: 1, x: 300, y: 200 });
+  });
+});
+
+describe("where a new card goes", () => {
+  it("the middle of the screen, but not on a 事项's card (2026-11-25)", () => {
+    const v = { x: 0, y: 0, k: 1 };
+    const box = { w: 800, h: 600 };
+    const size = { w: 200, h: 100 };
+    expect(freeSpot(emptyBoard(), v, box, size)).toEqual({ x: 300, y: 250 });
+    const card = { x: 260, y: 220, w: 264, h: 136 };
+    const at = freeSpot(emptyBoard(), v, box, size, [card]);
+    expect(at.x + size.w <= card.x || at.x >= card.x + card.w || at.y + size.h <= card.y || at.y >= card.y + card.h).toBe(true);
+    expect(at.x >= 0 && at.y >= 0 && at.x + size.w <= 800 && at.y + size.h <= 600).toBe(true);
   });
 });

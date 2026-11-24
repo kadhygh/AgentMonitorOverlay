@@ -27,7 +27,7 @@ export function agentChip(a: Pick<CoworkAgent, "state" | "queued" | "lastSeen">)
 export function agentWhat(a: Pick<CoworkAgent, "state" | "queued" | "lastSeen">): string {
   if (a.state === "idle") return "马上送进它的会话，开一轮";
   if (a.state === "busy") return a.queued ? `这一轮跑完再送，前面还有 ${a.queued} 条` : "这一轮跑完再送";
-  if (a.state === "owner") return "主人正在和它说话，或有草稿等主人确认；主人这边空下来再送";
+  if (a.state === "owner") return "主人正在和它说话；主人这边空下来再送";
   return `先存在服务上，它的 Studio 连上后送（${lastSeenText(a)}）`;
 }
 
@@ -43,7 +43,7 @@ export function agentRoute(a: Pick<CoworkAgent, "state" | "queued" | "lastSeen" 
 export const STATE_LEGEND: Array<[AgentState, string]> = [
   ["idle", "@ 它马上送到"],
   ["busy", "这一轮跑完再送，显示前面几条"],
-  ["owner", "主人在和它说话或有草稿没确认"],
+  ["owner", "主人在和它说话，空下来再送"],
   ["offline", "主人的 Studio 没开，连上后送"],
 ];
 

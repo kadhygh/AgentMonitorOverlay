@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coworkRef, findRefs, messageRef, parseOpen, parseRef, requestRef, subRef } from "./refs.js";
+import { coworkRef, findRefs, matterRef, messageRef, parseOpen, parseRef, requestRef, subRef } from "./refs.js";
 
 // 复制引用 (2026-11-23): the words copied, and how a message's text is read back for its chips.
 
@@ -44,6 +44,11 @@ describe("复制引用: read back", () => {
     const s = subRef({ id: "t_99", title: "过热" }, cw.id);
     expect(s.slice(sub[1]!.index, sub[1]!.index + sub[1]!.length)).toBe("协作 cowork:t_0a1b2c3d4e5f6a7b");
     expect(findRefs(messageRef(3, { cowork: cw }))[0]!.label).toBe("加特林射速调整");
+    // a 事项 (2026-11-25): its number and title go into the chip with its thread
+    const m = matterRef({ id: "t_99", no: 12, title: "射程加长" }, cw.id);
+    expect(m).toBe("事项 12「射程加长」 thread:t_99（协作 cowork:t_0a1b2c3d4e5f6a7b）");
+    const [r] = findRefs(m);
+    expect([r!.ref, r!.label, m.slice(r!.index, r!.index + r!.length)]).toEqual([{ kind: "thread", id: "t_99" }, "射程加长", "事项 12「射程加长」 thread:t_99"]);
   });
 
   it("a Studio session with its name", () => {

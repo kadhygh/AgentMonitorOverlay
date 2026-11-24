@@ -19,7 +19,7 @@ export async function canHandToStudio(device: string | null, threadId: string): 
 
 export function handoffText(cowork: Pick<Cowork, "title" | "goal" | "repo" | "branch">, thread: Thread, messages: Message[]): string {
   const where = [cowork.repo, cowork.branch].filter(Boolean).join(" · ");
-  return `协作「${cowork.title}」${where ? `（${where}）` : ""}里的子会话。协作的目标：\n\n${cowork.goal || "（还没写）"}\n\n---\n\n${threadAsText(thread, messages)}`;
+  return `协作「${cowork.title}」${where ? `（${where}）` : ""}里的一件事项。协作的目标：\n\n${cowork.goal || "（还没写）"}\n\n---\n\n${threadAsText(thread, messages)}`;
 }
 
 /** 转到我的会话: to Studio when it takes it; otherwise the text on the clipboard, with why it did not go. */
@@ -33,4 +33,28 @@ export async function toMySession(device: string | null, cowork: Cowork, thread:
   }
   await copyText(handoffText(cowork, thread, messages));
   return { sent: false, why };
+}
+
+// 两头打通 (2026-11-25, plans/collab-framework.md「11-24」, links written there under 「中转客户端到 Studio 的链接」): the
+// same road as 转到我的会话 — the shell's 在 Studio 里打开 with a mark Studio's POST /api/ui/open takes:
+//   studio:<设备号>:cowork-lead-<coworkId>    在我的 Studio 里开这一方的主控 (a new task with the goal, 已定的事 and the
+//                                             board; its first session joins this 协作 as my side's 主控)
+//   studio:<设备号>:cowork-patrol-<coworkId>  让主控现在看一遍 (Host works out my 主控's 待我处理 now, not at the next round)
+export const leadMark = (device: string, coworkId: string) => `studio:${device}:cowork-lead-${coworkId}`;
+export const patrolMark = (device: string, coworkId: string) => `studio:${device}:cowork-patrol-${coworkId}`;
+
+/** Studio on this computer takes these (the button is offered); null: why not, in words. */
+export async function studioHere(device: string | null): Promise<string | null> {
+  if (!shell?.openInStudio) return "在桌面客户端里才能跳到 Studio";
+  if (!device) return "这个中转客户端还说不出这台电脑是哪台：更新中转客户端后再试";
+  if (!shell.studioHas) return null;
+  return (await shell.studioHas(`studio:${device}:probe`).catch(() => false)) ? null : "这台电脑的 Studio 没开着";
+}
+
+/** Asks Studio; the toast says how it went (an older Studio does not know the mark: it says so). */
+export async function askStudio(mark: string, done: string, toast: (t: string) => void): Promise<void> {
+  if (!shell?.openInStudio) return toast("在桌面客户端里才能跳到 Studio");
+  const why = await shell.openInStudio(mark).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+  if (why === null) return toast(done);
+  toast(why.includes("没有这个会话") || why.includes("还不支持") ? "这个版本的 Studio 还接不了：更新 Studio 后再试" : `没能交给 Studio：${why}`);
 }

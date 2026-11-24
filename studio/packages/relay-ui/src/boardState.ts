@@ -117,11 +117,27 @@ export function fitView(m: BoardModel, box: { w: number; h: number }) {
 }
 
 /** Where a new card goes: the middle of what is on screen, a little lower for each card already there. */
-export function freeSpot(m: BoardModel, v: { x: number; y: number; k: number }, box: { w: number; h: number }, size: { w: number; h: number }) {
+export function freeSpot(m: BoardModel, v: { x: number; y: number; k: number }, box: { w: number; h: number }, size: { w: number; h: number }, avoid: ReadonlyArray<{ x: number; y: number; w: number; h: number }> = []) {
   const c = toBoard(v, { x: box.w / 2, y: box.h / 2 });
   let x = Math.round(c.x - size.w / 2);
   let y = Math.round(c.y - size.h / 2);
   const taken = live(m);
+  // Not on top of a 事项's card (2026-11-25: they are drawn from the 事项, the service's model has no card there): the free
+  // spot nearest the middle of what is on screen, on a 24-unit grid; none free → the middle as before.
+  const blocks = [...avoid, ...taken.filter((t) => t.kind !== "group" && t.kind !== "link")];
+  const hits = (px: number, py: number) => blocks.some((b) => px < b.x + b.w && px + size.w > b.x && py < b.y + b.h && py + size.h > b.y);
+  if (avoid.length && hits(x, y)) {
+    const tl = toBoard(v, { x: 0, y: 0 });
+    const br = toBoard(v, { x: box.w, y: box.h });
+    let best: { x: number; y: number } | null = null;
+    let bestD = Infinity;
+    for (let yy = tl.y + 12; yy + size.h <= br.y; yy += 24)
+      for (let xx = tl.x + 12; xx + size.w <= br.x; xx += 24) {
+        const d = (xx - x) ** 2 + (yy - y) ** 2;
+        if (d < bestD && !hits(xx, yy)) [best, bestD] = [{ x: xx, y: yy }, d];
+      }
+    if (best) return { x: Math.round(best.x), y: Math.round(best.y) };
+  }
   for (let i = 0; i < 20 && taken.some((t) => t.kind !== "group" && t.kind !== "link" && Math.abs(t.x - x) < 16 && Math.abs(t.y - y) < 16); i++) [x, y] = [x + 24, y + 24];
   return { x, y };
 }

@@ -10,6 +10,7 @@ import { CoworkList, CoworkView, CoworkWaitingRows, coworkUnreadCount, coworkWai
 import { FloatArea } from "./Floats.js";
 import { FilterRow, ICONS, ListPane, ListRow, ListSection, Rail, RailItem } from "./Layout.js";
 import { errorText } from "./Messages.js";
+import { mattersOf } from "./matterView.js";
 import { coworkOf, useMinuteTick, useSession, type Session } from "./session.js";
 import { HelpDialog, type HelpSection } from "./Help.js";
 import { SessionView } from "./SessionView.js";
@@ -84,7 +85,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   const [hiddenOpen, setHiddenOpen] = useState(false);
   // 协作: the one open, and a 子会话 to open in it (from 待处理, a notification, Studio's 在中转里打开).
   const [coworkId, setCoworkId] = useState<string | null>(null);
-  const [coworkFocus, setCoworkFocus] = useState<{ sub?: string; n: number } | null>(null);
+  const [coworkFocus, setCoworkFocus] = useState<{ sub?: string; seq?: number; n: number } | null>(null);
   const [coworkQuery, setCoworkQuery] = useState("");
   const availability = transferAvailability({ device, transfersOk });
   // The engine that moves the bytes (transfer.ts): while signed in on a desktop client that has 传文件.
@@ -160,7 +161,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
           // In a 协作 only what is for me: an @ of me, or a 子会话 that waits on me.
           const c = session.snapshot.coworks.find((x) => x.id === coworkOf(t));
           const forMe = m.mentions?.includes(me) || (t.kind === "request" && t.request?.to === me);
-          if (forMe) shell?.notify({ title: m.mentions?.includes(me) ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 在协作「${c?.title ?? ""}」里 @ 了你` : `协作「${c?.title ?? ""}」的子会话：${t.title}`, body: preview(m).slice(0, 120), threadId: m.threadId });
+          if (forMe) shell?.notify({ title: m.mentions?.includes(me) ? `${m.author}${m.via.kind === "ai" ? " 的 AI" : ""} 在协作「${c?.title ?? ""}」里 @ 了你` : `协作「${c?.title ?? ""}」的事项：${t.title}`, body: preview(m).slice(0, 120), threadId: m.threadId });
           return;
         }
         const title =
@@ -219,7 +220,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       return toast(st.coworksOk ? "打不开这个协作：你不在里面，或者它已经不在了。请发起人把你拉进去" : "打不开这个协作：中转服务还是旧版，没有协作", 6000);
     }
     if (ref.id.startsWith("transfer:") || threads.some((t) => t.id === ref.id)) return openThread(ref.id);
-    const sub = st.coworks.find((c) => c.sessions.some((s) => s.id === ref.id));
+    const sub = st.coworks.find((c) => c.sessions.some((s) => s.id === ref.id) || !!c.matters?.some((m) => m.id === ref.id));
     if (sub) return showCowork(sub.id, ref.id);
     toast("打不开这个会话：你看不到它，或者它已经不在了", 6000);
   }, [asked, st.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -227,8 +228,8 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
   // 复制引用's chips in messages (RefChips.tsx): what each names, and opening it.
   const subOf = (id: string) => {
     for (const c of st.coworks) {
-      const s = c.sessions.find((x) => x.id === id);
-      if (s) return { c, s };
+      const m = mattersOf(c).find((x) => x.id === id);
+      if (m) return { c, s: m };
     }
     return null;
   };
@@ -245,7 +246,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
       const sub = subOf(ref.id);
       if (sub || (t && ofCowork(t))) {
         const c = sub?.c ?? st.coworks.find((x) => x.id === coworkOf(t!));
-        return { text: `子会话「${sub?.s.title ?? t!.title}」`, hint: c ? `打开协作「${c.title}」里的这个子会话` : "打开这个子会话", can: !!c };
+        return { text: sub ? `事项 ${sub.s.no}「${sub.s.title}」` : `事项「${t!.title}」`, hint: c ? `打开协作「${c.title}」里的这件事项` : "打开这件事项", can: !!c };
       }
       if (t?.kind === "request") return { text: `中转会话「${t.title}」`, hint: "打开这个中转会话", can: true };
       if (t) return { text: `聊天「${chatTitleFor(t, members, me)}」`, hint: "打开这个聊天", can: true };
@@ -259,12 +260,13 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
     },
   };
 
-  /** A 协作, and one of its 子会话 opened over it. */
-  function showCowork(id: string, sub?: string) {
+  /** A 协作, and one of its 事项 opened over it (or a 群聊 message shown: a 知会). */
+  function showCowork(id: string, focus?: string | { sub?: string; seq?: number }) {
     setView("cowork");
     setCoworkId(id);
-    // (one-shot: cleared when the 协作 is opened another way, so coming back does not open that 子会话 again)
-    setCoworkFocus(sub ? (f) => ({ sub, n: (f?.n ?? 0) + 1 }) : null);
+    const f = typeof focus === "string" ? { sub: focus } : focus;
+    // (one-shot: cleared when the 协作 is opened another way, so coming back does not open that 事项 again)
+    setCoworkFocus(f && (f.sub || f.seq) ? (o) => ({ ...f, n: (o?.n ?? 0) + 1 }) : null);
   }
 
   const showTask = (id: string, pane: TaskPane = "overview") => {
@@ -580,7 +582,7 @@ export function Home({ session, onLogout, resumeOpen = null, updatedTo = null }:
         ) : view === "cowork" ? (
           <>
             <h2>几个人带着各自的 AI 一起推进一件事</h2>
-            <p>群聊是主体：@ 人、@ 某个 AI（只有被 @ 的 AI 会被唤醒）；要和某人确认的事开成子会话，折叠成一张卡；目标、已定的事和白板围着它。点左上「＋ 发起协作」开始。</p>
+            <p>具体的事开成事项：板上按负责方排好，AI 推进、互相确认，人只在「要你看」里有东西时才要动手。群聊只发进度、@ 和知会。点左上「＋ 发起协作」开始。</p>
           </>
         ) : view === "chat" ? (
           <>

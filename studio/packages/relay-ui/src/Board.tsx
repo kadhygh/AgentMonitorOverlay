@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { gridStyle, linkCurve, nearestSide, sidePoint } from "../../ui/src/canvas/geometry.js";
-import { applyRecords, deletedItems, emptyBoard, fitView, freeSpot, fromSnapshot, live, lockedBy, moveOps, nextUndo, setLock, toBoard, zoomAt, type BoardModel } from "./boardState.js";
-import { agentOf, subState, useCowork } from "./CoworkChat.js";
+import { applyRecords, deletedItems, emptyBoard, freeSpot, fromSnapshot, live, lockedBy, moveOps, nextUndo, setLock, toBoard, toScreen, zoomAt, type BoardModel } from "./boardState.js";
+import { LookPanel } from "./Cowork.js";
+import { agentOf, matterWhy, useCowork } from "./CoworkChat.js";
+import { MatterBody } from "./CoworkMatter.js";
+import { boundsOf, edgeArrow, layoutMatters, MATTER_CARD, splitBoard, type Rect } from "./matterBoard.js";
+import { isQuiet, LOOK_WORD, MATTER_CLS, matterChip, matterLabel, myLooks, partyText, sideText, waitsOnOthers } from "./matterView.js";
 import { Avatar, avatarColor, timeText, useDisplayName } from "./bits.js";
 import { Dialog, Field } from "./Dialog.js";
 import { errorText } from "./Messages.js";
 import { useSession } from "./session.js";
-import { RelayClientError, type BoardFields, type BoardItem, type BoardNewItem, type BoardOp, type BoardOpRecord, type BoardPresence, type BoardRef } from "./shared.js";
+import { matterSettled, RelayClientError, SETTLED_GROUP_TITLE, type BoardFields, type BoardItem, type BoardNewItem, type BoardOp, type BoardOpRecord, type BoardPresence, type BoardRef, type Matter } from "./shared.js";
 
 // A 协作's 白板 (2026-11-23, plans/cowork.md「白板怎么借 Studio 的画布」「白板：多人同时改」, prototype A's board): a floating
 // window over the 协作 page. Cards — 便签, 子会话卡, 引用卡 (a file at a commit, a document's version, a link; 已过时 when a
@@ -16,6 +20,13 @@ import { RelayClientError, type BoardFields, type BoardItem, type BoardNewItem, 
 // others until it is let go; a card's text is written under a soft lock (「小周 在写」, read-only for the rest); a text
 // written on an older version becomes 「另一版」 and the card asks which to keep; deletes go to 最近删除; Ctrl+Z takes back
 // only my own steps; what I did while the service was out is sent again, in order, when it is back.
+//
+// The 事项 (2026-11-25, prototype studio/out/cowork-flow/board.html, 放法 A; plans/collab-framework.md「看过原型后定的」): the
+// board is the 协作's page now (群聊 | 板), and its 事项 are computed here, not stored — a frame per side, 「已定 / 已验」, each
+// 事项's card (state, whom it waits on and why, bindings), the lines of what depends on what (matterBoard.ts); only where a
+// person dragged a card is kept. Mine to look at: a thick outline with 「等你确认」 / 「叫你来看」, an arrow on the edge when it
+// is off screen, the 「要你看」 panel top left; 「显示」 全部 / 要我看的 / 在等别人的. A 事项 opens as a drawer on the right, the
+// 群聊 as one on the left.
 
 const DEFAULT: Record<string, { w: number; h: number }> = { note: { w: 220, h: 120 }, session: { w: 250, h: 112 }, ref: { w: 240, h: 100 }, group: { w: 460, h: 300 } };
 const COLORS: Array<{ id: string | null; label: string }> = [
@@ -29,13 +40,17 @@ const AI_RECENT_MS = 90_000;
 const LOCK_RENEW_MS = 10_000;
 const PRESENCE_MS = 8_000;
 const newId = (p: string) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-const KIND_WORD: Record<string, string> = { note: "便签", session: "子会话", ref: "引用", group: "分组", link: "连线" };
+const KIND_WORD: Record<string, string> = { note: "便签", session: "子会话", ref: "引用", group: "分组", link: "连线", matter: "事项" };
+/** A 事项's card on the board is drawn under this id (it is no card of the service's). */
+const MATTER_ID = "m:";
+type Filter = "all" | "mine" | "others";
 const REF_WORD: Record<BoardRef["kind"], string> = { file: "文件", commit: "提交", doc: "文档", url: "链接" };
 
 type Drag = { id: string; kind: "move" | "size" | "link"; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number; moved: boolean; pointer: number };
 
-export function BoardBody({ focus }: { focus: { session: string; n: number } | null }) {
-  const { session, cowork, me, toast, openSub } = useCowork();
+export function BoardBody(props: { focus: { id: string; n: number } | null; chatFocus: { seq?: number; n: number } | null; lookOpen: boolean; setLookOpen: (v: boolean) => void; chat: ReactNode; onNotice: (seq: number) => void }) {
+  const { focus } = props;
+  const { session, cowork, me, toast, matters, looks } = useCowork();
   const show = useDisplayName();
   const { connection } = useSession(session);
   const [model, setModel] = useState<BoardModel>(emptyBoard);
@@ -50,6 +65,10 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [pop, setPop] = useState<null | { kind: "deleted" } | { kind: "history"; id: string } | { kind: "conflict"; id: string } | { kind: "ref" } | { kind: "session" }>(null);
   const [now, setNow] = useState(Date.now());
+  const [drawer, setDrawer] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [size, setSize] = useState({ w: 800, h: 500 });
   const plane = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const pan = useRef<{ sx: number; sy: number; ox: number; oy: number; pointer: number } | null>(null);
@@ -78,7 +97,6 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
         if (!alive) return;
         const m = fromSnapshot(emptyBoard(), s, me);
         setModel(m);
-        setView(fitView(m, box()));
         setLoaded(true);
       })
       .catch((err) => toast(errorText(err)));
@@ -162,9 +180,21 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
   /** A change shown at once (the service's answer replaces it with the card's next version). */
   const local = (cardId: string, f: Partial<BoardItem>) => setModel((m) => (m.items[cardId] ? { ...m, items: { ...m.items, [cardId]: { ...m.items[cardId]!, ...f } } } : m));
 
+  /** The service's card standing for each 事项 (its place is kept on it once a person drags it). */
+  const cardOf = useRef<Record<string, string>>({});
+  /** A 事项's card dragged to (x, y): kept as a person's place; it no longer moves by itself. */
+  const place = async (mid: string, x: number, y: number) => {
+    const cid = cardOf.current[mid];
+    const it = cid ? modelRef.current.items[cid] : undefined;
+    const fields = { x: Math.round(x), y: Math.round(y) };
+    if (it) {
+      local(it.id, { ...fields, placedBy: "person" });
+      await send([{ op: "set", opId: newId("o"), id: it.id, base: it.version, fields }]);
+    } else await send([{ op: "add", opId: newId("o"), item: { id: newId("c"), kind: "matter", matter: mid, ...fields, w: MATTER_CARD.w, h: MATTER_CARD.h } }]);
+  };
   const add = async (item: BoardNewItem, edit = false) => {
     const size = DEFAULT[item.kind] ?? DEFAULT.note!;
-    const spot = freeSpot(model, view, box(), size);
+    const spot = freeSpot(model, view, box(), size, Object.values(layoutRef.current?.cards ?? {}));
     const cardId = item.id ?? newId("c");
     const applied = await send([{ op: "add", opId: newId("o"), item: { ...size, ...spot, ...item, id: cardId } }]);
     setSelected(cardId);
@@ -172,25 +202,45 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
     return cardId;
   };
 
-  // 在白板上看 from a 子会话: its card selected and in the middle (put on the board when it is not there yet).
+  // The board's size (the arrows to what is off screen are drawn on its edge).
+  useEffect(() => {
+    const el = plane.current;
+    if (!el || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => setSize(box()));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const centre = (c: Rect) => {
+    const b = box();
+    setView((v) => ({ ...v, x: b.w / 2 - (c.x + c.w / 2) * v.k - (drawer || focus ? 180 : 0), y: b.h / 2 - (c.y + c.h / 2) * v.k }));
+  };
+  // A 事项 asked for (要你看, 在板上看, a reference): panned to, its drawer open.
+  const layoutRef = useRef<ReturnType<typeof layoutMatters> | null>(null);
   useEffect(() => {
     if (!focus || !loaded) return;
-    const card = live(modelRef.current).find((i) => i.kind === "session" && i.session === focus.session);
-    const centre = (c: { x: number; y: number; w: number; h: number }) => {
-      const b = box();
-      setView((v) => ({ ...v, x: b.w / 2 - (c.x + c.w / 2) * v.k, y: b.h / 2 - (c.y + c.h / 2) * v.k }));
-    };
-    if (card) {
-      setSelected(card.id);
-      centre(card);
-    } else if (!ended) {
-      void add({ kind: "session", session: focus.session }).then((cid) => {
-        toast("放上了这个子会话的卡");
-        const c = modelRef.current.items[cid];
-        if (c) centre(c);
-      });
-    }
+    setDrawer(focus.id);
+    const r = layoutRef.current?.cards[focus.id];
+    if (r) centre(r);
   }, [focus?.n, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A 知会 asked for: the 群聊 opens on the left at that message.
+  useEffect(() => {
+    if (!props.chatFocus) return;
+    setChatOpen(true);
+    const seq = props.chatFocus.seq;
+    if (seq) setTimeout(() => document.getElementById(`msg-${seq}`)?.scrollIntoView({ block: "center" }), 120);
+  }, [props.chatFocus?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Everything in sight once it has loaded.
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (!loaded || fitted.current) return;
+    fitted.current = true;
+    fitAll();
+    if (focus) {
+      setDrawer(focus.id);
+      const r = layoutRef.current?.cards[focus.id];
+      if (r) centre(r);
+    }
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- writing a card's text under the soft lock
   const lockTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -243,7 +293,9 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
       d.moved = true;
       if (d.kind === "move" && !ended) {
         setGhost({ id: d.id, x: d.ox + dx, y: d.oy + dy, w: d.ow, h: d.oh });
-        sayDrag({ id: d.id, x: Math.round(d.ox + dx), y: Math.round(d.oy + dy) });
+        // (a 事项's card is the service's card standing for it to the others)
+        const shownId = d.id.startsWith(MATTER_ID) ? cardOf.current[d.id.slice(MATTER_ID.length)] : d.id;
+        if (shownId) sayDrag({ id: shownId, x: Math.round(d.ox + dx), y: Math.round(d.oy + dy) });
       } else if (d.kind === "size") setGhost({ id: d.id, x: d.ox, y: d.oy, w: Math.max(140, d.ow + dx), h: Math.max(70, d.oh + dy) });
       else if (d.kind === "link") {
         const r = plane.current!.getBoundingClientRect();
@@ -264,8 +316,21 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
         const at = linkTo;
         setLinkTo(null);
         if (!at) return;
-        const target = [...live(modelRef.current)].reverse().find((c) => c.kind !== "link" && c.kind !== "group" && c.id !== d.id && at.x >= c.x && at.x <= c.x + c.w && at.y >= c.y && at.y <= c.y + c.h) ?? [...live(modelRef.current)].reverse().find((c) => c.kind === "group" && c.id !== d.id && at.x >= c.x && at.x <= c.x + c.w && at.y >= c.y && at.y <= c.y + c.h);
-        if (target && !live(modelRef.current).some((l) => l.kind === "link" && l.from === d.id && l.to === target.id)) void send([{ op: "add", opId: newId("o"), item: { id: newId("l"), kind: "link", from: d.id, to: target.id } }]);
+        // What is drawn: the board's own cards and the 事项's (a line to a 事项 goes to the service's card standing for it).
+        const own = splitRef.current?.own ?? [];
+        const hit = (c: Rect) => at.x >= c.x && at.x <= c.x + c.w && at.y >= c.y && at.y <= c.y + c.h;
+        const matterHit = Object.entries(layoutRef.current?.cards ?? {}).find(([mid, r]) => hit(r) && cardOf.current[mid])?.[0];
+        const targetId = [...own].reverse().find((c) => c.kind !== "link" && c.kind !== "group" && c.id !== d.id && hit(c))?.id ?? (matterHit ? cardOf.current[matterHit] : undefined) ?? [...own].reverse().find((c) => c.kind === "group" && c.id !== d.id && hit(c))?.id;
+        if (targetId && !live(modelRef.current).some((l) => l.kind === "link" && l.from === d.id && l.to === targetId)) void send([{ op: "add", opId: newId("o"), item: { id: newId("l"), kind: "link", from: d.id, to: targetId } }]);
+        return;
+      }
+      // A 事项's card: a click opens it; let go after a drag, it stays where it was put (the only thing kept of it).
+      if (d.id.startsWith(MATTER_ID)) {
+        const mid = d.id.slice(MATTER_ID.length);
+        if (!d.moved || !g) return setDrawer(mid);
+        if (ended) return;
+        sayDrag(null);
+        void place(mid, g.x, g.y);
         return;
       }
       if (!d.moved || !g || ended) return;
@@ -335,17 +400,65 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
   };
 
   const items = live(model);
-  const cards = items.filter((i) => i.kind !== "link");
+  // The 事项 layer: computed from the 事项; of what the service made for them only a person's drag is kept (matterBoard.ts).
+  const split = useMemo(() => splitBoard(items), [model]); // eslint-disable-line react-hooks/exhaustive-deps
+  const splitRef = useRef(split);
+  splitRef.current = split;
+  cardOf.current = Object.fromEntries(items.filter((i) => i.kind === "matter" && i.matter).map((i) => [i.matter!, i.id]));
+  const sidesIn = useMemo(() => [...new Set(cowork.agents.filter((a) => a.role !== "worker").map((a) => a.owner))], [cowork.agents]);
+  const layout = useMemo(() => layoutMatters(matters, cowork.members, split.placed, sidesIn), [matters, cowork.members, split.placed, sidesIn]);
+  layoutRef.current = layout;
+  const lookOf = useMemo(() => myLooks(looks), [looks]);
+  const byId = useMemo(() => new Map(matters.map((m) => [m.id, m])), [matters]);
+  const own = split.own;
+  const cards = own.filter((i) => i.kind !== "link");
   const groups = cards.filter((i) => i.kind === "group");
   const others = presence.filter((p) => p.name !== me);
   const viewers = [...new Set([me, ...presence.map((p) => p.name)])];
-  const recentAi = items.filter((i) => i.updatedAgent && now - i.updatedAt < AI_RECENT_MS).sort((a, b) => b.updatedAt - a.updatedAt)[0];
-  const rectOf = (it: BoardItem) => (ghost?.id === it.id ? ghost : it);
-  const sessionsOn = new Set(items.filter((i) => i.kind === "session").map((i) => i.session));
-  const deleted = deletedItems(model);
+  const recentAi = own.filter((i) => i.updatedAgent && now - i.updatedAt < AI_RECENT_MS).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const rectOf = (it: { id: string; x: number; y: number; w: number; h: number }) => (ghost?.id === it.id ? ghost : it);
+  /** Where a card is drawn: the board's own, or (for the service's 事项 and 子会话 cards) the 事项's computed card. */
+  const drawnRect = (cardId: string): Rect | null => {
+    const it = model.items[cardId];
+    if (!it || it.deleted) return null;
+    const mid = split.standIn[cardId];
+    if (mid) {
+      const r = layout.cards[mid];
+      return r ? rectOf({ id: `${MATTER_ID}${mid}`, ...r }) : null;
+    }
+    return rectOf(it);
+  };
+  const deleted = deletedItems(model).filter((d) => d.kind !== "matter" && d.kind !== "session" && !(d.kind === "group" && d.side));
+  const fitAll = () => {
+    const b = boundsOf([...layout.frames, ...Object.values(layout.cards), ...cards]);
+    const area = box();
+    if (!b) return setView({ x: 40, y: 40, k: 1 });
+    const k = Math.min(1, Math.max(0.25, Math.min((area.w - 60) / b.w, (area.h - 60) / b.h)));
+    const kk = Math.round(k * 100) / 100;
+    setView({ k: kk, x: (area.w - b.w * kk) / 2 - b.x * kk, y: (area.h - b.h * kk) / 2 - b.y * kk });
+  };
+  const shown = (m: Matter) => filter === "all" || (filter === "mine" ? lookOf.has(m.id) : waitsOnOthers(m, me));
+  // My 事项 off screen: an arrow on the edge (a click goes there and opens it).
+  const arrows = [...lookOf.entries()].flatMap(([mid, look]) => {
+    const r = layout.cards[mid];
+    if (!r) return [];
+    const p = toScreen(view, { x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    const half = { x: (r.w * view.k) / 2, y: (r.h * view.k) / 2 };
+    if (p.x + half.x > 0 && p.x - half.x < size.w && p.y + half.y > 0 && p.y - half.y < size.h) return [];
+    const a = edgeArrow(p, size, 70);
+    const m = byId.get(mid);
+    return a && m ? [{ mid, look, a, m }] : [];
+  });
+  const goTo = (mid: string) => {
+    setDrawer(mid);
+    const r = layout.cards[mid];
+    if (r) centre(r);
+  };
+  const drawerMatter = drawer ? byId.get(drawer) : undefined;
+  const chatUnread = session.snapshot.threads.find((t) => t.id === cowork.id)?.unread ?? 0;
 
   return (
-    <div className="bd" tabIndex={0} onKeyDown={onKey} aria-label="白板">
+    <div className="bd bd-page" tabIndex={0} onKeyDown={onKey} aria-label="板">
       <div className="bd-bar">
         <span className="bd-viewers" title={viewers.map(show).join("、")}>
           {viewers.slice(0, 5).map((n) => (
@@ -355,28 +468,42 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
         </span>
         {recentAi && <span className="muted tiny">· {agentOf(cowork, recentAi.updatedAgent)?.name ?? "AI"} 刚改过一张</span>}
         {model.pending.length > 0 && <span className="cw-chip st-owner">! {model.pending.length} 条改动等连上后补发</span>}
-        <span className="grow" />
         {!ended && (
           <>
             <button type="button" className="small" onClick={() => void add({ kind: "note", text: "" }, true)}>
               ＋ 便签
             </button>
-            <button type="button" className="small" onClick={() => setPop({ kind: "session" })}>
-              ＋ 子会话卡
-            </button>
             <button type="button" className="small" onClick={() => setPop({ kind: "ref" })}>
-              ＋ 引用文件 / 提交
+              ＋ 引用
             </button>
             <button type="button" className="small" onClick={() => void add({ kind: "group", text: "分组" })}>
               ＋ 分组
             </button>
           </>
         )}
+        <span className="bd-filter-k muted tiny">显示</span>
+        <div className="seg small" role="tablist" aria-label="显示哪些事项">
+          {(
+            [
+              ["all", "全部"],
+              ["mine", "要我看的"],
+              ["others", "在等别人的"],
+            ] as Array<[Filter, string]>
+          ).map(([f, label]) => (
+            <button key={f} type="button" role="tab" aria-selected={filter === f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
         <button type="button" className="small" onClick={() => setPop(pop?.kind === "deleted" ? null : { kind: "deleted" })}>
           最近删除 · {deleted.length}
         </button>
+        <button type="button" className={`small ${chatOpen ? "primary" : ""}`} aria-pressed={chatOpen} onClick={() => setChatOpen(!chatOpen)} title="群聊开在左边：只发进度、@ 和知会">
+          群聊{chatUnread ? ` · ${chatUnread}` : ""}
+        </button>
       </div>
-      {sel0 && (
+      {sel0 && !sel0.id.startsWith(MATTER_ID) && (
         <div className="bd-selbar" aria-label="选中的卡">
           <span className="muted tiny">
             {KIND_WORD[sel0.kind]} · {show(sel0.createdBy)} 加的
@@ -406,55 +533,107 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
           )}
         </div>
       )}
-      <div className="bd-plane" ref={plane} style={gridStyle(view)} onPointerDown={onPlaneDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
-        <div className="bd-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
-          {groups.map((g) => (
-            renderCard(g, rectOf(g))
-          ))}
-          <svg className="bd-links" aria-hidden="true">
-            <defs>
-              <marker id={`bd-arrow-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0 0L10 5L0 10z" />
-              </marker>
-            </defs>
-            {items
-              .filter((l) => l.kind === "link" && l.from && l.to && model.items[l.from] && model.items[l.to] && !model.items[l.from]!.deleted && !model.items[l.to]!.deleted)
-              .map((l) => {
-                const a = rectOf(model.items[l.from!]!);
-                const b = rectOf(model.items[l.to!]!);
+      <div className="bd-stage">
+        <div className="bd-plane" ref={plane} style={gridStyle(view)} onPointerDown={onPlaneDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+          <div className="bd-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+            {layout.frames.map((f) => (
+              <div key={f.side ?? "*settled"} className={`bd-frame ${f.side === null ? "settled" : ""} ${f.side === me ? "mine" : ""}`} data-frame={f.side ?? "settled"} style={{ left: f.x, top: f.y, width: f.w, height: f.h }}>
+                <div className="bd-frame-head">
+                  <b>{f.side === null ? SETTLED_GROUP_TITLE : `${show(f.side)} 这一方`}</b>
+                  <span className="muted tiny">{f.side === null ? "定了、验了的自动挪进来" : `负责：${sideText({ side: f.side, lead: null }, cowork.agents, show)}`}</span>
+                </div>
+                {!f.matters.length && f.side !== null && <div className="bd-frame-empty muted tiny">这一方还没有开着的事项</div>}
+              </div>
+            ))}
+            {groups.map((g) => renderCard(g, rectOf(g)))}
+            <svg className="bd-links" aria-hidden="true">
+              <defs>
+                <marker id={`bd-arrow-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0 0L10 5L0 10z" />
+                </marker>
+              </defs>
+              {layout.links.map((l) => {
+                const a = rectOf({ id: `${MATTER_ID}${l.from}`, ...layout.cards[l.from]! });
+                const b = rectOf({ id: `${MATTER_ID}${l.to}`, ...layout.cards[l.to]! });
                 const aSide = nearestSide(a, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
                 const bSide = nearestSide(b, { x: a.x + a.w / 2, y: a.y + a.h / 2 });
-                const c = linkCurve(sidePoint(a, aSide), aSide, sidePoint(b, bSide), bSide);
                 return (
-                  <g key={l.id} className={`bd-link ${selected === l.id ? "on" : ""}`}>
-                    <path d={c.d} className="hit" onPointerDown={(e) => (e.stopPropagation(), setSelected(l.id))} />
-                    <path d={c.d} markerEnd={`url(#bd-arrow-${id})`} />
+                  <g key={`d-${l.from}-${l.to}`} className="bd-link dep">
+                    <path d={linkCurve(sidePoint(a, aSide), aSide, sidePoint(b, bSide), bSide).d} markerEnd={`url(#bd-arrow-${id})`} />
                   </g>
                 );
               })}
-            {linkTo && drag.current?.kind === "link" && model.items[drag.current.id] && (() => {
-              const a = model.items[drag.current.id]!;
-              const aSide = nearestSide(a, linkTo);
-              return <path className="bd-link-draft" d={linkCurve(sidePoint(a, aSide), aSide, linkTo, null).d} />;
-            })()}
-          </svg>
-          {cards
-            .filter((c) => c.kind !== "group")
-            .map((c) => (
-              renderCard(c, rectOf(c))
-            ))}
-          {others
-            .filter((p) => p.dragging && model.items[p.dragging.id])
-            .map((p) => {
-              const it = model.items[p.dragging!.id]!;
-              return (
-                <div key={`g-${p.name}`} className="bd-ghost" style={{ left: p.dragging!.x, top: p.dragging!.y, width: it.w, height: it.h, borderColor: avatarColor(p.name) }}>
-                  <span style={{ background: avatarColor(p.name) }}>{show(p.name)} 在拖</span>
-                </div>
-              );
+              {items
+                .filter((l) => l.kind === "link" && l.from && l.to)
+                .map((l) => {
+                  const a = drawnRect(l.from!);
+                  const b = drawnRect(l.to!);
+                  if (!a || !b) return null;
+                  const aSide = nearestSide(a, { x: b.x + b.w / 2, y: b.y + b.h / 2 });
+                  const bSide = nearestSide(b, { x: a.x + a.w / 2, y: a.y + a.h / 2 });
+                  const c = linkCurve(sidePoint(a, aSide), aSide, sidePoint(b, bSide), bSide);
+                  return (
+                    <g key={l.id} className={`bd-link ${selected === l.id ? "on" : ""}`}>
+                      <path d={c.d} className="hit" onPointerDown={(e) => (e.stopPropagation(), setSelected(l.id))} />
+                      <path d={c.d} markerEnd={`url(#bd-arrow-${id})`} />
+                    </g>
+                  );
+                })}
+              {linkTo && drag.current?.kind === "link" && model.items[drag.current.id] && (() => {
+                const a = model.items[drag.current.id]!;
+                const aSide = nearestSide(a, linkTo);
+                return <path className="bd-link-draft" d={linkCurve(sidePoint(a, aSide), aSide, linkTo, null).d} />;
+              })()}
+            </svg>
+            {matters.map((m) => {
+              const r = layout.cards[m.id];
+              return r ? renderMatter(m, rectOf({ id: `${MATTER_ID}${m.id}`, ...r })) : null;
             })}
+            {cards.filter((c) => c.kind !== "group").map((c) => renderCard(c, rectOf(c)))}
+            {others
+              .filter((p) => p.dragging && model.items[p.dragging.id])
+              .map((p) => {
+                const it = model.items[p.dragging!.id]!;
+                return (
+                  <div key={`g-${p.name}`} className="bd-ghost" style={{ left: p.dragging!.x, top: p.dragging!.y, width: it.w, height: it.h, borderColor: avatarColor(p.name) }}>
+                    <span style={{ background: avatarColor(p.name) }}>{show(p.name)} 在拖</span>
+                  </div>
+                );
+              })}
+          </div>
+          {loaded && !cards.length && !matters.length && <div className="bd-empty muted">板还是空的：开一件事项，它的卡会排在负责方那一栏；也可以放便签，把文件、提交引上来。AI 也会往上放东西。</div>}
         </div>
-        {loaded && !cards.length && <div className="bd-empty muted">白板还是空的：放一张便签，或者把子会话、文件、提交引上来。AI 也会往上放东西。</div>}
+        {arrows.map(({ mid, look, a, m }) => (
+          <button key={`a-${mid}`} type="button" className={`bd-offscreen ${look}`} style={{ left: a.x, top: a.y }} onClick={() => goTo(mid)} title={`${matterLabel(m)}「${m.title}」在画面外：点一下过去`}>
+            <span className="bd-offscreen-arrow" style={{ transform: `rotate(${a.angle}deg)` }} aria-hidden="true">
+              ➤
+            </span>
+            {matterLabel(m)} · {LOOK_WORD[look]}
+          </button>
+        ))}
+        {props.lookOpen && (
+          <div className="bd-lookwrap">
+            <LookPanel onClose={() => props.setLookOpen(false)} onNotice={props.onNotice} onMatter={goTo} />
+          </div>
+        )}
+        {chatOpen && (
+          <aside className="bd-chat" aria-label="群聊">
+            <div className="bd-drawer-head">
+              <b>群聊</b>
+              <span className="muted tiny">只发进度、@ 和知会</span>
+              <span className="grow" />
+              <button type="button" className="link tiny" onClick={() => setChatOpen(false)}>
+                收起 ×
+              </button>
+            </div>
+            <div className="bd-chat-body">{props.chat}</div>
+          </aside>
+        )}
+        {drawerMatter && (
+          <aside className="bd-drawer" aria-label={`${matterLabel(drawerMatter)}「${drawerMatter.title}」`}>
+            <MatterBody key={drawerMatter.id} matter={drawerMatter} onClose={() => setDrawer(null)} />
+          </aside>
+        )}
       </div>
       <div className="bd-foot">
         <button type="button" className="small" onClick={() => zoomBy(1 / 1.2)} aria-label="缩小">
@@ -464,11 +643,11 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
         <button type="button" className="small" onClick={() => zoomBy(1.2)} aria-label="放大">
           ＋
         </button>
-        <button type="button" className="small" onClick={() => setView(fitView(model, box()))}>
-          回到中间
+        <button type="button" className="small" onClick={fitAll}>
+          看全部
         </button>
         <span className="grow" />
-        <span className="muted tiny">空白处拖动平移 · 滚轮缩放 · 卡片右边的点拖出连线 · Ctrl+Z 只撤销你自己的</span>
+        <span className="muted tiny">空白处拖动平移 · 滚轮缩放 · 事项卡按负责方自动排，定了、验了自动挪（人拖过的不挪） · Ctrl+Z 只撤销你自己的</span>
       </div>
       {pop?.kind === "deleted" && (
         <BoardPop title={`最近删除 · ${deleted.length}`} onClose={() => setPop(null)} foot="删掉的留到协作结束。别人正在写的卡不能删。">
@@ -509,23 +688,65 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
         />
       )}
       {pop?.kind === "ref" && <RefDialog onClose={() => setPop(null)} onAdd={(ref) => (setPop(null), void add({ kind: "ref", ref }))} />}
-      {pop?.kind === "session" && (
-        <BoardPop title="放一张子会话卡" onClose={() => setPop(null)}>
-          {!cowork.sessions.length && <div className="muted tiny">这个协作还没有子会话。</div>}
-          {cowork.sessions.map((s) => (
-            <div key={s.id} className="bd-pop-row">
-              <span className="grow">
-                {s.title} <span className="muted tiny">{subState(s, show, me).word}</span>
-              </span>
-              <button type="button" className="small" disabled={sessionsOn.has(s.id)} onClick={() => (setPop(null), void add({ kind: "session", session: s.id }))}>
-                {sessionsOn.has(s.id) ? "已在白板上" : "放上去"}
-              </button>
-            </div>
-          ))}
-        </BoardPop>
-      )}
     </div>
   );
+
+  /** A 事项's card: read from the 事项 (nothing of its own); mine to look at with a thick outline and its word on top. */
+  function renderMatter(m: Matter, r: Rect) {
+    const look = lookOf.get(m.id);
+    const settled = matterSettled(m);
+    const cid = `${MATTER_ID}${m.id}`;
+    const pseudo = { id: cid, x: r.x, y: r.y, w: r.w, h: r.h } as BoardItem;
+    const moving = others.find((p) => p.dragging && cardOf.current[m.id] === p.dragging.id);
+    return (
+      <div
+        key={cid}
+        className={`bd-card k-matter st-${MATTER_CLS[m.status]} ${look ? `look-${look}` : ""} ${shown(m) ? "" : "dim"} ${drawer === m.id ? "on" : ""}`}
+        data-matter={m.id}
+        style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+        onPointerDown={(e) => onCardDown(e, pseudo)}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      >
+        {look && (
+          <span className={`bd-look-tag ${look}`}>
+            {LOOK_WORD[look]} · {show(me)}
+          </span>
+        )}
+        <span className="bd-head">
+          {matterLabel(m)}
+          {m.kind === "confirm" || m.gate ? " · 闸门" : ""}
+          <span className={`cw-state ${MATTER_CLS[m.status]}`}>{matterChip(m.status)}</span>
+        </span>
+        <b className="bd-title">{m.title}</b>
+        <span className="bd-meta">负责 {sideText(m, cowork.agents, show)}</span>
+        {settled && m.conclusion ? (
+          <span className="bd-conclusion">
+            <b>结论</b> {m.conclusion}
+          </span>
+        ) : (
+          <span className={`bd-meta why ${isQuiet(m, now) ? "quiet" : ""}`}>
+            {isQuiet(m, now) ? "! 久没动静 · " : ""}
+            {matterWhy(m, cowork.agents, show, me)}
+          </span>
+        )}
+        {(m.bindings.sessions.length > 0 || m.bindings.commits.length > 0) && (
+          <span className="bd-binds">
+            {m.bindings.sessions.slice(0, 2).map((s) => (
+              <span key={s} className="tag">
+                执行 {partyText(`agent:${s}`, cowork.agents, show)}
+              </span>
+            ))}
+            {m.bindings.commits.slice(-2).map((c) => (
+              <code key={c}>{c.slice(0, 7)}</code>
+            ))}
+          </span>
+        )}
+        {moving && <span className="bd-tag who" style={{ background: avatarColor(moving.name) }}>{show(moving.name)} 在拖</span>}
+      </div>
+    );
+  }
 
   // A plain function, not a component: a component made inside would be a new kind each time and lose the text box.
   function renderCard(it: BoardItem, r: { x: number; y: number; w: number; h: number }) {
@@ -533,7 +754,6 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
     const theirs = others.filter((p) => p.selected.includes(it.id));
     const aiNew = !!it.updatedAgent && now - it.updatedAt < AI_RECENT_MS;
     const isEditing = editing?.id === it.id;
-    const sub = it.kind === "session" ? cowork.sessions.find((s) => s.id === it.session) : undefined;
     const outline = theirs[0] ? avatarColor(theirs[0].name) : undefined;
     const creator = it.updatedAgent ? (agentOf(cowork, it.updatedAgent)?.name ?? "AI") : show(it.createdBy);
     let head: ReactNode;
@@ -541,24 +761,6 @@ export function BoardBody({ focus }: { focus: { session: string; n: number } | n
     if (it.kind === "group") {
       head = null;
       body = null;
-    } else if (it.kind === "session") {
-      const st = sub ? subState(sub, show, me) : null;
-      head = (
-        <>
-          子会话{st ? ` · ${st.word}` : ""}
-        </>
-      );
-      body = (
-        <>
-          <b className="bd-title">{sub?.title ?? "（子会话不见了）"}</b>
-          <span className="bd-meta">{sub?.conclusion ? `结论：${sub.conclusion}` : sub ? `${show(sub.from)} → ${show(sub.to)}` : ""}</span>
-          {sub && (
-            <button type="button" className="link tiny" onClick={() => openSub(sub.id)}>
-              打开子会话
-            </button>
-          )}
-        </>
-      );
     } else if (it.kind === "ref") {
       const ref = it.ref;
       head = (
@@ -715,7 +917,7 @@ function ConflictDialog({ it, onClose, onKeep }: { it: BoardItem; onClose: () =>
         <div className="bd-version">
           <div className="muted tiny">
             {/* (the card's last change was the conflicting one: its author is 另一版's, not this text's) */}
-            现在的版本 · 在白板上的
+            现在的版本 · 在板上的
           </div>
           <div className="bd-version-text">{it.text}</div>
           <button type="button" onClick={() => onKeep("current")}>
@@ -755,7 +957,7 @@ function RefDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (ref: Board
             取消
           </button>
           <button type="button" className="primary" disabled={!ok} onClick={() => onAdd(ref)}>
-            放上白板
+            放上板
           </button>
         </>
       }
