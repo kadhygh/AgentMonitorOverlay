@@ -8,7 +8,7 @@
   - 设置 → 模型 → Gemini：显示用的是哪个 agy、什么版本；有「登录 Google 账号」（在浏览器里登录）和「检查」。agy 还能用的 Claude、GPT-OSS 型号默认不出现在模型选择里，在这一页勾上才出现。
   - 权限：只读 = agy 的计划模式，可写 = 改文件不问、运行命令先问你，完全访问 = 都不再询问。
   - 运行中发的消息排队，这一轮做完接着发。还不能分支、不能在终端打开、不能手动压缩。
-  - agy 要自己装：`winget install Google.AntigravityCLI`（AMO 平台的环境页以后会加上）。还没有用真的 Google 账号跑过一轮，可能有问题。
+  - agy 在 AMO 平台的「环境」页装（从团队服务器或 Google 下），也可以自己 `winget install Google.AntigravityCLI`。还没有用真的 Google 账号跑过一轮，可能有问题。
 
 ## 0.9.81（2026-11-23）
 
