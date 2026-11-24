@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
-import { claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshRegisteredDirs, firstOnPath, gitOnPath, locateDshDesktop, olderVersion, versionIn } from "@amo-studio/locate";
+import { agyCandidates, claudeCodeCandidates, codexOnPath, DSH_DESKTOP_ARGS, dshDesktopDir, dshRegisteredDirs, firstOnPath, gitOnPath, locateDshDesktop, olderVersion, versionIn } from "@amo-studio/locate";
 import type { EnvironmentView, EnvItemId, EnvItemView } from "./environment-view.js";
 import { isStandaloneCodex } from "./codex-install.js";
 import type { ToolSources } from "./tool-mirror.js";
@@ -24,6 +24,8 @@ export const DOWNLOADS: Record<EnvItemId, string | null> = {
   dsh: "https://www.deepseek.com/harness/",
   // OpenAI's Codex CLI repository: its README has the Windows install and links to the docs.
   codex: "https://github.com/openai/codex",
+  // Google Antigravity (2026-11-24): the CLI is installed from here as well (install.ps1, winget).
+  agy: "https://antigravity.google/",
   // Git for Windows on git-scm.com (what /download/win redirects to).
   git: "https://git-scm.com/install/windows",
 };
@@ -31,14 +33,15 @@ export const DOWNLOADS: Record<EnvItemId, string | null> = {
 /** Claude Code's own PowerShell install, as its docs and Studio's 设置 → 模型 give it. */
 export const CLAUDE_INSTALL_COMMAND = "irm https://claude.ai/install.ps1 | iex";
 
-const NAMES: Record<EnvItemId, string> = { claude: "Claude Code", dsh: "DeepSeek Harness 桌面版", codex: "Codex", git: "git" };
+const NAMES: Record<EnvItemId, string> = { claude: "Claude Code", dsh: "DeepSeek Harness 桌面版", codex: "Codex", agy: "Antigravity CLI（agy）", git: "git" };
 const USES: Record<EnvItemId, string> = {
   claude: "Studio 里的 Claude 订阅、GLM 等 Claude 渠道",
   dsh: "Studio 里的 DeepSeek（DSH）",
   codex: "Studio 里的 Codex / GPT 订阅",
+  agy: "Studio 里的 Gemini（测试功能「Gemini（Antigravity）」）",
   git: "Review、项目",
 };
-const ORDER: EnvItemId[] = ["claude", "dsh", "codex", "git"];
+const ORDER: EnvItemId[] = ["claude", "dsh", "codex", "agy", "git"];
 
 /** Pages that help with something an item needs (2026-11-03: Codex is installed with npm, which comes with Node.js). */
 export const HELP_PAGES: Record<string, string> = { node: "https://nodejs.org/zh-cn/download" };
@@ -111,7 +114,7 @@ export interface CheckOptions {
    * server's mirror and the maker's latest); asked for a Claude Code that is not there or came from its own installer, and
    * a Codex that is not there or came from npm. Absent: the old way (npm's latest, `npm install -g`, `claude update`).
    */
-  sources?: Partial<Record<"claude" | "codex", () => Promise<ToolSources | null>>>;
+  sources?: Partial<Record<"claude" | "codex" | "agy", () => Promise<ToolSources | null>>>;
 }
 
 const TIMEOUT_MS = 10_000;
@@ -169,6 +172,21 @@ export function updatePlan(id: EnvItemId, path: string | null, env: Env): Update
   }
   if (id === "claude" && p.startsWith(lower(join(env.USERPROFILE ?? homedir(), ".local", "bin")) + "\\")) return { file: path, args: ["update"], how: "claude update", packageDir: null };
   return null;
+}
+
+/** winget's own folders, where an agy it installed lives (its Links shim or the package folder). */
+function isWingetAgy(path: string | null, env: Env): boolean {
+  const local = env.LOCALAPPDATA;
+  return !!path && !!local && lower(path).startsWith(lower(join(local, "Microsoft", "WinGet")) + "\\");
+}
+
+/** An agy winget installed is updated by winget (2026-11-24): the way it came, as npm's Claude Code and Codex. */
+export function agyWingetPlan(path: string | null, env: Env): UpdatePlan | null {
+  if (!isWingetAgy(path, env)) return null;
+  const winget = firstOnPath(["winget.exe"], env);
+  if (!winget) return null;
+  const args = ["upgrade", "--id", "Google.AntigravityCLI", "--exact", "--silent", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity"];
+  return { file: winget, args, how: "winget upgrade --id Google.AntigravityCLI", packageDir: null };
 }
 
 export type UpdateRun = { ok: true; out: string } | { ok: false; out: string; reason: "timeout" | "error" };
@@ -249,7 +267,32 @@ async function checkOnPath(id: "codex" | "git", exe: string | null, o: CheckOpti
 }
 
 export const checkCodex = (o: CheckOptions) => checkOnPath("codex", codexOnPath(o.env), o);
+
+/** The oldest agy Studio runs on (host runtime/agy/install.ts AGY_MIN_VERSION). */
+export const AGY_MIN_VERSION = "1.5.0";
+
+/** The Antigravity CLI where Studio looks for it (@amo-studio/locate agyCandidates): the first that says its version. */
+export async function checkAgy(o: CheckOptions): Promise<EnvItemView> {
+  const candidates = agyCandidates(o.env);
+  if (!candidates.length) return item("agy", { state: "missing", path: null, version: null, note: "没找到：PATH、%LOCALAPPDATA%\\agy\\bin 和 winget 的目录里都没有 agy。只在用 Studio 的 Gemini 时要它。" });
+  let failure: RunResult & { ok: false } = { ok: false, reason: "error" };
+  for (const exe of candidates) {
+    const r = await (o.run ?? runProgram)(exe, ["--version"], { env: { ...o.env, AGY_CLI_DISABLE_AUTO_UPDATE: "1" }, timeoutMs: o.timeoutMs ?? TIMEOUT_MS });
+    const version = r.ok ? versionIn(r.out) : null;
+    if (version) {
+      if (olderVersion(version, AGY_MIN_VERSION)) return item("agy", { state: "attention", path: exe, version, note: `太旧了：Studio 要 ${AGY_MIN_VERSION} 以上，点「更新」。` });
+      return item("agy", { state: "ok", path: exe, version, note: null });
+    }
+    if (!r.ok) failure = r;
+  }
+  return item("agy", { state: "attention", path: candidates[0]!, version: null, note: `找到了，但它没有回应 agy --version（${why(failure)}）：重新装一下。` });
+}
 export const checkGit = (o: CheckOptions) => checkOnPath("git", gitOnPath(o.env), o);
+
+/** An agy where Google's install.ps1 (and the platform) puts it: %LOCALAPPDATA%\\agy\\bin. */
+function isPlacedAgy(path: string | null, env: Env): boolean {
+  return !!path && !!env.LOCALAPPDATA && lower(path).startsWith(lower(join(env.LOCALAPPDATA, "agy", "bin")) + "\\");
+}
 
 /** A Claude Code from its own installer (%USERPROFILE%\.local\bin): updated by putting the new version in place. */
 export function isNativeClaude(path: string | null, env: Env): boolean {
@@ -277,26 +320,32 @@ async function withSources(it: EnvItemView, o: CheckOptions): Promise<EnvItemVie
     const latest = it.version && o.sources?.codex ? ((await o.sources.codex().catch(() => null))?.official?.version ?? null) : null;
     return { ...it, latest, updater: null, note: [it.note, "这是 OpenAI 安装脚本装的独立版 Codex：平台不更新它，它会自己提示更新；也可以在 PowerShell 里重新运行 OpenAI 的安装命令。"].filter(Boolean).join(" ") };
   }
-  const here = it.id === "claude" ? !it.version || isNativeClaude(it.path, o.env) : it.id === "codex" ? !it.version || isNpmCodex(it.path, o.env) : false;
-  const ask = here ? o.sources?.[it.id as "claude" | "codex"] : undefined;
+  const here = it.id === "claude" ? !it.version || isNativeClaude(it.path, o.env) : it.id === "codex" ? !it.version || isNpmCodex(it.path, o.env) : it.id === "agy" ? !it.version || isPlacedAgy(it.path, o.env) : false;
+  const ask = here ? o.sources?.[it.id as "claude" | "codex" | "agy"] : undefined;
   if (!ask) return null;
   const src = await ask().catch(() => null);
   const blocked = it.id === "codex" && !firstOnPath(["npm.cmd"], o.env) ? { text: "Codex 用 npm 安装，这台电脑上没找到 npm：先装 Node.js（自带 npm），装好后退出平台再打开，就能在这里装了。", page: "node", pageName: "Node.js 下载页" } : null;
   const install = { server: src?.server ?? null, official: src?.official ?? null, preparing: src?.preparing ?? null, blocked };
-  const how = it.id === "claude" ? "下载后运行 claude install" : "下载后放进 npm 的缓存，再运行 npm install -g @openai/codex";
+  const how = it.id === "claude" ? "下载后运行 claude install" : it.id === "agy" ? "下载后放进 %LOCALAPPDATA%\\agy\\bin，再运行 agy install" : "下载后放进 npm 的缓存，再运行 npm install -g @openai/codex";
   return { ...it, latest: it.version ? newerOf(install.server?.version, install.official?.version) : null, updater: it.version && !blocked && (install.server || install.official) ? how : null, install };
 }
 
 /** All four at once (each `--version` has its own timeout, so the slowest one bounds the wait). */
 export async function checkEnvironment(o: CheckOptions, now: () => Date = () => new Date()): Promise<EnvironmentView> {
-  const checks: Record<EnvItemId, (o: CheckOptions) => Promise<EnvItemView>> = { claude: checkClaude, dsh: checkDsh, codex: checkCodex, git: checkGit };
+  const checks: Record<EnvItemId, (o: CheckOptions) => Promise<EnvItemView>> = { claude: checkClaude, dsh: checkDsh, codex: checkCodex, agy: checkAgy, git: checkGit };
   const latest = o.latest ?? ((pkg: string) => latestVersion(pkg));
   const items = await Promise.all(
     ORDER.map(async (id) => {
       const pkg = NPM_PACKAGES[id];
       const it = await checks[id](o);
-      const sourced = id === "claude" || id === "codex" ? await withSources(it, o) : null;
+      const sourced = id === "claude" || id === "codex" || id === "agy" ? await withSources(it, o) : null;
       if (sourced) return sourced;
+      if (id === "agy") {
+        // winget's agy: updated by winget; its 最新 from Google's manifest (the sources' official). Another installer: as found.
+        const plan = agyWingetPlan(it.path, o.env);
+        const newest = it.version && o.sources?.agy ? ((await o.sources.agy().catch(() => null))?.official?.version ?? null) : null;
+        return { ...it, latest: it.version ? newest : null, updater: it.version ? (plan?.how ?? null) : null };
+      }
       // Asked only for what is installed (nothing to compare otherwise).
       const newest = pkg && it.version ? await latest(pkg) : null;
       return { ...it, latest: it.version ? newest : null, updater: it.version ? (updatePlan(id, it.path, o.env)?.how ?? null) : null };

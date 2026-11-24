@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resumeDownload } from "@amo-studio/locate/download";
 import { listenInStudioRange } from "@amo-studio/testkit";
 import { RelayClient } from "./client.js";
-import { checkMirrorSettings, CLAUDE_CODE_SOURCE, CODEX_SOURCE, DEFAULT_MIRROR_SETTINGS, type MirrorOptions, type MirrorSource, ToolMirror } from "./mirror.js";
+import { AGY_SOURCE, checkMirrorSettings, CLAUDE_CODE_SOURCE, CODEX_SOURCE, DEFAULT_MIRROR_SETTINGS, type MirrorOptions, type MirrorSource, ToolMirror } from "./mirror.js";
 import { startRelayServer } from "./server.js";
 import { RelayStore } from "./store.js";
 
@@ -81,6 +81,28 @@ async function fake(versions: Record<string, string[]>, latest: string): Promise
       if (!b) return void (res.writeHead(404), res.end());
       const integrity = `sha512-${createHash("sha512").update(f.wrongChecksum ? Buffer.from("x") : b.zst).digest("base64")}`;
       return void res.end(JSON.stringify({ name: "@openai/codex", version: `${doc[1]}-${doc[2]}`, dist: { integrity, tarball: `${f.base}/@openai/codex/-/codex-${doc[1]}-${doc[2]}.tgz` } }));
+    }
+    // Google's updater for the Antigravity CLI: the newest only, its exe (not packed) under another path.
+    const agyArch: Record<string, string> = { windows_amd64: "win32-x64", windows_arm64: "win32-arm64" };
+    const am = /^\/manifests\/(windows_amd64|windows_arm64)\.json$/.exec(path);
+    if (am) {
+      const b = f.builds.get(f.latest)?.[agyArch[am[1]!]!];
+      if (!b) return void (res.writeHead(404), res.end());
+      return void res.end(JSON.stringify({ version: f.latest, url: `${f.base}/agy/${f.latest}/${agyArch[am[1]!]}/cli.exe`, sha512: createHash("sha512").update(f.wrongChecksum ? Buffer.from("x") : b.exe).digest("hex") }));
+    }
+    const ax = /^\/agy\/([^/]+)\/([^/]+)\/cli\.exe$/.exec(path);
+    if (ax) {
+      const exe = f.builds.get(ax[1]!)?.[ax[2]!]?.exe;
+      if (!exe) return void (res.writeHead(404), res.end());
+      f.ranges.push(req.headers.range ?? null);
+      const r = req.headers.range ? /^bytes=(\d+)-$/.exec(req.headers.range) : null;
+      const start = r ? Number(r[1]) : 0;
+      const body = exe.subarray(start);
+      const fault = f.faults.shift();
+      res.writeHead(r ? 206 : 200, { "content-length": String(body.length), "accept-ranges": "bytes", ...(r ? { "content-range": `bytes ${start}-${exe.length - 1}/${exe.length}` } : {}) });
+      if (!fault) return void res.end(body);
+      res.write(body.subarray(0, fault.after));
+      return void setTimeout(() => res.socket?.destroy(), 20);
     }
     const z = /^\/([^/]+)\/([^/]+)\/claude\.exe\.zst$/.exec(path) ?? /^\/@openai\/codex\/-\/codex-(\d+\.\d+\.\d+)-(win32-[a-z0-9]+)\.tgz$/.exec(path);
     const file = z ? f.builds.get(z[1]!)?.[z[2]!]?.zst : undefined;
@@ -238,6 +260,32 @@ describe("Codex 镜像 (mirror.ts, CODEX_SOURCE)", () => {
     const f = await fake({ "0.166.0": ["win32-x64"] }, "0.166.0");
     f.wrongChecksum = true;
     const m = mirror(tmp(), f, { retryDelaysMs: [] }, CODEX_SOURCE);
+    await m.checkNow();
+    expect(m.adminView().versions).toEqual([]);
+    expect(m.adminView().status.error).toMatch(/sha512 对不上/);
+  });
+});
+
+describe("Antigravity CLI 镜像 (mirror.ts, AGY_SOURCE, 2026-11-24)", () => {
+  it("downloads the exe Google's manifest names, checks its sha512 and keeps it as agy.exe; a second check downloads nothing", async () => {
+    const f = await fake({ "1.5.16": ["win32-x64"] }, "1.5.16");
+    f.faults.push({ kind: "cut", after: 40_000 });
+    const m = mirror(tmp(), f, {}, AGY_SOURCE);
+    await m.checkNow();
+    const exe = f.builds.get("1.5.16")!["win32-x64"]!.exe;
+    expect(m.adminView()).toMatchObject({ tool: "antigravity-cli", name: "Antigravity CLI", status: { state: "idle", official: "1.5.16", error: null } });
+    expect(m.adminView().versions[0]!.platforms).toEqual({ "win32-x64": { file: "agy.exe", size: exe.length, sha512: createHash("sha512").update(exe).digest("hex") } });
+    expect(readFileSync(m.file("1.5.16", "win32-x64")!.path).equals(exe)).toBe(true);
+    expect(f.ranges[1]).toMatch(/^bytes=\d+-$/);
+    const seen = f.ranges.length;
+    await m.checkNow();
+    expect(f.ranges.length).toBe(seen);
+  });
+
+  it("throws away an exe whose sha512 is not the manifest's", async () => {
+    const f = await fake({ "1.5.16": ["win32-x64"] }, "1.5.16");
+    f.wrongChecksum = true;
+    const m = mirror(tmp(), f, { retryDelaysMs: [] }, AGY_SOURCE);
     await m.checkNow();
     expect(m.adminView().versions).toEqual([]);
     expect(m.adminView().status.error).toMatch(/sha512 对不上/);

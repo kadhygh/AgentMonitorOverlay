@@ -18,7 +18,7 @@ import { typeOf } from "./types.js";
 //   serve [--port 47120] [--host 0.0.0.0] [--data <dir>] [--public <dir>] [--platform-dir <dir>] [--name 策划组] [--passphrase <邀请口令>]
 //         (passphrase also from AMO_RELAY_PASSPHRASE; public = client/ + downloads/, default: next to this file;
 //         platform dir = the AMO platform's files, platform.ts, also from AMO_RELAY_PLATFORM_DIR, default: none;
-//         [--mirror | --no-mirror]: 工具镜像 (Claude Code, Codex), mirror.ts, in <data>/mirror — on by default with a
+//         [--mirror | --no-mirror]: 工具镜像 (Claude Code, Codex, Antigravity CLI), mirror.ts, in <data>/mirror — on by default with a
 //         platform dir)
 //   passwd --data <dir> <名字> <新密码>        on the service machine, while it is stopped or running
 //   register --server <host:port> --name <名字> --password <密码> [--role …] [--passphrase …] | login --server … --name … --password …
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
       const mirrors = withMirror ? createMirrors({ dir: join(data, "mirror"), log: (line) => out(`${new Date().toISOString()} ${line}`) }) : undefined;
       const server = await startRelayServer({ store, passphrase, publicDir, platformDir, filesDir: join(data, "files"), transfersDir: join(data, "transfers"), dataDir: data, name: flags.name, host: flags.host, port: flags.port ? Number(flags.port) : RELAY_DEFAULT_PORT, mirrors });
       for (const m of Object.values(mirrors ?? {})) m.start();
-      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；工具镜像（Claude Code、Codex）${mirrors ? "开着（设置在管理页）" : "没开"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
+      out(`AMO 中转服务已启动：端口 ${server.port}；数据 ${data}；客户端 ${publicDir}；平台 ${platformDir ?? "（没有指定）"}；工具镜像（Claude Code、Codex、Antigravity CLI）${mirrors ? "开着（设置在管理页）" : "没开"}；${passphrase ? "注册要邀请口令" : "任何人都能注册"}`);
       const stop = () => void Promise.all([...Object.values(mirrors ?? {}).map((m) => m.close()), server.close()]).then(() => (store.close(), process.exit(0)));
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);

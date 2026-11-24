@@ -213,7 +213,8 @@ var mirTimer = null, mirBusy = false, mirCards = {};
 var MIR_STATE = { off: "○ 关着", idle: "✓ 空闲", checking: "◐ 正在检查", downloading: "◐ 正在下载", verifying: "◐ 正在校验", waiting: "! 下载断了，稍后接着下" };
 var MIR_TEXT = {
   "claude-code": "定时查 Anthropic 的最新版，有新版就在后台下好压缩包（约 120 MB）、按官方清单校验，断了会接着下。局域网里的 AMO 平台可以从这里安装、更新 Claude Code。",
-  codex: "定时查 npm 上 @openai/codex 的最新版，有新版就在后台下好 Windows 的平台包（约 180 MB）、按 npm 给的 sha512 校验，断了会接着下。局域网里的 AMO 平台可以从这里安装、更新 Codex（装法照旧是 npm）。"
+  codex: "定时查 npm 上 @openai/codex 的最新版，有新版就在后台下好 Windows 的平台包（约 180 MB）、按 npm 给的 sha512 校验，断了会接着下。局域网里的 AMO 平台可以从这里安装、更新 Codex（装法照旧是 npm）。",
+  "antigravity-cli": "定时查 Google 的 Antigravity CLI（agy，Studio 的 Gemini 渠道用它）的最新版，有新版就在后台下好 exe（约 240 MB）、按 Google 清单的 sha512 校验，断了会接着下。局域网里的 AMO 平台可以从这里安装、更新 agy。"
 };
 var MIR_CARD = '<div class="row" style="justify-content:space-between"><h2 data-k="name"></h2><div class="row"><span class="muted" data-k="at"></span><button type="button" data-k="check">现在检查</button></div></div>'
   + '<p class="muted" data-k="text"></p><div class="stats" data-k="stats"></div>'

@@ -168,7 +168,7 @@
       "label": "AMO 平台（安装、更新、登录、环境）",
       "aliases": ["平台", "platform", "AMO Platform", "安装", "更新", "自更新", "updates.json", "programs.json", "环境页", "安装 Claude Code", "镜像"],
       "category": "tool",
-      "purpose": "托盘常驻：从团队服务器装、更新、设置各工具（按版本一个文件夹），登录（只有平台有登录界面），环境页装 Claude Code / Codex（团队服务器镜像或官方）。只通过工具已支持的方式和它们打交道（AGENTS.md 架构约束第 1、3、7 条）。",
+      "purpose": "托盘常驻：从团队服务器装、更新、设置各工具（按版本一个文件夹），登录（只有平台有登录界面），环境页装 Claude Code / Codex / Antigravity CLI（团队服务器镜像或官方）。只通过工具已支持的方式和它们打交道（AGENTS.md 架构约束第 1、3、7 条）。",
       "anchors": [
         { "label": "Platform", "path": "studio/packages/platform/src/platform.ts", "anchor": "export class Platform" },
         { "label": "安装", "path": "studio/packages/platform/src/installer.ts" },
@@ -177,6 +177,7 @@
         { "label": "工具开着没有", "path": "studio/packages/platform/src/running.ts" },
         { "label": "环境页：Claude Code", "path": "studio/packages/platform/src/claude-install.ts", "anchor": "export async function installClaude" },
         { "label": "环境页：镜像", "path": "studio/packages/platform/src/tool-mirror.ts", "anchor": "export async function mirrorInfo" },
+        { "label": "环境页：Antigravity CLI", "path": "studio/packages/platform/src/agy-install.ts", "anchor": "export async function installAgy" },
         { "label": "界面", "path": "studio/packages/ui/src/platform/PlatformApp.tsx" },
         { "label": "改动说明", "path": "studio/packages/platform/CHANGELOG.md" }
       ],

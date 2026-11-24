@@ -1,6 +1,6 @@
 # Gemini 接入：经 Antigravity CLI（`agy acp`）做第四种会话运行时（2026-11-24）
 
-> 状态：进行中。11-24 用户定主做 `agy`、先按实测到的接口接好，账号验证回头再测。第 1 段（Host 运行时、设置页、界面分支，测试功能「Gemini（Antigravity）」后面，默认关）做完；第 2、3 段没开工；第 4 段等用户验证 Google 账号。代码里叫 agy（运行时 `agy`、Host `runtime/agy`），界面上叫「Antigravity · Gemini」（渠道名 Gemini，运行时标签 Antigravity）。
+> 状态：进行中。11-24 用户定主做 `agy`、先按实测到的接口接好，账号验证回头再测。第 1 段（Host 运行时、设置页、界面分支，测试功能「Gemini（Antigravity）」后面，默认关）、第 2 段（平台环境页装 / 更新 agy）、第 3 段（中转服务的 agy 镜像）做完（11-24 用户：「第二第三都做完，回头我再让别人试」）；第 4 段等用户验证 Google 账号。代码里叫 agy（运行时 `agy`、Host `runtime/agy`），界面上叫「Antigravity · Gemini」（渠道名 Gemini，运行时标签 Antigravity）。
 
 ## 用户说的（11-24）
 
@@ -96,6 +96,14 @@ pingdotgg/t3code 也是经 `agy acp` 接 Gemini（`apps/server/src/provider/acp/
 
 - 界面上叫「Antigravity · Gemini」（11-24 用户：「这两件就按你的建议来」）。
 - 权限对应：只读 = plan；可写 = accept-edits；完全 = `--dangerously-skip-permissions`（一个会话一个进程，换到或换出「完全访问」时换进程）。等系统升到 24H2 后再看要不要加「auto」。
+
+## 第 2、3 段里自己定的（没问过用户）
+
+- 镜像照 Claude Code、Codex 的做法（`packages/relay/src/mirror.ts` 的 `AGY_SOURCE`，工具名 `antigravity-cli`）：读 Google 的 `manifests/windows_<arch>.json`，下它给的 exe，按 sha512 校验，存成 `agy.exe`，默认开、每小时、只 x64、留 3 版。
+- 平台（`packages/platform/src/agy-install.ts`）照 Google 的 install.ps1 装：exe 放 `%LOCALAPPDATA%\agy\bin\agy.exe`，再跑 `agy install`。`agy install` 失败不算装失败（install.ps1 也这样），只在结果里说一句。正在跑的 agy.exe 先改名挪开再放新的（同 Claude Code 的启动器）。
+- Google 的清单只给最新版：从团队服务器装比 Google 旧的版本时，按服务器下载时记下的 sha512 校验（服务器当时按 Google 清单校验过）。
+- winget 装的 agy：平台不替它装，「更新」跑 `winget upgrade --id Google.AntigravityCLI --exact --silent …`；「最新」照样从 Google 清单读。
+- `agy install` 具体改了什么（PATH、PowerShell profile 里的别名）只看过 `--help`，**没在真机上跑过**；平台的安装只用假服务器和假 `agy install` 测过，真的 240 MB 下载没在平台上跑过（镜像部署后在服务器上会真下一次）。
 
 ## 第 1 段里自己定的（没问过用户）
 

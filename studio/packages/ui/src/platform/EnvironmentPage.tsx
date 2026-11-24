@@ -32,18 +32,22 @@ const TONE: Record<EnvItemView["state"], string> = { ok: "ok", attention: "warn"
 
 const FROM: Record<EnvFrom, string> = { server: "团队服务器", official: "官方" };
 /** Who the official place is, per tool. */
-const MAKER: Record<string, string> = { claude: "Anthropic", codex: "npm" };
+const MAKER: Record<string, string> = { claude: "Anthropic", codex: "npm", agy: "Google" };
+/** About how big the download is, per tool. */
+const SIZE: Record<string, string> = { claude: "约 120 MB", codex: "约 180 MB", agy: "约 240 MB" };
 
 /** The task's line under its bar. */
 function taskText(it: EnvItemView, t: EnvTaskView): string {
   const codex = it.id === "codex";
-  if (t.phase === "manifest") return codex ? `◐ 正在向 npm 要 ${t.version} 的 sha512（用来校验）…` : `◐ 正在拿 ${t.version} 的官方清单（用来校验）…`;
+  const agy = it.id === "agy";
+  if (t.phase === "manifest") return codex ? `◐ 正在向 npm 要 ${t.version} 的 sha512（用来校验）…` : agy ? `◐ 正在拿 Google 的清单（${t.version} 的 sha512，用来校验）…` : `◐ 正在拿 ${t.version} 的官方清单（用来校验）…`;
   if (t.phase === "downloading") {
     const pct = t.total ? `（${Math.floor((t.done / t.total) * 100)}%）` : "";
     return `◐ 正在从${FROM[t.from]}下载 ${t.version}：${formatBytes(t.done)}${t.total ? ` / ${formatBytes(t.total)}` : ""}${pct}${t.bytesPerSec ? ` · ${formatBytes(t.bytesPerSec)}/s` : ""}`;
   }
   if (t.phase === "unpacking") return "◐ 正在解压，按官方清单校验…";
-  if (t.phase === "verifying") return "◐ 正在按 npm 的 sha512 校验…";
+  if (t.phase === "verifying") return agy ? "◐ 正在按 sha512 校验…" : "◐ 正在按 npm 的 sha512 校验…";
+  if (agy) return "◐ 正在运行 agy install（配好 PATH），通常几秒…";
   return codex ? `◐ 正在运行 npm install -g @openai/codex@${t.version}（用刚下好的文件，不再从网上下），通常几秒到半分钟…` : "◐ 正在运行 claude install（装好启动器和 PATH），通常十秒左右…";
 }
 
@@ -65,7 +69,7 @@ export function EnvironmentPage({ task }: { task: EnvTaskView | null }) {
     <div className="pf-page">
       <div>
         <h1 className="pf-h1">环境</h1>
-        <p className="pf-hint">AMO 的工具要用到的程序。Claude Code 和 Codex 可以在这里安装、更新：团队服务器备好了版本时可以从团队服务器下（局域网，更快），也可以从官方下，你来选。别的没装的给官方下载页。只在你点的时候才装；不装平台，各工具也会自己检测和提示。</p>
+        <p className="pf-hint">AMO 的工具要用到的程序。Claude Code、Codex 和 Antigravity CLI 可以在这里安装、更新：团队服务器备好了版本时可以从团队服务器下（局域网，更快），也可以从官方下，你来选。别的没装的给官方下载页。只在你点的时候才装；不装平台，各工具也会自己检测和提示。</p>
       </div>
       <div className="pf-row">
         <button type="button" className="btn-ghost pf-small" disabled={checking} onClick={() => check(true)}>
@@ -93,7 +97,7 @@ function SourceRow({ it, from, busy, onPick }: { it: EnvItemView; from: EnvFrom;
   const hint =
     from === "server"
       ? `局域网${install.server ? ` · ${formatBytes(install.server.size)}` : ""} · 断了会接着下`
-      : `从 ${MAKER[it.id] ?? "官方"} 下载${it.id === "claude" ? " · 约 120 MB" : it.id === "codex" ? " · 约 180 MB" : ""} · 断了会接着下`;
+      : `从 ${MAKER[it.id] ?? "官方"} 下载${SIZE[it.id] ? ` · ${SIZE[it.id]}` : ""} · 断了会接着下`;
   let action: React.ReactNode;
   if (!version) action = <span className="pf-hint">连不上，看不到最新版</span>;
   else if (it.version && !newer(version, it.version)) action = <span className="pf-hint">{version === it.version ? "✓ 装的就是这版" : "装的比这版新"}</span>;

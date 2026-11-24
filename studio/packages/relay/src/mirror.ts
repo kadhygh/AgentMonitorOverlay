@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { DownloadError, fileIntegrity, resumeDownload, SHA512_INTEGRITY, unpackZstd } from "@amo-studio/locate/download";
+import { DownloadError, fileIntegrity, fileSha512, resumeDownload, SHA512_INTEGRITY, unpackZstd } from "@amo-studio/locate/download";
 import { VERSION } from "./platform.js";
 import { RelayError } from "./store.js";
 
@@ -15,6 +15,10 @@ import { RelayError } from "./store.js";
 //   Codex:       npm's `latest` of @openai/codex, the platform package @openai/codex@<version>-<platform> (its
 //                dist.integrity, sha512), codex-<version>-<platform>.tgz (180 MB) as npm has it: the platform puts it in
 //                npm's cache and runs npm install (tried 2026-11-03: 5 s, the big file not fetched again).
+//   Antigravity CLI (agy, Gemini; 2026-11-24, plans/agy.md): Google's updater manifest
+//                manifests/windows_<arch>.json ({version, url, sha512} of the newest only), the exe it names (about
+//                240 MB, not packed), checked against its sha512. Kept as agy.exe; the platform puts it in
+//                %LOCALAPPDATA%gyin and runs `agy install`, as Google's install.ps1 does.
 //
 // Files, all under <data>/mirror (deploy never touches the data folder):
 //   settings.json                              { "claude-code": MirrorSettings, "codex": MirrorSettings }
@@ -24,10 +28,13 @@ import { RelayError } from "./store.js";
 
 export const CLAUDE_CODE = "claude-code";
 export const CODEX = "codex";
-export const MIRROR_TOOLS = [CLAUDE_CODE, CODEX] as const;
+export const AGY = "antigravity-cli";
+export const MIRROR_TOOLS = [CLAUDE_CODE, CODEX, AGY] as const;
 export type MirrorTool = (typeof MIRROR_TOOLS)[number];
 export const CLAUDE_OFFICIAL = "https://downloads.claude.ai/claude-code-releases";
 export const NPM_REGISTRY = "https://registry.npmjs.org";
+/** Where Google's install.ps1 reads the Antigravity CLI's manifests. */
+export const AGY_UPDATER = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app";
 /** The Windows builds the mirror can keep (the platform installs on Windows); x64 by default (the user, 2026-11-03). */
 export const MIRROR_PLATFORMS = ["win32-x64", "win32-arm64"] as const;
 export type MirrorPlatform = (typeof MIRROR_PLATFORMS)[number];
@@ -81,6 +88,8 @@ export interface MirrorFile {
   exeSize?: number;
   /** Codex: npm's dist.integrity of the .tgz (and checked). */
   integrity?: string;
+  /** Antigravity CLI: the exe's sha512 (hex) from Google's manifest (and checked). */
+  sha512?: string;
 }
 
 export interface MirrorVersion {
@@ -136,7 +145,7 @@ export interface MirrorTarget {
   name: string;
   url: string;
   /** Recorded with it (and given to the platform). */
-  info: Pick<MirrorFile, "sha256" | "exeSize" | "integrity">;
+  info: Pick<MirrorFile, "sha256" | "exeSize" | "integrity" | "sha512">;
   /** Throws (the reason) when the downloaded file is not what the maker published. */
   check(file: string): Promise<void>;
 }
@@ -259,7 +268,36 @@ export const CODEX_SOURCE: MirrorSource = {
   },
 };
 
-export const MIRROR_SOURCES: Record<MirrorTool, MirrorSource> = { [CLAUDE_CODE]: CLAUDE_CODE_SOURCE, [CODEX]: CODEX_SOURCE };
+/** Google's manifest names the platforms its own way. */
+const AGY_ARCH: Record<MirrorPlatform, string> = { "win32-x64": "windows_amd64", "win32-arm64": "windows_arm64" };
+
+export const AGY_SOURCE: MirrorSource = {
+  tool: AGY,
+  name: "Antigravity CLI",
+  officialFrom: "Google 的更新清单（agy 自己的安装脚本读的那份）",
+  base: AGY_UPDATER,
+  async latest({ base, get }) {
+    const v = parseJson<{ version?: unknown }>(await get(`${base}/manifests/${AGY_ARCH["win32-x64"]}.json`), "Antigravity CLI 的清单").version;
+    return typeof v === "string" ? v : "";
+  },
+  async target(version, platform, { base, get }) {
+    // The manifest names only the newest: one that moved on since `latest` is caught here, and the next check fetches it.
+    const m = parseJson<{ version?: unknown; url?: unknown; sha512?: unknown }>(await get(`${base}/manifests/${AGY_ARCH[platform]}.json`), `Antigravity CLI 的 ${platform} 清单`);
+    const sha512 = typeof m.sha512 === "string" && /^[0-9a-fA-F]{128}$/.test(m.sha512) ? m.sha512.toLowerCase() : null;
+    const url = typeof m.url === "string" && /^https?:\/\//.test(m.url) ? m.url : null;
+    if (m.version !== version || !sha512 || !url) throw new Error(`Antigravity CLI 的 ${platform} 清单不是 ${version}（或缺了地址、sha512）`);
+    return {
+      name: "agy.exe",
+      url,
+      info: { sha512 },
+      async check(part) {
+        if ((await fileSha512(part)) !== sha512) throw new Error("和 Google 清单的 sha512 对不上");
+      },
+    };
+  },
+};
+
+export const MIRROR_SOURCES: Record<MirrorTool, MirrorSource> = { [CLAUDE_CODE]: CLAUDE_CODE_SOURCE, [CODEX]: CODEX_SOURCE, [AGY]: AGY_SOURCE };
 
 export interface MirrorOptions {
   /** <data>/mirror. */
@@ -287,7 +325,7 @@ const newerFirst = (a: string, b: string) => {
 export function createMirrors(opts: Omit<MirrorOptions, "base"> & { bases?: Partial<Record<MirrorTool, string>> }): Record<MirrorTool, ToolMirror> {
   const { bases, ...rest } = opts;
   const one = (tool: MirrorTool) => new ToolMirror(MIRROR_SOURCES[tool], { ...rest, ...(bases?.[tool] ? { base: bases[tool] } : {}) });
-  return { [CLAUDE_CODE]: one(CLAUDE_CODE), [CODEX]: one(CODEX) };
+  return { [CLAUDE_CODE]: one(CLAUDE_CODE), [CODEX]: one(CODEX), [AGY]: one(AGY) };
 }
 
 /** One tool's mirror: its timer, its check, its files under <dir>/<tool>. */

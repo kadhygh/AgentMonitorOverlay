@@ -14,10 +14,11 @@ import { currentExe, entryExe, loginItemExe, restartArgs, SELF, selfPlace, selfS
 import { channelFromArgs, readSettings, updateSettings } from "./settings.js";
 import { inFolder, Launched, logTiming, ownRunningFile, pidAlive, readOwnRunning, type RunningRecord } from "./running.js";
 import { foldersInUse, killProcess, QUIT_SINCE, runningExePaths, runningVersions, stopStudio, studioHealth, studioHostPid, studioRestart, waitForExit, type StudioHealth, type StudioStop } from "./system.js";
-import { CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
+import { agyWingetPlan, CLAUDE_INSTALL_COMMAND, downloadUrl, EnvironmentChecker, latestVersion, runUpdate, studioSdkClaudeCodeVersion, updatePlan, type UpdatePlan, type UpdateRun } from "./environment.js";
 import type { EnvFrom, EnvironmentView, EnvItemView, EnvTaskView, EnvUpdateResult } from "./environment-view.js";
 import { claudeSources, installClaude } from "./claude-install.js";
 import { codexSources, installCodex } from "./codex-install.js";
+import { agySources, installAgy } from "./agy-install.js";
 import { InstallError, SOURCE_NAME, type InstallProgress as EnvInstallProgress, type InstallRunner } from "./tool-mirror.js";
 import { firstOnPath } from "@amo-studio/locate";
 import type { Channel, ChangelogView, OpenResult, PlatformCalls, PlatformView, ProfilePatch, ProfileSaveResult, RegisterForm, RegisterResult, RootView, SelfView, ServerCheck, TaskView, ToolView } from "./view.js";
@@ -70,6 +71,8 @@ export interface PlatformOptions {
   claudeRun?: InstallRunner;
   /** 环境's Codex 安装 / 更新: what runs npm (`cache add`, `install -g`; tests stand in for it). */
   npmRun?: InstallRunner;
+  /** 环境's Antigravity CLI 安装 / 更新: what runs `agy install` (tests stand in for it). */
+  agyRun?: InstallRunner;
   /** The running platform's program; null or absent when it runs from the sources (development: no self-updates). */
   selfExe?: string | null;
   /** 重启平台: starts `spec` and ends this process (main.ts; tests record it). */
@@ -1131,7 +1134,7 @@ export class Platform implements PlatformCalls {
     // Studio's own SDK, when it is installed, tells an outdated Claude Code as Studio's 设置 → 模型 does.
     // AMO_PLATFORM_NPM_REGISTRY: another registry for the newest versions (tests point it nowhere).
     const registry = this.options.env.AMO_PLATFORM_NPM_REGISTRY;
-    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir), ...(registry ? { latest: (pkg: string) => latestVersion(pkg, fetch, 8000, registry) } : {}), sources: { claude: () => claudeSources(this.claudeOptions()), codex: () => codexSources(this.codexOptions()) } }));
+    this.envChecker ??= new EnvironmentChecker(() => ({ env: this.options.env, sdkClaudeCodeVersion: studioSdkClaudeCodeVersion(this.programs().studio?.dir), ...(registry ? { latest: (pkg: string) => latestVersion(pkg, fetch, 8000, registry) } : {}), sources: { claude: () => claudeSources(this.claudeOptions()), codex: () => codexSources(this.codexOptions()), agy: () => agySources(this.agyOptions()) } }));
     return this.envChecker.check(fresh);
   }
 
@@ -1146,6 +1149,12 @@ export class Platform implements PlatformCalls {
   }
 
   /** Codex 安装 / 更新's sources (codex-install.ts): the account's server, npm (AMO_PLATFORM_NPM_REGISTRY in tests). */
+  /** Antigravity CLI 安装 / 更新's sources (agy-install.ts): the account's server, Google's updater (AMO_PLATFORM_AGY_BASE in tests). */
+  private agyOptions() {
+    const base = this.options.env.AMO_PLATFORM_AGY_BASE;
+    return { env: this.options.env, account: this.serverAccount(), ...(this.options.fetch ? { fetch: this.options.fetch } : {}), ...(base ? { base } : {}) };
+  }
+
   private codexOptions() {
     const registry = this.options.env.AMO_PLATFORM_NPM_REGISTRY;
     return { env: this.options.env, account: this.serverAccount(), ...(this.options.fetch ? { fetch: this.options.fetch } : {}), ...(registry ? { registry } : {}) };
@@ -1157,8 +1166,8 @@ export class Platform implements PlatformCalls {
   private envSpeed: { at: number; done: number }[] = [];
 
   /** Where a download waits between tries: the platform's own folder, as the tools' downloads (2026-10-28). */
-  envDownloadsDir(id: "claude" | "codex"): string {
-    return join(this.place.root, "downloads", id === "claude" ? "claude-code" : "codex");
+  envDownloadsDir(id: "claude" | "codex" | "agy"): string {
+    return join(this.place.root, "downloads", id === "claude" ? "claude-code" : id === "agy" ? "antigravity-cli" : "codex");
   }
 
   /**
@@ -1196,13 +1205,16 @@ export class Platform implements PlatformCalls {
       }
     };
     try {
-      const common = { downloadsDir: this.envDownloadsDir(it.id as "claude" | "codex"), runEnv: startEnv(this.options.env), onProgress };
+      const common = { downloadsDir: this.envDownloadsDir(it.id as "claude" | "codex" | "agy"), runEnv: startEnv(this.options.env), onProgress };
+      let setup: string | null = null;
       if (it.id === "claude") await installClaude(version, from, { ...this.claudeOptions(), ...common, runningPaths: () => (this.options.runningPaths ?? runningExePaths)(), ...(this.options.claudeRun ? { run: this.options.claudeRun } : {}) });
+      else if (it.id === "agy") setup = (await installAgy(version, from, { ...this.agyOptions(), ...common, runningPaths: () => (this.options.runningPaths ?? runningExePaths)(), ...(this.options.agyRun ? { run: this.options.agyRun } : {}) })).setup;
       else await installCodex(version, from, { ...this.codexOptions(), ...common, npm: npm!, ...(this.options.npmRun ? { run: this.options.npmRun } : {}) });
       const fresh = await this.environment(true);
       const now = fresh.items.find((i) => i.id === it.id);
       const how = `从${SOURCE_NAME[from]}下载`;
-      return { ok: true, message: now?.version ? `已${it.version ? "更新" : "安装"}，现在是 ${now.version}（${how}）` : `已装好 ${version}（${how}）。还显示没装的话，退出平台再打开（新装的程序要平台重新读 PATH）。`, view: fresh };
+      const done = now?.version ? `已${it.version ? "更新" : "安装"}，现在是 ${now.version}（${how}）` : `已装好 ${version}（${how}）。还显示没装的话，退出平台再打开（新装的程序要平台重新读 PATH）。`;
+      return { ok: true, message: setup ? `${done}。${setup}` : done, view: fresh };
     } catch (err) {
       const fresh = await this.environment(true).catch(() => view);
       return { ok: false, message: err instanceof InstallError ? err.message : `没装成功：${message(err)}`, view: fresh };
@@ -1236,7 +1248,7 @@ export class Platform implements PlatformCalls {
     const view = await this.environment();
     const it = view.items.find((i) => i.id === id);
     if (it?.install) return this.installHere(it, from === "server" ? "server" : "official", view);
-    const plan = it ? updatePlan(it.id, it.path, this.options.env) : null;
+    const plan = it ? (updatePlan(it.id, it.path, this.options.env) ?? (it.id === "agy" ? agyWingetPlan(it.path, this.options.env) : null)) : null;
     if (!it || !plan) return { ok: false, message: "这一项不能在这里更新。", view };
     if (plan.packageDir) {
       const dir = plan.packageDir.toLowerCase() + "\\";

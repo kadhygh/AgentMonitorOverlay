@@ -11,7 +11,7 @@ import { DownloadError, resumeDownload } from "@amo-studio/locate/download";
 // same .part goes on).
 
 type Env = Record<string, string | undefined>;
-export type MirrorTool = "claude-code" | "codex";
+export type MirrorTool = "claude-code" | "codex" | "antigravity-cli";
 export type InstallFrom = "server" | "official";
 export type MachinePlatform = "win32-x64" | "win32-arm64";
 
@@ -38,6 +38,8 @@ export interface MirrorFile {
   exeSize?: number;
   /** Codex: npm's dist.integrity of the .tgz. */
   integrity?: string;
+  /** Antigravity CLI: the exe's sha512 (hex), as Google's manifest gave it. */
+  sha512?: string;
 }
 
 /** GET /api/platform/mirror/<tool> (relay mirror.ts's MirrorPlatformView). */

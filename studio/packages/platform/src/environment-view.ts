@@ -1,7 +1,7 @@
 // What the 环境 page shows (platform:call → environment). Types only: the page (packages/ui/src/platform) imports them
 // too, so nothing here may need Node.
 
-export type EnvItemId = "claude" | "dsh" | "codex" | "git";
+export type EnvItemId = "claude" | "dsh" | "codex" | "agy" | "git";
 
 export interface EnvItemView {
   id: EnvItemId;

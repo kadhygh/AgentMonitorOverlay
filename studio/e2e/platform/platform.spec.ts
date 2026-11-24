@@ -45,7 +45,7 @@ test.afterEach(async () => {
 function cleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(CLAUDE|ANTHROPIC_|AMO_)/.test(k)) env[k] = v;
-  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_NOTES_HOME: join(root, "notes"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9", AMO_PLATFORM_CLAUDE_BASE: "http://127.0.0.1:9" };
+  return { ...env, AMO_PLATFORM_TEST: "1", AMO_HOME: join(root, "roaming"), AMO_LOCAL_HOME: join(root, "local"), AMO_NOTES_HOME: join(root, "notes"), AMO_FAKE_TOOL_MARK: join(root, "launched"), AMO_PLATFORM_NPM_REGISTRY: "http://127.0.0.1:9", AMO_PLATFORM_CLAUDE_BASE: "http://127.0.0.1:9", AMO_PLATFORM_AGY_BASE: "http://127.0.0.1:9" };
 }
 
 /**
@@ -703,6 +703,13 @@ test("环境: what the tools run on, found where Studio looks; 去下载 opens t
   await expect(envStatus("codex")).toHaveText("○ 没装");
   await expect(envStatus("git")).toHaveText("○ 没装");
   await expect(item("git")).toContainText("用在：Review、项目");
+  // The Antigravity CLI (2026-11-24): installed here, from the team server or Google (neither reached in this test).
+  await expect(envStatus("agy")).toHaveText("○ 没装");
+  await expect(item("agy")).toContainText("用在：Studio 里的 Gemini");
+  await expect(page.getByTestId("env-agy-from-official")).toContainText("从 Google 下载 · 约 240 MB");
+  await item("agy").scrollIntoViewIfNeeded();
+  await screenshot(app, "platform", "P50-environment-agy", page);
+  await page.getByRole("heading", { name: "环境" }).scrollIntoViewIfNeeded();
   await screenshot(app, "platform", "P17-environment", page);
 
   // 去下载: the official pages, recorded instead of opened in tests; 复制: the install command.

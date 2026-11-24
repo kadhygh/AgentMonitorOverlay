@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { claudeCodeCandidates, codexOnPath, dshDesktopDir, gitOnPath } from "@amo-studio/locate";
 import { removeTempDir } from "@amo-studio/testkit";
-import { checkClaude, checkCodex, checkDsh, checkEnvironment, checkGit, CLAUDE_INSTALL_COMMAND, DOWNLOADS, downloadUrl, EnvironmentChecker, latestVersion, runProgram, studioSdkClaudeCodeVersion, updatePlan, type RunResult, type Runner } from "./environment.js";
+import { agyWingetPlan, checkAgy, checkClaude, checkCodex, checkDsh, checkEnvironment, checkGit, CLAUDE_INSTALL_COMMAND, DOWNLOADS, downloadUrl, EnvironmentChecker, latestVersion, runProgram, studioSdkClaudeCodeVersion, updatePlan, type RunResult, type Runner } from "./environment.js";
 import { Platform } from "./platform.js";
 import type { ToolSources } from "./tool-mirror.js";
 
@@ -161,7 +161,7 @@ describe("the checks", () => {
     expect(bad.note).toContain("git --version");
   });
 
-  it("all four at once, in the page's order, with what each is for", async () => {
+  it("all of them at once, in the page's order, with what each is for", async () => {
     const { env } = machine();
     const v = await checkEnvironment({ env, run: runner({}).run }, () => new Date("2026-10-28T08:00:00Z"));
     expect(v.checkedAt).toBe("2026-10-28T08:00:00.000Z");
@@ -169,8 +169,33 @@ describe("the checks", () => {
       ["claude", "missing", "Studio 里的 Claude 订阅、GLM 等 Claude 渠道"],
       ["dsh", "missing", "Studio 里的 DeepSeek（DSH）"],
       ["codex", "missing", "Studio 里的 Codex / GPT 订阅"],
+      ["agy", "missing", "Studio 里的 Gemini（测试功能「Gemini（Antigravity）」）"],
       ["git", "missing", "Review、项目"],
     ]);
+  });
+
+  it("Antigravity CLI (2026-11-24): found where Studio looks; too old, not answering; 安装 / 更新 here for Google's place, winget's updated by winget", async () => {
+    const { dirs, env, file } = machine();
+    expect(await checkAgy({ env, run: runner({}).run })).toMatchObject({ id: "agy", state: "missing", download: "https://antigravity.google/" });
+    const placed = file(join(dirs.local, "agy", "bin", "agy.exe"));
+    const r = runner({ [placed]: { ok: true, out: "1.5.16\n" } });
+    expect(await checkAgy({ env, run: r.run })).toMatchObject({ state: "ok", path: placed, version: "1.5.16" });
+    // Its own updater stays off while it is asked.
+    expect(r.calls[0]!.env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe("1");
+    expect(await checkAgy({ env, run: runner({ [placed]: { ok: true, out: "1.4.9" } }).run })).toMatchObject({ state: "attention", note: expect.stringMatching(/1\.5\.0 以上/) });
+    expect(await checkAgy({ env, run: runner({}).run })).toMatchObject({ state: "attention", path: placed, version: null });
+    // In Google's place (and not there at all): the two sources; 最新 the newer of them.
+    const sources = async (): Promise<ToolSources> => ({ platform: "win32-x64", server: { version: "1.5.16", size: 9 }, official: { version: "1.5.17" }, preparing: null });
+    const here = await checkEnvironment({ env, run: runner({ [placed]: { ok: true, out: "1.5.16" } }).run, sources: { agy: sources } });
+    expect(here.items.find((i) => i.id === "agy")).toMatchObject({ version: "1.5.16", latest: "1.5.17", install: { server: { version: "1.5.16" }, official: { version: "1.5.17" }, blocked: null }, updater: expect.stringMatching(/agy install/) });
+    // winget's: no sources to install from, winget updates it; 最新 still from Google.
+    removeTempDir(join(dirs.local, "agy"));
+    const winget = file(join(dirs.local, "Microsoft", "WinGet", "Packages", "Google.AntigravityCLI_Microsoft.Winget.Source_8wekyb3d8bbwe", "agy.exe"));
+    const wingetExe = file(join(dirs.bin, "winget.exe"));
+    const viaWinget = await checkEnvironment({ env, run: runner({ [winget]: { ok: true, out: "1.5.16" } }).run, sources: { agy: sources } });
+    expect(viaWinget.items.find((i) => i.id === "agy")).toMatchObject({ path: winget, latest: "1.5.17", install: null, updater: "winget upgrade --id Google.AntigravityCLI" });
+    expect(agyWingetPlan(winget, env)).toMatchObject({ file: wingetExe, args: expect.arrayContaining(["upgrade", "--id", "Google.AntigravityCLI", "--silent"]) });
+    expect(agyWingetPlan(placed, env)).toBeNull();
   });
 
   it("已安装 / 最新 (2026-10-29): npm's newest for Claude Code and Codex, asked only for what is installed, and how 更新 would run", async () => {

@@ -4,6 +4,10 @@
 
 ## 下一版
 
+- 「环境」页多了一项 Antigravity CLI（agy），AMO Studio 的 Gemini 渠道用它（Studio 里还是测试功能）。和 Claude Code、Codex 一样，可以在这里安装、更新，从团队服务器下（局域网，更快）或者从 Google 下，你来选。下载约 240 MB，断了会接着下；下好后按 Google 清单的 sha512 校验，放到 `%LOCALAPPDATA%\agy\bin`，再运行 `agy install` 配 PATH。
+  - 用 winget 装的 agy 照旧用 winget 更新：这一项的「更新」运行 `winget upgrade`。
+  - 正在用的 agy（Studio 里开着的 Gemini 会话）也能更新：旧的先挪开，会话照常跑完，新开的会话用新版本。
+
 ## 0.9.26（2026-11-10）
 
 - 平台崩溃时会留下转储文件（.dmp），方便查原因：更新通道是测试通道时开着，正式通道不开。文件在 `%LOCALAPPDATA%\AMO\platform-profile\Crashpad` 里，只存在这台电脑上，不上传，只留最近 5 个；平时不影响速度。平台装的其他工具也按这个通道决定。
