@@ -309,11 +309,24 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await first.getByRole("button", { name: "关闭…" }).click();
   const closing = A.getByRole("dialog", { name: /^关闭事项 1/ });
   await closing.getByRole("textbox", { name: "结论" }).fill("回落 1.2 秒线性，回落期间不能开火");
+  await expect(closing.getByRole("checkbox", { name: /结论是口径/ })).toBeChecked();
+  await shot(li.app, "C09-close-dialog");
   await closing.getByRole("button", { name: "关闭", exact: true }).click();
   await expect(A.locator(".cw-decisions")).toContainText("回落 1.2 秒线性");
   await expect(first.locator(".cw-sub-meta .cw-state")).toHaveText("✓ 关闭");
   await expect(first.locator(".cw-conclusion")).toContainText("回落 1.2 秒线性");
   await expect(B.locator(".cw-decisions")).toContainText("回落 1.2 秒线性");
+  // 老李 closed 小王's 事项 (the close box started ticked: it was a 请人确认, so the conclusion is a 口径). 小王's side is told
+  // (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」): 「事项 1 关了」 in his 要你看 until he has seen it.
+  const lookB = B.locator(".cowork-view .page-head .cw-look-btn");
+  await lookB.click();
+  const closedRow = B.locator(".cw-look-drop .cw-lookrow.notice", { hasText: "关了" });
+  await expect(closedRow.locator(".cw-look")).toHaveText("事项 1 · 关了");
+  await expect(closedRow).toContainText("回落 1.2 秒线性");
+  await shot(wang.app, "C09-matter-closed-told");
+  await closedRow.getByRole("button", { name: "看过了" }).click();
+  await expect(closedRow).toHaveCount(0);
+  await lookB.click();
   expect(ask.thread?.id).toBeTruthy();
   await shot(li.app, "C09-matter-closed");
   await theme(A, "dark");

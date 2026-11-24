@@ -475,7 +475,9 @@ function CloseDialog({ matter: m, onClose, onDone }: { matter: Matter; onClose: 
   const [text, setText] = useState(m.conclusion ?? "");
   // 已定的事只放口径 (2026-11-25): a 「等人确认」's conclusion always goes in; another only when it is a 口径.
   const gate = m.kind === "confirm";
-  const [decided, setDecided] = useState(false);
+  // Ticked to begin with when the 事项 asked someone to confirm (a person's 「请人确认」 is a work 事项 waiting on them):
+  // what they answered is usually the 口径, and the old cowork_conclude counted it so too; untick a finished piece of work.
+  const [decided, setDecided] = useState(() => m.history.some((h) => h.to === "confirm"));
   return (
     <Dialog
       title={`关闭${matterLabel(m)}`}

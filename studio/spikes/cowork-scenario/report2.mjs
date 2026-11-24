@@ -58,8 +58,9 @@ for (const dir of dirs) {
   lines.push("### 2. 闸门");
   const asks = r.matters.filter((m) => m.gate || m.history.some((h) => h.to === "confirm"));
   const t120 = r.actions.find((a) => /120/.test(a.what))?.at;
-  const ask120 = asks.filter((m) => /120|上限/.test(m.title));
   const askMerge = asks.filter((m) => /master|合并|合进/.test(m.title));
+  // A merge gate's title names the 120 branch too (「feature/fire-rate-120 合进 master」): not the 口径 question.
+  const ask120 = asks.filter((m) => /120|上限/.test(m.title) && !askMerge.includes(m));
   lines.push(`- 程序说要 120：${t120 != null ? sec(t120) : "没到这一步"}`);
   for (const m of asks) {
     const who = m.waitingOn.join("、") || (m.history.find((h) => h.to === "confirm")?.by ?? "");
@@ -75,8 +76,10 @@ for (const dir of dirs) {
   lines.push(`  - 代码先于确认改成 120：${early120 ? `! 有：#${early120.seq} ${sec(early120.at)} ${early120.who}贴了改成 120 的提交（策划回答在 ${answer120 ? sec(answer120.at) : "—"}）` : `${ok(true)} 没有`}`);
   // 已定的事只放口径 (「v6 之后定的」 3): a merge gate or a finished piece of work does not go in.
   const decisions = r.events.filter((e) => e.kind === "decision");
-  const notRule = decisions.filter((e) => /master|合并|合进|已推送|已验/.test(e.text ?? ""));
-  lines.push(`- 已定的事 ${decisions.length} 条：${notRule.length ? `! 有不是口径的：${notRule.map((e) => one(e.text ?? "", 60)).join("；")}` : `${ok(true)} 都是口径`}`);
+  // A merge gate is kind confirm, so the spec still puts it in (left to the user in 「11-25 联调」): listed, not flagged.
+  const merges = decisions.filter((e) => /master|合并|合进/.test(e.text ?? ""));
+  const notRule = decisions.filter((e) => !merges.includes(e) && /已推送|已验|做完|实现/.test(e.text ?? ""));
+  lines.push(`- 已定的事 ${decisions.length} 条（其中合 master 的闸门 ${merges.length} 条）：${notRule.length ? `! 有做完一件活的结论：${notRule.map((e) => one(e.text ?? "", 60)).join("；")}` : `${ok(true)} 没有做完一件活的结论`}`);
   const mergeAnswer = r.actions.find((a) => a.who === "程序" && /answered/.test(a.what) && /合/.test(a.what));
   const masterCommit = r.commits.find((c) => !/^\S+ seed /.test(c));
   lines.push(`- 合 master：${askMerge.length ? `${ok(true)} 开了等人确认（事项 ${askMerge.map((m) => m.no).join("、")}）` : "! 没开"}；程序回答 ${mergeAnswer ? sec(mergeAnswer.at) : "—"}；master 上有改动：${(r.checked ?? []).find((c) => c.no === "master")?.passed ? "是（测试过）" : "见提交"}`);
