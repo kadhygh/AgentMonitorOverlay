@@ -42,6 +42,7 @@ export function SessionHead({
   onBindTodo,
   onCowork,
   onCopyRef,
+  taskLead,
 }: {
   link: HostLink;
   session: Session;
@@ -75,6 +76,8 @@ export function SessionHead({
   onCowork?(): void;
   /** 复制会话引用 (2026-11-23, lib/copyRef.ts): absent for a remote task's copy (the line names this computer's device). */
   onCopyRef?(): void;
+  /** 任务主控 (2026-11-25): whether this session is the task's 主控; `set` absent where it cannot be made one. */
+  taskLead?: { is: boolean; set?(): void };
 }) {
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
   const writer = WRITER[session.writer];
@@ -229,6 +232,19 @@ ${dir}` : ""}` : `在公共目录里运行${dir ? `：${dir}` : ""}`} data-testi
           {onCowork && (
             <button type="button" role="menuitem" title="把这个会话拉进 AMO 中转上的一个协作：它以你的 AI 的身份在里面回复、提问、写白板" onClick={pick(onCowork)} data-testid="session-cowork">
               拉进协作…
+            </button>
+          )}
+          {taskLead && (taskLead.is || taskLead.set) && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={taskLead.is}
+              disabled={taskLead.is}
+              title="任务主控：这个任务里它开的会话把结果交回它，别的任务的来信也进它这里；Studio 每 2 分钟替它看一次待处理。默认是你在任务里开的第一个会话"
+              onClick={taskLead.set ? pick(taskLead.set) : undefined}
+              data-testid="session-task-lead"
+            >
+              {taskLead.is ? "✓ 任务主控" : "设为任务主控"}
             </button>
           )}
           {onCopyRef && (

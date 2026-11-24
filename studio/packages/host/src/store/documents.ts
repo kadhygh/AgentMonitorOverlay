@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ViewPack, Annotation, CanvasCallout, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { ViewPack, Annotation, CanvasCallout, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, Matter, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -303,7 +303,9 @@ export abstract class DocumentStore {
 
   putMail(m: MailMessage): void {
     this.db
-      .prepare("INSERT INTO mail (id, to_session, to_task, to_topic, state, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .prepare(
+        "INSERT INTO mail (id, to_session, to_task, to_topic, state, body, created_at, seq, matter, from_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET to_session = excluded.to_session, to_task = excluded.to_task, to_topic = excluded.to_topic, state = excluded.state, body = excluded.body, seq = excluded.seq, matter = excluded.matter",
+      )
       .run(
         m.id,
         m.to.kind === "session" ? m.to.sessionId : null,
@@ -312,7 +314,72 @@ export abstract class DocumentStore {
         m.state,
         JSON.stringify(m),
         m.createdAt,
+        m.seq ?? null,
+        m.matter ?? null,
+        m.fromSessionId,
       );
+  }
+
+  // 本机的事项 (2026-11-25, protocol/src/localmail.ts)
+
+  /** The next 「#seq」 of a local message (one numbering for the Host). */
+  nextMailSeq(): number {
+    const r = this.db.prepare("SELECT MAX(seq) AS n FROM mail").get() as Row | undefined;
+    return Number(r?.n ?? 0) + 1;
+  }
+
+  getMailBySeq(seq: number): MailMessage | undefined {
+    const r = this.db.prepare("SELECT body FROM mail WHERE seq = ?").get(seq) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  /** A 事项's messages, oldest first. */
+  listMailInMatter(matterId: Id): MailMessage[] {
+    return (this.db.prepare("SELECT body FROM mail WHERE matter = ? ORDER BY seq, created_at").all(matterId) as Row[]).map((r) => JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  /** What a session sent (its 留言, session_send, 传话…), oldest first; `since`: created at or after. */
+  listMailFrom(sessionId: Id, since?: string): MailMessage[] {
+    const rows = since
+      ? this.db.prepare("SELECT body FROM mail WHERE from_session = ? AND created_at >= ? ORDER BY created_at, id").all(sessionId, since)
+      : this.db.prepare("SELECT body FROM mail WHERE from_session = ? ORDER BY created_at, id").all(sessionId);
+    return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  /** Mail without a 「#seq」 (from before 2026-11-25), oldest first. */
+  listMailWithoutSeq(): MailMessage[] {
+    return (this.db.prepare("SELECT body FROM mail WHERE seq IS NULL ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  putMatter(m: Matter): void {
+    this.db
+      .prepare("INSERT INTO matters (id, scope_id, no, status, updated_at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at, body = excluded.body")
+      .run(m.id, m.scopeId, m.no, m.status, m.updatedAt, JSON.stringify(m));
+  }
+
+  getMatter(id: Id): Matter | undefined {
+    const r = this.db.prepare("SELECT body FROM matters WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as Matter);
+  }
+
+  getMatterByNo(scopeId: Id, no: number): Matter | undefined {
+    const r = this.db.prepare("SELECT body FROM matters WHERE scope_id = ? AND no = ?").get(scopeId, no) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as Matter);
+  }
+
+  nextMatterNo(scopeId: Id): number {
+    const r = this.db.prepare("SELECT MAX(no) AS n FROM matters WHERE scope_id = ?").get(scopeId) as Row | undefined;
+    return Number(r?.n ?? 0) + 1;
+  }
+
+  /** 事项, newest change first: of one scope (a task, or a topic's own sessions), or all; `open`: not closed. */
+  listMatters(filter: { scopeId?: Id; open?: boolean } = {}): Matter[] {
+    const where: string[] = [];
+    const args: string[] = [];
+    if (filter.scopeId) (where.push("scope_id = ?"), args.push(filter.scopeId));
+    if (filter.open) where.push("status <> 'closed'");
+    const sql = `SELECT body FROM matters${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY updated_at DESC, id`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => JSON.parse(str(r.body)) as Matter);
   }
 
   getMail(id: Id): MailMessage | undefined {

@@ -36,3 +36,4 @@ export * from "./reviewprogress.js";
 export * from "./refs.js";
 export * from "./matters.js";
 export * from "./pending.js";
+export * from "./localmail.js";

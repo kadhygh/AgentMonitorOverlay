@@ -1,4 +1,4 @@
-import type { Id, Session, Task, Topic } from "@amo-studio/protocol";
+import { taskLeadIn, type Id, type Session, type Task, type Topic } from "@amo-studio/protocol";
 import type { Store } from "../store/store.js";
 import { coworkCards } from "./cowork.js";
 
@@ -22,6 +22,24 @@ export interface RoleFacts {
   topic: Topic | null;
   /** Other topics whose canvases show the task as a reference card. */
   refTopics: Topic[];
+  /** 任务主控 (2026-11-25): this session is its task's 主控 (taskLeadOf). */
+  taskLead: boolean;
+}
+
+/**
+ * 任务主控 (2026-11-25, plans/collab-agent-spec.md §1, plans/collab-framework.md「主控是一个角色，三级范围」): the session
+ * the person picked (Task.leadSessionId), else the first main session the person opened in the task — one no other
+ * session started (`startedBy`), not archived. Its 执行会话 (session_start) report to it; the patrol (features/pending)
+ * wakes it for what waits on it. null: the task has no such session.
+ */
+export function taskLeadOf(store: Store, taskId: Id): Id | null {
+  return taskLeadIn(store.getTask(taskId), store.listSessions({ taskId }));
+}
+
+/** The 任务主控's card (plans/collab-agent-spec.md §1「任务主控」, its wording). */
+export function taskLeadCard(task: Pick<Task, "title">): string {
+  const name = task.title.split("\n").map((l) => l.trim()).find(Boolean) ?? "未命名任务";
+  return `你是任务「${name}」的**主控**。你开的会话是执行会话：它们每一轮的结果自动回到你这里（作为那件委派事项的消息）；要补充或改口，用 \`session_send\`（还没送到时可以撤回、改写）。别的任务、别的会话给你的消息会自动进来，回话用 \`replyTo\` 回到原来那条线。`;
 }
 
 /** What the session is: 主控 (its task is marked so, or it is a topic's own session), 执行, or a branch of one. */
@@ -37,7 +55,10 @@ export function subjectFacts(host: RoleHost, session: RoleSubject): RoleFacts {
   const topicId = session.topicId ?? task?.topicId ?? null;
   const topic = topicId ? (host.store.getTopic(topicId) ?? null) : null;
   const role: AmoRole = !task ? "topic" : session.kind === "fork" ? "fork" : task.lead ? "lead" : "worker";
-  return { sessionId: session.id ?? null, role, session, task, topic, refTopics: task ? refTopics(host, task) : [] };
+  // A session about to start is the 任务主控 when the task has none yet (its first one; one session_start opens has a lead).
+  const lead = task && session.kind === "main" ? taskLeadOf(host.store, task.id) : null;
+  const taskLead = !!task && session.kind === "main" && (session.id ? lead === session.id : lead === null);
+  return { sessionId: session.id ?? null, role, session, task, topic, refTopics: task ? refTopics(host, task) : [], taskLead };
 }
 
 /** The topics, other than its own, whose canvases show the task as a reference card. */
@@ -77,6 +98,8 @@ interface RoleStamp {
    * Absent in stamps from before: counted as in none, so a session already in one hears its card once.
    */
   cowork?: Array<{ id: string; title: string; role: string }>;
+  /** 任务主控 (2026-11-25). Absent in stamps from before: counted as not, so the task's 主控 hears its card once. */
+  taskLead?: boolean;
 }
 
 const stampKey = (sessionId: Id) => `role-stamp:${sessionId}`;
@@ -88,6 +111,7 @@ function stampOf(host: RoleHost, f: RoleFacts): RoleStamp {
     refs: f.refTopics.map((t) => ({ id: t.id, title: t.title })),
     description: f.task?.description ?? "",
     cowork: f.sessionId ? coworkCards(host.store, f.sessionId).map((c) => ({ id: c.coworkId, title: c.title, role: c.role })) : [],
+    taskLead: f.taskLead,
   };
 }
 
@@ -156,6 +180,15 @@ function changes(host: RoleHost, sessionId: Id, before: RoleStamp, now: RoleStam
     lines.push(`任务被引用到了专题「${t.title}」（${t.id}）的画布上：那个专题的主控可能会给你传话，它的专题文档用 topic_docs（topic 填这个专题）读。`);
   }
   for (const t of before.refs.filter((b) => !now.refs.some((r) => r.id === b.id) && b.id !== now.topic?.id)) lines.push(`任务不再在专题「${t.title}」的画布上。`);
+  if (now.taskLead && !before.taskLead) {
+    const task = host.store.getSession(sessionId)?.taskId ? host.store.getTask(host.store.getSession(sessionId)!.taskId!) : undefined;
+    if (task) lines.push(`你现在是这个任务的主控。${taskLeadCard(task)}`);
+  } else if (!now.taskLead && before.taskLead) {
+    const s = host.store.getSession(sessionId);
+    const lead = s?.taskId ? taskLeadOf(host.store, s.taskId) : null;
+    const name = lead ? (host.store.getSession(lead)?.title || "会话").split("\n")[0] : null;
+    lines.push(`你不再是这个任务的主控${name ? `（现在是会话「${name}」，${lead}）` : ""}：执行会话的结果、别的任务的来信交给它。`);
+  }
   if (before.description !== now.description) lines.push(now.description ? `任务说明改成了：${oneLine(now.description, 600)}` : "任务说明删掉了。");
   lines.push(...coworkChanges(host, sessionId, before.cowork ?? [], now.cowork ?? []));
   return lines;

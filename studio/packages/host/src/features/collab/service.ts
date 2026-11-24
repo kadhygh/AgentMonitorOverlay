@@ -1,10 +1,33 @@
-import { inTurn, type Id, type MessageOrigin, type TaskNote, type MailMessage, type MailRecipient, type DecisionRequest, type ChecklistItem, type Session } from "@amo-studio/protocol";
+import { inTurn, LOCAL_PERSON, sessionParty, type Id, type LocalMessageVia, type MessageOrigin, type TaskNote, type MailMessage, type MailRecipient, type DecisionRequest, type ChecklistItem, type Session } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
+import { LocalMatters } from "./matters.js";
+import { LocalPendingSource } from "./pending-source.js";
 import { HostError, boundedText, MAX_NOTE_CHARS, MAX_QUESTION_CHARS, MAX_OPTION_CHARS } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Collaboration (stage 5): notes and handoffs, mail, decision requests, checklists. */
-export class CollabFeature extends Feature<"sessions"> {
+export class CollabFeature extends Feature<"pending" | "sessions"> {
+  /** 本机的事项和消息 (2026-11-25): every message here is one of a 事项's (matters.ts). */
+  readonly matters = new LocalMatters(this.host);
+
+  /**
+   * 待我处理's local source (2026-11-25, source "local" of features/pending): registered once the 事项 are read, and told
+   * whenever a message, a 事项 or a session's turn moves.
+   */
+  watchPending(): void {
+    const source = new LocalPendingSource(this.matters, this.f.pending, {
+      inbox: this.f.sessions.inbox,
+      // 处理了 on a message waiting to be let in is 不送 (a 传话 is the person's to decide on its own card).
+      dropAsk: (mail) => {
+        if (!mail.relayId) this.updateMail(mail.id, { state: "dismissed" });
+      },
+    });
+    this.f.pending.register(source);
+    this.host.on("event", (e) => {
+      if (e.type === "mail.upserted" || e.type === "matter.upserted" || (e.type === "session.upserted" && (!inTurn(e.session.status) || e.session.archivedAt))) source.poke();
+    });
+  }
+
   taskNotes(taskId: Id): TaskNote[] {
     this.requireTask(taskId);
     return this.store.listTaskNotes(taskId);
@@ -34,31 +57,73 @@ export class CollabFeature extends Feature<"sessions"> {
       .filter((m) => (m.to.kind === "session" ? sessions.has(m.to.sessionId) : m.to.kind === "task" ? m.to.taskId === forTaskId : m.to.topicId === forTopicId));
   }
 
-  /** Leaves a message for a session or a task. `fromSessionId` null: from the person. */
-  sendMail(fromSessionId: Id | null, to: unknown, textIn: unknown): MailMessage {
+  /**
+   * Leaves a message for a session or a task, kept for the recipient's mailbox_read or the person's 送进会话 (Studio's
+   * own notes, the answer to a decision, the person's POST /api/mail). `fromSessionId` null: from the person. Since
+   * 2026-11-25 it is a message of a new 事项 (or of `matter`) with a 「#seq」 and a receipt.
+   */
+  sendMail(fromSessionId: Id | null, to: unknown, textIn: unknown, opts: { via?: LocalMessageVia; matter?: Id } = {}): MailMessage {
     const text = boundedText(textIn, "text", MAX_NOTE_CHARS);
     const recipient = this.validRecipient(to);
     const from = fromSessionId ? this.requireSession(fromSessionId) : null;
     if (from && recipient.kind === "session" && recipient.sessionId === from.id) throw new HostError("bad_request", "a session cannot leave mail for itself");
-    const mail: MailMessage = {
-      id: newId("mail"),
-      fromSessionId: from?.id ?? null,
-      fromTaskId: from?.taskId ?? null,
-      fromTopicId: from?.topicId ?? null,
-      to: recipient,
-      text,
-      state: "unread",
-      createdAt: new Date().toISOString(),
-      handledAt: null,
-    };
-    this.store.putMail(mail);
-    this.publish({ type: "mail.upserted", mail });
-    return mail;
+    const matter = opts.matter ? (this.matters.get(opts.matter) ?? null) : null;
+    return this.matters.record({ from, to: recipient, text, via: opts.via ?? (from ? "mail" : "note"), matter, mode: "none" }).mail;
   }
 
-  updateMail(id: Id, state: unknown): MailMessage {
+  /**
+   * mailbox_send (2026-11-25): a message in a 事项 — `replyTo` answers a message (to its sender, in its 事项), `matter`
+   * writes in a 事项 (to its other side), otherwise a new 事项 to the session, task or topic named. It goes in by the
+   * distance rule (localmail.ts deliveryMode). `withdraw` / `edit`: 撤回 or 改写 one of the caller's still queued.
+   */
+  async sendFromSession(sessionId: Id, args: { toSessionId?: unknown; toTaskId?: unknown; toTopicId?: unknown; text?: unknown; replyTo?: unknown; matter?: unknown; withdraw?: unknown; edit?: unknown }): Promise<MailMessage> {
+    const from = this.requireSession(sessionId);
+    const given = (v: unknown) => v !== undefined && v !== null && v !== "";
+    if (given(args.withdraw)) return this.matters.withdraw(args.withdraw, from);
+    if (given(args.edit)) return this.matters.rewrite(args.edit, args.text, from);
+    const text = boundedText(args.text, "text", MAX_NOTE_CHARS);
+    const replied = given(args.replyTo) ? this.matters.bySeq(args.replyTo) : null;
+    let matter = given(args.matter) ? this.matters.resolve(args.matter, from) : null;
+    if (replied && !matter && replied.matter) matter = this.matters.get(replied.matter) ?? null;
+    let to: MailRecipient | null =
+      typeof args.toSessionId === "string" && args.toSessionId
+        ? { kind: "session", sessionId: args.toSessionId }
+        : typeof args.toTaskId === "string" && args.toTaskId
+          ? { kind: "task", taskId: args.toTaskId }
+          : typeof args.toTopicId === "string" && args.toTopicId
+            ? { kind: "topic", topicId: args.toTopicId }
+            : null;
+    if (!to && replied) {
+      if (!replied.fromSessionId) throw new HostError("bad_request", `#${replied.seq} 是人写的：要问人，用 decision_request`);
+      to = { kind: "session", sessionId: replied.fromSessionId === from.id ? (replied.to.kind === "session" ? replied.to.sessionId : "") : replied.fromSessionId };
+      if (to.kind === "session" && !to.sessionId) throw new HostError("bad_request", `#${replied.seq} 是你自己发的：用 toSessionId 说发给谁`);
+    }
+    if (!to && matter) {
+      // The other side of the 事项: its owner when the caller is not, else its one other bound session.
+      const owner = matter.owner.startsWith("agent:") ? matter.owner.slice(6) : null;
+      const others = matter.bindings.sessions.filter((id) => id !== from.id);
+      if (owner && owner !== from.id) to = { kind: "session", sessionId: owner };
+      else if (others.length === 1) to = { kind: "session", sessionId: others[0]! };
+      else throw new HostError("bad_request", `事项 ${matter.no} 里不止一方（或只有你）：用 toSessionId 说发给谁`);
+    }
+    if (!to) throw new HostError("bad_request", "给 toSessionId、toTaskId 或 toTopicId；回话用 replyTo（消息编号），在事项里说用 matter");
+    return this.matters.post({ from, to: this.validRecipient(to), text, via: "mail", matter, ...(replied?.seq ? { replyTo: replied.seq } : {}) });
+  }
+
+  /** The person: 已读 / 不送 (dismissed), 撤回 (`withdraw`) or 改写 (`text`) of a message still queued. */
+  updateMail(id: Id, body: { state?: unknown; withdraw?: unknown; text?: unknown }): MailMessage {
+    const mail = this.requireMail(id);
+    if (body.withdraw === true) return this.matters.withdraw(mail.seq, null);
+    if (typeof body.text === "string") return this.matters.rewrite(mail.seq, body.text, null);
+    const state = body.state;
     if (state !== "read" && state !== "dismissed") throw new HostError("bad_request", "state must be read or dismissed");
-    return this.setMailState(this.requireMail(id), state);
+    if (state === "dismissed" && mail.via === "relay" && mail.relayId) throw new HostError("bad_request", "这是一条传话：用传话的「不送」");
+    const next = this.setMailState(mail, state);
+    if (state !== "dismissed") return next;
+    // 不送 (the person drops what waited for them): done with, as a 事项's message.
+    const done = this.saveMail({ ...this.matters.setReceipts(next, "handled", undefined, true), ask: false });
+    if (mail.matter) this.matters.update(mail.matter, {}, LOCAL_PERSON);
+    return done;
   }
 
   /**
@@ -66,23 +131,45 @@ export class CollabFeature extends Feature<"sessions"> {
    * through the session's inbox (2026-11-04): an agent's words, so once the session's turn is over (立即发送 on the row
    * sends it at once).
    */
+  /**
+   * The person puts a message into a conversation (送进会话); it goes in marked as coming from where it came from —
+   * through the session's inbox (2026-11-04): an agent's words, so once the session's turn is over (立即发送 on the row
+   * sends it at once). A message of a 事项 (2026-11-25) says its 「#seq」 and how to answer; one from before reads as it
+   * always did. Mail to a task without a session named goes into the task's latest main session.
+   */
   async forwardMail(id: Id, input: { sessionId?: unknown } = {}): Promise<MailMessage> {
     const mail = this.requireMail(id);
     if (mail.state === "forwarded") throw new HostError("conflict", "this message was already forwarded");
-    const target = mail.to.kind === "session" ? mail.to.sessionId : typeof input.sessionId === "string" ? input.sessionId : null;
+    if (mail.withdrawnAt !== undefined) throw new HostError("conflict", "这条已经被发的一方撤回了");
+    if (mail.via === "relay" && mail.relayId) throw new HostError("bad_request", "这是一条传话：用传话的「送进去」");
+    const named = typeof input.sessionId === "string" && input.sessionId ? input.sessionId : null;
+    const target = mail.to.kind === "session" ? mail.to.sessionId : (named ?? this.matters.targetSession(mail.to)?.id ?? null);
     if (!target) throw new HostError("bad_request", "name the session to forward this message to");
     const session = this.requireSession(target);
     if (mail.to.kind === "task" && session.taskId !== mail.to.taskId) throw new HostError("bad_request", "that session is not part of the task the message was left for");
     if (mail.to.kind === "topic" && session.topicId !== mail.to.topicId) throw new HostError("bad_request", "that session is not one of the topic's own sessions");
-    await this.f.sessions.inbox.put(target, this.mailAsMessage(mail), this.mailOrigin(mail));
-    return this.setMailState(mail, "forwarded");
+    if (mail.matter) return this.matters.putIn(mail, target);
+    const r = await this.f.sessions.inbox.put(target, this.mailAsMessage(mail), this.mailOrigin(mail));
+    const next = this.setMailState(mail, "forwarded");
+    return r.delivered ? this.matters.setReceipts(next, "delivered") : next;
   }
 
-  /** Mail an agent reads for itself (`mailbox_read`): its own and its owner's unread messages, then marked read. */
+  /**
+   * Mail an agent reads for itself (`mailbox_read`): its own and its owner's unread messages, then marked read (看过).
+   * Messages it is done with are marked first (matters.markHandledBy, mailbox_read's `handled`).
+   */
   readMailFromSession(sessionId: Id): MailMessage[] {
     const s = this.requireSession(sessionId);
-    const unread = this.store.listMail({ sessionId, ...(s.taskId ? { taskId: s.taskId } : { topicId: s.topicId! }), states: ["unread"] });
-    return unread.map((m) => this.setMailState(m, "read"));
+    const unread = this.store.listMail({ sessionId, ...(s.taskId ? { taskId: s.taskId } : { topicId: s.topicId! }), states: ["unread"] }).filter((m) => m.via !== "background" && m.withdrawnAt === undefined);
+    const party = sessionParty(sessionId);
+    const messages = unread.map((m) => {
+      const read = this.setMailState(m, "read");
+      // One left for the task or topic: it is this session's now.
+      const own = read.receipts?.map((r) => (r.party === party || r.party.startsWith("agent:task:") || r.party.startsWith("agent:topic:") ? { ...r, party } : r));
+      const next = own ? this.saveMail({ ...read, receipts: own, ask: false }) : read;
+      return this.matters.setReceipts(next, "seen", party);
+    });
+    return messages;
   }
 
   decisions(filter: { state?: DecisionRequest["state"] } = {}): DecisionRequest[] {
@@ -104,7 +191,7 @@ export class CollabFeature extends Feature<"sessions"> {
     if (!d) throw new HostError("not_found", `decision ${id} not found`);
     if (d.state !== "open") throw new HostError("conflict", "this decision was already answered");
     const answer = boundedText(answerIn, "answer", MAX_QUESTION_CHARS);
-    const mail = this.sendMail(null, { kind: "session", sessionId: d.sessionId }, `针对你的问题「${d.question}」，我的决定：${answer}`);
+    const mail = this.sendMail(null, { kind: "session", sessionId: d.sessionId }, `针对你的问题「${d.question}」，我的决定：${answer}`, { via: "answer" });
     const next: DecisionRequest = { ...d, state: "answered", answer, answeredAt: new Date().toISOString(), mailId: mail.id };
     this.store.putDecision(next);
     this.publish({ type: "decision.upserted", decision: next });
@@ -169,10 +256,13 @@ export class CollabFeature extends Feature<"sessions"> {
 
   private setMailState(mail: MailMessage, state: MailMessage["state"]): MailMessage {
     if (mail.state === state) return mail;
-    const next: MailMessage = { ...mail, state, handledAt: new Date().toISOString() };
-    this.store.putMail(next);
-    this.publish({ type: "mail.upserted", mail: next });
-    return next;
+    return this.saveMail({ ...mail, state, handledAt: new Date().toISOString() });
+  }
+
+  private saveMail(mail: MailMessage): MailMessage {
+    this.store.putMail(mail);
+    this.publish({ type: "mail.upserted", mail });
+    return mail;
   }
 
   private requireMail(id: Id): MailMessage {

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ModelProfile, Session, Task, Topic, Workspace } from "@amo-studio/protocol";
+import { emptyCanvas, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -61,27 +61,76 @@ describe("relays (传话)", () => {
     expect(service.relays.send(leadSession.id, { taskId: target.id, text: "先做数据" })).toMatchObject({ state: "pending", toTaskId: target.id });
   });
 
-  it("waits for the person: dismissed, or delivered into a new session (none yet), marked as from the 主控", async () => {
+  it("waits for the person when the task says 先问: dismissed, or delivered into a new session (none yet), marked as from the 主控", async () => {
+    service.tasks.updateTask(target.id, { relayAuto: false });
     const no = service.relays.send(leadSession.id, { taskId: target.id, text: "不用了" });
+    // In the person's 待我处理 (2026-11-25) while it waits.
+    expect(service.collab.matters.pendingView().asks.map((m) => m.relayId)).toEqual([no.id]);
     expect(service.relays.dismiss(no.id).state).toBe("dismissed");
     expect(lastMail()).toBe("人没有让你的传话送到「装甲车」。");
+    expect(service.collab.matters.pendingView().asks).toEqual([]);
     const yes = service.relays.send(leadSession.id, { taskId: target.id, text: "先迁数据表，界面等我通知" });
     const delivered = await service.relays.deliver(yes.id);
     expect(delivered).toMatchObject({ state: "delivered", sessionId: expect.any(String) });
     const text = userTexts(delivered.sessionId!)[0]!;
-    expect(text).toContain("【主控「迁移主控」传话】");
+    expect(text).toMatch(/^【传话 #\d+ · 事项 \d+「先迁数据表，界面等我通知」】来自任务「迁移主控」/);
     expect(text).toContain("先迁数据表，界面等我通知");
-    expect(text).toContain("mailbox_send");
-    expect(lastMail()).toBe("传话已送到「装甲车」。");
+    expect(text).toContain("mailbox_send 带 replyTo");
+    // Delivered: no 「传话已送到」 mail any more — its receipt says so.
+    expect(lastMail()).toBeUndefined();
+    expect(store.getMail(yes.mailId!)?.receipts?.[0]).toMatchObject({ party: `agent:${delivered.sessionId}`, state: expect.stringMatching(/^(delivered|seen|handled)$/) });
     await expect(service.relays.deliver(yes.id)).rejects.toThrow(/decided already/);
   });
 
-  it("goes at once to a task that takes relays without asking, into its session", async () => {
-    const first = await service.relays.deliver(service.relays.send(leadSession.id, { taskId: target.id, text: "开始" }).id);
-    service.tasks.updateTask(target.id, { relayAuto: true });
+  it("goes at once to a task of the same topic (2026-11-25: relayAuto turned round), into its session; one only on the canvas waits unless the task takes relays", async () => {
+    const opened = service.relays.send(leadSession.id, { taskId: target.id, text: "开始" });
+    await until(() => store.getRelay(opened.id)?.state === "delivered");
+    // The person cannot send it in a second time.
+    await expect(service.relays.deliver(opened.id)).rejects.toThrow(/decided already/);
+    const first = store.getRelay(opened.id)!;
     const sent = service.relays.send(leadSession.id, { taskId: target.id, text: "计划改了：先做界面" });
     await until(() => store.getRelay(sent.id)?.state === "delivered");
     expect(store.getRelay(sent.id)!.sessionId).toBe(first.sessionId);
-    expect(userTexts(first.sessionId!).at(-1)).toContain("计划改了：先做界面");
+    await until(() => userTexts(first.sessionId!).at(-1)?.includes("计划改了：先做界面") === true);
+    // A task of another topic, referenced on this topic's canvas: the person confirms, unless relayAuto is on.
+    const elsewhere = service.topics.createTopic({ title: "别的专题" });
+    const ref = store.createTask({ title: "引用来的", workspaceId: alpha.id, topicId: elsewhere.id });
+    store.putCanvas({ ...emptyCanvas(topic.id), nodes: [{ id: "n1", kind: "ref", taskId: ref.id, groupId: null, pos: { x: 0, y: 0 } }] });
+    expect(service.relays.goesAtOnce(leadSession.id, ref.id)).toBe(false);
+    service.tasks.updateTask(ref.id, { relayAuto: true });
+    expect(service.relays.goesAtOnce(leadSession.id, ref.id)).toBe(true);
+  });
+
+  it("a 委派's answer comes back to the 主控 by itself: replyTo from the task, and the reply of the turn that read it", { timeout: 15_000 }, async () => {
+    const relay = service.relays.send(leadSession.id, { taskId: target.id, text: "数一下装甲车有几张表" });
+    await until(() => store.getRelay(relay.id)?.state === "delivered");
+    const worker = store.getRelay(relay.id)!.sessionId!;
+    const mail = store.getMail(relay.mailId!)!;
+    // The turn that read it reports its reply into the 主控's conversation, in the same 事项.
+    await until(() => userTexts(leadSession.id).some((t) => t.includes("这一轮做完了")));
+    const report = userTexts(leadSession.id).find((t) => t.includes("这一轮做完了"))!;
+    expect(report).toMatch(/^【结果 #\d+ · 事项 1「数一下装甲车有几张表」】来自任务「装甲车」/);
+    expect(report).toContain("FAKE:");
+    const inMatter = store.listMailInMatter(mail.matter!);
+    expect(inMatter.map((m) => m.via)).toEqual(["relay", "report"]);
+    expect(inMatter[1]).toMatchObject({ fromSessionId: worker, replyTo: mail.seq });
+    // The task answers with replyTo: no address, it goes to the 主控 (same topic: at once), in the same 事项.
+    await until(() => store.getSession(worker)?.status === "idle");
+    const answer = await service.collab.sendFromSession(worker, { replyTo: `#${mail.seq}`, text: "一共 3 张" });
+    expect(answer).toMatchObject({ matter: mail.matter, replyTo: mail.seq, to: { kind: "session", sessionId: leadSession.id } });
+    await until(() => userTexts(leadSession.id).some((t) => t.includes("一共 3 张")));
+    // Answered: the 传话 is 处理了 for the task.
+    expect(store.getMail(mail.id)!.receipts![0]).toMatchObject({ party: `agent:${worker}`, state: "handled" });
+  });
+
+  it("通知 needs no answer: read, it is 处理了, and it does not report back", { timeout: 15_000 }, async () => {
+    const relay = service.relays.send(leadSession.id, { taskId: target.id, text: "下周一合主干", kind: "notice" });
+    await until(() => store.getRelay(relay.id)?.state === "delivered");
+    const mail = store.getMail(relay.mailId!)!;
+    await until(() => store.getMail(mail.id)!.receipts![0]!.state === "handled");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(userTexts(leadSession.id).some((t) => t.includes("这一轮做完了"))).toBe(false);
+    expect(store.getMatter(mail.matter!)?.status).toBe("closed");
+    expect(() => service.relays.send(leadSession.id, { taskId: target.id, text: "x", kind: "nope" })).toThrow(/kind must be/);
   });
 });

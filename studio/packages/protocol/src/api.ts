@@ -6,6 +6,7 @@ import type { ChatFileRoutes } from "./chatfiles.js";
 import type { CliRoutes } from "./cli.js";
 import type { DataRoutes } from "./datamgmt.js";
 import type { DutyRoutes } from "./duty.js";
+import type { LocalMailRoutes } from "./localmail.js";
 import type { FileRoutes } from "./files.js";
 import type { GitReviewRoutes } from "./gitreview.js";
 import type { MaintenanceRoutes } from "./maintenance.js";
@@ -730,6 +731,7 @@ export interface HostRoutes
     DutyRoutes,
     FileRoutes,
     GitReviewRoutes,
+    LocalMailRoutes,
     MaintenanceRoutes,
     MarkRoutes,
     McpRoutes,
@@ -855,7 +857,7 @@ export interface HostRoutes
    * `workspaceId` (null: the common space) only while the task has no sessions. `topicId` moves the task to another
    * topic or out of its topic (null); its place, group and dependencies on the old topic's canvas are removed.
    */
-  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; firstMessage?: string; lead?: boolean; relayAuto?: boolean; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
+  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; firstMessage?: string; lead?: boolean; relayAuto?: boolean | null; leadSessionId?: Id | null; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
   /** Archives the task and all its sessions; returns the task. */
   "POST /api/tasks/:id/archive": { req: void; res: Task };
   "POST /api/tasks/:id/unarchive": { req: void; res: Task };
@@ -997,7 +999,8 @@ export interface HostRoutes
    */
   "GET /api/mail": { req: void; res: MailMessage[] };
   "POST /api/mail": { req: { to: MailRecipient; text: string }; res: MailMessage };
-  "PATCH /api/mail/:id": { req: { state: "read" | "dismissed" }; res: MailMessage };
+  /** `state` as before; 撤回 (`withdraw`) and 改写 (`text`) of a message still queued, by the person (2026-11-25). */
+  "PATCH /api/mail/:id": { req: { state?: "read" | "dismissed"; withdraw?: boolean; text?: string }; res: MailMessage };
   /** Puts the message into a session's conversation as a user message; for mail to a task, name the session. */
   "POST /api/mail/:id/forward": { req: { sessionId?: Id }; res: MailMessage };
   /** Decision requests, `?state=open` for the pending ones. */
@@ -1141,6 +1144,8 @@ export type HostEvent = { seq: number } & (
   | { type: "todo.removed"; todoId: Id }
   | { type: "task.note.added"; note: TaskNote }
   | { type: "mail.upserted"; mail: MailMessage }
+  /** 本机的事项 (2026-11-25, localmail.ts): one was opened or changed. */
+  | { type: "matter.upserted"; matter: import("./matters.js").Matter }
   | { type: "decision.upserted"; decision: DecisionRequest }
   | { type: "checklist.upserted"; item: ChecklistItem }
   | { type: "proposal.upserted"; proposal: ScheduleProposal }

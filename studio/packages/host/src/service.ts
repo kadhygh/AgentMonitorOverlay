@@ -153,6 +153,9 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     router.on("log", (line) => this.log(line));
     this.config.watchClaudeAccounts();
     this.tasks.ensureStructure();
+    // 本机的事项 (2026-11-25): before the inbox starts sending what the last Host left, so their receipts follow.
+    this.collab.matters.watch();
+    this.collab.watchPending();
     this.sessions.watchReports();
     this.collab.watchAnswers();
     this.tasks.watchColumns();

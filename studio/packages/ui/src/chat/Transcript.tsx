@@ -438,6 +438,15 @@ function DeliveryLine({ itemId, delivery, withPerson }: { itemId: string; delive
   const { onDelivery, givingWay, waitsForSubagents, sendNowOff, idle } = useContext(DeliveryContext);
   const [asked, setAsked] = useState(false);
   useEffect(() => setAsked(false), [delivery]);
+  // 撤回 (2026-11-25, 本机的事项): the sender took it back while it was still queued; the model never read it.
+  if (delivery === "withdrawn")
+    return (
+      <div className="msg-delivery withdrawn" data-testid="msg-delivery" data-delivery="withdrawn">
+        <span className="msg-delivery-state" title="发它的会话在它送进去之前撤回了，模型没有读到这条">
+          × 已撤回（发的一方收回了，没送进会话）
+        </span>
+      </div>
+    );
   // `held` (2026-11-04): from an agent or from Studio (中转回复, 值守, 传话…), in the session's inbox until its turn is over;
   // 立即发送 puts it in now, as a waiting message's does.
   const held = delivery === "held";

@@ -32,7 +32,9 @@ export function toTask(r: Row): Task {
     ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
     ...(typeof r.first_message === "string" && r.first_message ? { firstMessage: r.first_message } : {}),
     ...(Number(r.lead) === 1 ? { lead: true } : {}),
-    ...(Number(r.relay_auto) === 1 ? { relayAuto: true } : {}),
+    // 0: by distance (the default since 2026-11-25), 1: 不用确认, 2: 先问.
+    ...(Number(r.relay_auto) === 1 ? { relayAuto: true } : Number(r.relay_auto) === 2 ? { relayAuto: false } : {}),
+    ...(typeof r.lead_session === "string" && r.lead_session ? { leadSessionId: r.lead_session } : {}),
     ...parseRemote(r.remote),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),

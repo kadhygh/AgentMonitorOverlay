@@ -1,4 +1,4 @@
-import { inTurn, type Id, type MessageOrigin, type Session, type SessionItem } from "@amo-studio/protocol";
+import { inTurn, sinceLine, type Id, type MessageOrigin, type Session, type SessionItem } from "@amo-studio/protocol";
 import { newId, type SessionItemInput } from "../../store/store.js";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import type { SessionsFeature } from "./service.js";
@@ -27,6 +27,8 @@ const TURN_SEEN_MS = 3000;
  * 2026-11-15, the day it shipped: 「这个可以先去掉，等我体验一段时间」).
  */
 export const TYPING_HOLD_MS = 5 * 60_000;
+/** How sinceLine begins (protocol/src/localmail.ts): a row that has it already is not noted again. */
+const SINCE_MARK = "（这条发出于";
 
 export class SessionInbox extends Feature {
   constructor(
@@ -58,6 +60,41 @@ export class SessionInbox extends Feature {
   private readonly typing = new Map<Id, ReturnType<typeof setTimeout>>();
   /** How long a touched composer holds the inbox; a test shortens it. */
   typingHoldMs = TYPING_HOLD_MS;
+  /**
+   * Told each time a held row went into its session (本机的事项, 2026-11-25: the message's receipt becomes 送到). The
+   * collab feature listens (features/collab/matters.ts).
+   */
+  readonly sent = new Set<(sessionId: Id, itemId: Id) => void>();
+
+  private tellSent(sessionId: Id, itemId: Id): void {
+    for (const f of this.sent) {
+      try {
+        f(sessionId, itemId);
+      } catch (err) {
+        this.log(`inbox: a listener failed for ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * 撤回 (2026-11-25): a held row its sender takes back before it went in — it stays in the conversation marked
+   * 「已撤回」 and is never sent. False when it is no longer held (it went in: too late).
+   */
+  withdraw(sessionId: Id, itemId: Id): boolean {
+    const it = this.store.getItem(itemId);
+    if (it?.type !== "user" || it.sessionId !== sessionId || it.delivery !== "held") return false;
+    this.publish({ type: "item.updated", item: this.store.replaceItem({ ...it, delivery: "withdrawn" }) });
+    if (!this.held(sessionId).length) this.forget(sessionId);
+    return true;
+  }
+
+  /** 改写 (2026-11-25): a held row gets its new text before it goes in. False when it is no longer held. */
+  rewrite(sessionId: Id, itemId: Id, text: string): boolean {
+    const it = this.store.getItem(itemId);
+    if (it?.type !== "user" || it.sessionId !== sessionId || it.delivery !== "held") return false;
+    this.publish({ type: "item.updated", item: this.store.replaceItem({ ...it, text }) });
+    return true;
+  }
 
   /** 停止 by the person: hold what comes until they write again. */
   pause(sessionId: Id): void {
@@ -114,7 +151,7 @@ export class SessionInbox extends Feature {
    * when it is. `delivered`: it went in now; `waiting`: how many of the session's are still held. `origin` (2026-11-15,
    * plans/collab-framework.md): who it is from, kept on the row — the conversation shows it as theirs, not the person's.
    */
-  async put(sessionId: Id, text: string, origin?: MessageOrigin): Promise<{ delivered: boolean; waiting: number }> {
+  async put(sessionId: Id, text: string, origin?: MessageOrigin): Promise<{ delivered: boolean; waiting: number; itemId?: Id }> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt || s.writer === "archived") throw new HostError("read_only", "这个会话已归档，不能再往里发消息");
     if (s.kind === "sub") throw new HostError("read_only", "子 agent 不能单独接收消息");
@@ -130,7 +167,7 @@ export class SessionInbox extends Feature {
     if (this.paused.has(sessionId)) this.tellPaused(sessionId);
     await this.flush(sessionId);
     const now = this.store.getItem(item.id);
-    return { delivered: !(now?.type === "user" && now.delivery === "held"), waiting: this.held(sessionId).length };
+    return { delivered: !(now?.type === "user" && now.delivery === "held"), waiting: this.held(sessionId).length, itemId: item.id };
   }
 
   /** 立即发送 on a held row: it goes now — into the running turn as the person's would, which then gives way to it. */
@@ -139,7 +176,25 @@ export class SessionInbox extends Feature {
     if (item?.type !== "user" || item.sessionId !== sessionId || item.delivery !== "held") return;
     const rt = this.runtime;
     if (!rt.resend) throw new HostError("bad_request", "this Host cannot send a held message");
+    this.noteSince(sessionId, item);
     await this.wrap(() => rt.resend!(sessionId, itemId, [], { now: true }));
+    this.tellSent(sessionId, itemId);
+  }
+
+  /**
+   * 「发出于 HH:MM，之后你又做了…」 (2026-11-25, the user 11-24): a message from another session or from Studio that waited
+   * while this session went on working says so as it goes in — when it was sent, how many turns ran since, and how the
+   * last reply began — so the model does not take an old word for a new one. Only once (a retry keeps the line).
+   */
+  private noteSince(sessionId: Id, item: SessionItem): void {
+    if (item.type !== "user" || !item.origin || item.text.includes(SINCE_MARK)) return;
+    // Turns that ended after it was sent: the one running then (it went on without this message) and any after.
+    const turns = this.store.findItems(sessionId, "turn", {}).filter((t) => t.type === "turn" && t.state !== "running" && (t.endedAt ? t.endedAt > item.createdAt : t.seq > item.seq)).length;
+    const [last] = this.store.findItems(sessionId, "agent", {}, { newest: true, limit: 1 });
+    const reply = last?.type === "agent" && last.createdAt > item.createdAt ? last.markdown : null;
+    const line = sinceLine(item.createdAt, turns, reply);
+    if (!line) return;
+    this.publish({ type: "item.updated", item: this.store.replaceItem({ ...item, text: [item.text.trimEnd(), "", line].join("\n") }) });
   }
 
   /** Watches sessions get free; sends what the last Host left held, and moves session_send's old queue in. */
@@ -207,7 +262,9 @@ export class SessionInbox extends Feature {
         if (!rt.resend) throw new Error("this Host cannot send a held message");
         // Set before sending: the runtime keeps the item's other fields when it changes its delivery.
         if (behindPerson) this.publish({ type: "item.updated", item: this.store.replaceItem({ ...current, withPerson: true }) });
+        this.noteSince(sessionId, this.store.getItem(it.id) ?? current);
         await rt.resend(sessionId, it.id, []);
+        this.tellSent(sessionId, it.id);
       } catch (err) {
         this.mark(it.id, "unsent");
         const why = err instanceof Error ? err.message : String(err);

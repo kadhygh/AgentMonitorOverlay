@@ -1,6 +1,6 @@
 import { isCommon, type Id, type Task } from "@amo-studio/protocol";
 import type { FeatureHost } from "../../core/feature.js";
-import { ROLE_DUTY, ROLE_NAME, roleFacts, subjectFacts, type RoleFacts, type RoleSubject } from "../../core/role.js";
+import { ROLE_DUTY, ROLE_NAME, roleFacts, subjectFacts, taskLeadCard, taskLeadOf, type RoleFacts, type RoleSubject } from "../../core/role.js";
 import { coworkCards } from "../../core/cowork.js";
 
 // Who a session is in AMO (stage 16, from the stage 15 design): its role card. Claude sessions get it in their MCP
@@ -41,6 +41,12 @@ function cardOf(service: CardHost, f: RoleFacts): string {
   lines.push(`- 会话：${f.session.title || "（未命名）"}（${f.sessionId ?? "新会话"}，${f.session.runtime}）`);
   if (f.task) {
     lines.push(`- 任务：${taskName(f.task)}（${f.task.id}）· 状态 ${f.task.column}${f.task.lead ? " · 主控" : ""}`);
+    // 任务主控 (2026-11-25, plans/collab-agent-spec.md §1): its card, or who it is.
+    if (f.taskLead) lines.push("", taskLeadCard(f.task), "");
+    else if (f.session.kind === "main") {
+      const lead = taskLeadOf(service.store, f.task.id);
+      if (lead) lines.push(`- 任务主控：会话「${oneLine((service.store.getSession(lead)?.title || "会话").split("\n")[0]!, 40)}」（${lead}）：给它的话用 mailbox_send 带 toSessionId`);
+    }
     if (f.task.description) lines.push(`- 任务说明：${oneLine(f.task.description, 400)}`);
   }
   if (ws) lines.push(`- 项目：${isCommon(ws) ? "公共目录（未指定项目）" : ws.name}（${ws.path}）`);

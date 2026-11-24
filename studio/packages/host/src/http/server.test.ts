@@ -380,10 +380,9 @@ describe("Host API", () => {
     expect(forwarded.state).toBe("forwarded");
     expect((await api("POST", `/api/mail/${toB.id}/forward`, {})).status).toBe(409);
     expect(servers.fakes.get("p-ds")!.calls.filter((c) => c.method === "turn/start").at(-1)?.params).toMatchObject({
-      input: [{ type: "text", text: expect.stringMatching(/^\[AMO 留言\] 来自任务「.*」的会话「a」：\n\n接口改好了/) }],
+      input: [{ type: "text", text: expect.stringMatching(/^【留言 #1 · 事项 1「接口改好了，你可以接着做导入」】来自任务「.*」的会话「a」（s-[^）]+）：\n\n接口改好了/) }],
     });
-    // Task mail needs a session of that task; dismissing is the other way out.
-    expect((await api("POST", `/api/mail/${toTask.id}/forward`, {})).status).toBe(400);
+    // Task mail goes into a session of that task (its latest, unless one is named); dismissing is the other way out.
     expect((await api("POST", `/api/mail/${toTask.id}/forward`, { sessionId: a.session.id })).status).toBe(400);
     expect(await ok("PATCH", `/api/mail/${toTask.id}`, { state: "dismissed" })).toMatchObject({ state: "dismissed" });
   });

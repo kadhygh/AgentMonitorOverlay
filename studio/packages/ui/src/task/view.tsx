@@ -25,6 +25,7 @@ export const taskView: ViewDef<"task"> = {
         justCreated={!!view.created}
         backLabel={back.label}
         onBack={() => setView(back.view)}
+        onOpenPending={() => setView({ kind: "pending" })}
       />
     );
   },

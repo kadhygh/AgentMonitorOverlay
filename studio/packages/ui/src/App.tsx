@@ -6,10 +6,11 @@ import { useHostState } from "./host/useHostState.js";
 import { QuickStart } from "./newtask/QuickStart.js";
 import { CoworkHandoffs } from "./teamrelay/Cowork.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
-import { useUnreadMail } from "./collab/useInbox.js";
+import { useLocalPending, useUnreadMail } from "./collab/useInbox.js";
 import { useOpenDecisions } from "./collab/DecisionPanel.js";
 import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
+import { usePending } from "./pending/pending.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, type SettingsPage } from "./settings/SettingsDialog.js";
 import { useSettings } from "./settings/useSettings.js";
@@ -95,6 +96,8 @@ export function App() {
   const setView = (next: View) => setShownView((current) => withOrigin(next, current));
   const focus = useFocusToggle();
   const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
+  const localPending = useLocalPending(host.kind === "ready" ? host.link : NO_LINK);
+  const pending = usePending(host.kind === "ready" ? host.link : null);
   const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
   const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
   const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
@@ -272,7 +275,7 @@ export function App() {
     link,
     state,
     scope,
-    data: { unreadMail, openDecisions, decisionsByTask, checklist, proposals, todos },
+    data: { unreadMail, localPending, pending, openDecisions, decisionsByTask, checklist, proposals, todos },
     disabled,
     experimental,
     setView,
@@ -333,6 +336,7 @@ export function App() {
             onView={setView}
             onNew={() => setView(canvasTopic ? { kind: "new", topicId: canvasTopic.id, back: { kind: "canvas" } } : { kind: "new" })}
             search={<SearchBox state={state} onOpen={openHit} />}
+            data={ctx.data}
           />
           {/* A page that fails to render says so; the title bar, the left column and the sessions carry on. */}
           <main className="main">

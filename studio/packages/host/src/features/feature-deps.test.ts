@@ -20,7 +20,7 @@ const HOW = "（依赖图：src/features/feature-deps.test.ts；为什么、怎�
 const GRAPH: Record<string, string[]> = {
   canvasreview: ["canvas", "sessions", "tasks"],
   cli: ["gitreview"],
-  collab: ["sessions"],
+  collab: ["pending", "sessions"],
   config: ["claudeaccounts", "scratchpad"],
   datamgmt: ["attachments", "projects"],
   duty: ["sessions", "tasks"],

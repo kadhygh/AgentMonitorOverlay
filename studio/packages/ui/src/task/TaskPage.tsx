@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { REMOTE_KINDS, REMOTE_ORDER_SINCE, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, taskRefText, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
+import { REMOTE_KINDS, REMOTE_ORDER_SINCE, REMOTE_TRACKS_SINCE, isCommon, remoteHeldTasks, taskLeadIn, taskRefText, type Annotation, type ChecklistItem, type ModelProfile, type NewSessionInput, type Session, type SessionOptions, type Task, type TaskColumn, type TodoView, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { rememberSession } from "../shell/lastPlace.js";
 import { navHistory } from "../shell/navHistory.js";
@@ -17,7 +17,8 @@ import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/useSettings.js";
 import { showToast } from "../lib/toast.js";
 import { AnnotationPanel } from "../review/AnnotationPanel.js";
-import { MailPanel, useTaskMail } from "../collab/MailPanel.js";
+import { useLocalPending, useTaskMail } from "../collab/useInbox.js";
+import { PendingPanel } from "../collab/PendingPage.js";
 import { DecisionPanel, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "../collab/NotesPanel.js";
 import { ChecklistPanel } from "../collab/ChecklistPanel.js";
@@ -82,12 +83,14 @@ interface TaskPageProps {
   /** What "←" says: where it returns (看板 or 画布). */
   backLabel?: string;
   onBack(): void;
+  /** 待我处理's 「全部 →」: the page across the workbench. */
+  onOpenPending?(): void;
 }
 
 type Toast = { text: string; command?: string; error?: boolean } | null;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, passage, restoreScroll, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, passage, restoreScroll, justCreated = false, backLabel = "看板", onBack, onOpenPending }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   // The first live session; in an archived task (or one whose sessions are all archived), the latest archived one.
   const firstSession = () => own.find((s) => !s.archivedAt) ?? [...own].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -290,18 +293,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const decisions = useOpenDecisions(link);
   const notes = useTaskNotes(link, task.id);
   const unread = new Map<string, number>();
-  for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
-  const forwardMail = (m: { id: string }, sessionId: string) =>
-    run(() => call(link, "POST /api/mail/:id/forward", { id: m.id }, { sessionId }), () => {
-      setSelected(sessionId);
-      setToast({ text: "已把留言转进对话。" });
-    });
-  const dismissMail = (m: { id: string }) => run(() => call(link, "PATCH /api/mail/:id", { id: m.id }, { state: "dismissed" }));
+  for (const m of mail) if (m.state === "unread" && m.to.kind === "session" && m.withdrawnAt === undefined && m.via !== "background") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
+  // 待我处理 (2026-11-25, in place of 留言): what waits for the person about this task.
+  const pending = useLocalPending(link, task.id);
+  const pendingAsks = pending.asks.filter((m) => !m.relayId).length;
 
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
   // What waits in the hidden right column: shown as a count on 侧栏.
   const sideCount =
-    decisions.filter((d) => d.taskId === task.id).length + mail.filter((m) => m.state === "unread").length + annotations.filter((a) => !a.sentAt).length;
+    decisions.filter((d) => d.taskId === task.id).length + pendingAsks + annotations.filter((a) => !a.sentAt).length;
   // Shown on 会话 while the list is hidden, when there is more than the one in front to choose from.
   const liveCount = own.filter((s) => !s.archivedAt).length;
 
@@ -594,20 +594,40 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             </button>
           )}
           {!task.archivedAt && !copy && (
+            // 按距离 (2026-11-25, the user 11-15: 默认自动，可配置): what the same topic's 主控 and tasks send comes in by itself
+            // unless this says 先问 (relayAuto false); relayAuto true (the old 「主控传话不用确认」) also takes it from farther.
+            <>
             <button
               type="button"
               role="menuitemcheckbox"
-              aria-checked={!!task.relayAuto}
+              aria-checked={task.relayAuto === false}
               disabled={busy}
-              title="主控给这个任务的传话直接送进它的会话，不再等你确认（长任务里自动送话很正常）"
+              title="同一个专题的主控和别的任务给这个任务发的传话、留言，先放在「待我处理」里等你点「送进会话」；不勾时直接送进它的会话（等它这一轮做完）。别的专题、没有专题的一直先问你"
               onClick={() => {
                 setTaskMenu(null);
-                void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { relayAuto: !task.relayAuto }));
+                void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { relayAuto: task.relayAuto === false ? null : false }));
               }}
-              data-testid="task-relay-auto"
+              data-testid="task-relay-ask"
             >
-              {task.relayAuto ? "✓ " : ""}主控传话不用确认
+              {task.relayAuto === false ? "✓ " : ""}别的任务发来的先问我
             </button>
+            {task.relayAuto === true && (
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked
+                disabled={busy}
+                title="以前设的「主控传话不用确认」：连别的专题、没有专题的任务发来的也直接送进会话。点一下改回按距离：同专题直接送，更远的先问你"
+                onClick={() => {
+                  setTaskMenu(null);
+                  void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { relayAuto: null }));
+                }}
+                data-testid="task-relay-auto"
+              >
+                ✓ 更远的任务发来的也直接送
+              </button>
+            )}
+            </>
           )}
           {task.topicId && !copy && <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />}
           {task.archivedAt && <span className="menu-note">任务已归档</span>}
@@ -744,6 +764,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {...(!copy && canBindTodo() ? { onBindTodo: () => bindTodo({ taskId: task.id, taskTitle: task.title, sessionId: head.id, sessionTitle: head.title }) } : {})}
               {...(!copy && !head.archivedAt && head.kind !== "sub" ? { onCowork: () => setCoworking(head.id) } : {})}
               {...(!copy ? { onCopyRef: () => void copySessionRef(link, head.id) } : {})}
+              {...(!copy && head.kind === "main" && !head.archivedAt ? { taskLead: { is: taskLeadIn(task, sessions) === head.id, ...(!task.archivedAt ? { set: () => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { leadSessionId: head.id })) } : {}) } } : {})}
             />
           )}
           {head && <SessionBanners session={head} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(head.id)} onReclaim={() => void reclaim(head.id)} />}
@@ -821,14 +842,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               <MattersPanel session={session} sessions={sessions} threads={teamThreads} items={items} decisions={decisions} onReveal={(itemId) => revealRow(itemId, 8)} onOpen={setSelected} />
             )}
             <DecisionPanel decisions={decisions} task={task} current={session?.id ?? null} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} onOpen={setSelected} />
-            <MailPanel
-              mail={mail}
-              sessions={sessions}
-              tasks={tasks}
+            <PendingPanel
+              link={link}
+              names={{ sessions, tasks, topics }}
+              view={pending}
               current={session ?? null}
-              busy={busy}
-              onForward={(m, sessionId) => void forwardMail(m, sessionId)}
-              onDismiss={(m) => void dismissMail(m)}
+              onOpenAll={() => onOpenPending?.()}
             />
             <ChecklistPanel link={link} items={checklist} sessions={sessions} />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />

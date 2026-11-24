@@ -3,7 +3,8 @@ import type { Relay, Session, Task, Topic, Workspace } from "@amo-studio/protoco
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // Stage 16 (the stage 15 design, third part): 传话 — a 主控 asks Studio to say something in another task's session;
-// the person confirms it (task page or Focus) unless that task takes relays without asking.
+// the person confirms it (task page or Focus) when the task says 先问. 2026-11-25 (本机的事项, 按距离): a task of the
+// same topic takes them without asking by default; 「别的任务发来的先问我」 turns that round.
 
 let studio: Studio | undefined;
 
@@ -12,7 +13,7 @@ test.afterEach(async () => {
   studio = undefined;
 });
 
-test("传话: confirmed from the task page and Focus, then a task that takes relays without asking (stage 16)", async () => {
+test("传话: confirmed from the task page and Focus while the task says 先问, then straight in (stage 16, 11-25)", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -24,6 +25,7 @@ test("传话: confirmed from the task page and Focus, then a task that takes rel
     firstSession: { profileId: "claude-mock", text: "开始迁移装甲车" },
   });
   const relayText = (text: string) => `[[mcp: task_message ${JSON.stringify({ taskId: target.id, text })}]]`;
+  await studio.api("PATCH", `/api/tasks/${target.id}`, { relayAuto: false });
   const { session: leadSession } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "迁移主控",
     workspaceId: ws.id,
@@ -51,10 +53,11 @@ test("传话: confirmed from the task page and Focus, then a task that takes rel
   await expect(thread.getByTestId("msg-origin").first()).toContainText("主控「迁移主控」传话", { timeout: 30_000 });
   await expect.poll(async () => (await studio!.api<Relay[]>("GET", "/api/relays"))[0]).toMatchObject({ state: "delivered", sessionId: targetSession.id });
 
-  // 主控传话不用确认: the next one goes straight in.
+  // 先问 off: the same topic's next one goes straight in.
   await page.getByTestId("task-more").click();
-  await page.getByTestId("task-relay-auto").click();
-  await expect.poll(async () => (await studio!.api<{ tasks: Task[] }>("GET", "/api/state")).tasks.find((t) => t.id === target.id)?.relayAuto).toBe(true);
+  await expect(page.getByTestId("task-relay-ask")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("task-relay-ask").click();
+  await expect.poll(async () => (await studio!.api<{ tasks: Task[] }>("GET", "/api/state")).tasks.find((t) => t.id === target.id)?.relayAuto ?? null).toBe(null);
   await studio.api("POST", `/api/sessions/${leadSession.id}/messages`, { text: relayText("计划改了：先做界面") });
   await expect(thread).toContainText("计划改了：先做界面", { timeout: 60_000 });
   await expect(page.getByTestId("relay-banner")).toHaveCount(0);

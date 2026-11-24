@@ -71,6 +71,19 @@
 
 工具名字先不变（`mailbox_send`、`task_message`、`session_send`），参数多 `replyTo`、`matter`，底下换成事项和消息。
 
+本机这一头的做法（11-25，第 4 步和第 5 步里本机的部分；规则在 `protocol/src/localmail.ts`，Host 在 `host/src/features/collab/matters.ts`，导航 `studio.localMatters`）：
+
+- **消息还是 `mail` 表里的一行**，加编号、事项、`replyTo`、回执、`via`（留言 / 派活 / 结果 / 续发 / 传话 / 背景更新 / 回答 / 通知）；事项是 Host 自己的表，字段用 `protocol` 的 `Matter`（scope 是任务，编号按任务或专题）。这样以前的留言都还在（启动时补上编号和回执：没读的进「待我处理」等人放行，别的算处理了），旧页面也照样读得到。
+- **按距离**（`deliveryMode`）：人发的、同一个任务里、同专题别的任务（对方没设先问）、专题自己的会话收自己专题任务的，自动进对方收件箱，这一轮做完再送；别的都先问。`relayAuto` 改成三态：没设 = 按距离，`false` = 先问，`true` = 以前的「不用确认」，连更远的也直接送（老设置照旧生效）。
+- **看过**：消息送进去之后，对方这一轮之后有了回复（或这一轮结束）就算看过；`mailbox_read` 读到也算。**处理了**：用 `replyTo` 回了它、之后在同一件事项里说过话、`mailbox_read` 带 `handled`、人在「待我处理」标、事项关掉。事项里的消息都处理了、也不等谁了，事项自己关掉。
+- **`session_start` 默认要结果**：开出来就是一件委派事项（等那个会话），每一轮的结果作为这件事项的「结果」消息送回；这一轮里它已经给主控发过消息的，结果只写「内容同上」。`forPerson` 开的不回报，之后 `session_send` 给它的是「背景更新」，随人的下一条消息带进去。
+- **`task_message`** 带 `kind`：`delegate`（默认，读到它的那一轮的回复自动交回主控）或 `notice`（看过就算处理了）。原来的「传话已送到」留言不发了。
+- **排队的可以撤回、改写**（`mailbox_send` 的 `withdraw` / `edit`，`session_send` 同样）；收件箱里那一行跟着改，撤回的显示「已撤回」。送进去时看对方在它发出以后又跑了几轮，有就附「这条发出于 HH:MM，之后你又做了 N 轮，最后的回复开头：…」。
+- **「待我处理」页**（顶栏一个 tab，取代任务侧栏的「留言」）：读 `GET /api/pending` 的全部组（`features/pending`，「协作·Studio 接入」的汇总模块）：协作的组在最上面（点了在中转里打开），本机的部分是等你放行的（先问的，和没自己送进去的旧式留言）、在等你的事项、按任务（来源）分组的进行中事项（画法还用 `GET /api/local-pending` 的 `LocalPendingView`），消息都处理了的折起来，再折着各主控会话的待处理（「让它现在看一遍」）。任务侧栏是这个任务的那部分。
+- **本机来源**（`host/src/features/collab/pending-source.ts`，source `local`）注册进汇总模块：人的组 `local:me`（放行的 key 是 `ask:<mailId>`，标「处理了」= 不送），每个本机主控一组 `local:session:<id>`（`pendingOf`）。已经送进主控对话的消息当场记成「告诉过」，巡检只为它对话里没见过的叫它（开始等它的事项、还在等人放行的）。叫它的话是【本机 · 待你处理】，写为什么现在叫、哪几条、这一轮结束前怎么收尾。
+- **任务主控**（11-25，`plans/collab-agent-spec.md` §1）：默认是人在任务里开的第一个主会话（没有 `startedBy`、没归档；`protocol` 的 `taskLeadIn`），人可以在会话菜单里「设为任务主控」（`Task.leadSessionId`，`PATCH /api/tasks/:id`）。角色卡和换主控时的变化说明照协作的做法放在 `core/role.ts`（`taskLeadCard`、role-stamp 的 `taskLead`）。它和专题自己的会话是本机巡检的对象。
+- Focus 那一行归「协作·Studio 接入」。
+
 反馈里剩下的（`session_start` 型号名猜不到）放下一轮。体验原型：`studio/out/cowork-flow/sim.html`（11-24，模拟策划、程序各带 agent 走一遍）。
 
 ### 看过原型后定的（11-24）

@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { experimentalEnabled, inTurn, isCommon, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkRequest, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { experimentalEnabled, inTurn, isCommon, sessionParty, titleFrom, type ModelOption, type SubsessionNote, type SubsessionSetup, type Workspace, asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ProfileChoices, type ApprovalDecision, type ForkRequest, type ForkTurn, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode, SendOptions } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, isRemoteCopy, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -16,6 +16,7 @@ import { SessionInbox } from "./inbox.js";
 import { readSetups, rememberSetups } from "./setups.js";
 import { forkTurns, itemsThrough } from "./fork.js";
 import { newId, type SessionItemInput } from "../../store/store.js";
+import { FOR_PERSON_KEY } from "../collab/matters.js";
 
 /** Options with some changed (model, effort, permission: a value, or null / "" back to the default; fast: a boolean or null). */
 function patchOptions(base: SessionOptions, patch: unknown): SessionOptions {
@@ -104,10 +105,13 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     const reading = experimentalEnabled(this.f.config.experimentalFeatures(), "review-progress") ? reviewProgressHint(this.store, sessionId) : null;
     // 协作 (2026-11-23): that it was brought into one, and 「协作里有 N 条新的」 (core/cowork.ts).
     const cowork = coworkHint(this.store, sessionId);
+    // 背景更新 (2026-11-25): what the session that opened this one forPerson added since, with the person's next message.
+    const background = this.f.collab.matters.backgroundHint(sessionId);
     const update = {
-      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? []), ...(reading?.lines ?? []), ...(cowork?.lines ?? [])],
+      lines: [...role.lines, ...(tracks?.lines ?? []), ...(board?.lines ?? []), ...(reading?.lines ?? []), ...(cowork?.lines ?? []), ...(background?.lines ?? [])],
       told: () => {
         role.told();
+        background?.told();
         tracks?.told();
         cowork?.told();
         if (reading?.lines.length) {
@@ -426,7 +430,7 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown; setup?: unknown; fast?: unknown; mcp?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown; setup?: unknown; fast?: unknown; mcp?: unknown; matter?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -447,7 +451,12 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     // Focus leaves to the starter): a session of the task like one they opened, not reporting back.
     const forPerson = input.forPerson === true;
     if (forPerson && input.report === true) throw new HostError("bad_request", "forPerson 的会话是给人自己推进的，结果不回到你这里：去掉 report");
-    const report = input.report === true;
+    // 2026-11-25 (the user 11-24: 主控和执行): its result comes back by default — as messages of the 委派事项.
+    const report = !forPerson && input.report !== false;
+    const matters = this.f.collab.matters;
+    const given = input.matter !== undefined && input.matter !== null && input.matter !== "";
+    if (given && forPerson) throw new HostError("bad_request", "forPerson 的会话是给人自己推进的，不进你的事项：去掉 matter");
+    const existing = given ? matters.resolve(input.matter, from) : null;
     const workspace = input.workspace === undefined || input.workspace === null || input.workspace === "" ? this.requireLiveWorkspace(task.workspaceId) : this.workspaceByRef(input.workspace);
     // 远程 (step 2, 「授权范围」): a task granted to a paired device keeps its sessions in its own project and on the
     // models allowed for remote use (another one is swapped for the default allowed one, and the new session told).
@@ -491,6 +500,9 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     const mcp = this.f.mcp.chooseFor(workspace.id, task.id, this.requireProfile(profileId).runtime, input.mcp, {});
     if (mcp) options = { ...options, mcp };
     const elsewhere = workspace.id !== task.workspaceId;
+    // The 委派事项 (本机的事项, 2026-11-25): opened before the session starts, so its first message can name it.
+    const matter = forPerson ? null : (existing ?? matters.open({ scopeId: task.id, kind: "delegate", title: title ?? titleFrom(text, "派活"), owner: sessionParty(from.id) }));
+    const matterLine = matter ? `你在做它的「事项 ${matter.no}」（${matter.title}）。` : "";
     const message = [
       forPerson ? `【本任务的会话「${from.title || "未命名会话"}」应人的要求开启：人会在这里和你一起推进】` : `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
       ...(elsewhere ? [`（你在项目「${isCommon(workspace) ? "公共目录" : workspace.name}」的文件夹 ${workspace.path} 里工作，和任务本身的项目不同。）`] : []),
@@ -501,16 +513,27 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
       forPerson
         ? `（这个会话是同一任务里的另一个会话（${from.id}）替人通过 AMO Studio 开的，之后听人的。要告诉那个会话什么，用 mailbox_send 给会话 ${from.id}。）`
         : report
-          ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它）；中途要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
-          : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
+          ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的，${matterLine}每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它），不用另外留言；中途要问它或告诉它什么，用 mailbox_send 带 matter: "${matter!.id}"，会自动送到它那里。）`
+          : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的，${matterLine}要告诉它什么，用 mailbox_send 带 matter: "${matter!.id}"，会自动送到它那里。）`,
       // Claude's read-only is plan mode (2026-11-09): its prompt ends with ExitPlanMode, which Studio declines in a
       // session opened this way (ClaudeAsks) — said up front so the result is not written twice.
       ...(!forPerson && options?.permission === PERMISSIONS.claude["read-only"] ? ["（你是以只读方式开的，用的是 Claude 的计划模式。这里没有人审批计划：做完直接把结果写成最后的回复，不要调用 ExitPlanMode。）"] : []),
     ].join("\n");
-    const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
+    let started: Session;
+    try {
+      started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
+    } catch (err) {
+      if (matter && !existing) matters.close(matter.id, sessionParty(from.id), "会话没开起来");
+      throw err;
+    }
     // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other. One for
-    // the person stands on its own, beside the caller.
+    // the person stands on its own, beside the caller (and its 背景更新 go in with the person's next message).
     if (!forPerson) this.store.setSessionStartedBy(started.id, from.id);
+    else this.store.setKv(FOR_PERSON_KEY + started.id, from.id);
+    if (matter) {
+      const bound = matters.update(matter.id, { bindSession: started.id, waitingOn: [sessionParty(started.id)], status: "doing" }, sessionParty(from.id));
+      matters.record({ from, to: { kind: "session", sessionId: started.id }, text, via: "start", matter: bound, mode: "none", delivered: { sessionId: started.id } });
+    }
     const session = report ? this.store.setSessionReportTo(started.id, from.id) : this.store.getSession(started.id)!;
     this.publish({ type: "session.upserted", session });
     const named = title ? await this.renameSession(session.id, title).catch(() => session) : session;
@@ -560,16 +583,32 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
    * gets it once that turn is over (the session's inbox, 2026-11-04: shown there meanwhile, kept across a restart);
    * several waiting go in together. With report, the turn's report reaches the caller first.
    */
-  async sendPeer(fromSessionId: Id, input: { sessionId?: unknown; text?: unknown }): Promise<{ session: Session; delivered: boolean; waiting: number }> {
+  async sendPeer(fromSessionId: Id, input: { sessionId?: unknown; text?: unknown; withdraw?: unknown; edit?: unknown }): Promise<{ session: Session; delivered: boolean; waiting: number; seq?: number; background?: boolean; withdrawn?: boolean; edited?: boolean }> {
     const from = this.requireSession(fromSessionId);
+    const matters = this.f.collab.matters;
+    const given = (v: unknown) => v !== undefined && v !== null && v !== "";
+    // 撤回 / 改写 (2026-11-25): one of the caller's messages still queued.
+    if (given(input.withdraw) || given(input.edit)) {
+      const m = given(input.withdraw) ? matters.withdraw(input.withdraw, from) : matters.rewrite(input.edit, input.text, from);
+      const to = m.to.kind === "session" ? this.requireSession(m.to.sessionId) : from;
+      return { session: to, delivered: false, waiting: this.inbox.held(to.id).length, ...(m.seq ? { seq: m.seq } : {}), ...(given(input.withdraw) ? { withdrawn: true } : { edited: true }) };
+    }
     if (typeof input.sessionId !== "string" || !input.sessionId) throw new HostError("bad_request", "sessionId is required");
     if (input.sessionId === from.id) throw new HostError("bad_request", "不能发给你自己：只能发给你用 session_start 开的会话。");
     const s = this.store.getSession(input.sessionId);
-    if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能往里发：只能发给你自己开的会话（人开的、别的会话开的、forPerson 开给人的都不行）。`);
-    if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了：要接着做就用 session_start 开个新的。`);
     const text = boundedText(input.text, "text", 20_000);
-    const { delivered, waiting } = await this.inbox.put(s.id, `【开启你的会话「${from.title || "未命名会话"}」（${from.id}）发来】\n${text}`, { kind: "send", from: from.title || "未命名会话", sessionId: from.id });
-    return { session: this.requireSession(s.id), delivered, waiting };
+    // 背景更新 (2026-11-25, the user 11-24): to one opened forPerson, it goes in with the person's next message, marked.
+    if (s && !s.archivedAt && matters.openedForPersonBy(s.id) === from.id) {
+      const m = matters.record({ from, to: { kind: "session", sessionId: s.id }, text, via: "background", open: { kind: "notice", title: titleFrom(text, "背景更新") }, mode: "background" }).mail;
+      return { session: s, delivered: false, waiting: 0, ...(m.seq ? { seq: m.seq } : {}), background: true };
+    }
+    if (!s || s.startedBy !== from.id || s.taskId !== from.taskId) throw new HostError("bad_request", `会话 ${input.sessionId} 不是你用 session_start 开的，不能往里发：只能发给你自己开的会话，或你 forPerson 开给人的（那样发的是背景更新，随人的下一条消息带进去）。`);
+    if (s.archivedAt) throw new HostError("bad_request", `会话 ${s.id} 已经归档了：要接着做就用 session_start 开个新的。`);
+    const delegated = matters.delegateOf(s.id, from.id) ?? matters.open({ scopeId: matters.scopeOf(from), kind: "delegate", title: s.title || titleFrom(text, "派活"), owner: sessionParty(from.id), sessions: [s.id] });
+    const matter = matters.update(delegated.id, { waitingOn: [sessionParty(s.id)] }, sessionParty(from.id));
+    const m = await matters.post({ from, to: { kind: "session", sessionId: s.id }, text, via: "send", matter, mode: "auto", origin: { kind: "send", from: from.title || "未命名会话", sessionId: from.id } });
+    const delivered = m.receipts?.[0]?.state !== "queued";
+    return { session: this.requireSession(s.id), delivered, waiting: this.inbox.held(s.id).length, ...(m.seq ? { seq: m.seq } : {}) };
   }
 
   /**
@@ -727,22 +766,17 @@ export class SessionsFeature extends Feature<"attachments" | "collab" | "config"
     if (this.store.getKv(key)?.value === turn.id) return;
     this.store.setKv(key, turn.id);
     const to = s.reportTo;
-    const name = `「${s.title || "未命名会话"}」（${s.id}）`;
-    let text: string;
-    if (turn.state === "interrupted") text = `【你开的会话${name}被人停下了，还没有结论】它接着做完后，结果会再转给你。`;
-    else if (turn.state === "failed") text = `【你开的会话${name}出错停下了】\n${turn.error ?? "（没有错误信息）"}`;
-    else {
-      const mailed = this.store.listMail({ sessionId: to }).some((m) => m.fromSessionId === s.id && m.createdAt >= turn.startedAt);
-      const [last] = this.store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
-      const reply = last && last.type === "agent" && last.createdAt >= turn.startedAt ? last.markdown.trim() : "";
-      const excerpt = reply.length > REPORT_MAX ? `${reply.slice(0, REPORT_MAX)}…（后面省略；完整的用 session_tree 或打开会话看）` : reply;
-      text = mailed ? `【你开的会话${name}这一轮做完了，它已经用留言把结果发给你】` : `【你开的会话${name}这一轮做完了】\n${excerpt || "（它没有回复文字）"}`;
-    }
-    // Into the caller's inbox (2026-11-04): it goes in once the caller is free, rather than into its running turn.
-    this.inbox.put(to, text, { kind: "report", from: s.title || "未命名会话", sessionId: s.id, state: turn.state === "interrupted" ? "stopped" : turn.state === "failed" ? "failed" : "done" }).catch(() => {
+    // 2026-11-25: the turn's result is a message of the 委派事项 (本机的事项) — 「内容同上」 when the session already sent it
+    // there during the turn — into the caller's inbox (2026-11-04): it goes in once the caller is free.
+    const matters = this.f.collab.matters;
+    const matter = matters.delegateOf(s.id, to) ?? null;
+    const text = matters.turnResult(s, turn, to, matter?.id);
+    if (matter && turn.state !== "interrupted") matters.update(matter.id, { waitingOn: [] }, sessionParty(s.id));
+    const origin = { kind: "report" as const, from: s.title || "未命名会话", sessionId: s.id, state: turn.state === "interrupted" ? ("stopped" as const) : turn.state === "failed" ? ("failed" as const) : ("done" as const) };
+    matters.post({ from: s, to: { kind: "session", sessionId: to }, text, via: "report", matter, open: { kind: "delegate", title: s.title || "派活" }, mode: "auto", origin }).catch(() => {
       // The caller is gone or archived: it can still read it as mail.
       try {
-        this.f.collab.sendMail(s.id, { kind: "session", sessionId: to }, text);
+        this.f.collab.sendMail(s.id, { kind: "session", sessionId: to }, text, { via: "report", ...(matter ? { matter: matter.id } : {}) });
       } catch {
         // Nowhere to report to.
       }

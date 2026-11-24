@@ -51,8 +51,17 @@ export interface Task {
    * project when it is in none). Its sessions get the 主控 role card and may propose tasks and relay messages.
    */
   lead?: boolean;
-  /** 主控传话不用确认 (stage 16): a 主控's relays go into this task's session without asking the person. */
+  /**
+   * 主控传话不用确认 (stage 16): a 主控's relays go into this task's session without asking the person. Since 2026-11-25
+   * (the user 11-15: 默认自动，可配置; localmail.ts deliveryMode) messages from the same topic go in by themselves when it
+   * is absent; `false` (先问) holds them for the person too; `true` also takes them from farther (another topic, none).
+   */
   relayAuto?: boolean;
+  /**
+   * 任务主控 (2026-11-25, plans/collab-agent-spec.md §1): the session the person made the task's 主控. Absent: the first
+   * main session the person opened in it (not one another session started) — core/role.ts taskLeadOf.
+   */
+  leadSessionId?: Id;
   /**
    * 远程 (step 2, 2026-10-29): this computer's copy of a task a paired device granted it — the task and its sessions run
    * there; here they are kept in sync and worked through it. Absent: an ordinary task of this computer.
@@ -353,9 +362,10 @@ export interface MessageImage {
  * Where a message stands before the model read it (see the `user` item). `waiting`: sent mid-turn, at the runtime, not
  * read yet (立即发送, 2026-11-02). `unsent`: its process went (or it could not go in) before the model read it; 重新发送
  * sends it again. `held` (2026-11-04, plans/done/message-delivery.md): from an agent or from Studio (中转回复, 值守, 传话,
- * session_send…), in the session's inbox until the session is free — then it goes in by itself.
+ * session_send…), in the session's inbox until the session is free — then it goes in by itself. `withdrawn`
+ * (2026-11-25): a held one its sender took back (撤回) before it went in; never sent.
  */
-export type UserDelivery = "waiting" | "unsent" | "held";
+export type UserDelivery = "waiting" | "unsent" | "held" | "withdrawn";
 
 /**
  * Who put a message into a session when it was not the person (交流框架, 2026-11-15, plans/collab-framework.md — the
@@ -593,6 +603,10 @@ export interface Relay {
   sessionId?: Id;
   /** Why delivering failed. */
   error?: string;
+  /** Its message in the 事项 it opened (2026-11-25, localmail.ts). */
+  mailId?: Id;
+  /** 委派 (waits for the result, reported back) or 通知 (only informs); absent before 2026-11-25: 委派. */
+  kind?: "delegate" | "notice";
 }
 export const RELAY_TEXT_MAX = 20_000;
 
@@ -905,8 +919,9 @@ export interface ChecklistItem {
 export type MailRecipient = { kind: "session"; sessionId: Id } | { kind: "task"; taskId: Id } | { kind: "topic"; topicId: Id };
 
 /**
- * A message for another session or task. It never enters a conversation by itself: the person forwards it (or
- * dismisses it), or the recipient's agent reads it with `mailbox_read` on its next turn.
+ * A message for another session or task. Since 2026-11-25 (localmail.ts) it goes in by itself when the two are close
+ * (same task, same topic: deliveryMode); otherwise the person lets it in from 待我处理 (or drops it), or the recipient's
+ * agent reads it with `mailbox_read`.
  */
 export interface MailMessage {
   id: Id;
@@ -921,6 +936,27 @@ export interface MailMessage {
   createdAt: Timestamp;
   /** When it was read, forwarded or dismissed. */
   handledAt: Timestamp | null;
+  // 本机的事项和消息 (2026-11-25, localmail.ts): every 留言, 传话, session_start / session_send message and report is one of
+  // these, in a 事项 of the Host. Mail from before gets a seq and receipts when the Host starts (no 事项: `matter` absent).
+  /** 「#7」: numbered per Host from 1 (事项 are numbered apart, per task). */
+  seq?: number;
+  /** Its 事项 (a Matter of scope "task"). */
+  matter?: Id;
+  /** The message it answers (#seq). */
+  replyTo?: number;
+  via?: import("./localmail.js").LocalMessageVia;
+  /** One per recipient: 排队 → 送到 → 看过 → 处理了 (matters.ts). */
+  receipts?: import("./matters.js").Receipt[];
+  /** 撤回 while still queued (the row in the receiving session is taken back). */
+  withdrawnAt?: number;
+  /** 改写 while still queued. */
+  editedAt?: number;
+  /** 先问 (按距离): waiting for the person to send it in. */
+  ask?: boolean;
+  /** A 传话's (via "relay"): the Relay the person decides on. */
+  relayId?: Id;
+  /** The row it became in the receiving session (an inbox row while queued; 撤回 / 改写 change it). */
+  itemId?: Id;
 }
 
 /** A question an agent puts to the person; the answer goes back to the asking session as mail. */

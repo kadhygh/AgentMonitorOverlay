@@ -39,8 +39,8 @@ test("a Codex session hands work to a Claude session through AMO mail", async ()
   await page.getByTestId("task-card").filter({ hasText: "补测试" }).click();
   await expect(page.getByTestId("msg-agent")).toHaveCount(1);
   await expect(page.getByTestId("mail-card")).toContainText("请接手补测试");
-  await page.getByTestId("mail-card").getByRole("button", { name: "转进对话" }).click();
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: [AMO 留言] 来自任务「导入重试」", { timeout: 60_000 });
+  await page.getByTestId("mail-card").getByRole("button", { name: "送进会话" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText(/MOCK: 【留言 #\d+ · 事项 \d+「[^」]*」】来自任务「导入重试」/, { timeout: 60_000 });
 
   // B reads A's handoff through the MCP, then records on its own task that it took over.
   const composer = page.getByLabel("输入消息");

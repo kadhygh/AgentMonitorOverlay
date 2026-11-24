@@ -193,20 +193,23 @@ export class Store extends DocumentStore {
   }
 
   /** `description`, `firstMessage`: empty removes it. */
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "firstMessage" | "lead" | "relayAuto" | "remote">>): Task {
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "firstMessage" | "lead" | "remote">> & { relayAuto?: boolean | null; leadSessionId?: Id | null }): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const { description: _old, firstMessage: _oldFirst, lead: _wasLead, relayAuto: _wasAuto, remote: _wasRemote, ...rest } = task;
+    const { description: _old, firstMessage: _oldFirst, lead: _wasLead, relayAuto: _wasAuto, remote: _wasRemote, leadSessionId: _wasLeadSession, ...rest } = task;
     const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
     const firstMessage = patch.firstMessage !== undefined ? patch.firstMessage.trim() : (task.firstMessage ?? "");
     const lead = patch.lead !== undefined ? patch.lead : !!task.lead;
-    const relayAuto = patch.relayAuto !== undefined ? patch.relayAuto : !!task.relayAuto;
+    // true 不用确认, false 先问, null / absent: by distance (2026-11-25).
+    const relayAuto = patch.relayAuto !== undefined ? patch.relayAuto : task.relayAuto;
     const remote = patch.remote !== undefined ? patch.remote : task.remote;
-    const { description: _d, firstMessage: _f, lead: _l, relayAuto: _r, remote: _m, ...plain } = patch;
-    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), ...(remote ? { remote } : {}), updatedAt: this.timestamp() };
+    // 任务主控 the person picked (2026-11-25); null / absent: the default (core/role.ts taskLeadOf).
+    const leadSessionId = patch.leadSessionId !== undefined ? patch.leadSessionId : task.leadSessionId;
+    const { description: _d, firstMessage: _f, lead: _l, relayAuto: _r, remote: _m, leadSessionId: _ls, ...plain } = patch;
+    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto === true || relayAuto === false ? { relayAuto } : {}), ...(leadSessionId ? { leadSessionId } : {}), ...(remote ? { remote } : {}), updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, first_message = ?, lead = ?, relay_auto = ?, remote = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, firstMessage || null, lead ? 1 : 0, relayAuto ? 1 : 0, remote ? JSON.stringify(remote) : null, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, first_message = ?, lead = ?, relay_auto = ?, lead_session = ?, remote = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, firstMessage || null, lead ? 1 : 0, relayAuto === true ? 1 : relayAuto === false ? 2 : 0, leadSessionId || null, remote ? JSON.stringify(remote) : null, next.updatedAt, id);
     return next;
   }
 
@@ -469,6 +472,8 @@ export class Store extends DocumentStore {
       each(sessions, "DELETE FROM mail WHERE to_session = ?");
       each(tasks, "DELETE FROM mail WHERE to_task = ?");
       each(topics, "DELETE FROM mail WHERE to_topic = ?");
+      each(tasks, "DELETE FROM matters WHERE scope_id = ?");
+      each(topics, "DELETE FROM matters WHERE scope_id = ?");
       each(tasks, "DELETE FROM task_notes WHERE task_id = ?");
       each(tasks, "DELETE FROM checklist_items WHERE task_id = ?");
       for (const p of this.listProposals()) if ((p.taskId && tasks.has(p.taskId)) || (p.sessionId && sessions.has(p.sessionId))) this.db.prepare("DELETE FROM proposals WHERE id = ?").run(p.id);

@@ -147,16 +147,43 @@
       "next": ["studio/plans/done/stage-15.md", "studio/plans/done/stage-16.md", "studio/plans/later/canvas-workflow.md"]
     },
     {
+      "id": "studio.localMatters",
+      "label": "本机的事项和消息、按距离送、待我处理",
+      "aliases": ["事项", "待我处理", "留言", "mailbox_send", "mailbox_read", "replyTo", "回执", "委派事项", "背景更新", "内容同上", "LocalMatters", "local-pending", "先问"],
+      "category": "host",
+      "purpose": "2026-11-25 起留言（mailbox_send）、传话（task_message）、session_start 的第一句和每一轮的结果、session_send 都是 Host 自己的事项表里的消息（带 #编号，事项按任务编号，字段和中转协作的事项一样：protocol/src/matters.ts）。每条消息对收的一方有回执 排队 → 送到 → 看过 → 处理了。按距离送（deliveryMode）：同任务、同专题自动进收件箱（这一轮做完再送），任务设了先问或更远的等人在「待我处理」放行。排队的可以撤回、改写，送到时附「发出于…之后你又做了 N 轮」。界面的「待我处理」页取代了任务侧栏的留言；协作那一组以后由「协作·Studio 接入」接进来（PendingPage 的 cowork）。",
+      "anchors": [
+        { "label": "规则和共用类型（按距离、编号、发出于）", "path": "studio/packages/protocol/src/localmail.ts", "anchor": "export function deliveryMode" },
+        { "label": "LocalMatters：事项、消息、回执、回报", "path": "studio/packages/host/src/features/collab/matters.ts", "anchor": "export class LocalMatters" },
+        { "label": "人看的数据：待我处理", "path": "studio/packages/host/src/features/collab/matters.ts", "anchor": "pendingView(taskId?: Id): LocalPendingView" },
+        { "label": "AI 发消息（mailbox_send）", "path": "studio/packages/host/src/features/collab/service.ts", "anchor": "async sendFromSession" },
+        { "label": "收件箱：撤回、改写、发出于", "path": "studio/packages/host/src/features/sessions/inbox.ts", "anchor": "withdraw(sessionId: Id, itemId: Id)" },
+        { "label": "待我处理页和任务侧栏", "path": "studio/packages/ui/src/collab/PendingPage.tsx", "anchor": "export function PendingPage" },
+        { "label": "待我处理的本机来源（source local：人的组、各主控的组、巡检叫醒）", "path": "studio/packages/host/src/features/collab/pending-source.ts", "anchor": "export class LocalPendingSource" },
+        { "label": "任务主控是谁（Task.leadSessionId，否则人开的第一个主会话）", "path": "studio/packages/protocol/src/localmail.ts", "anchor": "export function taskLeadIn" },
+        { "label": "任务主控的角色卡和变化说明", "path": "studio/packages/host/src/core/role.ts", "anchor": "export function taskLeadCard" }
+      ],
+      "steps": [
+        "改按距离的规则：localmail.ts 的 deliveryMode 和 localmail.test.ts；任务菜单的开关在 ui/src/task/TaskPage.tsx（task-relay-ask）。",
+        "消息送进模型时的样子（【留言 #n · 事项 N「…」】和末尾怎么回）：matters.ts 的 modelText；e2e 里 mailbox.spec、handoff-mail.spec 认这一行。",
+        "新的一类消息：LocalMessageVia 加一个、LOCAL_VIA_LABEL 写它的名字，matters.ts 的 record 里定它进哪件事项。",
+        "待我处理里本机的条目：pending-source.ts 的 groups()（组 id local:me / local:session:<id>，放行的 key 是 ask:<mailId>），标记在 mark()，叫醒主控的话在 wake()；页面读 GET /api/pending（features/pending）。",
+        "任务主控：规则在 localmail.ts 的 taskLeadIn（Host 用 role.ts 的 taskLeadOf），改它走 PATCH /api/tasks/:id 的 leadSessionId（tasks/service.ts 校验），会话菜单的 session-task-lead 在 ui/src/task/SessionHead.tsx。"
+      ],
+      "related": ["studio.collab", "studio.relays", "studio.sessions", "studio.collabFramework"],
+      "next": ["studio/plans/collab-framework.md", "studio/plans/collab-agent-spec.md"]
+    },
+    {
       "id": "studio.relays",
       "label": "传话（主控给别的任务的会话说话）",
       "aliases": ["传话", "RelaysFeature", "task_message", "relayAuto"],
       "category": "host",
-      "purpose": "主控（或专题自己的会话）让 Studio 在专题里另一个任务的会话里说一句：人在主窗口或 Focus 确认（任务设了不用确认就直接送），送进那个任务最新的主会话，结果用邮件告诉主控。不是 AMO 中转（那个是 studio.teamRelay）。",
+      "purpose": "主控（或专题自己的会话）让 Studio 在专题里另一个任务的会话里说一句，送进那个任务最新的主会话。2026-11-25 起它是一件委派或通知事项的第一条消息（studio.localMatters）：同专题直接送，任务设了先问（relayAuto false）或只是引用在画布上的，人在主窗口、Focus 或待我处理里确认；委派那一轮的回复自动交回主控。不是 AMO 中转（那个是 studio.teamRelay）。",
       "anchors": [
         { "label": "RelaysFeature", "path": "studio/packages/host/src/features/relays/service.ts", "anchor": "export class RelaysFeature" },
         { "label": "界面", "path": "studio/packages/ui/src/relays/Relays.tsx" }
       ],
-      "related": ["studio.topics", "studio.collab", "studio.sessions"],
+      "related": ["studio.topics", "studio.collab", "studio.sessions", "studio.localMatters"],
       "next": ["studio/plans/done/stage-16.md"]
     },
     {
@@ -297,7 +324,7 @@
       "label": "交流框架：消息的来源、事项清单、打字时不插队",
       "aliases": ["交流框架", "事项", "事项清单", "MessageOrigin", "origin", "agent 交互", "折叠卡", "OriginMessage", "matters", "MattersPanel", "还开着的事", "打字时不插队", "typing", "脉络", "tracks"],
       "category": "host",
-      "purpose": "agent 和 Studio 送进会话的消息（子会话回报、session_send、中转回复、主控传话、留言、值守）在行上带 origin（谁发的、哪一类），对话里显示成折叠的一行而不是人的气泡；旧消息按给模型看的那行【…】认。「脉络」开关（测试功能）后任务页侧栏有事项清单，由界面从中转会话、会话列表、会话的行里算出来，Host 没有事项表。脉络在 设置 → 测试功能 里有自己的一页（详细设置）：开发中的选项是 EXPERIMENTAL_FEATURES 里 parent 为 tracks 的行，默认关，只在脉络开着时生效。其中「打字时不插队」（typing-hold，用户 11-15：先去掉）开着时，输入框有按键界面就告诉 Host，收件箱压住来信 5 分钟，随人的下一条消息一起送。",
+      "purpose": "agent 和 Studio 送进会话的消息（子会话回报、session_send、中转回复、主控传话、留言、值守）在行上带 origin（谁发的、哪一类），对话里显示成折叠的一行而不是人的气泡；旧消息按给模型看的那行【…】认。「脉络」开关（测试功能）后任务页侧栏有事项清单，由界面从中转会话、会话列表、会话的行里算出来（和 Host 2026-11-25 起的事项表 studio.localMatters 是两回事）。脉络在 设置 → 测试功能 里有自己的一页（详细设置）：开发中的选项是 EXPERIMENTAL_FEATURES 里 parent 为 tracks 的行，默认关，只在脉络开着时生效。其中「打字时不插队」（typing-hold，用户 11-15：先去掉）开着时，输入框有按键界面就告诉 Host，收件箱压住来信 5 分钟，随人的下一条消息一起送。",
       "steps": [
         "新的「往会话里送一句话」的来源：inbox.put 的第三个参数给 origin；要新的一类就在 MessageOriginKind 加一个，origin.ts 的 originLabel 写它的标题，给模型看的首行有变化时改 HEADS 和 origin.test.ts。",
         "事项清单多一种事项：ui/src/tracks/matters.ts 的 sessionMatters 里加，matters.test.ts 里写上顺序；点它要跳到对话里的行，那一行的元素要带 data-row-id。",

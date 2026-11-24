@@ -96,6 +96,8 @@ export const KV_KEYS: readonly KvKey[] = [
   { key: "teamrelay.cowork.compacted:", scope: "session", owner: "core/cowork.ts", what: "协作：压缩后提醒重读协作，已提醒到哪次压缩" },
   { key: "annotation-seq:", scope: "session", owner: "features/review/service.ts", what: "批注编号" },
   { key: "report-turn:", scope: "session", owner: "features/sessions/service.ts", what: "已汇报过的那一轮" },
+  { key: "matters.relay-report:", scope: "session", owner: "features/collab/matters.ts", what: "传话（委派）读完那一轮要回报给主控" },
+  { key: "sessions.for-person:", scope: "session", owner: "features/collab/matters.ts", what: "forPerson 开的会话是谁开的（它的背景更新随人的下一条消息带进去）" },
   { key: "claude.login:", scope: "session", owner: "runtime/claude/claude-login.ts", what: "会话用的 Claude 登录方式" },
   { key: "subsession-setup:", scope: "session", owner: "features/sessions/setups.ts", what: "@ 开子会话… 的设定（session_start 的 setup）" },
   { key: "tracks:", scope: "session", owner: "core/tracks.ts", what: "脉络会话：开没开、AI 用 track_note 写的每轮标题和要点" },

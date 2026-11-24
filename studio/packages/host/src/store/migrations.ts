@@ -368,4 +368,26 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE sessions ADD COLUMN rank REAL;
   `,
+  // 28: 本机的事项 (2026-11-25, protocol/src/localmail.ts): the Host's 事项 table (scope "task": scope_id is the task, or the
+  // topic of a topic's own session), and mail's 「#seq」, 事项 and sender as columns to look them up by; the task's 任务主控
+  // when the person picked one (Task.leadSessionId).
+  `
+  CREATE TABLE matters (
+    id TEXT PRIMARY KEY,
+    scope_id TEXT NOT NULL,
+    no INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX matters_scope_no ON matters(scope_id, no);
+  ALTER TABLE mail ADD COLUMN seq INTEGER;
+  ALTER TABLE mail ADD COLUMN matter TEXT;
+  ALTER TABLE mail ADD COLUMN from_session TEXT;
+  UPDATE mail SET from_session = json_extract(body, '$.fromSessionId');
+  CREATE UNIQUE INDEX mail_seq ON mail(seq) WHERE seq IS NOT NULL;
+  CREATE INDEX mail_matter ON mail(matter, seq);
+  CREATE INDEX mail_from_session ON mail(from_session, created_at);
+  ALTER TABLE tasks ADD COLUMN lead_session TEXT;
+  `,
 ];

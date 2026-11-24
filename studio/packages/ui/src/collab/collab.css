@@ -5,6 +5,58 @@
 .mail-route { font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mail-text { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .mail-actions { display: flex; align-items: center; gap: 10px; }
+.mail-actions .spacer, .mail-panel .anno-head .spacer { flex: 1; }
+
+/* 待我处理 (2026-11-25, in place of 留言): the page across the workbench and the task's side panel. */
+.pending-page { max-width: 920px; margin: 0 auto; padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+.pending-page-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pending-page-head h2 { margin: 0; font-size: 18px; }
+.pending-page-sum { font-size: var(--fs-sm); color: var(--text-dim); }
+.pending-section { display: flex; flex-direction: column; gap: 8px; }
+.pending-section h3 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.pending-hint { margin: 0; font-size: var(--fs-cap); color: var(--text-dim); }
+.pending-group { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.pending-group-title { font-size: var(--fs-cap); font-weight: 600; color: var(--text-dim); }
+.pending-why { font-size: var(--fs-cap); color: var(--text-faint); }
+.pending-thread { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px 10px; border-radius: var(--r-l); border: 1px solid var(--border); background: var(--panel); min-width: 0; }
+.pending-thread.open { border-color: var(--attention-border); }
+.pending-thread-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: none; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pending-fold { flex: none; width: 12px; color: var(--text-faint); }
+.pending-no { flex: none; font-size: var(--fs-cap); font-weight: 600; color: var(--text-dim); }
+.pending-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pending-chip { flex: none; padding: 0 6px; border-radius: var(--r-m); background: var(--chip); color: var(--text-dim); font-size: 11px; line-height: 18px; }
+.pending-chip.status-waiting, .pending-chip.status-confirm { background: var(--attention-bg); color: var(--attention); }
+.pending-chip.status-closed, .pending-chip.status-verified { color: var(--text-faint); }
+.pending-thread-sub { display: flex; flex-wrap: wrap; gap: 4px 12px; padding-left: 20px; font-size: var(--fs-cap); color: var(--text-dim); }
+.pending-msgs { list-style: none; margin: 4px 0 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; }
+.pending-msg { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-left: 2px solid var(--border); min-width: 0; }
+.pending-msg.open { border-left-color: var(--attention-border); }
+.pending-msg.withdrawn { opacity: 0.6; }
+.pending-msg-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-cap); color: var(--text-dim); }
+.pending-seq { flex: none; font-weight: 600; color: var(--text); }
+.pending-via { flex: none; }
+.pending-route { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pending-time { flex: none; color: var(--text-faint); }
+.pending-state { flex: none; color: var(--text-dim); }
+.pending-state.ask { color: var(--attention); }
+.pending-state.done { color: var(--text-faint); }
+.pending-msg-text { font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pending-msg-text.clamped { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.pending-thread-actions { padding-left: 20px; margin-top: 4px; }
+.pending-fold-btn { align-self: flex-start; padding: 0; border: none; background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.pending-fold-btn:hover { color: var(--text); }
+.pending-line { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 10px; border-radius: var(--r-l); border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.pending-line:hover { background: var(--panel-raised); }
+.pending-line .pending-title { font-weight: 400; }
+.mail-actions button { white-space: nowrap; }
+.mail-card.compact .pending-why { display: none; }
+.pending-count { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--chip); color: var(--text-dim); font-size: 11px; font-weight: 600; line-height: 16px; vertical-align: 1px; }
+.pending-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pending-entry { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--panel); min-width: 0; }
+.pending-problem { padding: 6px 10px; border-radius: var(--r-l); border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error-text); font-size: var(--fs-sm); }
+.pending-line.static { cursor: default; }
+.pending-line.static:hover { background: var(--panel); }
+.mail-card.compact .mail-text { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Decision requests (S5-04) */
 .decision-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--attention-bg); min-width: 0; }

@@ -602,14 +602,16 @@ describe("DSH runtime", () => {
   it("session_start with write in a folder not set up says so to the agent; set up, it does not (2026-10-23)", async () => {
     const fake = fakeFolders({ ok: true, labelled: false });
     const host = await boot({ dshFolderAccess: fake.folderAccess });
-    const session = await start(host, `[[mcp: session_start {"text":"你好","permission":"write"}]]`);
+    // report: false (2026-11-25, session_start reports by default now): the fake child echoes its first message, which
+    // names this session by its title — the `[[mcp: session_start …]]` line — and its report would start one more.
+    const session = await start(host, `[[mcp: session_start {"text":"你好","permission":"write","report":false}]]`);
     await idle(host, session.id);
     expect(replies(await items(host, session.id)).join("\n")).toMatch(/"sandbox":\s*"这个项目还没为 DSH/);
     await call(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
     await until(() => call<{ state: string }>(host, "GET", `/api/dsh/folders/${session.workspaceId}`), (f) => f.state === "ready");
     // Full control was there already: only the label and the exes.
     expect(fake.done.map((d) => d.split(" ")[0])).toEqual(["label", "exes"]);
-    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: session_start {"text":"再开一个","permission":"write"}]]` });
+    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: session_start {"text":"再开一个","permission":"write","report":false}]]` });
     await idle(host, session.id);
     const last = replies(await items(host, session.id)).at(-1)!;
     expect(last).toMatch(/sessionId/);

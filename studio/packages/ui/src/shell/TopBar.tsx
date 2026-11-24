@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Scope } from "../board/Board.js";
 import { scratchpadBridge } from "../scratchpad/bridge.js";
 import { showToast } from "../lib/toast.js";
-import type { AnyViewDef, View } from "./views.js";
+import type { AnyViewDef, AppData, View } from "./views.js";
 import { RemoteIcon } from "./BackButton.js";
 import { WindowControls } from "./WindowControls.js";
 
@@ -168,9 +168,12 @@ export function ViewBar({
   onView,
   onNew,
   search,
+  data,
   disabled = false,
 }: {
   views: readonly AnyViewDef[];
+  /** For a tab's count (待我处理). */
+  data?: AppData;
   view: View | null;
   scope: Scope;
   onView(view: View): void;
@@ -191,6 +194,14 @@ export function ViewBar({
           return (
             <button key={def.kind} type="button" className="view-tab" aria-current={current ? "page" : undefined} onClick={() => onView(target)} disabled={disabled}>
               {def.tab.label}
+              {(() => {
+                const n = data && def.tab.count ? def.tab.count(data) : 0;
+                return n > 0 ? (
+                  <span className="view-tab-count" data-testid={`tab-count-${def.kind}`}>
+                    {n}
+                  </span>
+                ) : null;
+              })()}
             </button>
           );
         })}

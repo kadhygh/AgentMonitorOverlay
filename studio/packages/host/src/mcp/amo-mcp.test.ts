@@ -175,15 +175,22 @@ describe("AMO MCP", () => {
 
   it("leaves mail for another session or task, and the recipient reads it once", async () => {
     const sender = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
-    expect((await call(sender, "mailbox_send", { toSessionId: configSessionId, text: "导入接口改好了" })).data).toMatchObject({ to: { kind: "session", sessionId: configSessionId }, state: "unread" });
+    // Another task of the topic that says 先问 (2026-11-25, by distance): it waits for the person, or for the recipient's
+    // mailbox_read.
+    service.tasks.updateTask(configTask.id, { relayAuto: false });
+    expect((await call(sender, "mailbox_send", { toSessionId: configSessionId, text: "导入接口改好了" })).data).toMatchObject({ seq: 1, matter: "事项 1「导入接口改好了」", to: { kind: "session", sessionId: configSessionId }, state: "waiting for the person" });
     expect((await call(sender, "mailbox_send", { toTaskId: configTask.id, text: "记得同步配置键" })).data).toMatchObject({ to: { kind: "task" } });
     expect((await call(sender, "mailbox_send", { text: "nobody" })).isError).toBe(true);
     expect((await call(sender, "mailbox_send", { toSessionId: mainSessionId, text: "me" })).isError).toBe(true);
     await sender.close();
 
     const reader = await connect(MCP_TOKEN, identities.tokenFor(configSessionId));
-    const read = (await call(reader, "mailbox_read")).data as { messages: Array<{ from: { sessionId: string } | string; text: string }> };
+    const read = (await call(reader, "mailbox_read")).data as { messages: Array<{ from: { sessionId: string } | string; text: string; seq: number }>; pending: Array<{ seq?: number }> };
     expect(read.messages.map((m) => m.text)).toEqual(["导入接口改好了", "记得同步配置键"]);
+    expect(read.messages.map((m) => m.seq)).toEqual([1, 2]);
+    // Read, not answered: 待你处理 until it answers (replyTo) or marks them.
+    expect(read.pending.map((p) => p.seq).sort()).toEqual([1, 2]);
+    expect(((await call(reader, "mailbox_read", { handled: ["#1", 2] })).data as { markedHandled: string[]; pending: unknown[] })).toMatchObject({ markedHandled: ["#1", "#2"], pending: [] });
     expect(read.messages[0]!.from).toMatchObject({ sessionId: mainSessionId, title: "计划" });
     expect(((await call(reader, "mailbox_read")).data as { messages: unknown[] }).messages).toEqual([]);
     expect(service.collab.mail({ forTaskId: configTask.id }).map((m) => m.state)).toEqual(["read", "read"]);

@@ -4,6 +4,7 @@ import { launchStudio, screenshot, type Studio } from "../support/studio.js";
 
 // Mail between sessions: a Codex session leaves messages for a Claude session and its task through the AMO MCP; the
 // person sees them on the task page and decides (forward / dismiss); the recipient can also read mail itself.
+// 2026-11-25 (本机的事项): two tasks without a topic are far apart, so their messages wait in 待我处理 (先问).
 
 let studio: Studio | undefined;
 
@@ -37,11 +38,11 @@ test("mail between sessions, forwarded or dismissed by the person", async () => 
   await screenshot(studio.app, "stage-5", "S5-03-mail", page);
 
   // Dismiss the task message; forward the session message into the conversation.
-  await cards.filter({ hasText: "记得同步配置键" }).getByRole("button", { name: "忽略" }).click();
+  await cards.filter({ hasText: "记得同步配置键" }).getByRole("button", { name: "不送" }).click();
   await expect(cards).toHaveCount(1);
-  await cards.getByRole("button", { name: "转进对话" }).click();
+  await cards.getByRole("button", { name: "送进会话" }).click();
   await expect(page.getByTestId("mail-card")).toHaveCount(0);
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: [AMO 留言] 来自任务「发件任务」", { timeout: 60_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText(/MOCK: 【留言 #\d+ · 事项 \d+「[^」]*」】来自任务「发件任务」/, { timeout: 60_000 });
   expect((await mailFor()).map((m) => m.state).sort()).toEqual(["dismissed", "forwarded"]);
 
   // The recipient can also read its own mail on its next turn.

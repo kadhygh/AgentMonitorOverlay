@@ -186,10 +186,10 @@ export class TasksFeature extends Feature<"canvases" | "config" | "mcp" | "remot
     return this.updateTask(id, patch);
   }
 
-  updateTask(id: Id, patch: { title?: unknown; description?: unknown; firstMessage?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+  updateTask(id: Id, patch: { title?: unknown; description?: unknown; firstMessage?: unknown; lead?: unknown; relayAuto?: unknown; leadSessionId?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
     if (current.remote) throw new HostError("read_only", `这是 ${current.remote.name} 上的远程任务：状态、说明和专题跟着那台电脑走，这里不能改（名字可以改，会改到那边）`);
-    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "firstMessage" | "lead" | "relayAuto">> = {};
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "firstMessage" | "lead">> & { relayAuto?: boolean | null; leadSessionId?: Id | null } = {};
     // The first session took it into its composer, or the person cleared it ("").
     if (patch.firstMessage !== undefined) clean.firstMessage = firstMessageOf(patch.firstMessage);
     if (patch.lead !== undefined) {
@@ -197,8 +197,17 @@ export class TasksFeature extends Feature<"canvases" | "config" | "mcp" | "remot
       clean.lead = patch.lead;
     }
     if (patch.relayAuto !== undefined) {
-      if (typeof patch.relayAuto !== "boolean") throw new HostError("bad_request", "relayAuto must be true or false");
+      // null: back to the default, by distance (2026-11-25).
+      if (patch.relayAuto !== null && typeof patch.relayAuto !== "boolean") throw new HostError("bad_request", "relayAuto must be true, false or null");
       clean.relayAuto = patch.relayAuto;
+    }
+    if (patch.leadSessionId !== undefined) {
+      // 任务主控 (2026-11-25): one of the task's own main sessions; null goes back to the first the person opened.
+      if (patch.leadSessionId !== null) {
+        const s = typeof patch.leadSessionId === "string" ? this.store.getSession(patch.leadSessionId) : undefined;
+        if (!s || s.taskId !== id || s.kind !== "main" || s.archivedAt) throw new HostError("bad_request", "任务主控要是这个任务里一个没归档的主会话");
+      }
+      clean.leadSessionId = patch.leadSessionId as Id | null;
     }
     if (patch.title !== undefined) clean.title = String(patch.title).trim();
     if (patch.description !== undefined) {

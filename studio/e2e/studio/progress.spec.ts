@@ -61,7 +61,7 @@ test("progress on the task page and collaboration hints on the board", async () 
   const ask = page.getByTestId("question-popup").getByTestId("question-card");
   await ask.getByRole("radio", { name: /^3/ }).first().click();
   await ask.getByRole("button", { name: "提交", exact: true }).click();
-  await page.getByTestId("mail-card").filter({ hasText: "导入完成后告诉我" }).getByRole("button", { name: "忽略" }).click();
+  await page.getByTestId("mail-card").filter({ hasText: "导入完成后告诉我" }).getByRole("button", { name: "不送" }).click();
   await page.getByRole("button", { name: "返回看板" }).click();
   await expect(card.getByTestId("card-asks")).toHaveCount(0);
 });

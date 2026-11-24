@@ -54,13 +54,18 @@ const userTexts = (sessionId: string) => store.listItems(sessionId).flatMap((i) 
 
 describe("session_start (开会话)", () => {
   it("starts a main session in the caller's task, marked as from it, on the caller's model unless named", async () => {
-    const s = await service.sessions.startPeer(caller.id, { text: "只改数值表，别动界面", title: "改数值" });
+    const s = await service.sessions.startPeer(caller.id, { text: "只改数值表，别动界面", title: "改数值", report: false });
     expect(s).toMatchObject({ taskId: task.id, kind: "main", parentId: null, startedBy: caller.id, profileId: "p-ds", title: "改数值" });
     expect(store.getSession(s.id)?.startedBy).toBe(caller.id);
     const first = userTexts(s.id)[0]!;
     expect(first).toContain("【由本任务的会话「主会话」开启】");
     expect(first).toContain("只改数值表，别动界面");
-    expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
+    // 本机的事项 (2026-11-25): it is the caller's 委派事项, and says how to reach the caller in it.
+    const matter = service.collab.matters.delegateOf(s.id, caller.id)!;
+    expect(matter).toMatchObject({ kind: "delegate", no: 1, title: "改数值", owner: `agent:${caller.id}`, bindings: { sessions: [s.id] }, waitingOn: [`agent:${s.id}`] });
+    expect(first).toContain(`你在做它的「事项 1」`);
+    expect(first).toContain(`mailbox_send 带 matter: "${matter.id}"`);
+    expect(store.listMailInMatter(matter.id)).toMatchObject([{ via: "start", seq: 1, text: "只改数值表，别动界面", receipts: [{ party: `agent:${s.id}`, state: expect.stringMatching(/^(delivered|seen)$/) }] }]);
     expect((await service.sessions.startPeer(caller.id, { text: "看看界面", model: "gpt" })).profileId).toBe("p-gpt");
     // permission: the runtime's own option for the level (Codex: read-only, full-auto), never wider than the caller's
     // (10-29); left out, the caller's own (here none was picked: the default it runs on, Codex's 逐条询问).
@@ -87,9 +92,10 @@ describe("session_start (开会话)", () => {
     // Archiving the caller leaves the sessions it started alone.
     await service.sessions.archive(caller.id);
     expect(store.getSession(s.id)?.archivedAt).toBeNull();
-    // No report asked: nothing comes back into the caller.
+    // report: false: nothing comes back into the caller from it (the others report by default, 2026-11-25).
     await new Promise((r) => setTimeout(r, 300));
-    expect(userTexts(caller.id).some((t) => t.includes("这一轮做完了"))).toBe(false);
+    expect(userTexts(caller.id).some((t) => t.includes(`（${s.id}）`) && t.includes("这一轮做完了"))).toBe(false);
+    expect(store.getSession(s.id)?.reportTo ?? null).toBeNull();
   });
 
   it("setup: the person's 子会话设定 sent with a message wins over the agent's arguments; its words go to the new session (2026-11-05)", async () => {
@@ -150,8 +156,11 @@ describe("session_start (开会话)", () => {
   it("with report, the new session's first finished turn comes back into the caller's conversation", async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "数一下有几张表", report: true });
     expect(userTexts(s.id)[0]).toContain("你最后的回复会自动转给它");
-    await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）这一轮做完了`)));
+    await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）`) && t.includes("这一轮做完了")));
     const report = userTexts(caller.id).find((t) => t.includes("这一轮做完了"))!;
+    // A message of the 委派事项 (2026-11-25), with how to go on.
+    expect(report).toMatch(/^【结果 #\d+ · 事项 \d+「数一下有几张表」】/);
+    expect(report).toContain(`用 session_send 给会话 ${s.id}`);
     // The fake app-server answers with its own text; whatever it is, the report carries the reply.
     const [reply] = store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
     expect(reply && reply.type === "agent" && report.includes(reply.markdown.trim().slice(0, 20))).toBe(true);
@@ -183,7 +192,7 @@ describe("session_start (开会话)", () => {
     await until(() => store.getSession(s.id)?.status === "running");
     service.collab.sendMail(s.id, { kind: "session", sessionId: caller.id }, "结论：3 张表");
     await until(() => reports(s).length === 3);
-    expect(reports(s)[2]).toContain("它已经用留言把结果发给你");
+    expect(reports(s)[2]).toContain("内容同上");
     expect(reports(s)[2]).not.toContain("slow slow");
     // No turn is told twice, whatever else changes on the session.
     await service.sessions.renameSession(s.id, "改个名");
@@ -239,7 +248,8 @@ describe("session_send (续发)", () => {
     const sent = await service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "阶段 2：再加一列" });
     expect(sent).toMatchObject({ delivered: true, waiting: 0 });
     await until(() => userTexts(s.id).length === 2);
-    expect(userTexts(s.id)[1]).toContain(`【开启你的会话「主会话」（${caller.id}）发来】`);
+    expect(userTexts(s.id)[1]).toMatch(/^【续发 #\d+ · 事项 \d+「阶段 1：只改数值表」】来自任务「掉落表」的会话「主会话」/);
+    expect(userTexts(s.id)[1]).toContain(`（${caller.id}）`);
     expect(userTexts(s.id)[1]).toContain("阶段 2：再加一列");
     const sentRow = store.listItems(s.id).filter((i) => i.type === "user")[1];
     expect(sentRow && sentRow.type === "user" && sentRow.origin).toEqual({ kind: "send", from: "主会话", sessionId: caller.id });
@@ -250,7 +260,8 @@ describe("session_send (续发)", () => {
     const others = await service.sessions.startPeer(persons.id, { text: "另一个会话开的" });
     await expect(service.sessions.sendPeer(caller.id, { sessionId: others.id, text: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
     const forPerson = await service.sessions.startPeer(caller.id, { text: "人来处理", forPerson: true });
-    await expect(service.sessions.sendPeer(caller.id, { sessionId: forPerson.id, text: "x" })).rejects.toThrow(/不是你用 session_start 开的/);
+    // One opened forPerson (2026-11-25): a 背景更新, with the person's next message.
+    expect(await service.sessions.sendPeer(caller.id, { sessionId: forPerson.id, text: "x" })).toMatchObject({ background: true, delivered: false });
     await expect(service.sessions.sendPeer(caller.id, { sessionId: s.id, text: "  " })).rejects.toThrow();
     await until(() => store.getSession(s.id)?.status === "idle");
     await service.sessions.archivePeer(caller.id, { sessionId: s.id });
@@ -269,7 +280,7 @@ describe("session_send (续发)", () => {
     expect(userTexts(s.id)[1]).toContain("阶段 2");
     expect(userTexts(s.id)[2]).toContain("阶段 2 补一句");
     // The caller hears of the turn that ended (through its own inbox: it was free, so at once).
-    await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）这一轮做完了`)));
+    await until(() => userTexts(caller.id).some((t) => t.includes(`（${s.id}）`) && t.includes("这一轮做完了")));
     await until(() => store.getSession(s.id)?.status === "idle");
     expect(userTexts(s.id)).toHaveLength(3);
   });

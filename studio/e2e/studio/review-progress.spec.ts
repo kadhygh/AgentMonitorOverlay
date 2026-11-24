@@ -54,6 +54,9 @@ test("a line at each reply's right: left click reads down to a block, right clic
   await expect(replies).toHaveCount(1, { timeout: 30_000 });
   await studio.api("POST", `/api/sessions/${session.id}/messages`, { text: LONG });
   await expect(replies).toHaveCount(2, { timeout: 30_000 });
+  // The round over before the next message: sent while it still runs, 「好的，收到」 goes into that round, whose reply is
+  // then not a finished round's and has no line (seen 2 of 3 runs on 11-25, plans/maintenance.md).
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
   await studio.api("POST", `/api/sessions/${session.id}/messages`, { text: "好的，收到" });
   await expect(replies).toHaveCount(3, { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible({ timeout: 30_000 });
