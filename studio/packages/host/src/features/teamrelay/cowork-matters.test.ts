@@ -427,4 +427,42 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     // The cards say so.
     expect(roleCard(service, lead.id)).toContain("**交给对方**的事项");
   }, 30_000);
+
+  it("the patrol wakes an 执行 here for a reply to it or an @ of it only — not for the two 主控's back and forth (2026-11-25 evening: #37)", async () => {
+    const { service, session, coderClient, tool, told } = await setup();
+    const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
+    const lead = session("射速文档");
+    const j = await service.teamRelay.cowork.join(lead.id, c.id);
+    const LI = "studio:d_li00000000000000000000000:s-lead";
+    await coderClient.joinCoworkAgent(c.id, LI, "战斗代码", { role: "lead" });
+    const via = { kind: "ai" as const, client: "AMO Studio", conv: LI };
+    await tool(lead.id, "cowork_matter", { action: "open", title: "射速表", body: "写射速表" });
+    const worker = session("写表");
+    const w = await service.teamRelay.cowork.join(worker.id, c.id, "写表", { role: "worker", matter: "事项 1" });
+    const m = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 1)!;
+    const wakes = () => told.filter((t) => t.sessionId === worker.id && t.text.includes("【协作 · 待你处理】"));
+    // The 执行 asks 老李's 主控 in its 事项.
+    expect((await tool(worker.id, "cowork_post", { threadId: "事项 1", body: "上限按多少写？", agentMentions: [LI] })).error).toBe(false);
+    const asked = (await coderClient.messages(m.id)).messages.find((x) => x.body === "上限按多少写？")!;
+    // The two 主控 talk in it: no wake for the 执行.
+    const q = (await coderClient.postCowork(c.id, { kind: "text", threadId: m.id, body: "上限你们定的是 60？", agentMentions: [j.mark], via })).message!;
+    expect((await tool(lead.id, "cowork_post", { threadId: "事项 1", body: "是 60，照已定的事写", replyTo: q.seq, agentMentions: [LI] })).error).toBe(false);
+    await service.pending.tick();
+    expect(wakes().map((x) => x.text)).toEqual([]);
+    // 老李's 主控 answers the 执行: the patrol wakes it with the answer, and its own end-of-turn line.
+    await coderClient.postCowork(c.id, { kind: "text", threadId: m.id, body: "按 60 写", replyTo: asked.seq, via });
+    await service.pending.tick();
+    await until(() => wakes(), (x) => x.length === 1, "the 执行 woken for the reply");
+    expect(wakes()[0]!.text).toContain("回你");
+    expect(wakes()[0]!.text).toContain("按 60 写");
+    expect(wakes()[0]!.text).toContain("最后的回复会自动交给主控");
+    expect(wakes()[0]!.text).not.toContain("待核对的核对完标已验");
+    // Told once: the next patrol does not wake it again.
+    await service.pending.tick();
+    expect(wakes()).toHaveLength(1);
+    // Its 待我处理 group holds just that (not its 主控's word).
+    const g = service.pending.snapshot().groups.find((x) => x.for.kind === "session" && x.for.sessionId === worker.id)!;
+    expect(g.items.map((i) => i.kind)).toEqual(["reply"]);
+    expect(w.role).toBe("worker");
+  }, 30_000);
 });

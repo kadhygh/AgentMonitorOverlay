@@ -7,11 +7,15 @@ import { pendingGroupId, type TeamCowork } from "./cowork.js";
 // 待我处理 from the 协作 (2026-11-24, plans/collab-framework.md「11-24」第 5 步): a source of features/pending. The service
 // keeps each participant's list (GET /api/cowork/pending, protocol/matters.ts pendingFor); this reads the person's own (one
 // group per 协作, long-polled so the Focus row and the page move as it changes) and each 主控 session's here (read on the
-// patrol's tick: the patrol wakes it with what is new, in the wake message of plans/collab-agent-spec.md §2). 执行会话 are
-// not patrolled: what is for them comes as deliveries (an @ in their 事项). An older service (no 事项) gives no groups.
+// patrol's tick: the patrol wakes it with what is new, in the wake message of plans/collab-agent-spec.md §2). 执行会话 too,
+// but only for what answers or @-s them (WORKER_WAKES, 2026-11-25 evening: an 执行 that asked the other side was not woken
+// by the answer and stopped there — the real-model run's #37). An older service (no 事项) gives no groups.
 
 /** The person's list waits this long for a change per poll (the service holds it at most COWORK_INBOX_MAX_WAIT). */
 const PERSON_WAIT_MS = 25_000;
+
+/** What of an 执行's 待我处理 the patrol wakes it for: a reply to it, an @ of it (its 主控's word comes by session_send). */
+const WORKER_WAKES: ReadonlySet<PendingItem["kind"]> = new Set(["reply", "mention"]);
 
 export class CoworkPendingSource implements PendingSource {
   readonly source = "cowork";
@@ -90,11 +94,12 @@ export class CoworkPendingSource implements PendingSource {
       this.takePerson(mine.lists, mine.version);
       await this.readCoworks(client, [...new Set([...mine.lists.map((l) => l.coworkId), ...this.cowork.joined().map((j) => j.coworkId)])]);
       const next = new Map<string, { coworkId: string; mark: string; sessionId: Id; items: PendingItem[] }>();
-      // 主控 and 未分角色 (they work as before: as a 主控); not 执行.
+      // 主控 and 未分角色 (they work as before: as a 主控) with their whole list; 执行 with what answers or @-s them.
       for (const j of this.cowork.joined()) {
-        if (j.ended || j.role === "worker") continue;
-        const items = await this.cowork.agentPending(client, j.coworkId, j.mark).catch(() => null);
-        if (items === null) continue;
+        if (j.ended) continue;
+        const all = await this.cowork.agentPending(client, j.coworkId, j.mark).catch(() => null);
+        if (all === null) continue;
+        const items = j.role === "worker" ? all.filter((i) => WORKER_WAKES.has(i.kind)) : all;
         next.set(`${j.coworkId} ${j.mark}`, { coworkId: j.coworkId, mark: j.mark, sessionId: j.sessionId, items });
       }
       this.agents = next;
