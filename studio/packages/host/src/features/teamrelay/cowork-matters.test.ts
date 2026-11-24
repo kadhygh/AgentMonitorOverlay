@@ -138,11 +138,16 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(typeof (posted.basis as { at?: number } | undefined)?.at).toBe("number");
     expect((await tool(other.id, "cowork_matter", { action: "update", matter: "事项 1", status: "已推送" })).text).toContain("你是执行会话");
 
-    // 改角色: the 执行 becomes nothing new here — the 主控 changes the 事项 instead (by 「事项 1」 and the status's label).
+    // 改角色: the 执行 becomes nothing new here — the 主控 changes the 事项 instead (by 「事项 N」 and the status's label)…
+    // but only its own side's (2026-11-25): 事项 1 is 程序老李's, so it is refused saying so.
     const upd = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 1", status: "已推送", note: "执行贴了提交" });
-    expect(upd).toMatchObject({ error: false });
-    expect(upd.text).toContain("→ 已推送");
-    expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.id === m.id)!.status).toBe("pushed");
+    expect(upd.error).toBe(true);
+    expect(upd.text).toContain("这件归 程序老李 那方，在事项里 @ 它");
+    expect((await tool(lead.id, "cowork_matter", { action: "open", title: "穿透文档", body: "写穿透规则" })).error).toBe(false);
+    const upd2 = await tool(lead.id, "cowork_matter", { action: "update", matter: "事项 2", status: "已推送", note: "执行贴了提交" });
+    expect(upd2).toMatchObject({ error: false });
+    expect(upd2.text).toContain("→ 已推送");
+    expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 2)!.status).toBe("pushed");
   }, 30_000);
 
   it("the role card goes the role update's way (joined, role changed, after a compaction with the whole card); cowork_board lists the 事项卡; cowork-patrol-<id> wakes this side's 主控 (2026-11-25)", async () => {
@@ -359,7 +364,38 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(wakes()).toHaveLength(0);
     await coderClient.patchMatter(c.id, m.id, { conclusion: "图标 128" });
     setStatus(lead.id, "idle");
-    await new Promise((r) => setTimeout(r, 400));
-    expect(wakes()).toHaveLength(0);
+    // What it is woken for now is the other side's 「事项 1 关了」 (2026-11-25), not the 等你 it no longer is.
+    await expect.poll(() => wakes().length, { timeout: 5_000 }).toBe(1);
+    expect(wakes()[0]!.text).toContain("关了：事项 1「图标尺寸」关了：图标 128");
+    expect(wakes()[0]!.text).not.toContain("在等 你");
+  }, 30_000);
+
+  it("v6 之后定的 (2026-11-25): close goes into 已定的事 only with decided; a gate to my person lists the inferred answers they have not seen", async () => {
+    const { service, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
+    const lead = session("射速文档");
+    await service.teamRelay.cowork.join(lead.id, c.id);
+    // A 口径 closed with decided: into 已定的事; a piece of work: stays in its 事项.
+    await tool(lead.id, "cowork_matter", { action: "open", title: "射速口径", body: "1–60，默认 10" });
+    const rule = await tool(lead.id, "cowork_matter", { action: "close", matter: "事项 1", conclusion: "maxRate 1–60，默认 10", decided: true });
+    expect(rule.text).toContain("记进了已定的事");
+    await tool(lead.id, "cowork_matter", { action: "open", title: "写文档", body: "把口径写进文档" });
+    const work = await tool(lead.id, "cowork_matter", { action: "close", matter: "事项 2", conclusion: "文档写好了" });
+    expect(work.text).toContain("留在事项里");
+    expect(work.text).toContain("对方的主控和人会收到「事项 2 关了」");
+    const decided = (await tool(lead.id, "cowork_read")).text.split("## 已定的事")[1]!.split("\n## ")[0]!;
+    expect(decided).toContain("maxRate 1–60");
+    expect(decided).not.toContain("文档写好了");
+    // An answer of my own judgement in the other side's 事项: a 知会 to my person; the gate to them lists it.
+    const q = (await coderClient.openMatter(c.id, { title: "冰冻挡不挡", body: "冰冻的敌人挡不挡？" })).matter;
+    expect((await tool(lead.id, "cowork_post", { threadId: `事项 ${q.no}`, body: "我看挡", basis: "inferred" })).error).toBe(false);
+    const answer = (await coderClient.coworkFeed(c.id)).messages.find((x) => x.body === "我看挡")!;
+    expect(answer.notice).toEqual(["策划小王"]);
+    const ask = await tool(lead.id, "cowork_ask", { to: "策划小王", title: "等策划小王确认：合 master", body: "feature/fire-rate 合进 master" });
+    expect(ask.error).toBe(false);
+    const gate = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.title === "等策划小王确认：合 master")!;
+    const body = (await coderClient.messages(gate.id)).messages[0]!.body;
+    expect(body).toContain("还没看过的 AI 推断回答");
+    expect(body).toContain(`#${answer.seq}（事项 ${q.no}） 我看挡`);
   }, 30_000);
 });

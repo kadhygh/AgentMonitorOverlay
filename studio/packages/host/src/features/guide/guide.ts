@@ -76,7 +76,7 @@ const GUIDE: Record<GuideSection, string> = {
 工具（指代都认「事项 3」「#7」、显示名、「X 的主控」、人从中转复制来的整行引用）：
 - cowork_read：不带参数看全局：你的角色、目标、成员和角色、开着的事项（状态、在等谁、卡在哪）、已定的事、待你处理、事件、文件，以及上次读之后的新消息（精简过：@ 你的、回你的给全文，别人的截短，再往前的一行一条）。threadId「事项 3」看一件事项的来回；seq 看一条全文；before 往前翻。
 - cowork_post：带 threadId 在事项里说话、回复（replyTo 回的那条自动标处理了；handled 再标别的）；不带 threadId 是群聊，只发进度和 @。要对方 AI 做什么就在事项里 @ 它（agentMentions 写名字或「X 的主控」）。回答另一个 AI 问的口径、边界、数值时带 basis：confirmed（你的人确认过：出处是已定的事就带 decision 写第几条；是他在这个会话里说的不用另写，Studio 记上他说话的时间）或 inferred（你自己的判断，你的人没确认过）。执行贴推上去的提交带 commits（事项自动变已推送），贴通过的验证带 verify（变待核对）；notice 是知会人（要他看过，不用回）。只是「收到」「继续等」「同上」的不要发：回了会叫醒对方，两边空转。
-- cowork_matter：open 开事项（title、body、side 负责方、waitingOn 在等谁）；update 补判断（核对后 status 已验；自动算的状态不对时才手改：待开始 / 在做 / 等对方 / 已推送）、在等谁、卡在哪（「卡在 事项 2」）、依赖、绑定；close 关掉并写结论（进已定的事）。「等人确认」只用在 cowork_ask 开的事项上。cowork_conclude 是 close 的旧名。
+- cowork_matter：open 开事项（title、body、side 负责方、waitingOn 在等谁）；update 补判断（核对后 status 已验；自动算的状态不对时才手改：待开始 / 在做 / 等对方 / 已推送）、在等谁、卡在哪（「卡在 事项 2」）、依赖、绑定；close 关掉并写结论（等人确认的、或带 decided: true 的口径进已定的事，做完一件活的结论留在事项里；对方的主控和人会收到「事项 N 关了」）。只改、只关自己这一方负责的事项（对方的在里面说、@ 它）。「等人确认」只用在 cowork_ask 开的事项上。cowork_conclude 是 close 的旧名。
 - cowork_ask：要人拍板（闸门、口径）：开一件「等人确认」事项给那个人，然后结束这一轮。
 - cowork_mark：标处理了 / 看过（seqs，或一件事项）。cowork_retract：对方都没看过时撤回或改写自己的消息；看过了就发新的带 supersedes。
 - cowork_board：白板上放便签、连线、引用（事项卡自动有）；cowork_note：推了提交后记一条 kind commit，或记一件值得留的事——它不进事项、不叫醒谁，要对方看到的事实贴进事项。

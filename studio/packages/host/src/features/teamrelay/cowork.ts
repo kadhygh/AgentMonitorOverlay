@@ -1,5 +1,5 @@
 import { inTurn, refId, sessionRefText, type CoworkChoice, type CoworkHandoff, type CoworkJoin, type CoworkRoleChoices, type Id, type MessageOrigin, type Session } from "@amo-studio/protocol";
-import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, basisText, personParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type MessageBasis, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
+import { AGENT_REPORT_MS, AGENT_STATE_LABEL, agentParty, basisText, personParty, BOARD_AI_MAX_CARDS, COWORK_MATTERS_VERSION, filesAsText, GATE_LABEL, MATTER_STATUS_LABEL, matterDecided, otherSideText, pendingItemKey, RelayClientError, seenByAgents, threadAsText, type AgentReport, type AgentRole, type BoardItem, type BoardOp, type Cowork, type CoworkDelivery, type CoworkInbox, type CoworkInboxItem, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type MessageBasis, type Party, type PendingItem, type RelayClient, type RelayFile, type Thread, type Via } from "@amo-studio/relay/light";
 import { Feature, type FeatureHost } from "../../core/feature.js";
 import { noteCoworkKnown } from "../../core/role.js";
 import { HostError, isRemoteCopy } from "../../core/shared.js";
@@ -1066,16 +1066,18 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const m = matterRef(c, input.matter ?? input.threadId);
     if (!m) throw new HostError("bad_request", `要写是哪件事项（matter：「事项 3」或它的 threadId）。开着的：${(c.matters ?? []).filter((x) => x.status !== "closed").map((x) => `事项 ${x.no}「${x.title}」`).join("、") || "（没有）"}`);
     const patch: MatterPatch = { base: typeof input.base === "number" ? input.base : m.version };
+    // 主控不能改对方的事项 (2026-11-25, plans/collab-agent-spec.md 「v6 之后定的」; the service refuses it too): its judgement
+    // and closing are its side's; anyone may say something in it.
+    if (action === "close" && m.status === "closed") throw new HostError("bad_request", `事项 ${m.no}「${m.title}」已经关了${m.conclusion ? `，结论是：${m.conclusion}` : ""}。要改，在群聊里说，或者开一件新的事项。`);
+    const othersSide = m.side !== this.relay().me;
+    const judging = action === "close" || ["status", "waitingOn", "blocker", "conclusion"].some((k) => (input as Record<string, unknown>)[k] !== undefined);
+    if (othersSide && judging) throw new HostError("bad_request", `${otherSideText(m.no, m.side)}（cowork_post 带 threadId「事项 ${m.no}」和 agentMentions）。`);
     if (action === "close") {
-      if (m.status === "closed") throw new HostError("bad_request", `事项 ${m.no}「${m.title}」已经关了${m.conclusion ? `，结论是：${m.conclusion}` : ""}。要改，在群聊里说，或者开一件新的事项。`);
-      // A conclusion is the two sides' (as 子会话 were: its asker and the one asked): this side carries it, opened it, or it
-      // waits on this side. Another side's is a gate (动别人的东西).
-      const meParty = `person:${this.relay().me}`;
-      const mine = m.side === this.relay().me || m.owner === meParty || m.owner === agentParty(mark) || m.waitingOn.some((p) => p === meParty || p === agentParty(mark));
-      if (!mine) throw new HostError("bad_request", `事项 ${m.no}「${m.title}」是 ${m.side} 这一方负责的${m.waitingOn.length ? `、在等 ${m.waitingOn.map((p) => partyName(p, c)).join("、")}` : ""}：结论只有他们两边（和他们的 AI）能定。你有意见就用 cowork_post 带 threadId「事项 ${m.no}」在里面说。`);
       patch.status = "closed";
       const conclusion = typeof input.conclusion === "string" && input.conclusion.trim() ? input.conclusion.trim() : null;
       if (conclusion) patch.conclusion = conclusion;
+      // 已定的事只放口径: a 「等人确认」's conclusion always goes in; another only when said to be a 口径.
+      if (input.decided === true) patch.decided = true;
       if (typeof input.note === "string" && input.note.trim()) patch.note = input.note.trim();
     } else {
       if (status) patch.status = status;
@@ -1111,7 +1113,7 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     }
     const changed = after.status !== m.status ? `${MATTER_STATUS_LABEL[m.status]} → ${MATTER_STATUS_LABEL[after.status]}` : MATTER_STATUS_LABEL[after.status];
     return action === "close"
-      ? `事项 ${after.no}「${after.title}」关掉了${after.conclusion ? `，结论「${after.conclusion}」记进了已定的事` : ""}；里面的消息都算处理了。状态有变化时在群聊发一句进度（带事项编号）。`
+      ? `事项 ${after.no}「${after.title}」关掉了${after.conclusion ? (matterDecided(after) ? `，结论「${after.conclusion}」记进了已定的事` : `，结论「${after.conclusion}」留在事项里（不是口径，不进已定的事；是口径的话关的时候带 decided: true）`) : ""}；你这一方在里面的消息算处理了，对方的主控和人会收到「事项 ${after.no} 关了」。状态有变化时在群聊发一句进度（带事项编号）。`
       : `事项 ${after.no}「${after.title}」：${changed}${after.waitingOn.length ? ` · 在等 ${after.waitingOn.map((p) => partyName(p, c)).join("、")}` : ""}${after.blocker ? ` · 卡在 ${after.blocker}` : ""}（版本 ${after.version}）。`;
   }
 
@@ -1169,7 +1171,13 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
       if (!(await this.hasMatters())) throw new HostError("bad_request", `你用的就是 ${me} 的身份：要问 ${me} 本人，直接在这个对话里问。`);
       const { cowork: c } = await this.call(() => client.cowork(coworkId));
       if (c.agents.find((x) => x.mark === mark)?.role === "worker") throw new HostError("bad_request", "你是执行会话：不向人提问（这是主控的事）。要人拍板的，写进这一轮最后的回复，交回给主控。");
-      const body = [text(input.body, "body"), ...questions.map((q, i) => `${i + 1}. ${q.text}${q.options?.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n");
+      // The AIs' answers that were their own judgement and that the person has not looked at yet go along (2026-11-25, 「推断
+      // 的回答要让人看到」: the merge gate lists them) — what they would confirm with it.
+      const judged = await client
+        .coworkPending({ coworkId, party: personParty(me) })
+        .then((r) => (r.lists[0]?.items ?? []).filter((i) => i.kind === "notice" && i.why.text.startsWith("!")), () => []);
+      const unseen = judged.length ? [`还没看过的 AI 推断回答（替 ${me} 答的，${me} 没确认过；确认这件也就认了它们，不认的说哪条）：`, ...judged.slice(0, 20).map((i) => `- #${i.seq}${i.matterNo ? `（事项 ${i.matterNo}）` : ""} ${(i.body ?? i.text).replace(/\s+/g, " ").slice(0, 160)}`)] : [];
+      const body = [text(input.body, "body"), ...questions.map((q, i) => `${i + 1}. ${q.text}${q.options?.length ? `（${q.options.join(" / ")}）` : ""}`), ...(unseen.length ? ["", ...unseen] : [])].join("\n");
       const out = await this.call(() => client.openMatter(coworkId, { title: text(input.title, "title").slice(0, 200), body, kind: "confirm", waitingOn: [personParty(me)], via: this.via(mark) }));
       const m = out.matter;
       return `开了事项 ${m.no}「${m.title}」（等人确认，在等 ${me}；threadId ${m.id}）。${me} 在要你看里会看到它；回复后你会被叫醒。现在结束这一轮，不要在等的方向上接着做。`;

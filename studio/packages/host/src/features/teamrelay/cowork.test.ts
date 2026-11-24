@@ -283,11 +283,14 @@ describe("协作 in Studio", () => {
     // A 子会话 asking someone else: not the planner's to conclude; the 群聊 has none; one asking the planner, once.
     const notMine = await tool(s.id, "cowork_conclude", { threadId: toArtist.thread!.id, conclusion: "不变" });
     expect(notMine.error).toBe(true);
-    expect(notMine.text).toContain("结论只有他们两边");
+    expect(notMine.text).toContain("那方，在事项里 @ 它");
     expect((await tool(s.id, "cowork_conclude", { threadId: c.id, conclusion: "x" })).text).toContain("群聊没有结论");
-    const done = await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "先用线性，上限 12。" });
-    expect(done.error).toBe(false);
-    expect(done.text).toContain("「射速曲线」关掉了，结论「先用线性，上限 12。」记进了已定的事");
+    // One asking the planner is still 程序老李's 事项 (2026-11-25, an AI changes only its own side's): the planner's AI
+    // answers in it, and 程序老李 concludes it.
+    const asked = await tool(s.id, "cowork_conclude", { threadId: toPlanner.thread!.id, conclusion: "先用线性，上限 12。" });
+    expect(asked.error).toBe(true);
+    expect(asked.text).toContain("这件归 程序老李 那方，在事项里 @ 它");
+    await coderClient.concludeCowork(c.id, toPlanner.thread!.id, "先用线性，上限 12。");
     const after = await coderClient.cowork(c.id);
     expect(after.cowork.matters!.find((x) => x.id === toPlanner.thread!.id)).toMatchObject({ status: "closed", conclusion: "先用线性，上限 12。" });
     const decision = after.events.find((e) => e.kind === "decision")!;

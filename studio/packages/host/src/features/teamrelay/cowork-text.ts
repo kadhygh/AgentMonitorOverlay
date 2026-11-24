@@ -1,4 +1,4 @@
-import { AGENT_STATE_LABEL, messageAsText, sessionStateText, type BoardItem, type BoardLock, type BoardOpsResult, type BoardRejectCode, type Cowork, type CoworkDraft, type CoworkEvent, type CoworkInboxItem, type CoworkPostResult, type CoworkAskResult, type Message, type RelayFile, type Thread, sizeText } from "@amo-studio/relay/light";
+import { AGENT_STATE_LABEL, decisionStands, messageAsText, sessionStateText, type BoardItem, type BoardLock, type BoardOpsResult, type BoardRejectCode, type Cowork, type CoworkDraft, type CoworkEvent, type CoworkInboxItem, type CoworkPostResult, type CoworkAskResult, type Message, type RelayFile, type Thread, sizeText } from "@amo-studio/relay/light";
 
 // 协作 (2026-11-23, plans/cowork.md): what the agent of a session in a 协作 reads — a delivery put into its conversation,
 // and the answers of its cowork_* tools (cowork-mcp.ts). Plain Markdown in Chinese, as team_*'s.
@@ -217,7 +217,8 @@ export function coworkOverview(input: { cowork: Cowork; events: CoworkEvent[]; d
     const open = c.sessions.filter((s) => s.state !== "done");
     parts.push(`## 开着的子会话\n${open.length ? open.map((s) => `- 「${s.title}」 ${s.from} → ${s.to} · ${STATE_TEXT[s.state]}${s.waitingOn ? ` · 等 ${s.waitingOn}` : ""}${s.agent === mark ? " · 你发起的" : ""} · threadId ${s.id}`).join("\n") : "（没有）"}`);
   }
-  const decided = input.events.filter((e) => e.kind === "decision");
+  // Counted as the client counts them (decisionStands), so 「已定的事第 N 条」 means the same to both (2026-11-25).
+  const decided = input.events.filter((e) => e.kind === "decision" && decisionStands(e.data?.threadId, c.matters));
   const done = c.sessions.filter((s) => s.state === "done" && s.conclusion);
   const decisions = decided.length ? decided.map((e) => `- ${time(e.at)} ${e.actor}：${e.text}`) : done.map((s) => `- 「${s.title}」：${s.conclusion}`);
   parts.push(`## 已定的事\n${decisions.length ? decisions.join("\n") : "（还没有）"}`);
