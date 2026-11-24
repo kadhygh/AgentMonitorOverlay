@@ -2,11 +2,14 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   GATE_LABEL,
   MATTER_LIMITS,
+  MATTER_QUIET_MS,
   MATTER_STATUSES,
   MATTER_STATUS_LABEL,
   advanceReceipt,
   agentParty,
+  applyMatterEvent,
   isParty,
+  matterMessageEvent,
   messageRecipients,
   parseParty,
   pendingFor,
@@ -17,7 +20,9 @@ import {
   type Matter,
   type MatterBindings,
   type MatterChange,
+  type MatterEvent,
   type MatterKind,
+  type MatterState,
   type MatterStatus,
   type Party,
   type PendingList,
@@ -32,6 +37,10 @@ import { RelayError, type RelayStore } from "./store.js";
 // cowork's (cowork.ts). A 事项 is a 子会话: its id is the request thread's, its title the thread's; the rest is here. Each
 // message in a cowork's thread gets one receipt per recipient (messageRecipients); 待我处理 is computed from the 事项 and
 // the receipts not yet 处理了, with a version per participant that goes up when the list changes.
+//
+// Status from events (2026-11-25, the user: 有更稳定的架构吗): what happens in a 事项 is kept as its events
+// (cowork_matter_events); its status, who it waits on and why, its history are what applyMatterEvent adds them up to —
+// kept in the row (`derived`) as they go, so reading never replays. A hand change is one more event.
 //
 // What changed in a call is noted (`touched`) and read again by the service afterwards to push it (server.ts
 // coworkFlush): ids only, so a rolled-back change pushes the state as it is, never a state that was not kept.
@@ -101,6 +110,9 @@ function cleanIds(v: unknown, what: string, max: number, re = /^[A-Za-z0-9_:.-]{
   return out;
 }
 
+/** Commit ids (4–64 hex), lower case. */
+export const cleanCommits = (v: unknown, what = "提交号"): string[] => cleanIds(v, what, MATTER_LIMITS.bindings, /^[0-9a-fA-F]{4,64}$/).map((c) => c.toLowerCase());
+
 export function cleanBindings(v: unknown): Partial<MatterBindings> {
   if (v === undefined || v === null) return {};
   if (typeof v !== "object") throw new RelayError("bad_request", "绑定要是 { sessions, tasks, commits }");
@@ -108,7 +120,7 @@ export function cleanBindings(v: unknown): Partial<MatterBindings> {
   const out: Partial<MatterBindings> = {};
   if (b.sessions !== undefined) out.sessions = cleanIds(b.sessions, "绑定的执行会话", MATTER_LIMITS.bindings);
   if (b.tasks !== undefined) out.tasks = cleanIds(b.tasks, "绑定的任务", MATTER_LIMITS.bindings);
-  if (b.commits !== undefined) out.commits = cleanIds(b.commits, "绑定的提交", MATTER_LIMITS.bindings, /^[0-9a-fA-F]{4,64}$/).map((c) => c.toLowerCase());
+  if (b.commits !== undefined) out.commits = cleanCommits(b.commits, "绑定的提交");
   return out;
 }
 
@@ -132,21 +144,29 @@ export function cleanTitle(v: unknown): string {
 export interface CoworkTouched {
   coworks: Set<string>;
   matters: Set<string>;
-  /** 事项 made in this call (they get a card on the board). */
-  created: Set<string>;
-  /** Who last changed each 事项 (the board's placing is done in their name). */
-  by: Map<string, Party>;
   /** Message seqs whose receipts moved. */
   receipts: Set<number>;
   /** Message seqs withdrawn, rewritten or superseded. */
   messages: Set<number>;
+  /** Lines the service wrote itself (e.g. a 事项 reaching its AI limit, in the 群聊): announced like any message. */
+  posted: Set<number>;
+}
+
+/** The plain fields of a 事项 (not worked out from events). */
+export interface MatterFields {
+  side?: string;
+  blocker?: string | null;
+  dependsOn?: string[];
+  gate?: GateKind | null;
+  bindings?: MatterBindings;
+  kind?: MatterKind;
 }
 
 export class CoworkMatters {
   private touchedNow: CoworkTouched = CoworkMatters.fresh();
 
   private static fresh(): CoworkTouched {
-    return { coworks: new Set(), matters: new Set(), created: new Set(), by: new Map(), receipts: new Set(), messages: new Set() };
+    return { coworks: new Set(), matters: new Set(), receipts: new Set(), messages: new Set(), posted: new Set() };
   }
 
   constructor(
@@ -162,6 +182,10 @@ export class CoworkMatters {
         version INTEGER NOT NULL DEFAULT 1
       );
       CREATE INDEX IF NOT EXISTS cowork_matters_cowork ON cowork_matters(cowork_id, no);
+      CREATE TABLE IF NOT EXISTS cowork_matter_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, matter_id TEXT NOT NULL, at INTEGER NOT NULL, event TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS cowork_matter_events_matter ON cowork_matter_events(matter_id, id);
       CREATE TABLE IF NOT EXISTS cowork_receipts (
         seq INTEGER NOT NULL, party TEXT NOT NULL, cowork_id TEXT NOT NULL, thread_id TEXT NOT NULL, state TEXT NOT NULL,
         queued_at INTEGER NOT NULL, delivered_at INTEGER, seen_at INTEGER, handled_at INTEGER, by_close INTEGER NOT NULL DEFAULT 0,
@@ -173,6 +197,10 @@ export class CoworkMatters {
         cowork_id TEXT NOT NULL, party TEXT NOT NULL, key INTEGER NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (cowork_id, party)
       );
     `);
+    // 2026-11-25: the state the events add up to, and where a person dragged its card.
+    const cols = (db.prepare("PRAGMA table_info(cowork_matters)").all() as Row[]).map((r) => String(r.name));
+    if (!cols.includes("derived")) db.exec("ALTER TABLE cowork_matters ADD COLUMN derived TEXT; ALTER TABLE cowork_matters ADD COLUMN place TEXT;");
+    if (!cols.includes("place_version")) db.exec("ALTER TABLE cowork_matters ADD COLUMN place_version INTEGER NOT NULL DEFAULT 0;");
     this.migrate();
   }
 
@@ -187,9 +215,28 @@ export class CoworkMatters {
     this.touchedNow.coworks.add(coworkId);
   }
 
+  /** A message the service wrote (announced afterwards). */
+  posted(seq: number): void {
+    this.touchedNow.posted.add(seq);
+  }
+
   /**
-   * 子会话 from before 事项 (2026-11-24, the coordinator: open → 在做, concluded → 关闭): each gets its 事项, numbered in the
-   * order they were made. The one who asked owns it; their side carries it.
+   * Coworks with a 事项 that went 「久没动静」 between `since` and `now` (MATTER_QUIET_MS with no event while 在做): the
+   * service's sweep looks again at their 待我处理 so the 主控's list changes (and is pushed) when it happens.
+   */
+  quietDue(since: number, now: number): string[] {
+    return (
+      this.db
+        .prepare("SELECT DISTINCT cowork_id FROM cowork_matters WHERE status = 'doing' AND json_extract(derived, '$.lastEventAt') > ? AND json_extract(derived, '$.lastEventAt') <= ?")
+        .all(since - MATTER_QUIET_MS, now - MATTER_QUIET_MS) as Row[]
+    ).map((r) => String(r.cowork_id));
+  }
+
+  /**
+   * 子会话 from before 事项 (2026-11-24/25, plans/collab-framework.md 「已有的协作」: open → 在做, concluded → 关闭, from
+   * then on moved by events): each gets its 事项, numbered in the order they were made. The one who asked owns it; their
+   * side carries it.
+   * 事项 from before events (step 2, never deployed): an "open" event standing for what they had.
    */
   private migrate(): void {
     const rows = this.db
@@ -197,25 +244,28 @@ export class CoworkMatters {
       .all() as Row[];
     for (const r of rows) {
       const coworkId = String(r.cowork_id);
-      const status = statusFromSession((String(r.s_state ?? "open") as "open" | "returned" | "done") ?? "open", r.cw_conclusion == null ? null : String(r.cw_conclusion));
+      const conclusion = r.cw_conclusion == null ? null : String(r.cw_conclusion);
+      const status = statusFromSession((String(r.s_state ?? "open") as "open" | "returned" | "done") ?? "open", conclusion);
       const owner = r.cw_agent != null ? agentParty(String(r.cw_agent)) : personParty(String(r.req_from));
-      const waiting = status !== "closed" && r.s_waiting != null ? [personParty(String(r.s_waiting))] : [];
       const at = Number(r.created_at);
-      this.insert({
-        id: String(r.id),
-        coworkId,
-        kind: r.cw_agent != null ? "confirm" : "work",
-        owner,
-        side: String(r.req_from),
-        status,
-        waitingOn: waiting,
-        gate: null,
-        blocker: null,
-        dependsOn: [],
-        conclusion: r.cw_conclusion == null ? null : String(r.cw_conclusion),
-        history: [{ at, by: owner, from: null, to: status, note: "从子会话转成事项" }],
-        at,
-      });
+      const open: MatterEvent = { kind: "open", at, by: owner, status: "doing", note: "从子会话转成事项" };
+      this.insert({ id: String(r.id), coworkId, kind: r.cw_agent != null ? "confirm" : "work", owner, side: String(r.req_from), gate: null, blocker: null, dependsOn: [], at }, open);
+      if (status === "closed") this.apply(String(r.id), { kind: "conclude", at, by: owner, conclusion, note: "从子会话转成事项" });
+    }
+    for (const r of this.db.prepare("SELECT * FROM cowork_matters WHERE derived IS NULL").all() as Row[]) {
+      const at = Number(r.updated_at);
+      const status = String(r.status) as MatterStatus;
+      const waiting = json<Party[]>(r.waiting, []);
+      const open: MatterEvent = { kind: "open", at, by: String(r.owner) as Party, status: status === "closed" ? "doing" : status, to: waiting, note: "从旧的事项转来" };
+      let s = applyMatterEvent(null, open);
+      const events = [open];
+      if (status === "closed") {
+        const close: MatterEvent = { kind: "conclude", at, by: String(r.owner) as Party, conclusion: r.conclusion == null ? null : String(r.conclusion) };
+        s = applyMatterEvent(s, close);
+        events.push(close);
+      }
+      for (const e of events) this.db.prepare("INSERT INTO cowork_matter_events (matter_id, at, event) VALUES (?, ?, ?)").run(String(r.id), e.at, JSON.stringify(e));
+      this.db.prepare("UPDATE cowork_matters SET derived = ?, status = ?, waiting = ?, history = ? WHERE id = ?").run(JSON.stringify(s), s.status, JSON.stringify(s.waitingOn), JSON.stringify(s.history), String(r.id));
     }
   }
 
@@ -223,15 +273,15 @@ export class CoworkMatters {
     return Number((this.db.prepare("SELECT MAX(no) AS n FROM cowork_matters WHERE cowork_id = ?").get(coworkId) as Row).n ?? 0) + 1;
   }
 
-  /** A new 事项's row (the thread is made by the caller). */
-  insert(m: { id: string; coworkId: string; kind: MatterKind; owner: Party; side: string; status: MatterStatus; waitingOn: Party[]; gate: GateKind | null; blocker: string | null; dependsOn: string[]; conclusion: string | null; history: MatterChange[]; at: number; bindings?: MatterBindings }, isNew = false): void {
+  /** A new 事项's row (the thread is made by the caller), from its "open" event. */
+  insert(m: { id: string; coworkId: string; kind: MatterKind; owner: Party; side: string; gate: GateKind | null; blocker: string | null; dependsOn: string[]; at: number; bindings?: MatterBindings }, open: MatterEvent): void {
+    const s = applyMatterEvent(null, open);
     this.db
-      .prepare("INSERT INTO cowork_matters (id, cowork_id, no, kind, owner, side, status, waiting, bindings, blocker, depends, gate, conclusion, history, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")
-      .run(m.id, m.coworkId, this.nextNo(m.coworkId), m.kind, m.owner, m.side, m.status, JSON.stringify(m.waitingOn), JSON.stringify(m.bindings ?? EMPTY_BINDINGS), m.blocker, JSON.stringify(m.dependsOn), m.gate, m.conclusion, JSON.stringify(m.history), m.at, m.at);
+      .prepare("INSERT INTO cowork_matters (id, cowork_id, no, kind, owner, side, status, waiting, bindings, blocker, depends, gate, conclusion, history, created_at, updated_at, version, derived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
+      .run(m.id, m.coworkId, this.nextNo(m.coworkId), m.kind, m.owner, m.side, s.status, JSON.stringify(s.waitingOn), JSON.stringify(m.bindings ?? EMPTY_BINDINGS), m.blocker, JSON.stringify(m.dependsOn), m.gate, s.conclusion, JSON.stringify(s.history), m.at, m.at, JSON.stringify(s));
+    this.db.prepare("INSERT INTO cowork_matter_events (matter_id, at, event) VALUES (?, ?, ?)").run(m.id, open.at, JSON.stringify(open));
     this.touchedNow.matters.add(m.id);
     this.touchedNow.coworks.add(m.coworkId);
-    this.touchedNow.by.set(m.id, m.history[0]?.by ?? m.owner);
-    if (isNew) this.touchedNow.created.add(m.id);
   }
 
   // ---- reading
@@ -247,10 +297,15 @@ export class CoworkMatters {
     return out;
   }
 
+  private state(r: Row): MatterState {
+    return json<MatterState>(r.derived, { status: String(r.status) as MatterStatus, waitingOn: json<Party[]>(r.waiting, []), waitingWhy: null, asks: [], history: json<MatterChange[]>(r.history, []), lastEventAt: Number(r.updated_at), limited: false, commits: [], conclusion: r.conclusion == null ? null : String(r.conclusion) });
+  }
+
   private matterOf(r: Row, leads?: Record<string, string>): Matter {
     const coworkId = String(r.cowork_id);
     const side = String(r.side);
     const l = leads ?? this.leads(coworkId);
+    const s = this.state(r);
     return {
       id: String(r.id),
       scope: "cowork",
@@ -261,14 +316,19 @@ export class CoworkMatters {
       owner: String(r.owner) as Party,
       side,
       lead: l[side] ?? null,
-      status: String(r.status) as MatterStatus,
-      waitingOn: json<Party[]>(r.waiting, []),
+      status: s.status,
+      waitingOn: s.waitingOn,
       bindings: { ...EMPTY_BINDINGS, ...json<Partial<MatterBindings>>(r.bindings, {}) },
       blocker: r.blocker == null ? null : String(r.blocker),
       dependsOn: json<string[]>(r.depends, []),
       gate: r.gate == null ? null : (String(r.gate) as GateKind),
-      conclusion: r.conclusion == null ? null : String(r.conclusion),
-      history: json<MatterChange[]>(r.history, []),
+      conclusion: s.conclusion,
+      history: s.history,
+      waitingWhy: s.waitingWhy,
+      lastEventAt: s.lastEventAt,
+      limited: s.limited,
+      place: json<{ x: number; y: number } | null>(r.place, null),
+      placeVersion: Number(r.place_version ?? 0),
       createdAt: Number(r.created_at),
       updatedAt: Number(r.updated_at),
       version: Number(r.version),
@@ -287,6 +347,12 @@ export class CoworkMatters {
     return m;
   }
 
+  /** A cowork's 事项 by its number (「事项 3」). */
+  byNo(coworkId: string, no: number): Matter | null {
+    const r = this.db.prepare("SELECT id FROM cowork_matters WHERE cowork_id = ? AND no = ?").get(coworkId, no) as Row | undefined;
+    return r ? this.get(String(r.id)) : null;
+  }
+
   /** A cowork's 事项, by number. */
   list(coworkId: string): Matter[] {
     const leads = this.leads(coworkId);
@@ -298,52 +364,77 @@ export class CoworkMatters {
     return !!this.db.prepare("SELECT 1 FROM cowork_matters WHERE id = ?").get(threadId);
   }
 
+  /** What happened in a 事项, in order. */
+  events(id: string): MatterEvent[] {
+    return (this.db.prepare("SELECT event FROM cowork_matter_events WHERE matter_id = ? ORDER BY id").all(id) as Row[]).map((r) => json<MatterEvent>(r.event, { kind: "say", at: 0, by: "person:?" }));
+  }
+
   // ---- changing a 事项
 
   /**
-   * Writes the fields given and, for a new status, a line of history. Returns the 事项 as it is now and whether it was
-   * closed by this (its messages are then 处理了).
+   * Something happened in it: kept, and folded into its state (applyMatterEvent). Its version goes up when its status or
+   * who it waits on changed; closed by this, everything in it is 处理了. Returns the 事项 now and what moved.
    */
-  write(id: string, by: Party, fields: { status?: MatterStatus; note?: string; side?: string; waitingOn?: Party[]; blocker?: string | null; dependsOn?: string[]; gate?: GateKind | null; conclusion?: string | null; bindings?: MatterBindings; kind?: MatterKind }): { matter: Matter; closed: boolean; settledBefore: boolean } {
+  apply(id: string, e: MatterEvent): { matter: Matter; closed: boolean; changed: boolean; before: MatterStatus } {
+    const r = this.row(id);
+    if (!r) throw new RelayError("not_found", `没有这件事项：${id}`);
+    const prev = this.state(r);
+    const s = applyMatterEvent(prev, e);
+    this.db.prepare("INSERT INTO cowork_matter_events (matter_id, at, event) VALUES (?, ?, ?)").run(id, e.at, JSON.stringify(e));
+    const changed = s.status !== prev.status || JSON.stringify(s.waitingOn) !== JSON.stringify(prev.waitingOn) || s.conclusion !== prev.conclusion || s.limited !== prev.limited;
+    this.db
+      .prepare(`UPDATE cowork_matters SET derived = ?, status = ?, waiting = ?, history = ?, conclusion = ?, updated_at = ?${changed ? ", version = version + 1" : ""} WHERE id = ?`)
+      .run(JSON.stringify(s), s.status, JSON.stringify(s.waitingOn), JSON.stringify(s.history), s.conclusion, e.at, id);
+    this.touchedNow.matters.add(id);
+    this.touchedNow.coworks.add(String(r.cowork_id));
+    // A push's commits are the 事项's bound commits too.
+    if (e.kind === "push" && e.commits?.length) {
+      const b = { ...EMPTY_BINDINGS, ...json<Partial<MatterBindings>>(r.bindings, {}) };
+      const commits = [...new Set([...b.commits, ...e.commits])];
+      if (commits.length !== b.commits.length) this.db.prepare("UPDATE cowork_matters SET bindings = ? WHERE id = ?").run(JSON.stringify({ ...b, commits }), id);
+    }
+    const closed = s.status === "closed" && prev.status !== "closed";
+    if (closed) this.closeReceipts(id, e.at);
+    return { matter: this.get(id)!, closed, changed, before: prev.status };
+  }
+
+  /** Writes the plain fields given (not its status: that comes from events). */
+  fields(id: string, f: MatterFields): Matter {
     const before = this.get(id);
     if (!before) throw new RelayError("not_found", `没有这件事项：${id}`);
-    const at = this.now();
     const set: Record<string, string | number | null> = {};
-    const history = [...before.history];
-    if (fields.status !== undefined && fields.status !== before.status) {
-      set.status = fields.status;
-      history.push({ at, by, from: before.status, to: fields.status, ...(fields.note ? { note: fields.note.slice(0, 200) } : {}) });
-      set.history = JSON.stringify(history.slice(-200));
-    }
-    if (fields.side !== undefined && fields.side !== before.side) set.side = fields.side;
-    if (fields.waitingOn !== undefined && JSON.stringify(fields.waitingOn) !== JSON.stringify(before.waitingOn)) set.waiting = JSON.stringify(fields.waitingOn);
-    if (fields.blocker !== undefined && fields.blocker !== before.blocker) set.blocker = fields.blocker;
-    if (fields.dependsOn !== undefined && JSON.stringify(fields.dependsOn) !== JSON.stringify(before.dependsOn)) set.depends = JSON.stringify(fields.dependsOn);
-    if (fields.gate !== undefined && fields.gate !== before.gate) set.gate = fields.gate;
-    if (fields.conclusion !== undefined && fields.conclusion !== before.conclusion) set.conclusion = fields.conclusion;
-    if (fields.bindings !== undefined && JSON.stringify(fields.bindings) !== JSON.stringify(before.bindings)) set.bindings = JSON.stringify(fields.bindings);
-    if (fields.kind !== undefined && fields.kind !== before.kind) set.kind = fields.kind;
-    const settledBefore = before.status === "verified" || before.status === "closed" || before.conclusion !== null;
-    if (!Object.keys(set).length) return { matter: before, closed: false, settledBefore };
-    set.updated_at = at;
+    if (f.side !== undefined && f.side !== before.side) set.side = f.side;
+    if (f.blocker !== undefined && f.blocker !== before.blocker) set.blocker = f.blocker;
+    if (f.dependsOn !== undefined && JSON.stringify(f.dependsOn) !== JSON.stringify(before.dependsOn)) set.depends = JSON.stringify(f.dependsOn);
+    if (f.gate !== undefined && f.gate !== before.gate) set.gate = f.gate;
+    if (f.bindings !== undefined && JSON.stringify(f.bindings) !== JSON.stringify(before.bindings)) set.bindings = JSON.stringify(f.bindings);
+    if (f.kind !== undefined && f.kind !== before.kind) set.kind = f.kind;
+    if (!Object.keys(set).length) return before;
+    set.updated_at = this.now();
     const keys = Object.keys(set);
     this.db.prepare(`UPDATE cowork_matters SET ${keys.map((k) => `${k} = ?`).join(", ")}, version = version + 1 WHERE id = ?`).run(...keys.map((k) => set[k]!), id);
     this.touchedNow.matters.add(id);
     this.touchedNow.coworks.add(before.scopeId);
-    this.touchedNow.by.set(id, by);
-    const closed = fields.status === "closed" && before.status !== "closed";
-    if (closed) this.closeReceipts(id, at);
-    return { matter: this.get(id)!, closed, settledBefore };
+    return this.get(id)!;
+  }
+
+  /** Where a person dragged its card (null: laid out by the client again). Not a change of the 事项 (its version stays);
+   * its placeVersion goes up. */
+  place(id: string, at: { x: number; y: number } | null): Matter {
+    const m = this.get(id);
+    if (!m) throw new RelayError("not_found", `没有这件事项：${id}`);
+    this.db.prepare("UPDATE cowork_matters SET place = ?, place_version = place_version + 1 WHERE id = ?").run(at ? JSON.stringify(at) : null, id);
+    this.touchedNow.matters.add(id);
+    return this.get(id)!;
   }
 
   /** Something kept elsewhere changed (its title, in the thread): a new version. */
-  bump(id: string, by: Party): void {
+  bump(id: string): void {
     const m = this.get(id);
     if (!m) return;
     this.db.prepare("UPDATE cowork_matters SET version = version + 1, updated_at = ? WHERE id = ?").run(this.now(), id);
     this.touchedNow.matters.add(id);
     this.touchedNow.coworks.add(m.scopeId);
-    this.touchedNow.by.set(id, by);
   }
 
   // ---- receipts
@@ -386,6 +477,8 @@ export class CoworkMatters {
   /**
    * A message came into a cowork's thread: one receipt per recipient. People's are 送到 at once (the service holds it for
    * them); agents' wait 排队 until their owner's Studio takes them (a delivery acked, its 待我处理 read) or the agent reads.
+   * In a 事项 it is also an event (matterMessageEvent: 发言, @/回复, 确认回复 — not the 事项's opening message), and so are
+   * the commits (推送) and the verification (验证结果) it reports.
    */
   receive(coworkId: string, message: Message, people: string[]): Receipt[] {
     if (message.kind === "event") return [];
@@ -403,6 +496,13 @@ export class CoworkMatters {
     this.touchedNow.coworks.add(coworkId);
     // Whoever writes in a thread has seen what came before in it.
     this.seenInThread(message.threadId, author, message.seq - 1);
+    if (matter && message.kind !== "request") {
+      const r = this.row(matter.id)!;
+      const replied = message.replyTo ? this.store.messageBySeq(message.replyTo) : null;
+      this.apply(matter.id, matterMessageEvent(this.state(r), { by: author, seq: message.seq, at, mentions, replyToAuthor: replied ? authorParty(replied) : null }));
+      if (message.commits?.length) this.apply(matter.id, { kind: "push", at, by: author, seq: message.seq, commits: message.commits });
+      if (message.verify) this.apply(matter.id, { kind: "verify", at, by: author, seq: message.seq, passed: message.verify.passed, ...(message.verify.how ? { note: message.verify.how } : {}) });
+    }
     return this.receipts(message.seq);
   }
 
@@ -436,7 +536,10 @@ export class CoworkMatters {
     for (const s of seqs) this.advance(s, party, "delivered");
   }
 
-  /** Marks 看过 / 处理了 by seq, or every message of a 事项 up to `upTo`: the receipts that moved. */
+  /**
+   * Marks 看过 / 处理了 by seq, or every message of a 事项 up to `upTo`: the receipts that moved. A person marking a 知会 to
+   * them 看过 has handled it (2026-11-25: 「要你看」 asks only that).
+   */
   mark(coworkId: string, party: Party, mark: "seen" | "handled", seqs: number[] | null, matterId: string | null, upTo: number | null): Array<{ threadId: string; seq: number; receipt: Receipt }> {
     let rows: Row[];
     if (seqs) {
@@ -446,10 +549,13 @@ export class CoworkMatters {
       this.require(coworkId, matterId);
       rows = this.db.prepare("SELECT seq, thread_id FROM cowork_receipts WHERE thread_id = ? AND party = ? AND seq <= ?").all(matterId, party, upTo ?? Number.MAX_SAFE_INTEGER) as Row[];
     } else throw new RelayError("bad_request", "要标哪几条：seqs，或者 matter（加 upTo）");
+    const who = parseParty(party);
     const out: Array<{ threadId: string; seq: number; receipt: Receipt }> = [];
     for (const r of rows) {
-      const moved = this.advance(Number(r.seq), party, mark);
-      if (moved) out.push({ threadId: String(r.thread_id), seq: Number(r.seq), receipt: moved });
+      const seq = Number(r.seq);
+      const noticed = mark === "seen" && who?.kind === "person" && !!this.store.messageBySeq(seq)?.notice?.includes(who.name);
+      const moved = this.advance(seq, party, noticed ? "handled" : mark);
+      if (moved) out.push({ threadId: String(r.thread_id), seq, receipt: moved });
     }
     return out;
   }
@@ -498,11 +604,17 @@ export class CoworkMatters {
         receipts: [this.receiptOf(r)],
       };
       if (matterIds.has(String(r.m_thread))) pm.matter = String(r.m_thread);
+      if (extra.replyTo) {
+        pm.replyTo = extra.replyTo;
+        const replied = this.store.messageBySeq(extra.replyTo);
+        if (replied) pm.replyToAuthor = authorParty(replied);
+      }
+      if (extra.notice) pm.notice = extra.notice;
       if (extra.withdrawnAt !== undefined) pm.withdrawnAt = extra.withdrawnAt;
       if (extra.supersededBy !== undefined) pm.supersededBy = extra.supersededBy;
       return pm;
     });
-    const items = pendingFor(party, "cowork", coworkId, matters, messages);
+    const items = pendingFor(party, "cowork", coworkId, matters, messages, { now: this.now() });
     const key = pendingKey(items);
     const had = this.db.prepare("SELECT key, version FROM cowork_pending WHERE cowork_id = ? AND party = ?").get(coworkId, party) as Row | undefined;
     let version = had ? Number(had.version) : 1;

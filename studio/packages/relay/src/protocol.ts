@@ -2,7 +2,7 @@
 // later the UI share. A small team on one LAN; people talk to each other directly, and an AI session can send a
 // person a 「请求」 (body + questions) that they answer one by one. Everything is kept on the service.
 
-import type { Receipt } from "@amo-studio/protocol/matters";
+import type { MessageBasis, Receipt } from "@amo-studio/protocol/matters";
 import type { CoworkRelayEvent } from "./cowork-protocol.js";
 import type { Transfer } from "./transfer-protocol.js";
 
@@ -144,6 +144,11 @@ export interface Message {
   withdrawnAt?: number;
   editedAt?: number;
   supersededBy?: number;
+  /** 2026-11-25: an answer's 来源, a 知会 (people to look), commits reported pushed, a verification reported. */
+  basis?: MessageBasis;
+  notice?: string[];
+  commits?: string[];
+  verify?: { passed: boolean; how?: string };
   createdAt: number;
 }
 

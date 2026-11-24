@@ -24,7 +24,7 @@
 // Every call needs the caller to be a member of the cowork (403 otherwise); an agent's call is its owner's key plus its
 // mark in `via.conv`, and the mark must be one of that owner's agents in this cowork.
 
-import type { AgentRole, MarkRequest, Matter, MatterPatch, MessageRewrite, NewMatter, PendingList, Receipt, SupersedeResult } from "@amo-studio/protocol/matters";
+import type { AgentRole, MarkRequest, Matter, MatterEvent, MatterPatch, MessageBasis, MessageRewrite, NewMatter, PendingList, Receipt, SupersedeResult } from "@amo-studio/protocol/matters";
 import type { Message, NewMessage, Question, Thread, Via } from "./protocol.js";
 
 // 事项、回执、角色、待我处理 (2026-11-24): the shared fields and rules, the same as the Host's local 事项 table.
@@ -95,6 +95,8 @@ export interface CoworkAgent {
   role?: AgentRole;
   /** An 执行's 事项 (id); null for a 主控. */
   matter?: string | null;
+  /** Its 事项's number (「事项 3 的执行」), so cowork_read can say who carries what (2026-11-25). */
+  matterNo?: number | null;
 }
 
 /** A 子会话 as the cowork lists it (its messages are the thread's). */
@@ -204,6 +206,8 @@ export interface NewCoworkEvent {
   kind: "commit" | "note";
   text: string;
   commit?: string;
+  /** The 事项 a commit is for (its "push" event); an 执行's commit goes to its own 事项 without it. */
+  matter?: string;
   files?: string[];
   via?: Via;
 }
@@ -227,10 +231,22 @@ export interface CoworkDetail {
  * gets a delivery; `replyTo`, the seq of the message it answers (an agent's answer quotes it: 「回 美术小周」).
  */
 export interface CoworkPost extends NewMessage {
+  /** In a 事项 or the 群聊 (default): its thread id, or 「事项 3」 (/api/cowork/:id/messages). */
+  threadId?: string;
+  /** Agents by mark or by name (「老李的主控」, 「事项 3 的执行」). */
   agentMentions?: string[];
-  replyTo?: number;
-  /** My earlier message (seq) this one replaces: it is marked 被 #x 取代 (COWORK_MATTERS_VERSION). */
-  supersedes?: number;
+  /** The message it answers: its seq, or 「#7」. */
+  replyTo?: number | string;
+  /** My earlier message (seq or 「#7」) this one replaces: it is marked 被 #x 取代 (COWORK_MATTERS_VERSION). */
+  supersedes?: number | string;
+  /** Where the answer comes from (2026-11-25, protocol/matters.ts MessageBasis). */
+  basis?: MessageBasis;
+  /** 知会 · 要某人看过: people (accounts or nicknames) who should look at it. */
+  notice?: string[];
+  /** Commits pushed (in a 事项: its "push" event → 已推送). */
+  commits?: string[];
+  /** A verification (in a 事项: its "verify" event → 待核对 when passed). */
+  verify?: { passed: boolean; how?: string };
   /** 处理了 with this message (the user 11-24: AI 随回复标), besides what `replyTo` names (that one always is): these seqs,
    * or true for everything to me in this thread so far. */
   handled?: true | number[];
@@ -332,8 +348,8 @@ export interface DraftDecision {
 // ---- the board (白板)
 
 /** note 便签; session: a 子会话's card; ref: a file, commit, document version or link; group: a frame cards sit in; link: a
- * line from one card to another; matter: a 事项's card (COWORK_MATTERS_VERSION), drawn from the 事项 itself. */
-export type BoardItemKind = "note" | "session" | "ref" | "group" | "link" | "matter";
+ * line from one card to another. 事项卡 are not cards (2026-11-25): the client draws them from the 事项 (`Matter.place`). */
+export type BoardItemKind = "note" | "session" | "ref" | "group" | "link";
 
 export interface BoardRef {
   kind: "file" | "commit" | "doc" | "url";
@@ -377,13 +393,6 @@ export interface BoardItem {
   group: string | null;
   /** A session card's 子会话 (thread id). */
   session: string | null;
-  /** A matter card's 事项 (id): its title, status, waiting on… are read from the 事项, never stored on the card. */
-  matter?: string | null;
-  /** A group card standing for a side (its account), or SETTLED_SIDE for 「已定 / 已验」: 事项 cards are placed by it. */
-  side?: string | null;
-  /** Who last put the card where it is: "auto" (the service placed it by its 事项) or "person" (dragged: no more moving
-   * it by itself). */
-  placedBy?: "auto" | "person";
   ref: BoardRef | null;
   from: string | null;
   to: string | null;
@@ -413,8 +422,6 @@ export interface BoardNewItem extends BoardFields {
   id?: string;
   kind: BoardItemKind;
   session?: string;
-  /** A matter card's 事项. */
-  matter?: string;
 }
 
 /**
@@ -473,6 +480,7 @@ export interface BoardOpsResult {
 }
 
 export interface BoardLock {
+  /** A card's id, or a 事项's 「place:<id>」 / 「edit:<id>」 (protocol/matters.ts matterLockKey). */
   card: string;
   /** Who is writing it (a person: agents do not lock, their changes are single operations). */
   by: string;
@@ -511,19 +519,33 @@ export interface BoardPresence {
 //   Closing a 事项 marks all of its messages 处理了 (`byClose`).
 // - Roles: an agent comes in as 主控 (`lead`, one per side: a second is refused with 409 and leadTakenText) or 执行
 //   (`worker`, with its 事项). An 执行 reads the goal, 已定的事, its 事项 and that 事项's card only, and posts only in its 事项;
-//   the service refuses (403) the rest (roleAllows).
-// - 「AI 发起 @ 和提问」 and drafts go: an old cowork's `options.aiInitiate` and its pending drafts are ignored. In their
-//   place, 闸门 (GATE_RULES_TEXT): a 主控 opens a 「等人确认」 事项.
+//   the service refuses (403) the rest (roleAllows). No role (agents from before, an older Studio's join): `unassigned`
+//   未分角色 — as before, several on a side, not its side's 主控 — until a person picks one (2026-11-25).
+// - 「AI 发起 @ 和提问」 and drafts go: an old cowork's `options.aiInitiate` is ignored and no new drafts are made; drafts
+//   kept from before are still their owner's to send or drop once. In their place, 闸门 (GATE_RULES_TEXT): a 主控 opens a
+//   「等人确认」 事项.
+// - Older clients (Studio 0.9.81) keep working: every call they make answers as before and the new fields are optional;
+//   /api/health `cowork` (COWORK_VERSION) tells a newer Studio it may use the new tools.
 // - 待我处理: GET /api/cowork/pending (PendingList per participant, with a version that goes up when it changes; a long
 //   poll with `since`), and a /ws push `pending` to the person's own devices.
-// - The board: one group card per side (`side`), one 「已定 / 已验」 group (`side: SETTLED_SIDE`), and a card per 事项 (kind
-//   "matter", reading the 事项 itself: no text or state of its own). A new 事项's card goes into its side's group; once it is
-//   settled (matterSettled) it moves to 「已定 / 已验」 — unless a person moved it (`placedBy: "person"`).
+// - Status from events (2026-11-25, protocol/matters.ts applyMatterEvent): every message in a 事项 (发言, @/回复, 确认回复),
+//   a bound 执行, a push (`commits` on a message, or a commit event with `matter`), a verification (`verify` on a message),
+//   an ask, two AIs going back and forth AGENT_STREAK_MAX times (→ 等人确认, a line in the 群聊), a conclusion and a hand
+//   change are its events (GET …/matters/:id/events); the 事项 carries what they add up to. 在做 with no event for
+//   MATTER_QUIET_MS goes into its 主控's 待我处理 (「久没动静」).
+// - AIs answer each other (2026-11-25): an 执行 may @ agents in its 事项 (not people); an answer says where it comes from
+//   (`basis`: confirmed with whom / when or which of 已定的事, or inferred). A 知会 (`notice`: people) is in their 待我处理
+//   until they mark it 看过了.
+// - References: `threadId`, `matter`, `agentMentions`, `mentions`, `replyTo`, `supersedes`, `waitingOn` and the 事项 in a
+//   path take 「事项 3」, 「#7」, a display name (「老李的主控」) or a copied line (protocol/matters.ts parseCollabRef).
+// - The board (2026-11-25): 事项卡 are not stored as cards. The client draws them — group by side, 「已定 / 已验」 once
+//   settled (matterGroup), status, who it waits on, dependency lines — from the 事项; the service keeps only where a person
+//   dragged one (`Matter.place`, PATCH …/matters/:id `{place, placeBase}`). Notes, links and references stay cards.
+// - Locks (2026-11-25): POST …/matters/:id/lock `{what: place|edit, on}` — the board's soft lock (BOARD_LOCK_MS, renewed,
+//   let go on drop, disconnect or time-out), key 「place:<id>」 / 「edit:<id>」 in BoardLock.card and board-lock pushes. Someone
+//   else holding it: 409 with `lock` and `matter` (as it is now) in the body (RelayClientError.data).
 
-/** The board group of settled 事项 (BoardItem.side). */
-export const SETTLED_SIDE = "*settled";
-
-/** Bring an agent in with its role (POST /api/cowork/:id/agents): an 执行 names its 事项. Default role: lead. */
+/** Bring an agent in with its role (POST /api/cowork/:id/agents): an 执行 names its 事项. No role: unassigned 未分角色. */
 export interface CoworkAgentJoin {
   mark: string;
   label: string;
@@ -541,7 +563,9 @@ export interface CoworkAgentRolePatch {
 }
 
 /** POST /api/cowork/:id/matters. */
-export interface NewCoworkMatter extends NewMatter {
+export interface NewCoworkMatter extends Omit<NewMatter, "waitingOn"> {
+  /** Parties, or names of people and agents (「老李的主控」). */
+  waitingOn?: string[];
   via?: Via;
 }
 /** POST /api/cowork/:id/matters → the 事项, its thread and its first message. */
@@ -551,8 +575,16 @@ export interface CoworkMatterResult {
   message: Message;
 }
 
+/** GET /api/cowork/:id/matters/:matterId/events: what happened in it, in order (deriveMatter adds them up to its state). */
+export interface CoworkMatterEvents {
+  matter: Matter;
+  events: MatterEvent[];
+}
+
 /** PATCH /api/cowork/:id/matters/:matterId (MatterPatch): 409 `stale` with the 事项 as it is now when `base` is older. */
-export interface CoworkMatterPatch extends MatterPatch {
+export interface CoworkMatterPatch extends Omit<MatterPatch, "waitingOn"> {
+  /** Parties, or names of people and agents (「老李的主控」); [] waits on nobody. */
+  waitingOn?: string[];
   via?: Via;
 }
 

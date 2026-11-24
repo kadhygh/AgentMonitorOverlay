@@ -49,6 +49,11 @@ function matter(over: Partial<Matter> = {}): Matter {
     gate: null,
     conclusion: null,
     history: [{ at: 100, by: agentParty(L_LEAD), from: null, to: "doing" }],
+    waitingWhy: null,
+    lastEventAt: 100,
+    limited: false,
+    place: null,
+    placeVersion: 0,
     createdAt: 100,
     updatedAt: 100,
     version: 1,
@@ -166,7 +171,9 @@ describe("pendingFor", () => {
       ["mention", 1, null],
     ]);
     const wang = pendingFor(WANG, "cowork", "t_c", ms, msgs);
-    expect(wang).toEqual([{ kind: "waiting", scope: "cowork", scopeId: "t_c", matter: "t_m2", seq: null, since: 300, text: "事项 2 · 等小王确认" }]);
+    expect(wang).toEqual([
+      { kind: "waiting", scope: "cowork", scopeId: "t_c", matter: "t_m2", matterNo: 2, matterTitle: "等小王确认", matterStatus: "confirm", seq: null, seqs: [], since: 300, why: { by: null, at: 300, reason: "manual", text: "手改成在等你" }, text: "事项 2 · 等小王确认" },
+    ]);
   });
   it("a closed 事项's messages are handled", () => {
     expect(pendingFor(W, "cowork", "t_c", [matter({ status: "closed" })], [msg(3, { matter: "t_m1" })])).toEqual([]);
