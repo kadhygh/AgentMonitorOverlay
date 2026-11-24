@@ -111,7 +111,7 @@
 
 新的两种 Studio 还没接时，外壳拿到的是「没有这个会话」，界面提示更新 Studio。
 
-中转客户端读的、服务器还没有的字段（11-25 界面先按可选读，没有就不显示）：消息的 `basis`（`"confirmed" | "inferred"` 或 `{kind, text}`，AI 回答的依据，「我的判断」）、`notice`（`true` 或要看过的人，群聊知会；现在 @ 我的群聊消息就算知会）；板上人拖过的位置现在借服务器的事项卡（`kind: "matter"`、`placedBy: "person"`）存，服务器改成只存位置后界面跟着改。
+中转客户端怎么用服务器的这些（11-25，按 3d718a01 的服务器对齐）：消息的 `basis` 用 `basisText()` 出字，`inferred` 标「! 我的判断」；`notice`（要看过的人）在群聊消息上标「知会 · 要 X 看过」，「看过了」发 `marks {mark: "seen"}`（打开群聊不算）；「要你看」就是 `GET /api/cowork/pending` 里我这一份，群聊那几条按 `kind` 写成「群聊 · 知会 / @ 你 / 回你 / 给你」，`why.text` 写在下面；板按 `matterGroup()` 分栏，事项卡的位置只读事项自己的 `place`。拖事项卡：动起来才取 `lockMatter(…, "place", true)`（每 15 秒续），被拒就提示「X正在移动这张事项卡」、不动；松手 `patchMatter({place, placeBase: placeVersion})`，409 就用 `data.matter` 弹回现在的位置；别人的锁（`board-lock` 推的 `place:<id>` / `edit:<id>`）在卡上写 `matterLockText()`。改卡在哪、结论、关闭事项：打开编辑时取 `edit` 锁、开着时续、关上放掉；别人拿着就只读（「X正在改这件事项：先只能看」），保存带 `base`，409 时提示服务器的话并换上 `data.matter`。`unassigned` 写「未分角色」，主人可以改成主控或执行。以前留下的 AI 草稿（`drafts`）在群聊末尾给主人发出或不发，一次。
 
 ---
 

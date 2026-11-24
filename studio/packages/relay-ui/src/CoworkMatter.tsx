@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { canHandToStudio, toMySession } from "./coworkHandoff.js";
 import { agentOf, CoworkComposer, CoworkMessages, markMine, matterWhy, useCowork } from "./CoworkChat.js";
 import { timeText, useDisplayName, useListed } from "./bits.js";
@@ -7,7 +7,7 @@ import { basisOf, confirmParts, inferredCount, LOOK_WORD, MATTER_CLS, matterChip
 import { copyRef } from "./RefChips.js";
 import { matterRef } from "./refs.js";
 import { errorText, useMessages } from "./Messages.js";
-import { GATE_LABEL, MATTER_STATUS_LABEL, personParty, RelayClientError, type Answer, type GateKind, type Matter, type MatterKind, type MatterPatch, type Party, type Question } from "./shared.js";
+import { GATE_LABEL, MATTER_STATUS_LABEL, matterLockKey, matterLockText, personParty, RelayClientError, type BoardLock, type Answer, type GateKind, type Matter, type MatterKind, type MatterPatch, type Message, type Party, type Question } from "./shared.js";
 
 // A 事项 opened (2026-11-25, plans/collab-framework.md「11-24」, prototype studio/out/cowork-flow/board.html's drawer): over the
 // 群聊 as a window, on the board as a drawer. What it is and where it stands — 事项 N, its state, 负责方, whom it waits on
@@ -41,15 +41,26 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
     return () => void (alive = false);
   }, [device, m.id]);
 
+  const editLock = useEditLock(m);
   const patch = async (p: MatterPatch, done: string) => {
     try {
       session.putMatter(cowork.id, await session.client.patchMatter(cowork.id, m.id, { base: m.version, ...p }));
       toast(done);
       return true;
     } catch (err) {
-      toast(err instanceof RelayClientError && err.status === 409 ? `${matterLabel(m)} 刚被别人改过，看一眼现在的再改` : errorText(err));
+      // Someone changed it since I read it, or has it open: the 事项 as it is now comes with the 409 and is shown.
+      const now = err instanceof RelayClientError ? (err.data.matter as Matter | undefined) : undefined;
+      if (now?.id === m.id) session.putMatter(cowork.id, now);
+      toast(err instanceof RelayClientError && err.status === 409 ? `${err.message}${now ? "（现在的已经显示出来了）" : ""}` : errorText(err));
       return false;
     }
+  };
+  const openClose = async () => {
+    if (await editLock.begin()) setDialog("close");
+  };
+  const endClose = () => {
+    setDialog(null);
+    editLock.end();
   };
   const hand = async () => {
     if (!thread || !messages) return;
@@ -99,11 +110,12 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
                 重新打开
               </button>
             ) : (
-              <button type="button" className="small" onClick={() => setDialog("close")}>
+              <button type="button" className="small" disabled={!!editLock.by} title={editLock.by ? `${matterLockText("edit", show(editLock.by))}这件事项` : undefined} onClick={() => void openClose()}>
                 关闭…
               </button>
             ))}
         </div>
+        {editLock.by && <div className="cw-chip st-owner cw-edit-lock">{matterLockText("edit", show(editLock.by))}这件事项：先只能看</div>}
         {m.conclusion && (
           <div className="cw-conclusion">
             <b>结论</b> {m.conclusion}
@@ -113,7 +125,7 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
       <div className="cw-matter-scroll">
         {look && !ended && (askedMe && look.look === "confirm" ? <ConfirmBox matter={m} first={first ?? null} questions={round} /> : <LookBox look={look} />)}
         <Fold title="事项信息" open={open.info} onToggle={() => setOpen((o) => ({ ...o, info: !o.info }))}>
-          <MatterInfo matter={m} onPatch={patch} onOpen={openMatter} all={matters} />
+          <MatterInfo matter={m} onPatch={patch} onOpen={openMatter} all={matters} lock={editLock} />
         </Fold>
         <Fold title={`事项里的消息 · ${messages ? live : "…"}`} open={open.messages} onToggle={() => setOpen((o) => ({ ...o, messages: !o.messages }))} className="cw-fold-msgs">
           <CoworkMessages threadId={m.id} messages={messages} error={error} typing={typing} empty="还没有消息。" />
@@ -131,7 +143,7 @@ export function MatterBody({ matter: m, onBoard, onClose }: { matter: Matter; on
           </ol>
         </Fold>
       </div>
-      {dialog === "close" && <CloseDialog matter={m} onClose={() => setDialog(null)} onDone={(conclusion) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), note: "关闭" }, conclusion ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && setDialog(null))} />}
+      {dialog === "close" && <CloseDialog matter={m} onClose={endClose} onDone={(conclusion) => void patch({ status: "closed", ...(conclusion ? { conclusion } : {}), note: "关闭" }, conclusion ? "关了，结论记进了「已定的事」" : `${matterLabel(m)} 关了`).then((ok) => ok && endClose())} />}
     </div>
   );
 }
@@ -151,14 +163,14 @@ function Fold({ title, open, onToggle, children, className }: { title: string; o
  * 等你确认 (a 闸门 asked of me): its text in parts — 变化, 例子, 不确认会怎样, 来源 — then 「确认」 (a reply: back to the one
  * who asked, the 事项 goes on) or 「有问题，回一句」. A round with questions is answered one by one.
  */
-function ConfirmBox({ matter: m, first, questions }: { matter: Matter; first: { body: string; via: { kind: string; conv?: string }; author: string } | null; questions: Question[] }) {
+function ConfirmBox({ matter: m, first, questions }: { matter: Matter; first: { body: string; via: { kind: string; conv?: string }; author: string; basis?: Message["basis"] } | null; questions: Question[] }) {
   const { session, cowork, toast, me } = useCowork();
   const show = useDisplayName();
   const [asking, setAsking] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const parts = first ? confirmParts(first.body) : null;
   const asker = first ? (first.via.kind === "ai" ? (agentOf(cowork, first.via.conv) ? partyText(`agent:${first.via.conv}`, cowork.agents, show) : `${show(first.author)} 的 AI`) : show(first.author)) : "";
-  const basis = first && first.via.kind === "ai" ? basisOf(first as Parameters<typeof basisOf>[0]) : null;
+  const basis = first && first.via.kind === "ai" ? basisOf(first, show) : null;
   const reply = async (body: string, answers?: Answer[]) => {
     setBusy(true);
     try {
@@ -194,7 +206,7 @@ function ConfirmBox({ matter: m, first, questions }: { matter: Matter; first: { 
           {row(
             "来源",
             <>
-              {basis?.kind === "inferred" && <span className="tag cw-basis inferred">! 我的判断</span>} {parts.source ?? `${asker} 问的`}
+              {basis?.kind === "inferred" && <span className="tag cw-basis inferred" title={basis.text}>! 我的判断</span>} {parts.source ?? `${asker} 问的`}
             </>,
           )}
         </>
@@ -283,19 +295,88 @@ function AnswerForm({ questions, busy, onSend }: { questions: Question[]; busy: 
   );
 }
 
+type EditLock = ReturnType<typeof useEditLock>;
+
+/**
+ * The 事项's edit lock (2026-11-25, the user: 「要注意权限之类的…省得出现并发出问题」): taken while I have its judgement
+ * fields open (卡在哪, 结论, closing it), renewed while open, let go when I close them. `by`: someone else has them open
+ * (「老李正在改」, read-only here), from the service's board-lock pushes or a refused take.
+ */
+function useEditLock(m: Matter) {
+  const { session, cowork, me, toast } = useCowork();
+  const show = useDisplayName();
+  const key = matterLockKey("edit", m.id);
+  const [theirs, setTheirs] = useState<BoardLock | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const held = useRef(false);
+  useEffect(
+    () =>
+      session.onBoard((cw, p) => {
+        if (cw !== cowork.id || p.type !== "board-lock" || p.card !== key) return;
+        setTheirs(p.lock && p.lock.by !== me ? p.lock : null);
+        setNow(Date.now());
+      }),
+    [session, cowork.id, key, me],
+  );
+  // A lock nobody renews runs out (30 s): look again once it should have.
+  useEffect(() => {
+    if (!theirs) return;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, theirs.until - Date.now()) + 500);
+    return () => clearTimeout(t);
+  }, [theirs, now]);
+  const stop = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  };
+  const end = () => {
+    stop();
+    if (!held.current) return;
+    held.current = false;
+    void session.client.lockMatter(cowork.id, m.id, "edit", false).catch(() => undefined);
+  };
+  useEffect(() => end, [m.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const begin = async (): Promise<boolean> => {
+    try {
+      await session.client.lockMatter(cowork.id, m.id, "edit", true);
+      held.current = true;
+      stop();
+      timer.current = setInterval(() => void session.client.lockMatter(cowork.id, m.id, "edit", true).catch(() => undefined), 15_000);
+      return true;
+    } catch (err) {
+      const l = err instanceof RelayClientError ? (err.data.lock as BoardLock | undefined) : undefined;
+      const latest = err instanceof RelayClientError ? (err.data.matter as Matter | undefined) : undefined;
+      if (latest?.id === m.id) session.putMatter(cowork.id, latest);
+      if (l?.by && l.by !== me) setTheirs(l);
+      toast(l?.by ? `${matterLockText("edit", show(l.by))}${matterLabel(m)}，等他改完再改` : errorText(err));
+      return false;
+    }
+  };
+  const by = theirs && theirs.until > now ? theirs.by : null;
+  return { by, begin, end };
+}
+
 /** 事项信息: what a person may change here is 卡在哪 and 结论 (the rest is the 主控's, the user 2026-11-24). */
-function MatterInfo({ matter: m, onPatch, onOpen, all }: { matter: Matter; onPatch: (p: MatterPatch, done: string) => Promise<boolean>; onOpen: (id: string) => void; all: Matter[] }) {
+function MatterInfo({ matter: m, onPatch, onOpen, all, lock }: { matter: Matter; onPatch: (p: MatterPatch, done: string) => Promise<boolean>; onOpen: (id: string) => void; all: Matter[]; lock: EditLock }) {
   const { cowork, me } = useCowork();
   const show = useDisplayName();
-  const [edit, setEdit] = useState<null | { key: "blocker" | "conclusion"; text: string }>(null);
+  const [edit, setEditState] = useState<null | { key: "blocker" | "conclusion"; text: string }>(null);
   const ended = !!cowork.endedAt;
+  const setEdit = (e: null | { key: "blocker" | "conclusion"; text: string }) => {
+    setEditState(e);
+    if (!e) lock.end();
+  };
+  const startEdit = async (key: "blocker" | "conclusion", text: string) => {
+    if (edit) return setEditState({ key, text });
+    if (await lock.begin()) setEditState({ key, text });
+  };
   const field = (key: "blocker" | "conclusion", label: string, value: string | null, empty: string) => (
     <div className="cw-info-row">
       <dt>{label}</dt>
       <dd>
         {edit?.key === key ? (
           <div className="cw-edit">
-            <textarea value={edit.text} onChange={(e) => setEdit({ key, text: e.target.value })} rows={key === "conclusion" ? 3 : 2} aria-label={label} autoFocus />
+            <textarea value={edit.text} onChange={(e) => setEditState({ key, text: e.target.value })} rows={key === "conclusion" ? 3 : 2} aria-label={label} autoFocus />
             <div className="cw-edit-acts">
               <button type="button" className="small" onClick={() => setEdit(null)}>
                 取消
@@ -308,8 +389,8 @@ function MatterInfo({ matter: m, onPatch, onOpen, all }: { matter: Matter; onPat
         ) : (
           <>
             {value ?? <span className="muted">{empty}</span>}
-            {!ended && (
-              <button type="button" className="link tiny" onClick={() => setEdit({ key, text: value ?? "" })}>
+            {!ended && !lock.by && (
+              <button type="button" className="link tiny" onClick={() => void startEdit(key, value ?? "")}>
                 改
               </button>
             )}

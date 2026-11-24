@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { shell } from "./env.js";
-import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type BoardLock, type BoardOpRecord, type BoardPresence, type CoworkClientFrame, type CoworkDelivery, type CoworkEvent, type CoworkListItem, type Matter, type PendingList, type Receipt, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
+import { DEFAULT_SETTINGS, RelayClient, RelayClientError, TICK_MS, type BoardLock, type BoardOpRecord, type BoardPresence, type CoworkClientFrame, type CoworkDelivery, type CoworkDraft, type CoworkEvent, type CoworkListItem, type Matter, type PendingList, type Receipt, type Member, type Message, type RelayEvent, type TaskView, type TeamSettings, type ThreadView, type Transfer } from "./shared.js";
 
 // One login: the client with its key, the thread list, the people, the team's tasks and settings, kept current by /ws (reconnecting, and
 // reloading what it missed). Views subscribe; a thread view also hears each new message. The service ticks every
@@ -59,6 +59,8 @@ interface State {
 export interface CoworkData {
   events: CoworkEvent[];
   deliveries: CoworkDelivery[];
+  /** My AIs' drafts kept from before 2026-11-24 (no new ones are made): mine to send or drop once. */
+  drafts?: CoworkDraft[];
 }
 /** A change to a message already loaded: withdrawn, rewritten, superseded (the whole message) or a receipt that moved. */
 export type MessagePatch = { threadId: string; seq: number; message?: Message; receipt?: Receipt };
@@ -155,7 +157,7 @@ export class Session {
   async loadCowork(id: string): Promise<void> {
     const d = await this.client.cowork(id);
     this.putCowork(d.cowork);
-    this.set({ coworkData: { ...this.state.coworkData, [id]: { events: d.events, deliveries: d.deliveries } } });
+    this.set({ coworkData: { ...this.state.coworkData, [id]: { events: d.events, deliveries: d.deliveries, drafts: d.drafts ?? [] } } });
   }
 
   /** A 事项 as the service has it now (pushed, or the answer to a change of mine): into its cowork's list. */
@@ -217,7 +219,7 @@ export class Session {
         .filter((c) => !c.endedAt)
         .map((c) =>
           this.client.cowork(c.id).then(
-            (d) => void (data[c.id] = { events: d.events, deliveries: d.deliveries }),
+            (d) => void (data[c.id] = { events: d.events, deliveries: d.deliveries, drafts: d.drafts ?? [] }),
             () => undefined,
           ),
         ),

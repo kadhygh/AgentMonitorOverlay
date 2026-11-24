@@ -1105,7 +1105,8 @@ dl.cw-minfo { margin: 0; display: flex; flex-direction: column; }
 .cw-role { margin-right: 6px; font-size: 10px; font-weight: 700; line-height: 16px; padding: 0 5px; border-radius: var(--r-s); vertical-align: 1px; border: 1px solid var(--border); color: var(--text-dim); }
 .cw-role.lead { background: var(--ai-bg); color: var(--ai); border-color: var(--ai-border); }
 .cw-role.worker { color: var(--text); border-color: var(--border-strong); }
-.cw-role.none { border-style: dashed; font-weight: 400; }
+.cw-role.none, .cw-role.unassigned { border-style: dashed; font-weight: 400; }
+.cw-edit-lock { display: inline-block; margin: 6px 0 0; }
 .cw-person-acts { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .cw-person-acts:empty { display: none; }
 .cw-person-acts .link.tiny { height: auto; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
@@ -1156,3 +1157,9 @@ dl.cw-minfo { margin: 0; display: flex; flex-direction: column; }
 .bd-chat-body .cw-openline { padding: 6px 10px; }
 .bd-drawer .cw-matter { min-height: 0; }
 .bd-stage:has(.bd-drawer) .bd-lookwrap { right: calc(min(480px, 52%) + 12px); }
+
+/* An AI's draft kept from before 2026-11-24: its owner sends or drops it, once. */
+.cw-draft { margin: 12px 0 4px 42px; padding: 10px 12px; border: 1.5px dashed var(--ai-border); border-radius: var(--r-l); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.cw-draft-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cw-draft-head .tag { background: var(--ai-bg); color: var(--ai); }
+.cw-draft-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

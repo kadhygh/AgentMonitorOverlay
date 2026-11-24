@@ -38,7 +38,7 @@ export interface MatterLayout {
 }
 
 /** Order inside a side's frame: what waits on people first, then on others, then work going on. */
-const ORDER: Record<Matter["status"], number> = { confirm: 0, waiting: 1, doing: 2, pushed: 3, todo: 4, verified: 5, closed: 6 };
+const ORDER: Record<Matter["status"], number> = { confirm: 0, waiting: 1, doing: 2, review: 3, pushed: 4, todo: 5, verified: 6, closed: 7 };
 
 /**
  * Lay the 事项 out. `sides`: the order of the sides' frames (the cowork's people); a side with no 事项 gets a frame only if
@@ -76,31 +76,24 @@ export function layoutMatters(matters: readonly Matter[], sides: readonly string
 }
 
 /**
- * The board's own cards and the 事项 layer side by side: what the service made for 事项 before the board was computed
- * (its matter cards, 子会话 cards and side frames, 2026-11-24) is not drawn — except where a person dragged a matter card,
- * which is kept as that 事项's place. `placements` (a service that keeps only the places people dragged to) wins.
+ * The board's own cards and the 事项 layer side by side. The service keeps no cards for 事项 (2026-11-25): where a person
+ * dragged one is the 事项's own `place`. 子会话 cards an older service made are not drawn: a person's line to one lands on
+ * its 事项's card (`standIn`), and the side frames it made are left out too.
  */
-export function splitBoard(items: readonly BoardItem[], placements?: Readonly<Record<string, { x: number; y: number }>>): { own: BoardItem[]; placed: Record<string, { x: number; y: number }>; standIn: Record<string, string> } {
+export function splitBoard(items: readonly BoardItem[], matters: readonly Pick<Matter, "id" | "place">[] = []): { own: BoardItem[]; placed: Record<string, { x: number; y: number }>; standIn: Record<string, string> } {
   const own: BoardItem[] = [];
   const placed: Record<string, { x: number; y: number }> = {};
-  /** A hidden card (matter or 子会话) → its 事项, so a person's line to it still lands on the 事项's card. */
   const standIn: Record<string, string> = {};
   for (const it of items) {
-    if (it.kind === "matter") {
-      if (it.matter) {
-        standIn[it.id] = it.matter;
-        if (it.placedBy === "person" && !it.deleted) placed[it.matter] = { x: it.x, y: it.y };
-      }
-      continue;
-    }
     if (it.kind === "session") {
       if (it.session) standIn[it.id] = it.session;
       continue;
     }
-    if (it.kind === "group" && it.side) continue;
+    if (it.kind === "group" && (it as BoardItem & { side?: unknown }).side) continue;
     own.push(it);
   }
-  return { own, placed: { ...placed, ...(placements ?? {}) }, standIn };
+  for (const m of matters) if (m.place) placed[m.id] = { x: m.place.x, y: m.place.y };
+  return { own, placed, standIn };
 }
 
 /** Where a point off the visible box is, for the arrow on the edge pointing at it: the edge point and the direction. */

@@ -10,7 +10,7 @@ import { Avatar, avatarColor, timeText, useDisplayName } from "./bits.js";
 import { Dialog, Field } from "./Dialog.js";
 import { errorText } from "./Messages.js";
 import { useSession } from "./session.js";
-import { matterSettled, RelayClientError, SETTLED_GROUP_TITLE, type BoardFields, type BoardItem, type BoardNewItem, type BoardOp, type BoardOpRecord, type BoardPresence, type BoardRef, type Matter } from "./shared.js";
+import { matterLockKey, matterLockText, matterSettled, RelayClientError, SETTLED_GROUP_TITLE, type BoardFields, type BoardItem, type BoardNewItem, type BoardOp, type BoardOpRecord, type BoardPresence, type BoardRef, type Matter } from "./shared.js";
 
 // A 协作's 白板 (2026-11-23, plans/cowork.md「白板怎么借 Studio 的画布」「白板：多人同时改」, prototype A's board): a floating
 // window over the 协作 page. Cards — 便签, 子会话卡, 引用卡 (a file at a commit, a document's version, a link; 已过时 when a
@@ -46,7 +46,22 @@ const MATTER_ID = "m:";
 type Filter = "all" | "mine" | "others";
 const REF_WORD: Record<BoardRef["kind"], string> = { file: "文件", commit: "提交", doc: "文档", url: "链接" };
 
-type Drag = { id: string; kind: "move" | "size" | "link"; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number; moved: boolean; pointer: number };
+type Drag = {
+  id: string;
+  kind: "move" | "size" | "link";
+  sx: number;
+  sy: number;
+  ox: number;
+  oy: number;
+  ow: number;
+  oh: number;
+  moved: boolean;
+  pointer: number;
+  /** A 事项's card: the service's place lock, taken once it starts moving (true: mine; false: refused, the drag is off). */
+  lock?: Promise<boolean>;
+};
+/** A 事项 card's place lock is renewed this often while it is dragged (the service holds it 30 s). */
+const PLACE_RENEW_MS = 15_000;
 
 export function BoardBody(props: { focus: { id: string; n: number } | null; chatFocus: { seq?: number; n: number } | null; lookOpen: boolean; setLookOpen: (v: boolean) => void; chat: ReactNode; onNotice: (seq: number) => void }) {
   const { focus } = props;
@@ -180,17 +195,58 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
   /** A change shown at once (the service's answer replaces it with the card's next version). */
   const local = (cardId: string, f: Partial<BoardItem>) => setModel((m) => (m.items[cardId] ? { ...m, items: { ...m.items, [cardId]: { ...m.items[cardId]!, ...f } } } : m));
 
-  /** The service's card standing for each 事项 (its place is kept on it once a person drags it). */
+  /** An older service's 子会话 card standing for each 事项 (a person's line to it lands on the 事项's card). */
   const cardOf = useRef<Record<string, string>>({});
+  // ---- dragging a 事项's card (2026-11-25, the user: 「a 在拖拽卡 b 就不拖拽，省得出现并发出问题」): the service's place
+  // lock once it starts moving (someone else holding it: 「小王正在移动」 and it does not move); let go, its place is
+  // written with the placeVersion the drag started from; refused, it goes back to where it is now.
+  /** Where I let go of a card, shown until the service answers. */
+  const [placing, setPlacing] = useState<Record<string, { x: number; y: number }>>({});
+  const placeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopRenew = () => {
+    if (placeTimer.current) clearInterval(placeTimer.current);
+    placeTimer.current = null;
+  };
+  useEffect(() => stopRenew, []);
+  const takePlace = async (mid: string): Promise<boolean> => {
+    try {
+      const l = await session.client.lockMatter(id, mid, "place", true);
+      setModel((m) => setLock(m, matterLockKey("place", mid), l));
+      stopRenew();
+      placeTimer.current = setInterval(() => void session.client.lockMatter(id, mid, "place", true).catch(() => undefined), PLACE_RENEW_MS);
+      return true;
+    } catch (err) {
+      const l = err instanceof RelayClientError ? (err.data.lock as { by?: string; card?: string; until?: number } | undefined) : undefined;
+      if (l?.by && l.card && typeof l.until === "number") setModel((m) => setLock(m, l.card!, { card: l.card!, by: l.by!, until: l.until! }));
+      toast(l?.by ? `${matterLockText("place", show(l.by))}这张事项卡，等一会儿再拖` : errorText(err));
+      return false;
+    }
+  };
+  const letGo = (mid: string) => {
+    stopRenew();
+    void session.client.lockMatter(id, mid, "place", false).catch(() => undefined);
+    setModel((m) => setLock(m, matterLockKey("place", mid), null));
+  };
   /** A 事项's card dragged to (x, y): kept as a person's place; it no longer moves by itself. */
-  const place = async (mid: string, x: number, y: number) => {
-    const cid = cardOf.current[mid];
-    const it = cid ? modelRef.current.items[cid] : undefined;
-    const fields = { x: Math.round(x), y: Math.round(y) };
-    if (it) {
-      local(it.id, { ...fields, placedBy: "person" });
-      await send([{ op: "set", opId: newId("o"), id: it.id, base: it.version, fields }]);
-    } else await send([{ op: "add", opId: newId("o"), item: { id: newId("c"), kind: "matter", matter: mid, ...fields, w: MATTER_CARD.w, h: MATTER_CARD.h } }]);
+  const place = async (mid: string, x: number, y: number, base: number) => {
+    const at = { x: Math.round(x), y: Math.round(y) };
+    setPlacing((p) => ({ ...p, [mid]: at }));
+    try {
+      const m = await session.client.patchMatter(id, mid, { place: at, placeBase: base });
+      session.putMatter(id, m);
+      stopRenew();
+      setModel((mm) => setLock(mm, matterLockKey("place", mid), null));
+    } catch (err) {
+      const now = err instanceof RelayClientError ? (err.data.matter as Matter | undefined) : undefined;
+      if (now?.id === mid) session.putMatter(id, now);
+      toast(err instanceof RelayClientError && err.status === 409 ? `${err.message}` : errorText(err));
+      letGo(mid);
+    } finally {
+      setPlacing((p) => {
+        const { [mid]: _gone, ...rest } = p;
+        return rest;
+      });
+    }
   };
   const add = async (item: BoardNewItem, edit = false) => {
     const size = DEFAULT[item.kind] ?? DEFAULT.note!;
@@ -216,6 +272,7 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
   };
   // A 事项 asked for (要你看, 在板上看, a reference): panned to, its drawer open.
   const layoutRef = useRef<ReturnType<typeof layoutMatters> | null>(null);
+  const byIdRef = useRef<Map<string, Matter>>(new Map());
   useEffect(() => {
     if (!focus || !loaded) return;
     setDrawer(focus.id);
@@ -290,12 +347,27 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
       const dx = (e.clientX - d.sx) / view.k;
       const dy = (e.clientY - d.sy) / view.k;
       if (!d.moved && Math.hypot(dx, dy) * view.k < 4) return;
+      if (!d.moved && d.kind === "move" && !ended && d.id.startsWith(MATTER_ID)) {
+        const mid = d.id.slice(MATTER_ID.length);
+        const by = lockedBy(modelRef.current, matterLockKey("place", mid), me);
+        if (by) {
+          drag.current = null;
+          return toast(`${matterLockText("place", show(by))}这张事项卡，等一会儿再拖`);
+        }
+        d.lock = takePlace(mid).then((ok) => {
+          if (!ok && drag.current === d) {
+            drag.current = null;
+            setGhost(null);
+            sayDrag(null);
+          }
+          return ok;
+        });
+      }
       d.moved = true;
       if (d.kind === "move" && !ended) {
         setGhost({ id: d.id, x: d.ox + dx, y: d.oy + dy, w: d.ow, h: d.oh });
-        // (a 事项's card is the service's card standing for it to the others)
-        const shownId = d.id.startsWith(MATTER_ID) ? cardOf.current[d.id.slice(MATTER_ID.length)] : d.id;
-        if (shownId) sayDrag({ id: shownId, x: Math.round(d.ox + dx), y: Math.round(d.oy + dy) });
+        // (the others see a 事项's card dragged under the 事项's id)
+        sayDrag({ id: d.id.startsWith(MATTER_ID) ? d.id.slice(MATTER_ID.length) : d.id, x: Math.round(d.ox + dx), y: Math.round(d.oy + dy) });
       } else if (d.kind === "size") setGhost({ id: d.id, x: d.ox, y: d.oy, w: Math.max(140, d.ow + dx), h: Math.max(70, d.oh + dy) });
       else if (d.kind === "link") {
         const r = plane.current!.getBoundingClientRect();
@@ -319,18 +391,30 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
         // What is drawn: the board's own cards and the 事项's (a line to a 事项 goes to the service's card standing for it).
         const own = splitRef.current?.own ?? [];
         const hit = (c: Rect) => at.x >= c.x && at.x <= c.x + c.w && at.y >= c.y && at.y <= c.y + c.h;
-        const matterHit = Object.entries(layoutRef.current?.cards ?? {}).find(([mid, r]) => hit(r) && cardOf.current[mid])?.[0];
-        const targetId = [...own].reverse().find((c) => c.kind !== "link" && c.kind !== "group" && c.id !== d.id && hit(c))?.id ?? (matterHit ? cardOf.current[matterHit] : undefined) ?? [...own].reverse().find((c) => c.kind === "group" && c.id !== d.id && hit(c))?.id;
+        const ownHit = [...own].reverse().find((c) => c.kind !== "link" && c.kind !== "group" && c.id !== d.id && hit(c))?.id;
+        const matterHit = ownHit ? undefined : Object.entries(layoutRef.current?.cards ?? {}).find(([, r]) => hit(r))?.[0];
+        // A 事项's card is no card of the service's: a line lands on it only through an older 子会话 card standing for it;
+        // what a 事项 depends on is set in the 事项 itself.
+        if (matterHit && !cardOf.current[matterHit]) return toast("连线连不到事项卡上：事项之间的先后在事项里设（依赖）");
+        const targetId = ownHit ?? (matterHit ? cardOf.current[matterHit] : undefined) ?? [...own].reverse().find((c) => c.kind === "group" && c.id !== d.id && hit(c))?.id;
         if (targetId && !live(modelRef.current).some((l) => l.kind === "link" && l.from === d.id && l.to === targetId)) void send([{ op: "add", opId: newId("o"), item: { id: newId("l"), kind: "link", from: d.id, to: targetId } }]);
         return;
       }
       // A 事项's card: a click opens it; let go after a drag, it stays where it was put (the only thing kept of it).
       if (d.id.startsWith(MATTER_ID)) {
         const mid = d.id.slice(MATTER_ID.length);
-        if (!d.moved || !g) return setDrawer(mid);
+        if (!d.moved || !g) {
+          if (d.lock) void d.lock.then((ok) => {
+            if (ok) letGo(mid);
+          });
+          return setDrawer(mid);
+        }
         if (ended) return;
         sayDrag(null);
-        void place(mid, g.x, g.y);
+        const base = byIdRef.current.get(mid)?.placeVersion ?? 0;
+        void (d.lock ?? Promise.resolve(false)).then((ok) => {
+          if (ok) void place(mid, g.x, g.y, base);
+        });
         return;
       }
       if (!d.moved || !g || ended) return;
@@ -401,15 +485,17 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
 
   const items = live(model);
   // The 事项 layer: computed from the 事项; of what the service made for them only a person's drag is kept (matterBoard.ts).
-  const split = useMemo(() => splitBoard(items), [model]); // eslint-disable-line react-hooks/exhaustive-deps
+  const split = useMemo(() => splitBoard(items, matters), [model, matters]); // eslint-disable-line react-hooks/exhaustive-deps
   const splitRef = useRef(split);
   splitRef.current = split;
-  cardOf.current = Object.fromEntries(items.filter((i) => i.kind === "matter" && i.matter).map((i) => [i.matter!, i.id]));
+  cardOf.current = Object.fromEntries(Object.entries(split.standIn).map(([card, mid]) => [mid, card]));
+  const placed = useMemo(() => ({ ...split.placed, ...placing }), [split.placed, placing]);
   const sidesIn = useMemo(() => [...new Set(cowork.agents.filter((a) => a.role !== "worker").map((a) => a.owner))], [cowork.agents]);
-  const layout = useMemo(() => layoutMatters(matters, cowork.members, split.placed, sidesIn), [matters, cowork.members, split.placed, sidesIn]);
+  const layout = useMemo(() => layoutMatters(matters, cowork.members, placed, sidesIn), [matters, cowork.members, placed, sidesIn]);
   layoutRef.current = layout;
   const lookOf = useMemo(() => myLooks(looks), [looks]);
   const byId = useMemo(() => new Map(matters.map((m) => [m.id, m])), [matters]);
+  byIdRef.current = byId;
   const own = split.own;
   const cards = own.filter((i) => i.kind !== "link");
   const groups = cards.filter((i) => i.kind === "group");
@@ -428,7 +514,7 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
     }
     return rectOf(it);
   };
-  const deleted = deletedItems(model).filter((d) => d.kind !== "matter" && d.kind !== "session" && !(d.kind === "group" && d.side));
+  const deleted = deletedItems(model).filter((d) => d.kind !== "session" && !(d.kind === "group" && (d as BoardItem & { side?: unknown }).side));
   const fitAll = () => {
     const b = boundsOf([...layout.frames, ...Object.values(layout.cards), ...cards]);
     const area = box();
@@ -591,9 +677,10 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
             })}
             {cards.filter((c) => c.kind !== "group").map((c) => renderCard(c, rectOf(c)))}
             {others
-              .filter((p) => p.dragging && model.items[p.dragging.id])
+              .filter((p) => p.dragging && (model.items[p.dragging.id] || layout.cards[p.dragging.id]))
               .map((p) => {
-                const it = model.items[p.dragging!.id]!;
+                // (a 事项's card is dragged under the 事项's id)
+                const it = model.items[p.dragging!.id] ?? layout.cards[p.dragging!.id]!;
                 return (
                   <div key={`g-${p.name}`} className="bd-ghost" style={{ left: p.dragging!.x, top: p.dragging!.y, width: it.w, height: it.h, borderColor: avatarColor(p.name) }}>
                     <span style={{ background: avatarColor(p.name) }}>{show(p.name)} 在拖</span>
@@ -697,7 +784,9 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
     const settled = matterSettled(m);
     const cid = `${MATTER_ID}${m.id}`;
     const pseudo = { id: cid, x: r.x, y: r.y, w: r.w, h: r.h } as BoardItem;
-    const moving = others.find((p) => p.dragging && cardOf.current[m.id] === p.dragging.id);
+    const moving = others.find((p) => p.dragging?.id === m.id);
+    const placeBy = lockedBy(model, matterLockKey("place", m.id), me, now);
+    const editBy = lockedBy(model, matterLockKey("edit", m.id), me, now);
     return (
       <div
         key={cid}
@@ -743,7 +832,16 @@ export function BoardBody(props: { focus: { id: string; n: number } | null; chat
             ))}
           </span>
         )}
-        {moving && <span className="bd-tag who" style={{ background: avatarColor(moving.name) }}>{show(moving.name)} 在拖</span>}
+        {(placeBy || moving) && (
+          <span className="bd-tag who" style={{ background: avatarColor(placeBy ?? moving!.name) }}>
+            {matterLockText("place", show(placeBy ?? moving!.name))}
+          </span>
+        )}
+        {!placeBy && !moving && editBy && (
+          <span className="bd-tag who" style={{ background: avatarColor(editBy) }}>
+            {matterLockText("edit", show(editBy))}
+          </span>
+        )}
       </div>
     );
   }

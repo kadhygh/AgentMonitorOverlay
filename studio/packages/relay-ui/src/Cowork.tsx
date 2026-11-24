@@ -15,7 +15,7 @@ import { errorText, useMessages } from "./Messages.js";
 import { EMPTY_COWORK_DATA, useSession, type Session } from "./session.js";
 import { copyRef, openMenu, openStudio, studioWhere, type MenuItem } from "./RefChips.js";
 import { coworkRef } from "./refs.js";
-import { AGENT_ROLE_LABEL, listedOthers, personParty, type CoworkAgent, type CoworkGoalVersion, type CoworkListItem, type Matter, type Message } from "./shared.js";
+import { AGENT_ROLE_LABEL, listedOthers, personParty, type CoworkAgent, type CoworkDraft, type CoworkGoalVersion, type CoworkListItem, type Matter, type Message } from "./shared.js";
 
 // 协作 (2026-11-23, plans/cowork.md, prototype A's 协作 page; 2026-11-25 the communication plan, plans/collab-framework.md
 // 「11-24」 and the board prototype studio/out/cowork-flow/board.html): the list (进行中 / 已结束, unread, 「[@我]」), 发起协作,
@@ -33,10 +33,10 @@ export function coworkWaiting(s: { coworks: CoworkListItem[]; pending: Session["
     return { rows, count: rows.length };
   }
   const rows: Array<{ cowork: CoworkListItem; item: LookItem }> = [
-    ...open.flatMap((c) => mattersOf(c).filter((m) => m.status === "confirm" && m.waitingOn.includes(personParty(me))).map((m) => ({ cowork: c, item: { kind: "matter", look: "confirm", matter: m, since: m.updatedAt, seqs: [] } as LookItem }))),
+    ...open.flatMap((c) => mattersOf(c).filter((m) => m.status === "confirm" && m.waitingOn.includes(personParty(me))).map((m) => ({ cowork: c, item: { kind: "matter", look: "confirm", matter: m, since: m.updatedAt, seqs: [], why: null } as LookItem }))),
     ...s.mentions.flatMap((m) => {
       const c = s.coworks.find((x) => x.id === m.threadId);
-      return c ? [{ cowork: c, item: { kind: "notice", seq: m.seq, since: m.createdAt, text: m.body.replace(/\s+/g, " ").slice(0, 80) } as LookItem }] : [];
+      return c ? [{ cowork: c, item: { kind: "notice", seq: m.seq, since: m.createdAt, text: m.body.replace(/\s+/g, " ").slice(0, 80), mark: "handled", why: null, word: "@ 你" } as LookItem }] : [];
     }),
   ];
   return { rows, count: rows.length };
@@ -174,7 +174,9 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
   // (One just opened may not be in the list yet: its window opens with its title and fills in once it comes.)
   const openMatter = (id: string, title?: string) => {
     if (view === "board") return setBoardMatter((f) => ({ id, n: (f?.n ?? 0) + 1 }));
-    const m = matters.find((x) => x.id === id);
+    // (The list as the session has it now: the 事项 may have come in since this render, its window then has its title at once.)
+    const now = session.snapshot.coworks.find((c) => c.id === cowork.id);
+    const m = (now ? mattersOf(now) : matters).find((x) => x.id === id);
     if (m || title) floats.open({ id: `matter:${id}`, ...(m ? winTitle(m) : { title: `事项：${title}`, status: "开着" }), size: { w: 540, h: 600 } });
   };
   const openBoard = (matter?: string) => {
@@ -197,6 +199,7 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
 
   const ctx: CoworkCtx = { session, cowork, data, me, matters, looks, toHandle, openMatter, openBoard, replacing, setReplacing, toast };
   const ended = !!cowork.endedAt;
+  const leftover = ended ? [] : (data.drafts ?? []).filter((d) => d.state === "pending" && d.owner === me);
   const decisions = data.events.filter((e) => e.kind === "decision");
   const openCount = matters.filter((m) => m.status !== "closed").length;
   const where = [cowork.repo, cowork.branch].filter(Boolean);
@@ -213,7 +216,7 @@ export function CoworkView({ session, cowork, toast, focus, onOpenFile }: { sess
   const chat = (
     <>
       <OpenStrip />
-      <CoworkMessages threadId={cowork.id} messages={messages} error={error} typing={typing} withEvents empty="群里还没有消息。群聊只发进度和 @；具体的事开成事项。" />
+      <CoworkMessages threadId={cowork.id} messages={messages} error={error} typing={typing} withEvents empty="群里还没有消息。群聊只发进度和 @；具体的事开成事项。" after={leftover.map((d) => <LeftoverDraft key={d.id} draft={d} />)} />
       <div className="cw-dock">
         <FloatTabs />
         <CoworkComposer
@@ -360,19 +363,21 @@ export function LookPanel({ className, onClose, onNotice, onMatter }: { classNam
             <b>
               {matterLabel(l.matter)} · {l.matter.title}
             </b>
+            {l.why && <span className="muted tiny">{l.why}</span>}
           </button>
         ) : (
           <div key={`n${l.seq}`} className="cw-lookrow notice" data-seq={l.seq}>
             <button type="button" className="cw-lookrow-main" onClick={() => onNotice(l.seq)}>
               <span className="cw-lookrow-top">
-                <span className="cw-look notice">群聊知会</span>
+                <span className="cw-look notice">群聊 · {l.word}</span>
                 <span className="muted tiny">
                   #{l.seq} · {timeText(l.since)}
                 </span>
               </span>
               <b>{l.text}</b>
+              {l.why && <span className="muted tiny">{l.why}</span>}
             </button>
-            <button type="button" className="small" onClick={() => void markMine(ctx, "handled", [l.seq], "记下了：看过了")}>
+            <button type="button" className="small" onClick={() => void markMine(ctx, l.mark, [l.seq], "记下了：看过了")}>
               看过了
             </button>
           </div>
@@ -413,9 +418,54 @@ function PasteToBoard({ onPaste }: { onPaste: (text: string) => Promise<void> })
   );
 }
 
+/**
+ * An AI's draft kept from before 2026-11-24 (when 「AI 发起 @ 和提问」 went and an AI's @ goes out at once): nothing makes
+ * new ones, but one left over in an older 协作 is still its owner's to send or drop, once (the service 2026-11-25).
+ */
+function LeftoverDraft({ draft }: { draft: CoworkDraft }) {
+  const { cowork, session, toast } = useCowork();
+  const show = useDisplayName();
+  const [busy, setBusy] = useState(false);
+  const body = draft.kind === "ask" ? (draft.ask?.body ?? "") : (draft.post?.body ?? "");
+  const decide = async (action: "send" | "drop") => {
+    setBusy(true);
+    try {
+      await session.client.decideCoworkDraft(cowork.id, draft.id, { action });
+      await session.loadCowork(cowork.id);
+      toast(action === "drop" ? "这份草稿不发了" : "已发出");
+    } catch (err) {
+      toast(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="cw-draft" data-draft={draft.id}>
+      <div className="cw-draft-head">
+        <span className="tag">以前留下的 AI 草稿</span>
+        <b>{agentOf(cowork, draft.agent)?.name ?? "我的 AI"}</b>
+        <span className="muted tiny">
+          {draft.kind === "ask" ? `想请${show(draft.ask?.to ?? "")}确认「${draft.ask?.title ?? ""}」` : "想发一条"} · 只有你看得到 · {timeText(draft.createdAt)}
+        </span>
+      </div>
+      <div className="msg-body">{body || <span className="muted">（没有正文）</span>}</div>
+      <div className="cw-draft-foot">
+        <span className="muted tiny">现在 AI 的 @ 和提问直接发出，不再留草稿；这一份还等你定：发出或不发，只能定一次。</span>
+        <span className="grow" />
+        <button type="button" className="small primary" disabled={busy} onClick={() => void decide("send")}>
+          发出
+        </button>
+        <button type="button" className="small ghost" disabled={busy} onClick={() => void decide("drop")}>
+          不发
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** An AI's role in words: 主控 / 执行 · 事项 N / 未分角色 (one brought in before roles, the user 2026-11-25). */
 export function roleText(a: Pick<CoworkAgent, "role" | "matter">, matters: Matter[]): string {
-  if (!a.role) return "未分角色";
+  if (!a.role || a.role === "unassigned") return "未分角色";
   if (a.role === "worker") {
     const m = matters.find((x) => x.id === a.matter);
     return `执行 · ${m ? matterLabel(m) : "事项"}`;
@@ -859,7 +909,7 @@ export function CoworkWaitingRows({ session, onOpen }: { session: Session; onOpe
             onClick={() => onOpen(cowork.id, { sub: item.matter.id })}
           />
         ) : (
-          <ListRow key={`${cowork.id}:n${item.seq}`} className="cw-wait at" avatar={<span className="avatar sq small">@</span>} title={`知会 · ${item.text.slice(0, 30)}`} time={timeText(item.since)} sub={`${cowork.title} 的群聊 · #${item.seq}`} onClick={() => onOpen(cowork.id, { seq: item.seq })} />
+          <ListRow key={`${cowork.id}:n${item.seq}`} className="cw-wait at" avatar={<span className="avatar sq small">@</span>} title={`${item.word} · ${item.text.slice(0, 30)}`} time={timeText(item.since)} sub={`${cowork.title} 的群聊 · #${item.seq}`} onClick={() => onOpen(cowork.id, { seq: item.seq })} />
         ),
       )}
     </>

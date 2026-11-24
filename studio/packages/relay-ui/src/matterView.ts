@@ -1,14 +1,14 @@
-import { MATTER_STATUS_LABEL, matterSettled, parseParty, personParty, type CoworkAgent, type CoworkSession, type Matter, type MatterStatus, type Message, type Party, type PendingItem } from "./shared.js";
+import { basisText, MATTER_STATUS_LABEL, matterQuiet, parseParty, personParty, type CoworkAgent, type CoworkSession, type Matter, type MatterStatus, type Message, type MessageBasis, type Party, type PendingItem } from "./shared.js";
 
 // 事项 in the 中转 client (2026-11-25, plans/collab-framework.md「11-24」「看过原型后定的」; prototype
 // studio/out/cowork-flow/board.html): how a 事项 reads — its state as a mark and a word, whose it is, whom it waits on and
 // why — and what of it is mine to look at (「要你看」: 等你确认 / 叫你来看, and the 群聊's 知会). No React: tested alone.
 
-/** ✓ ◐ ! ○ with the word (never by colour alone). 已推送 is the 主控's to check: 待核对. */
-export const MATTER_MARK: Record<MatterStatus, string> = { todo: "○", doing: "◐", waiting: "!", confirm: "!", pushed: "◐", verified: "✓", closed: "✓" };
-export const MATTER_WORD: Record<MatterStatus, string> = { ...MATTER_STATUS_LABEL, pushed: "待核对" };
+/** ✓ ◐ ! ○ with the word (never by colour alone). */
+export const MATTER_MARK: Record<MatterStatus, string> = { todo: "○", doing: "◐", waiting: "!", confirm: "!", pushed: "◐", review: "◐", verified: "✓", closed: "✓" };
+export const MATTER_WORD: Record<MatterStatus, string> = MATTER_STATUS_LABEL;
 /** The class a state is drawn with. */
-export const MATTER_CLS: Record<MatterStatus, string> = { todo: "todo", doing: "doing", waiting: "wait", confirm: "confirm", pushed: "pushed", verified: "done", closed: "done" };
+export const MATTER_CLS: Record<MatterStatus, string> = { todo: "todo", doing: "doing", waiting: "wait", confirm: "confirm", pushed: "pushed", review: "pushed", verified: "done", closed: "done" };
 export const matterChip = (s: MatterStatus) => `${MATTER_MARK[s]} ${MATTER_WORD[s]}`;
 
 /**
@@ -40,6 +40,11 @@ export function mattersOf(c: { sessions: CoworkSession[]; matters?: Matter[] }):
         gate: null,
         conclusion: s.conclusion,
         history: [{ at: s.createdAt, by: owner, from: null, to: status }],
+        waitingWhy: null,
+        lastEventAt: s.updatedAt,
+        limited: false,
+        place: null,
+        placeVersion: 0,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
         version: 0,
@@ -77,9 +82,8 @@ export function sinceState(m: Pick<Matter, "status" | "history" | "updatedAt">):
   return { at: h?.at ?? m.updatedAt, note: h?.note ?? null, by: h?.by ?? null };
 }
 
-/** No change for this long while not settled: 「久没动静」 on its card. */
-export const QUIET_MS = 2 * 60 * 60_000;
-export const isQuiet = (m: Pick<Matter, "status" | "conclusion" | "updatedAt">, now: number) => !matterSettled(m) && m.status !== "todo" && now - m.updatedAt > QUIET_MS;
+/** 在做 with nothing happening for 2 hours: 「久没动静」 on its card (the service's rule, matterQuiet). */
+export const isQuiet = (m: Pick<Matter, "status" | "updatedAt"> & { lastEventAt?: number }, now: number) => matterQuiet({ status: m.status, lastEventAt: m.lastEventAt ?? m.updatedAt }, now);
 
 // ---- what is mine to look at (「要你看」)
 
@@ -88,9 +92,16 @@ export type LookKind = "confirm" | "look";
 export const LOOK_WORD: Record<LookKind, string> = { confirm: "等你确认", look: "叫你来看" };
 
 export type LookItem =
-  | { kind: "matter"; look: LookKind; matter: Matter; since: number; seqs: number[] }
-  /** 群聊里的知会: a message in the 群聊 to me (an @, or one marked 知会) not marked 处理了 yet. */
-  | { kind: "notice"; seq: number; since: number; text: string };
+  /** `why`: the service's sentence for the latest of its items (「等你确认」「@ 了你」…). */
+  | { kind: "matter"; look: LookKind; matter: Matter; since: number; seqs: number[]; why: string | null }
+  /**
+   * 群聊里的知会: a 群聊 message to me not dealt with yet — an @ or a reply (「看过了」 marks it 处理了) or one marked 知会
+   * (「看过了」 marks it 看过, which is all a 知会 asks, the service 2026-11-25). `text`: the whole message when the service sends it.
+   */
+  | { kind: "notice"; seq: number; since: number; text: string; mark: "seen" | "handled"; why: string | null; word: string };
+
+/** What a 群聊 row of 「要你看」 is, in a word. */
+export const NOTICE_WORD: Partial<Record<PendingItem["kind"], string>> = { notice: "知会", mention: "@ 你", reply: "回你", message: "给你" };
 
 /** My 待我处理 as the 「要你看」 list: one row per 事项 (its own and its messages' items together), then the 群聊's 知会. */
 export function lookItems(items: readonly PendingItem[], matters: readonly Matter[]): LookItem[] {
@@ -98,15 +109,17 @@ export function lookItems(items: readonly PendingItem[], matters: readonly Matte
   const per = new Map<string, Extract<LookItem, { kind: "matter" }>>();
   const notices: LookItem[] = [];
   for (const i of items) {
+    const why = i.why?.text ?? null;
     if (!i.matter) {
-      if (i.seq !== null) notices.push({ kind: "notice", seq: i.seq, since: i.since, text: i.text.replace(/^#\d+\s*/, "") });
+      if (i.seq !== null) notices.push({ kind: "notice", seq: i.seq, since: i.since, text: i.body ?? i.text.replace(/^#\d+\s*/, ""), mark: i.kind === "notice" ? "seen" : "handled", why, word: NOTICE_WORD[i.kind] ?? "叫你" });
       continue;
     }
     const m = byId.get(i.matter);
     if (!m || m.status === "closed") continue;
-    const row = per.get(m.id) ?? { kind: "matter" as const, look: "look" as LookKind, matter: m, since: i.since, seqs: [] };
+    const row = per.get(m.id) ?? { kind: "matter" as const, look: "look" as LookKind, matter: m, since: i.since, seqs: [], why };
     if (i.kind === "waiting" && m.status === "confirm") row.look = "confirm";
-    if (i.seq !== null) row.seqs.push(i.seq);
+    if (i.seq !== null && !row.seqs.includes(i.seq)) row.seqs.push(i.seq);
+    if (i.since >= row.since) row.why = why ?? row.why;
     row.since = Math.max(row.since, i.since);
     per.set(m.id, row);
   }
@@ -175,24 +188,17 @@ export function confirmParts(body: string): ConfirmParts | null {
 // ---- messages
 
 /** Where an AI's answer comes from (2026-11-25, the user: AIs answer each other with a basis): confirmed with someone, or
- * its own judgement (「我的判断」). Read from the message when the service carries it. */
-export interface Basis {
-  kind: "confirmed" | "inferred";
-  text?: string;
-}
-export function basisOf(m: Message): Basis | null {
-  const b = (m as Message & { basis?: unknown }).basis;
-  if (b === "confirmed" || b === "inferred") return { kind: b };
-  if (b && typeof b === "object" && ((b as Basis).kind === "confirmed" || (b as Basis).kind === "inferred")) return b as Basis;
-  return null;
+ * its own judgement (「我的判断」), with its line (basisText: 「我的判断，小王没确认过」「已和小王确认（11-25 10:30）」). */
+export function basisOf(m: Pick<Message, "basis">, show: (n: string) => string = (n) => n): (MessageBasis & { text: string }) | null {
+  const b = m.basis;
+  if (!b || (b.kind !== "confirmed" && b.kind !== "inferred")) return null;
+  return { ...b, text: basisText(b, show) };
 }
 
-/** 知会 (2026-11-25, 放法 A): a 群聊 message marked as only to be seen — true, or the people it is to. */
-export function noticeOf(m: Message): string[] | true | null {
-  const n = (m as Message & { notice?: unknown }).notice;
-  if (n === true) return true;
-  if (Array.isArray(n)) return n.filter((x): x is string => typeof x === "string").map((x) => (x.startsWith("person:") ? x.slice(7) : x));
-  return null;
+/** 知会 (2026-11-25, 放法 A): a message the people named only need to have seen. */
+export function noticeOf(m: Pick<Message, "notice">): string[] | null {
+  const n = m.notice;
+  return Array.isArray(n) && n.length ? n.filter((x): x is string => typeof x === "string").map((x) => (x.startsWith("person:") ? x.slice(7) : x)) : null;
 }
 
 /** How many messages in a 事项 are an AI's own judgement (「用了 N 条『我的判断』」 on its card). */

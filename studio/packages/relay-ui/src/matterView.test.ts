@@ -3,7 +3,7 @@ import { boundsOf, edgeArrow, layoutMatters, MATTER_CARD, splitBoard } from "./m
 import { basisOf, confirmParts, isQuiet, lookItems, mattersOf, myLooks, noticeOf, openLine, partyText, sideText, sinceState, waitsOnOthers } from "./matterView.js";
 import type { BoardItem, CoworkAgent, CoworkSession, Matter, Message, PendingItem } from "./shared.js";
 
-const matter = (no: number, f: Partial<Matter> = {}): Matter => ({ id: `t_${no}`, scope: "cowork", scopeId: "c", no, kind: "work", title: `事 ${no}`, owner: "person:小王", side: "小王", lead: null, status: "doing", waitingOn: [], bindings: { sessions: [], tasks: [], commits: [] }, blocker: null, dependsOn: [], gate: null, conclusion: null, history: [{ at: 1, by: "person:小王", from: null, to: "doing" }], createdAt: 1, updatedAt: 1, version: 1, ...f });
+const matter = (no: number, f: Partial<Matter> = {}): Matter => ({ id: `t_${no}`, scope: "cowork", scopeId: "c", no, kind: "work", title: `事 ${no}`, owner: "person:小王", side: "小王", lead: null, status: "doing", waitingOn: [], bindings: { sessions: [], tasks: [], commits: [] }, blocker: null, dependsOn: [], gate: null, conclusion: null, history: [{ at: 1, by: "person:小王", from: null, to: "doing" }], waitingWhy: null, lastEventAt: 1, limited: false, place: null, placeVersion: 0, createdAt: 1, updatedAt: 1, version: 1, ...f });
 const agent = (mark: string, f: Partial<CoworkAgent> = {}): CoworkAgent => ({ mark, owner: "小王", label: "射速曲线", name: "小王 的 AI · 射速曲线", state: "idle", queued: 0, lastSeen: 0, joinedAt: 0, ...f });
 const item = (f: Partial<PendingItem>): PendingItem => ({ kind: "waiting", scope: "cowork", scopeId: "c", matter: null, seq: null, since: 1, text: "", ...f });
 const card = (id: string, f: Partial<BoardItem> = {}): BoardItem => ({ id, kind: "note", x: 0, y: 0, w: 200, h: 100, color: null, text: "", group: null, session: null, ref: null, from: null, to: null, stale: false, version: 1, textVersion: 1, alt: null, createdBy: "小王", createdAt: 1, updatedBy: "小王", updatedAgent: null, updatedAt: 1, deleted: false, deletedBy: null, deletedAt: null, ...f });
@@ -34,8 +34,11 @@ describe("事项 as the 中转 client reads them", () => {
   it("knows since when a 事项 is in its state, and when it has gone quiet", () => {
     const m = matter(1, { status: "waiting", history: [{ at: 1, by: "person:小王", from: null, to: "doing" }, { at: 50, by: "agent:m1", from: "doing", to: "waiting", note: "等老李的数值" }], updatedAt: 50 });
     expect(sinceState(m)).toEqual({ at: 50, note: "等老李的数值", by: "agent:m1" });
-    expect(isQuiet(m, 50 + 2 * 3600_000 + 1)).toBe(true);
-    expect(isQuiet({ ...m, conclusion: "定了" }, 50 + 3 * 3600_000)).toBe(false);
+    // Only 在做 goes quiet (waiting on someone is theirs to answer), counted from its last event (the service's matterQuiet).
+    expect(isQuiet(m, 50 + 3 * 3600_000)).toBe(false);
+    const doing = { ...m, status: "doing" as const, lastEventAt: 50 };
+    expect(isQuiet(doing, 50 + 2 * 3600_000 + 1)).toBe(true);
+    expect(isQuiet({ ...doing, lastEventAt: 50 + 3600_000 }, 50 + 2 * 3600_000 + 1)).toBe(false);
   });
 
   it("puts 待我处理 into 要你看: one row per 事项 (等你确认 first), then the 群聊's 知会", () => {
@@ -77,10 +80,11 @@ describe("事项 as the 中转 client reads them", () => {
   it("reads an AI's basis and a 知会 when the message carries them", () => {
     const m = { body: "" } as Message;
     expect(basisOf(m)).toBeNull();
-    expect(basisOf({ ...m, basis: "inferred" } as Message)).toEqual({ kind: "inferred" });
-    expect(basisOf({ ...m, basis: { kind: "confirmed", text: "11-20 设计会" } } as Message)).toEqual({ kind: "confirmed", text: "11-20 设计会" });
-    expect(noticeOf({ ...m, notice: ["person:小王"] } as Message)).toEqual(["小王"]);
-    expect(noticeOf({ ...m, notice: true } as Message)).toBe(true);
+    expect(basisOf({ ...m, basis: { kind: "inferred", person: "小王" } }, (n) => `${n}同学`)).toEqual({ kind: "inferred", person: "小王", text: "我的判断，小王同学没确认过" });
+    expect(basisOf({ ...m, basis: { kind: "confirmed", person: "老李", decision: 3 } })?.text).toBe("已和老李确认（已定的事第 3 条）");
+    expect(noticeOf({ ...m, notice: ["小王", "person:老李"] })).toEqual(["小王", "老李"]);
+    expect(noticeOf({ ...m, notice: [] })).toBeNull();
+    expect(noticeOf(m)).toBeNull();
   });
 });
 
@@ -102,13 +106,12 @@ describe("the 事项 on the board, computed", () => {
     expect(l.links).toEqual([{ from: "t_2", to: "t_6" }]);
   });
 
-  it("leaves out what the service made for 事项 before, keeping a person's drag as the place", () => {
-    const items = [card("n1"), card("g1", { kind: "group", side: "小王" }), card("g2", { kind: "group" }), card("m1", { kind: "matter", matter: "t_1", placedBy: "auto", x: 5 }), card("m2", { kind: "matter", matter: "t_2", placedBy: "person", x: 70, y: 80 }), card("s1", { kind: "session", session: "t_3" })];
-    const s = splitBoard(items);
+  it("leaves out an older service's 子会话 cards and side frames; a 事项's place is its own", () => {
+    const items = [card("n1"), card("g1", { kind: "group", side: "小王" } as Partial<BoardItem>), card("g2", { kind: "group" }), card("s1", { kind: "session", session: "t_3" })];
+    const s = splitBoard(items, [matter(1), matter(2, { place: { x: 70, y: 80 } })]);
     expect(s.own.map((i) => i.id)).toEqual(["n1", "g2"]);
     expect(s.placed).toEqual({ t_2: { x: 70, y: 80 } });
-    expect(s.standIn).toEqual({ m1: "t_1", m2: "t_2", s1: "t_3" });
-    expect(splitBoard(items, { t_2: { x: 1, y: 2 } }).placed).toEqual({ t_2: { x: 1, y: 2 } });
+    expect(s.standIn).toEqual({ s1: "t_3" });
   });
 
   it("points at what is off screen from the edge, and bounds everything", () => {

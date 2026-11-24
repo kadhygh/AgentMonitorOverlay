@@ -124,6 +124,11 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   const req = (await wang.ask({ to: "程序老李", title: "登录页改版", body: "看一下新的登录页" })).thread;
   const hidden = await zhou.createCowork({ title: "美术资源整理", members: ["策划小王"] });
 
+  // A draft 老李's AI left before 「AI 发起 @ 和提问」 went (2026-11-24): nothing makes them now, but this one is still his to
+  // send or drop, once (written the way that service kept it).
+  store.db
+    .prepare("INSERT INTO cowork_drafts (id, cowork_id, agent, owner, kind, thread_id, payload, state, created_at) VALUES (?, ?, ?, '程序老李', 'post', ?, ?, 'pending', ?)")
+    .run("dr_0000000000000001", cw.id, liAi, cw.id, JSON.stringify({ body: "@策划小王 射速表我导好了，在 `设计/射速.xlsx`", mentions: ["策划小王"], via: { kind: "ai", client: "AMO Studio", conv: liAi } }), Date.now());
   const A = await start("程序老李", "LAOLI-PC", { env: { AMO_STUDIO_DATA_DIR: studioData } });
   const B = await start("策划小王", "WANG-PC");
   await size(A.app, 1280, 800);
@@ -137,6 +142,12 @@ test("复制引用 of a 协作, a message, a 子会话 and a 中转会话; refs 
   await a.locator(".cowork-view .head-copy").click();
   expect(await copiedText(A.app)).toBe(`协作「加特林射速调整」 cowork:${cw.id}`);
   await expect(a.locator(".toast")).toContainText("已复制协作「加特林射速调整」的引用");
+  // The kept draft, at the end of 老李's 群聊; sent, it is a message and the draft is gone.
+  const kept = a.locator(".cw-draft", { hasText: "射速表我导好了" });
+  await expect(kept).toContainText("以前留下的 AI 草稿");
+  await kept.getByRole("button", { name: "发出" }).click();
+  await expect(kept).toHaveCount(0);
+  await expect(a.locator(".msg", { hasText: "射速表我导好了" })).toBeVisible();
 
   // ---- 在 Studio 里打开 in the member list: my AI here has it, my AI elsewhere says so, 小王's has neither.
   const mineRow = a.locator(`.cw-person.agent[data-agent="${liAi}"]`);

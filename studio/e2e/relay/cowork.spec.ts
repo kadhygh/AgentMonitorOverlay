@@ -88,6 +88,7 @@ const win = (page: Page, title: string) => page.locator(`.float-win[aria-label^=
 const mwin = (page: Page, title: string) => page.locator(`.float-win[aria-label^="事项 "][aria-label$="：${title}"]`);
 const card = (page: Page, text: string) => page.locator(".bd-card", { hasText: text });
 const leftOf = (l: Locator) => l.evaluate((e) => parseFloat((e as HTMLElement).style.left));
+const topOf = (l: Locator) => l.evaluate((e) => parseFloat((e as HTMLElement).style.top));
 async function drag(page: Page, l: Locator, dx: number, dy: number): Promise<void> {
   const b = (await l.boundingBox())!;
   await page.mouse.move(b.x + 20, b.y + 12);
@@ -159,8 +160,8 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await expect(B.locator(".cowork-view .head-title")).toHaveText("加特林射速调整");
 
   // Each brings in an AI (Studio's 拉进协作) and says how it is.
-  await wangStudio.joinCoworkAgent(cw.id, wangAi, "射速曲线");
-  await liStudio.joinCoworkAgent(cw.id, liAi, "FireTimer");
+  await wangStudio.joinCoworkAgent(cw.id, wangAi, "射速曲线", { role: "lead" });
+  await liStudio.joinCoworkAgent(cw.id, liAi, "FireTimer", { role: "lead" });
   await wangStudio.reportCoworkAgents([{ mark: wangAi, state: "busy" }]);
   await liStudio.reportCoworkAgents([{ mark: liAi, state: "idle" }]);
   await expect(A.locator(`.cw-person.agent[data-agent="${wangAi}"] .cw-chip`)).toHaveText("◐ 处理中");
@@ -227,7 +228,9 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   // An @ of me while I am elsewhere waits in 待处理 (read once I am in the 协作).
   await A.locator(".rail-item", { hasText: "待处理" }).click();
   await wangStudio.postCowork(cw.id, { kind: "text", body: "@程序老李 过热的颜色读哪个字段？", mentions: ["程序老李"] });
-  await expect(A.locator(".list-body .cw-wait.at")).toContainText("过热的颜色读哪个字段");
+  await expect(A.locator(".list-body .cw-wait.at", { hasText: "过热的颜色读哪个字段" })).toContainText("@ 你 · ");
+  // (小王's AI's answer to my message is mine to look at too: a reply to me, 2026-11-25.)
+  await expect(A.locator(".list-body .cw-wait.at", { hasText: "起转 0.8 秒" })).toContainText("回你 · ");
   await expect(A.locator(".rail-item", { hasText: "协作" }).locator(".badge")).toHaveText("1");
   // ---- 老李's AI @-s 小王: out at once (no drafts since 2026-11-24 — the 事项's gates replace 「AI 发起 @ 和提问」).
   const d = await liStudio.postCowork(cw.id, { kind: "text", body: "@策划小王 FireTimer 起转段推上去了（3f2a91c），曲线那边按 0.8 秒接就行。", mentions: ["策划小王"], via: viaLi });
@@ -374,6 +377,8 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   // ---- 要你看: a 闸门 from 小王's AI (等你确认), a 事项 waiting on 老李 (叫你来看), the @ from before (群聊知会).
   const gate = await wangStudio.askCowork(cw.id, { to: "程序老李", title: "满速段改成每秒 18 发", body: "变化：满速段从每秒 20 发改成 18 发\n例子：满速 6 秒从 120 发变成 108 发\n不确认会怎样：数值表先不导", via: viaWang });
   const look = await wangStudio.openMatter(cw.id, { title: "过热颜色读哪个字段", body: "我这边写好了 `overheat_tint`，你看一眼对不对。", side: "策划小王", status: "doing", waitingOn: ["person:程序老李"] });
+  // A 知会 in the 群聊 (2026-11-25, 放法 A): only to be seen — 「看过了」 marks it 看过.
+  await wangStudio.postCowork(cw.id, { kind: "text", body: "弹壳动画按每秒 20 发做完了，曲线不用等它。", notice: ["程序老李"] });
   const lookBtn = A.locator(".cowork-view .page-head .cw-look-btn");
   const lookN = async () => Number((await lookBtn.textContent())!.replace(/\D/g, ""));
   await expect(lookBtn).toContainText("要你看");
@@ -385,14 +390,22 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await expect(panel.locator(".cw-lookrow").nth(0)).toContainText("满速段改成每秒 18 发");
   await expect(panel.locator(".cw-lookrow").nth(0).locator(".cw-look")).toHaveText("等你确认");
   await expect(panel.locator(".cw-lookrow.look")).toContainText("过热颜色读哪个字段");
-  await expect(panel.locator(".cw-lookrow.notice")).toContainText("过热的颜色读哪个字段？");
+  await expect(panel.locator(".cw-lookrow.notice", { hasText: "过热的颜色读哪个字段？" }).locator(".cw-look")).toHaveText("群聊 · @ 你");
+  await expect(panel.locator(".cw-lookrow.notice", { hasText: "起转 0.8 秒" }).locator(".cw-look")).toHaveText("群聊 · 回你");
+  const noticeRow = panel.locator(".cw-lookrow.notice", { hasText: "弹壳动画按每秒 20 发" });
+  await expect(noticeRow.locator(".cw-look")).toHaveText("群聊 · 知会");
   await noSideOverflow(A);
   await shot(li.app, "C11-look");
   await theme(A, "dark");
   await shot(li.app, "C11-look-dark");
   await theme(A, "light");
-  await panel.locator(".cw-lookrow.notice").getByRole("button", { name: "看过了" }).click();
+  await noticeRow.getByRole("button", { name: "看过了" }).click();
   await expect.poll(lookN).toBe(n0 - 1);
+  await expect(noticeRow).toHaveCount(0);
+  await panel.locator(".cw-lookrow.notice", { hasText: "起转 0.8 秒" }).getByRole("button", { name: "看过了" }).click();
+  await expect.poll(lookN).toBe(n0 - 2);
+  await panel.locator(".cw-lookrow.notice", { hasText: "过热的颜色读哪个字段？" }).getByRole("button", { name: "看过了" }).click();
+  await expect.poll(lookN).toBe(n0 - 3);
   await panel.locator(".cw-lookrow", { hasText: "满速段改成每秒 18 发" }).click();
   const gateWin = mwin(A, "满速段改成每秒 18 发");
   await expect(gateWin.locator(".cw-confirm-row", { hasText: "例子" })).toContainText("108 发");
@@ -400,7 +413,7 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await gateWin.getByRole("textbox", { name: "有问题，回一句" }).fill("先别改：美术的弹壳动画按 20 发做的");
   await gateWin.getByRole("button", { name: "回过去" }).click();
   await expect(gateWin.locator(".cw-sub-meta .cw-state")).toHaveText("◐ 在做");
-  await expect.poll(lookN).toBe(n0 - 2);
+  await expect.poll(lookN).toBe(n0 - 4);
   await gateWin.getByRole("button", { name: "关闭", exact: true }).click();
   await panel.getByRole("button", { name: "收起" }).click();
   await expect(panel).toHaveCount(0);
@@ -463,6 +476,43 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   const mx0 = await leftOf(mcard(B, look.matter.id));
   await drag(A, mA, 160, 60);
   await expect.poll(() => leftOf(mcard(B, look.matter.id))).toBeGreaterThan(mx0 + 100);
+  // Two on one card (2026-11-25, the user: 「a 在拖拽卡 b 就不拖拽」): while 小王 holds it, 老李 sees 「策划小王正在移动」 and
+  // cannot move it; let go, both see it where 小王 put it.
+  const mB = mcard(B, look.matter.id);
+  const held = (await mB.boundingBox())!;
+  await B.mouse.move(held.x + 20, held.y + 12);
+  await B.mouse.down();
+  await B.mouse.move(held.x + 60, held.y + 52, { steps: 4 });
+  await expect(mA.locator(".bd-tag.who")).toHaveText("策划小王正在移动");
+  const ax0 = await leftOf(mA);
+  await drag(A, mA, -140, 0);
+  await expect(A.locator(".toast")).toContainText("策划小王正在移动这张事项卡");
+  expect(await leftOf(mA)).toBe(ax0);
+  await shot(li.app, "C12-board-moving");
+  await B.mouse.move(held.x + 100, held.y + 92, { steps: 4 });
+  await B.mouse.up();
+  await expect.poll(() => leftOf(mA)).toBeGreaterThan(ax0 + 60);
+  await expect(mA.locator(".bd-tag.who")).toHaveCount(0);
+  await expect.poll(() => leftOf(mB)).toBe(await leftOf(mA));
+  // Both start at the same moment: one of them gets the card; whichever it was, both end up showing the same place.
+  await Promise.all([drag(A, mA, 0, 120), drag(B, mB, 0, -120)]);
+  await expect.poll(async () => (await leftOf(mA)) === (await leftOf(mB)) && (await topOf(mA)) === (await topOf(mB))).toBe(true);
+  await expect(mA.locator(".bd-tag.who")).toHaveCount(0);
+  await expect(mB.locator(".bd-tag.who")).toHaveCount(0);
+  // A drop from an old version (moved since the drag started): refused, the card goes back to where it is now.
+  const m0 = (await liStudio.cowork(cw.id)).cowork.matters!.find((x) => x.id === look.matter.id)!;
+  const stale = await wangStudio.patchMatter(cw.id, look.matter.id, { place: { x: 40, y: 900 }, placeBase: m0.placeVersion }).then(
+    () => null,
+    (e: { status?: number }) => e.status,
+  );
+  expect(stale).toBeNull();
+  await expect.poll(() => topOf(mA)).toBe(900);
+  const refused = await wangStudio.patchMatter(cw.id, look.matter.id, { place: { x: 40, y: 40 }, placeBase: m0.placeVersion }).then(
+    () => null,
+    (e: { status?: number }) => e.status,
+  );
+  expect(refused).toBe(409);
+  expect(await topOf(mA)).toBe(900);
   // 小王's AI puts a card up: 「AI 刚改」.
   await wangStudio.coworkBoardOps(cw.id, [{ op: "add", opId: "ai-1", item: { kind: "note", text: "过热从第 6 秒开始（AI 记的）", x: 40, y: 760, w: 220, h: 110 } }], viaWang);
   await expect(card(A, "过热从第 6 秒开始").locator(".bd-tag.ai")).toHaveText("AI 刚改");
@@ -501,6 +551,21 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await expect(boardA.locator(".bd-drawer .cw-matter-title")).toHaveText("满速段改成每秒 18 发");
   await boardA.locator(".bd-drawer").getByRole("button", { name: /^事项信息/ }).click();
   await expect(boardA.locator(".bd-drawer .cw-minfo")).toContainText("在等");
+  // 老李 opens 卡在哪 to write it: 小王, with the same 事项 open, sees 「程序老李正在改」 and only reads; saved, it is his to change again.
+  await mcard(B, gate.thread!.id).click({ position: { x: 40, y: 50 } });
+  const drawerB = boardB.locator(".bd-drawer");
+  await drawerB.getByRole("button", { name: /^事项信息/ }).click();
+  await boardA.locator(".bd-drawer .cw-info-row", { hasText: "卡在哪" }).getByRole("button", { name: "改" }).click();
+  await expect(drawerB.locator(".cw-edit-lock")).toHaveText("程序老李正在改这件事项：先只能看");
+  await expect(drawerB.locator(".cw-info-row", { hasText: "卡在哪" }).getByRole("button", { name: "改" })).toHaveCount(0);
+  await expect(drawerB.getByRole("button", { name: "关闭…" })).toBeDisabled();
+  await shot(wang.app, "C12-board-editing");
+  await boardA.locator(".bd-drawer").getByRole("textbox", { name: "卡在哪" }).fill("等美术确认弹壳动画");
+  await boardA.locator(".bd-drawer").getByRole("button", { name: "保存" }).click();
+  await expect(drawerB.locator(".cw-info-row", { hasText: "卡在哪" })).toContainText("等美术确认弹壳动画");
+  await expect(drawerB.locator(".cw-edit-lock")).toHaveCount(0);
+  await expect(drawerB.locator(".cw-info-row", { hasText: "卡在哪" }).getByRole("button", { name: "改" })).toBeVisible();
+  await drawerB.getByRole("button", { name: "关闭 ×" }).click();
   await shot(li.app, "C12-board-drawer");
   await boardA.locator(".bd-drawer").getByRole("button", { name: "关闭 ×" }).click();
   await boardA.locator(".bd-bar").getByRole("button", { name: /^群聊/ }).click();
@@ -559,8 +624,12 @@ test("协作: @ another's AI from queue to reply, an AI's @ at once, 事项 wind
   await expect.poll(() => opened.at(-1)).toBe(JSON.stringify({ sessionId: `cowork-lead-${cw.id}` }));
   await expect(A.locator(".toast")).toContainText("已交给 Studio");
   const leadMark = `studio:${DEVICE}:s-lead`;
+  // It joins with no role (as a Studio from before roles does): 未分角色 until its person picks one here.
   await liStudio.joinCoworkAgent(cw.id, leadMark, "加特林 · 主控");
   const leadRow = info.locator(`.cw-person.agent[data-agent="${leadMark}"]`);
+  await expect(leadRow.locator(".cw-role")).toHaveText("未分角色");
+  await leadRow.getByRole("button", { name: "改角色" }).click();
+  await A.getByRole("menuitem", { name: /^设成主控/ }).click();
   await expect(leadRow.locator(".cw-role")).toHaveText("主控");
   await expect(info.getByRole("button", { name: "在我的 Studio 里开这一方的主控" })).toHaveCount(0);
   await leadRow.getByRole("button", { name: "让主控现在看一遍" }).click();

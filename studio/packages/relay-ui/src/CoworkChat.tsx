@@ -257,7 +257,7 @@ function CoworkMessage({ m, prev, replied, me, questions, bySeq }: { m: Message;
   const handle = toHandle.has(m.seq) && !mine;
   const notice = noticeOf(m);
   const inChat = m.threadId === cowork.id;
-  const basis = ai ? basisOf(m) : null;
+  const basis = ai ? basisOf(m, show) : null;
   const withdraw = async () => {
     try {
       session.patchMessage({ threadId: m.threadId, seq: m.seq, message: await session.client.withdrawCoworkMessage(cowork.id, m.seq) });
@@ -308,22 +308,22 @@ function CoworkMessage({ m, prev, replied, me, questions, bySeq }: { m: Message;
               {ai ? " 的 AI" : ""}
             </b>
           )}
-          {agent && <span className="tag agent-label">{agent.role === "lead" ? "主控" : agent.role === "worker" ? `执行 · ${agent.label}` : agent.label}</span>}
+          {agent && <span className="tag agent-label">{agent.role === "lead" ? "主控" : agent.role === "worker" ? `执行 · ${agent.label}` : agent.role === "unassigned" ? `未分角色 · ${agent.label}` : agent.label}</span>}
           {repliedWho && <span className="cw-reply-to">↳ 回 {repliedWho}</span>}
           {mine && <span className="me-tag">我</span>}
           {m.approvedBy && <span className="tag">{m.edited ? `${show(m.approvedBy)} 改过后发出` : `${show(m.approvedBy)} 确认后发出`}</span>}
           {m.kind === "request" && <span className="tag">{inChat ? "事项" : "开头"}</span>}
           {m.kind === "text" && !!m.questions?.length && <span className="tag">追问</span>}
           {m.kind === "reply" && <span className="tag">回答</span>}
-          {notice && inChat && <span className="tag cw-notice-tag">知会{notice === true ? "" : ` · 要${notice.map(show).join("、")}看过`}</span>}
+          {notice && inChat && <span className="tag cw-notice-tag" title="知会：只要看过，不用回">知会 · 要{notice.map(show).join("、")}看过</span>}
           {basis?.kind === "inferred" && (
-            <span className="tag cw-basis inferred" title="AI 自己的判断，没和人确认过">
+            <span className="tag cw-basis inferred" title={basis.text}>
               ! 我的判断
             </span>
           )}
           {basis?.kind === "confirmed" && (
-            <span className="tag cw-basis confirmed" title="和人确认过的">
-              ✓ 已确认{basis.text ? ` · ${basis.text}` : ""}
+            <span className="tag cw-basis confirmed" title={basis.text}>
+              ✓ {basis.text}
             </span>
           )}
           {m.editedAt !== undefined && <span className="muted tiny">改过</span>}
@@ -396,7 +396,7 @@ function CoworkMessage({ m, prev, replied, me, questions, bySeq }: { m: Message;
         {(handle || (fresh && editing === null)) && (
           <div className="cw-msg-acts">
             {handle && (
-              <button type="button" className="small primary" onClick={() => void markMine(ctx, "handled", [m.seq], inChat ? "记下了：看过了" : "记下了：处理了")}>
+              <button type="button" className="small primary" onClick={() => void markMine(ctx, inChat && notice?.includes(me) ? "seen" : "handled", [m.seq], inChat ? "记下了：看过了" : "记下了：处理了")}>
                 {inChat ? "看过了" : "处理了"}
               </button>
             )}
