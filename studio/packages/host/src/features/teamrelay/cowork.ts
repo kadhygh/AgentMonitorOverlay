@@ -1160,8 +1160,20 @@ export class TeamCowork extends Feature<"config" | "sessions" | "attachments" | 
     const { coworkId, mark, join } = this.mine(sessionId, input.coworkId);
     const { client, me } = this.relay();
     const to = text(input.to, "to");
-    if (to === me) throw new HostError("bad_request", `你用的就是 ${me} 的身份：要问 ${me} 本人，直接在这个对话里问。`);
     const questions = Array.isArray(input.questions) ? (input.questions as Array<{ text?: unknown; options?: unknown }>).filter((q) => typeof q?.text === "string" && q.text.trim()).map((q) => ({ text: String(q.text).trim(), ...(Array.isArray(q.options) ? { options: q.options.filter((o): o is string => typeof o === "string" && !!o.trim()) } : {}) })) : [];
+    if (to === me) {
+      // A 闸门 asks the AI's own person (plans/collab-agent-spec.md §5: 「cowork_ask 给你的人」). The service's 子会话 are
+      // only for asking someone else (store.createRequest refuses one to yourself), so on a service with 事项 this opens
+      // the 等人确认 事项 itself: kind confirm on this side, waiting on the person — what an ask makes, minus the request.
+      // Both gates failed on the old refusal in the 11-25 real-model run (the 主控 said it in its own session and stopped).
+      if (!(await this.hasMatters())) throw new HostError("bad_request", `你用的就是 ${me} 的身份：要问 ${me} 本人，直接在这个对话里问。`);
+      const { cowork: c } = await this.call(() => client.cowork(coworkId));
+      if (c.agents.find((x) => x.mark === mark)?.role === "worker") throw new HostError("bad_request", "你是执行会话：不向人提问（这是主控的事）。要人拍板的，写进这一轮最后的回复，交回给主控。");
+      const body = [text(input.body, "body"), ...questions.map((q, i) => `${i + 1}. ${q.text}${q.options?.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n");
+      const out = await this.call(() => client.openMatter(coworkId, { title: text(input.title, "title").slice(0, 200), body, kind: "confirm", waitingOn: [personParty(me)], via: this.via(mark) }));
+      const m = out.matter;
+      return `开了事项 ${m.no}「${m.title}」（等人确认，在等 ${me}；threadId ${m.id}）。${me} 在要你看里会看到它；回复后你会被叫醒。现在结束这一轮，不要在等的方向上接着做。`;
+    }
     const out = await this.call(() => client.askCowork(coworkId, { to, title: text(input.title, "title").slice(0, 200), body: text(input.body, "body"), ...(questions.length ? { questions } : {}), via: this.via(mark) }));
     if (out.draft) this.draftMade(join);
     return postResultText(out, me, "ask");

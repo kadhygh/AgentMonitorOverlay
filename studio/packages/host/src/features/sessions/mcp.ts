@@ -29,7 +29,9 @@ export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[
           // matter (2026-11-25): a 协作's 事项 when this session is in one (or names coworkId), else a 事项 of its own task.
           const inCowork = args.matter !== undefined && (typeof args.coworkId === "string" || coworkCards(service.store, c.sessionId).length > 0);
           const plan = inCowork ? await service.teamRelay.cowork.workerPlan(c.sessionId, String(args.matter), args.coworkId) : null;
-          const input = plan ? { ...args, matter: undefined, text: `${plan.card}\n\n${args.text}` } : args;
+          // Without a title it is named after its 事项 (the 11-25 run: else it took its first message, the card's
+          // 「【由本任务的会话…】【协作…】你是…」, as its name — and as its name in the 协作).
+          const input = plan ? { ...args, matter: undefined, text: `${plan.card}\n\n${args.text}`, title: args.title || `事项 ${plan.matter.no}「${plan.matter.title}」`.slice(0, 100) } : args;
           const s = await service.sessions.startPeer(c.sessionId, input);
           const joined = plan ? await service.teamRelay.cowork.join(s.id, plan.coworkId, s.title || `事项 ${plan.matter.no}`, { role: "worker", matter: plan.matter.id }, false).then(() => null, (err: unknown) => (err instanceof Error ? err.message : String(err))) : null;
           // A DeepSeek · DSH session sandboxed to its folder, where the folder is not set up for it (2026-10-23).

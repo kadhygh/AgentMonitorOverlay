@@ -129,7 +129,7 @@ export class PendingFeature extends Feature {
     this.running = true;
     this.host.on("event", (e) => {
       if (!this.running || e.type !== "session.upserted" || !this.due.has(e.session.id)) return;
-      if (!inTurn(e.session.status) && e.session.status !== "awaiting-review") void this.wakeDue(e.session.id);
+      if (!inTurn(e.session.status) && e.session.status !== "awaiting-review") void this.wakeDue(e.session.id, true);
     });
     this.timer = setInterval(() => void this.tick(), this.patrolMs);
     this.timer.unref?.();
@@ -196,10 +196,19 @@ export class PendingFeature extends Feature {
     return any ? "woke" : "empty";
   }
 
-  private async wakeDue(sessionId: Id): Promise<void> {
+  /**
+   * `reread`: the turn it was in just ended — what it handled in that turn (answered, marked) leaves its list only once
+   * the sources read again; woken from the list as it was when the patrol noted it, it got items it had already dealt
+   * with (the 11-25 real-model run: a 主控 replied to #13 in its turn, was woken for #13 right after, found nothing to do).
+   */
+  private async wakeDue(sessionId: Id, reread = false): Promise<void> {
     const why = this.due.get(sessionId);
     if (!why) return;
     this.due.delete(sessionId);
+    if (reread) {
+      for (const s of this.sources.values()) await s.refresh?.().catch(() => undefined);
+      this.changed();
+    }
     await this.wakeOrLater(sessionId, why, why.kind === "manual");
   }
 

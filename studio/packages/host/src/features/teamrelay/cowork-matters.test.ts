@@ -262,6 +262,30 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(read.text).toContain("角色：主控");
   }, 30_000);
 
+  it("cowork_ask to the AI's own person (a 闸门, spec §5) opens a 等人确认 事项 waiting on them; their answer puts it back to 在做 (2026-11-25 real-model run)", async () => {
+    const { service, session, coderClient, tool } = await setup();
+    const c = await coderClient.createCowork({ title: "射速", members: ["策划小王"] });
+    const lead = session("射速口径");
+    await service.teamRelay.cowork.join(lead.id, c.id);
+    const asked = await tool(lead.id, "cowork_ask", { to: "策划小王", title: "等策划小王确认：上限从 60 改成 120", body: "程序那边提议把 maxRate 上限从 60 改成 120。", questions: [{ text: "改不改？", options: ["改", "不改"] }] });
+    expect(asked.error).toBe(false);
+    expect(asked.text).toContain("开了事项 1「等策划小王确认：上限从 60 改成 120」（等人确认，在等 策划小王");
+    const m = (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 1)!;
+    expect(m).toMatchObject({ status: "confirm", side: "策划小王", waitingOn: ["person:策划小王"], kind: "confirm" });
+    const me = service.teamRelay.cowork.relayLogin().client;
+    const first = (await me.messages(m.id, 0)).messages.find((x) => x.kind !== "event")!;
+    expect(first.body).toContain("1. 改不改？（改 / 不改）");
+    // In the person's 要你看 (their own list), and back to 在做 once they answer in it.
+    const mine = await me.coworkPending({ coworkId: c.id });
+    expect(mine.lists.flatMap((l) => l.items).some((i) => i.matter === m.id)).toBe(true);
+    await me.postCowork(c.id, { kind: "text", threadId: m.id, body: "改。", replyTo: first.seq });
+    await until(async () => (await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 1)!.status, (s) => s === "doing", "在做 after the answer");
+    // Someone else is still asked the old way (a 子会话 is a 等人确认 事项 there too).
+    const other = await tool(lead.id, "cowork_ask", { to: "程序老李", title: "等程序老李确认：合进 master", body: "要合吗？" });
+    expect(other.error).toBe(false);
+    expect((await coderClient.cowork(c.id)).cowork.matters!.find((x) => x.no === 2)).toMatchObject({ status: "confirm", waitingOn: ["person:程序老李"] });
+  }, 30_000);
+
   it("the patrol wakes a 主控 with only what changed, after its turn when it is in one; 让主控现在看一遍 wakes with all; 待我处理 has the person's and the 主控's groups", async () => {
     const { service, session, coderClient, told, setStatus } = await setup();
     const c = await coderClient.createCowork({ title: "背包", members: ["策划小王"] });
@@ -306,5 +330,22 @@ describe("协作里的事项和角色 in Studio (2026-11-24)", () => {
     expect(marked.mine).toBe(0);
     // The session's 协作 line counts its 待我处理.
     expect(service.teamRelay.cowork.joined().find((x) => x.sessionId === lead.id)!.pending).toBe(leadGroup.items.length);
+  }, 30_000);
+
+  it("a wake held for the end of a turn reads the list again first: what the 主控 dealt with in that turn does not wake it (2026-11-25 real-model run)", async () => {
+    const { service, session, coderClient, told, setStatus } = await setup();
+    const c = await coderClient.createCowork({ title: "背包", members: ["策划小王"] });
+    const lead = session("背包文档");
+    const j = await service.teamRelay.cowork.join(lead.id, c.id);
+    const m = (await coderClient.openMatter(c.id, { title: "图标尺寸", body: "64 还是 128？", waitingOn: [agentParty(j.mark)] })).matter;
+    const wakes = () => told.filter((t) => t.sessionId === lead.id && t.text.includes("【协作 · 待你处理】"));
+    // The patrol notes it while the 主控 is in a turn; in that turn it is settled.
+    setStatus(lead.id, "running");
+    await service.pending.tick();
+    expect(wakes()).toHaveLength(0);
+    await coderClient.patchMatter(c.id, m.id, { conclusion: "图标 128" });
+    setStatus(lead.id, "idle");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(wakes()).toHaveLength(0);
   }, 30_000);
 });
