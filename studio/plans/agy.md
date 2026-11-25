@@ -63,6 +63,7 @@
 - 一轮在跑时再发消息（排队）、取消、进程退出后续接。
 - `AGY_CLI_DISABLE_AUTO_UPDATE` 真的关掉了自更新。
 - 通过 agy 用 Claude / GPT-OSS 模型是否也吃同一份 Google 额度。
+- AMO 的 69 个工具 agy 只认 66 个（11-25 ybf 那边实测）：缺的 cowork_post（`const`）、cowork_matter（`"null"` 类型）、session_start（带类型的 additionalProperties）各有一种只有它用的 schema 写法，是 ybf 的主控比对缓存的 schema 推断的，没单改验证过。已改掉这三种写法，`mcp/tool-schemas.test.ts` 拦住以后的新工具；真机能不能看到这 3 个，待 ybf 装测试包后验证。
 
 ## 条款
 

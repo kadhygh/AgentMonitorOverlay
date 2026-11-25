@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fail, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
+import { fail, nullAsEmpty, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
 import { HostError } from "../../core/shared.js";
 import { BOARD_AI_MAX_CARDS } from "@amo-studio/relay/light";
 import { COWORK_BRIEF } from "./cowork-text.js";
@@ -52,7 +52,8 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
         threadId: thread,
         body: z.string().describe("Markdown."),
         replyTo: seq.optional(),
-        handled: z.union([z.literal(true), z.array(seq)]).optional(),
+        // A plain boolean, not literal true: its `const` hid the tool from Gemini on agy (2026-11-25); false marks nothing.
+        handled: z.union([z.boolean(), z.array(seq)]).optional(),
         mentions: z.array(z.string()).optional(),
         agentMentions: z.array(z.string()).optional(),
         supersedes: seq.optional(),
@@ -81,9 +82,10 @@ export function coworkTools({ service, caller }: ToolContext): AmoTool[] {
         side: z.string().optional(),
         status: z.string().optional(),
         waitingOn: z.array(z.string()).optional(),
-        blocker: z.string().nullable().optional(),
+        // "" clears (null too, as before, but not shown: a null type hid the tool from Gemini on agy, 2026-11-25).
+        blocker: nullAsEmpty(z.string()).optional().describe('"" clears it.'),
         dependsOn: z.array(z.string()).optional(),
-        gate: z.enum(["red", "rules", "master", "others", "release"]).nullable().optional(),
+        gate: nullAsEmpty(z.enum(["", "red", "rules", "master", "others", "release"])).optional().describe('"" clears it.'),
         conclusion: z.string().optional(),
         decided: z.boolean().optional().describe("close: the conclusion is a 口径 and goes into 已定的事 (a 「等人确认」 on the 口径 gate always does)."),
         note: z.string().optional(),

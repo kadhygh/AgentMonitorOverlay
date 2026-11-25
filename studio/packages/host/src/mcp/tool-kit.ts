@@ -57,6 +57,13 @@ export function answer(read: () => unknown): ToolResult {
 
 export const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
 
+/**
+ * A field that "" clears and that still takes null (as callers sent before), without a null type in its JSON Schema.
+ * Gemini on agy drops a whole tool whose schema has `const`, a `"null"` type or a typed additionalProperties (2026-11-25:
+ * cowork_post, cowork_matter and session_start were missing there); tool-schemas.test.ts keeps every tool clear of them.
+ */
+export const nullAsEmpty = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === null ? "" : v), schema);
+
 /** Runs a write for the caller; Studio's own refusals become readable tool errors. */
 export function write(caller: McpCaller | null, run: (caller: McpCaller) => unknown): ToolResult {
   if (!caller) return fail("这次调用没有 AMO 会话身份（例如由 Codex 自己派生的子 agent），只能使用只读工具。");
