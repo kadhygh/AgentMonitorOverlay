@@ -5,6 +5,7 @@ import { needsPerson } from "../lib/status.js";
 import { noteFocusJump } from "../lib/focusJump.js";
 import { hangsUnderOf, interruptedSince, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen, withGrants } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
+import { liveDecisions } from "../lib/decisions.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayCard, useRelays } from "../relays/Relays.js";
@@ -194,7 +195,7 @@ export function FocusApp() {
   // (2026-10-26: an entry kept while open looked unreviewed for half an hour after 在工作台打开, then vanished when its
   // title folded it). Opening it here no longer counts as seeing it.
   const list = [...waiting, ...finished];
-  const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
+  const asks = live ? liveDecisions(decisions, live.sessions) : [];
   const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id), ...relays.map((r) => r.id), ...teamSends.map((s) => s.id), ...canvasAsks.map((q) => q.first.id), ...pairAsks.map((r) => r.id), ...taskAsks.map((r) => r.id), ...mineList.map((i) => `pending:${i.group}:${i.key}`)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.

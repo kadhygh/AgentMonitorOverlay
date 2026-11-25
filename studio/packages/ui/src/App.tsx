@@ -8,6 +8,7 @@ import { CoworkHandoffs } from "./teamrelay/Cowork.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import { useLocalPending, useUnreadMail } from "./collab/useInbox.js";
 import { useOpenDecisions } from "./collab/DecisionPanel.js";
+import { liveDecisions } from "./lib/decisions.js";
 import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { usePending } from "./pending/pending.js";
@@ -263,7 +264,7 @@ export function App() {
   const views = VIEWS.filter((d) => featureOn(disabled, d.feature) && experimentalOn(experimental, d.experimental));
   const planning = featureOn(disabled, "planning");
   const decisionsByTask = new Map<string, number>();
-  for (const d of openDecisions) if (d.taskId) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
+  for (const d of liveDecisions(openDecisions, state.sessions)) if (d.taskId) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
   // A task needs the person when a session waits for approval or review, or an agent asked for a decision.
   // Pending scheduler proposals wait for the person too (one each: they are not tasks yet).
   const needs =

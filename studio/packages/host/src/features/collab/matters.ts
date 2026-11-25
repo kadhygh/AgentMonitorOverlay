@@ -694,9 +694,10 @@ export class LocalMatters extends Feature<"sessions"> {
       (mail.fromSessionId !== null && sessionsOf.has(mail.fromSessionId));
     // 先问 ones, and an agent's message that did not go in by itself and was not read yet (a note to a 主控, mail from
     // before): the page sends it in or drops it, as the old 留言 panel did. The person's own (a decision's answer) are not.
+    // Nor, while its recipient is archived or gone, one with nowhere to go in (2026-11-25): the message is left as it is.
     const asks = this.store
       .listMail({ states: ["unread"] })
-      .filter((m) => (m.ask || m.fromSessionId !== null) && m.withdrawnAt === undefined && m.via !== "background" && concerns(m));
+      .filter((m) => (m.ask || m.fromSessionId !== null) && m.withdrawnAt === undefined && m.via !== "background" && concerns(m) && !this.recipientGone(m.to));
     const threads: LocalThread[] = [];
     for (const m of this.store.listMatters({ open: true })) {
       const messages = this.store.listMailInMatter(m.id);
@@ -711,6 +712,12 @@ export class LocalMatters extends Feature<"sessions"> {
     });
     for (const t of threads) if (t.matter) pending.push(...pendingFor(LOCAL_PERSON, "task", t.matter.scopeId, [t.matter], t.messages.map(asPending)));
     return { asks, threads, pending: pending.sort((a, b) => b.since - a.since) };
+  }
+
+  /** The task, session or topic a message is for is archived or not there. */
+  private recipientGone(to: MailRecipient): boolean {
+    const r = to.kind === "task" ? this.store.getTask(to.taskId) : to.kind === "session" ? this.store.getSession(to.sessionId) : this.store.getTopic(to.topicId);
+    return !r || !!r.archivedAt;
   }
 
   /** The person marks messages 看过 / 处理了 (their receipts all move). */

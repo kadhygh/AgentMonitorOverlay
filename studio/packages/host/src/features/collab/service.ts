@@ -12,7 +12,8 @@ export class CollabFeature extends Feature<"pending" | "sessions"> {
 
   /**
    * 待我处理's local source (2026-11-25, source "local" of features/pending): registered once the 事项 are read, and told
-   * whenever a message, a 事项 or a session's turn moves.
+   * whenever a message, a 事项 or a session's turn moves, or a task or topic changes (archived, its messages are not listed;
+   * one without sessions says so by its own event only).
    */
   watchPending(): void {
     const source = new LocalPendingSource(this.matters, this.f.pending, {
@@ -24,7 +25,7 @@ export class CollabFeature extends Feature<"pending" | "sessions"> {
     });
     this.f.pending.register(source);
     this.host.on("event", (e) => {
-      if (e.type === "mail.upserted" || e.type === "matter.upserted" || (e.type === "session.upserted" && (!inTurn(e.session.status) || e.session.archivedAt))) source.poke();
+      if (e.type === "mail.upserted" || e.type === "matter.upserted" || e.type === "task.upserted" || e.type === "topic.upserted" || (e.type === "session.upserted" && (!inTurn(e.session.status) || e.session.archivedAt))) source.poke();
     });
   }
 

@@ -1,4 +1,4 @@
-import type { HostEvent, Id, LocalPendingView, MailMessage, Session, Task } from "@amo-studio/protocol";
+import { inTurn, type HostEvent, type Id, type LocalPendingView, type MailMessage, type Session, type Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { keepWhere, upsertById, useLiveResource } from "../host/live.js";
 
@@ -49,11 +49,14 @@ export function useTaskMail(link: HostLink, task: Task, sessions: readonly Sessi
 
 export const NO_PENDING: LocalPendingView = { asks: [], threads: [], pending: [] };
 
-const touchesPending = (e: HostEvent) => e.type === "mail.upserted" || e.type === "matter.upserted" || e.type === "relay.upserted";
+/** After these the Host's list may differ: a task, topic or session archived or restored takes its messages out or back. */
+export const touchesPending = (e: HostEvent) =>
+  e.type === "mail.upserted" || e.type === "matter.upserted" || e.type === "relay.upserted" || e.type === "task.upserted" || e.type === "topic.upserted" || (e.type === "session.upserted" && (!inTurn(e.session.status) || !!e.session.archivedAt));
 
 /**
- * 待我处理, the Host's part (2026-11-25, 本机的事项): read again whenever a message, a 事项 or a 传话 changes (a turn
- * moves several at once, so the reloads are coalesced). `taskId`: only what concerns that task (its side panel).
+ * 待我处理, the Host's part (2026-11-25, 本机的事项): read again whenever a message, a 事项, a 传话 or what a message is
+ * for changes (a turn moves several at once, so the reloads are coalesced). `taskId`: only what concerns that task (its
+ * side panel).
  */
 export function useLocalPending(link: HostLink, taskId?: Id): LocalPendingView {
   const [view] = useLiveResource<LocalPendingView>(

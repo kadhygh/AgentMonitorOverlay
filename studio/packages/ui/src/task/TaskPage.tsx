@@ -20,6 +20,7 @@ import { AnnotationPanel } from "../review/AnnotationPanel.js";
 import { useLocalPending, useTaskMail } from "../collab/useInbox.js";
 import { PendingPanel } from "../collab/PendingPage.js";
 import { DecisionPanel, useOpenDecisions } from "../collab/DecisionPanel.js";
+import { liveDecisions } from "../lib/decisions.js";
 import { NotesPanel, useTaskNotes } from "../collab/NotesPanel.js";
 import { ChecklistPanel } from "../collab/ChecklistPanel.js";
 import { EditableName } from "./EditableName.js";
@@ -301,7 +302,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
   // What waits in the hidden right column: shown as a count on 侧栏.
   const sideCount =
-    decisions.filter((d) => d.taskId === task.id).length + pendingAsks + annotations.filter((a) => !a.sentAt).length;
+    liveDecisions(decisions, sessions).filter((d) => d.taskId === task.id).length + pendingAsks + annotations.filter((a) => !a.sentAt).length;
   // Shown on 会话 while the list is hidden, when there is more than the one in front to choose from.
   const liveCount = own.filter((s) => !s.archivedAt).length;
 

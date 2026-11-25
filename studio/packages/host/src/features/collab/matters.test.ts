@@ -92,6 +92,51 @@ describe("本机的事项", () => {
     expect(store.getTask(taskB.id)?.relayAuto).toBeUndefined();
   });
 
+  it("a message whose task, session or topic is archived or gone is not listed as waiting; restored, it is again", { timeout: 20_000 }, async () => {
+    // A task and a topic without sessions: archiving them says so by their own events only.
+    const empty = store.createTask({ title: "没会话", workspaceId: alpha.id });
+    const other = service.topics.createTopic({ title: "别的专题" });
+    const toTask = await service.collab.sendFromSession(a.id, { toTaskId: empty.id, text: "给任务" });
+    const toSession = await service.collab.sendFromSession(a.id, { toSessionId: c.id, text: "给会话" });
+    const toTopic = await service.collab.sendFromSession(a.id, { toTopicId: other.id, text: "给专题" });
+    const all = [toTask, toSession, toTopic];
+    const stored = all.map(mail);
+    store.putMail({ id: "mail-gone", fromSessionId: a.id, fromTaskId: taskA.id, to: { kind: "session", sessionId: "s-gone" }, text: "收的会话没了", state: "unread", createdAt: new Date().toISOString(), handledAt: null, ask: true });
+
+    const listed = () => service.collab.matters.pendingView().asks.map((m) => m.id).sort();
+    const items = () => service.collab.matters.pendingView().pending.map((p) => p.seq).sort();
+    const snapshot = () => (service.pending.snapshot().groups.find((g) => g.id === "local:me")?.items ?? []).map((i) => i.key).sort();
+    /** Without `gone`: the page's list, its items, and 待我处理's snapshot (made again by the archive's own event). */
+    const expectWithout = async (...gone: MailMessage[]) => {
+      const left = all.filter((m) => !gone.includes(m));
+      expect(listed()).toEqual(left.map((m) => m.id).sort());
+      expect(items()).toEqual(left.map((m) => m.seq).sort());
+      const keys = left.map((m) => `ask:${m.id}`).sort();
+      await until(() => JSON.stringify(snapshot()) === JSON.stringify(keys));
+    };
+    await expectWithout();
+
+    await service.tasks.archiveTask(empty.id);
+    await expectWithout(toTask);
+    await service.tasks.unarchiveTask(empty.id);
+    await expectWithout();
+
+    await service.sessions.archive(c.id);
+    await expectWithout(toSession);
+    await service.sessions.unarchive(c.id);
+    await expectWithout();
+
+    await service.topics.archiveTopic(other.id);
+    await expectWithout(toTopic);
+    // The task side column's list follows it too.
+    expect(service.collab.matters.pendingView(taskA.id).asks.map((m) => m.id)).not.toContain(toTopic.id);
+    await service.topics.unarchiveTopic(other.id);
+    await expectWithout();
+
+    // Only left out of the list: nothing about the messages changed.
+    expect(all.map(mail)).toEqual(stored);
+  });
+
   it("replyTo goes back to the sender in the same 事项 without an address; the 事项 closes once all is 处理了", { timeout: 20_000 }, async () => {
     const ask = await service.collab.sendFromSession(a.id, { toSessionId: b.id, text: "界面要几列？" });
     await idle(b.id);
